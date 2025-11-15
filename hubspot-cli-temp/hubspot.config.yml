@@ -1,0 +1,14 @@
+defaultPortal: default
+portals:
+  - name: default
+    portalId: 146182077
+    env: prod
+    authType: personalaccesskey
+    personalAccessKey: >-
+      YOUR_HUBSPOT_PERSONAL_ACCESS_KEY
+    auth:
+      tokenInfo:
+        accessToken: >-
+          YOUR_HUBSPOT_ACCESS_TOKEN
+        expiresAt: '2025-11-14T19:31:37.178Z'
+    accountType: STANDARD
