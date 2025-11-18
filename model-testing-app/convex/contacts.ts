@@ -67,6 +67,7 @@ export const create = mutation({
     clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
     sourceDocumentId: v.optional(v.id("documents")),
+    linkedCompanyIds: v.optional(v.array(v.id("companies"))),
   },
   handler: async (ctx, args) => {
     const contactId = await ctx.db.insert("contacts", {
@@ -79,8 +80,26 @@ export const create = mutation({
       clientId: args.clientId,
       projectId: args.projectId,
       sourceDocumentId: args.sourceDocumentId,
+      linkedCompanyIds: args.linkedCompanyIds || [],
       createdAt: new Date().toISOString(),
     });
+
+    // Update linked companies to include this contact
+    if (args.linkedCompanyIds && args.linkedCompanyIds.length > 0) {
+      for (const companyId of args.linkedCompanyIds) {
+        const company = await ctx.db.get(companyId);
+        if (company) {
+          const existingContactIds = company.linkedContactIds || [];
+          if (!existingContactIds.includes(contactId)) {
+            await ctx.db.patch(companyId, {
+              linkedContactIds: [...existingContactIds, contactId],
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    }
+
     return contactId;
   },
 });

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,17 +38,24 @@ import {
   Phone,
   Briefcase,
   ExternalLink,
+  Plus,
+  Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 import MetricCard from '@/components/MetricCard';
 import { HubSpotLink } from '@/components/HubSpotLink';
+import CreateRolodexModal from '@/components/CreateRolodexModal';
 
 export default function RolodexPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'companies' | 'contacts'>('companies');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [promotingCompanyId, setPromotingCompanyId] = useState<string | null>(null);
   
   // Fetch data
   const companies = useQuery(api.companies.getAll) || [];
   const contacts = useQuery(api.contacts.getAll) || [];
+  const promoteToClient = useMutation(api.companies.promoteToClient);
   
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -148,6 +155,22 @@ export default function RolodexPage() {
 
   const hasActiveFilters = lifecycleFilter !== 'all' || searchQuery.trim() !== '';
 
+  const handlePromoteToClient = async (companyId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (promotingCompanyId) return;
+    
+    setPromotingCompanyId(companyId);
+    try {
+      const clientId = await promoteToClient({ id: companyId as any });
+      // Redirect to client dashboard
+      router.push(`/clients/${clientId}`);
+    } catch (error) {
+      console.error('Error promoting company to client:', error);
+      alert('Failed to promote company to client. Please try again.');
+      setPromotingCompanyId(null);
+    }
+  };
+
   // Calculate metrics for companies
   const companyMetrics = useMemo(() => {
     const lifecycleStages = companies.reduce((acc: Record<string, number>, company) => {
@@ -202,23 +225,33 @@ export default function RolodexPage() {
                   Manage your contacts and companies database
                 </p>
               </div>
-              {/* Tabs */}
-              <TabsList className="grid grid-cols-2 bg-gray-100 p-1 w-auto">
-                <TabsTrigger 
-                  value="companies" 
-                  className="flex items-center gap-2 px-8 py-2 text-sm font-medium data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors"
+              <div className="flex items-center gap-4">
+                {/* Tabs */}
+                <TabsList className="grid grid-cols-2 bg-gray-100 p-1 w-auto">
+                  <TabsTrigger 
+                    value="companies" 
+                    className="flex items-center gap-2 px-8 py-2 text-sm font-medium data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors"
+                  >
+                    <Building2 className="w-4 h-4" />
+                    Companies ({companies.length})
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="contacts" 
+                    className="flex items-center gap-2 px-8 py-2 text-sm font-medium data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors"
+                  >
+                    <User className="w-4 h-4" />
+                    Contacts ({contacts.length})
+                  </TabsTrigger>
+                </TabsList>
+                {/* Create Button */}
+                <Button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="bg-blue-600 text-white hover:bg-blue-700"
                 >
-                  <Building2 className="w-4 h-4" />
-                  Companies ({companies.length})
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="contacts" 
-                  className="flex items-center gap-2 px-8 py-2 text-sm font-medium data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors"
-                >
-                  <User className="w-4 h-4" />
-                  Contacts ({contacts.length})
-                </TabsTrigger>
-              </TabsList>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Create
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -390,17 +423,44 @@ export default function RolodexPage() {
                                   : '—'}
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-3 text-xs"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    router.push(`/companies/${company._id}`);
-                                  }}
-                                >
-                                  View
-                                </Button>
+                                <div className="flex items-center justify-end gap-2">
+                                  {company.promotedToClientId ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-3 text-xs text-green-600"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        router.push(`/clients/${company.promotedToClientId}`);
+                                      }}
+                                    >
+                                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                                      Client
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-3 text-xs"
+                                      onClick={(e) => handlePromoteToClient(company._id, e)}
+                                      disabled={promotingCompanyId === company._id}
+                                    >
+                                      <Sparkles className="w-3 h-3 mr-1" />
+                                      {promotingCompanyId === company._id ? 'Promoting...' : 'Promote'}
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 px-3 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      router.push(`/companies/${company._id}`);
+                                    }}
+                                  >
+                                    View
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           );
@@ -625,6 +685,15 @@ export default function RolodexPage() {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* Create Modal */}
+        <CreateRolodexModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onSuccess={() => {
+            // Data will refresh automatically via useQuery
+          }}
+        />
       </div>
     </div>
   );

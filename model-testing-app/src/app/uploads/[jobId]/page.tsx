@@ -16,6 +16,7 @@ import { useEnrichmentByDocument } from '@/lib/clientStorage';
 import FileAssignmentCard from '@/components/FileAssignmentCard';
 import EnrichmentReviewCard from '@/components/EnrichmentReviewCard';
 import EditableFileTypeBadge from '@/components/EditableFileTypeBadge';
+import InstructionsModal from '@/components/InstructionsModal';
 import { useState, useEffect } from 'react';
 import { AnalysisResult } from '@/types';
 import {
@@ -40,6 +41,7 @@ export default function UploadSummaryPage() {
   const [filedDocumentId, setFiledDocumentId] = useState<Id<"documents"> | null>(null);
   const [editedFileType, setEditedFileType] = useState<string | null>(null);
   const [editedCategory, setEditedCategory] = useState<string | null>(null);
+  const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
   
   // Update filedDocumentId when job loads or updates
   useEffect(() => {
@@ -58,6 +60,18 @@ export default function UploadSummaryPage() {
       markAsRead({ jobId });
     }
   }, [job, jobId, markAsRead]);
+
+  // Show instructions modal if needed
+  useEffect(() => {
+    if (job && job.hasCustomInstructions && !job.customInstructions && !filedDocumentId) {
+      setInstructionsModalOpen(true);
+    }
+  }, [job, filedDocumentId]);
+
+  const handleInstructionsSaved = () => {
+    // Instructions saved, modal will close
+    // The job query will automatically refetch
+  };
 
   if (!job) {
     return (
@@ -240,6 +254,37 @@ export default function UploadSummaryPage() {
             </div>
           </div>
         </div>
+
+        {/* Custom Instructions Section */}
+        {job.hasCustomInstructions && (
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Custom Instructions</CardTitle>
+                {!filedDocumentId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setInstructionsModalOpen(true)}
+                  >
+                    {job.customInstructions ? 'Edit Instructions' : 'Add Instructions'}
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {job.customInstructions ? (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{job.customInstructions}</p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 italic">
+                  No instructions provided yet. Click "Add Instructions" to provide context for better filing accuracy.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* File Assignment Card - Show when not filed yet */}
         {analysisResult && job.status !== 'error' && !filedDocumentId && (
@@ -526,6 +571,16 @@ export default function UploadSummaryPage() {
             )}
           </Tabs>
         )}
+
+        {/* Instructions Modal */}
+        <InstructionsModal
+          open={instructionsModalOpen}
+          onOpenChange={setInstructionsModalOpen}
+          jobId={jobId}
+          fileName={job.fileName}
+          existingInstructions={job.customInstructions}
+          onInstructionsSaved={handleInstructionsSaved}
+        />
       </div>
     </div>
   );

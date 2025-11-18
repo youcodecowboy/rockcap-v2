@@ -330,3 +330,21 @@
 - Lists properly indented with disc/decimal markers
 - All markdown elements maintain proper spacing and readability within chat bubbles
 - GitHub-flavored markdown support for tables, strikethrough, and task lists
+
+## 2025-11-15 15:38:40 EST
+- Added ability to create companies and contacts directly from the Rolodex page
+- Created CreateRolodexModal component with tabbed interface for switching between Company and Contact creation
+- Implemented company creation mutation in Convex (companies.create) supporting manual entry without HubSpot requirement
+- Enhanced contact creation mutation to support linking contacts to existing companies via linkedCompanyIds
+- Company creation supports linking to existing contacts, creating bidirectional relationships
+- Contact creation supports linking to existing companies, creating bidirectional relationships
+- Modal includes comprehensive forms with all company fields (name, domain, phone, address, city, state, zip, country, industry, type, website, notes)
+- Modal includes comprehensive forms with all contact fields (name, role, email, phone, company text field, notes)
+- Added multi-select dropdowns for linking existing records (contacts can link to multiple companies, companies can link to multiple contacts)
+- Linked records display as removable chips/badges in the form
+- Added "Create" button positioned next to Company/Contacts tabs in top-right of Rolodex page
+- Mutations automatically update bidirectional relationships when creating records with links
+- Manual company entries generate unique HubSpot IDs prefixed with "manual-" for identification
+- Forms include validation requiring name fields before submission
+- Modal resets forms and closes automatically after successful creation
+- Data refreshes automatically via Convex queries after creation

@@ -27,6 +27,9 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const customInstructions = formData.get('customInstructions') as string | null;
+
+    console.log('[API] Received custom instructions:', customInstructions ? `"${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? '...' : ''}"` : 'none');
 
     if (!file) {
       return NextResponse.json(
@@ -117,7 +120,8 @@ export async function POST(request: NextRequest) {
       const analysisResult = await analyzeFileContent(
         textContent,
         file.name,
-        clientsWithProjects
+        clientsWithProjects,
+        customInstructions || null
       );
       const analysisTime = Date.now() - analysisStartTime;
       console.log('[API] Analysis completed in:', analysisTime, 'ms');

@@ -42,17 +42,25 @@ export const getPending = query({
     projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("enrichmentSuggestions");
+    let suggestions;
     
     if (args.clientId) {
-      query = query.withIndex("by_client", (q) => q.eq("clientId", args.clientId));
+      suggestions = await ctx.db
+        .query("enrichmentSuggestions")
+        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .collect();
     } else if (args.projectId) {
-      query = query.withIndex("by_project", (q) => q.eq("projectId", args.projectId));
+      suggestions = await ctx.db
+        .query("enrichmentSuggestions")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .collect();
     } else {
-      query = query.withIndex("by_status", (q) => q.eq("status", "pending"));
+      suggestions = await ctx.db
+        .query("enrichmentSuggestions")
+        .withIndex("by_status", (q) => q.eq("status", "pending"))
+        .collect();
     }
     
-    const suggestions = await query.collect();
     return suggestions.filter(s => s.status === "pending");
   },
 });

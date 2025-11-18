@@ -240,3 +240,47 @@ export const getStats = query({
   },
 });
 
+// Query: Get projects that have Excel documents with extracted data
+export const getWithExtractedData = query({
+  args: {},
+  handler: async (ctx) => {
+    const allProjects = await ctx.db.query("projects").collect();
+    const allDocuments = await ctx.db.query("documents").collect();
+    
+    // Filter documents to Excel files with extracted data
+    const excelDocsWithData = allDocuments.filter(doc => {
+      const fileType = doc.fileType?.toLowerCase() || "";
+      const isExcel = fileType.includes("spreadsheet") || 
+                      fileType.includes("excel") || 
+                      fileType.includes("xlsx") || 
+                      fileType.includes("xls");
+      return isExcel && doc.extractedData;
+    });
+    
+    // Get project IDs that have Excel documents with extracted data
+    const projectIdsWithData = new Set(
+      excelDocsWithData
+        .map(doc => doc.projectId)
+        .filter((id): id is string => id !== undefined)
+    );
+    
+    // Return projects with their document dates
+    return allProjects
+      .filter(project => projectIdsWithData.has(project._id))
+      .map(project => {
+        // Find the most recent Excel document with extracted data for this project
+        const projectDocs = excelDocsWithData
+          .filter(doc => doc.projectId === project._id)
+          .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+        
+        const latestDoc = projectDocs[0];
+        
+        return {
+          ...project,
+          extractionDate: latestDoc?.uploadedAt || project.createdAt,
+          lastModified: latestDoc?.savedAt || project.createdAt,
+        };
+      });
+  },
+});
+

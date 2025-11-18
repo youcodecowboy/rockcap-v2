@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,15 +18,20 @@ import {
   TrendingUp,
   Globe,
   MapPin,
+  Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 import { HubSpotLink } from '@/components/HubSpotLink';
+import { useState } from 'react';
 
 export default function CompanyDetailPage() {
   const params = useParams();
   const router = useRouter();
   const companyId = params.companyId as string;
+  const [isPromoting, setIsPromoting] = useState(false);
   
   const company = useQuery(api.companies.get, { id: companyId as any });
+  const promoteToClient = useMutation(api.companies.promoteToClient);
 
   if (company === undefined) {
     return (
@@ -64,6 +69,21 @@ export default function CompanyDetailPage() {
   const contacts = company.contacts || [];
   const deals = company.deals || [];
 
+  const handlePromoteToClient = async () => {
+    if (isPromoting || company.promotedToClientId) return;
+    
+    setIsPromoting(true);
+    try {
+      const clientId = await promoteToClient({ id: companyId as any });
+      // Redirect to client dashboard
+      router.push(`/clients/${clientId}`);
+    } catch (error) {
+      console.error('Error promoting company to client:', error);
+      alert('Failed to promote company to client. Please try again.');
+      setIsPromoting(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       <div className="mb-6">
@@ -84,6 +104,25 @@ export default function CompanyDetailPage() {
             </h1>
             {company.industry && (
               <div className="text-lg text-muted-foreground">{company.industry}</div>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {company.promotedToClientId ? (
+              <Link href={`/clients/${company.promotedToClientId}`}>
+                <Button className="bg-green-600 hover:bg-green-700 text-white">
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  View Client Dashboard
+                </Button>
+              </Link>
+            ) : (
+              <Button
+                onClick={handlePromoteToClient}
+                disabled={isPromoting}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                {isPromoting ? 'Promoting...' : 'Promote to Client'}
+              </Button>
             )}
           </div>
         </div>
@@ -256,6 +295,26 @@ export default function CompanyDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Client Status */}
+          {company.promotedToClientId && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Client Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2 text-green-600 mb-3">
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span className="font-medium">Promoted to Client</span>
+                </div>
+                <Link href={`/clients/${company.promotedToClientId}`}>
+                  <Button variant="outline" className="w-full">
+                    View Client Dashboard
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+
           {/* HubSpot Information */}
           {company.hubspotCompanyId && (
             <Card>

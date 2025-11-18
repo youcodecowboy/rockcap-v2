@@ -8,6 +8,7 @@ export const createJob = mutation({
     fileSize: v.number(),
     fileType: v.string(),
     userId: v.optional(v.string()),
+    hasCustomInstructions: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -19,6 +20,7 @@ export const createJob = mutation({
       progress: 0,
       isRead: false,
       userId: args.userId,
+      hasCustomInstructions: args.hasCustomInstructions || false,
       createdAt: now,
       updatedAt: now,
     });
@@ -43,6 +45,7 @@ export const updateJobStatus = mutation({
     analysisResult: v.optional(v.any()),
     documentId: v.optional(v.id("documents")),
     error: v.optional(v.string()),
+    customInstructions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { jobId, ...updates } = args;
@@ -100,6 +103,14 @@ export const getJob = query({
   args: { jobId: v.id("fileUploadQueue") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.jobId);
+  },
+});
+
+// Query: Get file URL from storage ID
+export const getFileUrl = query({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    return await ctx.storage.getUrl(args.storageId);
   },
 });
 

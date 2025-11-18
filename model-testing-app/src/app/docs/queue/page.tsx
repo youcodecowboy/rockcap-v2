@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -15,11 +16,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { FileText, Clock, CheckCircle2, AlertCircle, ArrowRight, Building2 } from 'lucide-react';
+import { FileText, Clock, CheckCircle2, AlertCircle, ArrowRight, Building2, Edit } from 'lucide-react';
 import Link from 'next/link';
+import InstructionsModal from '@/components/InstructionsModal';
 
 export default function DocsQueuePage() {
   const router = useRouter();
+  const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<Id<"fileUploadQueue"> | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>('');
+  const [selectedInstructions, setSelectedInstructions] = useState<string | undefined>(undefined);
   
   // Get all jobs that need confirmation
   const pendingJobs = useQuery(api.fileQueue.getJobs, { 
@@ -56,6 +62,21 @@ export default function DocsQueuePage() {
 
   const pendingCount = pendingJobs?.length || 0;
   const completedCount = completedJobs?.length || 0;
+
+  const handleOpenInstructionsModal = (jobId: Id<"fileUploadQueue">, fileName: string, instructions?: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setSelectedJobId(jobId);
+    setSelectedFileName(fileName);
+    setSelectedInstructions(instructions);
+    setInstructionsModalOpen(true);
+  };
+
+  const handleInstructionsSaved = () => {
+    // Refresh the page or refetch jobs
+    // The query will automatically refetch
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -155,6 +176,7 @@ export default function DocsQueuePage() {
                   {pendingJobs?.map((job) => {
                     const analysisResult = job.analysisResult as any;
                     const clientName = analysisResult?.clientName || analysisResult?.suggestedClientName || '—';
+                    const needsInstructions = job.hasCustomInstructions && !job.customInstructions;
                     return (
                       <TableRow 
                         key={job._id}
@@ -203,6 +225,29 @@ export default function DocsQueuePage() {
                             <AlertCircle className="w-3 h-3 mr-1" />
                             Review
                           </Badge>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {needsInstructions ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => handleOpenInstructionsModal(job._id, job.fileName, job.customInstructions, e)}
+                              className="text-xs"
+                            >
+                              <Edit className="w-3 h-3 mr-1" />
+                              Add Instructions
+                            </Button>
+                          ) : job.hasCustomInstructions && job.customInstructions ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleOpenInstructionsModal(job._id, job.fileName, job.customInstructions, e)}
+                              className="text-xs"
+                            >
+                              <Edit className="w-3 h-3 mr-1" />
+                              Edit
+                            </Button>
+                          ) : null}
                         </TableCell>
                         <TableCell>
                           <ArrowRight className="w-4 h-4 text-gray-400" />
@@ -329,6 +374,18 @@ export default function DocsQueuePage() {
               </Link>
             </CardContent>
           </Card>
+        )}
+
+        {/* Instructions Modal */}
+        {selectedJobId && (
+          <InstructionsModal
+            open={instructionsModalOpen}
+            onOpenChange={setInstructionsModalOpen}
+            jobId={selectedJobId}
+            fileName={selectedFileName}
+            existingInstructions={selectedInstructions}
+            onInstructionsSaved={handleInstructionsSaved}
+          />
         )}
       </div>
     </div>

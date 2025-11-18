@@ -603,6 +603,8 @@ export default defineSchema({
     error: v.optional(v.string()),
     isRead: v.optional(v.boolean()), // For notification read status
     userId: v.optional(v.string()), // For future multi-user support
+    hasCustomInstructions: v.optional(v.boolean()), // Flag to indicate if custom instructions were requested
+    customInstructions: v.optional(v.string()), // Custom instructions for LLM analysis
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -776,5 +778,57 @@ export default defineSchema({
     lastSyncedAt: v.string(),
   })
     .index("by_pipeline_id", ["pipelineId"]),
+
+  // Scenarios table - modeling scenarios linked to projects
+  scenarios: defineTable({
+    projectId: v.id("projects"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    data: v.optional(v.any()), // Handsontable-compatible data format
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    createdBy: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+  })
+    .index("by_project", ["projectId"]),
+
+  // Model runs table - versioned model executions
+  // Scenario results table - stores formula calculation results for version tracking
+  scenarioResults: defineTable({
+    scenarioId: v.id("scenarios"),
+    version: v.number(),
+    inputs: v.any(), // Map of input cell values (cellAddress -> value)
+    outputs: v.any(), // Map of output cell values (cellAddress -> value)
+    allValues: v.any(), // Complete snapshot (cellAddress -> value)
+    extractedAt: v.string(), // ISO timestamp
+  })
+    .index("by_scenario", ["scenarioId"])
+    .index("by_scenario_version", ["scenarioId", "version"]),
+
+  modelRuns: defineTable({
+    scenarioId: v.id("scenarios"),
+    modelType: v.union(
+      v.literal("appraisal"),
+      v.literal("operating"),
+      v.literal("other")
+    ),
+    version: v.number(),
+    versionName: v.optional(v.string()),
+    inputs: v.any(),
+    outputs: v.optional(v.any()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("error")
+    ),
+    error: v.optional(v.string()),
+    runAt: v.string(),
+    runBy: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+  })
+    .index("by_scenario", ["scenarioId"])
+    .index("by_modelType", ["modelType"])
+    .index("by_version", ["version"]),
 });
 

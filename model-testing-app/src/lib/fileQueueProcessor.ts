@@ -5,10 +5,11 @@ import { shouldAutoFile, needsConfirmation } from './autoFiling';
 interface QueueJob {
   jobId: Id<"fileUploadQueue">;
   file: File;
+  hasCustomInstructions?: boolean;
 }
 
 export interface QueueProcessorCallbacks {
-  createJob: (args: { fileName: string; fileSize: number; fileType: string }) => Promise<Id<"fileUploadQueue">>;
+  createJob: (args: { fileName: string; fileSize: number; fileType: string; hasCustomInstructions?: boolean }) => Promise<Id<"fileUploadQueue">>;
   updateJobStatus: (args: {
     jobId: Id<"fileUploadQueue">;
     status?: "pending" | "uploading" | "analyzing" | "completed" | "error" | "needs_confirmation";
@@ -17,8 +18,11 @@ export interface QueueProcessorCallbacks {
     analysisResult?: any;
     documentId?: Id<"documents">;
     error?: string;
+    customInstructions?: string;
   }) => Promise<Id<"fileUploadQueue">>;
   generateUploadUrl: () => Promise<string>;
+  getFileUrl: (storageId: Id<"_storage">) => Promise<string>;
+  getJob: (jobId: Id<"fileUploadQueue">) => Promise<any>;
   createDocument: (args: any) => Promise<Id<"documents">>;
   saveProspectingContext: (args: any) => Promise<void>;
   createEnrichment: (args: any) => Promise<void>;
@@ -41,7 +45,7 @@ export class FileQueueProcessor {
   /**
    * Add a file to the queue
    */
-  async addFile(file: File): Promise<Id<"fileUploadQueue"> | null> {
+  async addFile(file: File, hasCustomInstructions?: boolean): Promise<Id<"fileUploadQueue"> | null> {
     if (this.queue.length >= this.maxQueueSize) {
       throw new Error(`Queue is full. Maximum ${this.maxQueueSize} files allowed.`);
     }
@@ -55,10 +59,11 @@ export class FileQueueProcessor {
       fileName: file.name,
       fileSize: file.size,
       fileType: file.type,
+      hasCustomInstructions: hasCustomInstructions || false,
     });
 
     // Add to local queue
-    this.queue.push({ jobId, file });
+    this.queue.push({ jobId, file, hasCustomInstructions: hasCustomInstructions || false });
 
     // Start processing if not already processing
     if (!this.processing) {
@@ -95,7 +100,7 @@ export class FileQueueProcessor {
       if (!job) break;
 
       try {
-        await this.processFile(job.jobId, job.file);
+        await this.processFile(job.jobId, job.file, job.hasCustomInstructions);
       } catch (error) {
         console.error('Error processing file:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -168,7 +173,7 @@ export class FileQueueProcessor {
   /**
    * Process a single file through the pipeline
    */
-  private async processFile(jobId: Id<"fileUploadQueue">, file: File) {
+  private async processFile(jobId: Id<"fileUploadQueue">, file: File, hasCustomInstructions?: boolean) {
     if (!this.callbacks) {
       throw new Error('Queue processor not initialized');
     }
@@ -208,7 +213,19 @@ export class FileQueueProcessor {
         fileStorageId,
       });
 
-      // Step 2: Analyze file with retry logic
+      // Step 2: Check if custom instructions are needed BEFORE analysis
+      // If custom instructions were requested, skip analysis and wait for instructions
+      if (hasCustomInstructions) {
+        await this.callbacks.updateJobStatus({
+          jobId,
+          status: 'needs_confirmation',
+          progress: 100,
+          fileStorageId,
+        });
+        return; // Stop here - analysis will happen after instructions are provided
+      }
+
+      // Step 3: Analyze file with retry logic (only if no custom instructions needed)
       await this.callbacks.updateJobStatus({
         jobId,
         status: 'analyzing',
@@ -244,7 +261,7 @@ export class FileQueueProcessor {
         analysisResult,
       });
 
-      // Step 3: Determine if auto-filing or needs confirmation
+      // Step 4: Determine if auto-filing or needs confirmation
       if (shouldAutoFile(analysisResult)) {
         // Auto-file the document
         await this.autoFileDocument(jobId, file, fileStorageId, analysisResult);
@@ -456,6 +473,113 @@ export class FileQueueProcessor {
         jobId,
         status: 'error',
         error: error instanceof Error ? error.message : 'Failed to auto-file document',
+        progress: 0,
+      });
+    }
+  }
+
+  /**
+   * Analyze a file with custom instructions
+   * Called after instructions are provided
+   */
+  async analyzeWithInstructions(
+    jobId: Id<"fileUploadQueue">,
+    fileStorageId: Id<"_storage">,
+    customInstructions: string
+  ): Promise<void> {
+    if (!this.callbacks) {
+      throw new Error('Queue processor not initialized');
+    }
+
+    // Find the job in queue to get the file
+    let file: File | null = null;
+    const queueJob = this.queue.find(job => job.jobId === jobId);
+    
+    if (queueJob) {
+      file = queueJob.file;
+    } else {
+      // File not in queue - fetch from storage
+      // Get job data to get fileName and fileType
+      const jobData = await this.callbacks.getJob(jobId);
+      if (!jobData || !jobData.fileStorageId) {
+        throw new Error('Job not found or file storage ID missing');
+      }
+
+      // Get file URL from storage
+      const fileUrl = await this.callbacks.getFileUrl(jobData.fileStorageId);
+      
+      // Fetch the file from storage
+      const fileResponse = await fetch(fileUrl);
+      if (!fileResponse.ok) {
+        throw new Error('Failed to fetch file from storage');
+      }
+
+      // Convert blob to File object
+      const blob = await fileResponse.blob();
+      file = new File([blob], jobData.fileName, { type: jobData.fileType });
+    }
+
+    if (!file) {
+      throw new Error('File object is missing');
+    }
+
+    try {
+      await this.callbacks.updateJobStatus({
+        jobId,
+        status: 'analyzing',
+        progress: 40,
+      });
+
+      // Analyze file with custom instructions
+      console.log('[FileQueueProcessor] Analyzing with instructions:', customInstructions ? `"${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? '...' : ''}"` : 'none');
+      
+      const analysisResult: AnalysisResult = await this.retryWithBackoff(async () => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('customInstructions', customInstructions);
+        
+        console.log('[FileQueueProcessor] Sending FormData with customInstructions:', customInstructions ? 'yes' : 'no');
+
+        const analysisResponse = await fetch('/api/analyze-file', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!analysisResponse.ok) {
+          const errorData = await analysisResponse.json().catch(() => ({ error: `HTTP ${analysisResponse.status}` }));
+          const error = new Error(errorData.error || `Failed to analyze file (${analysisResponse.status})`);
+          (error as any).status = analysisResponse.status;
+          throw error;
+        }
+
+        return await analysisResponse.json();
+      }, 3, 2000);
+
+      await this.callbacks.updateJobStatus({
+        jobId,
+        status: 'analyzing',
+        progress: 70,
+        analysisResult,
+      });
+
+      // Determine if auto-filing or needs confirmation
+      if (shouldAutoFile(analysisResult)) {
+        await this.autoFileDocument(jobId, file, fileStorageId, analysisResult);
+      } else {
+        // Mark as needing confirmation (user can review and file manually)
+        await this.callbacks.updateJobStatus({
+          jobId,
+          status: 'needs_confirmation',
+          progress: 100,
+          analysisResult,
+        });
+      }
+    } catch (error) {
+      console.error('Error analyzing file with instructions:', error);
+      await this.callbacks.updateJobStatus({
+        jobId,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Failed to analyze file with instructions',
         progress: 0,
       });
     }

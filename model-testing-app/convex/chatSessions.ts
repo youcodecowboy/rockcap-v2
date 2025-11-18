@@ -32,7 +32,7 @@ export const list = query({
     if (args.contextType) {
       return await ctx.db
         .query("chatSessions")
-        .withIndex("by_contextType", (q) => q.eq("contextType", args.contextType))
+        .withIndex("by_contextType", (q) => q.eq("contextType", args.contextType!))
         .order("desc")
         .collect();
     }

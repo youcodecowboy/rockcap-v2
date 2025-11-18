@@ -1,5 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 
 /**
  * Link HubSpot contact IDs to our internal contacts table
@@ -16,7 +17,7 @@ export const linkContactsToDeal = mutation({
       throw new Error(`Deal ${args.dealId} not found`);
     }
 
-    const linkedContactIds: string[] = [];
+    const linkedContactIds: Id<"contacts">[] = [];
     
     // For each HubSpot contact ID, find the matching contact in our database
     for (const hubspotContactId of args.hubspotContactIds) {
@@ -54,7 +55,7 @@ export const linkCompaniesToDeal = mutation({
       throw new Error(`Deal ${args.dealId} not found`);
     }
 
-    const linkedCompanyIds: string[] = [];
+    const linkedCompanyIds: Id<"companies">[] = [];
     
     // For each HubSpot company ID, find the matching company in our database
     for (const hubspotCompanyId of args.hubspotCompanyIds) {
@@ -95,7 +96,7 @@ export const linkAssociationsToDeal = mutation({
 
     // Link contacts
     if (deal.contactIds && deal.contactIds.length > 0) {
-      const linkedContactIds: string[] = [];
+      const linkedContactIds: Id<"contacts">[] = [];
       for (const hubspotContactId of deal.contactIds) {
         const contact = await ctx.db
           .query("contacts")
@@ -114,7 +115,7 @@ export const linkAssociationsToDeal = mutation({
 
     // Link companies
     if (deal.companyIds && deal.companyIds.length > 0) {
-      const linkedCompanyIds: string[] = [];
+      const linkedCompanyIds: Id<"companies">[] = [];
       for (const hubspotCompanyId of deal.companyIds) {
         const company = await ctx.db
           .query("companies")

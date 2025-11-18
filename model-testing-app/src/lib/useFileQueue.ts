@@ -8,6 +8,7 @@ import { FileQueueProcessor, QueueProcessorCallbacks } from "./fileQueueProcesso
 import { useCreateDocument } from "./documentStorage";
 import { useSaveProspectingContext } from "./prospectingStorage";
 import { useCreateEnrichment } from "./clientStorage";
+import { ConvexHttpClient } from "convex/browser";
 
 /**
  * Hook for managing file upload queue
@@ -29,6 +30,17 @@ export function useFileQueue() {
   const recentJobs = useQuery(api.fileQueue.getRecentJobs, { includeRead: false });
   const unreadCount = useQuery(api.fileQueue.getUnreadCount);
   const pendingJobs = useQuery(api.fileQueue.getPendingJobs);
+  
+  // Create a Convex HTTP client for queries (since we can't use hooks conditionally)
+  const convexClient = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+      if (convexUrl) {
+        return new ConvexHttpClient(convexUrl);
+      }
+    }
+    return null;
+  }, []);
 
   // Create callbacks object that's stable
   // Convex mutations are always available, so we can create callbacks immediately
@@ -43,6 +55,18 @@ export function useFileQueue() {
       generateUploadUrl: async () => {
         return await generateUploadUrl();
       },
+      getFileUrl: async (storageId: Id<"_storage">) => {
+        if (!convexClient) {
+          throw new Error('Convex client not initialized');
+        }
+        return await convexClient.query(api.fileQueue.getFileUrl, { storageId });
+      },
+      getJob: async (jobId: Id<"fileUploadQueue">) => {
+        if (!convexClient) {
+          throw new Error('Convex client not initialized');
+        }
+        return await convexClient.query(api.fileQueue.getJob, { jobId });
+      },
       createDocument: async (args) => {
         return await createDocument(args);
       },
@@ -53,7 +77,7 @@ export function useFileQueue() {
         return await createEnrichment(args);
       },
     };
-  }, [createJob, updateJobStatus, generateUploadUrl, createDocument, saveProspectingContext, createEnrichment]);
+  }, [createJob, updateJobStatus, generateUploadUrl, createDocument, saveProspectingContext, createEnrichment, convexClient]);
 
   // Initialize processor once callbacks are ready
   // Use a ref to ensure we only create one instance
@@ -68,11 +92,11 @@ export function useFileQueue() {
 
   return {
     // Queue operations
-    addFile: async (file: File) => {
+    addFile: async (file: File, hasCustomInstructions?: boolean) => {
       if (!isReady || !processor) {
         throw new Error("Queue processor not initialized. Please wait a moment and try again.");
       }
-      return await processor.addFile(file);
+      return await processor.addFile(file, hasCustomInstructions);
     },
     removeFile: async (jobId: Id<"fileUploadQueue">) => {
       if (!isReady || !processor) return false;
@@ -98,6 +122,16 @@ export function useFileQueue() {
     isProcessing: () => {
       if (!isReady || !processor) return false;
       return processor.isProcessing();
+    },
+    analyzeWithInstructions: async (
+      jobId: Id<"fileUploadQueue">,
+      fileStorageId: Id<"_storage">,
+      customInstructions: string
+    ) => {
+      if (!isReady || !processor) {
+        throw new Error("Queue processor not initialized. Please wait a moment and try again.");
+      }
+      return await processor.analyzeWithInstructions(jobId, fileStorageId, customInstructions);
     },
     // Queue state
     recentJobs: recentJobs || [],

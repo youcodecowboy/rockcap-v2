@@ -13,6 +13,7 @@ import {
   Database,
   Settings,
   ContactRound,
+  Calculator,
   LucideIcon,
 } from 'lucide-react';
 
@@ -40,15 +41,17 @@ export default function Sidebar() {
     { href: '/docs', label: 'Docs', icon: File },
     { href: '/notes', label: 'Notes', icon: FileText },
     { href: '/knowledge-bank', label: 'Knowledge Bank', icon: Database },
+    { href: '/modeling', label: 'Modeling', icon: Calculator },
   ];
 
   return (
     <aside
-      className={`fixed left-0 top-16 h-[calc(100vh-4rem)] bg-black text-white transition-all duration-300 ease-in-out z-40 ${
+      className={`fixed left-0 top-16 h-[calc(100vh-4rem)] bg-black text-white transition-all duration-300 ease-in-out z-50 ${
         isHovered ? 'w-64' : 'w-20'
       }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      style={{ zIndex: 50 }}
     >
       <div className="flex flex-col h-full">
         {/* Navigation Items */}

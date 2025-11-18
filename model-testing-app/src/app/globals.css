@@ -287,6 +287,151 @@
   cursor: pointer;
 }
 
+/* Ensure main sidebar is always on top */
+aside[class*="fixed"][class*="left-0"] {
+  z-index: 50 !important;
+}
+
+/* Handsontable Context Menu z-index fix */
+.handsontable .htContextMenu {
+  position: fixed !important;
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+}
+
+.handsontable .htContextMenu table.htCore {
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+}
+
+.handsontable .htContextMenu tbody tr {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+.handsontable .htContextMenu tbody tr:hover {
+  background-color: #f0f0f0 !important;
+}
+
+/* Ensure Handsontable doesn't overlap sidebar */
+.handsontable {
+  z-index: 10 !important;
+}
+
+.handsontable .ht_master {
+  z-index: 10 !important;
+}
+
+/* Formula cell styling - Excel-like visual feedback */
+.handsontable .htFormulaBar {
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+  padding: 8px;
+  font-family: 'Courier New', monospace;
+}
+
+.handsontable .htFormulaBar input {
+  width: 100%;
+  border: 1px solid #ced4da;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+/* Highlight formula cells */
+.handsontable td[data-formula] {
+  background-color: #e7f3ff !important;
+  color: #0066cc !important;
+  font-style: italic;
+}
+
+/* Highlight cells being edited with formulas */
+.handsontable .currentRow .currentCol {
+  background-color: #fffacd !important;
+}
+
+/* Formula reference highlighting */
+.handsontable .area {
+  background-color: rgba(0, 123, 255, 0.1) !important;
+  border: 1px solid rgba(0, 123, 255, 0.3) !important;
+}
+
+/* Formula Bar Styling */
+.formula-bar-container {
+  background: #f8f9fa;
+  border-bottom: 2px solid #e9ecef;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  zoom: 1 !important;
+  transform: scale(1) !important;
+  isolation: isolate;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Ensure FormulaBar wrapper is never zoomed and has horizontal scroll */
+.formula-bar-wrapper {
+  zoom: 1 !important;
+  transform: scale(1) !important;
+  isolation: isolate;
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 100%;
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  /* Smooth scrolling */
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
+}
+
+.formula-bar-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+
+.formula-bar-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.formula-bar-wrapper::-webkit-scrollbar-thumb {
+  background-color: #cbd5e0;
+  border-radius: 3px;
+}
+
+.formula-bar-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: #a0aec0;
+}
+
+.cell-reference-label {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 6px 12px;
+  color: #495057;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+.formula-bar-container input {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+
+.formula-bar-container input:focus {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.formula-bar-container input::placeholder {
+  color: #adb5bd;
+  font-style: italic;
+}
+
+.formula-autocomplete {
+  position: relative;
+  z-index: 10001;
+}
+
 .ProseMirror a:hover {
   color: #2563eb;
 }

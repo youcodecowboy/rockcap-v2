@@ -3,9 +3,12 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useFileQueue } from '@/lib/useFileQueue';
 import { Id } from '../../convex/_generated/dataModel';
-import { X, Upload, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Upload, CheckCircle2, AlertCircle, Loader2, Power } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { Switch } from '@/components/ui/switch';
+import InstructionsModal from '@/components/InstructionsModal';
+import { usePathname } from 'next/navigation';
 
 interface FileUploadProps {
   onFileAnalyzed?: () => void; // Optional callback for when files are analyzed
@@ -17,11 +20,29 @@ const MAX_FILES = 15;
 export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [localFiles, setLocalFiles] = useState<Map<Id<"fileUploadQueue">, File>>(new Map());
+  const [hasCustomInstructions, setHasCustomInstructions] = useState(false);
+  const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
+  const [pendingJobId, setPendingJobId] = useState<Id<"fileUploadQueue"> | null>(null);
+  const [pendingFileName, setPendingFileName] = useState<string>('');
+  
+  const pathname = usePathname();
+  const isMainPage = pathname === '/';
   
   const { addFile, removeFile, getQueueSize, isProcessing, isReady } = useFileQueue();
   
   // Subscribe to queue jobs to show status
   const queueJobs = useQuery(api.fileQueue.getRecentJobs, { includeRead: true });
+  
+  // Watch for jobs that need instructions (single file uploads on main page)
+  useEffect(() => {
+    if (isMainPage && hasCustomInstructions && pendingJobId) {
+      const job = queueJobs?.find(j => j._id === pendingJobId);
+      if (job && job.status === 'needs_confirmation' && job.hasCustomInstructions && !job.customInstructions) {
+        // File is ready for instructions - show modal
+        setInstructionsModalOpen(true);
+      }
+    }
+  }, [queueJobs, pendingJobId, isMainPage, hasCustomInstructions]);
 
   const handleFiles = useCallback(async (files: File[]) => {
     if (!isReady) {
@@ -37,11 +58,20 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
       return;
     }
 
-    for (const file of files.slice(0, remainingSlots)) {
+    const filesToUpload = files.slice(0, remainingSlots);
+    const isSingleFileWithInstructions = isMainPage && filesToUpload.length === 1 && hasCustomInstructions;
+    
+    for (const file of filesToUpload) {
       try {
-        const jobId = await addFile(file);
+        const jobId = await addFile(file, hasCustomInstructions);
         if (jobId) {
           setLocalFiles(prev => new Map(prev).set(jobId, file));
+          
+          // If single file with instructions on main page, track it for immediate modal
+          if (isSingleFileWithInstructions) {
+            setPendingJobId(jobId);
+            setPendingFileName(file.name);
+          }
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to add file to queue';
@@ -51,7 +81,7 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
         }
       }
     }
-  }, [isReady, addFile, getQueueSize, onError]);
+  }, [isReady, addFile, getQueueSize, onError, hasCustomInstructions, isMainPage]);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
@@ -159,8 +189,35 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
   const currentQueueSize = isReady ? getQueueSize() : 0;
   const isDisabled = !isReady || currentQueueSize >= MAX_FILES;
 
+  const handleInstructionsSaved = () => {
+    setPendingJobId(null);
+    setPendingFileName('');
+  };
+
+  const pendingJob = pendingJobId ? queueJobs?.find(j => j._id === pendingJobId) : null;
+
   return (
     <div className="space-y-4">
+      {/* Add Instructions Switch */}
+      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 flex-1">
+          <Power className={`w-4 h-4 transition-colors ${hasCustomInstructions ? 'text-blue-600' : 'text-gray-400'}`} />
+          <label htmlFor="add-instructions" className="text-sm font-medium text-gray-700 cursor-pointer">
+            Add instructions
+          </label>
+        </div>
+        <Switch
+          id="add-instructions"
+          checked={hasCustomInstructions}
+          onCheckedChange={setHasCustomInstructions}
+        />
+        {hasCustomInstructions && (
+          <span className="text-xs text-gray-500 ml-2">
+            {isMainPage ? 'Single file: modal will appear • Multiple files: go to queue' : 'Files will go to review queue'}
+          </span>
+        )}
+      </div>
+
       <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -270,6 +327,18 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
             })}
           </div>
         </div>
+      )}
+
+      {/* Instructions Modal for single file uploads on main page */}
+      {pendingJobId && pendingJob && (
+        <InstructionsModal
+          open={instructionsModalOpen}
+          onOpenChange={setInstructionsModalOpen}
+          jobId={pendingJobId}
+          fileName={pendingFileName || pendingJob.fileName}
+          existingInstructions={pendingJob.customInstructions}
+          onInstructionsSaved={handleInstructionsSaved}
+        />
       )}
     </div>
   );

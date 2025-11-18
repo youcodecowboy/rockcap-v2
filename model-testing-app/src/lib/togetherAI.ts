@@ -14,7 +14,8 @@ interface ClientWithProjects {
 export async function analyzeFileContent(
   textContent: string,
   fileName: string,
-  clientsWithProjects: ClientWithProjects[]
+  clientsWithProjects: ClientWithProjects[],
+  customInstructions: string | null = null
 ): Promise<ModelResponse & { tokensUsed: number }> {
   const apiKey = process.env.TOGETHER_API_KEY;
   
@@ -46,9 +47,37 @@ export async function analyzeFileContent(
     ? `\n\nFILE TYPE GUIDANCE (CRITICAL - USE THESE IF CONTENT MATCHES):\nThe following file types are DEFINITELY relevant based on the content and filename:\n\n${fileTypeHints.join('\n\n')}\n\nCRITICAL INSTRUCTIONS:\n- If the content matches ANY of the file types above, you MUST use that exact file type name\n- Use the category specified in the FILE TYPE GUIDANCE above (do NOT use a different category)\n- If "Initial Monitoring Report" is listed above, use fileType: "Initial Monitoring Report" and category: "Inspections"\n- If "Interim Monitoring Report" is listed above, use fileType: "Interim Monitoring Report" and category: "Inspections"\n- If "RedBook Valuation" is listed above, use fileType: "RedBook Valuation" and category: "Appraisals"\n- If "Plans" is listed above, use fileType: "Plans" and category: "Property Documents"\n- If "Legal Documents" is listed above, use fileType: "Legal Documents" or "Legal Documents - [Subcategory]" and category: "Legal Documents"\n- If "Indicative Terms" is listed above, use fileType: "Indicative Terms" and category: "Loan Terms"\n- Do NOT use generic file types like "Appraisal Report" if a specific file type definition matches\n- The FILE TYPE GUIDANCE takes absolute precedence over general assumptions`
     : '';
 
+  // Build custom instructions section if provided
+  console.log('[Together.ai] Custom instructions received:', customInstructions ? `"${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? '...' : ''}"` : 'none');
+  
+  const customInstructionsSection = customInstructions && customInstructions.trim()
+    ? `\n\n═══════════════════════════════════════════════════════════════
+⚠️ CRITICAL: USER PROVIDED CUSTOM INSTRUCTIONS - THESE TAKE ABSOLUTE PRIORITY ⚠️
+═══════════════════════════════════════════════════════════════
+
+USER INSTRUCTIONS:
+${customInstructions.trim()}
+
+CRITICAL RULES FOR CUSTOM INSTRUCTIONS:
+1. THE USER IS ALWAYS RIGHT - These instructions override any information found in the file content
+2. If the user specifies a client name, use that exact client name (even if it's not in the available clients list - suggest it)
+3. If the user specifies a project name, use that exact project name (even if it's not in the available projects list - suggest it)
+4. If the user specifies a document type, use that exact document type
+5. If the user specifies a category, use that exact category
+6. These instructions provide context that may not be evident from the file content alone
+7. Trust the user's instructions over your own analysis when there's a conflict
+8. The user knows their files better than the AI - follow their guidance precisely
+
+═══════════════════════════════════════════════════════════════`
+    : '';
+  
+  if (customInstructionsSection) {
+    console.log('[Together.ai] Custom instructions section added to prompt');
+  }
+
   const prompt = `You are a file organization assistant for a real estate financing company. Analyze the following file content and provide a comprehensive analysis.
 
-CONTEXT:
+${customInstructionsSection ? customInstructionsSection + '\n\n' : ''}CONTEXT:
 - This is a real estate financing company
 - Files can be associated with clients and their projects
 - Projects are property-specific (e.g., addresses, property names, loan numbers)
@@ -67,7 +96,7 @@ File content:
 ${textContent.substring(0, 12000)}${textContent.length > 12000 ? '\n\n[... content truncated for analysis ...]' : ''}
 
 ANALYSIS REQUIREMENTS:
-1. Provide a brief summary (2-3 sentences) of what this file contains
+${customInstructionsSection ? `⚠️ PRIORITY: If CUSTOM INSTRUCTIONS were provided above, they take ABSOLUTE PRIORITY over all other analysis. Follow them precisely.\n\n` : ''}1. Provide a brief summary (2-3 sentences) of what this file contains
 2. Determine the file type:
    - CRITICAL: If FILE TYPE GUIDANCE is provided above, you MUST use the exact file type name from that guidance
    - For example, if "Initial Monitoring Report" is listed, use fileType: "Initial Monitoring Report" (NOT "Appraisal Report" or "Monitoring Report")
@@ -80,21 +109,22 @@ ANALYSIS REQUIREMENTS:
    - Only use general file types (e.g., Loan Application, Property Deed, Email, Contract, etc.) if NO FILE TYPE GUIDANCE is provided
    - Be specific and accurate in your file type identification - use the exact names from FILE TYPE GUIDANCE when available
 3. Identify the client:
-   - CRITICAL: ALWAYS try to identify a client from the file content
+   ${customInstructionsSection ? '   - ⚠️ CRITICAL: If CUSTOM INSTRUCTIONS specify a client name, use that EXACT name. The user is always right.\n   - ' : ''}  - CRITICAL: ALWAYS try to identify a client from the file content
    - If you find a matching client from the list, use their exact name in "clientName"
    - If no client matches but you can identify a potential client name from the content, ALWAYS suggest it in "suggestedClientName"
-   - Look for: company names, organization names, client names, business names, individual names
+   ${customInstructionsSection ? '   - If CUSTOM INSTRUCTIONS specify a client, prioritize that over file content analysis\n   - ' : ''}  - Look for: company names, organization names, client names, business names, individual names
    - Even if uncertain, provide a suggestion if you can identify any potential client name
    - Only set both to null if there is absolutely no client information in the file
 4. Identify the project (property/loan) - THIS IS IMPORTANT:
-   - CRITICAL: ALWAYS try to identify a project from the file content
+   ${customInstructionsSection ? '   - ⚠️ CRITICAL: If CUSTOM INSTRUCTIONS specify a project name, use that EXACT name. The user is always right.\n   - ' : ''}  - CRITICAL: ALWAYS try to identify a project from the file content
    - Look for: property addresses, street addresses, loan numbers, loan IDs, property names, building names, parcel numbers, APN numbers, or any property identifiers
    - If you find a matching project for the identified client, use the exact project name in "projectName"
    - If no project matches but you can identify ANY property address, loan number, property identifier, or project name from the content, ALWAYS suggest it in "suggestedProjectName"
-   - Projects are typically: property addresses (e.g., "123 Main Street"), loan numbers (e.g., "Loan #12345"), property names (e.g., "Downtown Office Complex"), or parcel IDs
+   ${customInstructionsSection ? '   - If CUSTOM INSTRUCTIONS specify a project, prioritize that over file content analysis\n   - ' : ''}  - Projects are typically: property addresses (e.g., "123 Main Street"), loan numbers (e.g., "Loan #12345"), property names (e.g., "Downtown Office Complex"), or parcel IDs
    - Even if the client is "General" or null, still try to suggest a project if you can identify property information
    - Only set both to null if there is absolutely no property, address, loan, or project information in the file
 5. Categorize the file using ONE of the available categories
+   ${customInstructionsSection ? '   - ⚠️ CRITICAL: If CUSTOM INSTRUCTIONS specify a category, use that EXACT category. The user is always right.\n   ' : ''}
 6. Provide detailed reasoning explaining your analysis
 7. Provide a confidence score (0.0 to 1.0)
 8. Extract enrichment information (PRIORITY - ALWAYS extract contact information when found):
