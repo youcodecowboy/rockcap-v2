@@ -830,5 +830,251 @@ export default defineSchema({
     .index("by_scenario", ["scenarioId"])
     .index("by_modelType", ["modelType"])
     .index("by_version", ["version"]),
+
+  // Companies House Companies - companies tracked from Companies House API
+  companiesHouseCompanies: defineTable({
+    companyNumber: v.string(), // Unique company number from Companies House
+    companyName: v.string(),
+    sicCodes: v.array(v.string()), // Array of SIC codes
+    address: v.optional(v.string()),
+    registeredOfficeAddress: v.optional(v.any()), // Full address object
+    registeredOfficeAddressHash: v.optional(v.string()), // Normalized hash for matching
+    incorporationDate: v.optional(v.string()),
+    companyStatus: v.optional(v.string()), // e.g., "active", "dissolved"
+    hasNewCharges: v.optional(v.boolean()), // Flag for new charges
+    lastCheckedAt: v.optional(v.string()), // ISO timestamp
+    lastFullSyncAt: v.optional(v.string()), // ISO timestamp of last comprehensive sync
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_company_number", ["companyNumber"])
+    .index("by_sic_code", ["sicCodes"])
+    .index("by_last_checked", ["lastCheckedAt"])
+    .index("by_new_charges", ["hasNewCharges"])
+    .index("by_address_hash", ["registeredOfficeAddressHash"]),
+
+  // Companies House Charges - charges (loans) for each company
+  companiesHouseCharges: defineTable({
+    companyId: v.id("companiesHouseCompanies"),
+    chargeId: v.string(), // Unique charge ID from Companies House
+    chargeDate: v.optional(v.string()),
+    chargeDescription: v.optional(v.string()),
+    chargeAmount: v.optional(v.number()),
+    chargeStatus: v.optional(v.string()), // e.g., "outstanding", "satisfied"
+    chargeeName: v.optional(v.string()), // Name of chargee
+    pdfUrl: v.optional(v.string()), // Original PDF URL from Companies House
+    pdfDocumentId: v.optional(v.id("_storage")), // Reference to stored PDF in Convex storage
+    isNew: v.optional(v.boolean()), // Flag for newly detected charges
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_company", ["companyId"])
+    .index("by_charge_date", ["chargeDate"])
+    .index("by_status", ["chargeStatus"])
+    .index("by_is_new", ["isNew"]),
+
+  // Companies House PSC - Persons with Significant Control
+  companiesHousePSC: defineTable({
+    pscId: v.string(), // Unique PSC ID from Companies House
+    companyId: v.id("companiesHouseCompanies"),
+    pscType: v.union(
+      v.literal("individual"),
+      v.literal("corporate-entity"),
+      v.literal("legal-person")
+    ),
+    name: v.string(),
+    nationality: v.optional(v.string()),
+    dateOfBirth: v.optional(v.object({
+      month: v.optional(v.number()),
+      year: v.optional(v.number()),
+    })),
+    address: v.optional(v.any()), // Address object
+    naturesOfControl: v.optional(v.array(v.string())), // Array of control types
+    notifiableOn: v.optional(v.string()), // ISO timestamp
+    ceasedOn: v.optional(v.string()), // ISO timestamp
+    // For corporate entities
+    identification: v.optional(v.any()), // Corporate identification details
+    // Links to other companies (for relationship mapping)
+    linkedCompanyIds: v.optional(v.array(v.id("companiesHouseCompanies"))),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_company", ["companyId"])
+    .index("by_psc_id", ["pscId"])
+    .index("by_name", ["name"])
+    .index("by_type", ["pscType"]),
+
+  // Companies House Officers - Company officers/directors
+  companiesHouseOfficers: defineTable({
+    officerId: v.string(), // Unique officer ID from Companies House
+    companyId: v.id("companiesHouseCompanies"),
+    name: v.string(),
+    officerRole: v.string(), // e.g., "director", "secretary"
+    appointedOn: v.optional(v.string()), // ISO timestamp
+    resignedOn: v.optional(v.string()), // ISO timestamp
+    nationality: v.optional(v.string()),
+    occupation: v.optional(v.string()),
+    countryOfResidence: v.optional(v.string()),
+    address: v.optional(v.any()), // Address object
+    dateOfBirth: v.optional(v.object({
+      month: v.optional(v.number()),
+      year: v.optional(v.number()),
+    })),
+    // Links to other companies (for relationship mapping)
+    linkedCompanyIds: v.optional(v.array(v.id("companiesHouseCompanies"))),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_company", ["companyId"])
+    .index("by_officer_id", ["officerId"])
+    .index("by_name", ["name"]),
+
+  // Company Relationships - Links between companies through shared PSC/officers/addresses
+  companyRelationships: defineTable({
+    companyId1: v.id("companiesHouseCompanies"),
+    companyId2: v.id("companiesHouseCompanies"),
+    relationshipType: v.union(
+      v.literal("shared_psc"),
+      v.literal("shared_officer"),
+      v.literal("shared_address"),
+      v.literal("parent_subsidiary")
+    ),
+    sharedEntityId: v.optional(v.string()), // PSC ID, Officer ID, or address hash
+    sharedEntityType: v.union(
+      v.literal("psc"),
+      v.literal("officer"),
+      v.literal("address")
+    ),
+    strength: v.number(), // Number of shared connections (1, 2, 3+)
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_company1", ["companyId1"])
+    .index("by_company2", ["companyId2"])
+    .index("by_relationship_type", ["relationshipType"])
+    .index("by_address_hash", ["sharedEntityId"]),
+
+  // API Rate Limit Tracking - Track requests per 5-minute window
+  apiRateLimit: defineTable({
+    windowStart: v.string(), // ISO timestamp of window start
+    requestCount: v.number(),
+    lastRequestAt: v.string(), // ISO timestamp
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_window_start", ["windowStart"]),
+
+  // Prospects - Sales/intelligence layer on top of Companies House companies
+  prospects: defineTable({
+    companyNumber: v.string(), // FK to companiesHouseCompanies.companyNumber
+    companyId: v.optional(v.id("companiesHouseCompanies")), // Direct reference to company
+    activeProjectScore: v.optional(v.number()), // Computed score based on planning apps + properties
+    prospectTier: v.optional(v.union(
+      v.literal("A"),
+      v.literal("B"),
+      v.literal("C"),
+      v.literal("UNQUALIFIED")
+    )),
+    hasPlanningHits: v.optional(v.boolean()),
+    hasOwnedPropertyHits: v.optional(v.boolean()),
+    lastGauntletRunAt: v.optional(v.string()), // ISO timestamp
+    owner: v.optional(v.string()), // CRM owner assignment
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_company_number", ["companyNumber"])
+    .index("by_company_id", ["companyId"])
+    .index("by_tier", ["prospectTier"])
+    .index("by_score", ["activeProjectScore"])
+    .index("by_last_gauntlet_run", ["lastGauntletRunAt"]),
+
+  // Planning Applications - Planning application data from various sources
+  planningApplications: defineTable({
+    externalId: v.string(), // Unique ID from source (LPA ref, data.gov.uk entity ID, etc.)
+    source: v.union(
+      v.literal("planning_data_api"),
+      v.literal("london_datahub"),
+      v.literal("other")
+    ),
+    localAuthority: v.optional(v.string()),
+    councilName: v.optional(v.string()), // Alternative name for local authority
+    siteAddress: v.optional(v.string()),
+    sitePostcode: v.optional(v.string()),
+    geometryReference: v.optional(v.string()), // UPRN, lat/lng, or other geometry ref
+    applicantName: v.optional(v.string()),
+    applicantOrganisation: v.optional(v.string()),
+    status: v.optional(v.union(
+      v.literal("APPROVED"),
+      v.literal("REFUSED"),
+      v.literal("UNDER_CONSIDERATION"),
+      v.literal("UNKNOWN")
+    )),
+    decisionDate: v.optional(v.string()), // ISO timestamp
+    receivedDate: v.optional(v.string()), // ISO timestamp
+    rawPayload: v.optional(v.any()), // Full JSON payload for debugging
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_external_id", ["externalId"])
+    .index("by_source", ["source"])
+    .index("by_postcode", ["sitePostcode"])
+    .index("by_status", ["status"])
+    .index("by_decision_date", ["decisionDate"]),
+
+  // Company Planning Links - Many-to-many relationship between companies and planning apps
+  companyPlanningLinks: defineTable({
+    companyNumber: v.string(), // FK to companiesHouseCompanies.companyNumber
+    planningApplicationId: v.id("planningApplications"),
+    matchConfidence: v.union(
+      v.literal("HIGH"),
+      v.literal("MEDIUM"),
+      v.literal("LOW")
+    ),
+    matchReason: v.string(), // e.g., "ORG_NAME_MATCH", "ADDRESS_MATCH", "PERSON_NAME_MATCH"
+    createdAt: v.string(),
+  })
+    .index("by_company_number", ["companyNumber"])
+    .index("by_planning_app", ["planningApplicationId"])
+    .index("by_confidence", ["matchConfidence"]),
+
+  // Property Titles - Property title data from Land & Property API
+  propertyTitles: defineTable({
+    titleNumber: v.string(), // Unique title number
+    country: v.optional(v.string()), // e.g., "E&W" for England and Wales
+    address: v.optional(v.string()),
+    postcode: v.optional(v.string()),
+    geometrySource: v.optional(v.union(
+      v.literal("none"),
+      v.literal("inspire_index"),
+      v.literal("nps")
+    )),
+    geometryReference: v.optional(v.string()), // Optional geometry reference
+    rawPayload: v.optional(v.any()), // Full JSON payload for debugging
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_title_number", ["titleNumber"])
+    .index("by_postcode", ["postcode"]),
+
+  // Company Property Links - Links between companies and property titles
+  companyPropertyLinks: defineTable({
+    companyNumber: v.string(), // FK to companiesHouseCompanies.companyNumber
+    propertyTitleId: v.id("propertyTitles"),
+    ownershipType: v.optional(v.union(
+      v.literal("FREEHOLD"),
+      v.literal("LEASEHOLD"),
+      v.literal("UNKNOWN")
+    )),
+    fromDataset: v.union(
+      v.literal("uk_companies_own_property"),
+      v.literal("overseas_companies_own_property")
+    ),
+    acquiredDate: v.optional(v.string()), // ISO timestamp if available
+    createdAt: v.string(),
+  })
+    .index("by_company_number", ["companyNumber"])
+    .index("by_property_title", ["propertyTitleId"])
+    .index("by_dataset", ["fromDataset"]),
 });
 

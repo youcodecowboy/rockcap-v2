@@ -28,3 +28,10 @@ export function updateProspect(id: string, updates: any) {
 export function deleteProspect(id: string) {
   console.warn("deleteProspect() is deprecated. Use useDeleteClient() hook instead.");
 }
+
+// Convert prospect (client with status="prospect") to active client
+export function convertProspectToClient(prospectId: string): string {
+  // Prospects are just clients, so we just return the same ID
+  // The actual conversion (status change) should be done via updateClient mutation
+  return prospectId;
+}
