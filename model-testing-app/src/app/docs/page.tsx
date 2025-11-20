@@ -279,7 +279,7 @@ export default function DocsPage() {
                   <SelectContent>
                     <SelectItem value="all">All Clients</SelectItem>
                     {clients.map((client) => {
-                      const clientId = (client._id || client.id) as string;
+                      const clientId = client._id as string;
                       return (
                         <SelectItem key={clientId} value={clientId}>
                           {client.name}
