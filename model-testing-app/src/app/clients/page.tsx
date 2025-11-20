@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useClients, useProjectsByClient, useProjects } from '@/lib/clientStorage';
 import { useDocumentsByClient, useDocuments } from '@/lib/documentStorage';
-import { Id } from '../../convex/_generated/dataModel';
+import { Id } from '../../../convex/_generated/dataModel';
 import {
   Table,
   TableBody,
@@ -199,7 +199,7 @@ export default function ClientsPage() {
                 </TableHeader>
               <TableBody>
                 {clients.map((client) => {
-                  const clientId = (client._id || client.id) as Id<"clients">;
+                  const clientId = client._id as Id<"clients">;
                   return (
                     <ClientDataLoader key={clientId} clientId={clientId}>
                       {(data) => (

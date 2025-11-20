@@ -25,7 +25,7 @@ import {
 import {
   useProspectingContextsByClient,
 } from '@/lib/prospectingStorage';
-import { Id } from '../../../convex/_generated/dataModel';
+import { Id } from '../../../../convex/_generated/dataModel';
 import { Client, Project, Contact, EnrichmentSuggestion, Communication, ProspectingContext } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -324,9 +324,9 @@ export default function ClientProfilePage() {
     return new Date(dateString).toLocaleString();
   };
 
-  const getDocumentName = (documentId: Id<"documents">): string => {
+  const getDocumentName = (documentId: string): string => {
     // Find document in the documents array
-    const doc = documents.find(d => (d._id as string) === (documentId as string));
+    const doc = documents.find(d => (d._id as string) === documentId);
     return doc?.fileName || 'Unknown Document';
   };
 
@@ -424,9 +424,9 @@ export default function ClientProfilePage() {
                   type={client.type}
                   onTypeChange={handleTypeChange}
                 />
-                {client.lifecycleStage && (
+                {client.hubspotLifecycleStage && (
                   <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                    {client.lifecycleStage.charAt(0).toUpperCase() + client.lifecycleStage.slice(1)}
+                    {client.hubspotLifecycleStage.charAt(0).toUpperCase() + client.hubspotLifecycleStage.slice(1)}
                   </Badge>
                 )}
               </div>
@@ -1315,13 +1315,33 @@ export default function ClientProfilePage() {
                           Context extracted from documents to help personalize outreach and prospecting communications.
                         </p>
                         <div className="space-y-4">
-                          {prospectingContexts.map((context) => (
-                            <ProspectingContextCard
-                              key={context.documentId}
-                              context={context}
-                              documentName={getDocumentName(context.documentId)}
-                            />
-                          ))}
+                          {prospectingContexts.map((context) => {
+                            const mappedContext: ProspectingContext = {
+                              documentId: context.documentId as string,
+                              clientId: context.clientId ? (context.clientId as string) : null,
+                              projectId: context.projectId ? (context.projectId as string) : null,
+                              extractedAt: context.extractedAt,
+                              keyPoints: context.keyPoints || [],
+                              painPoints: context.painPoints || [],
+                              opportunities: context.opportunities || [],
+                              decisionMakers: context.decisionMakers || [],
+                              businessContext: context.businessContext || {},
+                              financialContext: context.financialContext,
+                              relationshipContext: context.relationshipContext,
+                              competitiveMentions: context.competitiveMentions,
+                              timeline: context.timeline,
+                              templateSnippets: context.templateSnippets,
+                              confidence: context.confidence,
+                              tokensUsed: context.tokensUsed,
+                            };
+                            return (
+                              <ProspectingContextCard
+                                key={context.documentId}
+                                context={mappedContext}
+                                documentName={getDocumentName(context.documentId as string)}
+                              />
+                            );
+                          })}
                         </div>
                       </div>
                     )}

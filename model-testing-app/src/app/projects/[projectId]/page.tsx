@@ -22,7 +22,7 @@ import {
 import {
     useProspectingContextsByProject,
 } from '@/lib/prospectingStorage';
-import { Id } from '../../../convex/_generated/dataModel';
+import { Id } from '../../../../convex/_generated/dataModel';
 import { Project } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
