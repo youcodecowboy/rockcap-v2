@@ -4,7 +4,7 @@ import { fetchMutation, fetchQuery } from 'convex/nextjs';
 
 export async function GET() {
   try {
-    const config = await fetchQuery(api.hubspotSync.getSyncConfig as any);
+    const config = await fetchQuery(api.hubspotSync.getSyncConfig as any) as any;
     
     return NextResponse.json({
       success: true,
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     await fetchMutation(api.hubspotSync.updateSyncConfig as any, {
       isRecurringSyncEnabled,
       syncIntervalHours: syncIntervalHours || 24,
-    });
+    }) as any;
     
     return NextResponse.json({
       success: true,
