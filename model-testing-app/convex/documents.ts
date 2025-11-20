@@ -145,6 +145,19 @@ export const getUniqueCategories = query({
   },
 });
 
+// Query: Get recent documents
+export const getRecent = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 10;
+    const allDocs = await ctx.db.query("documents").collect();
+    const sorted = allDocs.sort((a, b) => 
+      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+    );
+    return sorted.slice(0, limit);
+  },
+});
+
 // Mutation: Create document
 export const create = mutation({
   args: {

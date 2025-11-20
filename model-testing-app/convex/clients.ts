@@ -430,3 +430,16 @@ export const getStats = query({
   },
 });
 
+// Query: Get recent clients
+export const getRecent = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 4;
+    const allClients = await ctx.db.query("clients").collect();
+    const sorted = allClients.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    return sorted.slice(0, limit);
+  },
+});
+

@@ -8,6 +8,7 @@ import { verifyExtractedData } from '@/lib/dataVerification';
 // Enrichment suggestions are created on client-side after document is saved
 import { getClientsServer, getProjectsServer } from '@/lib/convexServer';
 import { classifySpreadsheet } from '@/lib/spreadsheetClassifier';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds max for file processing
@@ -25,6 +26,17 @@ if (typeof process !== 'undefined') {
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const client = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(client);
+    } catch (authError) {
+      return NextResponse.json(
+        { error: 'Unauthenticated' },
+        { status: 401 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const customInstructions = formData.get('customInstructions') as string | null;

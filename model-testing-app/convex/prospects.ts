@@ -115,11 +115,15 @@ export const listProspects = query({
     let query = ctx.db.query("prospects");
 
     // Apply filters
+    let prospects;
     if (args.tier) {
-      query = query.withIndex("by_tier", (q) => q.eq("prospectTier", args.tier));
+      prospects = await ctx.db
+        .query("prospects")
+        .withIndex("by_tier", (q: any) => q.eq("prospectTier", args.tier!))
+        .collect();
+    } else {
+      prospects = await query.collect();
     }
-
-    const prospects = await query.collect();
 
     // Apply additional filters that aren't indexed
     let filtered = prospects;
@@ -163,6 +167,24 @@ export const getProspectsNeedingRefresh = query({
       if (!p.lastGauntletRunAt) return true;
       return p.lastGauntletRunAt < cutoffISO;
     });
+  },
+});
+
+/**
+ * Get recent prospects count
+ */
+export const getRecentCount = query({
+  handler: async (ctx) => {
+    // Get prospects from prospects table
+    const prospects = await ctx.db.query("prospects").collect();
+    
+    // Also count clients with status="prospect"
+    const prospectClients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q) => q.eq("status", "prospect"))
+      .collect();
+    
+    return prospects.length + prospectClients.length;
   },
 });
 

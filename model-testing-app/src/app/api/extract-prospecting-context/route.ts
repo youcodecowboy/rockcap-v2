@@ -1,12 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractProspectingContext } from '@/lib/togetherAI';
-import { ProspectingContext, AnalysisResult } from '@/types';
+import { ProspectingContext } from '@/types';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const client = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(client);
+    } catch (authError) {
+      return NextResponse.json(
+        { error: 'Unauthenticated' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { documentId, clientId, projectId, fileName, analysisResult, clientName, projectName, clientHistory, textContent } = body;
 

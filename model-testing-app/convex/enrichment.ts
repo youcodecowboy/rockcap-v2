@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 // Query: Get enrichment suggestions by client
 export const getByClient = query({
@@ -246,9 +247,10 @@ export const accept = mutation({
           // Use the internal migration mutation to clean up the client
           // This uses delete + insert to bypass replace validation issues
           try {
+            // @ts-expect-error - Type inference issue with Convex internal mutations
             const migrationResult = await ctx.runMutation(internal.clients.migrateInvalidFields, {
               id: suggestion.clientId,
-            });
+            }) as { migrated: boolean; oldId?: string; newId?: string; invalidFields?: string[] };
             
             if (!migrationResult || !migrationResult.migrated) {
               throw new Error("Migration did not complete successfully");
@@ -257,10 +259,10 @@ export const accept = mutation({
             console.log(`Migration completed. Old ID: ${migrationResult.oldId}, New ID: ${migrationResult.newId}`);
             
             // Migration may have created a new client ID, update the suggestion
-            const actualClientId = migrationResult.newId || suggestion.clientId;
+            const actualClientId = (migrationResult.newId || suggestion.clientId) as Id<"clients">;
             if (migrationResult.newId && migrationResult.newId !== suggestion.clientId) {
-              await ctx.db.patch(args.id, { clientId: migrationResult.newId });
-              suggestion.clientId = migrationResult.newId;
+              await ctx.db.patch(args.id, { clientId: migrationResult.newId as Id<"clients"> });
+              suggestion.clientId = migrationResult.newId as Id<"clients">;
             }
             
             // Refresh client reference after migration using the actual client ID
@@ -442,15 +444,21 @@ export const updateDocumentId = mutation({
     projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("enrichmentSuggestions");
+    let suggestions;
     
     if (args.clientId) {
-      query = query.withIndex("by_client", (q) => q.eq("clientId", args.clientId));
+      suggestions = await ctx.db
+        .query("enrichmentSuggestions")
+        .withIndex("by_client", (q) => q.eq("clientId", args.clientId!))
+        .collect();
     } else if (args.projectId) {
-      query = query.withIndex("by_project", (q) => q.eq("projectId", args.projectId));
+      suggestions = await ctx.db
+        .query("enrichmentSuggestions")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId!))
+        .collect();
+    } else {
+      suggestions = await ctx.db.query("enrichmentSuggestions").collect();
     }
-    
-    const suggestions = await query.collect();
     
     for (const suggestion of suggestions) {
       // Match if documentId starts with oldDocumentId (for temp IDs) or exact match

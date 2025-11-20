@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CHAT_TOOLS, executeTool } from '@/lib/chatTools';
-import { ConvexHttpClient } from 'convex/browser';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 
@@ -10,17 +10,15 @@ const MODEL_NAME = 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
-
 /**
  * Gather context for the chat based on session context
  */
 async function gatherChatContext(
+  client: any,
   sessionId: string,
   clientId?: string,
   projectId?: string
 ): Promise<string> {
-  const client = new ConvexHttpClient(convexUrl);
   let context = '';
 
   try {
@@ -148,6 +146,17 @@ function getActivityMessage(toolName: string, params: any): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const client = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(client);
+    } catch (authError) {
+      return NextResponse.json(
+        { error: 'Unauthenticated' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const {
       sessionId,
@@ -170,8 +179,6 @@ export async function POST(request: NextRequest) {
     if (!apiKey) {
       throw new Error('TOGETHER_API_KEY environment variable is not set');
     }
-
-    const client = new ConvexHttpClient(convexUrl);
 
     // If this is an action execution request
     if (executeAction && actionId) {
@@ -227,7 +234,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Gather context
-    const context = await gatherChatContext(sessionId, clientId, projectId);
+    const context = await gatherChatContext(client, sessionId, clientId, projectId);
 
     // Build system prompt with tools
     const systemPrompt = `You are an AI assistant for a real estate financing application. You help users manage clients, projects, documents, knowledge bank entries, and notes.

@@ -1,6 +1,74 @@
 # Development Changelog
 
-## [Latest] - 2025-01-16 16:30
+## [Latest] - 2025-01-27
+
+### Dashboard Landing Page & Auth Routes Verification
+
+**Overview**: Created a comprehensive dashboard landing page at the home route (`/`) and moved the filing agent to `/filing`. Verified and ensured all authentication routes are working properly.
+
+**New Features:**
+- **Dashboard Landing Page** (`/`):
+  - Personalized welcome message with user's first name from Clerk
+  - Recent Files table showing last 10 uploaded documents with client links
+  - Recent Messages table (placeholder for upcoming email integration)
+  - Quick Links section with 3-4 recent clients as clickable cards
+  - Metrics Cards:
+    - Recent Prospects count (from prospects table + clients with status="prospect")
+    - Pipeline Total £ (sum of all deal amounts, formatted as currency)
+  - Calendar component (placeholder for Google Calendar integration)
+
+- **Filing Agent Page** (`/filing`):
+  - Moved from home route to dedicated `/filing` route
+  - Maintains all existing functionality (file upload, client management, output window)
+
+**New Convex Queries:**
+- `documents.getRecent`: Get recent documents (last N, sorted by uploadedAt)
+- `emails.getRecent`: Get recent emails/messages (last N, sorted by createdAt)
+- `clients.getRecent`: Get recent clients (last N, sorted by createdAt)
+- `deals.getPipelineTotal`: Calculate total pipeline value (sum of amount field)
+- `prospects.getRecentCount`: Count recent prospects (prospects table + clients with status="prospect")
+
+**Enhanced Components:**
+- **Sidebar Navigation** (`Sidebar.tsx`):
+  - Added "Dashboard" link for home route (`/`) with LayoutDashboard icon
+  - Updated "Filing Agent" to point to `/filing` route
+  - Maintains all existing navigation items
+
+**Auth Routes Verification:**
+- Verified Clerk middleware properly protects all routes except `/sign-in` and `/sign-up`
+- Confirmed main API routes have proper authentication:
+  - `/api/chat-assistant` - ✅ Has auth
+  - `/api/ai-assistant` - ✅ Has auth
+  - `/api/extract-prospecting-context` - ✅ Has auth
+  - `/api/analyze-file` - ✅ Has auth
+- Middleware configuration verified to protect all API routes by default
+- Clerk's default sign-in/sign-up routes (`/sign-in`, `/sign-up`) are accessible and working
+- Empty `/login` and `/signup` directories don't interfere (Clerk uses `/sign-in`/`/sign-up`)
+
+**Technical Details:**
+- Dashboard uses Clerk's `useUser()` hook to get user's first name
+- All data queries use Convex React hooks with proper loading states
+- Currency formatting uses Intl.NumberFormat for GBP formatting
+- Date formatting shows relative dates (Today, Yesterday, X days ago) for recent items
+- Responsive grid layout for mobile/desktop compatibility
+- All links properly navigate to client/document detail pages
+
+**User Benefits:**
+- Better first impression with personalized dashboard
+- Quick access to recent files and clients
+- Clear overview of key metrics (prospects, pipeline)
+- Organized navigation with dedicated filing agent page
+- Secure authentication verified across all routes
+
+**Next Steps:**
+- Integrate Google Calendar sync for calendar component
+- Add email integration for Recent Messages table
+- Consider adding more dashboard widgets (activity feed, notifications, etc.)
+- Add dashboard customization options
+
+---
+
+## [Previous] - 2025-01-16 16:30
 
 ### Company to Client Promotion System
 

@@ -2,6 +2,16 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // Users table - user profiles (Clerk manages auth, we store extra data)
+  users: defineTable({
+    clerkId: v.optional(v.string()), // Clerk user ID (optional for backward compatibility)
+    email: v.string(),
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+  })
+    .index("by_clerk_id", ["clerkId"])
+    .index("by_email", ["email"]),
+  
   // Clients table - unified (prospects are clients with status="prospect")
   clients: defineTable({
     name: v.string(),
@@ -648,6 +658,7 @@ export default defineSchema({
     title: v.string(),
     content: v.any(), // Rich text content (JSON format for editor)
     emoji: v.optional(v.string()), // Emoji icon for note
+    userId: v.optional(v.id("users")), // User who owns this note (for unfiled notes only)
     clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
     templateId: v.optional(v.id("noteTemplates")),
@@ -662,7 +673,8 @@ export default defineSchema({
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
-    .index("by_template", ["templateId"]),
+    .index("by_template", ["templateId"])
+    .index("by_user", ["userId"]),
 
   // Note Templates - templates for creating notes
   noteTemplates: defineTable({
@@ -684,6 +696,7 @@ export default defineSchema({
       v.literal("client"),
       v.literal("project")
     ),
+    userId: v.optional(v.string()), // User ID (string for backward compatibility, will be id("users") in future)
     clientId: v.optional(v.id("clients")), // If context is client-specific
     projectId: v.optional(v.id("projects")), // If context is project-specific
     lastMessageAt: v.string(), // Timestamp of last message

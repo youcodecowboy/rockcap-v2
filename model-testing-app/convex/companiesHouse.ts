@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { Doc } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 
 /**
  * Normalize address for matching
@@ -481,7 +481,7 @@ export const syncCompanyData = mutation({
       const isRecentCharge = chargeDate && chargeDate >= twelveMonthsAgo;
       
       // Mark as "new" if it's a recent charge (within 12 months)
-      const shouldMarkAsNew = isRecentCharge;
+      const shouldMarkAsNew = isRecentCharge ?? false;
 
       if (isNewToUs) {
         if (shouldMarkAsNew) {
@@ -728,7 +728,7 @@ export const buildAllRelationships = mutation({
     let relationshipsCreated = 0;
 
     // Group companies by address hash
-    const companiesByAddress = new Map<string, string[]>();
+    const companiesByAddress = new Map<string, Id<"companiesHouseCompanies">[]>();
     for (const company of companies) {
       if (company.registeredOfficeAddressHash) {
         if (!companiesByAddress.has(company.registeredOfficeAddressHash)) {
@@ -1120,10 +1120,27 @@ export const uploadChargePdf = mutation({
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      // Upload to Convex storage
-      const storageId = await ctx.storage.store(
-        new Blob([bytes], { type: "application/pdf" })
-      );
+      // Upload to Convex storage using generateUploadUrl
+      const uploadUrl = await ctx.storage.generateUploadUrl();
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/pdf" },
+        body: blob,
+      });
+      
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload PDF to Convex storage");
+      }
+      
+      const responseText = await uploadResponse.text();
+      let storageId: Id<"_storage">;
+      try {
+        const responseData = JSON.parse(responseText);
+        storageId = responseData.storageId as Id<"_storage">;
+      } catch {
+        storageId = responseText.trim() as Id<"_storage">;
+      }
 
       // Find the charge and update it with the storage ID
       const charges = await ctx.db

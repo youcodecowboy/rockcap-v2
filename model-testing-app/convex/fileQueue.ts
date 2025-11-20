@@ -76,14 +76,17 @@ export const getJobs = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("fileUploadQueue");
+    let jobs;
     
     if (args.status) {
-      query = query.withIndex("by_status", (q) => q.eq("status", args.status));
+      jobs = await ctx.db
+        .query("fileUploadQueue")
+        .withIndex("by_status", (q) => q.eq("status", args.status!))
+        .collect();
+    } else {
+      jobs = await ctx.db.query("fileUploadQueue").collect();
     }
     // If no status filter, query all and sort in memory
-    
-    const jobs = await query.collect();
     
     // Sort by createdAt descending (most recent first)
     const sorted = jobs.sort((a, b) => 

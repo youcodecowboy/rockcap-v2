@@ -199,3 +199,16 @@ export const remove = mutation({
   },
 });
 
+// Query: Get recent emails
+export const getRecent = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 10;
+    const allEmails = await ctx.db.query("prospectingEmails").collect();
+    const sorted = allEmails.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    return sorted.slice(0, limit);
+  },
+});
+

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 
 // Mutation: Create knowledge bank entry from document
 export const createFromDocument = mutation({
@@ -133,7 +134,7 @@ export const syncKnowledgeEntries = mutation({
 
             const now = new Date().toISOString();
             await ctx.db.insert("knowledgeBankEntries", {
-              clientId: clientId,
+              clientId: clientId as Id<"clients">,
               projectId: project._id,
               sourceType: "manual",
               entryType: "project_status",
@@ -521,12 +522,12 @@ export const search = query({
     if (args.clientId) {
       entries = await ctx.db
         .query("knowledgeBankEntries")
-        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId!))
         .collect();
     } else if (args.projectId) {
       entries = await ctx.db
         .query("knowledgeBankEntries")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId!))
         .collect();
     } else {
       entries = await ctx.db

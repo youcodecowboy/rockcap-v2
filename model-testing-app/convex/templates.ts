@@ -13,13 +13,16 @@ export const list = query({
     activeOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("emailTemplates");
+    let templates;
     
     if (args.category) {
-      query = query.withIndex("by_category", (q) => q.eq("category", args.category));
+      templates = await ctx.db
+        .query("emailTemplates")
+        .withIndex("by_category", (q: any) => q.eq("category", args.category!))
+        .collect();
+    } else {
+      templates = await ctx.db.query("emailTemplates").collect();
     }
-    
-    const templates = await query.collect();
     
     if (args.activeOnly !== false) {
       return templates.filter(t => t.isActive);

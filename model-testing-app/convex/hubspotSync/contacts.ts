@@ -28,7 +28,7 @@ async function linkContactAssociations(
         
         const company = await ctx.db
           .query("companies")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", hubspotCompanyId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", hubspotCompanyId))
           .first();
         if (company && !linkedCompanyIds.some(id => id === company._id)) {
           linkedCompanyIds.push(company._id as any);
@@ -53,7 +53,7 @@ async function linkContactAssociations(
         
         const deal = await ctx.db
           .query("deals")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotDealId", hubspotDealId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotDealId", hubspotDealId))
           .first();
         if (deal && !linkedDealIds.some(id => id === deal._id)) {
           linkedDealIds.push(deal._id as any);
@@ -104,7 +104,7 @@ export const syncContactFromHubSpot = mutation({
     // First, check if contact exists with this HubSpot ID
     const existingByHubSpotId = await ctx.db
       .query("contacts")
-      .withIndex("by_hubspot_id", (q) => q.eq("hubspotContactId", hubspotContactId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
       .first();
     
     if (existingByHubSpotId) {
@@ -165,7 +165,7 @@ export const syncContactFromHubSpot = mutation({
     if (contactData.email) {
       const existingByEmail = await ctx.db
         .query("contacts")
-        .withIndex("by_email", (q) => q.eq("email", contactData.email!))
+        .withIndex("by_email", (q: any) => q.eq("email", contactData.email!))
         .first();
       
       if (existingByEmail) {
@@ -366,7 +366,7 @@ export const syncLeadFromHubSpot = mutation({
     let contactId: any;
     const existingContact = await ctx.db
       .query("contacts")
-      .withIndex("by_hubspot_id", (q) => q.eq("hubspotContactId", hubspotContactId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
       .first();
     
     if (existingContact) {
@@ -389,7 +389,7 @@ export const syncLeadFromHubSpot = mutation({
       if (cleanArgs.email) {
         const existingByEmail = await ctx.db
           .query("contacts")
-          .withIndex("by_email", (q) => q.eq("email", cleanArgs.email!))
+          .withIndex("by_email", (q: any) => q.eq("email", cleanArgs.email!))
           .first();
         
         if (existingByEmail) {
@@ -472,7 +472,7 @@ export const syncLeadFromHubSpot = mutation({
     // Check if lead already exists for this contact
     const existingLead = await ctx.db
       .query("leads")
-      .withIndex("by_hubspot_contact_id", (q) => q.eq("hubspotContactId", hubspotContactId))
+      .withIndex("by_hubspot_contact_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
       .first();
     
     // Find company if hubspotCompanyId provided
@@ -480,7 +480,7 @@ export const syncLeadFromHubSpot = mutation({
     if (hubspotCompanyId) {
       const company = await ctx.db
         .query("companies")
-        .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", hubspotCompanyId))
+        .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", hubspotCompanyId))
         .first();
       if (company) {
         companyId = company._id;

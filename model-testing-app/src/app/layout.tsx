@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ConvexProvider } from "@/components/ConvexProvider";
+import { UserSync } from "@/components/UserSync";
 import NavigationBar from "@/components/NavigationBar";
 import Sidebar from "@/components/Sidebar";
 import ChatAssistantButton from "@/components/ChatAssistantButton";
-import { ConvexClientProvider } from "@/components/ConvexProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,14 +32,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ConvexClientProvider>
+        <ConvexProvider>
+          <UserSync />
           <Sidebar />
           <NavigationBar />
           <main className="ml-20 pt-16 min-h-screen">
             {children}
           </main>
           <ChatAssistantButton />
-        </ConvexClientProvider>
+        </ConvexProvider>
       </body>
     </html>
   );

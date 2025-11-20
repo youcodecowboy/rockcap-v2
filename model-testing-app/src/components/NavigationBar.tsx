@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { User } from 'lucide-react';
+import { UserButton } from '@clerk/nextjs';
 import NotificationDropdown from './NotificationDropdown';
 import GlobalSearch from './GlobalSearch';
 
@@ -22,13 +22,8 @@ export default function NavigationBar() {
           {/* Notification Dropdown */}
           <NotificationDropdown />
           
-          {/* Profile Icon */}
-          <button
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="Profile"
-          >
-            <User className="h-5 w-5" />
-          </button>
+          {/* Clerk User Button */}
+          <UserButton afterSignOutUrl="/" />
         </div>
       </div>
     </header>

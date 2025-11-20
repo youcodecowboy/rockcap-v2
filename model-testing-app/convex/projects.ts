@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 
 // Query: Get all projects
 export const list = query({
@@ -261,7 +262,7 @@ export const getWithExtractedData = query({
     const projectIdsWithData = new Set(
       excelDocsWithData
         .map(doc => doc.projectId)
-        .filter((id): id is string => id !== undefined)
+        .filter((id): id is Id<"projects"> => id !== undefined)
     );
     
     // Return projects with their document dates

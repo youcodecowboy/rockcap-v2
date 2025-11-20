@@ -77,7 +77,7 @@ export const list = query({
     if (args.isActive !== undefined) {
       templates = await ctx.db
         .query("noteTemplates")
-        .withIndex("by_active", (q) => q.eq("isActive", args.isActive))
+        .withIndex("by_active", (q: any) => q.eq("isActive", args.isActive!))
         .collect();
     } else {
       templates = await ctx.db

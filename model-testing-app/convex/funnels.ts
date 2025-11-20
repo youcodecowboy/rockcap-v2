@@ -12,13 +12,16 @@ export const list = query({
     activeOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("emailFunnels");
+    let funnels;
     
     if (args.prospectType) {
-      query = query.withIndex("by_prospect_type", (q) => q.eq("prospectType", args.prospectType));
+      funnels = await ctx.db
+        .query("emailFunnels")
+        .withIndex("by_prospect_type", (q) => q.eq("prospectType", args.prospectType!))
+        .collect();
+    } else {
+      funnels = await ctx.db.query("emailFunnels").collect();
     }
-    
-    const funnels = await query.collect();
     
     if (args.activeOnly !== false) {
       return funnels.filter(f => f.isActive);

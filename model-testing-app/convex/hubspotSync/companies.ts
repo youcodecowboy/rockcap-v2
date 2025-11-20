@@ -28,7 +28,7 @@ async function linkCompanyAssociations(
         
         const contact = await ctx.db
           .query("contacts")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotContactId", hubspotContactId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
           .first();
         if (contact && !linkedContactIds.some(id => id === contact._id)) {
           linkedContactIds.push(contact._id as any);
@@ -53,7 +53,7 @@ async function linkCompanyAssociations(
         
         const deal = await ctx.db
           .query("deals")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotDealId", hubspotDealId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotDealId", hubspotDealId))
           .first();
         if (deal && !linkedDealIds.some(id => id === deal._id)) {
           linkedDealIds.push(deal._id as any);
@@ -102,12 +102,12 @@ export const syncCompanyFromHubSpot = mutation({
     
     // Clean args - filter out null/undefined/empty values
     const cleaned = cleanArgs(companyData);
-    const cleanArgs: any = { hubspotCompanyId, ...cleaned };
+    const cleanedCompanyData: any = { hubspotCompanyId, ...cleaned };
     
     // First, check if company exists with this HubSpot ID
     const existingByHubSpotId = await ctx.db
       .query("companies")
-      .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", hubspotCompanyId))
+      .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", hubspotCompanyId))
       .first();
     
     if (existingByHubSpotId) {
@@ -119,38 +119,38 @@ export const syncCompanyFromHubSpot = mutation({
         args.metadata
       );
       
-      const updatedAtDate = parseUpdatedAt(cleanArgs.updatedAt);
+      const updatedAtDate = parseUpdatedAt(cleanedCompanyData.updatedAt);
       
       const cleanData: any = {
-        name: cleanArgs.name,
-        hubspotLifecycleStage: cleanArgs.lifecycleStage,
-        hubspotUrl: cleanArgs.hubspotUrl,
+        name: cleanedCompanyData.name,
+        hubspotLifecycleStage: cleanedCompanyData.lifecycleStage,
+        hubspotUrl: cleanedCompanyData.hubspotUrl,
         lastHubSpotSync: new Date().toISOString(),
         metadata,
         updatedAt: updatedAtDate,
       };
       
       // Only include fields that have actual values
-      if (cleanArgs.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
-      if (cleanArgs.hubspotOwnerId) cleanData.hubspotOwnerId = cleanArgs.hubspotOwnerId;
-      if (cleanArgs.lastContactedDate) cleanData.lastContactedDate = cleanArgs.lastContactedDate;
-      if (cleanArgs.lastActivityDate) cleanData.lastActivityDate = cleanArgs.lastActivityDate;
-      if (cleanArgs.phone) cleanData.phone = cleanArgs.phone;
-      if (cleanArgs.website) {
-        cleanData.website = cleanArgs.website;
-        cleanData.domain = cleanArgs.website;
+      if (cleanedCompanyData.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
+      if (cleanedCompanyData.hubspotOwnerId) cleanData.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;
+      if (cleanedCompanyData.lastContactedDate) cleanData.lastContactedDate = cleanedCompanyData.lastContactedDate;
+      if (cleanedCompanyData.lastActivityDate) cleanData.lastActivityDate = cleanedCompanyData.lastActivityDate;
+      if (cleanedCompanyData.phone) cleanData.phone = cleanedCompanyData.phone;
+      if (cleanedCompanyData.website) {
+        cleanData.website = cleanedCompanyData.website;
+        cleanData.domain = cleanedCompanyData.website;
       }
-      if (cleanArgs.address) cleanData.address = cleanArgs.address;
-      if (cleanArgs.city) cleanData.city = cleanArgs.city;
-      if (cleanArgs.state) cleanData.state = cleanArgs.state;
-      if (cleanArgs.zip) cleanData.zip = cleanArgs.zip;
-      if (cleanArgs.country) cleanData.country = cleanArgs.country;
-      if (cleanArgs.industry) cleanData.industry = cleanArgs.industry;
-      if (cleanArgs.hubspotContactIds && cleanArgs.hubspotContactIds.length > 0) {
-        cleanData.hubspotContactIds = cleanArgs.hubspotContactIds;
+      if (cleanedCompanyData.address) cleanData.address = cleanedCompanyData.address;
+      if (cleanedCompanyData.city) cleanData.city = cleanedCompanyData.city;
+      if (cleanedCompanyData.state) cleanData.state = cleanedCompanyData.state;
+      if (cleanedCompanyData.zip) cleanData.zip = cleanedCompanyData.zip;
+      if (cleanedCompanyData.country) cleanData.country = cleanedCompanyData.country;
+      if (cleanedCompanyData.industry) cleanData.industry = cleanedCompanyData.industry;
+      if (cleanedCompanyData.hubspotContactIds && cleanedCompanyData.hubspotContactIds.length > 0) {
+        cleanData.hubspotContactIds = cleanedCompanyData.hubspotContactIds;
       }
-      if (cleanArgs.hubspotDealIds && cleanArgs.hubspotDealIds.length > 0) {
-        cleanData.hubspotDealIds = cleanArgs.hubspotDealIds;
+      if (cleanedCompanyData.hubspotDealIds && cleanedCompanyData.hubspotDealIds.length > 0) {
+        cleanData.hubspotDealIds = cleanedCompanyData.hubspotDealIds;
       }
       
       await ctx.db.patch(existingByHubSpotId._id, cleanData);
@@ -159,8 +159,8 @@ export const syncCompanyFromHubSpot = mutation({
       await linkCompanyAssociations(
         ctx,
         existingByHubSpotId._id,
-        cleanArgs.hubspotContactIds,
-        cleanArgs.hubspotDealIds
+        cleanedCompanyData.hubspotContactIds,
+        cleanedCompanyData.hubspotDealIds
       );
       
       return { id: existingByHubSpotId._id, action: "updated" };
@@ -180,33 +180,33 @@ export const syncCompanyFromHubSpot = mutation({
         args.metadata
       );
       
-      const updatedAtDate = parseUpdatedAt(cleanArgs.updatedAt);
+      const updatedAtDate = parseUpdatedAt(cleanedCompanyData.updatedAt);
       
       const cleanData: any = {
         hubspotCompanyId,
-        name: cleanArgs.name,
-        hubspotLifecycleStage: cleanArgs.lifecycleStage,
-        hubspotUrl: cleanArgs.hubspotUrl,
+        name: cleanedCompanyData.name,
+        hubspotLifecycleStage: cleanedCompanyData.lifecycleStage,
+        hubspotUrl: cleanedCompanyData.hubspotUrl,
         lastHubSpotSync: new Date().toISOString(),
         metadata,
         updatedAt: updatedAtDate,
       };
       
       // Only include fields that have actual values
-      if (cleanArgs.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
-      if (cleanArgs.hubspotOwnerId) cleanData.hubspotOwnerId = cleanArgs.hubspotOwnerId;
-      if (cleanArgs.lastContactedDate) cleanData.lastContactedDate = cleanArgs.lastContactedDate;
-      if (cleanArgs.lastActivityDate) cleanData.lastActivityDate = cleanArgs.lastActivityDate;
+      if (cleanedCompanyData.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
+      if (cleanedCompanyData.hubspotOwnerId) cleanData.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;
+      if (cleanedCompanyData.lastContactedDate) cleanData.lastContactedDate = cleanedCompanyData.lastContactedDate;
+      if (cleanedCompanyData.lastActivityDate) cleanData.lastActivityDate = cleanedCompanyData.lastActivityDate;
       
       // Merge with existing values
-      const phone = cleanArgs.phone || existingByName.phone;
-      const website = cleanArgs.website || existingByName.website;
-      const address = cleanArgs.address || existingByName.address;
-      const city = cleanArgs.city || existingByName.city;
-      const state = cleanArgs.state || existingByName.state;
-      const zip = cleanArgs.zip || existingByName.zip;
-      const country = cleanArgs.country || existingByName.country;
-      const industry = cleanArgs.industry || existingByName.industry;
+      const phone = cleanedCompanyData.phone || existingByName.phone;
+      const website = cleanedCompanyData.website || existingByName.website;
+      const address = cleanedCompanyData.address || existingByName.address;
+      const city = cleanedCompanyData.city || existingByName.city;
+      const state = cleanedCompanyData.state || existingByName.state;
+      const zip = cleanedCompanyData.zip || existingByName.zip;
+      const country = cleanedCompanyData.country || existingByName.country;
+      const industry = cleanedCompanyData.industry || existingByName.industry;
       
       if (phone) cleanData.phone = phone;
       if (website) {
@@ -219,11 +219,11 @@ export const syncCompanyFromHubSpot = mutation({
       if (zip) cleanData.zip = zip;
       if (country) cleanData.country = country;
       if (industry) cleanData.industry = industry;
-      if (cleanArgs.hubspotContactIds && cleanArgs.hubspotContactIds.length > 0) {
-        cleanData.hubspotContactIds = cleanArgs.hubspotContactIds;
+      if (cleanedCompanyData.hubspotContactIds && cleanedCompanyData.hubspotContactIds.length > 0) {
+        cleanData.hubspotContactIds = cleanedCompanyData.hubspotContactIds;
       }
-      if (cleanArgs.hubspotDealIds && cleanArgs.hubspotDealIds.length > 0) {
-        cleanData.hubspotDealIds = cleanArgs.hubspotDealIds;
+      if (cleanedCompanyData.hubspotDealIds && cleanedCompanyData.hubspotDealIds.length > 0) {
+        cleanData.hubspotDealIds = cleanedCompanyData.hubspotDealIds;
       }
       
       await ctx.db.patch(existingByName._id, cleanData);
@@ -232,8 +232,8 @@ export const syncCompanyFromHubSpot = mutation({
       await linkCompanyAssociations(
         ctx,
         existingByName._id,
-        cleanArgs.hubspotContactIds,
-        cleanArgs.hubspotDealIds
+        cleanedCompanyData.hubspotContactIds,
+        cleanedCompanyData.hubspotDealIds
       );
       
       return { id: existingByName._id, action: "updated" };
@@ -241,14 +241,14 @@ export const syncCompanyFromHubSpot = mutation({
     
     // Create new company
     const metadata = mergeMetadata(undefined, args.customProperties, args.metadata);
-    const createdAtDate = parseCreatedAt(cleanArgs.createdAt);
-    const updatedAtDate = parseUpdatedAt(cleanArgs.updatedAt);
+    const createdAtDate = parseCreatedAt(cleanedCompanyData.createdAt);
+    const updatedAtDate = parseUpdatedAt(cleanedCompanyData.updatedAt);
     
     const companyDataClean: any = {
       hubspotCompanyId,
-      name: cleanArgs.name,
-      hubspotLifecycleStage: cleanArgs.lifecycleStage,
-      hubspotUrl: cleanArgs.hubspotUrl,
+      name: cleanedCompanyData.name,
+      hubspotLifecycleStage: cleanedCompanyData.lifecycleStage,
+      hubspotUrl: cleanedCompanyData.hubspotUrl,
       lastHubSpotSync: new Date().toISOString(),
       metadata,
       createdAt: createdAtDate,
@@ -256,26 +256,26 @@ export const syncCompanyFromHubSpot = mutation({
     };
     
     // Only include fields that have actual values
-    if (cleanArgs.lifecycleStageName) companyDataClean.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
-    if (cleanArgs.hubspotOwnerId) companyDataClean.hubspotOwnerId = cleanArgs.hubspotOwnerId;
-    if (cleanArgs.lastContactedDate) companyDataClean.lastContactedDate = cleanArgs.lastContactedDate;
-    if (cleanArgs.lastActivityDate) companyDataClean.lastActivityDate = cleanArgs.lastActivityDate;
-    if (cleanArgs.phone) companyDataClean.phone = cleanArgs.phone;
-    if (cleanArgs.website) {
-      companyDataClean.website = cleanArgs.website;
-      companyDataClean.domain = cleanArgs.website;
+    if (cleanedCompanyData.lifecycleStageName) companyDataClean.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
+    if (cleanedCompanyData.hubspotOwnerId) companyDataClean.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;
+    if (cleanedCompanyData.lastContactedDate) companyDataClean.lastContactedDate = cleanedCompanyData.lastContactedDate;
+    if (cleanedCompanyData.lastActivityDate) companyDataClean.lastActivityDate = cleanedCompanyData.lastActivityDate;
+    if (cleanedCompanyData.phone) companyDataClean.phone = cleanedCompanyData.phone;
+    if (cleanedCompanyData.website) {
+      companyDataClean.website = cleanedCompanyData.website;
+      companyDataClean.domain = cleanedCompanyData.website;
     }
-    if (cleanArgs.address) companyDataClean.address = cleanArgs.address;
-    if (cleanArgs.city) companyDataClean.city = cleanArgs.city;
-    if (cleanArgs.state) companyDataClean.state = cleanArgs.state;
-    if (cleanArgs.zip) companyDataClean.zip = cleanArgs.zip;
-    if (cleanArgs.country) companyDataClean.country = cleanArgs.country;
-    if (cleanArgs.industry) companyDataClean.industry = cleanArgs.industry;
-    if (cleanArgs.hubspotContactIds && cleanArgs.hubspotContactIds.length > 0) {
-      companyDataClean.hubspotContactIds = cleanArgs.hubspotContactIds;
+    if (cleanedCompanyData.address) companyDataClean.address = cleanedCompanyData.address;
+    if (cleanedCompanyData.city) companyDataClean.city = cleanedCompanyData.city;
+    if (cleanedCompanyData.state) companyDataClean.state = cleanedCompanyData.state;
+    if (cleanedCompanyData.zip) companyDataClean.zip = cleanedCompanyData.zip;
+    if (cleanedCompanyData.country) companyDataClean.country = cleanedCompanyData.country;
+    if (cleanedCompanyData.industry) companyDataClean.industry = cleanedCompanyData.industry;
+    if (cleanedCompanyData.hubspotContactIds && cleanedCompanyData.hubspotContactIds.length > 0) {
+      companyDataClean.hubspotContactIds = cleanedCompanyData.hubspotContactIds;
     }
-    if (cleanArgs.hubspotDealIds && cleanArgs.hubspotDealIds.length > 0) {
-      companyDataClean.hubspotDealIds = cleanArgs.hubspotDealIds;
+    if (cleanedCompanyData.hubspotDealIds && cleanedCompanyData.hubspotDealIds.length > 0) {
+      companyDataClean.hubspotDealIds = cleanedCompanyData.hubspotDealIds;
     }
     
     const companyId = await ctx.db.insert("companies", companyDataClean);
@@ -284,8 +284,8 @@ export const syncCompanyFromHubSpot = mutation({
     await linkCompanyAssociations(
       ctx,
       companyId,
-      cleanArgs.hubspotContactIds,
-      cleanArgs.hubspotDealIds
+      cleanedCompanyData.hubspotContactIds,
+      cleanedCompanyData.hubspotDealIds
     );
     
     return { id: companyId, action: "created" };
@@ -318,7 +318,7 @@ export const syncCompanyToClientFromHubSpot = mutation({
     // First, check if client exists with this HubSpot ID
     const existingByHubSpotId = await ctx.db
       .query("clients")
-      .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", hubspotCompanyId))
+      .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", hubspotCompanyId))
       .first();
     
     if (existingByHubSpotId) {

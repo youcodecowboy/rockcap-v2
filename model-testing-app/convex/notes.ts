@@ -17,11 +17,33 @@ export const create = mutation({
     isDraft: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get user ID from identity using Clerk ID
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     const now = new Date().toISOString();
+    
+    // If note is unfiled (no clientId or projectId), set userId
+    // If note is filed, userId is optional (shared note)
+    const userId = (!args.clientId && !args.projectId) ? user._id : undefined;
+    
     const noteId = await ctx.db.insert("notes", {
       title: args.title,
       content: args.content,
       emoji: args.emoji,
+      userId: userId,
       clientId: args.clientId,
       projectId: args.projectId,
       templateId: args.templateId,
@@ -54,18 +76,58 @@ export const update = mutation({
     isDraft: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get user ID from identity using Clerk ID
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     const { id, ...updates } = args;
     const existing = await ctx.db.get(id);
     if (!existing) {
       throw new Error("Note not found");
     }
 
+    // Verify ownership for unfiled notes
+    if (existing.userId && existing.userId !== user._id) {
+      throw new Error("Unauthorized: You can only edit your own notes");
+    }
+
+    // Determine if note is being filed or unfiled
+    const newClientId = updates.clientId !== undefined ? updates.clientId : existing.clientId;
+    const newProjectId = updates.projectId !== undefined ? updates.projectId : existing.projectId;
+    const isUnfiled = !newClientId && !newProjectId;
+    const wasUnfiled = !existing.clientId && !existing.projectId;
+
+    // Set userId based on filing status
+    // If unfiled, set userId. If filed, clear userId (shared)
+    const userIdUpdate = isUnfiled ? user._id : (wasUnfiled && !isUnfiled ? null : undefined);
+
     const now = new Date().toISOString();
-    await ctx.db.patch(id, {
+    // Filter out null values - convert to undefined for optional fields
+    const patchData: any = {
       ...updates,
+      ...(userIdUpdate !== undefined && { userId: userIdUpdate }),
       updatedAt: now,
       lastSavedAt: now,
-    });
+    };
+    // Convert null to undefined for optional ID fields
+    if (patchData.clientId === null) patchData.clientId = undefined;
+    if (patchData.projectId === null) patchData.projectId = undefined;
+    if (patchData.templateId === null) patchData.templateId = undefined;
+    if (patchData.userId === null) patchData.userId = undefined;
+    
+    await ctx.db.patch(id, patchData);
     return id;
   },
 });
@@ -74,6 +136,34 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("notes") },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get user ID from identity using Clerk ID
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const note = await ctx.db.get(args.id);
+    if (!note) {
+      throw new Error("Note not found");
+    }
+
+    // Verify ownership for unfiled notes
+    // Filed notes (with clientId/projectId) can be deleted by anyone (shared)
+    // Unfiled notes can only be deleted by their owner
+    if (note.userId && note.userId !== user._id) {
+      throw new Error("Unauthorized: You can only delete your own notes");
+    }
+
     await ctx.db.delete(args.id);
   },
 });
@@ -90,6 +180,7 @@ export const get = query({
 export const getByClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
+    // Filed notes are shared - no need to filter by user
     const notes = await ctx.db
       .query("notes")
       .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
@@ -125,28 +216,64 @@ export const getAll = query({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return []; // Return empty array if not authenticated
+    }
+
+    // Get user ID from identity using Clerk ID
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    
+    if (!user) {
+      return []; // Return empty array if user not found
+    }
+
     let notes;
 
     // Start with appropriate index
     if (args.clientId) {
+      // Filed notes by client - all users can see (shared)
       notes = await ctx.db
         .query("notes")
         .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
         .collect();
     } else if (args.projectId) {
+      // Filed notes by project - all users can see (shared)
       notes = await ctx.db
         .query("notes")
         .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
         .collect();
     } else if (args.templateId) {
+      // Notes by template - filter by user for unfiled notes
       notes = await ctx.db
         .query("notes")
         .withIndex("by_template", (q) => q.eq("templateId", args.templateId))
         .collect();
+      
+      // Filter: Show all filed notes, but only user's own unfiled notes
+      notes = notes.filter(note => {
+        // If note is filed (has clientId or projectId), show it (shared)
+        if (note.clientId || note.projectId) return true;
+        // If note is unfiled, only show if it belongs to current user
+        return note.userId === user._id;
+      });
     } else {
+      // Get all notes
       notes = await ctx.db
         .query("notes")
         .collect();
+      
+      // Filter: Show all filed notes (shared), but only user's own unfiled notes
+      notes = notes.filter(note => {
+        // If note is filed (has clientId or projectId), show it (shared)
+        if (note.clientId || note.projectId) return true;
+        // If note is unfiled, only show if it belongs to current user
+        return note.userId === user._id;
+      });
     }
 
     // Filter by tags if provided

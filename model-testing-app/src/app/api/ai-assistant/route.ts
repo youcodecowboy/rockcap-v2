@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { gatherContextForNote, formatContextForLLM, estimateTokens } from '@/lib/aiNotesContext';
-import { Id } from '../../convex/_generated/dataModel';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 
 const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
 const MODEL_NAME = 'openai/gpt-oss-120b'; // OSS-120B via Together.ai
@@ -10,6 +10,17 @@ export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const client = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(client);
+    } catch (authError) {
+      return NextResponse.json(
+        { error: 'Unauthenticated' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { prompt, noteId, clientId, projectId, updateMode, existingContent } = body;
 

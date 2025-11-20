@@ -48,7 +48,7 @@ async function linkDealAssociations(
         
         const contact = await ctx.db
           .query("contacts")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotContactId", hubspotContactId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
           .first();
         if (contact && !linkedContactIds.some(id => id === contact._id)) {
           linkedContactIds.push(contact._id as any);
@@ -73,7 +73,7 @@ async function linkDealAssociations(
         
         const company = await ctx.db
           .query("companies")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", hubspotCompanyId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", hubspotCompanyId))
           .first();
         if (company && !linkedCompanyIds.some(id => id === company._id)) {
           linkedCompanyIds.push(company._id as any);
@@ -283,7 +283,7 @@ export const syncDealFromHubSpot = mutation({
       for (const companyId of associatedCompanyIds) {
         const client = await ctx.db
           .query("clients")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", companyId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", companyId))
           .first();
         
         if (client) {

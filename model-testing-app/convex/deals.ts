@@ -84,3 +84,16 @@ export const getDealsByPipeline = query({
   },
 });
 
+/**
+ * Get pipeline total value (sum of all deal amounts)
+ */
+export const getPipelineTotal = query({
+  handler: async (ctx) => {
+    const deals = await ctx.db.query("deals").collect();
+    const total = deals.reduce((sum, deal) => {
+      return sum + (deal.amount || 0);
+    }, 0);
+    return total;
+  },
+});
+

@@ -14,6 +14,7 @@ import {
   Settings,
   ContactRound,
   Calculator,
+  LayoutDashboard,
   LucideIcon,
 } from 'lucide-react';
 
@@ -33,7 +34,8 @@ export default function Sidebar() {
   };
 
   const navItems: NavItem[] = [
-    { href: '/', label: 'Filing Agent', icon: Archive },
+    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/filing', label: 'Filing Agent', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },
     { href: '/projects', label: 'Projects', icon: FolderKanban },
     { href: '/prospects', label: 'Prospects', icon: UserSearch },
