@@ -15,7 +15,7 @@ export const createProspect = mutation({
     // Check if prospect already exists
     const existing = await ctx.db
       .query("prospects")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .first();
@@ -77,7 +77,7 @@ export const getProspectByCompanyNumber = query({
   handler: async (ctx, args) => {
     const prospect = await ctx.db
       .query("prospects")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .first();
@@ -112,8 +112,6 @@ export const listProspects = query({
     hasOwnedPropertyHits: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("prospects");
-
     // Apply filters
     let prospects;
     if (args.tier) {
@@ -122,7 +120,7 @@ export const listProspects = query({
         .withIndex("by_tier", (q: any) => q.eq("prospectTier", args.tier!))
         .collect();
     } else {
-      prospects = await query.collect();
+      prospects = await ctx.db.query("prospects").collect();
     }
 
     // Apply additional filters that aren't indexed
@@ -181,7 +179,7 @@ export const getRecentCount = query({
     // Also count clients with status="prospect"
     const prospectClients = await ctx.db
       .query("clients")
-      .withIndex("by_status", (q) => q.eq("status", "prospect"))
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
       .collect();
     
     return prospects.length + prospectClients.length;

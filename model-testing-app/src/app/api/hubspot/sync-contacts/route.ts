@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         if (associatedCompanyIds.length > 0) contactData.hubspotCompanyIds = associatedCompanyIds;
         if (associatedDealIds.length > 0) contactData.hubspotDealIds = associatedDealIds;
         
-        const result = await fetchMutation(api.hubspotSync.syncContactFromHubSpot, contactData);
+        const result = await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData);
         
         synced++;
         if (result.action === 'created') {

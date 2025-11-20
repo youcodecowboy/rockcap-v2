@@ -24,7 +24,7 @@ export const savePropertyTitle = mutation({
     // Check if property title already exists
     const existing = await ctx.db
       .query("propertyTitles")
-      .withIndex("by_title_number", (q) =>
+      .withIndex("by_title_number", (q: any) =>
         q.eq("titleNumber", args.titleNumber)
       )
       .first();
@@ -83,7 +83,7 @@ export const linkCompanyToProperty = mutation({
     // Check if link already exists
     const existing = await ctx.db
       .query("companyPropertyLinks")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .filter((q) =>
@@ -122,7 +122,7 @@ export const getPropertiesForCompany = query({
   handler: async (ctx, args) => {
     const links = await ctx.db
       .query("companyPropertyLinks")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .collect();
@@ -150,7 +150,7 @@ export const getPropertyTitleByTitleNumber = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("propertyTitles")
-      .withIndex("by_title_number", (q) =>
+      .withIndex("by_title_number", (q: any) =>
         q.eq("titleNumber", args.titleNumber)
       )
       .first();

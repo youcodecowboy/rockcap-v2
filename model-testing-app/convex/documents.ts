@@ -18,7 +18,7 @@ export const list = query({
     if (args.clientId) {
       const docs = await ctx.db
         .query("documents")
-        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId!))
         .collect();
       return docs.filter(doc => {
         if (args.category && doc.category !== args.category) return false;
@@ -28,7 +28,7 @@ export const list = query({
     } else if (args.projectId) {
       const docs = await ctx.db
         .query("documents")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId!))
         .collect();
       return docs.filter(doc => {
         if (args.category && doc.category !== args.category) return false;
@@ -38,7 +38,7 @@ export const list = query({
     } else if (args.category) {
       const docs = await ctx.db
         .query("documents")
-        .withIndex("by_category", (q) => q.eq("category", args.category!))
+        .withIndex("by_category", (q: any) => q.eq("category", args.category!))
         .collect();
       return docs.filter(doc => {
         if (args.status && doc.status !== args.status) return false;
@@ -47,7 +47,7 @@ export const list = query({
     } else if (args.status) {
       return await ctx.db
         .query("documents")
-        .withIndex("by_status", (q) => q.eq("status", args.status!))
+        .withIndex("by_status", (q: any) => q.eq("status", args.status!))
         .collect();
     } else {
       return await ctx.db.query("documents").collect();
@@ -69,7 +69,7 @@ export const getByClient = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("documents")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
   },
 });
@@ -80,7 +80,7 @@ export const getByProject = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("documents")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .collect();
   },
 });

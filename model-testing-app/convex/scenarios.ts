@@ -9,7 +9,7 @@ export const list = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("scenarios")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .collect();
   },
 });

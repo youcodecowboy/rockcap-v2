@@ -69,8 +69,8 @@ export const listCompanies = query({
     if (args.hasNewCharges !== undefined) {
       companies = await ctx.db
         .query("companiesHouseCompanies")
-        .withIndex("by_new_charges", (q) =>
-          q.eq("hasNewCharges", args.hasNewCharges)
+        .withIndex("by_new_charges", (q: any) =>
+          q.eq("hasNewCharges", args.hasNewCharges!)
         )
         .collect();
     } else {
@@ -90,7 +90,7 @@ export const listCompanies = query({
       filtered.map(async (company) => {
         const charges = await ctx.db
           .query("companiesHouseCharges")
-          .withIndex("by_company", (q) => q.eq("companyId", company._id))
+          .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
           .collect();
 
         return {
@@ -116,28 +116,28 @@ export const getCompany = query({
 
     const charges = await ctx.db
       .query("companiesHouseCharges")
-      .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
       .collect();
 
     const psc = await ctx.db
       .query("companiesHousePSC")
-      .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
       .collect();
 
     const officers = await ctx.db
       .query("companiesHouseOfficers")
-      .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
       .collect();
 
     // Get relationships inline (can't call another query's handler)
     const relationships1 = await ctx.db
       .query("companyRelationships")
-      .withIndex("by_company1", (q) => q.eq("companyId1", args.companyId))
+      .withIndex("by_company1", (q: any) => q.eq("companyId1", args.companyId))
       .collect();
     
     const relationships2 = await ctx.db
       .query("companyRelationships")
-      .withIndex("by_company2", (q) => q.eq("companyId2", args.companyId))
+      .withIndex("by_company2", (q: any) => q.eq("companyId2", args.companyId))
       .collect();
 
     const allRelationships = [...relationships1, ...relationships2];
@@ -172,7 +172,7 @@ export const getCompanyByNumber = query({
   handler: async (ctx, args) => {
     const company = await ctx.db
       .query("companiesHouseCompanies")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .first();
@@ -181,7 +181,7 @@ export const getCompanyByNumber = query({
 
     const charges = await ctx.db
       .query("companiesHouseCharges")
-      .withIndex("by_company", (q) => q.eq("companyId", company._id))
+      .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
       .collect();
 
     return {
@@ -198,14 +198,14 @@ export const getCompaniesWithNewCharges = query({
   handler: async (ctx) => {
     const companies = await ctx.db
       .query("companiesHouseCompanies")
-      .withIndex("by_new_charges", (q) => q.eq("hasNewCharges", true))
+      .withIndex("by_new_charges", (q: any) => q.eq("hasNewCharges", true))
       .collect();
 
     const companiesWithChargeCounts = await Promise.all(
       companies.map(async (company) => {
         const charges = await ctx.db
           .query("companiesHouseCharges")
-          .withIndex("by_company", (q) => q.eq("companyId", company._id))
+          .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
           .collect();
 
         return {
@@ -236,7 +236,7 @@ export const saveCompany = mutation({
     // Check if company already exists
     const existing = await ctx.db
       .query("companiesHouseCompanies")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .first();
@@ -293,7 +293,7 @@ export const saveCharge = mutation({
     // Check if charge already exists
     const existingCharges = await ctx.db
       .query("companiesHouseCharges")
-      .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
       .collect();
 
     const existing = existingCharges.find(
@@ -358,7 +358,7 @@ export const markChargesAsSeen = mutation({
   handler: async (ctx, args) => {
     const charges = await ctx.db
       .query("companiesHouseCharges")
-      .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
       .collect();
 
     const now = new Date().toISOString();
@@ -420,7 +420,7 @@ export const syncCompanyData = mutation({
     // Save or update company
     const existing = await ctx.db
       .query("companiesHouseCompanies")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .first();
@@ -458,7 +458,7 @@ export const syncCompanyData = mutation({
     // Get existing charges to detect new ones
     const existingCharges = await ctx.db
       .query("companiesHouseCharges")
-      .withIndex("by_company", (q) => q.eq("companyId", companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", companyId))
       .collect();
 
     const existingChargeIds = new Set(existingCharges.map((c) => c.chargeId));
@@ -565,7 +565,7 @@ export const savePSC = mutation({
     // Check if PSC already exists for this company
     const existing = await ctx.db
       .query("companiesHousePSC")
-      .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
       .filter((q) => q.eq(q.field("pscId"), args.pscId))
       .first();
 
@@ -631,7 +631,7 @@ export const saveOfficer = mutation({
     // Check if officer already exists for this company
     const existing = await ctx.db
       .query("companiesHouseOfficers")
-      .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+      .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
       .filter((q) => q.eq(q.field("officerId"), args.officerId))
       .first();
 
@@ -690,12 +690,12 @@ export const getCompanyRelationships = query({
   handler: async (ctx, args) => {
     const relationships = await ctx.db
       .query("companyRelationships")
-      .withIndex("by_company1", (q) => q.eq("companyId1", args.companyId))
+      .withIndex("by_company1", (q: any) => q.eq("companyId1", args.companyId))
       .collect();
     
     const relationships2 = await ctx.db
       .query("companyRelationships")
-      .withIndex("by_company2", (q) => q.eq("companyId2", args.companyId))
+      .withIndex("by_company2", (q: any) => q.eq("companyId2", args.companyId))
       .collect();
 
     // Combine and get company details
@@ -747,7 +747,7 @@ export const buildAllRelationships = mutation({
             // Check if relationship already exists
             const existing = await ctx.db
               .query("companyRelationships")
-              .withIndex("by_company1", (q) => q.eq("companyId1", companyIds[i]))
+              .withIndex("by_company1", (q: any) => q.eq("companyId1", companyIds[i]))
               .filter((q) => 
                 q.or(
                   q.and(
@@ -811,7 +811,7 @@ export const buildAllRelationships = mutation({
           // Check if relationship already exists
           const existing = await ctx.db
             .query("companyRelationships")
-            .withIndex("by_company1", (q) => q.eq("companyId1", id1 as any))
+            .withIndex("by_company1", (q: any) => q.eq("companyId1", id1 as any))
             .filter((q) => 
               q.or(
                 q.and(
@@ -881,7 +881,7 @@ export const buildAllRelationships = mutation({
           // Check if relationship already exists
           const existing = await ctx.db
             .query("companyRelationships")
-            .withIndex("by_company1", (q) => q.eq("companyId1", id1 as any))
+            .withIndex("by_company1", (q: any) => q.eq("companyId1", id1 as any))
             .filter((q) => 
               q.or(
                 q.and(
@@ -942,7 +942,7 @@ export const linkCompaniesByPSC = mutation({
     // Check if relationship already exists
     const existing = await ctx.db
       .query("companyRelationships")
-      .withIndex("by_company1", (q) => q.eq("companyId1", args.companyId1))
+      .withIndex("by_company1", (q: any) => q.eq("companyId1", args.companyId1))
       .filter((q) => 
         q.or(
           q.and(
@@ -1000,7 +1000,7 @@ export const linkCompaniesByOfficer = mutation({
     // Check if relationship already exists
     const existing = await ctx.db
       .query("companyRelationships")
-      .withIndex("by_company1", (q) => q.eq("companyId1", args.companyId1))
+      .withIndex("by_company1", (q: any) => q.eq("companyId1", args.companyId1))
       .filter((q) => 
         q.or(
           q.and(
@@ -1058,7 +1058,7 @@ export const linkCompaniesByAddress = mutation({
     // Check if relationship already exists
     const existing = await ctx.db
       .query("companyRelationships")
-      .withIndex("by_company1", (q) => q.eq("companyId1", args.companyId1))
+      .withIndex("by_company1", (q: any) => q.eq("companyId1", args.companyId1))
       .filter((q) => 
         q.or(
           q.and(
@@ -1145,7 +1145,7 @@ export const uploadChargePdf = mutation({
       // Find the charge and update it with the storage ID
       const charges = await ctx.db
         .query("companiesHouseCharges")
-        .withIndex("by_company", (q) => q.eq("companyId", args.companyId))
+        .withIndex("by_company", (q: any) => q.eq("companyId", args.companyId))
         .collect();
 
       const charge = charges.find((c) => c.chargeId === args.chargeId);

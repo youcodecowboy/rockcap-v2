@@ -23,7 +23,7 @@ export const linkContactsToDeal = mutation({
     for (const hubspotContactId of args.hubspotContactIds) {
       const contact = await ctx.db
         .query("contacts")
-        .withIndex("by_hubspot_id", (q) => q.eq("hubspotContactId", hubspotContactId))
+        .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
         .first();
       
       if (contact) {
@@ -61,7 +61,7 @@ export const linkCompaniesToDeal = mutation({
     for (const hubspotCompanyId of args.hubspotCompanyIds) {
       const company = await ctx.db
         .query("companies")
-        .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", hubspotCompanyId))
+        .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", hubspotCompanyId))
         .first();
       
       if (company) {
@@ -100,7 +100,7 @@ export const linkAssociationsToDeal = mutation({
       for (const hubspotContactId of deal.contactIds) {
         const contact = await ctx.db
           .query("contacts")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotContactId", hubspotContactId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
           .first();
         
         if (contact) {
@@ -119,7 +119,7 @@ export const linkAssociationsToDeal = mutation({
       for (const hubspotCompanyId of deal.companyIds) {
         const company = await ctx.db
           .query("companies")
-          .withIndex("by_hubspot_id", (q) => q.eq("hubspotCompanyId", hubspotCompanyId))
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", hubspotCompanyId))
           .first();
         
         if (company) {

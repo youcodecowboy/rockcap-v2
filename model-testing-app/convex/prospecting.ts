@@ -7,7 +7,7 @@ export const getByDocument = query({
   handler: async (ctx, args) => {
     const contexts = await ctx.db
       .query("prospectingContext")
-      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .withIndex("by_document", (q: any) => q.eq("documentId", args.documentId))
       .collect();
     return contexts[0] || null;
   },
@@ -19,7 +19,7 @@ export const getByClient = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("prospectingContext")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
   },
 });
@@ -30,7 +30,7 @@ export const getByProject = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("prospectingContext")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .collect();
   },
 });
@@ -97,7 +97,7 @@ export const save = mutation({
     // Check if context already exists for this document
     const existing = await ctx.db
       .query("prospectingContext")
-      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .withIndex("by_document", (q: any) => q.eq("documentId", args.documentId))
       .first();
     
     const contextData = {
@@ -134,7 +134,7 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     const context = await ctx.db
       .query("prospectingContext")
-      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .withIndex("by_document", (q: any) => q.eq("documentId", args.documentId))
       .first();
     
     if (context) {

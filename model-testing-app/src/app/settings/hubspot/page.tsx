@@ -9,7 +9,7 @@ import { useQuery } from "convex/react";
 import { ExternalLink, RefreshCw, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 export default function HubSpotSettingsPage() {
-  const syncConfig = useQuery(api.hubspotSync.getSyncConfig);
+  const syncConfig = useQuery(api.hubspotSync.getSyncConfig as any);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
   const [isSyncingLeads, setIsSyncingLeads] = useState(false);

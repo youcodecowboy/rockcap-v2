@@ -28,7 +28,7 @@ export const syncPipelinesAndStages = mutation({
       // Check if pipeline already exists
       const existing = await ctx.db
         .query("hubspotPipelines")
-        .withIndex("by_pipeline_id", (q) => q.eq("pipelineId", pipeline.pipelineId))
+        .withIndex("by_pipeline_id", (q: any) => q.eq("pipelineId", pipeline.pipelineId))
         .first();
       
       if (existing) {
@@ -93,7 +93,7 @@ export const getPipelineName = query({
   handler: async (ctx, args) => {
     const pipeline = await ctx.db
       .query("hubspotPipelines")
-      .withIndex("by_pipeline_id", (q) => q.eq("pipelineId", args.pipelineId))
+      .withIndex("by_pipeline_id", (q: any) => q.eq("pipelineId", args.pipelineId))
       .first();
     
     return pipeline ? pipeline.pipelineName : null;

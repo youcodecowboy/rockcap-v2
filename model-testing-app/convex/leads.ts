@@ -59,7 +59,7 @@ export const getLeadsByLifecycleStage = query({
   handler: async (ctx, args) => {
     const leads = await ctx.db
       .query("leads")
-      .withIndex("by_lifecycle_stage", (q) => q.eq("lifecycleStage", args.lifecycleStage))
+      .withIndex("by_lifecycle_stage", (q: any) => q.eq("lifecycleStage", args.lifecycleStage))
       .collect();
     
     const leadsWithDetails = await Promise.all(
@@ -94,7 +94,7 @@ export const getLeadsByStatus = query({
   handler: async (ctx, args) => {
     const leads = await ctx.db
       .query("leads")
-      .withIndex("by_status", (q) => q.eq("status", args.status))
+      .withIndex("by_status", (q: any) => q.eq("status", args.status))
       .collect();
     
     const leadsWithDetails = await Promise.all(

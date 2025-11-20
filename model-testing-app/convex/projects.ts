@@ -199,7 +199,7 @@ export const getStats = query({
   handler: async (ctx, args) => {
     const documents = await ctx.db
       .query("documents")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .collect();
     
     let totalCosts: number | undefined;

@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const errorMessages: string[] = [];
     
     // Update sync status to in_progress
-    await fetchMutation(api.hubspotSync.updateSyncStatus, {
+    await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: 'in_progress',
     });
     
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
               companyData.industry = company.properties.industry;
             }
             
-            await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot, companyData);
+            await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companyData);
             
             stats.companiesSynced++;
           } catch (error: any) {
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
             }
             
             // Always sync as contact first
-            await fetchMutation(api.hubspotSync.syncContactFromHubSpot, contactData);
+            await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData);
             
             stats.contactsSynced++;
             
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
                   leadData.role = contact.properties.jobtitle;
                 }
                 
-                await fetchMutation(api.hubspotSync.syncLeadFromHubSpot, leadData);
+                await fetchMutation(api.hubspotSync.syncLeadFromHubSpot as any, leadData);
                 
                 // Track leads separately if needed
                 if (!stats.leadsSynced) stats.leadsSynced = 0;
@@ -262,14 +262,14 @@ export async function POST(request: NextRequest) {
             
             const associatedCompanyIds: string[] = [];
             if (deal.associations?.companies?.results) {
-              associatedCompanyIds.push(...deal.associations.companies.results.map(c => c.id));
+              associatedCompanyIds.push(...deal.associations.companies.results.map((c: any) => c.id));
             }
             
             const amount = deal.properties.amount 
               ? parseFloat(deal.properties.amount) 
               : undefined;
             
-            await fetchMutation(api.hubspotSync.syncDealFromHubSpot, {
+            await fetchMutation(api.hubspotSync.syncDealFromHubSpot as any, {
               hubspotDealId: deal.id,
               name: deal.properties.dealname,
               amount,
@@ -294,7 +294,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Update sync status
-    await fetchMutation(api.hubspotSync.updateSyncStatus, {
+    await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: stats.errors > 0 ? 'error' : 'success',
       stats,
     });
@@ -309,7 +309,7 @@ export async function POST(request: NextRequest) {
     
     // Update sync status to error
     try {
-      await fetchMutation(api.hubspotSync.updateSyncStatus, {
+      await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
         status: 'error',
       });
     } catch (e) {

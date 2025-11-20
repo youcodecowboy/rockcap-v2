@@ -10,7 +10,7 @@ export const list = query({
   handler: async (ctx, args) => {
     let query = ctx.db
       .query("chatMessages")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
       .order("asc");
     
     if (args.limit) {
@@ -112,7 +112,7 @@ export const remove = mutation({
     // Delete any actions associated with this message
     const actions = await ctx.db
       .query("chatActions")
-      .withIndex("by_message", (q) => q.eq("messageId", args.id))
+      .withIndex("by_message", (q: any) => q.eq("messageId", args.id))
       .collect();
     
     for (const action of actions) {

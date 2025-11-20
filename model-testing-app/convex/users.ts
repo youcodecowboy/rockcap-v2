@@ -13,7 +13,7 @@ export const store = mutation({
     // Check if user exists
     const existingUser = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", args.clerkId))
       .first();
 
     if (existingUser) {
@@ -50,7 +50,7 @@ export const getCurrent = query({
 
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
 
     console.log('[users:getCurrent] User lookup result:', user ? { id: user._id, email: user.email } : 'null');
@@ -64,7 +64,7 @@ export const getByEmail = query({
   handler: async (ctx, args) => {
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("by_email", (q: any) => q.eq("email", args.email))
       .first();
     return user;
   },

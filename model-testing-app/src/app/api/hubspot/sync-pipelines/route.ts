@@ -34,12 +34,12 @@ export async function POST(request: NextRequest) {
     }));
     
     // Sync to Convex
-    const result = await fetchMutation(api.hubspotSync.syncPipelinesAndStages, {
+    const result = await fetchMutation(api.hubspotSync.syncPipelinesAndStages as any, {
       pipelines: pipelinesData,
     });
     
     // Update existing deals with stage/pipeline names
-    const updateResult = await fetchMutation(api.hubspotSync.updateDealsWithStageAndPipelineNames, {});
+    const updateResult = await fetchMutation(api.hubspotSync.updateDealsWithStageAndPipelineNames as any, {});
     
     return NextResponse.json({
       success: true,

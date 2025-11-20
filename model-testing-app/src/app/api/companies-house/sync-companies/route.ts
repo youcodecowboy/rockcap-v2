@@ -10,6 +10,7 @@ import {
   getPSCIndividual,
   getPSCCorporateEntity,
   getCompanyOfficers,
+  CompaniesHouseCharge,
 } from '@/lib/companiesHouse/client';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
@@ -236,7 +237,7 @@ export async function POST(request: NextRequest) {
         twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
 
         const chargesWithPdfs = await Promise.all(
-          chargesData.items.map(async (charge) => {
+          chargesData.items.map(async (charge: CompaniesHouseCharge) => {
             const chargeDate = charge.created_on || charge.delivered_on;
             const chargeDateObj = chargeDate ? new Date(chargeDate) : null;
             const isRecentCharge = chargeDateObj && chargeDateObj >= twelveMonthsAgo;

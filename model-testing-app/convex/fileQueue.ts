@@ -81,7 +81,7 @@ export const getJobs = query({
     if (args.status) {
       jobs = await ctx.db
         .query("fileUploadQueue")
-        .withIndex("by_status", (q) => q.eq("status", args.status!))
+        .withIndex("by_status", (q: any) => q.eq("status", args.status!))
         .collect();
     } else {
       jobs = await ctx.db.query("fileUploadQueue").collect();
@@ -200,7 +200,7 @@ export const getPendingJobs = query({
   handler: async (ctx) => {
     const pending = await ctx.db
       .query("fileUploadQueue")
-      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .withIndex("by_status", (q: any) => q.eq("status", "pending"))
       .collect();
     
     // Sort by createdAt ascending (oldest first for FIFO processing)

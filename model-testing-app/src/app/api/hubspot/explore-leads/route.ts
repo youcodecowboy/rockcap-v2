@@ -100,9 +100,7 @@ export async function GET() {
       const dealsResponse = await client.crm.deals.basicApi.getPage(
         50,
         undefined,
-        ['dealname', 'dealstage', 'pipeline', 'amount', 'closedate', 'hubspot_owner_id'],
-        undefined,
-        true // Include associations
+        ['dealname', 'dealstage', 'pipeline', 'amount', 'closedate', 'hubspot_owner_id']
       );
       
       // Handle response structure - check if results is an array

@@ -325,7 +325,7 @@ export const getByClient = query({
   handler: async (ctx, args) => {
     let entries = await ctx.db
       .query("knowledgeBankEntries")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
 
     // Filter by entryType if provided
@@ -363,7 +363,7 @@ export const getByProject = query({
   handler: async (ctx, args) => {
     let entries = await ctx.db
       .query("knowledgeBankEntries")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .collect();
 
     // Filter by entryType if provided
@@ -434,7 +434,7 @@ export const aggregateClientSummary = query({
     // Get all knowledge bank entries for the client
     const entries = await ctx.db
       .query("knowledgeBankEntries")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
 
     // Get client info

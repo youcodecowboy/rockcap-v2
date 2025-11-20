@@ -62,7 +62,7 @@ export const getDealsByStage = query({
   handler: async (ctx, args) => {
     const deals = await ctx.db
       .query("deals")
-      .withIndex("by_stage", (q) => q.eq("stage", args.stage))
+      .withIndex("by_stage", (q: any) => q.eq("stage", args.stage))
       .collect();
     
     return deals;
@@ -77,7 +77,7 @@ export const getDealsByPipeline = query({
   handler: async (ctx, args) => {
     const deals = await ctx.db
       .query("deals")
-      .withIndex("by_pipeline", (q) => q.eq("pipeline", args.pipeline))
+      .withIndex("by_pipeline", (q: any) => q.eq("pipeline", args.pipeline))
       .collect();
     
     return deals;

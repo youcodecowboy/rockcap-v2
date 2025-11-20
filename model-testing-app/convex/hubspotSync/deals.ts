@@ -126,7 +126,7 @@ export const syncDealToDealsTable = mutation({
     // Check if deal exists with this HubSpot ID
     const existingDeal = await ctx.db
       .query("deals")
-      .withIndex("by_hubspot_id", (q) => q.eq("hubspotDealId", hubspotDealId))
+      .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotDealId", hubspotDealId))
       .first();
     
     if (existingDeal) {

@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
     if (lastContactedDate) contactSyncData.lastContactedDate = lastContactedDate;
     if (lastActivityDate) contactSyncData.lastActivityDate = lastActivityDate;
 
-    const contactResult = await fetchMutation(api.hubspotSync.syncContactFromHubSpot, contactSyncData);
+    const contactResult = await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactSyncData);
     results.contact = {
       id: contactResult.id,
       action: contactResult.action,
@@ -346,7 +346,7 @@ export async function POST(request: NextRequest) {
         if (companyLastContactedDate) companySyncData.lastContactedDate = companyLastContactedDate;
         if (companyLastActivityDate) companySyncData.lastActivityDate = companyLastActivityDate;
 
-        const companyResult = await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot, companySyncData);
+        const companyResult = await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companySyncData);
         results.company = {
           id: companyResult.id,
           action: companyResult.action,
@@ -355,7 +355,7 @@ export async function POST(request: NextRequest) {
         };
 
         // Check if contact is linked to company
-        const contactRecord = await fetchMutation(api.deals.getContactById as any, { contactId: contactResult.id }).catch(() => null);
+        // Note: getContactById doesn't exist, skipping this check
         // We'll verify links after syncing the deal
       }
     }
@@ -535,7 +535,7 @@ export async function POST(request: NextRequest) {
           dealSyncData.companyIds = dealAssociatedCompanyIds;
         }
 
-        const dealResult = await fetchMutation(api.hubspotSync.syncDealToDealsTable, dealSyncData);
+        const dealResult = await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealSyncData);
         results.deal = {
           id: dealResult.id,
           action: dealResult.action,

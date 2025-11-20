@@ -9,7 +9,7 @@ export const getByClient = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("enrichmentSuggestions")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
   },
 });
@@ -20,7 +20,7 @@ export const getByProject = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("enrichmentSuggestions")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .collect();
   },
 });
@@ -31,7 +31,7 @@ export const getByDocument = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("enrichmentSuggestions")
-      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .withIndex("by_document", (q: any) => q.eq("documentId", args.documentId))
       .collect();
   },
 });
@@ -48,17 +48,17 @@ export const getPending = query({
     if (args.clientId) {
       suggestions = await ctx.db
         .query("enrichmentSuggestions")
-        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
         .collect();
     } else if (args.projectId) {
       suggestions = await ctx.db
         .query("enrichmentSuggestions")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
         .collect();
     } else {
       suggestions = await ctx.db
         .query("enrichmentSuggestions")
-        .withIndex("by_status", (q) => q.eq("status", "pending"))
+        .withIndex("by_status", (q: any) => q.eq("status", "pending"))
         .collect();
     }
     
@@ -449,12 +449,12 @@ export const updateDocumentId = mutation({
     if (args.clientId) {
       suggestions = await ctx.db
         .query("enrichmentSuggestions")
-        .withIndex("by_client", (q) => q.eq("clientId", args.clientId!))
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId!))
         .collect();
     } else if (args.projectId) {
       suggestions = await ctx.db
         .query("enrichmentSuggestions")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId!))
+        .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId!))
         .collect();
     } else {
       suggestions = await ctx.db.query("enrichmentSuggestions").collect();

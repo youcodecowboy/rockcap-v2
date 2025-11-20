@@ -20,17 +20,17 @@ export const list = query({
     if (args.prospectId) {
       emails = await ctx.db
         .query("prospectingEmails")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+        .withIndex("by_prospect", (q: any) => q.eq("prospectId", args.prospectId))
         .collect();
     } else if (args.clientId) {
       emails = await ctx.db
         .query("prospectingEmails")
-        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
         .collect();
     } else if (args.status) {
       emails = await ctx.db
         .query("prospectingEmails")
-        .withIndex("by_status", (q) => q.eq("status", args.status!))
+        .withIndex("by_status", (q: any) => q.eq("status", args.status!))
         .collect();
     } else {
       emails = await ctx.db.query("prospectingEmails").collect();
@@ -61,12 +61,12 @@ export const getDrafts = query({
     if (args.prospectId) {
       emails = await ctx.db
         .query("prospectingEmails")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+        .withIndex("by_prospect", (q: any) => q.eq("prospectId", args.prospectId))
         .collect();
     } else {
       emails = await ctx.db
         .query("prospectingEmails")
-        .withIndex("by_status", (q) => q.eq("status", "draft" as const))
+        .withIndex("by_status", (q: any) => q.eq("status", "draft" as const))
         .collect();
     }
     
@@ -82,7 +82,7 @@ export const getByProspect = query({
   handler: async (ctx, args) => {
     const emails = await ctx.db
       .query("prospectingEmails")
-      .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+      .withIndex("by_prospect", (q: any) => q.eq("prospectId", args.prospectId))
       .collect();
     return emails.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -96,7 +96,7 @@ export const getByClient = query({
   handler: async (ctx, args) => {
     const emails = await ctx.db
       .query("prospectingEmails")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
     return emails.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()

@@ -53,7 +53,7 @@ export const getByCategory = query({
   handler: async (ctx, args) => {
     const templates = await ctx.db
       .query("emailTemplates")
-      .withIndex("by_category", (q) => q.eq("category", args.category))
+      .withIndex("by_category", (q: any) => q.eq("category", args.category))
       .collect();
     return templates.filter(t => t.isActive);
   },

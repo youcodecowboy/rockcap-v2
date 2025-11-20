@@ -16,7 +16,7 @@ export const list = query({
     if (args.clientId) {
       return await ctx.db
         .query("chatSessions")
-        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
         .order("desc")
         .collect();
     }
@@ -24,7 +24,7 @@ export const list = query({
     if (args.projectId) {
       return await ctx.db
         .query("chatSessions")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
         .order("desc")
         .collect();
     }
@@ -32,7 +32,7 @@ export const list = query({
     if (args.contextType) {
       return await ctx.db
         .query("chatSessions")
-        .withIndex("by_contextType", (q) => q.eq("contextType", args.contextType!))
+        .withIndex("by_contextType", (q: any) => q.eq("contextType", args.contextType!))
         .order("desc")
         .collect();
     }
@@ -127,7 +127,7 @@ export const remove = mutation({
     // Delete all messages in the session
     const messages = await ctx.db
       .query("chatMessages")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.id))
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.id))
       .collect();
     
     for (const message of messages) {
@@ -137,7 +137,7 @@ export const remove = mutation({
     // Delete all actions in the session
     const actions = await ctx.db
       .query("chatActions")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.id))
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.id))
       .collect();
     
     for (const action of actions) {

@@ -9,7 +9,7 @@ export const list = query({
   handler: async (ctx, args) => {
     const runs = await ctx.db
       .query("modelRuns")
-      .withIndex("by_scenario", (q) => q.eq("scenarioId", args.scenarioId))
+      .withIndex("by_scenario", (q: any) => q.eq("scenarioId", args.scenarioId))
       .collect();
     
     // Sort by version descending (newest first)
@@ -38,7 +38,7 @@ export const getLatest = query({
   handler: async (ctx, args) => {
     const runs = await ctx.db
       .query("modelRuns")
-      .withIndex("by_scenario", (q) => q.eq("scenarioId", args.scenarioId))
+      .withIndex("by_scenario", (q: any) => q.eq("scenarioId", args.scenarioId))
       .collect();
     
     let filtered = runs;
@@ -61,7 +61,7 @@ export const getVersions = query({
   handler: async (ctx, args) => {
     const runs = await ctx.db
       .query("modelRuns")
-      .withIndex("by_scenario", (q) => q.eq("scenarioId", args.scenarioId))
+      .withIndex("by_scenario", (q: any) => q.eq("scenarioId", args.scenarioId))
       .collect();
     
     // Sort by version descending

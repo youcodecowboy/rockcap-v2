@@ -26,9 +26,8 @@ export async function GET() {
       // Use the raw API request method to test
       const testResponse = await client.apiRequest({
         method: 'GET',
-        path: '/crm/v3/objects/companies',
-        query: { limit: 1 },
-      });
+        path: '/crm/v3/objects/companies?limit=1',
+      } as any);
       
       return NextResponse.json({
         success: true,

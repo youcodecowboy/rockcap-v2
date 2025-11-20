@@ -16,12 +16,12 @@ export const list = query({
     if (args.status) {
       return await ctx.db
         .query("clients")
-        .withIndex("by_status", (q) => q.eq("status", args.status))
+        .withIndex("by_status", (q: any) => q.eq("status", args.status!))
         .collect();
     } else if (args.type) {
       return await ctx.db
         .query("clients")
-        .withIndex("by_type", (q) => q.eq("type", args.type))
+        .withIndex("by_type", (q: any) => q.eq("type", args.type))
         .collect();
     }
     
@@ -48,7 +48,7 @@ export const getByStatus = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("clients")
-      .withIndex("by_status", (q) => q.eq("status", args.status))
+      .withIndex("by_status", (q: any) => q.eq("status", args.status))
       .collect();
   },
 });
@@ -59,7 +59,7 @@ export const getByType = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("clients")
-      .withIndex("by_type", (q) => q.eq("type", args.type))
+      .withIndex("by_type", (q: any) => q.eq("type", args.type))
       .collect();
   },
 });
@@ -326,17 +326,17 @@ export const migrateInvalidFields = internalMutation({
     // Query all references BEFORE deleting (we can't query after delete)
     const documents = await ctx.db
       .query("documents")
-      .withIndex("by_client", (q) => q.eq("clientId", oldId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", oldId))
       .collect();
     
     const contacts = await ctx.db
       .query("contacts")
-      .withIndex("by_client", (q) => q.eq("clientId", oldId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", oldId))
       .collect();
     
     const enrichments = await ctx.db
       .query("enrichmentSuggestions")
-      .withIndex("by_client", (q) => q.eq("clientId", oldId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", oldId))
       .collect();
     
     const allProjects = await ctx.db.query("projects").collect();
@@ -389,7 +389,7 @@ export const exists = query({
   handler: async (ctx, args) => {
     const clients = await ctx.db
       .query("clients")
-      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .withIndex("by_name", (q: any) => q.eq("name", args.name))
       .collect();
     return clients.length > 0;
   },
@@ -408,7 +408,7 @@ export const getStats = query({
     // Get documents for this client
     const documents = await ctx.db
       .query("documents")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
     
     const activeProjects = clientProjects.filter(p => p.status === "active");

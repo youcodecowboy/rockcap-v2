@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
         }
         
         // Sync contact first (required for lead)
-        await fetchMutation(api.hubspotSync.syncContactFromHubSpot, contactData);
+        await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData);
         
         // Prepare lead data with date fields
         const leadData: any = {
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
         }
         
         // Sync as lead
-        await fetchMutation(api.hubspotSync.syncLeadFromHubSpot, leadData);
+        await fetchMutation(api.hubspotSync.syncLeadFromHubSpot as any, leadData);
         
         stats.leadsSynced++;
       } catch (error: any) {

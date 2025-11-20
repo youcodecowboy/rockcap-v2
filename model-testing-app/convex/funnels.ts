@@ -17,7 +17,7 @@ export const list = query({
     if (args.prospectType) {
       funnels = await ctx.db
         .query("emailFunnels")
-        .withIndex("by_prospect_type", (q) => q.eq("prospectType", args.prospectType!))
+        .withIndex("by_prospect_type", (q: any) => q.eq("prospectType", args.prospectType!))
         .collect();
     } else {
       funnels = await ctx.db.query("emailFunnels").collect();
@@ -51,7 +51,7 @@ export const getByProspectType = query({
   handler: async (ctx, args) => {
     const funnels = await ctx.db
       .query("emailFunnels")
-      .withIndex("by_prospect_type", (q) => q.eq("prospectType", args.prospectType))
+      .withIndex("by_prospect_type", (q: any) => q.eq("prospectType", args.prospectType))
       .collect();
     return funnels.filter(f => f.isActive);
   },

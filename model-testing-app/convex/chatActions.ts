@@ -9,7 +9,7 @@ export const listPending = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("chatActions")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
       .filter((q) => q.eq(q.field("status"), "pending"))
       .collect();
   },
@@ -31,7 +31,7 @@ export const listByMessage = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("chatActions")
-      .withIndex("by_message", (q) => q.eq("messageId", args.messageId))
+      .withIndex("by_message", (q: any) => q.eq("messageId", args.messageId))
       .collect();
   },
 });

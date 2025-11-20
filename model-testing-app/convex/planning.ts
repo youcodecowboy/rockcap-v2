@@ -35,7 +35,7 @@ export const savePlanningApplication = mutation({
     // Check if planning application already exists
     const existing = await ctx.db
       .query("planningApplications")
-      .withIndex("by_external_id", (q) =>
+      .withIndex("by_external_id", (q: any) =>
         q.eq("externalId", args.externalId)
       )
       .first();
@@ -102,7 +102,7 @@ export const linkCompanyToPlanning = mutation({
     // Check if link already exists
     const existing = await ctx.db
       .query("companyPlanningLinks")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .filter((q) =>
@@ -139,7 +139,7 @@ export const getPlanningApplicationsForCompany = query({
   handler: async (ctx, args) => {
     const links = await ctx.db
       .query("companyPlanningLinks")
-      .withIndex("by_company_number", (q) =>
+      .withIndex("by_company_number", (q: any) =>
         q.eq("companyNumber", args.companyNumber)
       )
       .collect();
@@ -167,7 +167,7 @@ export const getPlanningApplicationByExternalId = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("planningApplications")
-      .withIndex("by_external_id", (q) =>
+      .withIndex("by_external_id", (q: any) =>
         q.eq("externalId", args.externalId)
       )
       .first();

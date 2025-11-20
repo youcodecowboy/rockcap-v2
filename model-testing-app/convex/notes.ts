@@ -26,7 +26,7 @@ export const create = mutation({
     // Get user ID from identity using Clerk ID
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
     
     if (!user) {
@@ -85,7 +85,7 @@ export const update = mutation({
     // Get user ID from identity using Clerk ID
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
     
     if (!user) {
@@ -145,7 +145,7 @@ export const remove = mutation({
     // Get user ID from identity using Clerk ID
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
     
     if (!user) {
@@ -183,7 +183,7 @@ export const getByClient = query({
     // Filed notes are shared - no need to filter by user
     const notes = await ctx.db
       .query("notes")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .collect();
     
     return notes.sort((a, b) => 
@@ -198,7 +198,7 @@ export const getByProject = query({
   handler: async (ctx, args) => {
     const notes = await ctx.db
       .query("notes")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .collect();
     
     return notes.sort((a, b) => 
@@ -225,7 +225,7 @@ export const getAll = query({
     // Get user ID from identity using Clerk ID
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
     
     if (!user) {
@@ -239,19 +239,19 @@ export const getAll = query({
       // Filed notes by client - all users can see (shared)
       notes = await ctx.db
         .query("notes")
-        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
         .collect();
     } else if (args.projectId) {
       // Filed notes by project - all users can see (shared)
       notes = await ctx.db
         .query("notes")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
         .collect();
     } else if (args.templateId) {
       // Notes by template - filter by user for unfiled notes
       notes = await ctx.db
         .query("notes")
-        .withIndex("by_template", (q) => q.eq("templateId", args.templateId))
+        .withIndex("by_template", (q: any) => q.eq("templateId", args.templateId))
         .collect();
       
       // Filter: Show all filed notes, but only user's own unfiled notes

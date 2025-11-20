@@ -18,7 +18,7 @@ export const saveResults = mutation({
     // Check if results already exist for this version
     const existing = await ctx.db
       .query("scenarioResults")
-      .withIndex("by_scenario_version", (q) => 
+      .withIndex("by_scenario_version", (q: any) => 
         q.eq("scenarioId", scenarioId).eq("version", version)
       )
       .first();
@@ -59,7 +59,7 @@ export const getResults = query({
     
     const results = await ctx.db
       .query("scenarioResults")
-      .withIndex("by_scenario_version", (q) => 
+      .withIndex("by_scenario_version", (q: any) => 
         q.eq("scenarioId", scenarioId).eq("version", version)
       )
       .first();
@@ -78,7 +78,7 @@ export const getAllResults = query({
     
     const results = await ctx.db
       .query("scenarioResults")
-      .withIndex("by_scenario", (q) => q.eq("scenarioId", scenarioId))
+      .withIndex("by_scenario", (q: any) => q.eq("scenarioId", scenarioId))
       .order("desc")
       .collect();
     
@@ -101,13 +101,13 @@ export const compareVersions = query({
     const [results1, results2] = await Promise.all([
       ctx.db
         .query("scenarioResults")
-        .withIndex("by_scenario_version", (q) => 
+        .withIndex("by_scenario_version", (q: any) => 
           q.eq("scenarioId", scenarioId).eq("version", version1)
         )
         .first(),
       ctx.db
         .query("scenarioResults")
-        .withIndex("by_scenario_version", (q) => 
+        .withIndex("by_scenario_version", (q: any) => 
           q.eq("scenarioId", scenarioId).eq("version", version2)
         )
         .first(),
@@ -174,7 +174,7 @@ export const getLatestResults = query({
     
     const results = await ctx.db
       .query("scenarioResults")
-      .withIndex("by_scenario", (q) => q.eq("scenarioId", scenarioId))
+      .withIndex("by_scenario", (q: any) => q.eq("scenarioId", scenarioId))
       .order("desc")
       .first();
     
