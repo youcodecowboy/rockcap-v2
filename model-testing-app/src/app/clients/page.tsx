@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import MetricCard from '@/components/MetricCard';
-import { Building2, FolderKanban, FileText, TrendingUp, Download, Filter, ArrowUpDown } from 'lucide-react';
+import { Building2, FolderKanban, FileText, Download, Filter, ArrowUpDown } from 'lucide-react';
 
 // Component to get client data (projects and documents)
 function ClientDataLoader({ clientId, children }: { clientId: Id<"clients">, children: (data: any) => React.ReactNode }) {
@@ -231,7 +231,7 @@ export default function ClientsPage() {
                                   <div className="font-medium">{data.projectCount} {data.projectCount === 1 ? 'project' : 'projects'}</div>
                                   <div className="flex flex-wrap gap-1">
                                     {data.projects.slice(0, 2).map((project: any) => {
-                                      const projectId = (project._id || project.id) as Id<"projects">;
+                                      const projectId = project._id as Id<"projects">;
                                       return (
                                         <Button
                                           key={projectId}
