@@ -48,6 +48,7 @@ import type * as scenarioResults from "../scenarioResults.js";
 import type * as scenarios from "../scenarios.js";
 import type * as search from "../search.js";
 import type * as templates from "../templates.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -96,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   scenarios: typeof scenarios;
   search: typeof search;
   templates: typeof templates;
+  users: typeof users;
 }>;
 
 /**
