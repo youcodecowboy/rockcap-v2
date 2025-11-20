@@ -173,6 +173,8 @@ export default defineSchema({
     projectName: v.optional(v.string()),
     suggestedClientName: v.optional(v.string()),
     suggestedProjectName: v.optional(v.string()),
+    // Document code for filing system (e.g., "FIRESIDE-VAL-WELLINGTON-201125")
+    documentCode: v.optional(v.string()),
     // Extracted data (stored as JSON)
     extractedData: v.optional(v.any()),
     // Status
@@ -189,6 +191,45 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_category", ["category"])
     .index("by_status", ["status"]),
+
+  // Internal Documents table - internal documents that can link to clients/projects
+  internalDocuments: defineTable({
+    // File storage reference (Convex file storage ID)
+    fileStorageId: v.optional(v.id("_storage")),
+    // File metadata
+    fileName: v.string(),
+    fileSize: v.number(),
+    fileType: v.string(),
+    uploadedAt: v.string(),
+    // Document code for filing system (e.g., "ROCK-INT-TOPIC-251120")
+    documentCode: v.string(),
+    // Analysis results
+    summary: v.string(),
+    fileTypeDetected: v.string(),
+    category: v.string(),
+    reasoning: v.string(),
+    confidence: v.number(),
+    tokensUsed: v.number(),
+    // Links to clients/projects (optional - can link to one client and multiple projects)
+    linkedClientId: v.optional(v.id("clients")),
+    clientName: v.optional(v.string()),
+    linkedProjectIds: v.optional(v.array(v.id("projects"))),
+    projectNames: v.optional(v.array(v.string())),
+    // Extracted data (stored as JSON)
+    extractedData: v.optional(v.any()),
+    // Status
+    status: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("error")
+    )),
+    error: v.optional(v.string()),
+    savedAt: v.string(),
+  })
+    .index("by_linked_client", ["linkedClientId"])
+    .index("by_uploadedAt", ["uploadedAt"])
+    .index("by_category", ["category"]),
 
   // Contacts table - can be linked to clients or projects
   contacts: defineTable({

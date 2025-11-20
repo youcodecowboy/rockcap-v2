@@ -14,11 +14,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Building2, FolderKanban, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
-import { useCreateDocument } from '@/lib/documentStorage';
+import { useCreateDocument, useCreateInternalDocument } from '@/lib/documentStorage';
 import { useSaveProspectingContext } from '@/lib/prospectingStorage';
 import { useCreateEnrichment } from '@/lib/clientStorage';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { generateInternalDocumentCode } from '@/lib/documentCodeUtils';
 
 interface FileAssignmentCardProps {
   fileName: string;
@@ -44,6 +45,8 @@ export default function FileAssignmentCard({
     analysisResult.clientId || null
   );
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(analysisResult.projectId || null);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]); // For multiple projects when internal
+  const [isInternal, setIsInternal] = useState(false);
   const [newClientName, setNewClientName] = useState(analysisResult.suggestedClientName || '');
   const [newProjectName, setNewProjectName] = useState(analysisResult.suggestedProjectName || '');
   const [isCreatingClient, setIsCreatingClient] = useState(false);
@@ -53,10 +56,12 @@ export default function FileAssignmentCard({
 
   // Convex hooks
   const clients = useClients() || [];
+  // For internal docs, we might want all projects, but for now show projects for selected client or empty if no client
   const projects = useProjectsByClient(selectedClientId ? (selectedClientId as Id<"clients">) : undefined) || [];
   const createClient = useCreateClient();
   const createProject = useCreateProject();
   const createDocument = useCreateDocument();
+  const createInternalDocument = useCreateInternalDocument();
   const saveProspectingContext = useSaveProspectingContext();
   const createEnrichment = useCreateEnrichment();
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -68,13 +73,11 @@ export default function FileAssignmentCard({
     if (value === 'new') {
       setIsCreatingClient(true);
       setSelectedClientId(null);
-    } else if (value === 'internal') {
-      setSelectedClientId(null);
-      setSelectedProjectId(null);
     } else {
       setIsCreatingClient(false);
       setSelectedClientId(value);
       setSelectedProjectId(null); // Reset project when client changes
+      setSelectedProjectIds([]); // Reset multiple projects
     }
   };
 
@@ -104,13 +107,23 @@ export default function FileAssignmentCard({
   };
 
   const handleCreateProject = async () => {
-    if (!newProjectName.trim() || !selectedClientId) return;
+    if (!newProjectName.trim()) return;
+    // For internal docs, we can create projects without a client, but we need at least a client for regular docs
+    if (!isInternal && !selectedClientId) return;
+    
     try {
       const projectId = await createProject({
         name: newProjectName.trim(),
-        clientRoles: [{ clientId: selectedClientId as Id<"clients">, role: 'primary' }],
+        clientRoles: selectedClientId 
+          ? [{ clientId: selectedClientId as Id<"clients">, role: 'primary' }]
+          : [],
       });
-      setSelectedProjectId(projectId as string);
+      
+      if (isInternal) {
+        setSelectedProjectIds([...selectedProjectIds, projectId as string]);
+      } else {
+        setSelectedProjectId(projectId as string);
+      }
       setIsCreatingProject(false);
       setNewProjectName('');
     } catch (error) {
@@ -123,29 +136,68 @@ export default function FileAssignmentCard({
 
     setIsFiling(true);
     try {
-      // Create document record
-      const documentId = await createDocument({
-        fileStorageId,
-        fileName,
-        fileSize,
-        fileType,
-        summary: analysisResult.summary,
-        fileTypeDetected: analysisResult.fileType,
-        category: analysisResult.category,
-        reasoning: analysisResult.reasoning,
-        confidence: analysisResult.confidence,
-        tokensUsed: analysisResult.tokensUsed,
-        clientId: selectedClientId ? (selectedClientId as Id<"clients">) : undefined,
-        clientName: selectedClientData?.name || analysisResult.clientName || undefined,
-        projectId: selectedProjectId ? (selectedProjectId as Id<"projects">) : undefined,
-        projectName: selectedProjectData?.name || analysisResult.projectName || undefined,
-        suggestedClientName: analysisResult.suggestedClientName || undefined,
-        suggestedProjectName: analysisResult.suggestedProjectName || undefined,
-        extractedData: analysisResult.extractedData || undefined,
-        status: 'completed',
-      });
+      if (isInternal) {
+        // Create internal document
+        const uploadedAt = new Date().toISOString();
+        const documentCode = generateInternalDocumentCode(analysisResult.category, uploadedAt);
+        
+        // Get project names for internal doc
+        const projectNames: string[] = [];
+        if (selectedProjectIds.length > 0) {
+          // We'll need to fetch project names, but for now use empty array
+          // The backend will handle this
+        }
+        
+        const internalDocumentId = await createInternalDocument({
+          fileStorageId,
+          fileName,
+          fileSize,
+          fileType,
+          summary: analysisResult.summary,
+          fileTypeDetected: analysisResult.fileType,
+          category: analysisResult.category,
+          reasoning: analysisResult.reasoning,
+          confidence: analysisResult.confidence,
+          tokensUsed: analysisResult.tokensUsed,
+          linkedClientId: selectedClientId ? (selectedClientId as Id<"clients">) : undefined,
+          clientName: selectedClientData?.name || undefined,
+          linkedProjectIds: selectedProjectIds.length > 0 
+            ? selectedProjectIds.map(id => id as Id<"projects">)
+            : undefined,
+          projectNames: projectNames.length > 0 ? projectNames : undefined,
+          extractedData: analysisResult.extractedData || undefined,
+          status: 'completed',
+          documentCode,
+        });
+        
+        setIsFiled(true);
+        setIsFiling(false);
+        // Internal documents don't use the onFiled callback
+        return;
+      } else {
+        // Create regular document record
+        const documentId = await createDocument({
+          fileStorageId,
+          fileName,
+          fileSize,
+          fileType,
+          summary: analysisResult.summary,
+          fileTypeDetected: analysisResult.fileType,
+          category: analysisResult.category,
+          reasoning: analysisResult.reasoning,
+          confidence: analysisResult.confidence,
+          tokensUsed: analysisResult.tokensUsed,
+          clientId: selectedClientId ? (selectedClientId as Id<"clients">) : undefined,
+          clientName: selectedClientData?.name || analysisResult.clientName || undefined,
+          projectId: selectedProjectId ? (selectedProjectId as Id<"projects">) : undefined,
+          projectName: selectedProjectData?.name || analysisResult.projectName || undefined,
+          suggestedClientName: analysisResult.suggestedClientName || undefined,
+          suggestedProjectName: analysisResult.suggestedProjectName || undefined,
+          extractedData: analysisResult.extractedData || undefined,
+          status: 'completed',
+        });
 
-      // Create enrichment suggestions if any
+        // Create enrichment suggestions if any
       if (analysisResult.enrichmentSuggestions && analysisResult.enrichmentSuggestions.length > 0) {
         for (const suggestion of analysisResult.enrichmentSuggestions) {
           try {
@@ -272,18 +324,19 @@ export default function FileAssignmentCard({
         });
       }
 
-      // Update job status
-      await updateJobStatus({
-        jobId,
-        status: 'completed',
-        progress: 100,
-        documentId,
-        analysisResult,
-      });
+        // Update job status
+        await updateJobStatus({
+          jobId,
+          status: 'completed',
+          progress: 100,
+          documentId,
+          analysisResult,
+        });
 
-      setIsFiled(true);
-      setIsFiling(false);
-      onFiled(documentId);
+        setIsFiled(true);
+        setIsFiling(false);
+        onFiled(documentId);
+      }
     } catch (error) {
       console.error('Error filing document:', error);
       setIsFiling(false);
@@ -326,10 +379,34 @@ export default function FileAssignmentCard({
       )}
 
       <div className="space-y-4">
+        {/* Mark as Internal Checkbox */}
+        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <input
+            type="checkbox"
+            id="isInternal"
+            checked={isInternal}
+            onChange={(e) => {
+              setIsInternal(e.target.checked);
+              if (!e.target.checked) {
+                // Clear multiple project selection when unchecking internal
+                setSelectedProjectIds([]);
+              }
+            }}
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+          />
+          <label htmlFor="isInternal" className="text-sm font-medium text-gray-700 cursor-pointer">
+            Mark as Internal Document
+          </label>
+          <span className="text-xs text-gray-500 ml-auto">
+            {isInternal ? '(Can still link to client/projects)' : ''}
+          </span>
+        </div>
+
         {/* Client Selection */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Client {!selectedClientId && <span className="text-red-500">*</span>}
+            Client {!isInternal && !selectedClientId && <span className="text-red-500">*</span>}
+            {isInternal && <span className="text-gray-500 text-xs">(Optional)</span>}
           </label>
           {isCreatingClient ? (
             <div className="space-y-2">
@@ -363,11 +440,11 @@ export default function FileAssignmentCard({
             </div>
           ) : (
             <Select 
-              value={selectedClientId === null ? 'internal' : selectedClientId || ''} 
+              value={selectedClientId || ''} 
               onValueChange={handleClientSelect}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a client..." />
+                <SelectValue placeholder={isInternal ? "Select a client (optional)..." : "Select a client..."} />
               </SelectTrigger>
               <SelectContent>
                 {clients.map((client) => {
@@ -386,21 +463,16 @@ export default function FileAssignmentCard({
                     </div>
                   </SelectItem>
                 )}
-                <SelectItem value="internal">
-                  <div className="flex items-center gap-2 text-green-600">
-                    <span>Mark as Internal Document</span>
-                  </div>
-                </SelectItem>
               </SelectContent>
             </Select>
           )}
         </div>
 
-        {/* Project Selection (only if client is selected) */}
-        {selectedClientId && (
+        {/* Project Selection (if client is selected OR if internal) */}
+        {(selectedClientId || isInternal) && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Project <span className="text-gray-500 text-xs">(Optional)</span>
+              {isInternal ? 'Projects' : 'Project'} <span className="text-gray-500 text-xs">(Optional{isInternal ? ', can select multiple' : ''})</span>
             </label>
             {isCreatingProject ? (
               <div className="space-y-2">
@@ -431,6 +503,49 @@ export default function FileAssignmentCard({
                     Cancel
                   </Button>
                 </div>
+              </div>
+            ) : isInternal ? (
+              // Multiple project selection for internal documents
+              <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-2">
+                {projects.length === 0 ? (
+                  <p className="text-sm text-gray-500 p-2">No projects available</p>
+                ) : (
+                  projects.map((project) => {
+                    const projectId = ((project as any)._id || (project as any).id) as string;
+                    const isSelected = selectedProjectIds.includes(projectId);
+                    return (
+                      <div key={projectId} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded">
+                        <input
+                          type="checkbox"
+                          id={`project-${projectId}`}
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedProjectIds([...selectedProjectIds, projectId]);
+                            } else {
+                              setSelectedProjectIds(selectedProjectIds.filter(id => id !== projectId));
+                            }
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor={`project-${projectId}`} className="text-sm text-gray-700 cursor-pointer flex-1">
+                          {project.name}
+                        </label>
+                      </div>
+                    );
+                  })
+                )}
+                {analysisResult.suggestedProjectName && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsCreatingProject(true)}
+                    className="w-full mt-2"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create: {analysisResult.suggestedProjectName}
+                  </Button>
+                )}
               </div>
             ) : (
               <Select value={selectedProjectId || 'none'} onValueChange={handleProjectSelect}>
@@ -463,21 +578,32 @@ export default function FileAssignmentCard({
 
         {/* Selected Assignment Display */}
         <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="flex items-center gap-2 text-sm">
-            {selectedClientId ? (
-              <>
+          <div className="flex flex-col gap-2 text-sm">
+            {isInternal && (
+              <div className="flex items-center gap-2">
+                <span className="text-green-600 font-medium">Internal Document</span>
+              </div>
+            )}
+            {selectedClientId && (
+              <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-gray-400" />
                 <span className="font-medium text-gray-900">{selectedClientData?.name || 'Loading...'}</span>
-                {selectedProjectId && (
-                  <>
-                    <span className="text-gray-400">•</span>
-                    <FolderKanban className="w-4 h-4 text-gray-400" />
-                    <span className="font-medium text-gray-900">{selectedProjectData?.name || 'Loading...'}</span>
-                  </>
-                )}
-              </>
-            ) : (
-              <span className="text-green-600 font-medium">Internal Document</span>
+              </div>
+            )}
+            {!isInternal && selectedProjectId && (
+              <div className="flex items-center gap-2">
+                <FolderKanban className="w-4 h-4 text-gray-400" />
+                <span className="font-medium text-gray-900">{selectedProjectData?.name || 'Loading...'}</span>
+              </div>
+            )}
+            {isInternal && selectedProjectIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <FolderKanban className="w-4 h-4 text-gray-400" />
+                <span className="text-xs text-gray-500">{selectedProjectIds.length} project(s) selected</span>
+              </div>
+            )}
+            {!isInternal && !selectedClientId && (
+              <span className="text-red-500 text-xs">Please select a client</span>
             )}
           </div>
         </div>

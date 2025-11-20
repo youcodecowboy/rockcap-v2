@@ -435,12 +435,15 @@ export const CHAT_TOOLS: Tool[] = [
 /**
  * Execute a tool with the given parameters
  * This is called after user confirmation for tools that require it
+ * @param authenticatedClient - Optional authenticated Convex client. If provided, uses this instead of creating a new one.
  */
 export async function executeTool(
   toolName: string,
-  parameters: Record<string, any>
+  parameters: Record<string, any>,
+  authenticatedClient?: ConvexHttpClient
 ): Promise<any> {
-  const client = new ConvexHttpClient(convexUrl);
+  // Use provided authenticated client, or create a new unauthenticated one (for backward compatibility)
+  const client = authenticatedClient || new ConvexHttpClient(convexUrl);
   
   try {
     switch (toolName) {

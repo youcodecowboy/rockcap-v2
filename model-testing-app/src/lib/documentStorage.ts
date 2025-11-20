@@ -26,7 +26,7 @@ export function useDocumentsByProject(projectId: Id<"projects"> | undefined) {
   return useQuery(api.documents.getByProject, projectId ? { projectId } : "skip");
 }
 
-export function useInternalDocuments() {
+export function useUnfiledDocuments() {
   return useQuery(api.documents.getInternal);
 }
 
@@ -56,6 +56,51 @@ export function useDeleteDocument() {
 
 export function useGetFileUrl(storageId: Id<"_storage"> | undefined) {
   return useQuery(api.documents.getFileUrl, storageId ? { storageId } : "skip");
+}
+
+export function useUnclassifiedDocuments() {
+  return useQuery(api.documents.getUnclassified);
+}
+
+export function useFolderStats() {
+  return useQuery(api.documents.getFolderStats);
+}
+
+export function useUpdateDocumentCode() {
+  return useMutation(api.documents.updateDocumentCode);
+}
+
+// Internal Documents hooks
+export function useInternalDocuments(linkedClientId?: Id<"clients">) {
+  return useQuery(api.internalDocuments.list, linkedClientId ? { linkedClientId } : {});
+}
+
+export function useInternalDocument(id: Id<"internalDocuments"> | undefined) {
+  return useQuery(api.internalDocuments.get, id ? { id } : "skip");
+}
+
+export function useInternalDocumentsByClient(clientId: Id<"clients"> | undefined) {
+  return useQuery(api.internalDocuments.getByClient, clientId ? { clientId } : "skip");
+}
+
+export function useInternalDocumentsByProject(projectId: Id<"projects"> | undefined) {
+  return useQuery(api.internalDocuments.getByProject, projectId ? { projectId } : "skip");
+}
+
+export function useCreateInternalDocument() {
+  return useMutation(api.internalDocuments.create);
+}
+
+export function useUpdateInternalDocument() {
+  return useMutation(api.internalDocuments.update);
+}
+
+export function useUpdateInternalDocumentCode() {
+  return useMutation(api.internalDocuments.updateDocumentCode);
+}
+
+export function useDeleteInternalDocument() {
+  return useMutation(api.internalDocuments.remove);
 }
 
 // Legacy compatibility functions

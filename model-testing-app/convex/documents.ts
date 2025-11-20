@@ -1,6 +1,71 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+// Helper functions for document code generation
+function abbreviateText(text: string, maxLength: number): string {
+  if (!text) return '';
+  const cleaned = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return cleaned.slice(0, maxLength);
+}
+
+function abbreviateCategory(category: string): string {
+  if (!category) return 'DOC';
+  
+  const categoryMap: Record<string, string> = {
+    'valuation': 'VAL',
+    'operating': 'OPR',
+    'operating statement': 'OPR',
+    'appraisal': 'APP',
+    'financial': 'FIN',
+    'contract': 'CNT',
+    'agreement': 'AGR',
+    'invoice': 'INV',
+    'report': 'RPT',
+    'letter': 'LTR',
+    'email': 'EML',
+    'note': 'NTE',
+    'memo': 'MEM',
+    'proposal': 'PRP',
+    'quote': 'QTE',
+    'receipt': 'RCP',
+  };
+  
+  const categoryLower = category.toLowerCase();
+  for (const [key, value] of Object.entries(categoryMap)) {
+    if (categoryLower.includes(key)) {
+      return value;
+    }
+  }
+  
+  return abbreviateText(category, 3);
+}
+
+function formatDateDDMMYY(dateString: string | Date): string {
+  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  return `${day}${month}${year}`;
+}
+
+function generateDocumentCode(
+  clientName: string,
+  category: string,
+  projectName: string | undefined,
+  uploadedAt: string | Date
+): string {
+  const clientCode = abbreviateText(clientName, 8);
+  const typeCode = abbreviateCategory(category);
+  const projectCode = projectName ? abbreviateText(projectName, 10) : '';
+  const dateCode = formatDateDDMMYY(uploadedAt);
+  
+  if (projectCode) {
+    return `${clientCode}-${typeCode}-${projectCode}-${dateCode}`;
+  } else {
+    return `${clientCode}-${typeCode}-${dateCode}`;
+  }
+}
+
 // Query: Get all documents
 export const list = query({
   args: {
@@ -90,6 +155,72 @@ export const getInternal = query({
   handler: async (ctx) => {
     const allDocs = await ctx.db.query("documents").collect();
     return allDocs.filter(doc => !doc.clientId && !doc.projectId);
+  },
+});
+
+// Query: Get unclassified documents (no client AND no project)
+export const getUnclassified = query({
+  handler: async (ctx) => {
+    const allDocs = await ctx.db.query("documents").collect();
+    return allDocs.filter(doc => !doc.clientId && !doc.projectId);
+  },
+});
+
+// Query: Get folder statistics for clients
+export const getFolderStats = query({
+  handler: async (ctx) => {
+    const allDocs = await ctx.db.query("documents").collect();
+    const clients = await ctx.db.query("clients").collect();
+    const projects = await ctx.db.query("projects").collect();
+    
+    // Group documents by client
+    const clientStats = clients.map(client => {
+      const clientDocs = allDocs.filter(doc => doc.clientId === client._id);
+      const lastUpdated = clientDocs.length > 0
+        ? Math.max(...clientDocs.map(doc => new Date(doc.uploadedAt).getTime()))
+        : 0;
+      
+      return {
+        clientId: client._id,
+        clientName: client.name,
+        documentCount: clientDocs.length,
+        lastUpdated: lastUpdated > 0 ? new Date(lastUpdated).toISOString() : null,
+      };
+    });
+    
+    // Group documents by project
+    const projectStats = projects.map(project => {
+      const projectDocs = allDocs.filter(doc => doc.projectId === project._id);
+      const lastUpdated = projectDocs.length > 0
+        ? Math.max(...projectDocs.map(doc => new Date(doc.uploadedAt).getTime()))
+        : 0;
+      
+      // Get client name for this project
+      const clientId = project.clientRoles?.[0]?.clientId;
+      const client = clientId ? clients.find(c => c._id === clientId) : null;
+      
+      return {
+        projectId: project._id,
+        projectName: project.name,
+        clientId: clientId,
+        clientName: client?.name,
+        documentCount: projectDocs.length,
+        lastUpdated: lastUpdated > 0 ? new Date(lastUpdated).toISOString() : null,
+      };
+    });
+    
+    return {
+      clients: clientStats.sort((a, b) => {
+        const aTime = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+        const bTime = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+        return bTime - aTime;
+      }),
+      projects: projectStats.sort((a, b) => {
+        const aTime = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+        const bTime = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+        return bTime - aTime;
+      }),
+    };
   },
 });
 
@@ -185,14 +316,38 @@ export const create = mutation({
       v.literal("error")
     )),
     error: v.optional(v.string()),
+    documentCode: v.optional(v.string()), // Optional - will auto-generate if not provided
   },
   handler: async (ctx, args) => {
+    const uploadedAt = new Date().toISOString();
+    
+    // Generate document code if client/project info available and code not provided
+    let documentCode = args.documentCode;
+    if (!documentCode && args.clientName) {
+      documentCode = generateDocumentCode(
+        args.clientName,
+        args.category,
+        args.projectName,
+        uploadedAt
+      );
+      
+      // Ensure uniqueness
+      const existingDocs = await ctx.db.query("documents").collect();
+      let finalCode = documentCode;
+      let counter = 1;
+      while (existingDocs.some(doc => doc.documentCode === finalCode)) {
+        finalCode = `${documentCode}-${counter}`;
+        counter++;
+      }
+      documentCode = finalCode;
+    }
+    
     const documentId = await ctx.db.insert("documents", {
       fileStorageId: args.fileStorageId,
       fileName: args.fileName,
       fileSize: args.fileSize,
       fileType: args.fileType,
-      uploadedAt: new Date().toISOString(),
+      uploadedAt: uploadedAt,
       summary: args.summary,
       fileTypeDetected: args.fileTypeDetected,
       category: args.category,
@@ -205,10 +360,11 @@ export const create = mutation({
       projectName: args.projectName,
       suggestedClientName: args.suggestedClientName,
       suggestedProjectName: args.suggestedProjectName,
+      documentCode: documentCode,
       extractedData: args.extractedData,
       status: args.status || "completed",
       error: args.error,
-      savedAt: new Date().toISOString(),
+      savedAt: uploadedAt,
     });
 
     // Automatically create knowledge bank entry if document is linked to a client
@@ -305,12 +461,35 @@ export const uploadFileAndCreateDocument = mutation({
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const uploadedAt = new Date().toISOString();
+    
+    // Generate document code if client/project info available
+    let documentCode: string | undefined = undefined;
+    if (args.clientName) {
+      documentCode = generateDocumentCode(
+        args.clientName,
+        args.category,
+        args.projectName,
+        uploadedAt
+      );
+      
+      // Ensure uniqueness
+      const existingDocs = await ctx.db.query("documents").collect();
+      let finalCode = documentCode;
+      let counter = 1;
+      while (existingDocs.some(doc => doc.documentCode === finalCode)) {
+        finalCode = `${documentCode}-${counter}`;
+        counter++;
+      }
+      documentCode = finalCode;
+    }
+    
     const documentId = await ctx.db.insert("documents", {
       fileStorageId: args.storageId,
       fileName: args.fileName,
       fileSize: args.fileSize,
       fileType: args.fileType,
-      uploadedAt: new Date().toISOString(),
+      uploadedAt: uploadedAt,
       summary: args.summary,
       fileTypeDetected: args.fileTypeDetected,
       category: args.category,
@@ -323,10 +502,11 @@ export const uploadFileAndCreateDocument = mutation({
       projectName: args.projectName,
       suggestedClientName: args.suggestedClientName,
       suggestedProjectName: args.suggestedProjectName,
+      documentCode: documentCode,
       extractedData: args.extractedData,
       status: args.status || "completed",
       error: args.error,
-      savedAt: new Date().toISOString(),
+      savedAt: uploadedAt,
     });
     return documentId;
   },
@@ -349,6 +529,7 @@ export const update = mutation({
       v.literal("error")
     )),
     error: v.optional(v.string()),
+    documentCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;
@@ -373,6 +554,33 @@ export const update = mutation({
     
     await ctx.db.patch(id, cleanUpdates);
     return id;
+  },
+});
+
+// Mutation: Update document code specifically
+export const updateDocumentCode = mutation({
+  args: {
+    id: v.id("documents"),
+    documentCode: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (!existing) {
+      throw new Error("Document not found");
+    }
+    
+    // Check for uniqueness
+    const existingDocs = await ctx.db.query("documents").collect();
+    const isDuplicate = existingDocs.some(
+      doc => doc._id !== args.id && doc.documentCode === args.documentCode
+    );
+    
+    if (isDuplicate) {
+      throw new Error("Document code already exists");
+    }
+    
+    await ctx.db.patch(args.id, { documentCode: args.documentCode });
+    return args.id;
   },
 });
 

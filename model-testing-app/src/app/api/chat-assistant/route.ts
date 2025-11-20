@@ -192,8 +192,8 @@ export async function POST(request: NextRequest) {
           throw new Error('Action not found');
         }
 
-        // Execute the tool
-        const result = await executeTool(action.actionType, action.actionData);
+        // Execute the tool with authenticated client
+        const result = await executeTool(action.actionType, action.actionData, client);
 
         // Mark action as executed
         await client.mutation(api.chatActions.markExecuted, {
@@ -386,7 +386,7 @@ ${context}`;
             });
             
             try {
-              const result = await executeTool(toolCall.name, params);
+              const result = await executeTool(toolCall.name, params, client);
               toolResults.push({
                 toolCallId: toolCall.id,
                 toolName: toolCall.name,
@@ -521,7 +521,7 @@ CRITICAL INSTRUCTIONS:
             });
             
             try {
-              const result = await executeTool(toolCall.name, JSON.parse(toolCall.arguments));
+              const result = await executeTool(toolCall.name, JSON.parse(toolCall.arguments), client);
               toolResults.push({
                 toolCallId: toolCall.id,
                 toolName: toolCall.name,

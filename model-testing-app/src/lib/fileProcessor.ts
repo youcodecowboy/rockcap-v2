@@ -1,15 +1,14 @@
 import mammoth from 'mammoth';
-// Use pdfjs-dist version 2.16.105 - older stable version
+// Use pdfjs-dist legacy build (version 3.x) which doesn't require workers - perfect for serverless
+// The legacy build runs everything in the main thread, making it ideal for serverless environments
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfjsLib = require('pdfjs-dist/build/pdf.js');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx');
 
-// CRITICAL: Completely disable worker for server-side usage
-// For version 2.16.105, we need to set workerSrc to empty string BEFORE any imports
-if (typeof window === 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-}
+// CRITICAL: Legacy build doesn't use workers - it runs everything in the main thread
+// This is perfect for serverless environments where worker files can't be loaded
+// No need to configure GlobalWorkerOptions with legacy build
 
 export async function extractTextFromFile(file: File): Promise<string> {
   const fileType = file.type;

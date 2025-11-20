@@ -48,7 +48,7 @@
     "lucide-react": "^0.553.0",
     "mammoth": "^1.11.0",
     "next": "16.0.1",
-    "pdfjs-dist": "^2.16.105",
+    "pdfjs-dist": "^3.11.174",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-markdown": "^10.1.0",

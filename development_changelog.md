@@ -1,3 +1,38 @@
+## 2025-01-25 [Current Date/Time]
+- Implemented comprehensive document filing system with hierarchical navigation
+- Added internalDocuments table to schema for internal document management
+- Added documentCode field to documents table for standardized filing codes
+- Created document code generation utility with smart abbreviation logic (CLIENT-TYPE-PROJECT-DDMMYY format)
+- Built internal documents Convex functions with CRUD operations and linking support
+- Updated documents.ts with documentCode auto-generation and getUnclassified query
+- Added "Mark as Internal Document" checkbox to FileAssignmentCard component
+- Internal documents can link to one client and multiple projects
+- Created FolderCard component for displaying client/project folders with document counts
+- Created DocumentCodeEditor component for inline editing of document codes
+- Added hooks for internal documents and document code management
+- Created migration script to backfill documentCode for existing documents
+- Redesigned main docs page with three tabs: Client Documents (folder view), Internal Documents, and Unclassified
+- Created client folder drill-down page (/docs/client/[clientId]) with breadcrumbs showing projects and client-level docs
+- Created project folder drill-down page (/docs/project/[projectId]) with breadcrumbs showing all project documents
+- All folder pages support document code editing and display linked internal documents
+- All changes compile successfully with no TypeScript errors
+
+## 2025-11-20 11:08:16 EST
+- Fixed chat assistant note creation authentication error causing 500 errors when executing actions
+- Updated executeTool function to accept optional authenticated Convex client parameter
+- Modified all executeTool call sites in chat-assistant API route to pass authenticated client
+- Notes mutations now properly authenticate using Clerk JWT token via authenticated client
+- Chat assistant can now successfully create notes, knowledge bank entries, and other authenticated operations
+- Fixed issue where executeTool was creating unauthenticated client, causing auth failures for mutations requiring user identity
+
+## 2025-11-20 11:04:50 EST
+- Fixed critical PDF parsing worker error in production deployment
+- Updated pdfjs-dist from version 2.16.105 to 3.11.174 to use legacy build that doesn't require workers
+- Switched to pdfjs-dist/legacy/build/pdf.js which runs entirely in main thread - perfect for serverless environments
+- Legacy build eliminates worker file dependency that was causing "Cannot find module './pdf.worker.js'" errors in production
+- PDF uploads now work reliably in deployed serverless environments without worker file resolution issues
+- Removed unnecessary GlobalWorkerOptions configuration since legacy build doesn't use workers
+
 ## 2025-11-08 12:33:17 EST
 - Initialized `model-testing-app` using `create-next-app@16.0.1` with default configuration (App Router, Tailwind CSS, TypeScript) to serve as a playground for Together.ai SLM experimentation.
 
