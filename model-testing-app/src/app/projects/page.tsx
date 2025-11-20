@@ -259,7 +259,7 @@ export default function ProjectsPage() {
                 </TableHeader>
               <TableBody>
                 {filteredProjects.map((project: any) => {
-                  const projectId = (project._id || project.id) as Id<"projects">;
+                  const projectId = project._id as Id<"projects">;
                   // Get first client from clientRoles
                   const firstClientRole = project.clientRoles?.[0];
                   const firstClientId = firstClientRole ? ((firstClientRole.clientId as any)?._id || firstClientRole.clientId) as Id<"clients"> : null;

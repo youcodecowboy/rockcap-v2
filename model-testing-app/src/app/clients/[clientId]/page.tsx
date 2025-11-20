@@ -215,7 +215,7 @@ export default function ClientProfilePage() {
   };
 
   const handleEditContact = (contact: any) => {
-    const contactId = (contact._id || contact.id) as string;
+    const contactId = contact._id as string;
     setEditingContactId(contactId);
     setContactFormData({
       name: contact.name,
@@ -496,7 +496,7 @@ export default function ClientProfilePage() {
             {currentProjects.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {currentProjects.slice(0, 3).map((project: any) => {
-                  const projectId = (project._id || project.id) as Id<"projects">;
+                  const projectId = project._id as Id<"projects">;
                   return (
                     <Button
                       key={projectId}
@@ -861,7 +861,7 @@ export default function ClientProfilePage() {
                     <h3 className="font-semibold text-gray-900 mb-3">Key Contacts</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {contacts.slice(0, 3).map((contact: any) => {
-                        const contactId = (contact._id || contact.id) as string;
+                        const contactId = contact._id as string;
                         return (
                           <ContactCard
                             key={contactId}
@@ -893,7 +893,7 @@ export default function ClientProfilePage() {
                         .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
                         .slice(0, 5)
                         .map((doc: any) => {
-                          const docId = (doc._id || doc.id) as Id<"documents">;
+                          const docId = doc._id as Id<"documents">;
                           return (
                             <div
                               key={docId}
@@ -991,7 +991,7 @@ export default function ClientProfilePage() {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {documents.map((doc: any) => {
-                          const docId = (doc._id || doc.id) as Id<"documents">;
+                          const docId = doc._id as Id<"documents">;
                           const projectId = doc.projectId ? ((doc.projectId as any)?._id || doc.projectId) as Id<"projects"> : null;
                           return (
                             <tr key={docId} className="hover:bg-gray-50">
@@ -1212,7 +1212,7 @@ export default function ClientProfilePage() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contacts.map((contact: any) => {
-                      const contactId = (contact._id || contact.id) as string;
+                      const contactId = contact._id as string;
                       return (
                         <ContactCard
                           key={contactId}
@@ -1252,7 +1252,7 @@ export default function ClientProfilePage() {
                           {enrichmentSuggestions
                             .filter((s: any) => !s.status || s.status === 'pending')
                             .map((suggestion: any) => {
-                              const suggestionId = (suggestion._id || suggestion.id) as string;
+                              const suggestionId = suggestion._id as string;
                               return (
                                 <EnrichmentSuggestionCard
                                   key={suggestionId}
@@ -1289,7 +1289,7 @@ export default function ClientProfilePage() {
                                   {enrichmentSuggestions
                                     .filter((s: any) => s.status && s.status !== 'pending')
                                     .map((suggestion: any) => {
-                                      const suggestionId = (suggestion._id || suggestion.id) as string;
+                                      const suggestionId = suggestion._id as string;
                                       return (
                                         <EnrichmentSuggestionCard
                                           key={suggestionId}

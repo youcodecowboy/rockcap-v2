@@ -35,7 +35,7 @@ interface ProjectCardProps {
 
 export default function ProjectCard({ project, isPast = false }: ProjectCardProps) {
   const router = useRouter();
-  const projectId = (project._id || project.id) as Id<"projects">;
+  const projectId = project._id as Id<"projects">;
   const documents = useDocumentsByProject(projectId) || [];
   
   // Calculate metrics

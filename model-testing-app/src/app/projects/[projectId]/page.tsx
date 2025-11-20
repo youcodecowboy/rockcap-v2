@@ -644,7 +644,7 @@ export default function ProjectDetailPage() {
                     <h3 className="font-semibold text-gray-900 mb-3">Financial Summary</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {documentsWithExtractedData.map((doc: any) => {
-                        const docId = (doc._id || doc.id) as Id<"documents">;
+                        const docId = doc._id as Id<"documents">;
                         const extracted = doc.extractedData;
                         if (!extracted) return null;
                         return (
@@ -721,7 +721,7 @@ export default function ProjectDetailPage() {
                           .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
                           .slice(0, 5)
                           .map((doc: any) => {
-                            const docId = (doc._id || doc.id) as Id<"documents">;
+                            const docId = doc._id as Id<"documents">;
                             return (
                               <div
                                 key={docId}
@@ -785,7 +785,7 @@ export default function ProjectDetailPage() {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {documents.map((doc: any) => {
-                          const docId = (doc._id || doc.id) as Id<"documents">;
+                          const docId = doc._id as Id<"documents">;
                           return (
                             <tr key={docId} className="hover:bg-gray-50">
                               <td className="px-6 py-4 max-w-[200px]">
@@ -1296,7 +1296,7 @@ export default function ProjectDetailPage() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contacts.map((contact: any) => {
-                      const contactId = (contact._id || contact.id) as string;
+                      const contactId = contact._id as string;
                       return (
                         <ContactCard
                           key={contactId}
@@ -1676,7 +1676,7 @@ export default function ProjectDetailPage() {
                         <h4 className="text-md font-semibold text-gray-900 mb-4">Data Enrichment Suggestions</h4>
                         <div className="space-y-4">
                           {enrichmentSuggestions.map((suggestion: any) => {
-                            const suggestionId = (suggestion._id || suggestion.id) as string;
+                            const suggestionId = suggestion._id as string;
                             return (
                               <EnrichmentSuggestionCard
                                 key={suggestionId}
