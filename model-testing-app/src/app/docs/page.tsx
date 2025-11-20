@@ -18,8 +18,9 @@ import { Badge } from '@/components/ui/badge';
 import CompactMetricCard from '@/components/CompactMetricCard';
 import RecentUploadCard from '@/components/RecentUploadCard';
 import DocumentsTable from '@/components/DocumentsTable';
-import DocumentCodeEditor from '@/components/DocumentCodeEditor';
-import { FileText, Building2, Clock, Search, AlertCircle, ChevronRight } from 'lucide-react';
+import InternalDocumentsTable from '@/components/InternalDocumentsTable';
+import UnclassifiedDocumentsTable from '@/components/UnclassifiedDocumentsTable';
+import { FileText, Building2, Clock, Search, AlertCircle, ChevronRight, Plus } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 
@@ -250,6 +251,45 @@ export default function DocsPage() {
                   </Button>
                 </div>
               )}
+              {activeTab === 'internal' && (
+                <div className="pr-4 flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      // Trigger create folder dialog in InternalDocumentsTable
+                      const event = new CustomEvent('createFolder');
+                      window.dispatchEvent(event);
+                    }}
+                    className="gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create Folder
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="gap-2"
+                  >
+                    <Search className="w-4 h-4" />
+                    {showFilters ? 'Hide Filters' : 'Show Filters'}
+                  </Button>
+                </div>
+              )}
+              {activeTab === 'unclassified' && (
+                <div className="pr-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="gap-2"
+                  >
+                    <Search className="w-4 h-4" />
+                    {showFilters ? 'Hide Filters' : 'Show Filters'}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -293,14 +333,6 @@ export default function DocsPage() {
 
             {activeTab === 'internal' && (
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                  Internal Documents
-                  {searchQuery && (
-                    <span className="text-sm font-normal text-gray-500 ml-2">
-                      (filtered)
-                    </span>
-                  )}
-                </h2>
                 {filteredInternalDocs.length === 0 ? (
                   <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                     <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -310,79 +342,17 @@ export default function DocsPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {filteredInternalDocs.map((doc) => (
-                      <div
-                        key={doc._id}
-                        className="bg-purple-50 rounded-lg border border-purple-200 p-4 hover:border-purple-300 transition-colors"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
-                              <DocumentCodeEditor
-                                documentCode={doc.documentCode}
-                                fileName={doc.fileName}
-                                onSave={(newCode) => handleUpdateInternalDocumentCode(doc._id, newCode)}
-                                isInternal={true}
-                              />
-                              <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300">
-                                Internal
-                              </Badge>
-                            </div>
-                            <div className="text-sm text-gray-600 mb-1">
-                              {doc.summary.substring(0, 150)}...
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
-                              <span>{doc.category}</span>
-                              {doc.clientName && (
-                                <>
-                                  <span>•</span>
-                                  <span>Client: {doc.clientName}</span>
-                                </>
-                              )}
-                              {doc.linkedProjectIds && doc.linkedProjectIds.length > 0 && (
-                                <>
-                                  <span>•</span>
-                                  <span>{doc.linkedProjectIds.length} project(s)</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 ml-4">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => router.push(`/docs/${doc._id}`)}
-                            >
-                              View
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteInternalDocument(doc._id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <InternalDocumentsTable 
+                    documents={filteredInternalDocs} 
+                    showFilters={showFilters}
+                    onFiltersChange={setShowFilters}
+                  />
                 )}
               </div>
             )}
 
             {activeTab === 'unclassified' && (
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                  Unclassified Documents
-                  {searchQuery && (
-                    <span className="text-sm font-normal text-gray-500 ml-2">
-                      (filtered)
-                    </span>
-                  )}
-                </h2>
                 {filteredUnclassifiedDocs.length === 0 ? (
                   <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                     <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -392,51 +362,11 @@ export default function DocsPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {filteredUnclassifiedDocs.map((doc) => (
-                      <div
-                        key={doc._id}
-                        className="bg-yellow-50 rounded-lg border border-yellow-200 p-4 hover:border-yellow-300 transition-colors"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
-                              <DocumentCodeEditor
-                                documentCode={doc.documentCode}
-                                fileName={doc.fileName}
-                                onSave={(newCode) => handleUpdateDocumentCode(doc._id, newCode)}
-                              />
-                            </div>
-                            <div className="text-sm text-gray-600 mb-1">
-                              {doc.summary.substring(0, 150)}...
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
-                              <span>{doc.category}</span>
-                              <span>•</span>
-                              <span className="text-yellow-700 font-medium">Needs classification</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 ml-4">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => router.push(`/docs/${doc._id}`)}
-                            >
-                              View
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteDocument(doc._id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <UnclassifiedDocumentsTable 
+                    documents={filteredUnclassifiedDocs} 
+                    showFilters={showFilters}
+                    onFiltersChange={setShowFilters}
+                  />
                 )}
               </div>
             )}

@@ -283,3 +283,112 @@ export const getFileUrl = query({
   },
 });
 
+// Query: Get internal documents by folder
+export const getByFolder = query({
+  args: { folderId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    let docs = await ctx.db.query("internalDocuments").collect();
+    
+    if (args.folderId === undefined || args.folderId === null) {
+      // Return documents without a folder (null or undefined folderId)
+      docs = docs.filter(doc => !doc.folderId);
+    } else {
+      // Return documents in the specified folder
+      docs = docs.filter(doc => doc.folderId === args.folderId);
+    }
+    
+    return docs.sort((a, b) => 
+      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+    );
+  },
+});
+
+// Query: Get all folders (including empty ones)
+export const getFolders = query({
+  handler: async (ctx) => {
+    const folders = await ctx.db.query("internalDocumentFolders").collect();
+    return folders.sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
+// Query: Get folder by ID
+export const getFolder = query({
+  args: { folderId: v.id("internalDocumentFolders") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.folderId);
+  },
+});
+
+// Mutation: Create folder
+export const createFolder = mutation({
+  args: {
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Check if folder with same name already exists
+    const existingFolders = await ctx.db
+      .query("internalDocumentFolders")
+      .withIndex("by_name", (q: any) => q.eq("name", args.name))
+      .collect();
+    
+    if (existingFolders.length > 0) {
+      throw new Error("Folder with this name already exists");
+    }
+    
+    const folderId = await ctx.db.insert("internalDocumentFolders", {
+      name: args.name,
+      createdAt: new Date().toISOString(),
+    });
+    
+    return folderId;
+  },
+});
+
+// Mutation: Delete folder
+export const deleteFolder = mutation({
+  args: {
+    folderId: v.id("internalDocumentFolders"),
+  },
+  handler: async (ctx, args) => {
+    // Move all documents in this folder to unorganized (null folderId)
+    const docsInFolder = await ctx.db
+      .query("internalDocuments")
+      .withIndex("by_folder", (q: any) => q.eq("folderId", args.folderId))
+      .collect();
+    
+    // Get folder name to use as folderId string
+    const folder = await ctx.db.get(args.folderId);
+    if (!folder) {
+      throw new Error("Folder not found");
+    }
+    
+    // Update all documents to remove folderId
+    for (const doc of docsInFolder) {
+      await ctx.db.patch(doc._id, { folderId: undefined });
+    }
+    
+    // Delete the folder
+    await ctx.db.delete(args.folderId);
+    return args.folderId;
+  },
+});
+
+// Mutation: Update document folder
+export const updateFolder = mutation({
+  args: {
+    id: v.id("internalDocuments"),
+    folderId: v.optional(v.union(v.id("internalDocumentFolders"), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (!existing) {
+      throw new Error("Internal document not found");
+    }
+    
+    // Convert folder ID to string for storage (folderId field stores the folder _id as string)
+    const folderIdString = args.folderId ? (args.folderId as string) : undefined;
+    await ctx.db.patch(args.id, { folderId: folderIdString });
+    return args.id;
+  },
+});
+

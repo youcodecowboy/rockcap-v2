@@ -10,6 +10,15 @@ interface ReminderFormProps {
   reminderId?: Id<'reminders'>;
   initialClientId?: Id<'clients'>;
   initialProjectId?: Id<'projects'>;
+  initialData?: {
+    title?: string;
+    description?: string;
+    scheduledDate?: string;
+    scheduledTime?: string;
+    clientId?: Id<'clients'>;
+    projectId?: Id<'projects'>;
+    notes?: string;
+  };
   onSuccess?: () => void;
   onCancel?: () => void;
 }
@@ -18,6 +27,7 @@ export default function ReminderForm({
   reminderId,
   initialClientId,
   initialProjectId,
+  initialData,
   onSuccess,
   onCancel,
 }: ReminderFormProps) {
@@ -27,12 +37,12 @@ export default function ReminderForm({
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [scheduledDate, setScheduledDate] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
-  const [clientId, setClientId] = useState<Id<'clients'> | undefined>(initialClientId);
-  const [projectId, setProjectId] = useState<Id<'projects'> | undefined>(initialProjectId);
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [description, setDescription] = useState(initialData?.description || '');
+  const [scheduledDate, setScheduledDate] = useState(initialData?.scheduledDate || '');
+  const [scheduledTime, setScheduledTime] = useState(initialData?.scheduledTime || '');
+  const [clientId, setClientId] = useState<Id<'clients'> | undefined>(initialData?.clientId || initialClientId);
+  const [projectId, setProjectId] = useState<Id<'projects'> | undefined>(initialData?.projectId || initialProjectId);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
 

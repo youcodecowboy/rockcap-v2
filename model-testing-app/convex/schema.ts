@@ -228,10 +228,20 @@ export default defineSchema({
     )),
     error: v.optional(v.string()),
     savedAt: v.string(),
+    // Folder organization (optional - for organizing internal documents)
+    folderId: v.optional(v.string()),
   })
     .index("by_linked_client", ["linkedClientId"])
     .index("by_uploadedAt", ["uploadedAt"])
-    .index("by_category", ["category"]),
+    .index("by_category", ["category"])
+    .index("by_folder", ["folderId"]),
+
+  // Internal Document Folders table - for organizing internal documents
+  internalDocumentFolders: defineTable({
+    name: v.string(),
+    createdAt: v.string(),
+  })
+    .index("by_name", ["name"]),
 
   // Contacts table - can be linked to clients or projects
   contacts: defineTable({
@@ -1211,5 +1221,95 @@ export default defineSchema({
     .index("by_type", ["type"])
     .index("by_isRead", ["isRead"])
     .index("by_createdAt", ["createdAt"]),
+
+  // User tags for task/reminder categorization (LLM uses these for matching)
+  userTags: defineTable({
+    userId: v.id("users"), // User who owns these tags
+    tags: v.array(v.string()), // Array of tag strings (e.g., ["email", "call", "meeting", "follow-up"])
+    updatedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // Events table - Calendar events with Google Calendar compatibility
+  events: defineTable({
+    // Core fields
+    title: v.string(),
+    description: v.optional(v.string()),
+    location: v.optional(v.string()),
+    startTime: v.string(), // ISO timestamp
+    endTime: v.string(), // ISO timestamp
+    allDay: v.optional(v.boolean()), // All-day event flag
+    
+    // Extended fields
+    attendees: v.optional(v.array(v.object({
+      email: v.optional(v.string()),
+      name: v.optional(v.string()),
+      responseStatus: v.optional(v.union(
+        v.literal("needsAction"),
+        v.literal("declined"),
+        v.literal("tentative"),
+        v.literal("accepted")
+      )),
+    }))),
+    recurrence: v.optional(v.string()), // RRULE format for recurring events
+    colorId: v.optional(v.string()), // Color coding (1-11, matching Google Calendar)
+    visibility: v.optional(v.union(
+      v.literal("default"),
+      v.literal("public"),
+      v.literal("private"),
+      v.literal("confidential")
+    )),
+    status: v.optional(v.union(
+      v.literal("confirmed"),
+      v.literal("tentative"),
+      v.literal("cancelled")
+    )),
+    
+    // Google Calendar sync fields
+    googleCalendarId: v.optional(v.string()), // Google Calendar ID (e.g., "primary")
+    googleEventId: v.optional(v.string()), // Google Calendar event ID
+    googleCalendarUrl: v.optional(v.string()), // URL to event in Google Calendar
+    lastGoogleSync: v.optional(v.string()), // ISO timestamp of last sync
+    syncStatus: v.optional(v.union(
+      v.literal("synced"),
+      v.literal("pending"),
+      v.literal("failed"),
+      v.literal("local_only")
+    )),
+    
+    // Relations
+    createdBy: v.id("users"), // User who created the event
+    organizerId: v.optional(v.id("users")), // Event organizer (can be different from creator)
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    
+    // Metadata
+    reminders: v.optional(v.array(v.object({
+      method: v.union(
+        v.literal("email"),
+        v.literal("popup")
+      ),
+      minutes: v.number(), // Minutes before event
+    }))),
+    attachments: v.optional(v.array(v.id("_storage"))), // File storage IDs
+    conferenceData: v.optional(v.object({
+      videoLink: v.optional(v.string()), // Video conference URL
+      conferenceId: v.optional(v.string()),
+      entryPoints: v.optional(v.array(v.object({
+        entryPointType: v.optional(v.string()),
+        uri: v.optional(v.string()),
+        label: v.optional(v.string()),
+      }))),
+    })),
+    metadata: v.optional(v.any()), // Flexible metadata object
+    
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_start_time", ["startTime"])
+    .index("by_user", ["createdBy"])
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_google_event_id", ["googleEventId"]),
 });
 

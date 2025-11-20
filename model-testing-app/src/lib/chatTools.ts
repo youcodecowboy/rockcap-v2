@@ -596,6 +596,150 @@ export const CHAT_TOOLS: Tool[] = [
       required: []
     },
     requiresConfirmation: false
+  },
+  
+  // EVENT OPERATIONS
+  {
+    name: "createEvent",
+    description: "Create a new calendar event.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Event title (required)"
+        },
+        description: {
+          type: "string",
+          description: "Event description"
+        },
+        location: {
+          type: "string",
+          description: "Event location"
+        },
+        startTime: {
+          type: "string",
+          description: "Event start time (ISO timestamp, required)"
+        },
+        endTime: {
+          type: "string",
+          description: "Event end time (ISO timestamp, required)"
+        },
+        allDay: {
+          type: "boolean",
+          description: "Whether this is an all-day event"
+        },
+        clientId: {
+          type: "string",
+          description: "Link event to a client (optional)"
+        },
+        projectId: {
+          type: "string",
+          description: "Link event to a project (optional)"
+        }
+      },
+      required: ["title", "startTime", "endTime"]
+    },
+    requiresConfirmation: true
+  },
+  {
+    name: "getEvents",
+    description: "Get user's calendar events with optional filters (date range, client, project).",
+    parameters: {
+      type: "object",
+      properties: {
+        startDate: {
+          type: "string",
+          description: "Filter events from this date (ISO timestamp)"
+        },
+        endDate: {
+          type: "string",
+          description: "Filter events until this date (ISO timestamp)"
+        },
+        clientId: {
+          type: "string",
+          description: "Filter by client ID"
+        },
+        projectId: {
+          type: "string",
+          description: "Filter by project ID"
+        }
+      },
+      required: []
+    },
+    requiresConfirmation: false
+  },
+  {
+    name: "getNextEvent",
+    description: "Get the user's next upcoming event.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    },
+    requiresConfirmation: false
+  },
+  {
+    name: "updateEvent",
+    description: "Update an existing calendar event.",
+    parameters: {
+      type: "object",
+      properties: {
+        eventId: {
+          type: "string",
+          description: "Event ID (required)"
+        },
+        title: {
+          type: "string",
+          description: "Updated title"
+        },
+        description: {
+          type: "string",
+          description: "Updated description"
+        },
+        location: {
+          type: "string",
+          description: "Updated location"
+        },
+        startTime: {
+          type: "string",
+          description: "Updated start time (ISO timestamp)"
+        },
+        endTime: {
+          type: "string",
+          description: "Updated end time (ISO timestamp)"
+        },
+        allDay: {
+          type: "boolean",
+          description: "Whether this is an all-day event"
+        },
+        clientId: {
+          type: "string",
+          description: "Link event to a client (optional, use null to unlink)"
+        },
+        projectId: {
+          type: "string",
+          description: "Link event to a project (optional, use null to unlink)"
+        }
+      },
+      required: ["eventId"]
+    },
+    requiresConfirmation: true
+  },
+  {
+    name: "deleteEvent",
+    description: "Delete a calendar event.",
+    parameters: {
+      type: "object",
+      properties: {
+        eventId: {
+          type: "string",
+          description: "Event ID (required)"
+        }
+      },
+      required: ["eventId"]
+    },
+    requiresConfirmation: true
   }
 ];
 
@@ -795,6 +939,45 @@ export async function executeTool(
         return await client.query(api.reminders.getUpcoming, {
           days: parameters.days,
           limit: parameters.limit,
+        });
+      
+      // EVENT OPERATIONS
+      case "createEvent":
+        return await client.mutation(api.events.create, {
+          title: parameters.title,
+          description: parameters.description,
+          location: parameters.location,
+          startTime: parameters.startTime,
+          endTime: parameters.endTime,
+          allDay: parameters.allDay,
+          clientId: parameters.clientId as Id<"clients"> | undefined,
+          projectId: parameters.projectId as Id<"projects"> | undefined,
+        });
+      
+      case "getEvents":
+        return await client.query(api.events.list, {
+          startDate: parameters.startDate,
+          endDate: parameters.endDate,
+          clientId: parameters.clientId as Id<"clients"> | undefined,
+          projectId: parameters.projectId as Id<"projects"> | undefined,
+        });
+      
+      case "getNextEvent":
+        return await client.query(api.events.getNextEvent, {});
+      
+      case "updateEvent":
+        const { eventId, ...eventUpdates } = parameters;
+        const updateEventData: any = { ...eventUpdates };
+        if (updateEventData.clientId === null) updateEventData.clientId = undefined;
+        if (updateEventData.projectId === null) updateEventData.projectId = undefined;
+        return await client.mutation(api.events.update, {
+          id: eventId as Id<"events">,
+          ...updateEventData,
+        });
+      
+      case "deleteEvent":
+        return await client.mutation(api.events.remove, {
+          id: parameters.eventId as Id<"events">,
         });
       
       default:

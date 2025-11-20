@@ -334,18 +334,27 @@ export const getUpcoming = query({
       .withIndex("by_user", (q: any) => q.eq("userId", user._id))
       .collect();
 
-    // Filter to pending reminders scheduled within the date range
+    // Filter to pending reminders (include overdue and upcoming within date range)
     reminders = reminders.filter(r => {
       const scheduledDate = new Date(r.scheduledFor);
       return r.status === "pending" && 
-             scheduledDate >= now && 
-             scheduledDate <= endDate;
+             (scheduledDate < now || scheduledDate <= endDate);
     });
 
-    // Sort by scheduledFor ascending
-    reminders.sort((a, b) => 
-      new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime()
-    );
+    // Sort: overdue reminders first (most urgent), then upcoming reminders
+    reminders.sort((a, b) => {
+      const aDate = new Date(a.scheduledFor);
+      const bDate = new Date(b.scheduledFor);
+      const aOverdue = aDate < now;
+      const bOverdue = bDate < now;
+      
+      // Overdue reminders come first
+      if (aOverdue && !bOverdue) return -1;
+      if (!aOverdue && bOverdue) return 1;
+      
+      // Within same category (both overdue or both upcoming), sort by date ascending
+      return aDate.getTime() - bDate.getTime();
+    });
 
     // Apply limit if provided
     if (args.limit) {
@@ -381,6 +390,43 @@ export const getDue = query({
     });
 
     return reminders;
+  },
+});
+
+// Query: Get reminders metrics
+export const getMetrics = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return {
+        activeReminders: 0,
+      };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      return {
+        activeReminders: 0,
+      };
+    }
+
+    // Get all reminders for user
+    const allReminders = await ctx.db
+      .query("reminders")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .collect();
+
+    // Calculate active reminders (pending, not completed or dismissed)
+    const activeReminders = allReminders.filter(r => r.status === 'pending').length;
+
+    return {
+      activeReminders,
+    };
   },
 });
 

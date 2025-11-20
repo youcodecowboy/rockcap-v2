@@ -70,3 +70,21 @@ export const getByEmail = query({
   },
 });
 
+// Query: Get all users (for assignment)
+export const getAll = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return [];
+    }
+
+    const users = await ctx.db.query("users").collect();
+    return users.sort((a, b) => {
+      const nameA = a.name || a.email;
+      const nameB = b.name || b.email;
+      return nameA.localeCompare(nameB);
+    });
+  },
+});
+

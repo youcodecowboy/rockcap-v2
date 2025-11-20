@@ -441,3 +441,74 @@ export const getByProject = query({
   },
 });
 
+// Query: Get task metrics for current user
+export const getMetrics = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return {
+        activeTasks: 0,
+        completed: 0,
+        upNext: null,
+      };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      return {
+        activeTasks: 0,
+        completed: 0,
+        upNext: null,
+      };
+    }
+
+    // Get all tasks for user
+    const allTasks = await ctx.db.query("tasks").collect();
+    const userTasks = allTasks.filter(task => 
+      task.createdBy === user._id || task.assignedTo === user._id
+    );
+
+    const now = new Date();
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Calculate metrics
+    const activeTasks = userTasks.filter(t => 
+      t.status !== 'completed' && t.status !== 'cancelled'
+    ).length;
+    
+    const completed = userTasks.filter(t => t.status === 'completed').length;
+
+    // Find up next task (earliest due date, not completed)
+    // Include all non-completed tasks (overdue, upcoming, or no due date)
+    const upcomingTasks = userTasks
+      .filter(t => {
+        // Exclude only completed and cancelled tasks
+        return t.status !== 'completed' && t.status !== 'cancelled';
+      })
+      .sort((a, b) => {
+        // Sort: overdue tasks first (most urgent), then upcoming tasks, then tasks without due dates
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1; // Tasks without due dates go to end
+        if (!b.dueDate) return -1;
+        const dateA = new Date(a.dueDate!).getTime();
+        const dateB = new Date(b.dueDate!).getTime();
+        // Sort by date ascending (earliest first, including overdue)
+        return dateA - dateB;
+      });
+
+    const upNext = upcomingTasks.length > 0 ? upcomingTasks[0] : null;
+
+    return {
+      activeTasks,
+      completed,
+      upNext,
+    };
+  },
+});
+

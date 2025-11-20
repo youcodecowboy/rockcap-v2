@@ -103,6 +103,26 @@ export function useDeleteInternalDocument() {
   return useMutation(api.internalDocuments.remove);
 }
 
+export function useInternalDocumentsByFolder(folderId?: string) {
+  return useQuery(api.internalDocuments.getByFolder, { folderId });
+}
+
+export function useInternalDocumentFolders() {
+  return useQuery(api.internalDocuments.getFolders);
+}
+
+export function useUpdateInternalDocumentFolder() {
+  return useMutation(api.internalDocuments.updateFolder);
+}
+
+export function useCreateInternalDocumentFolder() {
+  return useMutation(api.internalDocuments.createFolder);
+}
+
+export function useDeleteInternalDocumentFolder() {
+  return useMutation(api.internalDocuments.deleteFolder);
+}
+
 // Legacy compatibility functions
 export function getLibrary(): SavedDocument[] {
   console.warn("getLibrary() is deprecated. Use useDocuments() hook instead.");

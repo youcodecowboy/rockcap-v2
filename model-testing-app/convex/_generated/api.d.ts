@@ -21,10 +21,12 @@ import type * as directUpload from "../directUpload.js";
 import type * as documents from "../documents.js";
 import type * as emails from "../emails.js";
 import type * as enrichment from "../enrichment.js";
+import type * as events from "../events.js";
 import type * as excelTemplates from "../excelTemplates.js";
 import type * as fileQueue from "../fileQueue.js";
 import type * as files from "../files.js";
 import type * as funnels from "../funnels.js";
+import type * as googleCalendar from "../googleCalendar.js";
 import type * as hubspotSync from "../hubspotSync.js";
 import type * as hubspotSync_activities from "../hubspotSync/activities.js";
 import type * as hubspotSync_companies from "../hubspotSync/companies.js";
@@ -54,6 +56,7 @@ import type * as scenarios from "../scenarios.js";
 import type * as search from "../search.js";
 import type * as tasks from "../tasks.js";
 import type * as templates from "../templates.js";
+import type * as userTags from "../userTags.js";
 import type * as users from "../users.js";
 
 import type {
@@ -76,10 +79,12 @@ declare const fullApi: ApiFromModules<{
   documents: typeof documents;
   emails: typeof emails;
   enrichment: typeof enrichment;
+  events: typeof events;
   excelTemplates: typeof excelTemplates;
   fileQueue: typeof fileQueue;
   files: typeof files;
   funnels: typeof funnels;
+  googleCalendar: typeof googleCalendar;
   hubspotSync: typeof hubspotSync;
   "hubspotSync/activities": typeof hubspotSync_activities;
   "hubspotSync/companies": typeof hubspotSync_companies;
@@ -109,6 +114,7 @@ declare const fullApi: ApiFromModules<{
   search: typeof search;
   tasks: typeof tasks;
   templates: typeof templates;
+  userTags: typeof userTags;
   users: typeof users;
 }>;
 

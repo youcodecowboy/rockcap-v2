@@ -16,6 +16,8 @@ import {
   Calculator,
   LayoutDashboard,
   CheckSquare,
+  Calendar,
+  Mail,
   LucideIcon,
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
@@ -39,6 +41,8 @@ export default function Sidebar() {
   const navItems: NavItem[] = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+    { href: '/calendar', label: 'Calendar', icon: Calendar },
+    { href: '/inbox', label: 'Inbox', icon: Mail },
     { href: '/filing', label: 'Filing Agent', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },
     { href: '/projects', label: 'Projects', icon: FolderKanban },

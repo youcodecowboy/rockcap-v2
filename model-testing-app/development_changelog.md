@@ -1,6 +1,555 @@
 # Development Changelog
 
-## [Latest] - 2024-11-20 16:30
+## [Latest] - 2025-01-28 14:30
+
+### Inbox Placeholder Page Added
+
+**Overview**: Added a placeholder Inbox page to the navigation bar in preparation for future Google Workspace mail integration.
+
+**Changes:**
+1. **New Inbox Page** (`/inbox`):
+   - Created placeholder page with centered "Coming Soon" message
+   - Displays Mail icon and description about Google Workspace integration
+   - Clean, minimal design matching application theme
+
+2. **Navigation Integration**:
+   - Added "Inbox" nav item to sidebar (positioned after Calendar)
+   - Uses Mail icon from lucide-react
+   - Follows existing navigation pattern
+
+**Files Created**:
+- `src/app/inbox/page.tsx` - Inbox placeholder page
+
+**Files Modified**:
+- `src/components/Sidebar.tsx` - Added Inbox navigation item
+
+**Future Enhancements**:
+- Google Workspace OAuth integration for Gmail access
+- Email inbox display and management
+- Email composition and sending
+- Email threading and conversation view
+- Email search and filtering
+
+## [Previous] - 2025-01-28 (Current Date/Time)
+
+### Calendar Feature Implementation
+
+**Overview**: Implemented a comprehensive calendar feature using React Big Calendar, with full backend support for events, Google Calendar integration preparation, dashboard integration, and AI assistant integration.
+
+**Changes:**
+
+1. **Backend - Events Schema & Functions**:
+   - Added `events` table to schema with Google Calendar-compatible fields:
+     - Core fields: title, description, location, startTime, endTime, allDay
+     - Extended fields: attendees, recurrence (RRULE), colorId, visibility, status
+     - Google sync fields: googleCalendarId, googleEventId, googleCalendarUrl, lastGoogleSync, syncStatus
+     - Relations: clientId, projectId, createdBy, organizerId
+     - Metadata: reminders, attachments, conferenceData, metadata
+   - Created `convex/events.ts` with full CRUD operations:
+     - Queries: list, get, getByDateRange, getByUser, getUpcoming, getNextEvent
+     - Mutations: create, update, remove, updateGoogleSync
+   - Created `convex/googleCalendar.ts` with stub functions for future OAuth integration:
+     - syncFromGoogle, pushToGoogle, handleWebhook, getSyncStatus, disconnect
+     - Includes comprehensive documentation for future implementation
+
+2. **Frontend - Calendar Page**:
+   - Created `/calendar` page with React Big Calendar integration
+   - Supports month, week, day, and agenda views
+   - Event rendering with color coding matching Google Calendar colors
+   - Click to view event details, double-click to create new event
+   - Select time slot to create event at specific time
+   - Responsive design matching application theme
+
+3. **Event Modal Component**:
+   - Created `EventModal.tsx` for event creation and editing
+   - Form fields: title, description, location, start/end date/time, all-day toggle
+   - Client/project linking using existing ClientProjectSearch component
+   - Advanced options section (prepared for future: recurrence, attendees, reminders)
+   - Delete functionality for existing events
+
+4. **Navigation Integration**:
+   - Added Calendar nav item to sidebar (between Tasks and Filing Agent)
+   - Uses Calendar icon from lucide-react
+
+5. **Dashboard Integration**:
+   - Updated "Next Event" card on dashboard to show real event data
+   - Displays event title, description, location, time remaining
+   - Shows linked client/project if applicable
+   - "View Event" button navigates to calendar page
+   - "Create Event" button when no upcoming events
+
+6. **AI Assistant Integration**:
+   - Added event tools to `chatTools.ts`:
+     - `createEvent` - Create new calendar event (requires confirmation)
+     - `getEvents` - Retrieve events with filters
+     - `getNextEvent` - Get upcoming event
+     - `updateEvent` - Modify event (requires confirmation)
+     - `deleteEvent` - Remove event (requires confirmation)
+   - AI assistant can now handle commands like:
+     - "Create me a new event tomorrow at 2pm"
+     - "What's on my calendar this week?"
+     - "Move my 3pm meeting to 4pm"
+
+7. **Dependencies**:
+   - Installed `react-big-calendar` and `date-fns` for calendar functionality
+   - Installed `moment` for React Big Calendar localizer
+   - Installed `@types/react-big-calendar` for TypeScript support
+
+**Files Created**:
+- `convex/events.ts` - Event management functions
+- `convex/googleCalendar.ts` - Google Calendar sync stubs
+- `src/app/calendar/page.tsx` - Main calendar page
+- `src/components/EventModal.tsx` - Event creation/editing modal
+
+**Files Modified**:
+- `convex/schema.ts` - Added events table
+- `src/components/Sidebar.tsx` - Added calendar nav item
+- `src/app/page.tsx` - Updated next event card
+- `src/lib/chatTools.ts` - Added event tools
+
+**Future Enhancements**:
+- Google OAuth integration for two-way sync
+- Recurring events support
+- Attendees management
+- Event reminders
+- Drag-and-drop event rescheduling
+- Event attachments
+
+## [Previous] - 2025-01-28 00:05
+
+### Simplified Metrics Cards - 4 Card Layout
+
+**Overview**: Simplified the metrics cards from 5 cards to 4 more meaningful cards that fit better on one line.
+
+**Changes:**
+1. **Metrics Card Restructure**:
+   - Removed "Total Tasks", "Upcoming (24h)", and "Completed (7d)" cards
+   - Added "Active Tasks" - shows tasks that aren't completed or cancelled
+   - Added "Active Reminders" - shows reminders with pending status
+   - Kept "Up Next" and "Completed" cards
+   
+2. **Grid Layout**: Changed from 6-column to 4-column grid for better proportions
+
+3. **New Convex Queries**:
+   - Updated `tasks.getMetrics` to return `activeTasks` instead of `total`, `upcoming24h`, `completed7d`
+   - Created `reminders.getMetrics` to return `activeReminders` count
+   
+4. **Final Card Layout**:
+   - **Up Next** (1 column): Shows next task with time remaining or title if overdue
+   - **Active Tasks** (1 column): Count of non-completed, non-cancelled tasks
+   - **Active Reminders** (1 column): Count of pending reminders
+   - **Completed** (1 column): Count of completed tasks
+
+**Result**: All metric values are now fully visible with better spacing and more meaningful data.
+
+## [Previous] - 2025-01-27 23:58
+
+### Metric Cards Layout & Table Truncation Fixes
+
+**Overview**: Fixed metric card visibility issues and added truncation to project columns to prevent horizontal scrolling.
+
+**Changes:**
+1. **Metric Cards Grid**: Reverted from 7-column to 6-column grid for better visibility of all metric values
+2. **Project Column Truncation**: 
+   - Added `max-w-[200px]` constraint to project links in tasks table
+   - Added `truncate` class to project names
+   - Made icon `flex-shrink-0` to prevent icon squishing
+   - Applied same truncation to reminders table
+3. **Improved Table UX**: Tables no longer require horizontal scrolling with long project names
+
+## [Previous] - 2025-01-27 23:55
+
+### Tasks & Reminders Natural Language Input Restructure
+
+**Overview**: Restructured the Tasks & Reminders page to support natural language input for both tasks and reminders with intelligent parsing.
+
+**Major Changes:**
+1. **Grid Layout Fixed**:
+   - Changed from 6-column to 7-column grid for better proportions
+   - "Up Next" card now fits properly without eclipsing other metrics
+   - All metric cards display on one line with proper spacing
+
+2. **Tabs Repositioned**:
+   - Moved Tasks/Reminders tabs above the natural language input section
+   - Tabs now control what type of item is being created
+   - More intuitive flow: select tab → describe item → see form
+
+3. **Unified Natural Language Component**:
+   - `TaskNaturalLanguageInput` now supports both tasks and reminders via `mode` prop
+   - Component adapts placeholder text, button text, and API endpoint based on mode
+   - Orange button color for reminders, blue for tasks
+
+4. **Dual Mode Creation**:
+   - Toggle between "Create a Task" and "Create a Reminder" based on active tab
+   - Section header updates dynamically
+   - Description text updates to guide user appropriately
+
+5. **New API Endpoint**:
+   - Created `/api/reminders/parse` endpoint using GPT-OSS-20B
+   - Separate prompt optimized for reminder parsing
+   - Handles client/project matching, time/date extraction
+   - Fuzzy matching for client and project names
+
+6. **Enhanced ReminderForm**:
+   - Added `initialData` prop support for pre-filling parsed data
+   - Can accept scheduledDate, scheduledTime, clientId, projectId from natural language
+   - Seamless integration with natural language parsing flow
+
+7. **Create Form Modal**:
+   - Modal now adapts to active tab (tasks vs reminders)
+   - Shows appropriate form (TaskFormCompact or ReminderForm)
+   - Title updates dynamically based on context
+
+**Technical Details:**
+- `TaskNaturalLanguageInput.tsx`: Added `mode` prop (`'task' | 'reminder'`)
+- `src/app/api/reminders/parse/route.ts`: New endpoint for reminder parsing
+- `ReminderForm.tsx`: Added `initialData` interface prop
+- Removed Tabs wrapper from table section (now conditional rendering)
+- Both parsing endpoints share similar fuzzy matching logic
+
+**User Experience:**
+- Select Tasks or Reminders tab
+- Type natural language description (e.g., "Call Kristian Hansen tomorrow at 3pm")
+- AI parses and pre-fills form with title, description, time, client, project
+- Review and submit or manually adjust
+
+## [Previous] - 2025-01-27 23:45
+
+### Up Next Card Layout Improvement
+
+**Overview**: Improved the "Up Next" task card layout to better display task titles and handle overdue tasks.
+
+**Changes:**
+- **Stacked Layout**: Added `stacked` prop to `CompactMetricCard` component for vertical badge layout
+- **Overdue Handling**: When a task is overdue, the title is shown as the value (no badge), and the icon turns red
+- **Card Size**: "Up Next" card now spans 2 columns (`md:col-span-2`) to provide more space for longer task titles
+- **Badge Positioning**: Badge now appears below the value in a stacked layout instead of awkwardly floating next to it
+- **Text Truncation**: Added proper text truncation to prevent overflow within the card boundaries
+- **Visual Hierarchy**: Improved spacing and alignment with `items-start` for better multi-line content display
+
+**Technical Details:**
+- Modified `CompactMetricCard` to support stacked layout mode
+- Updated tasks page to detect overdue tasks and adjust display accordingly
+- Grid layout adjusted to accommodate larger "Up Next" card (other cards remain same size)
+
+## [Previous] - 2025-01-27 22:30
+
+### Dynamic Cards Redesign - Card-Based UI Overhaul
+
+**Overview**: Completely redesigned the dynamic cards section to match a modern card-based UI pattern with urgent banners, bold titles, clear time displays, and improved visual hierarchy.
+
+**Major Changes:**
+- **Action Buttons Repositioned**: Moved action buttons above the metrics cards for better visual flow
+- **Card Layout**: Changed from 4 square cards to 3 rectangular cards (Next Task, Next Reminder, Next Event)
+- **Removed Recent Email Card**: Removed since Inbox section is below
+- **Rounded Corners**: All buttons and cards now use `rounded-lg` or `rounded-xl` for softer appearance
+
+**New Card Design Features:**
+- **Urgent Banners**: Red banner at top of cards when task/reminder is urgent (overdue or <24 hours)
+- **Bold Titles**: Large, prominent titles (`text-xl font-bold`) for clear hierarchy
+- **Descriptions**: Shows task/reminder description with `line-clamp-2` for truncation
+- **Time Remaining Display**: Clear time remaining in footer (e.g., "2h remaining", "Overdue")
+- **Context Information**: Shows client/project names below description
+- **Priority Badges**: Color-coded priority indicators (high=red, medium=yellow, low=blue)
+- **Action Buttons**: Full-width buttons at bottom of each card with clear CTAs
+- **Visual Separation**: Border-top separator between content and footer section
+
+**Card-Specific Details:**
+1. **Next Task Card**:
+   - Blue icon and button (`bg-blue-600`)
+   - Shows task title, description, client/project context
+   - Displays time remaining or "No due date"
+   - Shows priority badge
+   - "View Task" or "Create Task" button
+
+2. **Next Reminder Card**:
+   - Orange icon and button (`bg-orange-600`)
+   - Shows reminder title, description, client/project context
+   - Displays time remaining until scheduled time
+   - "View Reminder" or "Create Reminder" button
+
+3. **Next Event Card**:
+   - Green icon
+   - Placeholder for calendar integration
+   - Disabled "View Calendar" button
+
+**Styling Improvements:**
+- Cards use `rounded-xl` for softer corners
+- Hover effect: `hover:shadow-lg` for better interactivity
+- Urgent items highlighted in red (`text-red-600`)
+- Consistent spacing with `p-6` padding
+- Flex layout with `mt-auto` for button positioning at bottom
+- Border separators (`border-t border-gray-200`) for visual hierarchy
+
+**Technical Details:**
+- `isUrgent()` helper function checks if item is overdue or <24 hours away
+- `formatTimeRemaining()` returns both text and urgent flag
+- Cards maintain consistent height with flex layout
+- All buttons use `rounded-lg` for consistency
+- Action buttons grid uses `rounded-lg` on each button
+
+**User Benefits:**
+- Much clearer understanding of what each card represents
+- Immediate visual feedback for urgent items
+- Better readability with larger titles and descriptions
+- Clear call-to-action buttons in each card
+- More professional, polished appearance
+- Better use of space with rectangular cards
+
+---
+
+## [Previous] - 2025-01-27 22:00
+
+### Home Page Dashboard Improvements
+
+**Overview**: Fixed readability issues, improved card layouts, enhanced action buttons styling, and corrected task filtering logic.
+
+**Fixes:**
+- **Card Layout Improvements**:
+  - Changed from horizontal flex layout to vertical flex-col layout for better readability
+  - Removed truncation issues - text now wraps properly with `line-clamp-2`
+  - Added action buttons directly in cards ("View Task", "View Reminder", "Create Task", "Create Reminder")
+  - Better spacing and visual hierarchy
+  - Cards now have consistent height with flex-1 and mt-auto for button positioning
+
+- **Task Filtering Fix**:
+  - Updated upcoming tasks filter to include tasks without due dates (they're still upcoming)
+  - Fixed "No upcoming tasks" showing when tasks exist - now properly includes all non-completed tasks
+  - Tasks without due dates are sorted to the end, tasks with due dates sorted by date ascending
+
+- **Action Buttons Enhancement**:
+  - Changed to black buttons (`bg-black`) with colored icons
+  - Full-width grid layout (6 columns on desktop, responsive)
+  - Larger buttons (`h-12`, `size="lg"`)
+  - Color-coded icons:
+    - New Note: Blue (`text-blue-400`)
+    - New Contact: Green (`text-green-400`)
+    - New E-mail: Purple (`text-purple-400`)
+    - New Task: Yellow (`text-yellow-400`)
+    - New Reminder: Orange (`text-orange-400`)
+    - New Upload: Red (`text-red-400`)
+
+- **Inbox Section**:
+  - Renamed "Recent Messages" to "Inbox"
+  - Updated description to "App notifications and emails"
+  - Changed icon from MessageSquare to Inbox
+  - Shows "Coming soon" placeholder with helpful message
+
+- **Subtitle Addition**:
+  - Added subtitle below greeting: "Here is what you have to do today — {date}"
+  - Date formatted as full date (e.g., "Monday, 27 January 2025")
+
+**Technical Details:**
+- Cards use flex-col layout with flex-1 for content and mt-auto for button positioning
+- Task filtering now includes tasks without due dates in upcoming tasks table
+- Action buttons use grid layout for full-width distribution
+- All buttons maintain hover states and proper disabled states
+
+---
+
+## [Previous] - 2025-01-27 21:30
+
+### Home Page Dashboard Overhaul
+
+**Overview**: Completely redesigned the main dashboard home page with dynamic metrics cards, action buttons control panel, and data tables for recent messages and upcoming tasks.
+
+**New Features:**
+- **Enhanced Metrics Cards** (4 cards across top):
+  - **Next Task Upcoming**: Shows next task title and due date/time, or "No tasks" if none
+  - **Next Reminder**: Shows next reminder title and scheduled time, or "No active reminders" if none
+  - **Recent E-mail**: Placeholder card showing "Coming soon"
+  - **Next Event**: Placeholder card showing "Coming soon"
+  - All cards are clickable and link to relevant pages
+  - Dynamic content with formatted dates and relative time displays
+
+- **Control Panel Section**:
+  - Horizontal row of action buttons for quick access:
+    - **New Note**: Navigates to notes page
+    - **New Contact**: Opens CreateRolodexModal
+    - **New E-mail**: Disabled placeholder (coming soon)
+    - **New Task**: Opens TaskFormCompact modal
+    - **New Reminder**: Navigates to tasks page
+    - **New Upload**: Navigates to docs page
+  - Compact button styling with icons
+  - Responsive flex-wrap layout
+
+- **Recent Messages Table**:
+  - Displays recent chat sessions from global context
+  - Shows session title, last message time (relative), and open action
+  - Links to chat drawer for session access
+  - Empty state with helpful messaging
+
+- **Upcoming Tasks Table**:
+  - Displays upcoming tasks (non-completed, with due dates in future)
+  - Shows task title, client/project context, due date (relative), priority badge
+  - Sorted by due date ascending (soonest first)
+  - Limited to 10 most upcoming tasks
+  - Links to tasks page for full task management
+
+**Enhanced Components:**
+- **page.tsx** (Home Dashboard):
+  - Complete redesign with new layout structure
+  - Personalized greeting "Hello {User}" at top
+  - Metrics cards in responsive grid (4 columns desktop, responsive)
+  - Control panel with action buttons
+  - Two-column layout for tables (Recent Messages | Upcoming Tasks)
+  - Integrated modals for contact and task creation
+  - Proper loading states and empty states for all sections
+
+**Data Queries Used:**
+- `api.tasks.getMetrics` - For next task information
+- `api.reminders.getUpcoming` - For next reminder (limit: 1)
+- `api.chatSessions.list` - For recent messages (contextType: 'global', limit: 10)
+- `api.tasks.getByUser` - For upcoming tasks table
+- `api.clients.list` - For client name lookups
+- `api.projects.list` - For project name lookups
+
+**UI/UX Improvements:**
+- More dynamic and actionable dashboard
+- Quick access to common actions via control panel
+- Clear visual hierarchy with metrics at top
+- Detailed information in metric cards (not just numbers)
+- Relative time formatting (e.g., "in 2h", "in 3d", "2h ago")
+- Responsive design for mobile and desktop
+- Proper empty states for all sections
+- Clickable cards for navigation
+
+**Technical Details:**
+- Uses existing UI components (Card, Table, Button) from shadcn/ui
+- Integrated with ChatDrawerContext for opening chat sessions
+- Modal management for contact and task creation
+- Proper TypeScript types throughout
+- Convex real-time subscriptions for live updates
+- Filtered and sorted task data client-side for performance
+
+**User Benefits:**
+- Better overview of upcoming work (tasks and reminders)
+- Quick access to common actions
+- Recent activity visibility (messages)
+- Personalized greeting
+- More actionable dashboard layout
+
+**Next Steps:**
+- Implement email integration for Recent E-mail card
+- Implement calendar integration for Next Event card
+- Add more dashboard widgets (activity feed, notifications)
+- Consider adding dashboard customization options
+- Add quick actions directly from tables (e.g., complete task from table)
+
+---
+
+## [Previous] - 2025-01-27 20:00
+
+### Tasks and Reminders Management System
+
+**Overview**: Implemented a comprehensive tasks and reminders management system with natural language input, tag management, search-based client/project selection, metrics dashboard, and tabbed interface for both tasks and reminders.
+
+**New Features:**
+- **Tasks and Reminders Page** (`/tasks`):
+  - Tabbed interface with separate views for Tasks and Reminders
+  - Natural language task creation with LLM parsing
+  - Search-based client/project selection (replaces dropdowns)
+  - Metrics cards showing: Up Next task, Total Tasks, Upcoming (24h), Completed, Completed (7d)
+  - Tag management system with "Edit Tags" settings
+  - Task assignment to other users with notifications
+  - Reminder creation linked to tasks
+  - Table views for both tasks and reminders with filtering
+
+**New Components:**
+1. **ClientProjectSearch.tsx** - Search-based client/project selector
+   - Type-ahead search for clients and projects
+   - Shows suggested client/project from LLM with "Accept" option
+   - Dropdown results with client/project details
+   - Disabled project search until client selected
+   - Clear buttons for selected items
+
+2. **TagManagementModal.tsx** - Tag library editor
+   - Add/remove tags from user's tag library
+   - Default tags: email, call, meeting, follow-up, review, send, prepare, update, check, schedule
+   - Tags used by LLM to match natural language inputs
+   - Persistent storage per user
+
+3. **DatePickerCompact.tsx** - Improved date picker
+   - Month and day dropdowns
+   - Fixed year display (current year)
+   - Starts from today's date
+   - Prevents infinite loop with proper state management
+
+**New Convex Functions:**
+- **convex/userTags.ts**:
+  - `get`: Get user's tag library
+  - `update`: Update user's tag library
+
+- **convex/tasks.ts**:
+  - `getMetrics`: Get task metrics (total, upcoming, completed, up next)
+
+**Enhanced Components:**
+- **TaskFormCompact.tsx**:
+  - Integrated ClientProjectSearch component
+  - Reminder section with Switch component (replaces checkbox)
+  - DatePickerCompact for reminder date selection
+  - User assignment dropdown
+  - All fields can be left blank except title
+
+- **TaskNaturalLanguageInput.tsx**:
+  - Added visible "Create Task" button
+  - Shows "Parsing..." state during LLM processing
+  - Button disabled when input is empty
+
+- **tasks/page.tsx**:
+  - Complete redesign with tabs for Tasks and Reminders
+  - Metrics cards at top showing key statistics
+  - Natural language input with search-based client/project selection
+  - Tag management button in header
+  - Separate table views for tasks and reminders
+  - Task table shows: Status, Task, Assigned To, Priority, Due Date, Client, Project, Tags
+  - Reminder table shows: Status, Reminder, Scheduled For, Client, Project
+  - Filtering by status for both tabs
+
+**LLM Integration:**
+- **Updated `/api/tasks/parse/route.ts`**:
+  - Now uses user's tag library for matching natural language inputs
+  - LLM suggests client and project matches with confidence
+  - Tags extracted from description matched against user's tag library
+  - Returns suggested client/project IDs for highlighting
+
+**Schema Updates:**
+- **convex/schema.ts**:
+  - Added `userTags` table for per-user tag libraries
+  - Indexed by userId for fast lookups
+
+**Bug Fixes:**
+- Fixed DatePickerCompact infinite loop issue
+- Fixed syntax errors in tasks page
+- Fixed auth imports in userTags.ts
+
+**Technical Details:**
+- Tag library stored per user in `userTags` table
+- LLM receives tag library in prompt for better matching
+- Search inputs use debounced queries for performance
+- Metrics calculated in real-time from user's tasks
+- Up Next task shows hours/minutes until due date
+- All components use Convex real-time subscriptions
+
+**User Benefits:**
+- Faster task creation with natural language input
+- Better client/project selection with search (handles large lists)
+- Customizable tag library for better LLM matching
+- Clear metrics dashboard for task overview
+- Unified interface for tasks and reminders
+- Task assignment to team members with notifications
+
+**Next Steps:**
+- Add task detail page for editing tasks
+- Add reminder detail page
+- Add bulk actions for tasks/reminders
+- Add calendar view for reminders
+- Add email notifications for reminders
+- Add task templates
+
+---
+
+## [Previous] - 2024-11-20 16:30
 
 ### Docs Section Enterprise Table Overhaul
 
