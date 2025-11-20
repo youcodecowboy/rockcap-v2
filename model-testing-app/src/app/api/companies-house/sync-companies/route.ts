@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const existingCompanyNumbers = await fetchQuery(
       api.companiesHouse.getExistingCompanyNumbers, 
       {}
-    ) as string[];
+    ) as any as string[];
     const existingSet = new Set(existingCompanyNumbers);
     console.log(`Found ${existingSet.size} existing companies in database. Will skip these during sync.`);
 
@@ -297,7 +297,7 @@ export async function POST(request: NextRequest) {
           incorporationDate: profile.date_of_creation,
           companyStatus: profile.company_status,
           charges: chargesWithPdfs.map(({ pdfData, pdfDocumentId, ...charge }) => charge), // Remove pdfData and pdfDocumentId before sending
-        });
+        }) as any;
         
         // Save PSC data
         for (const pscItem of pscList.items) {
@@ -325,7 +325,7 @@ export async function POST(request: NextRequest) {
                   naturesOfControl: pscDetails.natures_of_control,
                   notifiableOn: pscDetails.notified_on,
                   ceasedOn: pscDetails.ceased_on,
-                });
+                }) as any;
                 stats.pscSynced++;
               } else if (pscType === 'corporate-entity') {
                 pscDetails = await getPSCCorporateEntity(companyNumber, pscId);
@@ -339,7 +339,7 @@ export async function POST(request: NextRequest) {
                   notifiableOn: pscDetails.notified_on,
                   ceasedOn: pscDetails.ceased_on,
                   identification: pscDetails.identification,
-                });
+                }) as any;
                 stats.pscSynced++;
               }
             } catch (error: any) {
@@ -373,7 +373,7 @@ export async function POST(request: NextRequest) {
               countryOfResidence: officerItem.country_of_residence,
               address: officerItem.address,
               dateOfBirth: officerItem.date_of_birth,
-            });
+            }) as any;
             stats.officersSynced++;
           } catch (error: any) {
             console.error(`  ✗ Error processing officer:`, error);
@@ -389,7 +389,7 @@ export async function POST(request: NextRequest) {
                 chargeId: charge.chargeId,
                 pdfData: charge.pdfData,
                 pdfUrl: charge.pdfUrl,
-              });
+              }) as any;
             } catch (error) {
               console.error(`Error uploading PDF for charge ${charge.chargeId}:`, error);
             }
@@ -416,7 +416,7 @@ export async function POST(request: NextRequest) {
             await fetchMutation(api.prospects.createProspect, {
               companyNumber: companyNumber,
               companyId: companyId as any,
-            });
+            }) as any;
 
             // Trigger gauntlet asynchronously (don't wait for it to complete)
             // Fire and forget - gauntlet will run in background

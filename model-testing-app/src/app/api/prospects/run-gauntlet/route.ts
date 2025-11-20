@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     if (prospectId && !companyNumber) {
       const prospect = await fetchQuery(api.prospects.getProspect, {
         prospectId: prospectId as any,
-      });
+      }) as any;
       if (!prospect) {
         return NextResponse.json(
           { error: 'Prospect not found' },
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Get company data from Companies House
     const company = await fetchQuery(api.companiesHouse.getCompanyByNumber, {
       companyNumber: targetCompanyNumber,
-    });
+    }) as any;
 
     if (!company) {
       return NextResponse.json(
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Get full company data with officers and PSC
     const fullCompanyData = await fetchQuery(api.companiesHouse.getCompany, {
       companyId: company._id,
-    });
+    }) as any;
 
     if (!fullCompanyData) {
       return NextResponse.json(
@@ -80,16 +80,16 @@ export async function POST(request: NextRequest) {
     // Ensure prospect exists
     let prospect = await fetchQuery(api.prospects.getProspectByCompanyNumber, {
       companyNumber: targetCompanyNumber,
-    });
+    }) as any;
 
     if (!prospect) {
       const prospectId = await fetchMutation(api.prospects.createProspect, {
         companyNumber: targetCompanyNumber,
         companyId: company._id,
-      });
+      }) as any;
       prospect = await fetchQuery(api.prospects.getProspect, {
         prospectId: prospectId as any,
-      });
+      }) as any;
     }
 
     if (!prospect) {
@@ -251,14 +251,14 @@ export async function POST(request: NextRequest) {
               (result.app as LondonPlanningApplicationRaw).validated_date,
             rawPayload: result.app,
           }
-        );
+        ) as any;
 
         await fetchMutation(api.planning.linkCompanyToPlanning, {
           companyNumber: targetCompanyNumber,
           planningApplicationId: planningAppId as any,
           matchConfidence: result.confidence,
           matchReason: result.matchReason,
-        });
+        }) as any;
 
         planningAppsSaved++;
       } catch (error: any) {
@@ -303,7 +303,7 @@ export async function POST(request: NextRequest) {
               postcode: prop.postcode,
               rawPayload: prop,
             }
-          );
+          ) as any;
 
           // Determine dataset from context (would need to track which query returned it)
           const fromDataset = prop.company_number
@@ -316,7 +316,7 @@ export async function POST(request: NextRequest) {
             ownershipType: normalizeOwnershipType(prop.tenure),
             fromDataset,
             acquiredDate: prop.date_of_sale,
-          });
+          }) as any;
 
           propertiesSaved++;
         } catch (error: any) {
@@ -342,7 +342,7 @@ export async function POST(request: NextRequest) {
       hasPlanningHits: planningAppsSaved > 0,
       hasOwnedPropertyHits: propertiesSaved > 0,
       lastGauntletRunAt: new Date().toISOString(),
-    });
+    }) as any;
 
     return NextResponse.json({
       success: true,
@@ -513,12 +513,12 @@ async function calculateProspectScore(
   const planningLinks = await fetchQuery(
     api.planning.getPlanningApplicationsForCompany,
     { companyNumber }
-  );
+  ) as any;
 
   // Get properties for the company
   const propertyLinks = await fetchQuery(api.property.getPropertiesForCompany, {
     companyNumber,
-  });
+  }) as any;
 
   let score = 0;
   const twentyFourMonthsAgo = new Date();
@@ -557,12 +557,12 @@ async function calculateProspectScore(
   // Bonus: planning app + property share postcode
   const planningPostcodes = new Set(
     planningLinks
-      .map((link) => link.planningApplication?.sitePostcode)
+      .map((link: any) => link.planningApplication?.sitePostcode)
       .filter(Boolean)
   );
   const propertyPostcodes = new Set(
     propertyLinks
-      .map((link) => link.propertyTitle?.postcode)
+      .map((link: any) => link.propertyTitle?.postcode)
       .filter(Boolean)
   );
 

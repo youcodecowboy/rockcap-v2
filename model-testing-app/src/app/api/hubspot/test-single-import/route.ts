@@ -547,7 +547,7 @@ export async function POST(request: NextRequest) {
         console.log('[Test Import] Verifying links...');
         
         // Use fetchQuery to get the synced deal
-        const syncedDeal = await fetchQuery(api.deals.getDealById, { dealId: dealResult.id }).catch(() => null);
+        const syncedDeal = await fetchQuery(api.deals.getDealById, { dealId: dealResult.id }).catch(() => null) as any;
         if (syncedDeal) {
           results.links.dealLinkedToContact = (syncedDeal.linkedContactIds?.length || 0) > 0;
           results.links.dealLinkedToCompany = (syncedDeal.linkedCompanyIds?.length || 0) > 0;

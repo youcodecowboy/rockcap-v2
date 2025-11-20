@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     // Get reminders due now (within 1 minute window)
     const dueReminders = await fetchQuery(api.reminders.getDue, {
       bufferMinutes: 1, // Check reminders due within 1 minute
-    });
+    }) as any;
 
     if (!dueReminders || dueReminders.length === 0) {
       return NextResponse.json({
@@ -40,14 +40,14 @@ export async function POST(request: NextRequest) {
           title: `Reminder: ${reminder.title}`,
           message: reminder.description || `Reminder scheduled for ${new Date(reminder.scheduledFor).toLocaleString()}`,
           relatedId: reminder._id,
-        });
+        }) as any;
 
         notificationsCreated.push(notificationId);
 
         // Mark reminder notification as sent (update isRead flag)
         await fetchMutation(api.reminders.markAsRead, {
           id: reminder._id,
-        });
+        }) as any;
       } catch (error) {
         console.error(`Failed to create notification for reminder ${reminder._id}:`, error);
         errors.push({

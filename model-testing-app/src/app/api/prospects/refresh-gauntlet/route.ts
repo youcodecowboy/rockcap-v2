@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const prospectsNeedingRefresh = await fetchQuery(
       api.prospects.getProspectsNeedingRefresh,
       { daysOld }
-    );
+    ) as any;
 
     // Limit the number of prospects to process
     const prospectsToProcess = prospectsNeedingRefresh.slice(0, limit);
