@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       
       const result = await fetchMutation(api.hubspotSync.extractDatesFromMetadata as any, {
         tableType: tableType as 'contacts' | 'companies' | 'deals',
-      });
+      }) as any;
       
       return NextResponse.json({
         success: true,
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
     
     if (action === 'link-contacts-to-companies') {
-      const result = await fetchMutation(api.hubspotSync.linkContactsToCompanies as any, {});
+      const result = await fetchMutation(api.hubspotSync.linkContactsToCompanies as any, {}) as any;
       
       return NextResponse.json({
         success: true,
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
     
     if (action === 'link-deals') {
-      const result = await fetchMutation(api.hubspotSync.linkDealsToContactsAndCompanies as any, {});
+      const result = await fetchMutation(api.hubspotSync.linkDealsToContactsAndCompanies as any, {}) as any;
       
       return NextResponse.json({
         success: true,
@@ -57,19 +57,19 @@ export async function POST(request: NextRequest) {
       // Extract dates for all tables
       results.datesContacts = await fetchMutation(api.hubspotSync.extractDatesFromMetadata as any, {
         tableType: 'contacts',
-      });
+      }) as any;
       results.datesCompanies = await fetchMutation(api.hubspotSync.extractDatesFromMetadata as any, {
         tableType: 'companies',
-      });
+      }) as any;
       results.datesDeals = await fetchMutation(api.hubspotSync.extractDatesFromMetadata as any, {
         tableType: 'deals',
-      });
+      }) as any;
       
       // Link contacts to companies
-      results.linkContactsToCompanies = await fetchMutation(api.hubspotSync.linkContactsToCompanies as any, {});
+      results.linkContactsToCompanies = await fetchMutation(api.hubspotSync.linkContactsToCompanies as any, {}) as any;
       
       // Link deals to contacts and companies
-      results.linkDeals = await fetchMutation(api.hubspotSync.linkDealsToContactsAndCompanies as any, {});
+      results.linkDeals = await fetchMutation(api.hubspotSync.linkDealsToContactsAndCompanies as any, {}) as any;
       
       return NextResponse.json({
         success: true,
