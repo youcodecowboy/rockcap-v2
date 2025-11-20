@@ -11,11 +11,13 @@ import { PlaceholderMapping, ArrayPlaceholderMapping, PlaceholderConfig } from '
 export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   // Property info - specific mappings, high priority
   '<property.name>': { 
+    placeholder: '<property.name>',
     source: 'summary.property_name', 
     type: 'string', 
     priority: 10 
   },
   '<property.address>': { 
+    placeholder: '<property.address>',
     source: 'summary.property_address', 
     type: 'string', 
     priority: 10 
@@ -23,42 +25,49 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   
   // Financial - specific mappings, high priority
   '<interest.rate>': { 
+    placeholder: '<interest.rate>',
     source: 'financing.interestRate', 
     type: 'number', 
     format: 'percentage', 
     priority: 10 
   },
   '<interest.percentage>': { 
+    placeholder: '<interest.percentage>',
     source: 'financing.interestPercentage', 
     type: 'number', 
     format: 'percentage', 
     priority: 10 
   },
   '<loan.amount>': { 
+    placeholder: '<loan.amount>',
     source: 'financing.loanAmount', 
     type: 'number', 
     format: 'currency', 
     priority: 10 
   },
   '<total.cost>': { 
+    placeholder: '<total.cost>',
     source: 'costsTotal.amount', 
     type: 'number', 
     format: 'currency', 
     priority: 10 
   },
   '<total.revenue>': { 
+    placeholder: '<total.revenue>',
     source: 'revenue.totalSales', 
     type: 'number', 
     format: 'currency', 
     priority: 10 
   },
   '<profit.total>': { 
+    placeholder: '<profit.total>',
     source: 'profit.total', 
     type: 'number', 
     format: 'currency', 
     priority: 10 
   },
   '<profit.percentage>': { 
+    placeholder: '<profit.percentage>',
     source: 'profit.percentage', 
     type: 'number', 
     format: 'percentage', 
@@ -68,18 +77,21 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   // Multiple mappings with priorities - array format for ambiguous matches
   '<expense.amount>': [
     { 
+      placeholder: '<expense.amount>',
       source: 'costCategories.professionalFees.subtotal', 
       type: 'number', 
       format: 'currency', 
       priority: 8 
     },  // Specific - high priority
     { 
+      placeholder: '<expense.amount>',
       source: 'costCategories.netConstructionCosts.subtotal', 
       type: 'number', 
       format: 'currency', 
       priority: 8 
     },  // Same priority, second choice
     { 
+      placeholder: '<expense.amount>',
       source: 'costs[].amount', 
       type: 'number', 
       format: 'currency', 
@@ -89,6 +101,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   
   // Array placeholders with priorities
   '<costs>': {
+    placeholder: '<costs>',
     source: 'costs',
     priority: 5,  // Generic - lower priority
     startMarker: '<costs.start>',
@@ -102,6 +115,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<professional.fees>': {
+    placeholder: '<professional.fees>',
     source: 'costCategories.professionalFees.items',
     priority: 8,  // More specific - higher priority
     startMarker: '<professional.fees.start>',
@@ -114,6 +128,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<site.costs>': {
+    placeholder: '<site.costs>',
     source: 'costCategories.siteCosts.items',
     priority: 8,
     startMarker: '<site.costs.start>',
@@ -126,6 +141,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<construction.costs>': {
+    placeholder: '<construction.costs>',
     source: 'costCategories.netConstructionCosts.items',
     priority: 8,
     startMarker: '<construction.costs.start>',
@@ -138,6 +154,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<disposal.fees>': {
+    placeholder: '<disposal.fees>',
     source: 'costCategories.disposalFees.items',
     priority: 8,
     startMarker: '<disposal.fees.start>',
@@ -150,6 +167,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<financing.legal.fees>': {
+    placeholder: '<financing.legal.fees>',
     source: 'costCategories.financingLegalFees.items',
     priority: 8,
     startMarker: '<financing.legal.fees.start>',
@@ -163,6 +181,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   
   // Category subtotals
   '<site.costs.subtotal>': {
+    placeholder: '<site.costs.subtotal>',
     source: 'costCategories.siteCosts.subtotal',
     type: 'number',
     format: 'currency',
@@ -170,6 +189,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<construction.costs.subtotal>': {
+    placeholder: '<construction.costs.subtotal>',
     source: 'costCategories.netConstructionCosts.subtotal',
     type: 'number',
     format: 'currency',
@@ -177,6 +197,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<professional.fees.subtotal>': {
+    placeholder: '<professional.fees.subtotal>',
     source: 'costCategories.professionalFees.subtotal',
     type: 'number',
     format: 'currency',
@@ -184,6 +205,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<disposal.fees.subtotal>': {
+    placeholder: '<disposal.fees.subtotal>',
     source: 'costCategories.disposalFees.subtotal',
     type: 'number',
     format: 'currency',
@@ -191,6 +213,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<financing.legal.fees.subtotal>': {
+    placeholder: '<financing.legal.fees.subtotal>',
     source: 'costCategories.financingLegalFees.subtotal',
     type: 'number',
     format: 'currency',
@@ -198,6 +221,7 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<plots>': {
+    placeholder: '<plots>',
     source: 'plots',
     priority: 7,
     startMarker: '<plots.start>',
@@ -211,12 +235,14 @@ export const STANDARD_PLACEHOLDERS: PlaceholderConfig = {
   },
   
   '<units.count>': {
+    placeholder: '<units.count>',
     source: 'units.count',
     type: 'number',
     priority: 9,
   },
   
   '<units.type>': {
+    placeholder: '<units.type>',
     source: 'units.type',
     type: 'string',
     priority: 9,
@@ -230,6 +256,7 @@ export const APPRAISAL_MODEL_PLACEHOLDERS: PlaceholderConfig = {
   ...STANDARD_PLACEHOLDERS,
   // Add appraisal-specific placeholders here
   '<appraisal.value>': {
+    placeholder: '<appraisal.value>',
     source: 'summary.appraisal_value',
     type: 'number',
     format: 'currency',
@@ -244,6 +271,7 @@ export const OPERATING_MODEL_PLACEHOLDERS: PlaceholderConfig = {
   ...STANDARD_PLACEHOLDERS,
   // Add operating-specific placeholders here
   '<operating.expenses>': {
+    placeholder: '<operating.expenses>',
     source: 'operating.expenses',
     type: 'number',
     format: 'currency',

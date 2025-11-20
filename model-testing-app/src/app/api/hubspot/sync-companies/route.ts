@@ -132,7 +132,10 @@ export async function POST(request: NextRequest) {
         if (lastContactedDate) companyData.lastContactedDate = lastContactedDate;
         if (lastActivityDate) companyData.lastActivityDate = lastActivityDate;
         
-        const result = await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companyData);
+        const result = await fetchMutation(
+          api.hubspotSync.syncCompanyFromHubSpot as any, 
+          companyData
+        ) as { action: 'created' | 'updated'; id: string };
         
         synced++;
         if (result.action === 'created') {

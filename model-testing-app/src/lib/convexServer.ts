@@ -1,5 +1,6 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
 
 // Server-side Convex client for use in API routes
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "";
@@ -11,18 +12,27 @@ if (!convexUrl) {
 export const convexServer = convexUrl ? new ConvexHttpClient(convexUrl) : null;
 
 // Helper functions for server-side Convex operations
-export async function getClientsServer(status?: string, type?: string) {
+export async function getClientsServer(status?: string, type?: string): Promise<any> {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.clients.list, { status, type });
+  const statusEnum = status as 'prospect' | 'active' | 'archived' | 'past' | undefined;
+  const queryParams: any = { status: statusEnum, type };
+  // @ts-expect-error TS2589 - Type instantiation depth issue with Convex generics
+  const queryFn: any = api.clients.list;
+  const server: any = convexServer;
+  const result = await server.query(queryFn, queryParams);
+  return result;
 }
 
 export async function getProjectsServer(clientId?: string, status?: string) {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.projects.list, { clientId, status });
+  const clientIdTyped = clientId as Id<"clients"> | undefined;
+  const statusEnum = status as 'active' | 'inactive' | 'completed' | 'on-hold' | 'cancelled' | undefined;
+  const result = await convexServer.query(api.projects.list, { clientId: clientIdTyped, status: statusEnum }) as any;
+  return result;
 }
 
 export async function createDocumentServer(data: {
@@ -49,7 +59,15 @@ export async function createDocumentServer(data: {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.mutation(api.documents.create, data);
+  const statusEnum = data.status as 'completed' | 'pending' | 'processing' | 'error' | undefined;
+  const result = await convexServer.mutation(api.documents.create, {
+    ...data,
+    fileStorageId: data.fileStorageId as Id<"_storage"> | undefined,
+    clientId: data.clientId as Id<"clients"> | undefined,
+    projectId: data.projectId as Id<"projects"> | undefined,
+    status: statusEnum,
+  }) as any;
+  return result;
 }
 
 export async function createEnrichmentServer(data: {
@@ -65,21 +83,31 @@ export async function createEnrichmentServer(data: {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.mutation(api.enrichment.create, data);
+  const typeEnum = data.type as 'email' | 'address' | 'phone' | 'other' | 'company' | 'contact' | 'date';
+  const result = await convexServer.mutation(api.enrichment.create, {
+    ...data,
+    type: typeEnum,
+    documentId: data.documentId as Id<"documents">,
+    clientId: data.clientId as Id<"clients"> | undefined,
+    projectId: data.projectId as Id<"projects"> | undefined,
+  }) as any;
+  return result;
 }
 
 export async function getClientServer(clientId: string) {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.clients.get, { id: clientId as any });
+  const result = await convexServer.query(api.clients.get, { id: clientId as any }) as any;
+  return result;
 }
 
 export async function getProjectServer(projectId: string) {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.projects.get, { id: projectId as any });
+  const result = await convexServer.query(api.projects.get, { id: projectId as any }) as any;
+  return result;
 }
 
 export async function searchKnowledgeBankServer(params: {
@@ -92,28 +120,32 @@ export async function searchKnowledgeBankServer(params: {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.knowledgeBank.search, params as any);
+  const result = await convexServer.query(api.knowledgeBank.search, params as any) as any;
+  return result;
 }
 
 export async function getKnowledgeBankByClientServer(clientId: string) {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.knowledgeBank.getByClient, { clientId: clientId as any });
+  const result = await convexServer.query(api.knowledgeBank.getByClient, { clientId: clientId as any }) as any;
+  return result;
 }
 
 export async function getKnowledgeBankByProjectServer(projectId: string) {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.knowledgeBank.getByProject, { projectId: projectId as any });
+  const result = await convexServer.query(api.knowledgeBank.getByProject, { projectId: projectId as any }) as any;
+  return result;
 }
 
 export async function getClientSummaryServer(clientId: string) {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.knowledgeBank.aggregateClientSummary, { clientId: clientId as any });
+  const result = await convexServer.query(api.knowledgeBank.aggregateClientSummary, { clientId: clientId as any }) as any;
+  return result;
 }
 
 export async function getDocumentsServer(params: {
@@ -125,6 +157,7 @@ export async function getDocumentsServer(params: {
   if (!convexServer) {
     throw new Error("Convex server client not configured");
   }
-  return await convexServer.query(api.documents.list, params as any);
+  const result = await convexServer.query(api.documents.list, params as any) as any;
+  return result;
 }
 

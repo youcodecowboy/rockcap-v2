@@ -41,7 +41,6 @@ export function initializeDemoData(): { client1Id: string; client2Id: string; cl
         companyName: 'Pacific Coast Developers',
         email: 'info@pacificcoastdev.com',
         phone: '+1-415-555-0123',
-        lifecycleStage: 'perspective',
         tags: ['high-value', 'multifamily'],
       });
     }
@@ -71,7 +70,7 @@ export function initializeDemoData(): { client1Id: string; client2Id: string; cl
       });
 
       addEnrichmentSuggestion(client1.id, {
-        type: 'contactName',
+        type: 'contact',
         field: 'contactName',
         value: 'Michael Chen - CEO',
         source: 'Document header',
@@ -154,7 +153,6 @@ export function initializeDemoData(): { client1Id: string; client2Id: string; cl
         companyName: 'Metro Property Group',
         email: 'info@metropg.com',
         phone: '+1-212-555-0456',
-        lifecycleStage: 'perspective',
         tags: ['commercial', 'high-value'],
       });
     }
@@ -173,7 +171,7 @@ export function initializeDemoData(): { client1Id: string; client2Id: string; cl
       });
 
       addEnrichmentSuggestion(client2.id, {
-        type: 'contactName',
+        type: 'contact',
         field: 'contactName',
         value: 'Sarah Johnson - Managing Director',
         source: 'Email header',
@@ -246,7 +244,6 @@ export function initializeDemoData(): { client1Id: string; client2Id: string; cl
         companyName: 'Summit Real Estate Investments',
         email: 'info@summitrei.com',
         phone: '+1-310-555-0789',
-        lifecycleStage: 'perspective',
         tags: ['residential', 'warm-lead'],
       });
     }
@@ -265,7 +262,7 @@ export function initializeDemoData(): { client1Id: string; client2Id: string; cl
       });
 
       addEnrichmentSuggestion(client3.id, {
-        type: 'website',
+        type: 'other',
         field: 'website',
         value: 'https://www.summitrei.com',
         source: 'Email signature',

@@ -31,11 +31,15 @@ export function registerFormulasWithEngine(
 
   sheets.forEach((sheet) => {
     // Get sheet ID in HyperFormula
-    let sheetId: number;
+    let sheetId: number | undefined;
     try {
       sheetId = engine.getSheetId(sheet.name);
     } catch (e) {
       console.warn(`[FormulaRegistrar] Sheet "${sheet.name}" not found in engine, skipping`);
+      return;
+    }
+
+    if (sheetId === undefined) {
       return;
     }
 

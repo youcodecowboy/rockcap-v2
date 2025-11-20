@@ -1,3 +1,30 @@
+import { Id } from "../../convex/_generated/dataModel";
+
+export interface SavedDocument {
+  _id: Id<"documents">;
+  fileStorageId?: Id<"_storage">;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  uploadedAt: string;
+  summary: string;
+  fileTypeDetected: string;
+  category: string;
+  reasoning: string;
+  confidence: number;
+  tokensUsed: number;
+  clientId?: Id<"clients">;
+  clientName?: string;
+  projectId?: Id<"projects">;
+  projectName?: string;
+  suggestedClientName?: string;
+  suggestedProjectName?: string;
+  extractedData?: any;
+  status?: 'pending' | 'processing' | 'completed' | 'error';
+  error?: string;
+  savedAt: string;
+}
+
 export interface Client {
   id: string;
   name: string;

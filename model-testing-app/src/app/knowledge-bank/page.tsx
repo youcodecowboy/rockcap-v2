@@ -191,7 +191,7 @@ export default function KnowledgeBankPage() {
   const renderExtractedData = (extractedData: any) => {
     if (!extractedData) return null;
     
-    const sections: JSX.Element[] = [];
+    const sections: React.ReactElement[] = [];
     
     // Costs breakdown
     if (extractedData.costsTotal) {
@@ -404,7 +404,7 @@ export default function KnowledgeBankPage() {
             <div className="p-4 text-sm text-gray-500">No clients found.</div>
           ) : (
             <div className="space-y-1">
-              {clients.map((client) => {
+              {clients.map((client: any) => {
                 const entryCount = clientEntryCounts[client._id] || 0;
                 const isExpanded = expandedClients.has(client._id);
                 const isSelected = selectedClientId === client._id;
@@ -534,7 +534,7 @@ export default function KnowledgeBankPage() {
             ) : (
               <div className="space-y-8">
                 {/* Client-level entries */}
-                {organizedEntries.clientLevel.map((entry, index) => {
+                {organizedEntries.clientLevel.map((entry: any, index: number) => {
                   const isEditing = editingEntryId === entry._id;
                   const document = entry.sourceId && entry.sourceType === 'document' 
                     ? documentsMap.get(entry.sourceId as Id<"documents">) 
@@ -637,7 +637,7 @@ export default function KnowledgeBankPage() {
                         <div className="mt-4">
                           <h3 className="text-sm font-semibold text-gray-900 mb-2">Key Points</h3>
                           <ul className="space-y-1">
-                            {entry.keyPoints.map((point, idx) => (
+                            {entry.keyPoints.map((point: string, idx: number) => (
                               <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
                                 <span className="text-blue-600 mt-1">•</span>
                                 <span>{point}</span>
@@ -672,7 +672,7 @@ export default function KnowledgeBankPage() {
                       {/* Tags */}
                       {entry.tags.length > 0 && (
                         <div className="mt-4 flex flex-wrap gap-2">
-                          {entry.tags.map((tag, idx) => (
+                          {entry.tags.map((tag: string, idx: number) => (
                             <Badge key={idx} variant="secondary" className="text-xs">
                               {tag}
                             </Badge>
@@ -684,7 +684,7 @@ export default function KnowledgeBankPage() {
                 })}
 
                 {/* Project-based entries */}
-                {Array.from(organizedEntries.byProject.entries()).map(([projectId, entries]) => {
+                {Array.from(organizedEntries.byProject.entries()).map(([projectId, entries]: [string, any[]]) => {
                   const project = projects?.find(p => p._id === projectId);
                   if (!project) return null;
                   
@@ -711,7 +711,7 @@ export default function KnowledgeBankPage() {
                       )}
 
                       <div className="space-y-8">
-                        {entries.map((entry) => {
+                        {entries.map((entry: any) => {
                           const isEditing = editingEntryId === entry._id;
                           const document = entry.sourceId && entry.sourceType === 'document' 
                             ? documentsMap.get(entry.sourceId as Id<"documents">) 
@@ -812,7 +812,7 @@ export default function KnowledgeBankPage() {
                                 <div className="mt-4">
                                   <h4 className="text-sm font-semibold text-gray-900 mb-2">Key Points</h4>
                                   <ul className="space-y-1">
-                                    {entry.keyPoints.map((point, idx) => (
+                                    {entry.keyPoints.map((point: string, idx: number) => (
                                       <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
                                         <span className="text-blue-600 mt-1">•</span>
                                         <span>{point}</span>
@@ -846,7 +846,7 @@ export default function KnowledgeBankPage() {
 
                               {entry.tags.length > 0 && (
                                 <div className="mt-4 flex flex-wrap gap-2">
-                                  {entry.tags.map((tag, idx) => (
+                                  {entry.tags.map((tag: string, idx: number) => (
                                     <Badge key={idx} variant="secondary" className="text-xs">
                                       {tag}
                                     </Badge>

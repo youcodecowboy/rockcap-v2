@@ -78,22 +78,26 @@ export default function ProspectDetailPage() {
 
   const loadData = () => {
     if (typeof window === 'undefined') return;
-    const loadedProspect = getProspectById(prospectId);
-    setProspect(loadedProspect);
+    const loadedProspectRaw = getProspectById(prospectId);
+    setProspect(loadedProspectRaw || null);
 
-    if (loadedProspect) {
-      setEditFormData({
-        name: loadedProspect.name,
-        companyName: loadedProspect.companyName || '',
-        email: loadedProspect.email || '',
-        phone: loadedProspect.phone || '',
-        industry: loadedProspect.industry || '',
-        tags: loadedProspect.tags || [],
-      });
-
-      const prospectEmails = getEmailsByProspect(prospectId);
-      setEmails(prospectEmails);
+    if (!loadedProspectRaw) {
+      return;
     }
+
+    const loadedProspect = loadedProspectRaw as Prospect;
+
+    setEditFormData({
+      name: loadedProspect.name,
+      companyName: loadedProspect.companyName || '',
+      email: loadedProspect.email || '',
+      phone: loadedProspect.phone || '',
+      industry: loadedProspect.industry || '',
+      tags: loadedProspect.tags || [],
+    });
+
+    const prospectEmails = getEmailsByProspect(prospectId);
+    setEmails(prospectEmails);
   };
 
   const handleSave = () => {
@@ -165,7 +169,7 @@ export default function ProspectDetailPage() {
 
   const getDocumentName = (documentId: string): string => {
     const doc = getDocumentById(documentId);
-    return doc?.file.name || 'Unknown Document';
+    return doc?.fileName || 'Unknown Document';
   };
 
   if (!prospect) {

@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
         clientsWithProjects.push({
           id: client._id as any,
           name: client.name,
-          projects: projects.map(p => ({ id: p._id as any, name: p.name })),
+          projects: projects.map((p: any) => ({ id: p._id as any, name: p.name })),
         });
       }
     } catch (error) {

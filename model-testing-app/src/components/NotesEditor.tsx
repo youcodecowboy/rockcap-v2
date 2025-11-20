@@ -67,8 +67,8 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
   const [title, setTitle] = useState(note.title);
   const [emoji, setEmoji] = useState(note.emoji || '');
   const [tags, setTags] = useState(note.tags || []);
-  const [currentClientId, setCurrentClientId] = useState<Id<"clients"> | null>(note.clientId || null);
-  const [currentProjectId, setCurrentProjectId] = useState<Id<"projects"> | null>(note.projectId || null);
+  const [currentClientId, setCurrentClientId] = useState<Id<"clients"> | null>(note.clientId ? (note.clientId as Id<"clients">) : null);
+  const [currentProjectId, setCurrentProjectId] = useState<Id<"projects"> | null>(note.projectId ? (note.projectId as Id<"projects">) : null);
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'unsaved' | 'error'>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>(note.lastSavedAt);
   const [linkModalOpen, setLinkModalOpen] = useState(false);

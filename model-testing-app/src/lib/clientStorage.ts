@@ -14,8 +14,8 @@ export function useClient(id: Id<"clients"> | undefined) {
   return useQuery(api.clients.get, id ? { id } : "skip");
 }
 
-export function useClientsByStatus(status: Client['status']) {
-  return useQuery(api.clients.getByStatus, { status });
+export function useClientsByStatus(status: Client['status'] | undefined) {
+  return useQuery(api.clients.getByStatus, status ? { status } : "skip");
 }
 
 export function useClientsByType(type: string) {
@@ -248,7 +248,7 @@ export function projectExists(clientId: string, name: string): boolean {
   return false;
 }
 
-export function getClientsByLifecycleStage(lifecycleStage: Client['lifecycleStage']): Client[] {
+export function getClientsByLifecycleStage(lifecycleStage: string): Client[] {
   console.warn("getClientsByLifecycleStage() is deprecated. Filter clients in component using useClients() hook.");
   return [];
 }

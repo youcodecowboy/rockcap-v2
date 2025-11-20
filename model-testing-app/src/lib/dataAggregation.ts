@@ -21,15 +21,15 @@ export function aggregateClientStats(clientId: string): ClientStats {
   const documents = getDocumentsByClient(clientId);
 
   const totalProjects = projects.length;
-  const activeProjects = projects.filter(p => p.status === 'active').length;
+  const activeProjects = projects.filter((p: any) => p.status === 'active').length;
   const totalDocuments = documents.length;
 
   let lastActivity: string | undefined;
   if (documents.length > 0) {
     const sortedDocs = documents.sort((a, b) =>
-      new Date(b.file.uploadedAt).getTime() - new Date(a.file.uploadedAt).getTime()
+      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
     );
-    lastActivity = sortedDocs[0].file.uploadedAt;
+    lastActivity = sortedDocs[0].uploadedAt;
   }
 
   return {
@@ -47,10 +47,10 @@ export function aggregateProjectStats(projectId: string): ProjectStats {
   let totalCosts: number | undefined;
   let loanAmount: number | undefined;
 
-  const documentsWithData = documents.filter(doc => doc.analysisResult.extractedData);
+  const documentsWithData = documents.filter(doc => doc.extractedData);
   if (documentsWithData.length > 0) {
     const costs = documentsWithData
-      .map(doc => doc.analysisResult.extractedData?.costsTotal?.amount)
+      .map(doc => doc.extractedData?.costsTotal?.amount)
       .filter((amount): amount is number => typeof amount === 'number');
 
     if (costs.length > 0) {
@@ -58,7 +58,7 @@ export function aggregateProjectStats(projectId: string): ProjectStats {
     }
 
     const loanAmounts = documentsWithData
-      .map(doc => doc.analysisResult.extractedData?.financing?.loanAmount)
+      .map(doc => doc.extractedData?.financing?.loanAmount)
       .filter((amount): amount is number => typeof amount === 'number');
 
     if (loanAmounts.length > 0) {
@@ -69,9 +69,9 @@ export function aggregateProjectStats(projectId: string): ProjectStats {
   let lastActivity: string | undefined;
   if (documents.length > 0) {
     const sortedDocs = documents.sort((a, b) =>
-      new Date(b.file.uploadedAt).getTime() - new Date(a.file.uploadedAt).getTime()
+      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
     );
-    lastActivity = sortedDocs[0].file.uploadedAt;
+    lastActivity = sortedDocs[0].uploadedAt;
   }
 
   return {
@@ -88,7 +88,7 @@ export function extractContactsFromDocuments(documents: SavedDocument[]): Contac
 
   for (const doc of documents) {
     // Extract from summary and reasoning
-    const text = `${doc.analysisResult.summary} ${doc.analysisResult.reasoning}`.toLowerCase();
+    const text = `${doc.summary} ${doc.reasoning}`.toLowerCase();
 
     // Simple email extraction
     const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
@@ -101,8 +101,8 @@ export function extractContactsFromDocuments(documents: SavedDocument[]): Contac
           id: `extracted_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: email.split('@')[0].replace(/[._]/g, ' '),
           email: email,
-          createdAt: doc.file.uploadedAt,
-          sourceDocumentId: doc.id,
+          createdAt: doc.uploadedAt,
+          sourceDocumentId: doc._id,
         });
       }
     }
@@ -119,8 +119,8 @@ export function extractContactsFromDocuments(documents: SavedDocument[]): Contac
           id: `extracted_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: 'Unknown Contact',
           phone: phone.trim(),
-          createdAt: doc.file.uploadedAt,
-          sourceDocumentId: doc.id,
+          createdAt: doc.uploadedAt,
+          sourceDocumentId: doc._id,
         });
       }
     }
@@ -133,8 +133,8 @@ export function extractCommunicationsFromDocuments(documents: SavedDocument[]): 
   const communications: Communication[] = [];
 
   for (const doc of documents) {
-    const category = doc.analysisResult.category.toLowerCase();
-    const fileType = doc.analysisResult.fileType.toLowerCase();
+    const category = doc.category.toLowerCase();
+    const fileType = doc.fileTypeDetected.toLowerCase();
 
     let commType: Communication['type'] = 'other';
     if (fileType.includes('email') || category.includes('email')) {
@@ -148,18 +148,18 @@ export function extractCommunicationsFromDocuments(documents: SavedDocument[]): 
     }
 
     // Extract participants from summary/reasoning (simple extraction)
-    const text = `${doc.analysisResult.summary} ${doc.analysisResult.reasoning}`;
+    const text = `${doc.summary} ${doc.reasoning}`;
     const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
     const participants = text.match(emailRegex) || [];
 
     communications.push({
-      id: `comm_${doc.id}`,
+      id: `comm_${doc._id}`,
       type: commType,
-      subject: doc.file.name,
-      date: doc.file.uploadedAt,
+      subject: doc.fileName,
+      date: doc.uploadedAt,
       participants: participants.slice(0, 5), // Limit to 5 participants
-      documentId: doc.id,
-      summary: doc.analysisResult.summary,
+      documentId: doc._id,
+      summary: doc.summary,
     });
   }
 
@@ -179,9 +179,9 @@ export function getRecentActivity(
 
   const activities = documents.map(doc => ({
     type: 'document_upload',
-    date: doc.file.uploadedAt,
-    documentId: doc.id,
-    documentName: doc.file.name,
+    date: doc.uploadedAt,
+    documentId: doc._id,
+    documentName: doc.fileName,
   }));
 
   return activities.sort((a, b) =>

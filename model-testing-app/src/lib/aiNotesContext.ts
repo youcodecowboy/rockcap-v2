@@ -1,4 +1,4 @@
-import { Id } from '../convex/_generated/dataModel';
+import { Id } from '../../convex/_generated/dataModel';
 import {
   getClientServer,
   getProjectServer,
@@ -64,7 +64,7 @@ export async function gatherContextForNote(
       const projectEntries = await getKnowledgeBankByProjectServer(projectId);
       // Merge with search results, avoiding duplicates
       const existingIds = new Set(context.knowledgeBankEntries.map(e => e._id));
-      projectEntries.forEach(entry => {
+      (projectEntries as any[]).forEach((entry: any) => {
         if (!existingIds.has(entry._id)) {
           context.knowledgeBankEntries.push(entry);
         }
@@ -73,7 +73,7 @@ export async function gatherContextForNote(
       const clientEntries = await getKnowledgeBankByClientServer(clientId);
       // Merge with search results, avoiding duplicates
       const existingIds = new Set(context.knowledgeBankEntries.map(e => e._id));
-      clientEntries.forEach(entry => {
+      (clientEntries as any[]).forEach((entry: any) => {
         if (!existingIds.has(entry._id)) {
           context.knowledgeBankEntries.push(entry);
         }

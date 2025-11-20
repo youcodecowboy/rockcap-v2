@@ -41,7 +41,8 @@ export function auditFormulaRecognition(
     // Find sheet index in HyperFormula (by name)
     let hfSheetIndex: number | null = null;
     try {
-      hfSheetIndex = engine.getSheetId(sheet.name);
+      const sheetId = engine.getSheetId(sheet.name);
+      hfSheetIndex = sheetId ?? null;
     } catch (e) {
       console.warn(`[FormulaAuditor] Sheet "${sheet.name}" not found in HyperFormula engine`);
       return;

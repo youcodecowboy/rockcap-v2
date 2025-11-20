@@ -79,7 +79,10 @@ export default function CompaniesHouseTestPage() {
   const [selectedCompany, setSelectedCompany] = useState<CompanyWithCharges | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
-  const allCompanies = useQuery(api.companiesHouse.listCompanies, {}) || [];
+  const allCompanies = (useQuery(
+    api.companiesHouse.listCompanies, 
+    {}
+  ) as any) || [];
   const companiesWithNewCharges = useQuery(
     api.companiesHouse.getCompaniesWithNewCharges
   ) || [];
@@ -305,13 +308,14 @@ export default function CompaniesHouseTestPage() {
       </Card>
 
       {/* Company Details Drawer */}
-      <CompanyDetailsDrawer
-        isOpen={isDetailsOpen}
-        onClose={() => {
-          setIsDetailsOpen(false);
-          setSelectedCompany(null);
-        }}
-        company={selectedCompany}
+      {selectedCompany && (
+        <CompanyDetailsDrawer
+          isOpen={isDetailsOpen}
+          onClose={() => {
+            setIsDetailsOpen(false);
+            setSelectedCompany(null);
+          }}
+          company={selectedCompany}
         companyData={getCompany}
         prospect={prospect}
         planningApps={planningApps}
@@ -330,7 +334,8 @@ export default function CompaniesHouseTestPage() {
         }}
         formatDate={formatDate}
         formatDateTime={formatDateTime}
-      />
+        />
+      )}
     </div>
   );
 }

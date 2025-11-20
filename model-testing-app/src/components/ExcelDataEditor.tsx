@@ -422,7 +422,7 @@ export default function ExcelDataEditor({ data, onDataChange, readOnly = false }
 
     // Apply formatting to all selected cells
     cellsToFormat.forEach(({ row, col }) => {
-      instance.setCellMeta(row, col, 'renderer', function(instance: any, td: HTMLElement) {
+      instance.setCellMeta(row, col, 'renderer', function(this: any, instance: any, td: HTMLElement) {
         // Use default text renderer first
         Handsontable.renderers.TextRenderer.apply(this, arguments as any);
     
@@ -808,7 +808,6 @@ export default function ExcelDataEditor({ data, onDataChange, readOnly = false }
           allowRemoveRow={!readOnly}
           allowRemoveColumn={!readOnly}
           enterBeginsEditing={true}
-          fillHandle={!readOnly}
           autoWrapRow={true}
           autoWrapCol={true}
           cells={(row: number, col: number) => {

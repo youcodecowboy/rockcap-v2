@@ -335,6 +335,7 @@ export default function WorkbookEditor({
   // Helper function to get display value for formula bar (formula text if formula, otherwise cell value)
   const getFormulaBarDisplayValue = useCallback((row: number, col: number, sheetName?: string): string => {
     const targetSheet = sheetName || activeSheet;
+    if (!targetSheet) return '';
     const hotRef = hotTableRefs.current.get(targetSheet);
     if (!isInstanceReady(hotRef)) return '';
     
@@ -343,9 +344,24 @@ export default function WorkbookEditor({
       try {
         const currentSheet = sheets.find(s => s.name === targetSheet);
         if (currentSheet) {
-          const sheetId = hyperFormulaEngine.current.getSheetId(targetSheet);
+          // targetSheet is guaranteed to be string here due to early return
+          const sheetIdRaw = hyperFormulaEngine.current.getSheetId(targetSheet);
+          if (sheetIdRaw === undefined) return '';
+          // Convert to number if needed - HyperFormula expects number for sheet ID
+          let sheetId: number;
+          if (typeof sheetIdRaw === 'number') {
+            sheetId = sheetIdRaw;
+          } else if (typeof sheetIdRaw === 'string') {
+            const parsed = parseInt(sheetIdRaw, 10);
+            if (isNaN(parsed)) return '';
+            sheetId = parsed;
+          } else {
+            return '';
+          }
+          // At this point, sheetId is definitely a number - use type assertion to satisfy TypeScript
+          const sheetIdForApi = sheetId as any;
           const hasFormula = hyperFormulaEngine.current.doesCellHaveFormula({
-            sheet: sheetId,
+            sheet: sheetIdForApi,
             row,
             col,
           });
@@ -353,7 +369,7 @@ export default function WorkbookEditor({
           if (hasFormula) {
             // Get the formula text
             const formula = hyperFormulaEngine.current.getCellFormula({
-              sheet: sheetId,
+              sheet: sheetId as any,
               row,
               col,
             });
@@ -465,7 +481,7 @@ export default function WorkbookEditor({
       instance.setCellMeta(row, col, 'format', format);
       
       // Create custom renderer for number formatting
-      instance.setCellMeta(row, col, 'renderer', function(instance: any, td: HTMLElement, row: number, col: number, prop: any, value: any, cellProperties: any) {
+      instance.setCellMeta(row, col, 'renderer', function(this: any, instance: any, td: HTMLElement, row: number, col: number, prop: any, value: any, cellProperties: any) {
         // Use default numeric renderer first
         Handsontable.renderers.NumericRenderer.apply(this, arguments as any);
         
@@ -581,7 +597,7 @@ export default function WorkbookEditor({
 
     // Apply formatting to all selected cells
     cellsToFormat.forEach(({ row, col }) => {
-      instance.setCellMeta(row, col, 'renderer', function(instance: any, td: HTMLElement) {
+      instance.setCellMeta(row, col, 'renderer', function(this: any, instance: any, td: HTMLElement) {
         // Use default text renderer first
         Handsontable.renderers.TextRenderer.apply(this, arguments as any);
         
@@ -1001,7 +1017,6 @@ export default function WorkbookEditor({
                 allowRemoveRow={!readOnly}
                 allowRemoveColumn={!readOnly}
                 enterBeginsEditing={true}
-                fillHandle={!readOnly}
                 autoWrapRow={true}
                 autoWrapCol={true}
                 cells={(row: number, col: number) => {

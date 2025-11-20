@@ -12,7 +12,7 @@ export async function generateHubSpotContactUrl(
     // Try to get from API if not provided
     try {
       const { getHubSpotPortalId, getHubSpotClient } = await import('./client');
-      finalPortalId = await getHubSpotPortalId(getHubSpotClient());
+      finalPortalId = await getHubSpotPortalId(getHubSpotClient()) || undefined;
     } catch (error) {
       console.warn('Could not determine HubSpot portal ID:', error);
       return null;
@@ -40,7 +40,7 @@ export async function generateHubSpotCompanyUrl(
     // Try to get from API if not provided
     try {
       const { getHubSpotPortalId, getHubSpotClient } = await import('./client');
-      finalPortalId = await getHubSpotPortalId(getHubSpotClient());
+      finalPortalId = await getHubSpotPortalId(getHubSpotClient()) || undefined;
     } catch (error) {
       console.warn('Could not determine HubSpot portal ID:', error);
       return null;
@@ -68,7 +68,7 @@ export async function generateHubSpotDealUrl(
     // Try to get from API if not provided
     try {
       const { getHubSpotPortalId, getHubSpotClient } = await import('./client');
-      finalPortalId = await getHubSpotPortalId(getHubSpotClient());
+      finalPortalId = await getHubSpotPortalId(getHubSpotClient()) || undefined;
     } catch (error) {
       console.warn('Could not determine HubSpot portal ID:', error);
       return null;

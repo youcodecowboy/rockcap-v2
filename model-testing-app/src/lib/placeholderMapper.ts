@@ -554,7 +554,8 @@ function resolveFormulaPlaceholders(
               }
             } else {
               // Try to find the placeholder in the sheet
-              range = findPlaceholderRange(sheet, placeholder);
+              const foundRange = findPlaceholderRange(sheet, placeholder);
+              range = foundRange || undefined;
             }
           }
           

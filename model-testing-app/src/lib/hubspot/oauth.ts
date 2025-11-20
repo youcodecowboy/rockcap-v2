@@ -37,8 +37,12 @@ async function getAccessToken(): Promise<string> {
   }
 
   const data = await response.json();
-  cachedAccessToken = data.access_token;
+  cachedAccessToken = data.access_token || null;
   tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // Refresh 1 min early
+
+  if (!cachedAccessToken) {
+    throw new Error('Failed to get access token: no access_token in response');
+  }
 
   return cachedAccessToken;
 }

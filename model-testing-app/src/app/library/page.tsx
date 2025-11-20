@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { searchLibrary, getUniqueFileTypes, getUniqueCategories, deleteDocument, SavedDocument } from '@/lib/documentStorage';
+import { searchLibrary, getUniqueFileTypes, getUniqueCategories, deleteDocument } from '@/lib/documentStorage';
+import { SavedDocument } from '@/types';
 import { FILE_CATEGORIES } from '@/lib/categories';
 
 export default function Library() {
@@ -38,7 +39,7 @@ export default function Library() {
     if (confirm('Are you sure you want to delete this document from the library?')) {
       deleteDocument(id);
       loadDocuments();
-      if (selectedDoc?.id === id) {
+      if (selectedDoc?._id === id) {
         setSelectedDoc(null);
       }
     }
@@ -155,37 +156,37 @@ export default function Library() {
                 ) : (
                   filteredDocuments.map((doc) => (
                     <div
-                      key={doc.id}
+                      key={doc._id}
                       onClick={() => setSelectedDoc(doc)}
                       className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
-                        selectedDoc?.id === doc.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                        selectedDoc?._id === doc._id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <h3 className="text-sm font-medium text-gray-900 truncate">
-                            {doc.file.name}
+                            {doc.fileName}
                           </h3>
                           <p className="mt-1 text-xs text-gray-500">
-                            {formatFileSize(doc.file.size)} • {doc.analysisResult.fileType}
+                            {formatFileSize(doc.fileSize)} • {doc.fileType}
                           </p>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                              {doc.analysisResult.category}
+                              {doc.category}
                             </span>
-                            {doc.analysisResult.clientName && (
+                            {doc.clientName && (
                               <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
-                                {doc.analysisResult.clientName}
+                                {doc.clientName}
                               </span>
                             )}
-                            {doc.analysisResult.projectName && (
+                            {doc.projectName && (
                               <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                                {doc.analysisResult.projectName}
+                                {doc.projectName}
                               </span>
                             )}
                           </div>
                           <p className="mt-2 text-xs text-gray-600 line-clamp-2">
-                            {doc.analysisResult.summary}
+                            {doc.summary}
                           </p>
                           <p className="mt-1 text-xs text-gray-400">
                             Saved {formatDate(doc.savedAt)}
@@ -194,7 +195,7 @@ export default function Library() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDelete(doc.id);
+                            handleDelete(doc._id);
                           }}
                           className="ml-2 p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
                           title="Delete document"
@@ -229,50 +230,50 @@ export default function Library() {
                   <div className="space-y-4">
                     <div>
                       <h3 className="text-sm font-medium text-gray-700 mb-1">File Name</h3>
-                      <p className="text-sm text-gray-900">{selectedDoc.file.name}</p>
+                      <p className="text-sm text-gray-900">{selectedDoc.fileName}</p>
                     </div>
 
                     <div>
                       <h3 className="text-sm font-medium text-gray-700 mb-1">Summary</h3>
-                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedDoc.analysisResult.summary}</p>
+                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedDoc.summary}</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">File Type</h3>
-                        <p className="text-sm text-gray-900">{selectedDoc.analysisResult.fileType}</p>
+                        <p className="text-sm text-gray-900">{selectedDoc.fileType}</p>
                       </div>
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">Category</h3>
-                        <p className="text-sm text-gray-900">{selectedDoc.analysisResult.category}</p>
+                        <p className="text-sm text-gray-900">{selectedDoc.category}</p>
                       </div>
                     </div>
 
-                    {selectedDoc.analysisResult.clientName && (
+                    {selectedDoc.clientName && (
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">Client</h3>
-                        <p className="text-sm text-gray-900">{selectedDoc.analysisResult.clientName}</p>
+                        <p className="text-sm text-gray-900">{selectedDoc.clientName}</p>
                       </div>
                     )}
 
-                    {selectedDoc.analysisResult.suggestedClientName && (
+                    {selectedDoc.suggestedClientName && (
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">Suggested Client</h3>
-                        <p className="text-sm text-blue-600">{selectedDoc.analysisResult.suggestedClientName}</p>
+                        <p className="text-sm text-blue-600">{selectedDoc.suggestedClientName}</p>
                       </div>
                     )}
 
-                    {selectedDoc.analysisResult.projectName && (
+                    {selectedDoc.projectName && (
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">Project</h3>
-                        <p className="text-sm text-gray-900">{selectedDoc.analysisResult.projectName}</p>
+                        <p className="text-sm text-gray-900">{selectedDoc.projectName}</p>
                       </div>
                     )}
 
-                    {selectedDoc.analysisResult.suggestedProjectName && (
+                    {selectedDoc.suggestedProjectName && (
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">Suggested Project</h3>
-                        <p className="text-sm text-blue-600">{selectedDoc.analysisResult.suggestedProjectName}</p>
+                        <p className="text-sm text-blue-600">{selectedDoc.suggestedProjectName}</p>
                       </div>
                     )}
 
@@ -280,40 +281,40 @@ export default function Library() {
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">Confidence</h3>
                         <p className="text-sm text-gray-900">
-                          {(selectedDoc.analysisResult.confidence * 100).toFixed(1)}%
+                          {(selectedDoc.confidence * 100).toFixed(1)}%
                         </p>
                       </div>
                       <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-1">Tokens Used</h3>
                         <p className="text-sm text-gray-900">
-                          {selectedDoc.analysisResult.tokensUsed.toLocaleString()}
+                          {selectedDoc.tokensUsed.toLocaleString()}
                         </p>
                       </div>
                     </div>
 
                     <div>
                       <h3 className="text-sm font-medium text-gray-700 mb-1">Reasoning</h3>
-                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedDoc.analysisResult.reasoning}</p>
+                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedDoc.reasoning}</p>
                     </div>
 
                     {/* Extracted Data */}
-                    {selectedDoc.analysisResult.extractedData && (
+                    {selectedDoc.extractedData && (
                       <div className="pt-4 border-t border-gray-200">
                         <h3 className="text-sm font-medium text-gray-700 mb-2">
                           Extracted Data
-                          {selectedDoc.analysisResult.extractedData.detectedCurrency && (
+                          {selectedDoc.extractedData.detectedCurrency && (
                             <span className="text-gray-500 ml-2 text-xs font-normal">
-                              ({selectedDoc.analysisResult.extractedData.detectedCurrency})
+                              ({selectedDoc.extractedData.detectedCurrency})
                             </span>
                           )}
                         </h3>
                         <div className="space-y-4">
                           {/* Plots/Developments */}
-                          {selectedDoc.analysisResult.extractedData.plots && selectedDoc.analysisResult.extractedData.plots.length > 0 && (
+                          {selectedDoc.extractedData.plots && selectedDoc.extractedData.plots.length > 0 && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Plots/Developments:</h4>
                               <div className="ml-2 space-y-1">
-                                {selectedDoc.analysisResult.extractedData.plots.map((plot, idx) => {
+                                {selectedDoc.extractedData.plots.map((plot: any, idx: number) => {
                                   if (!plot || plot.cost === undefined || plot.cost === null) {
                                     return null;
                                   }
@@ -330,9 +331,9 @@ export default function Library() {
                                     </p>
                                   );
                                 })}
-                                {selectedDoc.analysisResult.extractedData.plotsTotal && selectedDoc.analysisResult.extractedData.plotsTotal.amount !== undefined && selectedDoc.analysisResult.extractedData.plotsTotal.amount !== null && (
+                                {selectedDoc.extractedData.plotsTotal && selectedDoc.extractedData.plotsTotal.amount !== undefined && selectedDoc.extractedData.plotsTotal.amount !== null && (
                                   <p className="text-xs text-green-700 font-semibold mt-1 pt-1 border-t border-gray-200">
-                                    Total: {selectedDoc.analysisResult.extractedData.plotsTotal.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.plotsTotal.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.plotsTotal.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.plotsTotal.amount.toLocaleString()} {selectedDoc.analysisResult.extractedData.plotsTotal.currency || ''}
+                                    Total: {selectedDoc.extractedData.plotsTotal.currency === 'GBP' ? '£' : selectedDoc.extractedData.plotsTotal.currency === 'USD' ? '$' : selectedDoc.extractedData.plotsTotal.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.plotsTotal.amount.toLocaleString()} {selectedDoc.extractedData.plotsTotal.currency || ''}
                                   </p>
                                 )}
                               </div>
@@ -340,11 +341,11 @@ export default function Library() {
                           )}
 
                           {/* Costs */}
-                          {selectedDoc.analysisResult.extractedData.costs && selectedDoc.analysisResult.extractedData.costs.length > 0 && (
+                          {selectedDoc.extractedData.costs && selectedDoc.extractedData.costs.length > 0 && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Costs:</h4>
                               <div className="ml-2 space-y-1">
-                                {selectedDoc.analysisResult.extractedData.costs.map((cost, idx) => {
+                                {selectedDoc.extractedData.costs.map((cost: any, idx: number) => {
                                   if (!cost || cost.amount === undefined || cost.amount === null) {
                                     return null;
                                   }
@@ -355,40 +356,40 @@ export default function Library() {
                                     </p>
                                   );
                                 })}
-                                {selectedDoc.analysisResult.extractedData.costsTotal && selectedDoc.analysisResult.extractedData.costsTotal.amount !== undefined && selectedDoc.analysisResult.extractedData.costsTotal.amount !== null && (
+                                {selectedDoc.extractedData.costsTotal && selectedDoc.extractedData.costsTotal.amount !== undefined && selectedDoc.extractedData.costsTotal.amount !== null && (
                                   <p className="text-xs text-green-700 font-semibold mt-1 pt-1 border-t border-gray-200">
-                                    Total: {selectedDoc.analysisResult.extractedData.costsTotal.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.costsTotal.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.costsTotal.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.costsTotal.amount.toLocaleString()} {selectedDoc.analysisResult.extractedData.costsTotal.currency || ''}
+                                    Total: {selectedDoc.extractedData.costsTotal.currency === 'GBP' ? '£' : selectedDoc.extractedData.costsTotal.currency === 'USD' ? '$' : selectedDoc.extractedData.costsTotal.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.costsTotal.amount.toLocaleString()} {selectedDoc.extractedData.costsTotal.currency || ''}
                                   </p>
                                 )}
 
                                 {/* Cost Category Breakdown */}
-                                {selectedDoc.analysisResult.extractedData.costCategories && (
+                                {selectedDoc.extractedData.costCategories && (
                                   <div className="mt-2 pt-2 border-t border-gray-200">
                                     <p className="text-xs text-cyan-600 font-semibold italic mb-1">Category Breakdown:</p>
                                     <div className="ml-2 space-y-1">
-                                      {selectedDoc.analysisResult.extractedData.costCategories.siteCosts && (
+                                      {selectedDoc.extractedData.costCategories.siteCosts && (
                                         <p className="text-xs text-gray-600">
-                                          Site Costs: {selectedDoc.analysisResult.extractedData.costCategories.siteCosts.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.costCategories.siteCosts.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.costCategories.siteCosts.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.costCategories.siteCosts.subtotal.toLocaleString()}
+                                          Site Costs: {selectedDoc.extractedData.costCategories.siteCosts.currency === 'GBP' ? '£' : selectedDoc.extractedData.costCategories.siteCosts.currency === 'USD' ? '$' : selectedDoc.extractedData.costCategories.siteCosts.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.costCategories.siteCosts.subtotal.toLocaleString()}
                                         </p>
                                       )}
-                                      {selectedDoc.analysisResult.extractedData.costCategories.netConstructionCosts && (
+                                      {selectedDoc.extractedData.costCategories.netConstructionCosts && (
                                         <p className="text-xs text-gray-600">
-                                          Net Construction Costs: {selectedDoc.analysisResult.extractedData.costCategories.netConstructionCosts.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.costCategories.netConstructionCosts.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.costCategories.netConstructionCosts.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.costCategories.netConstructionCosts.subtotal.toLocaleString()}
+                                          Net Construction Costs: {selectedDoc.extractedData.costCategories.netConstructionCosts.currency === 'GBP' ? '£' : selectedDoc.extractedData.costCategories.netConstructionCosts.currency === 'USD' ? '$' : selectedDoc.extractedData.costCategories.netConstructionCosts.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.costCategories.netConstructionCosts.subtotal.toLocaleString()}
                                         </p>
                                       )}
-                                      {selectedDoc.analysisResult.extractedData.costCategories.professionalFees && (
+                                      {selectedDoc.extractedData.costCategories.professionalFees && (
                                         <p className="text-xs text-gray-600">
-                                          Professional Fees: {selectedDoc.analysisResult.extractedData.costCategories.professionalFees.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.costCategories.professionalFees.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.costCategories.professionalFees.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.costCategories.professionalFees.subtotal.toLocaleString()}
+                                          Professional Fees: {selectedDoc.extractedData.costCategories.professionalFees.currency === 'GBP' ? '£' : selectedDoc.extractedData.costCategories.professionalFees.currency === 'USD' ? '$' : selectedDoc.extractedData.costCategories.professionalFees.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.costCategories.professionalFees.subtotal.toLocaleString()}
                                         </p>
                                       )}
-                                      {selectedDoc.analysisResult.extractedData.costCategories.financingLegalFees && (
+                                      {selectedDoc.extractedData.costCategories.financingLegalFees && (
                                         <p className="text-xs text-gray-600">
-                                          Financing/Legal Fees: {selectedDoc.analysisResult.extractedData.costCategories.financingLegalFees.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.costCategories.financingLegalFees.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.costCategories.financingLegalFees.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.costCategories.financingLegalFees.subtotal.toLocaleString()}
+                                          Financing/Legal Fees: {selectedDoc.extractedData.costCategories.financingLegalFees.currency === 'GBP' ? '£' : selectedDoc.extractedData.costCategories.financingLegalFees.currency === 'USD' ? '$' : selectedDoc.extractedData.costCategories.financingLegalFees.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.costCategories.financingLegalFees.subtotal.toLocaleString()}
                                         </p>
                                       )}
-                                      {selectedDoc.analysisResult.extractedData.costCategories.disposalFees && (
+                                      {selectedDoc.extractedData.costCategories.disposalFees && (
                                         <p className="text-xs text-gray-600">
-                                          Disposal Fees: {selectedDoc.analysisResult.extractedData.costCategories.disposalFees.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.costCategories.disposalFees.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.costCategories.disposalFees.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.costCategories.disposalFees.subtotal.toLocaleString()}
+                                          Disposal Fees: {selectedDoc.extractedData.costCategories.disposalFees.currency === 'GBP' ? '£' : selectedDoc.extractedData.costCategories.disposalFees.currency === 'USD' ? '$' : selectedDoc.extractedData.costCategories.disposalFees.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.costCategories.disposalFees.subtotal.toLocaleString()}
                                         </p>
                                       )}
                                     </div>
@@ -399,23 +400,23 @@ export default function Library() {
                           )}
 
                           {/* Financing */}
-                          {selectedDoc.analysisResult.extractedData.financing && (
+                          {selectedDoc.extractedData.financing && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Financing:</h4>
                               <div className="ml-2 space-y-1">
-                                {selectedDoc.analysisResult.extractedData.financing.loanAmount !== undefined && selectedDoc.analysisResult.extractedData.financing.loanAmount !== null && (
+                                {selectedDoc.extractedData.financing.loanAmount !== undefined && selectedDoc.extractedData.financing.loanAmount !== null && (
                                   <p className="text-xs text-gray-700">
-                                    Loan Amount: {selectedDoc.analysisResult.extractedData.financing.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.financing.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.financing.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.financing.loanAmount.toLocaleString()} {selectedDoc.analysisResult.extractedData.financing.currency || ''}
+                                    Loan Amount: {selectedDoc.extractedData.financing.currency === 'GBP' ? '£' : selectedDoc.extractedData.financing.currency === 'USD' ? '$' : selectedDoc.extractedData.financing.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.financing.loanAmount.toLocaleString()} {selectedDoc.extractedData.financing.currency || ''}
                                   </p>
                                 )}
-                                {selectedDoc.analysisResult.extractedData.financing.interestPercentage !== undefined && (
+                                {selectedDoc.extractedData.financing.interestPercentage !== undefined && (
                                   <p className="text-xs text-gray-700">
-                                    Interest Rate: {selectedDoc.analysisResult.extractedData.financing.interestPercentage}%
+                                    Interest Rate: {selectedDoc.extractedData.financing.interestPercentage}%
                                   </p>
                                 )}
-                                {selectedDoc.analysisResult.extractedData.financing.interestRate !== undefined && (
+                                {selectedDoc.extractedData.financing.interestRate !== undefined && (
                                   <p className="text-xs text-gray-700">
-                                    Interest Rate: {(selectedDoc.analysisResult.extractedData.financing.interestRate * 100).toFixed(2)}%
+                                    Interest Rate: {(selectedDoc.extractedData.financing.interestRate * 100).toFixed(2)}%
                                   </p>
                                 )}
                               </div>
@@ -423,18 +424,18 @@ export default function Library() {
                           )}
 
                           {/* Revenue/Sales */}
-                          {selectedDoc.analysisResult.extractedData.revenue && (
+                          {selectedDoc.extractedData.revenue && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Revenue/Sales:</h4>
                               <div className="ml-2 space-y-1">
-                                {selectedDoc.analysisResult.extractedData.revenue.totalSales !== undefined && selectedDoc.analysisResult.extractedData.revenue.totalSales !== null && (
+                                {selectedDoc.extractedData.revenue.totalSales !== undefined && selectedDoc.extractedData.revenue.totalSales !== null && (
                                   <p className="text-xs text-gray-700">
-                                    Total Sales: {selectedDoc.analysisResult.extractedData.revenue.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.revenue.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.revenue.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.revenue.totalSales.toLocaleString()} {selectedDoc.analysisResult.extractedData.revenue.currency || ''}
+                                    Total Sales: {selectedDoc.extractedData.revenue.currency === 'GBP' ? '£' : selectedDoc.extractedData.revenue.currency === 'USD' ? '$' : selectedDoc.extractedData.revenue.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.revenue.totalSales.toLocaleString()} {selectedDoc.extractedData.revenue.currency || ''}
                                   </p>
                                 )}
-                                {selectedDoc.analysisResult.extractedData.revenue.salesPerUnit !== undefined && selectedDoc.analysisResult.extractedData.revenue.salesPerUnit !== null && (
+                                {selectedDoc.extractedData.revenue.salesPerUnit !== undefined && selectedDoc.extractedData.revenue.salesPerUnit !== null && (
                                   <p className="text-xs text-gray-700">
-                                    Sales per Unit: {selectedDoc.analysisResult.extractedData.revenue.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.revenue.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.revenue.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.revenue.salesPerUnit.toLocaleString()} {selectedDoc.analysisResult.extractedData.revenue.currency || ''}
+                                    Sales per Unit: {selectedDoc.extractedData.revenue.currency === 'GBP' ? '£' : selectedDoc.extractedData.revenue.currency === 'USD' ? '$' : selectedDoc.extractedData.revenue.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.revenue.salesPerUnit.toLocaleString()} {selectedDoc.extractedData.revenue.currency || ''}
                                   </p>
                                 )}
                               </div>
@@ -442,53 +443,53 @@ export default function Library() {
                           )}
 
                           {/* Profit */}
-                          {selectedDoc.analysisResult.extractedData.profit && (
+                          {selectedDoc.extractedData.profit && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Profit:</h4>
                               <p className="text-xs text-gray-700 ml-2">
-                                {selectedDoc.analysisResult.extractedData.profit.total !== undefined && selectedDoc.analysisResult.extractedData.profit.total !== null && (
-                                  <>Total: {selectedDoc.analysisResult.extractedData.profit.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.profit.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.profit.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.profit.total.toLocaleString()} {selectedDoc.analysisResult.extractedData.profit.currency || ''}</>
+                                {selectedDoc.extractedData.profit.total !== undefined && selectedDoc.extractedData.profit.total !== null && (
+                                  <>Total: {selectedDoc.extractedData.profit.currency === 'GBP' ? '£' : selectedDoc.extractedData.profit.currency === 'USD' ? '$' : selectedDoc.extractedData.profit.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.profit.total.toLocaleString()} {selectedDoc.extractedData.profit.currency || ''}</>
                                 )}
-                                {selectedDoc.analysisResult.extractedData.profit.percentage !== undefined && (
-                                  <> | Percentage: {selectedDoc.analysisResult.extractedData.profit.percentage}%</>
+                                {selectedDoc.extractedData.profit.percentage !== undefined && (
+                                  <> | Percentage: {selectedDoc.extractedData.profit.percentage}%</>
                                 )}
                               </p>
                             </div>
                           )}
 
                           {/* Average Interest (if not in financing) */}
-                          {selectedDoc.analysisResult.extractedData.averageInterest && !selectedDoc.analysisResult.extractedData.financing && (
+                          {selectedDoc.extractedData.averageInterest && !selectedDoc.extractedData.financing && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Average Interest:</h4>
                               <p className="text-xs text-gray-700 ml-2">
-                                {selectedDoc.analysisResult.extractedData.averageInterest.percentage !== undefined ? (
-                                  <>{selectedDoc.analysisResult.extractedData.averageInterest.percentage}%</>
-                                ) : selectedDoc.analysisResult.extractedData.averageInterest.rate !== undefined ? (
-                                  <>{(selectedDoc.analysisResult.extractedData.averageInterest.rate * 100).toFixed(2)}%</>
+                                {selectedDoc.extractedData.averageInterest.percentage !== undefined ? (
+                                  <>{selectedDoc.extractedData.averageInterest.percentage}%</>
+                                ) : selectedDoc.extractedData.averageInterest.rate !== undefined ? (
+                                  <>{(selectedDoc.extractedData.averageInterest.rate * 100).toFixed(2)}%</>
                                 ) : null}
                               </p>
                             </div>
                           )}
 
                           {/* Units */}
-                          {selectedDoc.analysisResult.extractedData.units && (
+                          {selectedDoc.extractedData.units && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Units:</h4>
                               <p className="text-xs text-gray-700 ml-2">
-                                {selectedDoc.analysisResult.extractedData.units.count} {selectedDoc.analysisResult.extractedData.units.type}
-                                {selectedDoc.analysisResult.extractedData.units.costPerUnit !== undefined && selectedDoc.analysisResult.extractedData.units.costPerUnit !== null && (
-                                  <> | Cost per {selectedDoc.analysisResult.extractedData.units.type.slice(0, -1)}: {selectedDoc.analysisResult.extractedData.units.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.units.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.units.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.units.costPerUnit.toLocaleString()} {selectedDoc.analysisResult.extractedData.units.currency || ''}</>
+                                {selectedDoc.extractedData.units.count} {selectedDoc.extractedData.units.type}
+                                {selectedDoc.extractedData.units.costPerUnit !== undefined && selectedDoc.extractedData.units.costPerUnit !== null && (
+                                  <> | Cost per {selectedDoc.extractedData.units.type.slice(0, -1)}: {selectedDoc.extractedData.units.currency === 'GBP' ? '£' : selectedDoc.extractedData.units.currency === 'USD' ? '$' : selectedDoc.extractedData.units.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.units.costPerUnit.toLocaleString()} {selectedDoc.extractedData.units.currency || ''}</>
                                 )}
                               </p>
                             </div>
                           )}
 
                           {/* Miscellaneous */}
-                          {selectedDoc.analysisResult.extractedData.miscellaneous && selectedDoc.analysisResult.extractedData.miscellaneous.length > 0 && (
+                          {selectedDoc.extractedData.miscellaneous && selectedDoc.extractedData.miscellaneous.length > 0 && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Miscellaneous:</h4>
                               <div className="ml-2 space-y-1">
-                                {selectedDoc.analysisResult.extractedData.miscellaneous.map((item, idx) => {
+                                {selectedDoc.extractedData.miscellaneous.map((item: { type: string; amount: number; currency?: string }, idx: number) => {
                                   if (!item || item.amount === undefined || item.amount === null) {
                                     return null;
                                   }
@@ -499,9 +500,9 @@ export default function Library() {
                                     </p>
                                   );
                                 })}
-                                {selectedDoc.analysisResult.extractedData.miscellaneousTotal && selectedDoc.analysisResult.extractedData.miscellaneousTotal.amount !== undefined && selectedDoc.analysisResult.extractedData.miscellaneousTotal.amount !== null && (
+                                {selectedDoc.extractedData.miscellaneousTotal && selectedDoc.extractedData.miscellaneousTotal.amount !== undefined && selectedDoc.extractedData.miscellaneousTotal.amount !== null && (
                                   <p className="text-xs text-green-700 font-semibold mt-1 pt-1 border-t border-gray-200">
-                                    Total: {selectedDoc.analysisResult.extractedData.miscellaneousTotal.currency === 'GBP' ? '£' : selectedDoc.analysisResult.extractedData.miscellaneousTotal.currency === 'USD' ? '$' : selectedDoc.analysisResult.extractedData.miscellaneousTotal.currency === 'EUR' ? '€' : ''}{selectedDoc.analysisResult.extractedData.miscellaneousTotal.amount.toLocaleString()} {selectedDoc.analysisResult.extractedData.miscellaneousTotal.currency || ''}
+                                    Total: {selectedDoc.extractedData.miscellaneousTotal.currency === 'GBP' ? '£' : selectedDoc.extractedData.miscellaneousTotal.currency === 'USD' ? '$' : selectedDoc.extractedData.miscellaneousTotal.currency === 'EUR' ? '€' : ''}{selectedDoc.extractedData.miscellaneousTotal.amount.toLocaleString()} {selectedDoc.extractedData.miscellaneousTotal.currency || ''}
                                   </p>
                                 )}
                               </div>
@@ -509,55 +510,55 @@ export default function Library() {
                           )}
 
                           {/* Extraction Notes */}
-                          {selectedDoc.analysisResult.extractedData.extractionNotes && (
+                          {selectedDoc.extractedData.extractionNotes && (
                             <div>
                               <h4 className="text-xs font-medium text-gray-600 mb-1">Notes:</h4>
                               <p className="text-xs text-gray-600 italic ml-2">
-                                {selectedDoc.analysisResult.extractedData.extractionNotes}
+                                {selectedDoc.extractedData.extractionNotes}
                               </p>
                             </div>
                           )}
 
                           {/* Extraction Metadata */}
                           <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-200">
-                            {selectedDoc.analysisResult.extractedData.confidence !== undefined && (
+                            {selectedDoc.extractedData.confidence !== undefined && (
                               <div>
                                 <h4 className="text-xs font-medium text-gray-600 mb-1">Extraction Confidence</h4>
                                 <p className="text-xs text-gray-700">
-                                  {(selectedDoc.analysisResult.extractedData.confidence * 100).toFixed(1)}%
+                                  {(selectedDoc.extractedData.confidence * 100).toFixed(1)}%
                                 </p>
                               </div>
                             )}
-                            {selectedDoc.analysisResult.extractedData.tokensUsed !== undefined && (
+                            {selectedDoc.extractedData.tokensUsed !== undefined && (
                               <div>
                                 <h4 className="text-xs font-medium text-gray-600 mb-1">Extraction Tokens</h4>
                                 <p className="text-xs text-gray-700">
-                                  {selectedDoc.analysisResult.extractedData.tokensUsed.toLocaleString()}
+                                  {selectedDoc.extractedData.tokensUsed.toLocaleString()}
                                 </p>
                               </div>
                             )}
                           </div>
 
                           {/* Verification Info */}
-                          {selectedDoc.analysisResult.extractedData.verificationNotes && (
+                          {selectedDoc.extractedData.verificationNotes && (
                             <div className="pt-2 border-t border-gray-200">
                               <h4 className="text-xs font-medium text-cyan-600 mb-1">Verification</h4>
                               <p className="text-xs text-gray-700 mb-2">
-                                {selectedDoc.analysisResult.extractedData.verificationNotes}
+                                {selectedDoc.extractedData.verificationNotes}
                               </p>
-                              {selectedDoc.analysisResult.extractedData.verificationDiscrepancies && selectedDoc.analysisResult.extractedData.verificationDiscrepancies.length > 0 && (
+                              {selectedDoc.extractedData.verificationDiscrepancies && selectedDoc.extractedData.verificationDiscrepancies.length > 0 && (
                                 <div className="ml-2 space-y-1 mb-2">
-                                  {selectedDoc.analysisResult.extractedData.verificationDiscrepancies.map((disc, idx) => (
+                                  {selectedDoc.extractedData.verificationDiscrepancies.map((disc: { type: string; description: string }, idx: number) => (
                                     <p key={idx} className="text-xs text-yellow-700">
                                       • {disc.type}: {disc.description}
                                     </p>
                                   ))}
                                 </div>
                               )}
-                              {selectedDoc.analysisResult.extractedData.verificationConfidence !== undefined && (
+                              {selectedDoc.extractedData.verificationConfidence !== undefined && (
                                 <p className="text-xs text-gray-700">
                                   <span className="font-medium">Verification Confidence:</span>{' '}
-                                  {(selectedDoc.analysisResult.extractedData.verificationConfidence * 100).toFixed(1)}%
+                                  {(selectedDoc.extractedData.verificationConfidence * 100).toFixed(1)}%
                                 </p>
                               )}
                             </div>
@@ -571,7 +572,7 @@ export default function Library() {
                         Saved: {formatDate(selectedDoc.savedAt)}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        File size: {formatFileSize(selectedDoc.file.size)}
+                        File size: {formatFileSize(selectedDoc.fileSize)}
                       </p>
                     </div>
                   </div>

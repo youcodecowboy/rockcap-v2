@@ -506,7 +506,10 @@ export default function getSuggestion() {
             return true;
           }
 
-          return component.ref?.onKeyDown(props);
+          if (component.ref && typeof (component.ref as any).onKeyDown === 'function') {
+            return (component.ref as any).onKeyDown(props);
+          }
+          return false;
         },
 
         onExit() {

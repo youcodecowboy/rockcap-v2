@@ -151,17 +151,18 @@ export default function FileAssignmentCard({
           try {
             let suggestionType: 'email' | 'phone' | 'address' | 'company' | 'contact' | 'date' | 'other' = 'other';
             
-            if (suggestion.type === 'email') {
+            const typeStr = suggestion.type as string;
+            if (typeStr === 'email') {
               suggestionType = 'email';
-            } else if (suggestion.type === 'phone') {
+            } else if (typeStr === 'phone') {
               suggestionType = 'phone';
-            } else if (suggestion.type === 'address') {
+            } else if (typeStr === 'address') {
               suggestionType = 'address';
-            } else if (suggestion.type === 'company' || suggestion.type === 'website') {
+            } else if (typeStr === 'company' || typeStr === 'website') {
               suggestionType = 'company';
-            } else if (suggestion.type === 'contactName' || suggestion.type === 'contact') {
+            } else if (typeStr === 'contactName' || typeStr === 'contact') {
               suggestionType = 'contact';
-            } else if (suggestion.type === 'date') {
+            } else if (typeStr === 'date') {
               suggestionType = 'date';
             }
 

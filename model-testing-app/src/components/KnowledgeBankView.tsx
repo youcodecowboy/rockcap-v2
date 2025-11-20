@@ -28,12 +28,12 @@ export default function KnowledgeBankView({
   const entries = useQuery(
     api.knowledgeBank.getByClient,
     clientId ? { clientId } : 'skip'
-  );
+  ) as any;
 
-  const projectEntries = useQuery(
+  const projectEntries = (useQuery(
     api.knowledgeBank.getByProject,
     projectId ? { projectId } : 'skip'
-  );
+  ) as any);
 
   const summary = useQuery(
     api.knowledgeBank.aggregateClientSummary,
@@ -43,7 +43,7 @@ export default function KnowledgeBankView({
   const displayedEntries = projectId ? projectEntries : entries;
 
   // Filter entries
-  const filteredEntries = displayedEntries?.filter(entry => {
+  const filteredEntries = (displayedEntries as any[])?.filter((entry: any) => {
     if (selectedEntryType && entry.entryType !== selectedEntryType) {
       return false;
     }
@@ -52,8 +52,8 @@ export default function KnowledgeBankView({
       return (
         entry.title.toLowerCase().includes(queryLower) ||
         entry.content.toLowerCase().includes(queryLower) ||
-        entry.keyPoints.some(kp => kp.toLowerCase().includes(queryLower)) ||
-        entry.tags.some(tag => tag.toLowerCase().includes(queryLower))
+        entry.keyPoints.some((kp: any) => kp.toLowerCase().includes(queryLower)) ||
+        entry.tags.some((tag: any) => tag.toLowerCase().includes(queryLower))
       );
     }
     return true;
@@ -61,7 +61,7 @@ export default function KnowledgeBankView({
 
   // Get unique entry types for filter
   const entryTypes = displayedEntries
-    ? Array.from(new Set(displayedEntries.map(e => e.entryType)))
+    ? Array.from(new Set((displayedEntries as any[]).map((e: any) => e.entryType)))
     : [];
 
   if (compact) {
@@ -70,7 +70,7 @@ export default function KnowledgeBankView({
         {filteredEntries.length === 0 ? (
           <div className="text-sm text-gray-500 p-4">No knowledge bank entries found.</div>
         ) : (
-          filteredEntries.map((entry) => (
+          filteredEntries.map((entry: any) => (
             <KnowledgeBankEntryCard key={entry._id} entry={entry} compact={true} />
           ))
         )}
@@ -102,10 +102,10 @@ export default function KnowledgeBankView({
             >
               All
             </button>
-            {entryTypes.map((type) => (
+            {entryTypes.map((type: any) => (
               <button
-                key={type}
-                onClick={() => setSelectedEntryType(type)}
+                key={String(type)}
+                onClick={() => setSelectedEntryType(String(type))}
                 className={`px-3 py-1 text-sm rounded-md transition-colors ${
                   selectedEntryType === type
                     ? 'bg-blue-600 text-white'
@@ -121,7 +121,7 @@ export default function KnowledgeBankView({
 
       {/* Summary View */}
       {summary && clientId && (
-        <KnowledgeBankSummary summary={summary} />
+        <KnowledgeBankSummary summary={summary as any} />
       )}
 
       {/* Entries List */}
@@ -133,7 +133,7 @@ export default function KnowledgeBankView({
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredEntries.map((entry) => (
+          {filteredEntries.map((entry: any) => (
             <KnowledgeBankEntryCard key={entry._id} entry={entry} />
           ))}
         </div>

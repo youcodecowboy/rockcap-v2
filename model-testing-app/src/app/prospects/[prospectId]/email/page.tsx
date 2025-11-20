@@ -107,8 +107,8 @@ export default function EmailComposerPage() {
   const loadData = () => {
     if (typeof window === 'undefined') return;
 
-    const loadedProspect = getProspectById(prospectId);
-    setProspect(loadedProspect);
+    const loadedProspectRaw = getProspectById(prospectId);
+    setProspect(loadedProspectRaw || null);
 
     const allTemplates = getTemplates();
     setTemplates(allTemplates);
@@ -122,8 +122,14 @@ export default function EmailComposerPage() {
       }
     }
 
+    if (!loadedProspectRaw) {
+      return;
+    }
+
+    const loadedProspect = loadedProspectRaw as Prospect;
+
     // Auto-load enrichment data if prospect has a clientId
-    if (loadedProspect?.clientId) {
+    if (loadedProspect.clientId) {
       const aggregated = aggregateProspectingDataForClient(loadedProspect.clientId);
       if (aggregated) {
         setEnrichmentData(aggregated);
@@ -142,8 +148,8 @@ export default function EmailComposerPage() {
       const { getClients } = require('@/lib/clientStorage');
       const clients = getClients();
       const matchingClient = clients.find((c: any) => 
-        c.name.toLowerCase() === loadedProspect?.companyName?.toLowerCase() ||
-        c.companyName?.toLowerCase() === loadedProspect?.companyName?.toLowerCase()
+        c.name.toLowerCase() === loadedProspect.companyName?.toLowerCase() ||
+        c.companyName?.toLowerCase() === loadedProspect.companyName?.toLowerCase()
       );
       
       if (matchingClient) {
@@ -162,7 +168,7 @@ export default function EmailComposerPage() {
     }
     
     // Load external database enrichment
-    const externalData = getMockExternalEnrichment(prospectId, loadedProspect?.companyName);
+    const externalData = getMockExternalEnrichment(prospectId, loadedProspect.companyName);
     setExternalEnrichment(externalData);
   };
 
@@ -221,7 +227,7 @@ export default function EmailComposerPage() {
 
   const getDocumentName = (documentId: string): string => {
     const doc = getDocumentById(documentId);
-    return doc?.file.name || 'Unknown Document';
+    return doc?.fileName || 'Unknown Document';
   };
 
   const handleLoadEnrichment = () => {

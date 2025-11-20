@@ -21,7 +21,7 @@ export interface QueueProcessorCallbacks {
     customInstructions?: string;
   }) => Promise<Id<"fileUploadQueue">>;
   generateUploadUrl: () => Promise<string>;
-  getFileUrl: (storageId: Id<"_storage">) => Promise<string>;
+  getFileUrl: (storageId: Id<"_storage">) => Promise<string | null>;
   getJob: (jobId: Id<"fileUploadQueue">) => Promise<any>;
   createDocument: (args: any) => Promise<Id<"documents">>;
   saveProspectingContext: (args: any) => Promise<void>;
@@ -341,12 +341,15 @@ export class FileQueueProcessor {
               suggestionType = 'phone';
             } else if (suggestion.type === 'address') {
               suggestionType = 'address';
-            } else if (suggestion.type === 'company' || suggestion.type === 'website') {
-              suggestionType = 'company';
-            } else if (suggestion.type === 'contactName' || suggestion.type === 'contact') {
-              suggestionType = 'contact';
-            } else if (suggestion.type === 'date') {
-              suggestionType = 'date';
+            } else {
+              const typeStr = suggestion.type as string;
+              if (typeStr === 'company' || typeStr === 'website') {
+                suggestionType = 'company';
+              } else if (typeStr === 'contactName' || typeStr === 'contact') {
+                suggestionType = 'contact';
+              } else if (typeStr === 'date') {
+                suggestionType = 'date';
+              }
             }
 
             if (this.callbacks.createEnrichment) {
@@ -391,7 +394,7 @@ export class FileQueueProcessor {
           return response.json();
         })
         .then(data => {
-          if (data.success && data.prospectingContext && this.callbacks.saveProspectingContext) {
+          if (data.success && data.prospectingContext && this.callbacks?.saveProspectingContext) {
             // Sanitize and save prospecting context (similar to FileUpload component)
             const sanitizedRelationshipContext = data.prospectingContext.relationshipContext ? {
               sentiment: data.prospectingContext.relationshipContext.sentiment && 
@@ -435,7 +438,7 @@ export class FileQueueProcessor {
               callToAction: data.prospectingContext.templateSnippets.callToAction || undefined,
             } : undefined;
 
-            this.callbacks.saveProspectingContext({
+            this.callbacks?.saveProspectingContext?.({
               documentId: documentId,
               clientId: analysisResult.clientId ? (analysisResult.clientId as Id<"clients">) : null,
               projectId: analysisResult.projectId ? (analysisResult.projectId as Id<"projects">) : null,
@@ -507,6 +510,10 @@ export class FileQueueProcessor {
 
       // Get file URL from storage
       const fileUrl = await this.callbacks.getFileUrl(jobData.fileStorageId);
+      
+      if (!fileUrl) {
+        throw new Error('Failed to get file URL from storage');
+      }
       
       // Fetch the file from storage
       const fileResponse = await fetch(fileUrl);

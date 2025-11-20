@@ -16,22 +16,14 @@ export default function FilingAgent() {
     }>
   >([]);
 
-  const handleFileAnalyzed = (file: FileMetadata, result: AnalysisResult) => {
-    // Document is already saved in FileUpload component with file content
-    // Just update the log here
-    
-    setAnalysisLog(prev => [
-      ...prev,
-      {
-        file,
-        result,
-        timestamp: new Date().toLocaleTimeString(),
-      },
-    ]);
+  const handleFileAnalyzed = () => {
+    // FileUpload component handles file analysis internally
+    // This callback is just for notification that analysis completed
+    // The OutputWindow will show results from the file queue
   };
 
-  const handleFileError = (file: FileMetadata, error: string) => {
-    console.error('File analysis error:', error);
+  const handleFileError = (fileName: string, error: string) => {
+    console.error('File analysis error:', fileName, error);
     // Optionally add error entries to the log
   };
 

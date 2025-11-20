@@ -3,36 +3,15 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import { FileMetadata, AnalysisResult } from '@/types';
+import { FileMetadata, AnalysisResult, SavedDocument } from '@/types';
 
-export interface SavedDocument {
-  _id: Id<"documents">;
-  fileStorageId?: Id<"_storage">;
-  fileName: string;
-  fileSize: number;
-  fileType: string;
-  uploadedAt: string;
-  summary: string;
-  fileTypeDetected: string;
-  category: string;
-  reasoning: string;
-  confidence: number;
-  tokensUsed: number;
-  clientId?: Id<"clients">;
-  clientName?: string;
-  projectId?: Id<"projects">;
-  projectName?: string;
-  suggestedClientName?: string;
-  suggestedProjectName?: string;
-  extractedData?: any;
-  status?: 'pending' | 'processing' | 'completed' | 'error';
-  error?: string;
-  savedAt: string;
-}
+// Re-export SavedDocument for backward compatibility
+export type { SavedDocument };
 
 // Document hooks
 export function useDocuments(clientId?: Id<"clients">, projectId?: Id<"projects">, category?: string, status?: string) {
-  return useQuery(api.documents.list, { clientId, projectId, category, status });
+  const statusEnum = status as 'completed' | 'pending' | 'processing' | 'error' | undefined;
+  return useQuery(api.documents.list, { clientId, projectId, category, status: statusEnum });
 }
 
 export function useDocument(id: Id<"documents"> | undefined) {

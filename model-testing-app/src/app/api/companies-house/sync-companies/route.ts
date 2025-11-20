@@ -49,7 +49,10 @@ export async function POST(request: NextRequest) {
     const errorMessages: string[] = [];
 
     // Get existing company numbers to skip already synced companies
-    const existingCompanyNumbers = await fetchQuery(api.companiesHouse.getExistingCompanyNumbers, {});
+    const existingCompanyNumbers = await fetchQuery(
+      api.companiesHouse.getExistingCompanyNumbers, 
+      {}
+    ) as string[];
     const existingSet = new Set(existingCompanyNumbers);
     console.log(`Found ${existingSet.size} existing companies in database. Will skip these during sync.`);
 

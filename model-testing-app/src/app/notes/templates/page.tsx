@@ -10,7 +10,7 @@ import { NoteTemplate } from '@/types';
 export default function TemplatesPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<NoteTemplate | null>(null);
-  const templates = useQuery(api.noteTemplates.list);
+  const templates = useQuery(api.noteTemplates.list, {});
 
   return (
     <div className="max-w-4xl mx-auto p-8">

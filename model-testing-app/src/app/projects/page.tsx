@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProjects, useClient, useClients } from '@/lib/clientStorage';
 import { useDocumentsByProject, useDocuments } from '@/lib/documentStorage';
-import { Id } from '../../convex/_generated/dataModel';
+import { Id } from '../../../convex/_generated/dataModel';
 import {
   Table,
   TableBody,

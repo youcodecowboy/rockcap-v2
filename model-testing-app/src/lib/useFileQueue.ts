@@ -27,7 +27,10 @@ export function useFileQueue() {
   const createEnrichment = useCreateEnrichment();
 
   // Convex queries
-  const recentJobs = useQuery(api.fileQueue.getRecentJobs, { includeRead: false });
+  const recentJobs = useQuery(
+    api.fileQueue.getRecentJobs, 
+    { includeRead: false }
+  ) as any;
   const unreadCount = useQuery(api.fileQueue.getUnreadCount);
   const pendingJobs = useQuery(api.fileQueue.getPendingJobs);
   
@@ -44,12 +47,21 @@ export function useFileQueue() {
 
   // Create callbacks object that's stable
   // Convex mutations are always available, so we can create callbacks immediately
-  const callbacks = useMemo<QueueProcessorCallbacks>(() => {
-    return {
-      createJob: async (args) => {
-        return await createJob(args);
+  const callbacks = useMemo(() => {
+    const callbacksObj: QueueProcessorCallbacks = {
+      createJob: async (args: { fileName: string; fileSize: number; fileType: string; hasCustomInstructions?: boolean }) => {
+        return await createJob(args) as Id<"fileUploadQueue">;
       },
-      updateJobStatus: async (args) => {
+      updateJobStatus: async (args: {
+        jobId: Id<"fileUploadQueue">;
+        status?: "pending" | "uploading" | "analyzing" | "completed" | "error" | "needs_confirmation";
+        progress?: number;
+        fileStorageId?: Id<"_storage">;
+        analysisResult?: any;
+        documentId?: Id<"documents">;
+        error?: string;
+        customInstructions?: string;
+      }) => {
         return await updateJobStatus(args);
       },
       generateUploadUrl: async () => {
@@ -67,16 +79,17 @@ export function useFileQueue() {
         }
         return await convexClient.query(api.fileQueue.getJob, { jobId });
       },
-      createDocument: async (args) => {
+      createDocument: async (args: any) => {
         return await createDocument(args);
       },
-      saveProspectingContext: async (args) => {
-        return await saveProspectingContext(args);
+      saveProspectingContext: async (args: any) => {
+        await saveProspectingContext(args);
       },
-      createEnrichment: async (args) => {
-        return await createEnrichment(args);
+      createEnrichment: async (args: any) => {
+        await createEnrichment(args);
       },
     };
+    return callbacksObj;
   }, [createJob, updateJobStatus, generateUploadUrl, createDocument, saveProspectingContext, createEnrichment, convexClient]);
 
   // Initialize processor once callbacks are ready

@@ -42,7 +42,10 @@ export default function ModelingPage() {
   const [hyperFormulaEngine, setHyperFormulaEngine] = useState<any>(null);
 
   // Queries
-  const projectsWithData = useQuery(api.projects.getWithExtractedData, {});
+  const projectsWithData = useQuery(
+    api.projects.getWithExtractedData, 
+    {}
+  ) as any;
   const clients = useQuery(api.clients.list, {});
   const selectedProject = useQuery(
     api.projects.get,
@@ -112,7 +115,7 @@ export default function ModelingPage() {
   const uniqueClients = useMemo(() => {
     if (!projectsWithData || !clients) return [];
     const clientSet = new Set<string>();
-    projectsWithData.forEach(project => {
+    (projectsWithData as any[]).forEach((project: any) => {
       if (!project?.clientRoles || project.clientRoles.length === 0) return;
       const firstClientId = project.clientRoles[0].clientId;
       const client = clients.find(c => c._id === firstClientId);
@@ -126,7 +129,7 @@ export default function ModelingPage() {
   
   const uniqueProjects = useMemo(() => {
     if (!projectsWithData) return [];
-    return projectsWithData.map(p => p.name).sort();
+    return (projectsWithData as any[]).map((p: any) => p.name).sort();
   }, [projectsWithData]);
   
   // Get client name for a project
@@ -424,7 +427,7 @@ export default function ModelingPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All projects</SelectItem>
-                    {uniqueProjects.map(project => (
+                    {uniqueProjects.map((project: any) => (
                       <SelectItem key={project} value={project}>{project}</SelectItem>
                     ))}
                   </SelectContent>
@@ -453,15 +456,15 @@ export default function ModelingPage() {
               </div>
             ) : (
               <div className="divide-y divide-gray-200">
-                {projectsWithData
-                  .filter((project) => {
+                {(projectsWithData as any[])
+                  .filter((project: any) => {
                     const clientName = getClientName(project);
                     const projectName = project.name;
                     const matchesClient = clientFilter === 'all' || clientName === clientFilter;
                     const matchesProject = projectFilter === 'all' || projectName === projectFilter;
                     return matchesClient && matchesProject;
                   })
-                  .map((project) => {
+                  .map((project: any) => {
                   const isSelected = selectedProjectId === project._id;
                   const clientName = getClientName(project);
                   const projectScenarios = scenarios?.filter(s => s.projectId === project._id) || [];
@@ -551,7 +554,7 @@ export default function ModelingPage() {
               </div>
             ) : (
               <div className="space-y-1 px-2">
-                {projectsWithData.map((project) => (
+                {(projectsWithData as any[]).map((project: any) => (
                   <button
                     key={project._id}
                     onClick={() => {

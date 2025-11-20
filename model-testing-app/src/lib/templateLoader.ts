@@ -283,7 +283,7 @@ export async function loadExcelTemplate(fileUrl: string): Promise<WorkbookData> 
       let isVisible = true;
       
       if (workbook.Workbook && workbook.Workbook.Sheets) {
-        const sheetInfo = workbook.Workbook.Sheets.find((s: any) => s.name === sheetName);
+        const sheetInfo = workbook.Workbook.Sheets.find((s: any) => s.name === sheetName) as any;
         if (sheetInfo) {
           // Sheet state: 'visible', 'hidden', or 'veryHidden'
           isVisible = sheetInfo.state === 'visible' || sheetInfo.state === undefined;
@@ -495,7 +495,7 @@ export async function loadExcelTemplateMetadata(fileUrl: string): Promise<LazyWo
     const visibleSheetNames = workbook.SheetNames.filter((sheetName: string) => {
       let isVisible = true;
       if (workbook.Workbook && workbook.Workbook.Sheets) {
-        const sheetInfo = workbook.Workbook.Sheets.find((s: any) => s.name === sheetName);
+        const sheetInfo: any = workbook.Workbook.Sheets.find((s: any) => s.name === sheetName);
         if (sheetInfo) {
           isVisible = sheetInfo.state === 'visible' || sheetInfo.state === undefined;
         }
@@ -798,7 +798,7 @@ export function exportToExcel(
               stylesToApply[cellAddress].font = {
                 ...stylesToApply[cellAddress].font,
                 underline: true,
-              };
+              } as any;
             }
           });
         }
@@ -902,10 +902,16 @@ function convertStyleToXLSX(style: CellStyle): any {
   }
   
   if (style.font) {
-    xlsxStyle.font = {};
-    if (style.font.bold !== undefined) xlsxStyle.font.bold = style.font.bold;
-    if (style.font.italic !== undefined) xlsxStyle.font.italic = style.font.italic;
-    if (style.font.underline !== undefined) xlsxStyle.font.underline = style.font.underline;
+    const fontStyle: any = {};
+    if (style.font.bold !== undefined) fontStyle.bold = style.font.bold;
+    if (style.font.italic !== undefined) fontStyle.italic = style.font.italic;
+    const fontAny = style.font as any;
+    if (fontAny.underline !== undefined) {
+      fontStyle.underline = fontAny.underline;
+    }
+    if (Object.keys(fontStyle).length > 0) {
+      xlsxStyle.font = fontStyle;
+    }
     if (style.font.color?.rgb) {
       xlsxStyle.font.color = { rgb: style.font.color.rgb };
     }

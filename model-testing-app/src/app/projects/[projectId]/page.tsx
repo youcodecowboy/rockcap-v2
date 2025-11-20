@@ -84,7 +84,12 @@ export default function ProjectDetailPage() {
   const documents = useDocumentsByProject(projectId) || [];
   const contacts = useContactsByProject(projectId) || [];
   const enrichmentSuggestions = useEnrichmentByProject(projectId) || [];
-  const prospectingContexts = useProspectingContextsByProject(projectId) || [];
+  const rawProspectingContexts = useProspectingContextsByProject(projectId) || [];
+  const prospectingContexts = rawProspectingContexts.map((ctx: any) => ({
+    ...ctx,
+    clientId: ctx.clientId ? (ctx.clientId as string) : null,
+    projectId: ctx.projectId ? (ctx.projectId as string) : null,
+  }));
 
   // Mutations
   const updateProjectMutation = useUpdateProject();
@@ -97,7 +102,7 @@ export default function ProjectDetailPage() {
 
   // Get first client from clientRoles
   const firstClientRole = project?.clientRoles?.[0];
-  const firstClientId = firstClientRole ? ((firstClientRole.clientId as any)?._id || firstClientRole.clientId) as Id<"clients"> : null;
+  const firstClientId = firstClientRole ? ((firstClientRole.clientId as any)?._id || firstClientRole.clientId) as Id<"clients"> : undefined;
   const client = useClient(firstClientId);
 
   // Computed values
@@ -246,7 +251,7 @@ export default function ProjectDetailPage() {
     setIsAddingNote(false);
   };
 
-  const handleFileAnalyzed = (file: any, result: any) => {
+  const handleFileAnalyzed = () => {
     // FileUpload component handles the modal and confirmation
     // After confirmation, it will automatically associate with this project
     setIsAnalysisOpen(false);
@@ -281,7 +286,7 @@ export default function ProjectDetailPage() {
   };
 
   const handleEditContact = (contact: any) => {
-    const contactId = (contact._id || contact.id) as string;
+    const contactId = contact._id as string;
     setEditingContactId(contactId);
     setContactFormData({
       name: contact.name,
@@ -318,7 +323,7 @@ export default function ProjectDetailPage() {
     return new Date(dateString).toLocaleString();
   };
 
-  const getDocumentName = (documentId: Id<"documents">): string => {
+  const getDocumentName = (documentId: string | Id<"documents">): string => {
     const doc = documents.find(d => (d._id as string) === (documentId as string));
     return doc?.fileName || 'Unknown Document';
   };
@@ -849,7 +854,7 @@ export default function ProjectDetailPage() {
                 ) : (
                   <div className="space-y-6">
                     {documentsWithExtractedData.map((doc: any) => {
-                      const docId = (doc._id || doc.id) as Id<"documents">;
+                      const docId = doc._id as Id<"documents">;
                       const extracted = doc.extractedData;
                       if (!extracted) return null;
 
@@ -960,7 +965,7 @@ export default function ProjectDetailPage() {
                             <div className="mt-4 pt-4 border-t border-gray-200">
                               <p className="text-sm font-medium text-gray-900 mb-2">Plots</p>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {extracted.plots.map((plot, idx) => (
+                                {extracted.plots.map((plot: { name: string; cost: number; squareFeet?: number; pricePerSquareFoot?: number; currency?: string }, idx: number) => (
                                   <div key={idx} className="bg-gray-50 rounded-md p-2">
                                     <p className="text-sm font-medium text-gray-900">{plot.name}</p>
                                     <p className="text-sm text-gray-700">
@@ -991,7 +996,7 @@ export default function ProjectDetailPage() {
                                     </div>
                                     {extracted.costCategories.siteCosts.items && extracted.costCategories.siteCosts.items.length > 0 && (
                                       <div className="mt-2 space-y-1">
-                                        {extracted.costCategories.siteCosts.items.map((item, idx) => (
+                                        {extracted.costCategories.siteCosts.items.map((item: { type: string; amount: number; currency?: string }, idx: number) => (
                                           <div key={idx} className="flex justify-between text-xs text-gray-600 pl-2">
                                             <span>{item.type}</span>
                                             <span>{item.currency || 'GBP'} {item.amount.toLocaleString()}</span>
@@ -1011,7 +1016,7 @@ export default function ProjectDetailPage() {
                                     </div>
                                     {extracted.costCategories.netConstructionCosts.items && extracted.costCategories.netConstructionCosts.items.length > 0 && (
                                       <div className="mt-2 space-y-1">
-                                        {extracted.costCategories.netConstructionCosts.items.map((item, idx) => (
+                                        {extracted.costCategories.netConstructionCosts.items.map((item: { type: string; amount: number; currency?: string }, idx: number) => (
                                           <div key={idx} className="flex justify-between text-xs text-gray-600 pl-2">
                                             <span>{item.type}</span>
                                             <span>{item.currency || 'GBP'} {item.amount.toLocaleString()}</span>
@@ -1031,7 +1036,7 @@ export default function ProjectDetailPage() {
                                     </div>
                                     {extracted.costCategories.professionalFees.items && extracted.costCategories.professionalFees.items.length > 0 && (
                                       <div className="mt-2 space-y-1">
-                                        {extracted.costCategories.professionalFees.items.map((item, idx) => (
+                                        {extracted.costCategories.professionalFees.items.map((item: { type: string; amount: number; currency?: string }, idx: number) => (
                                           <div key={idx} className="flex justify-between text-xs text-gray-600 pl-2">
                                             <span>{item.type}</span>
                                             <span>{item.currency || 'GBP'} {item.amount.toLocaleString()}</span>
@@ -1051,7 +1056,7 @@ export default function ProjectDetailPage() {
                                     </div>
                                     {extracted.costCategories.financingLegalFees.items && extracted.costCategories.financingLegalFees.items.length > 0 && (
                                       <div className="mt-2 space-y-1">
-                                        {extracted.costCategories.financingLegalFees.items.map((item, idx) => (
+                                        {extracted.costCategories.financingLegalFees.items.map((item: { type: string; amount: number; currency?: string }, idx: number) => (
                                           <div key={idx} className="flex justify-between text-xs text-gray-600 pl-2">
                                             <span>{item.type}</span>
                                             <span>{item.currency || 'GBP'} {item.amount.toLocaleString()}</span>
@@ -1071,7 +1076,7 @@ export default function ProjectDetailPage() {
                                     </div>
                                     {extracted.costCategories.disposalFees.items && extracted.costCategories.disposalFees.items.length > 0 && (
                                       <div className="mt-2 space-y-1">
-                                        {extracted.costCategories.disposalFees.items.map((item, idx) => (
+                                        {extracted.costCategories.disposalFees.items.map((item: { type: string; amount: number; currency?: string }, idx: number) => (
                                           <div key={idx} className="flex justify-between text-xs text-gray-600 pl-2">
                                             <span>{item.type}</span>
                                             <span>{item.currency || 'GBP'} {item.amount.toLocaleString()}</span>
@@ -1089,7 +1094,7 @@ export default function ProjectDetailPage() {
                             <div className="mt-4 pt-4 border-t border-gray-200">
                               <p className="text-sm font-medium text-gray-900 mb-3">Individual Cost Items</p>
                               <div className="space-y-2 max-h-64 overflow-y-auto">
-                                {extracted.costs.map((cost, idx) => (
+                                {extracted.costs.map((cost: { type: string; amount: number; currency?: string; category?: string }, idx: number) => (
                                   <div key={idx} className="flex justify-between items-center text-sm bg-gray-50 rounded-md p-2">
                                     <div className="flex-1">
                                       <span className="font-medium text-gray-900">{cost.type}</span>
@@ -1112,7 +1117,7 @@ export default function ProjectDetailPage() {
                             <div className="mt-4 pt-4 border-t border-gray-200">
                               <p className="text-sm font-medium text-gray-900 mb-3">Miscellaneous Costs</p>
                               <div className="space-y-2">
-                                {extracted.miscellaneous.map((misc, idx) => (
+                                {extracted.miscellaneous.map((misc: { type: string; amount: number; currency?: string }, idx: number) => (
                                   <div key={idx} className="flex justify-between items-center text-sm bg-gray-50 rounded-md p-2">
                                     <span className="font-medium text-gray-900">{misc.type}</span>
                                     <span className="font-semibold text-gray-900">
@@ -1348,8 +1353,13 @@ export default function ProjectDetailPage() {
                           Status
                         </label>
                         <select
-                          value={projectFormData.status}
-                          onChange={(e) => handleStatusChange(e.target.value as Project['status'])}
+                          value={projectFormData.status || 'active'}
+                          onChange={(e) => {
+                            const value = e.target.value as Project['status'];
+                            if (value) {
+                              handleStatusChange(value);
+                            }
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
                         >
                           <option value="active">Active</option>

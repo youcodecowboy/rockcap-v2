@@ -30,7 +30,7 @@ export const getHubSpotPortalId = async (client?: Client): Promise<string | null
   // Try to get from API if not in env
   if (client) {
     try {
-      const accountInfo = await client.apiRequest({
+      const accountInfo: any = await client.apiRequest({
         method: 'GET',
         path: '/integrations/v1/me',
       });

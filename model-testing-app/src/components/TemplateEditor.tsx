@@ -37,7 +37,7 @@ export default function TemplateEditor({ template, onSave, onCancel }: TemplateE
     try {
       if (template) {
         await updateTemplate({
-          id: template._id,
+          id: template._id as Id<"noteTemplates">,
           name,
           description: description || undefined,
           knowledgeBankFields: fields,
