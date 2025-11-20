@@ -1,6 +1,45 @@
 # Development Changelog
 
-## [Latest] - 2025-01-27
+## [Latest] - 2025-01-27 18:00
+
+### Fixed Vercel Deployment 404 Issue
+
+**Overview**: Resolved 404 deployment errors on Vercel by updating middleware configuration and adding proper Vercel deployment configuration.
+
+**Changes Made:**
+- **Middleware Updates** (`src/middleware.ts`):
+  - Added `/login` and `/signup` routes to public routes matcher (in addition to `/sign-in` and `/sign-up`)
+  - Ensures Clerk authentication redirects work correctly for all authentication routes
+
+- **Vercel Configuration** (`vercel.json`):
+  - Created `vercel.json` with proper Next.js framework configuration
+  - Ensures Vercel correctly detects and builds the Next.js application
+
+- **Deployment Documentation** (`VERCEL_DEPLOYMENT.md`):
+  - Created comprehensive deployment troubleshooting guide
+  - Documented common 404 error causes and solutions
+  - Added checklist for verifying Root Directory settings in Vercel
+  - Included debugging steps and environment variable requirements
+
+**Root Cause:**
+The 404 error was caused by Vercel deploying from the parent directory instead of the `model-testing-app` subdirectory. This prevented Vercel from finding the Next.js application files.
+
+**Solution:**
+Updated Vercel project settings to set Root Directory to `model-testing-app`, ensuring Vercel builds and deploys from the correct directory.
+
+**Technical Details:**
+- Middleware now properly handles all Clerk authentication routes
+- Vercel configuration ensures proper framework detection
+- All environment variables verified (Clerk keys, Convex URL)
+
+**Next Steps:**
+- Monitor deployment to ensure 404 errors are resolved
+- Verify authentication flow works correctly on production
+- Test all routes after deployment completes
+
+---
+
+## [Previous] - 2025-01-27
 
 ### Dashboard Landing Page & Auth Routes Verification
 
