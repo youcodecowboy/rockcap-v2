@@ -390,7 +390,7 @@ export default function DocsPage() {
                   </TableHeader>
                 <TableBody>
                   {filteredDocuments.map((doc) => {
-                    const docId = (doc._id || doc.id) as Id<"documents">;
+                    const docId = doc._id as Id<"documents">;
                     const clientId = doc.clientId ? ((doc.clientId as any)?._id || doc.clientId) as string : null;
                     const projectId = doc.projectId ? ((doc.projectId as any)?._id || doc.projectId) as string : null;
                     
