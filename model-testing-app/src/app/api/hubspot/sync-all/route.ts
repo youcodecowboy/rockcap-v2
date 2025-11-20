@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Update sync status to in_progress
     await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: 'in_progress',
-    });
+    }) as any;
     
     // Sync companies (to companies table, not clients)
     if (syncCompanies) {
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
               companyData.industry = company.properties.industry;
             }
             
-            await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companyData);
+            await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companyData) as any;
             
             stats.companiesSynced++;
           } catch (error: any) {
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
             }
             
             // Always sync as contact first
-            await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData);
+            await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData) as any;
             
             stats.contactsSynced++;
             
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
                   leadData.role = contact.properties.jobtitle;
                 }
                 
-                await fetchMutation(api.hubspotSync.syncLeadFromHubSpot as any, leadData);
+                await fetchMutation(api.hubspotSync.syncLeadFromHubSpot as any, leadData) as any;
                 
                 // Track leads separately if needed
                 if (!stats.leadsSynced) stats.leadsSynced = 0;
@@ -279,7 +279,7 @@ export async function POST(request: NextRequest) {
               associatedCompanyIds: associatedCompanyIds.length > 0 ? associatedCompanyIds : undefined,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
-            });
+            }) as any;
             
             stats.dealsSynced++;
           } catch (error: any) {
@@ -297,7 +297,7 @@ export async function POST(request: NextRequest) {
     await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: stats.errors > 0 ? 'error' : 'success',
       stats,
-    });
+    }) as any;
     
     return NextResponse.json({
       success: true,
@@ -311,7 +311,7 @@ export async function POST(request: NextRequest) {
     try {
       await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
         status: 'error',
-      });
+      }) as any;
     } catch (e) {
       // Ignore errors updating status
     }

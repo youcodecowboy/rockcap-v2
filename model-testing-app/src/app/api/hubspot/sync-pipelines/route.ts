@@ -36,10 +36,10 @@ export async function POST(request: NextRequest) {
     // Sync to Convex
     const result = await fetchMutation(api.hubspotSync.syncPipelinesAndStages as any, {
       pipelines: pipelinesData,
-    });
+    }) as any;
     
     // Update existing deals with stage/pipeline names
-    const updateResult = await fetchMutation(api.hubspotSync.updateDealsWithStageAndPipelineNames as any, {});
+    const updateResult = await fetchMutation(api.hubspotSync.updateDealsWithStageAndPipelineNames as any, {}) as any;
     
     return NextResponse.json({
       success: true,

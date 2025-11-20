@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     
     try {
       // Try to get pipelines from Convex first
-      const pipelines = await fetchQuery(api.hubspotSync.getPipelineName as any, { pipelineId: '' });
+      const pipelines = await fetchQuery(api.hubspotSync.getPipelineName as any, { pipelineId: '' }) as any;
       // If we have pipelines in Convex, build the map from there
       // For now, we'll still fetch from HubSpot to ensure we have the latest
       // In the future, we could optimize this to use Convex data if available
@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
         }
         
         // Sync to deals table (for prospecting)
-        const result = await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealData);
+        const result = await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealData) as any;
         
         synced++;
         if (result.action === 'created') {

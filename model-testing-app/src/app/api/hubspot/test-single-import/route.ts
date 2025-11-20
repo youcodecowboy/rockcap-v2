@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
     if (lastContactedDate) contactSyncData.lastContactedDate = lastContactedDate;
     if (lastActivityDate) contactSyncData.lastActivityDate = lastActivityDate;
 
-    const contactResult = await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactSyncData);
+    const contactResult = await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactSyncData) as any;
     results.contact = {
       id: contactResult.id,
       action: contactResult.action,
@@ -346,7 +346,7 @@ export async function POST(request: NextRequest) {
         if (companyLastContactedDate) companySyncData.lastContactedDate = companyLastContactedDate;
         if (companyLastActivityDate) companySyncData.lastActivityDate = companyLastActivityDate;
 
-        const companyResult = await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companySyncData);
+        const companyResult = await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companySyncData) as any;
         results.company = {
           id: companyResult.id,
           action: companyResult.action,
@@ -535,7 +535,7 @@ export async function POST(request: NextRequest) {
           dealSyncData.companyIds = dealAssociatedCompanyIds;
         }
 
-        const dealResult = await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealSyncData);
+        const dealResult = await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealSyncData) as any;
         results.deal = {
           id: dealResult.id,
           action: dealResult.action,
