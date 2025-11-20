@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import MetricCard from '@/components/MetricCard';
 import { FileText, Mail, Building2, UserSearch, PoundSterling, Calendar } from 'lucide-react';
+import UpcomingReminders from '@/components/UpcomingReminders';
 
 export default function Dashboard() {
   const { user, isLoaded } = useUser();
@@ -201,23 +202,9 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Calendar */}
+          {/* Upcoming Reminders */}
           <div>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5" />
-                  Calendar
-                </CardTitle>
-                <CardDescription>Google Calendar integration coming soon</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-gray-500">
-                  <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-sm">Calendar sync coming soon</p>
-                </div>
-              </CardContent>
-            </Card>
+            <UpcomingReminders />
           </div>
         </div>
       </div>

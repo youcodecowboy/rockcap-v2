@@ -317,6 +317,7 @@ export const create = mutation({
     )),
     error: v.optional(v.string()),
     documentCode: v.optional(v.string()), // Optional - will auto-generate if not provided
+    isBaseDocument: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const uploadedAt = new Date().toISOString();
@@ -324,10 +325,12 @@ export const create = mutation({
     // Generate document code if client/project info available and code not provided
     let documentCode = args.documentCode;
     if (!documentCode && args.clientName) {
+      // For base documents, don't include project name in code
+      const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
       documentCode = generateDocumentCode(
         args.clientName,
         args.category,
-        args.projectName,
+        projectNameForCode,
         uploadedAt
       );
       
@@ -459,6 +462,7 @@ export const uploadFileAndCreateDocument = mutation({
       v.literal("error")
     )),
     error: v.optional(v.string()),
+    isBaseDocument: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const uploadedAt = new Date().toISOString();
@@ -466,10 +470,12 @@ export const uploadFileAndCreateDocument = mutation({
     // Generate document code if client/project info available
     let documentCode: string | undefined = undefined;
     if (args.clientName) {
+      // For base documents, don't include project name in code
+      const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
       documentCode = generateDocumentCode(
         args.clientName,
         args.category,
-        args.projectName,
+        projectNameForCode,
         uploadedAt
       );
       
@@ -498,11 +504,12 @@ export const uploadFileAndCreateDocument = mutation({
       tokensUsed: args.tokensUsed,
       clientId: args.clientId,
       clientName: args.clientName,
-      projectId: args.projectId,
-      projectName: args.projectName,
+      projectId: args.isBaseDocument ? undefined : args.projectId,
+      projectName: args.isBaseDocument ? undefined : args.projectName,
       suggestedClientName: args.suggestedClientName,
       suggestedProjectName: args.suggestedProjectName,
       documentCode: documentCode,
+      isBaseDocument: args.isBaseDocument || false,
       extractedData: args.extractedData,
       status: args.status || "completed",
       error: args.error,
@@ -584,6 +591,102 @@ export const updateDocumentCode = mutation({
   },
 });
 
+// Mutation: Bulk update document codes for a client
+export const updateDocumentCodesForClient = mutation({
+  args: {
+    clientId: v.id("clients"),
+    documentCodePattern: v.string(), // The new pattern to apply
+    excludeDocumentId: v.optional(v.id("documents")), // Optional document to exclude
+  },
+  handler: async (ctx, args) => {
+    // Get all documents for this client
+    const clientDocs = await ctx.db
+      .query("documents")
+      .filter((q: any) => q.eq(q.field("clientId"), args.clientId))
+      .collect();
+    
+    // Filter out excluded document if provided
+    const docsToUpdate = args.excludeDocumentId
+      ? clientDocs.filter(doc => doc._id !== args.excludeDocumentId)
+      : clientDocs;
+    
+    // Get all existing document codes to check uniqueness
+    const allDocs = await ctx.db.query("documents").collect();
+    const existingCodes = new Set(allDocs.map(doc => doc.documentCode).filter(Boolean));
+    
+    // Update each document with unique code
+    const updatedIds: string[] = [];
+    for (const doc of docsToUpdate) {
+      let newCode = args.documentCodePattern;
+      let counter = 1;
+      
+      // Ensure uniqueness
+      while (existingCodes.has(newCode) && newCode !== doc.documentCode) {
+        newCode = `${args.documentCodePattern}-${counter}`;
+        counter++;
+      }
+      
+      // Update document
+      await ctx.db.patch(doc._id, { documentCode: newCode });
+      existingCodes.add(newCode);
+      updatedIds.push(doc._id);
+    }
+    
+    return {
+      updatedCount: updatedIds.length,
+      documentIds: updatedIds,
+    };
+  },
+});
+
+// Mutation: Bulk update document codes for a project
+export const updateDocumentCodesForProject = mutation({
+  args: {
+    projectId: v.id("projects"),
+    documentCodePattern: v.string(), // The new pattern to apply
+    excludeDocumentId: v.optional(v.id("documents")), // Optional document to exclude
+  },
+  handler: async (ctx, args) => {
+    // Get all documents for this project
+    const projectDocs = await ctx.db
+      .query("documents")
+      .filter((q: any) => q.eq(q.field("projectId"), args.projectId))
+      .collect();
+    
+    // Filter out excluded document if provided
+    const docsToUpdate = args.excludeDocumentId
+      ? projectDocs.filter(doc => doc._id !== args.excludeDocumentId)
+      : projectDocs;
+    
+    // Get all existing document codes to check uniqueness
+    const allDocs = await ctx.db.query("documents").collect();
+    const existingCodes = new Set(allDocs.map(doc => doc.documentCode).filter(Boolean));
+    
+    // Update each document with unique code
+    const updatedIds: string[] = [];
+    for (const doc of docsToUpdate) {
+      let newCode = args.documentCodePattern;
+      let counter = 1;
+      
+      // Ensure uniqueness
+      while (existingCodes.has(newCode) && newCode !== doc.documentCode) {
+        newCode = `${args.documentCodePattern}-${counter}`;
+        counter++;
+      }
+      
+      // Update document
+      await ctx.db.patch(doc._id, { documentCode: newCode });
+      existingCodes.add(newCode);
+      updatedIds.push(doc._id);
+    }
+    
+    return {
+      updatedCount: updatedIds.length,
+      documentIds: updatedIds,
+    };
+  },
+});
+
 // Mutation: Delete document
 export const remove = mutation({
   args: { id: v.id("documents") },
@@ -597,5 +700,85 @@ export const getFileUrl = query({
   args: { storageId: v.id("_storage") },
   handler: async (ctx, args) => {
     return await ctx.storage.getUrl(args.storageId);
+  },
+});
+
+// Query: Get base documents for a client
+export const getBaseDocumentsByClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+    
+    // Filter for base documents (isBaseDocument: true and projectId is null/undefined)
+    return docs.filter(doc => 
+      doc.isBaseDocument === true && 
+      (!doc.projectId || doc.projectId === undefined)
+    );
+  },
+});
+
+// Mutation: Move document between projects or to/from base documents
+export const moveDocument = mutation({
+  args: {
+    documentId: v.id("documents"),
+    targetClientId: v.id("clients"),
+    targetProjectId: v.optional(v.id("projects")),
+    targetProjectName: v.optional(v.string()),
+    isBaseDocument: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc) {
+      throw new Error("Document not found");
+    }
+    
+    // Validate same client constraint
+    if (doc.clientId !== args.targetClientId) {
+      throw new Error("Cannot move document to different client");
+    }
+    
+    // Get client name if needed
+    let clientName = doc.clientName;
+    if (!clientName && args.targetClientId) {
+      const client = await ctx.db.get(args.targetClientId);
+      clientName = client?.name || "Unknown";
+    }
+    
+    // Determine project name for code generation
+    const projectNameForCode = args.isBaseDocument ? undefined : args.targetProjectName;
+    
+    // Regenerate document code based on new location
+    let newDocumentCode: string | undefined = undefined;
+    if (clientName) {
+      newDocumentCode = generateDocumentCode(
+        clientName,
+        doc.category,
+        projectNameForCode,
+        doc.uploadedAt
+      );
+      
+      // Ensure uniqueness
+      const existingDocs = await ctx.db.query("documents").collect();
+      let finalCode = newDocumentCode;
+      let counter = 1;
+      while (existingDocs.some(d => d._id !== args.documentId && d.documentCode === finalCode)) {
+        finalCode = `${newDocumentCode}-${counter}`;
+        counter++;
+      }
+      newDocumentCode = finalCode;
+    }
+    
+    // Update document
+    await ctx.db.patch(args.documentId, {
+      projectId: args.isBaseDocument ? undefined : args.targetProjectId,
+      projectName: args.isBaseDocument ? undefined : args.targetProjectName,
+      isBaseDocument: args.isBaseDocument,
+      documentCode: newDocumentCode || doc.documentCode,
+    });
+    
+    return args.documentId;
   },
 });

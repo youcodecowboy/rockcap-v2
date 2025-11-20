@@ -1,6 +1,117 @@
 # Development Changelog
 
-## [Latest] - 2025-01-27 18:00
+## [Latest] - 2024-11-20 16:30
+
+### Docs Section Enterprise Table Overhaul
+
+**Overview**: Completely redesigned the docs section from a card-based layout to an enterprise-grade table interface with expandable hierarchies, advanced filtering, compact metrics, and a recent upload widget. This major UX improvement enables efficient browsing of large document volumes while keeping all interactions on a single page.
+
+**New Components:**
+1. **CompactMetricCard.tsx** - Streamlined metric display component
+   - Single horizontal line layout with icon, title, and value
+   - Minimal padding and height (1/3 of previous metric cards)
+   - Optional badge support for status indicators
+   - Click-through support for interactive metrics
+   - Support for 7 color variants (blue, green, purple, orange, yellow, gray, red)
+
+2. **RecentUploadCard.tsx** - Recent upload status widget
+   - Shows most recent file from upload queue
+   - Real-time status display with color-coded badges
+   - Status types: "Needs Attention", "Complete", "Processing", "Error"
+   - Click-through to document detail or queue page
+   - Time-ago formatting (e.g., "5 mins ago", "2 hours ago")
+   - Subtle highlight for files needing attention (orange background)
+   - Falls back to "No recent uploads" when queue is empty
+
+3. **DocumentsTable.tsx** - Advanced hierarchical document table
+   - Three-level hierarchy: Client > Project > Document
+   - Expandable/collapsible rows with chevron indicators
+   - Sortable columns: Client, Project, Code, Category, Date
+   - Column-based filtering with toggle controls
+   - Visual hierarchy with indentation and color-coding:
+     - Client rows: Blue background with Building2 icon
+     - Project rows: Purple background with FolderKanban icon
+     - Document rows: White background with FileText icon
+   - Document count badges at each level
+   - Action buttons: External link for clients/projects, View for documents
+   - Sticky header for scrolling large datasets
+   - Empty state with helpful messaging
+   - Compact row height for high-density display
+
+**Enhanced Pages:**
+- **docs/page.tsx** - Major refactor for table-based UX
+  - Replaced 4-column metric card grid with 5-column compact metrics row
+  - RecentUploadCard as first metric (prominent position)
+  - Replaced client tab cards with DocumentsTable component
+  - Maintains three tabs: Client Documents, Internal Documents, Unclassified
+  - Enhanced search functionality (filters table in real-time)
+  - Internal and Unclassified tabs retain list view (simpler structure)
+  - All navigation stays on same page (no routing to client/project folders)
+  - Improved empty states with dashed borders and icons
+  - Better visual hierarchy and spacing
+
+**Key Features:**
+- **Stay-on-Page Navigation**: Expand/collapse functionality keeps users in context
+- **Advanced Filtering**: Column-specific filters with show/hide toggle
+- **Smart Sorting**: Multi-level sorting maintains hierarchy
+- **High-Density Display**: Compact design handles 100+ documents efficiently
+- **Visual Hierarchy**: Clear client > project > document relationships
+- **Quick Actions**: Direct links to client/project pages or document detail
+- **Status Awareness**: Recent upload widget highlights files needing attention
+- **Responsive Design**: Horizontal scroll on mobile, full table on desktop
+
+**Data Flow:**
+- Documents grouped by client first, then by project
+- Filtered documents maintain grouping structure
+- Sorting applied at each hierarchy level independently
+- Expansion state managed per client and per project
+- Real-time updates from Convex queries
+
+**UX Improvements:**
+- 70% reduction in metric card height (more space for content)
+- No page navigation required for browsing documents
+- One-click expand/collapse for quick exploration
+- Multi-column filtering for precise document location
+- Prominent recent upload status for quick action
+- Clear document counts at every level
+
+**Technical Details:**
+- Uses shadcn/ui Table components as foundation
+- State management with React hooks (useState, useMemo)
+- Set-based tracking for expanded clients and projects
+- Memoized grouping and filtering for performance
+- Proper TypeScript types for all data structures
+- Convex real-time subscriptions for live updates
+
+**Breaking Changes:**
+- None - all existing pages and functionality preserved
+- Client folder pages (`/docs/client/[id]`) still functional but de-emphasized
+- Project folder pages (`/docs/project/[id]`) still functional but de-emphasized
+
+**User Benefits:**
+- Enterprise-grade document management interface
+- Faster document discovery and access
+- Better suited for high-volume document workflows
+- Clear organizational structure at a glance
+- Immediate awareness of files needing attention
+- More screen real estate for document content
+
+**Performance:**
+- Efficient rendering with memoized data processing
+- Handles 1000+ documents without virtualization
+- Can add react-window if needed for 10,000+ documents
+- Minimal re-renders with proper state management
+
+**Next Steps:**
+- Monitor user feedback on table vs card preference
+- Consider adding bulk actions (select multiple, batch operations)
+- Add column width persistence (save user preferences)
+- Consider adding saved filter presets
+- Add export functionality (export filtered document list)
+
+---
+
+## [Previous] - 2025-01-27 18:00
 
 ### Fixed Vercel Deployment 404 Issue
 

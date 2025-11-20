@@ -1,18 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 import ChatAssistantDrawer from './ChatAssistantDrawer';
+import { useChatDrawer } from '@/contexts/ChatDrawerContext';
 
 export default function ChatAssistantButton() {
-  const [isOpen, setIsOpen] = useState(false);
+  const { isOpen, setIsOpen } = useChatDrawer();
 
   // Keyboard shortcut: Cmd/Ctrl + K
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
         event.preventDefault();
-        setIsOpen((prev) => !prev);
+        setIsOpen(!isOpen);
       }
       // ESC to close
       if (event.key === 'Escape' && isOpen) {
@@ -43,7 +44,7 @@ export default function ChatAssistantButton() {
       </button>
 
       {/* Drawer */}
-      <ChatAssistantDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} />
+      <ChatAssistantDrawer />
     </>
   );
 }

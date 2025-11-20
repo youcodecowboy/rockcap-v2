@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import MetricCard from '@/components/MetricCard';
+import CompactMetricCard from '@/components/CompactMetricCard';
 import { Building2, FolderKanban, FileText, Download, Filter, ArrowUpDown } from 'lucide-react';
 
 // Component to get client data (projects and documents)
@@ -136,34 +136,30 @@ export default function ClientsPage() {
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <MetricCard
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+          <CompactMetricCard
             label="Total Clients"
             value={metrics.totalClients}
             icon={Building2}
             iconColor="blue"
-            trend={{ value: 0, isPositive: true, period: 'vs last month' }}
           />
-          <MetricCard
+          <CompactMetricCard
             label="Active Clients"
             value={metrics.activeClients}
             icon={Building2}
             iconColor="green"
-            trend={{ value: 0, isPositive: true, period: 'vs last month' }}
           />
-          <MetricCard
+          <CompactMetricCard
             label="Total Projects"
             value={metrics.totalProjects}
             icon={FolderKanban}
             iconColor="purple"
-            trend={{ value: 0, isPositive: true, period: 'vs last month' }}
           />
-          <MetricCard
+          <CompactMetricCard
             label="Total Documents"
             value={metrics.totalDocuments}
             icon={FileText}
             iconColor="orange"
-            trend={{ value: 0, isPositive: true, period: 'vs last month' }}
           />
         </div>
 

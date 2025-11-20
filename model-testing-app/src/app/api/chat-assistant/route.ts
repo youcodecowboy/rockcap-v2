@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
       conversationHistory = [],
       executeAction = false,
       actionId,
+      fileMetadata,
     } = body;
 
     if (!sessionId) {
@@ -186,7 +187,18 @@ export async function POST(request: NextRequest) {
         // Get the action details
         const action = await client.query(api.chatActions.get, {
           id: actionId as Id<"chatActions">,
-        });
+        }) as {
+          _id: Id<"chatActions">;
+          sessionId: Id<"chatSessions">;
+          messageId: Id<"chatMessages">;
+          actionType: string;
+          actionData: any;
+          status: "pending" | "confirmed" | "cancelled" | "executed" | "failed";
+          result?: any;
+          error?: string;
+          createdAt: string;
+          updatedAt: string;
+        } | null;
 
         if (!action) {
           throw new Error('Action not found');
@@ -201,10 +213,42 @@ export async function POST(request: NextRequest) {
           result: result,
         });
 
+        // Determine item type and ID for navigation
+        let itemId: string | undefined;
+        let itemType: string | undefined;
+        let clientId: string | undefined;
+
+        if (result) {
+          // The result is typically the ID of the created/updated item
+          if (action.actionType === 'createNote' || action.actionType === 'updateNote') {
+            itemId = result as string;
+            itemType = 'note';
+          } else if (action.actionType === 'createClient' || action.actionType === 'updateClient') {
+            itemId = result as string;
+            itemType = 'client';
+          } else if (action.actionType === 'createProject' || action.actionType === 'updateProject') {
+            itemId = result as string;
+            itemType = 'project';
+          } else if (action.actionType === 'createContact') {
+            itemId = result as string;
+            itemType = 'contact';
+          } else if (action.actionType === 'createKnowledgeBankEntry') {
+            itemId = result as string;
+            itemType = 'knowledgeBankEntry';
+            // Knowledge bank entries need clientId for navigation
+            if (action.actionData.clientId) {
+              clientId = action.actionData.clientId;
+            }
+          }
+        }
+
         return NextResponse.json({
           success: true,
           result,
           message: `Successfully executed ${action.actionType}`,
+          itemId,
+          itemType,
+          clientId,
         });
       } catch (error) {
         // Mark action as failed
@@ -233,8 +277,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Auto-generate chat title if this is the first user message
+    if (conversationHistory.length === 0) {
+      try {
+        const titleResponse = await fetch(TOGETHER_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: MODEL_NAME,
+            messages: [
+              {
+                role: 'system',
+                content: 'Generate a short, concise title (3-5 words maximum) for this conversation based on the user\'s question. Return ONLY the title, nothing else. Make it descriptive but brief.',
+              },
+              {
+                role: 'user',
+                content: message,
+              },
+            ],
+            temperature: 0.7,
+            max_tokens: 20,
+          }),
+        });
+
+        if (titleResponse.ok) {
+          const titleData = await titleResponse.json();
+          const generatedTitle = titleData.choices[0]?.message?.content?.trim();
+          
+          if (generatedTitle && generatedTitle.length > 0 && generatedTitle.length < 100) {
+            // Update session title
+            await client.mutation(api.chatSessions.update, {
+              id: sessionId as Id<"chatSessions">,
+              title: generatedTitle,
+            });
+          }
+        }
+      } catch (error) {
+        // Silently fail - title generation is not critical
+        console.error('Error generating chat title:', error);
+      }
+    }
+
     // Gather context
     const context = await gatherChatContext(client, sessionId, clientId, projectId);
+
+    // Add file metadata to context if present
+    let fileContext = '';
+    if (fileMetadata) {
+      fileContext = `\n\nFILE UPLOADED:\n`;
+      fileContext += `Filename: ${fileMetadata.fileName}\n`;
+      fileContext += `Size: ${(fileMetadata.fileSize / 1024).toFixed(2)} KB\n`;
+      fileContext += `Type: ${fileMetadata.fileType}\n`;
+      fileContext += `Storage ID: ${fileMetadata.fileStorageId}\n`;
+      fileContext += `\nThe user has uploaded a file and wants you to help process and file it. You can use the analyze-file API endpoint or existing document processing tools to help organize this file.`;
+    }
 
     // Build system prompt with tools
     const systemPrompt = `You are an AI assistant for a real estate financing application. You help users manage clients, projects, documents, knowledge bank entries, and notes.
@@ -303,8 +402,9 @@ IMPORTANT RULES:
 4. Include the <TOOL_CALL> tags EXACTLY as shown in examples
 5. You can provide conversational text before or after the tool call
 6. Always use the context provided to give personalized assistance
+7. If a file has been uploaded, help the user process and file it appropriately using available tools
 
-${context}`;
+${context}${fileContext}`;
 
     // Build messages array
     const messages = [

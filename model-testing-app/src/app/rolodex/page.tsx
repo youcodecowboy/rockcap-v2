@@ -42,7 +42,7 @@ import {
   Sparkles,
   CheckCircle2,
 } from 'lucide-react';
-import MetricCard from '@/components/MetricCard';
+import CompactMetricCard from '@/components/CompactMetricCard';
 import { HubSpotLink } from '@/components/HubSpotLink';
 import CreateRolodexModal from '@/components/CreateRolodexModal';
 
@@ -258,15 +258,15 @@ export default function RolodexPage() {
           {/* Companies Tab */}
           <TabsContent value="companies" className="space-y-6">
             {/* Metric Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricCard
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+              <CompactMetricCard
                 label="Total Companies"
                 value={companyMetrics.total}
                 icon={Building2}
                 iconColor="blue"
               />
-              {Object.entries(companyMetrics).filter(([key]) => key !== 'total').slice(0, 3).map(([stage, count]) => (
-                <MetricCard
+              {Object.entries(companyMetrics).filter(([key]) => key !== 'total').slice(0, 4).map(([stage, count]) => (
+                <CompactMetricCard
                   key={stage}
                   label={stage}
                   value={count as number}
@@ -476,27 +476,27 @@ export default function RolodexPage() {
           {/* Contacts Tab */}
           <TabsContent value="contacts" className="space-y-6">
             {/* Metric Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricCard
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+              <CompactMetricCard
                 label="Total Contacts"
                 value={contactMetrics.total}
                 icon={User}
                 iconColor="blue"
               />
-              <MetricCard
+              <CompactMetricCard
                 label="With Email"
                 value={contactMetrics.withEmail}
                 icon={Mail}
                 iconColor="green"
               />
-              <MetricCard
+              <CompactMetricCard
                 label="With Phone"
                 value={contactMetrics.withPhone}
                 icon={Phone}
                 iconColor="purple"
               />
-              {Object.entries(contactMetrics).filter(([key]) => !['total', 'withEmail', 'withPhone'].includes(key)).slice(0, 1).map(([stage, count]) => (
-                <MetricCard
+              {Object.entries(contactMetrics).filter(([key]) => !['total', 'withEmail', 'withPhone'].includes(key)).slice(0, 2).map(([stage, count]) => (
+                <CompactMetricCard
                   key={stage}
                   label={stage}
                   value={count as number}

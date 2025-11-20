@@ -339,6 +339,49 @@ export const CHAT_TOOLS: Tool[] = [
     },
     requiresConfirmation: true
   },
+  {
+    name: "createContact",
+    description: "Create a new contact, optionally linked to a client or project.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Contact name (required)"
+        },
+        email: {
+          type: "string",
+          description: "Email address"
+        },
+        phone: {
+          type: "string",
+          description: "Phone number"
+        },
+        role: {
+          type: "string",
+          description: "Role/title"
+        },
+        company: {
+          type: "string",
+          description: "Company name"
+        },
+        clientId: {
+          type: "string",
+          description: "Link to client (optional)"
+        },
+        projectId: {
+          type: "string",
+          description: "Link to project (optional)"
+        },
+        notes: {
+          type: "string",
+          description: "Additional notes"
+        }
+      },
+      required: ["name"]
+    },
+    requiresConfirmation: true
+  },
   
   // UPDATE TOOLS (Require confirmation)
   {
@@ -413,6 +456,42 @@ export const CHAT_TOOLS: Tool[] = [
     },
     requiresConfirmation: true
   },
+  {
+    name: "updateNote",
+    description: "Update an existing note's title, content, or metadata.",
+    parameters: {
+      type: "object",
+      properties: {
+        noteId: {
+          type: "string",
+          description: "Note ID (required)"
+        },
+        title: {
+          type: "string",
+          description: "Updated title"
+        },
+        content: {
+          type: "string",
+          description: "Updated content"
+        },
+        clientId: {
+          type: "string",
+          description: "Link to client (optional, use null to unlink)"
+        },
+        projectId: {
+          type: "string",
+          description: "Link to project (optional, use null to unlink)"
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Tags for categorization"
+        }
+      },
+      required: ["noteId"]
+    },
+    requiresConfirmation: true
+  },
   
   // FILE OPERATIONS (Require confirmation)
   {
@@ -427,6 +506,94 @@ export const CHAT_TOOLS: Tool[] = [
         }
       },
       required: ["documentId"]
+    },
+    requiresConfirmation: false
+  },
+  
+  // REMINDER OPERATIONS
+  {
+    name: "createReminder",
+    description: "Create a reminder with optional LLM enhancement. Reminders trigger notifications at the scheduled time.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Reminder title (required)"
+        },
+        description: {
+          type: "string",
+          description: "Reminder description/notes (optional)"
+        },
+        scheduledFor: {
+          type: "string",
+          description: "ISO timestamp when reminder should trigger (required)"
+        },
+        clientId: {
+          type: "string",
+          description: "Link reminder to a client (optional)"
+        },
+        projectId: {
+          type: "string",
+          description: "Link reminder to a project (optional)"
+        },
+        taskId: {
+          type: "string",
+          description: "Link reminder to a task (optional)"
+        }
+      },
+      required: ["title", "scheduledFor"]
+    },
+    requiresConfirmation: true
+  },
+  {
+    name: "getReminders",
+    description: "Get user's reminders with optional filters (status, date range, client, project).",
+    parameters: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["pending", "completed", "dismissed", "overdue"],
+          description: "Filter by reminder status"
+        },
+        clientId: {
+          type: "string",
+          description: "Filter by client ID"
+        },
+        projectId: {
+          type: "string",
+          description: "Filter by project ID"
+        },
+        startDate: {
+          type: "string",
+          description: "Filter reminders from this date (ISO timestamp)"
+        },
+        endDate: {
+          type: "string",
+          description: "Filter reminders until this date (ISO timestamp)"
+        }
+      },
+      required: []
+    },
+    requiresConfirmation: false
+  },
+  {
+    name: "getUpcomingReminders",
+    description: "Get user's upcoming reminders (next N days).",
+    parameters: {
+      type: "object",
+      properties: {
+        days: {
+          type: "number",
+          description: "Number of days ahead to look (default: 7)"
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of reminders to return"
+        }
+      },
+      required: []
     },
     requiresConfirmation: false
   }
@@ -560,6 +727,18 @@ export async function executeTool(
           knowledgeBankEntryIds: [],
         });
       
+      case "createContact":
+        return await client.mutation(api.contacts.create, {
+          name: parameters.name,
+          email: parameters.email,
+          phone: parameters.phone,
+          role: parameters.role,
+          company: parameters.company,
+          clientId: parameters.clientId as Id<"clients"> | undefined,
+          projectId: parameters.projectId as Id<"projects"> | undefined,
+          notes: parameters.notes,
+        });
+      
       // UPDATES
       case "updateClient":
         const { clientId, ...clientUpdates } = parameters;
@@ -575,10 +754,47 @@ export async function executeTool(
           ...projectUpdates,
         });
       
+      case "updateNote":
+        const { noteId, ...noteUpdates } = parameters;
+        // Handle null values for clientId/projectId (to unlink)
+        const updateData: any = { ...noteUpdates };
+        if (updateData.clientId === null) updateData.clientId = null;
+        if (updateData.projectId === null) updateData.projectId = null;
+        return await client.mutation(api.notes.update, {
+          id: noteId as Id<"notes">,
+          ...updateData,
+        });
+      
       // FILE OPERATIONS
       case "getFileSummary":
         return await client.query(api.documents.get, {
           id: parameters.documentId as Id<"documents">,
+        });
+      
+      // REMINDER OPERATIONS
+      case "createReminder":
+        return await client.mutation(api.reminders.create, {
+          title: parameters.title,
+          description: parameters.description,
+          scheduledFor: parameters.scheduledFor,
+          clientId: parameters.clientId as Id<"clients"> | undefined,
+          projectId: parameters.projectId as Id<"projects"> | undefined,
+          taskId: parameters.taskId as Id<"tasks"> | undefined,
+        });
+      
+      case "getReminders":
+        return await client.query(api.reminders.getByUser, {
+          status: parameters.status as "pending" | "completed" | "dismissed" | "overdue" | undefined,
+          clientId: parameters.clientId as Id<"clients"> | undefined,
+          projectId: parameters.projectId as Id<"projects"> | undefined,
+          startDate: parameters.startDate,
+          endDate: parameters.endDate,
+        });
+      
+      case "getUpcomingReminders":
+        return await client.query(api.reminders.getUpcoming, {
+          days: parameters.days,
+          limit: parameters.limit,
         });
       
       default:

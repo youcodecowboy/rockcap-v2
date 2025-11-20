@@ -7,7 +7,6 @@ import {
   useDocuments, 
   useInternalDocuments as useInternalDocumentsHook, 
   useUnclassifiedDocuments,
-  useFolderStats,
   useDeleteDocument,
   useDeleteInternalDocument,
   useUpdateDocumentCode,
@@ -16,10 +15,11 @@ import {
 import { Id } from '../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import MetricCard from '@/components/MetricCard';
-import FolderCard from '@/components/FolderCard';
+import CompactMetricCard from '@/components/CompactMetricCard';
+import RecentUploadCard from '@/components/RecentUploadCard';
+import DocumentsTable from '@/components/DocumentsTable';
 import DocumentCodeEditor from '@/components/DocumentCodeEditor';
-import { FileText, Building2, FolderKanban, Clock, Search, AlertCircle, ChevronRight } from 'lucide-react';
+import { FileText, Building2, Clock, Search, AlertCircle, ChevronRight } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 
@@ -29,12 +29,12 @@ export default function DocsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('client');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   
   // Convex hooks
   const allDocuments = useDocuments() || [];
   const internalDocuments = useInternalDocumentsHook() || [];
   const unclassifiedDocuments = useUnclassifiedDocuments() || [];
-  const folderStats = useFolderStats();
   const deleteDocument = useDeleteDocument();
   const deleteInternalDocument = useDeleteInternalDocument();
   const updateDocumentCode = useUpdateDocumentCode();
@@ -118,13 +118,24 @@ export default function DocsPage() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Breadcrumbs */}
+        <div className="mb-4">
+          <nav className="flex items-center gap-2 text-sm text-gray-600">
+            <Link href="/docs" className="hover:text-gray-900 transition-colors">
+              Docs
+            </Link>
+            <ChevronRight className="w-4 h-4" />
+            <span className="text-gray-900 font-medium">Document Library</span>
+          </nav>
+        </div>
+
         {/* Page Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Document Library</h1>
               <p className="mt-2 text-gray-600">
-                Browse documents by client folders, internal documents, or unclassified files
+                Browse and manage all documents with advanced filtering and organization
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -143,30 +154,31 @@ export default function DocsPage() {
           </div>
         </div>
 
-        {/* Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <MetricCard
-            label="Client Documents"
+        {/* Compact Metric Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+          <RecentUploadCard />
+          <CompactMetricCard
+            label="Client Docs"
             value={metrics.clientDocuments}
             icon={Building2}
             iconColor="green"
           />
-          <MetricCard
-            label="Internal Documents"
+          <CompactMetricCard
+            label="Internal"
             value={metrics.internalDocuments}
             icon={FileText}
             iconColor="purple"
           />
-          <MetricCard
+          <CompactMetricCard
             label="Unclassified"
             value={metrics.unclassifiedDocuments}
             icon={AlertCircle}
             iconColor="orange"
           />
-          <MetricCard
-            label="Total Documents"
+          <CompactMetricCard
+            label="Total"
             value={metrics.totalDocuments}
-            icon={FolderKanban}
+            icon={FileText}
             iconColor="blue"
           />
         </div>
@@ -174,65 +186,80 @@ export default function DocsPage() {
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
           <div className="border-b border-gray-200">
-            <nav className="flex -mb-px">
-              <button
-                onClick={() => setActiveTab('client')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'client'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4" />
-                  Client Documents
-                  <Badge variant="outline" className="ml-2">
-                    {metrics.clientDocuments}
-                  </Badge>
+            <div className="flex items-center justify-between">
+              <nav className="flex -mb-px">
+                <button
+                  onClick={() => setActiveTab('client')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'client'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
+                    Client Documents
+                    <Badge variant="outline" className="ml-2">
+                      {metrics.clientDocuments}
+                    </Badge>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setActiveTab('internal')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'internal'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Internal Documents
+                    <Badge variant="outline" className="ml-2">
+                      {metrics.internalDocuments}
+                    </Badge>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setActiveTab('unclassified')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'unclassified'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    Unclassified
+                    <Badge variant="outline" className="ml-2">
+                      {metrics.unclassifiedDocuments}
+                    </Badge>
+                  </div>
+                </button>
+              </nav>
+              {activeTab === 'client' && (
+                <div className="pr-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="gap-2"
+                  >
+                    <Search className="w-4 h-4" />
+                    {showFilters ? 'Hide Filters' : 'Show Filters'}
+                  </Button>
                 </div>
-              </button>
-              <button
-                onClick={() => setActiveTab('internal')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'internal'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
-                  Internal Documents
-                  <Badge variant="outline" className="ml-2">
-                    {metrics.internalDocuments}
-                  </Badge>
-                </div>
-              </button>
-              <button
-                onClick={() => setActiveTab('unclassified')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'unclassified'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  Unclassified
-                  <Badge variant="outline" className="ml-2">
-                    {metrics.unclassifiedDocuments}
-                  </Badge>
-                </div>
-              </button>
-            </nav>
+              )}
+            </div>
           </div>
 
           {/* Search Bar */}
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-4 border-b border-gray-200 bg-gray-50">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 type="text"
-                placeholder="Search documents..."
+                placeholder="Search documents by name, code, category, client, or project..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-400"
@@ -244,39 +271,38 @@ export default function DocsPage() {
           <div className="p-6">
             {activeTab === 'client' && (
               <div>
-                {folderStats && folderStats.clients && folderStats.clients.length > 0 ? (
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Client Folders</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                      {folderStats.clients.map((client) => (
-                        <FolderCard
-                          key={client.clientId}
-                          type="client"
-                          id={client.clientId}
-                          name={client.clientName}
-                          documentCount={client.documentCount}
-                          lastUpdated={client.lastUpdated}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
+                {filteredClientDocs.length === 0 ? (
+                  <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                     <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-900 font-medium mb-1">No client folders</p>
+                    <p className="text-gray-900 font-medium mb-1">No client documents</p>
                     <p className="text-sm text-gray-500">
-                      Client folders will appear here once documents are filed to clients.
+                      {searchQuery 
+                        ? 'No documents match your search. Try adjusting your filters.' 
+                        : 'Client documents will appear here once uploaded and classified.'}
                     </p>
                   </div>
+                ) : (
+                  <DocumentsTable 
+                    documents={filteredClientDocs} 
+                    showFilters={showFilters}
+                    onFiltersChange={setShowFilters}
+                  />
                 )}
               </div>
             )}
 
             {activeTab === 'internal' && (
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Internal Documents</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Internal Documents
+                  {searchQuery && (
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      (filtered)
+                    </span>
+                  )}
+                </h2>
                 {filteredInternalDocs.length === 0 ? (
-                  <div className="text-center py-12">
+                  <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                     <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-900 font-medium mb-1">No internal documents</p>
                     <p className="text-sm text-gray-500">
@@ -288,7 +314,7 @@ export default function DocsPage() {
                     {filteredInternalDocs.map((doc) => (
                       <div
                         key={doc._id}
-                        className="bg-gray-50 rounded-lg border border-gray-200 p-4 hover:border-blue-300 transition-colors"
+                        className="bg-purple-50 rounded-lg border border-purple-200 p-4 hover:border-purple-300 transition-colors"
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
@@ -299,6 +325,9 @@ export default function DocsPage() {
                                 onSave={(newCode) => handleUpdateInternalDocumentCode(doc._id, newCode)}
                                 isInternal={true}
                               />
+                              <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300">
+                                Internal
+                              </Badge>
                             </div>
                             <div className="text-sm text-gray-600 mb-1">
                               {doc.summary.substring(0, 150)}...
@@ -346,9 +375,16 @@ export default function DocsPage() {
 
             {activeTab === 'unclassified' && (
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Unclassified Documents</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Unclassified Documents
+                  {searchQuery && (
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      (filtered)
+                    </span>
+                  )}
+                </h2>
                 {filteredUnclassifiedDocs.length === 0 ? (
-                  <div className="text-center py-12">
+                  <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                     <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-900 font-medium mb-1">No unclassified documents</p>
                     <p className="text-sm text-gray-500">

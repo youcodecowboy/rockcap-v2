@@ -15,8 +15,10 @@ import {
   ContactRound,
   Calculator,
   LayoutDashboard,
+  CheckSquare,
   LucideIcon,
 } from 'lucide-react';
+import { useChatDrawer } from '@/contexts/ChatDrawerContext';
 
 interface NavItem {
   href: string;
@@ -27,6 +29,7 @@ interface NavItem {
 export default function Sidebar() {
   const pathname = usePathname();
   const [isHovered, setIsHovered] = useState(false);
+  const { isOpen: isChatOpen } = useChatDrawer();
 
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/';
@@ -35,6 +38,7 @@ export default function Sidebar() {
 
   const navItems: NavItem[] = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/tasks', label: 'Tasks', icon: CheckSquare },
     { href: '/filing', label: 'Filing Agent', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },
     { href: '/projects', label: 'Projects', icon: FolderKanban },
@@ -50,14 +54,14 @@ export default function Sidebar() {
     <aside
       className={`fixed left-0 top-16 h-[calc(100vh-4rem)] bg-black text-white transition-all duration-300 ease-in-out z-50 ${
         isHovered ? 'w-64' : 'w-20'
-      }`}
+      } ${isChatOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{ zIndex: 50 }}
     >
       <div className="flex flex-col h-full">
         {/* Navigation Items */}
-        <nav className="flex-1 py-4 px-3 space-y-3">
+        <nav className="flex-1 py-2 px-3 space-y-1.5 overflow-hidden">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -65,7 +69,7 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-center w-12 h-12 rounded-md transition-colors ${
+                className={`flex items-center justify-center w-12 h-10 rounded-md transition-colors ${
                   active
                     ? 'bg-gray-900'
                     : 'hover:bg-gray-900'
@@ -87,10 +91,10 @@ export default function Sidebar() {
         </nav>
         
         {/* Bottom Settings Section */}
-        <div className="border-t border-gray-800 py-4 px-3">
+        <div className="border-t border-gray-800 py-2 px-3">
           <Link
             href="/settings"
-            className={`flex items-center justify-center w-12 h-12 rounded-md transition-colors ${
+            className={`flex items-center justify-center w-12 h-10 rounded-md transition-colors ${
               isActive('/settings')
                 ? 'bg-gray-900'
                 : 'hover:bg-gray-900'

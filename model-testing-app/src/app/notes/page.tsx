@@ -1,19 +1,30 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import NotesEditor from '@/components/NotesEditor';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Trash2, X, Filter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
-export default function NotesPage() {
+function NotesPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedNoteId, setSelectedNoteId] = useState<Id<"notes"> | null>(null);
+  
+  // Read note ID from URL params
+  useEffect(() => {
+    const noteParam = searchParams.get('note');
+    if (noteParam) {
+      setSelectedNoteId(noteParam as Id<"notes">);
+      // Clean up URL
+      router.replace('/notes', { scroll: false });
+    }
+  }, [searchParams, router]);
   const [filterClientIds, setFilterClientIds] = useState<Id<"clients">[]>([]);
   const [filterProjectIds, setFilterProjectIds] = useState<Id<"projects">[]>([]);
   const [filterTags, setFilterTags] = useState<string[]>([]);
@@ -605,5 +616,13 @@ export default function NotesPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function NotesPage() {
+  return (
+    <Suspense fallback={<div className="flex h-[calc(100vh-4rem)] items-center justify-center">Loading...</div>}>
+      <NotesPageContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Settings2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { X, Settings2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
@@ -10,13 +11,13 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import ContextSelector from './ContextSelector';
 import ActionConfirmationModal from './ActionConfirmationModal';
+import { useChatDrawer } from '@/contexts/ChatDrawerContext';
 
-interface ChatAssistantDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDrawerProps) {
+export default function ChatAssistantDrawer() {
+  const router = useRouter();
+  const { isOpen, setIsOpen } = useChatDrawer();
+  
+  const onClose = () => setIsOpen(false);
   const [currentSessionId, setCurrentSessionId] = useState<Id<"chatSessions"> | null>(null);
   const [contextType, setContextType] = useState<'global' | 'client' | 'project'>('global');
   const [contextClientId, setContextClientId] = useState<Id<"clients"> | undefined>();
@@ -25,6 +26,7 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
   const [pendingAction, setPendingAction] = useState<any>(null);
   const [showContextSelector, setShowContextSelector] = useState(false);
   const [activityMessages, setActivityMessages] = useState<Array<{ activity: string; id: string }>>([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -32,6 +34,15 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
   const createSession = useMutation(api.chatSessions.create);
   const addMessage = useMutation(api.chatMessages.add);
   const createAction = useMutation(api.chatActions.create);
+  const generateUploadUrl = useMutation(api.files.generateUploadUrl);
+  const deleteSession = useMutation(api.chatSessions.remove);
+
+  // Get sessions to find the most recent one
+  const sessions = useQuery(api.chatSessions.list, {
+    contextType,
+    clientId: contextClientId,
+    projectId: contextProjectId,
+  });
 
   // Get messages for current session
   const messages = useQuery(
@@ -50,12 +61,13 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Create initial session when drawer opens
+  // Open most recent session when drawer opens (instead of creating new one)
   useEffect(() => {
-    if (isOpen && !currentSessionId) {
-      handleNewChat();
+    if (isOpen && !currentSessionId && sessions && sessions.length > 0) {
+      // Select the most recent session (first in the list since they're ordered desc)
+      setCurrentSessionId(sessions[0]._id);
     }
-  }, [isOpen]);
+  }, [isOpen, sessions, currentSessionId]);
 
   const handleNewChat = async () => {
     try {
@@ -74,7 +86,55 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
     setCurrentSessionId(sessionId);
   };
 
-  const handleSendMessage = async (content: string) => {
+  const handleDeleteSession = async (sessionId: Id<"chatSessions">) => {
+    try {
+      await deleteSession({ id: sessionId });
+      // If we deleted the current session, select the most recent one or clear selection
+      if (currentSessionId === sessionId) {
+        const remainingSessions = sessions?.filter(s => s._id !== sessionId) || [];
+        if (remainingSessions.length > 0) {
+          setCurrentSessionId(remainingSessions[0]._id);
+        } else {
+          setCurrentSessionId(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      alert('Failed to delete chat. Please try again.');
+    }
+  };
+
+  const handleFileUpload = async (file: File): Promise<{ storageId: string }> => {
+    // Generate upload URL
+    const uploadUrl = await generateUploadUrl();
+    
+    // Upload file to Convex storage
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Failed to upload file');
+    }
+
+    const responseText = await uploadResponse.text();
+    let fileStorageId: Id<"_storage">;
+    try {
+      const responseData = JSON.parse(responseText);
+      fileStorageId = responseData.storageId as Id<"_storage">;
+    } catch {
+      fileStorageId = responseText.trim() as Id<"_storage">;
+    }
+
+    return { storageId: fileStorageId };
+  };
+
+  const handleSendMessage = async (
+    content: string,
+    fileMetadata?: { fileName: string; fileStorageId: string; fileSize: number; fileType: string }
+  ) => {
     if (!currentSessionId) return;
 
     setIsLoading(true);
@@ -106,6 +166,7 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
           clientId: contextClientId,
           projectId: contextProjectId,
           conversationHistory,
+          fileMetadata, // Include file metadata if present
         }),
       });
 
@@ -201,12 +262,51 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
 
       const data = await response.json();
 
+      // Build success message with link if item ID is provided
+      let successMessage = data.message || 'Action completed successfully.';
+      let itemLink: { url: string; text: string } | null = null;
+
+      if (data.itemId && data.itemType) {
+        switch (data.itemType) {
+          case 'note':
+            itemLink = { url: `/notes?note=${data.itemId}`, text: 'View Note' };
+            break;
+          case 'client':
+            itemLink = { url: `/clients/${data.itemId}`, text: 'View Client' };
+            break;
+          case 'project':
+            itemLink = { url: `/projects/${data.itemId}`, text: 'View Project' };
+            break;
+          case 'contact':
+            itemLink = { url: `/rolodex?contact=${data.itemId}`, text: 'View Contact' };
+            break;
+          case 'knowledgeBankEntry':
+            if (data.clientId) {
+              itemLink = { url: `/knowledge-bank/${data.clientId}`, text: 'View Knowledge Bank Entry' };
+            }
+            break;
+        }
+      }
+
+      if (itemLink) {
+        successMessage += ` [${itemLink.text}](${itemLink.url})`;
+      }
+
       // Add success message
       await addMessage({
         sessionId: currentSessionId,
         role: 'system',
-        content: data.message || 'Action completed successfully.',
+        content: successMessage,
+        metadata: itemLink ? { itemLink, itemId: data.itemId, itemType: data.itemType } : undefined,
       });
+
+      // If item link exists, navigate and close chat
+      if (itemLink && data.itemId) {
+        setTimeout(() => {
+          router.push(itemLink!.url);
+          onClose();
+        }, 500); // Small delay to show the message
+      }
 
       setPendingAction(null);
     } catch (error) {
@@ -241,7 +341,7 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
     <>
       {/* Overlay */}
       <div
-        className={`fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300 ${
+        className={`fixed inset-0 backdrop-blur-sm bg-black/20 z-40 transition-opacity duration-300 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -253,16 +353,36 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <div className="flex h-full">
+        <div className="flex h-full relative">
           {/* Chat History Sidebar */}
-          <ChatHistory
-            currentSessionId={currentSessionId}
-            onSelectSession={handleSelectSession}
-            onNewChat={handleNewChat}
-            contextType={contextType}
-            clientId={contextClientId}
-            projectId={contextProjectId}
-          />
+          {!isSidebarCollapsed && (
+            <ChatHistory
+              currentSessionId={currentSessionId}
+              onSelectSession={handleSelectSession}
+              onNewChat={handleNewChat}
+              onDeleteSession={handleDeleteSession}
+              contextType={contextType}
+              clientId={contextClientId}
+              projectId={contextProjectId}
+            />
+          )}
+
+          {/* Sidebar Toggle Button */}
+          <button
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className={`absolute top-1/2 -translate-y-1/2 bg-white border border-gray-200 rounded-lg p-1.5 hover:bg-gray-50 transition-all z-20 shadow-md ${
+              isSidebarCollapsed 
+                ? 'left-2' 
+                : 'left-[248px]'
+            }`}
+            title={isSidebarCollapsed ? 'Show chat history' : 'Hide chat history'}
+          >
+            {isSidebarCollapsed ? (
+              <ChevronRight className="w-4 h-4 text-gray-600" />
+            ) : (
+              <ChevronLeft className="w-4 h-4 text-gray-600" />
+            )}
+          </button>
 
           {/* Main Chat Interface */}
           <div className="flex-1 flex flex-col">
@@ -320,6 +440,7 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
                       content={message.content}
                       timestamp={message.createdAt}
                       tokensUsed={message.metadata?.tokensUsed}
+                      metadata={message.metadata}
                     />
                   ))}
                   {/* Activity Messages */}
@@ -349,6 +470,7 @@ export default function ChatAssistantDrawer({ isOpen, onClose }: ChatAssistantDr
             {/* Input */}
             <ChatInput
               onSend={handleSendMessage}
+              onFileSelect={handleFileUpload}
               disabled={isLoading || !currentSessionId}
               placeholder={isLoading ? 'AI is thinking...' : 'Ask me anything...'}
             />

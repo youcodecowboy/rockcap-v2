@@ -175,6 +175,8 @@ export default defineSchema({
     suggestedProjectName: v.optional(v.string()),
     // Document code for filing system (e.g., "FIRESIDE-VAL-WELLINGTON-201125")
     documentCode: v.optional(v.string()),
+    // Flag to indicate if document belongs to client's Base Documents (not project-specific)
+    isBaseDocument: v.optional(v.boolean()),
     // Extracted data (stored as JSON)
     extractedData: v.optional(v.any()),
     // Status
@@ -1130,5 +1132,84 @@ export default defineSchema({
     .index("by_company_number", ["companyNumber"])
     .index("by_property_title", ["propertyTitleId"])
     .index("by_dataset", ["fromDataset"]),
+
+  // Reminders table - user-specific reminders that trigger notifications
+  reminders: defineTable({
+    userId: v.id("users"), // User who created the reminder
+    title: v.string(),
+    description: v.optional(v.string()), // LLM-enhanced context
+    scheduledFor: v.string(), // ISO timestamp - triggers notification at exact time
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    taskId: v.optional(v.id("tasks")), // Link to task if reminder is about a task
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("dismissed"),
+      v.literal("overdue")
+    ),
+    isRead: v.optional(v.boolean()), // For notification tracking
+    llmContext: v.optional(v.any()), // LLM-generated summary/context
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_scheduledFor", ["scheduledFor"])
+    .index("by_status", ["status"])
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_task", ["taskId"]),
+
+  // Tasks table - task management with assignment and linking
+  tasks: defineTable({
+    createdBy: v.id("users"), // Who created the task
+    assignedTo: v.optional(v.id("users")), // Who the task is assigned to (can be different from creator)
+    title: v.string(),
+    description: v.optional(v.string()), // What needs to happen
+    notes: v.optional(v.string()), // Additional notes/context (editable)
+    dueDate: v.optional(v.string()), // ISO timestamp
+    status: v.union(
+      v.literal("todo"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("cancelled")
+    ),
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high")
+    )),
+    tags: v.optional(v.array(v.string())),
+    clientId: v.optional(v.id("clients")), // Attached client
+    projectId: v.optional(v.id("projects")), // Attached project
+    reminderIds: v.optional(v.array(v.id("reminders"))), // Reminders linked to task
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_createdBy", ["createdBy"])
+    .index("by_assignedTo", ["assignedTo"])
+    .index("by_status", ["status"])
+    .index("by_dueDate", ["dueDate"])
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"]),
+
+  // Notifications table - unified notification system
+  notifications: defineTable({
+    userId: v.id("users"), // Required
+    type: v.union(
+      v.literal("file_upload"),
+      v.literal("reminder"),
+      v.literal("task")
+    ),
+    title: v.string(),
+    message: v.string(),
+    relatedId: v.optional(v.string()), // ID of related entity (reminder, task, etc.)
+    isRead: v.optional(v.boolean()),
+    createdAt: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_type", ["type"])
+    .index("by_isRead", ["isRead"])
+    .index("by_createdAt", ["createdAt"]),
 });
 

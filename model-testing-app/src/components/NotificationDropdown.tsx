@@ -5,7 +5,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { useRouter } from 'next/navigation';
-import { Bell, CheckCircle2, AlertCircle, Loader2, X } from 'lucide-react';
+import { Bell, CheckCircle2, AlertCircle, Loader2, X, Clock, CheckSquare } from 'lucide-react';
 
 const formatTimeAgo = (dateString: string): string => {
   const date = new Date(dateString);
@@ -31,6 +31,12 @@ export default function NotificationDropdown() {
   const unreadCount = useQuery(api.fileQueue.getUnreadCount);
   const markAsRead = useMutation(api.fileQueue.markAsRead);
   const markAllAsRead = useMutation(api.fileQueue.markAllAsRead);
+  
+  // Unified notifications
+  const notifications = useQuery(api.notifications.getRecent, { limit: 20, includeRead: false });
+  const notificationUnreadCount = useQuery(api.notifications.getUnreadCount, {});
+  const markNotificationAsRead = useMutation(api.notifications.markAsRead);
+  const markAllNotificationsAsRead = useMutation(api.notifications.markAllAsRead);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -114,8 +120,25 @@ export default function NotificationDropdown() {
     errors: recentJobs?.filter(j => j.status === 'error') || [],
   };
 
-  const hasNotifications = (unreadCount || 0) > 0;
+  const hasNotifications = (unreadCount || 0) > 0 || (notificationUnreadCount || 0) > 0;
   const totalJobs = recentJobs?.length || 0;
+  const totalNotifications = notifications?.length || 0;
+
+  const handleNotificationClick = async (notificationId: Id<"notifications">, relatedId?: string, type?: string) => {
+    await markNotificationAsRead({ id: notificationId });
+    
+    // Navigate based on notification type
+    if (type === 'reminder' && relatedId) {
+      router.push(`/reminders`);
+    } else if (type === 'task' && relatedId) {
+      router.push(`/tasks`);
+    }
+    setIsOpen(false);
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    await markAllNotificationsAsRead({});
+  };
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -127,7 +150,9 @@ export default function NotificationDropdown() {
         <Bell className="h-5 w-5" />
         {hasNotifications && (
           <span className="absolute top-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
-            {unreadCount! > 9 ? '9+' : unreadCount}
+            {((unreadCount || 0) + (notificationUnreadCount || 0)) > 9 
+              ? '9+' 
+              : (unreadCount || 0) + (notificationUnreadCount || 0)}
           </span>
         )}
       </button>
@@ -136,25 +161,75 @@ export default function NotificationDropdown() {
         <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-[600px] flex flex-col">
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-900">File Uploads</h3>
+            <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
             {hasNotifications && (
-              <button
-                onClick={handleMarkAllAsRead}
-                className="text-xs text-blue-600 hover:text-blue-700"
-              >
-                Mark all as read
-              </button>
+              <div className="flex gap-2">
+                {(notificationUnreadCount || 0) > 0 && (
+                  <button
+                    onClick={handleMarkAllNotificationsAsRead}
+                    className="text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    Mark all as read
+                  </button>
+                )}
+                {(unreadCount || 0) > 0 && (
+                  <button
+                    onClick={handleMarkAllAsRead}
+                    className="text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    Mark uploads as read
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
           {/* Content */}
           <div className="overflow-y-auto flex-1">
-            {totalJobs === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-gray-500">
-                No file uploads yet
-              </div>
-            ) : (
+            {/* Reminder and Task Notifications */}
+            {notifications && notifications.length > 0 && (
               <div className="divide-y divide-gray-100">
+                {notifications.map((notification) => {
+                  const getNotificationIcon = () => {
+                    switch (notification.type) {
+                      case 'reminder':
+                        return <Clock className="w-4 h-4 text-blue-600" />;
+                      case 'task':
+                        return <CheckSquare className="w-4 h-4 text-purple-600" />;
+                      default:
+                        return <Bell className="w-4 h-4 text-gray-600" />;
+                    }
+                  };
+
+                  return (
+                    <button
+                      key={notification._id}
+                      onClick={() => handleNotificationClick(notification._id, notification.relatedId, notification.type)}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        {getNotificationIcon()}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{notification.message}</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {formatTimeAgo(notification.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* File Uploads Section */}
+            {totalJobs > 0 && (
+              <div className="border-t border-gray-200">
+                <div className="px-4 py-2 bg-gray-50">
+                  <p className="text-xs font-medium text-gray-700">File Uploads</p>
+                </div>
+                <div className="divide-y divide-gray-100">
                 {/* Processing */}
                 {groupedJobs.processing.length > 0 && (
                   <div>
@@ -275,6 +350,14 @@ export default function NotificationDropdown() {
                     ))}
                   </div>
                 )}
+                </div>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {totalJobs === 0 && totalNotifications === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-gray-500">
+                No notifications
               </div>
             )}
           </div>

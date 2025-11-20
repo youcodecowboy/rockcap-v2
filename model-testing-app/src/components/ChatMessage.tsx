@@ -1,6 +1,7 @@
 'use client';
 
-import { User, Bot, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { User, Bot, Loader2, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -10,6 +11,11 @@ interface ChatMessageProps {
   timestamp?: string;
   tokensUsed?: number;
   isThinking?: boolean;
+  metadata?: {
+    itemLink?: { url: string; text: string };
+    itemId?: string;
+    itemType?: string;
+  };
 }
 
 export default function ChatMessage({ 
@@ -17,17 +23,33 @@ export default function ChatMessage({
   content, 
   timestamp, 
   tokensUsed,
-  isThinking = false 
+  isThinking = false,
+  metadata
 }: ChatMessageProps) {
+  const router = useRouter();
   const isUser = role === 'user';
   const isSystem = role === 'system';
   const isToolActivity = role === 'tool-activity';
+  
+  const handleItemLinkClick = (e: React.MouseEvent, url: string) => {
+    e.preventDefault();
+    router.push(url);
+  };
 
   if (isSystem) {
     return (
       <div className="flex justify-center my-2">
-        <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-          {content}
+        <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full flex items-center gap-2">
+          <span>{content.replace(/\[.*?\]\(.*?\)/g, '').trim()}</span>
+          {metadata?.itemLink && (
+            <button
+              onClick={(e) => handleItemLinkClick(e, metadata.itemLink!.url)}
+              className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 font-medium"
+            >
+              {metadata.itemLink.text}
+              <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
     );

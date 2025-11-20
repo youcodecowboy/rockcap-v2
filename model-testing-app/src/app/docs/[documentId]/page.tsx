@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
 import RefileModal from '@/components/RefileModal';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
+import EditableDocumentName from '@/components/EditableDocumentName';
 
 export default function DocumentViewerPage() {
   const params = useParams();
@@ -49,6 +51,23 @@ export default function DocumentViewerPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Breadcrumbs */}
+        <div className="mb-4">
+          <nav className="flex items-center gap-2 text-sm text-gray-600">
+            <Link href="/docs" className="hover:text-gray-900 transition-colors">
+              Docs
+            </Link>
+            <ChevronRight className="w-4 h-4" />
+            <Link href="/docs" className="hover:text-gray-900 transition-colors">
+              Document Library
+            </Link>
+            <ChevronRight className="w-4 h-4" />
+            <span className="text-gray-900 font-medium truncate max-w-md">
+              {document.documentCode || document.fileName}
+            </span>
+          </nav>
+        </div>
+
         {/* Header */}
         <div className="mb-6">
           <Button
@@ -61,10 +80,16 @@ export default function DocumentViewerPage() {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                  {document.fileName}
-                </h1>
-                <div className="flex gap-2 mb-2">
+                <EditableDocumentName
+                  documentCode={document.documentCode}
+                  fileName={document.fileName}
+                  documentId={docId}
+                  clientId={document.clientId}
+                  clientName={document.clientName}
+                  projectId={document.projectId}
+                  projectName={document.projectName}
+                />
+                <div className="flex gap-2 mb-2 mt-2">
                   <Badge variant="secondary">
                     {document.fileTypeDetected}
                   </Badge>

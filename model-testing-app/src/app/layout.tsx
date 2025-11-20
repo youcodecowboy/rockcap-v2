@@ -6,6 +6,7 @@ import { UserSync } from "@/components/UserSync";
 import NavigationBar from "@/components/NavigationBar";
 import Sidebar from "@/components/Sidebar";
 import ChatAssistantButton from "@/components/ChatAssistantButton";
+import { ChatDrawerProvider } from "@/contexts/ChatDrawerContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,13 +34,15 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ConvexProvider>
-          <UserSync />
-          <Sidebar />
-          <NavigationBar />
-          <main className="ml-20 pt-16 min-h-screen">
-            {children}
-          </main>
-          <ChatAssistantButton />
+          <ChatDrawerProvider>
+            <UserSync />
+            <Sidebar />
+            <NavigationBar />
+            <main className="ml-20 pt-16 min-h-screen">
+              {children}
+            </main>
+            <ChatAssistantButton />
+          </ChatDrawerProvider>
         </ConvexProvider>
       </body>
     </html>
