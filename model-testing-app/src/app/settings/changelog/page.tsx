@@ -190,11 +190,14 @@ export default function ChangelogPage() {
   };
 
   // Calculate version numbers (2.1.1, 2.1.2, etc.)
+  // Newest entries get the highest version numbers
   const entriesWithVersions = useMemo(() => {
     if (!entries) return [];
     
+    const totalEntries = entries.length;
     return entries.map((entry, index) => {
-      const versionNumber = index + 1;
+      // Reverse the numbering so newest entries get highest version
+      const versionNumber = totalEntries - index;
       const version = `${BASE_VERSION}.${versionNumber}`;
       const title = (entry as any).title || entry.description.split('.')[0] || 'Update';
       const changeType = detectChangeType(title, entry.description);

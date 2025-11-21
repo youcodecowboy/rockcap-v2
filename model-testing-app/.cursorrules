@@ -2,5 +2,34 @@
 
 ## Changelog Management
 
-The changelog is accessible at `/settings/changelog` in the application. Entries can be added manually through the UI on that page. When entries are added, all users automatically receive notifications.
+The changelog is accessible at `/settings/changelog` in the application. When entries are added, all users automatically receive notifications.
+
+### Adding Changelog Entries
+
+To add a changelog entry, use:
+```bash
+npx convex run changelog:add '{
+  "title": "Brief Title of the Change",
+  "description": "Detailed description of what changed and why.",
+  "pagesAffected": ["Page Name 1", "Page Name 2"],
+  "featuresAffected": ["Feature Name 1", "Feature Name 2"]
+}'
+```
+
+### Standards & Guidelines
+
+See `docs/CHANGELOG_STANDARDS.md` for:
+- Complete entry structure and required fields
+- Change type categories and auto-detection
+- Page and feature name references
+- Style guidelines and examples
+- Best practices
+
+### Quick Reference
+
+- **Title**: Brief, present tense, specific (50-80 chars)
+- **Description**: 2-4 sentences explaining what changed and why
+- **Pages Affected**: Use exact page names (e.g., "Settings", "Changelog", "Clients")
+- **Features Affected**: Use exact feature names (e.g., "Changelog", "Chat", "Notifications")
+- **Change Types**: Auto-detected (New Feature, Bug Fix, UI Improvement, Security, Performance, General Update)
 
