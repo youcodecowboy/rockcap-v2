@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCompanyCharges, getChargeDocumentUrl, downloadChargeDocument } from '@/lib/companiesHouse/client';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation } from 'convex/nextjs';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 /**
  * Get charges for a company and optionally download PDFs
@@ -9,6 +11,13 @@ import { fetchMutation } from 'convex/nextjs';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const body = await request.json();
     const { companyNumber, downloadPdfs = false } = body;
 
@@ -65,14 +74,10 @@ export async function POST(request: NextRequest) {
         items: chargesWithPdfs,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error getting company charges:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to get company charges',
-      },
-      { status: 500 }
+    return ErrorResponses.internalError(
+      error instanceof Error ? error : 'Failed to get company charges'
     );
   }
 }

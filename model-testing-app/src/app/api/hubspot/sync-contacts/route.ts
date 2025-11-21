@@ -5,9 +5,18 @@ import { extractCustomProperties, generateHubSpotContactUrl } from '@/lib/hubspo
 import { getLifecycleStageName } from '@/lib/hubspot/lifecycleStages';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation } from 'convex/nextjs';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const { maxRecords = 100 } = await request.json().catch(() => ({}));
     
     const client = getHubSpotClient();
@@ -130,9 +139,10 @@ export async function POST(request: NextRequest) {
         } else {
           updated++;
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         errors++;
-        errorMessages.push(`Error syncing contact ${contact.id}: ${error.message}`);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        errorMessages.push(`Error syncing contact ${contact.id}: ${errorMessage}`);
         console.error(`Error syncing contact ${contact.id}:`, error);
       }
     }
@@ -145,11 +155,12 @@ export async function POST(request: NextRequest) {
       errors,
       errorMessages: errorMessages.slice(0, 10), // Limit error messages
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Sync error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Sync failed';
     return NextResponse.json({
       success: false,
-      error: error.message || 'Sync failed',
+      error: errorMessage,
     }, { status: 500 });
   }
 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompanyProfile } from '@/lib/companiesHouse/client';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 /**
  * Get company details by company number
@@ -7,6 +9,13 @@ import { getCompanyProfile } from '@/lib/companiesHouse/client';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const body = await request.json();
     const { companyNumber } = body;
 
@@ -23,14 +32,10 @@ export async function POST(request: NextRequest) {
       success: true,
       data: profile,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error getting company details:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to get company details',
-      },
-      { status: 500 }
+    return ErrorResponses.internalError(
+      error instanceof Error ? error : 'Failed to get company details'
     );
   }
 }

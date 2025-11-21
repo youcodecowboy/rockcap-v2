@@ -23,12 +23,6 @@ export async function analyzeFileContent(
     throw new Error('TOGETHER_API_KEY environment variable is not set');
   }
 
-  console.log('[Together.ai] Starting analysis for file:', fileName);
-  console.log('[Together.ai] Text content length:', textContent.length);
-  console.log('[Together.ai] API Key present:', !!apiKey);
-  console.log('[Together.ai] API Key prefix:', apiKey ? apiKey.substring(0, 8) + '...' : 'N/A');
-  console.log('[Together.ai] Model:', MODEL_NAME);
-  console.log('[Together.ai] Endpoint:', TOGETHER_API_URL);
   const startTime = Date.now();
 
   // Build client and project list for prompt
@@ -48,7 +42,6 @@ export async function analyzeFileContent(
     : '';
 
   // Build custom instructions section if provided
-  console.log('[Together.ai] Custom instructions received:', customInstructions ? `"${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? '...' : ''}"` : 'none');
   
   const customInstructionsSection = customInstructions && customInstructions.trim()
     ? `\n\n═══════════════════════════════════════════════════════════════
@@ -227,8 +220,6 @@ CRITICAL: Always extract contact information (emails, phone numbers, contact nam
     });
 
     const elapsedTime = Date.now() - startTime;
-    console.log('[Together.ai] API response received in:', elapsedTime, 'ms');
-    console.log('[Together.ai] Response status:', response.status, response.statusText);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -261,19 +252,9 @@ CRITICAL: Always extract contact information (emails, phone numbers, contact nam
     }
 
     const data = await response.json();
-    console.log('[Together.ai] Response data keys:', Object.keys(data));
-    console.log('[Together.ai] Has choices:', !!data.choices);
-    console.log('[Together.ai] Has usage:', !!data.usage);
     
     const content = data.choices?.[0]?.message?.content;
     const usage = data.usage;
-    
-    console.log('[Together.ai] Content length:', content?.length || 0);
-    console.log('[Together.ai] Usage details:', JSON.stringify(usage, null, 2));
-    console.log('[Together.ai] Tokens used (total):', usage?.total_tokens || 0);
-    console.log('[Together.ai] Tokens used (prompt):', usage?.prompt_tokens || 0);
-    console.log('[Together.ai] Tokens used (completion):', usage?.completion_tokens || 0);
-    console.log('[Together.ai] Model used in response:', data.model || 'not specified');
 
     if (!content) {
       throw new Error('No response content from Together.ai API');
@@ -286,10 +267,6 @@ CRITICAL: Always extract contact information (emails, phone numbers, contact nam
     }
 
     const result: ModelResponse = JSON.parse(jsonContent);
-    
-    const totalTime = Date.now() - startTime;
-    console.log('[Together.ai] Analysis complete in:', totalTime, 'ms');
-    console.log('[Together.ai] Result summary:', result.summary?.substring(0, 100) + '...');
     
     return {
       summary: result.summary || 'No summary provided',

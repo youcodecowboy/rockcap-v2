@@ -453,7 +453,7 @@ ${context}${fileContext}`;
     const toolCalls = parseToolCalls(aiResponse);
     
     // Remove tool call syntax from the display content
-    let displayContent = aiResponse.replace(/<TOOL_CALL>\s*[\s\S]*?\s*<\/TOOL_CALL>/g, '').trim();
+    const displayContent = aiResponse.replace(/<TOOL_CALL>\s*[\s\S]*?\s*<\/TOOL_CALL>/g, '').trim();
 
     // Execute read-only tools immediately and feed results back to AI
     const toolResults: Array<{ toolCallId: string; toolName: string; result: any }> = [];

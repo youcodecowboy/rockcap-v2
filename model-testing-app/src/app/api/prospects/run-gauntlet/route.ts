@@ -16,6 +16,8 @@ import {
   normalizeOwnershipType,
   LandPropertyTitleRaw,
 } from '@/lib/landPropertyData/client';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 /**
  * Run prospect gauntlet for a company
@@ -25,6 +27,13 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const body = await request.json();
     const { companyNumber, prospectId } = body;
 

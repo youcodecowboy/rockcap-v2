@@ -5,9 +5,18 @@ import { extractCustomProperties, generateHubSpotDealUrl } from '@/lib/hubspot/u
 import { createStageIdToNameMap } from '@/lib/hubspot/pipelines';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const body = await request.json().catch(() => ({}));
     const maxRecords = body.maxRecords || 20; // Default to 20 for testing
     

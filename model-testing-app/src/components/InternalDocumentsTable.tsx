@@ -183,7 +183,7 @@ export default function InternalDocumentsTable({
   // Group documents by folder
   const groupedData = useMemo(() => {
     // Filter documents - don't apply navigation filter here, we want all documents for grouping
-    let filtered = documents.filter(doc => {
+    const filtered = documents.filter(doc => {
       // Apply column filters only
       if (filters.code && !doc.documentCode.toLowerCase().includes(filters.code.toLowerCase())) {
         return false;

@@ -5,9 +5,18 @@ import { extractCustomProperties, generateHubSpotCompanyUrl } from '@/lib/hubspo
 import { getLifecycleStageName } from '@/lib/hubspot/lifecycleStages';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation } from 'convex/nextjs';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const { maxRecords = 100 } = await request.json().catch(() => ({}));
     
     // Verify API key is available

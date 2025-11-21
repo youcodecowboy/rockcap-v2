@@ -200,7 +200,7 @@ export default function EditableDocumentName({
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-gray-900 mb-0.5">This Document Only</div>
-                  <div className="text-sm text-gray-500">Update only this document's name</div>
+                  <div className="text-sm text-gray-500">Update only this document&apos;s name</div>
                 </div>
               </div>
             </button>

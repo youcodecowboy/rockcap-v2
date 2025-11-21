@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchQuery } from 'convex/nextjs';
 import { api } from '../../../../../convex/_generated/api';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 /**
  * Refresh gauntlet for prospects that need updating
@@ -14,6 +16,13 @@ import { api } from '../../../../../convex/_generated/api';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const { searchParams } = new URL(request.url);
     const daysOld = parseInt(searchParams.get('daysOld') || '7', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);

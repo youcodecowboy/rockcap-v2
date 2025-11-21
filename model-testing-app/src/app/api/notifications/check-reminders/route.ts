@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchQuery, fetchMutation } from 'convex/nextjs';
 import { api } from '../../../../../convex/_generated/api';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -12,6 +14,13 @@ export const maxDuration = 60;
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     // Get reminders due now (within 1 minute window)
     const dueReminders = await fetchQuery(api.reminders.getDue, {
       bufferMinutes: 1, // Check reminders due within 1 minute
@@ -63,13 +72,10 @@ export async function POST(request: NextRequest) {
       notificationsCreated: notificationsCreated.length,
       errors: errors.length > 0 ? errors : undefined,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error checking reminders:', error);
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : 'Failed to check reminders',
-      },
-      { status: 500 }
+    return ErrorResponses.internalError(
+      error instanceof Error ? error : 'Failed to check reminders'
     );
   }
 }

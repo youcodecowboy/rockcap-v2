@@ -262,19 +262,19 @@ export default function ProspectingContextCard({
               {context.templateSnippets.opening && (
                 <div>
                   <span className="font-medium text-gray-900">Opening:</span>
-                  <p className="text-gray-700 mt-1 italic">"{context.templateSnippets.opening}"</p>
+                  <p className="text-gray-700 mt-1 italic">&quot;{context.templateSnippets.opening}&quot;</p>
                 </div>
               )}
               {context.templateSnippets.valueProposition && (
                 <div>
                   <span className="font-medium text-gray-900">Value Proposition:</span>
-                  <p className="text-gray-700 mt-1 italic">"{context.templateSnippets.valueProposition}"</p>
+                  <p className="text-gray-700 mt-1 italic">&quot;{context.templateSnippets.valueProposition}&quot;</p>
                 </div>
               )}
               {context.templateSnippets.callToAction && (
                 <div>
                   <span className="font-medium text-gray-900">Call to Action:</span>
-                  <p className="text-gray-700 mt-1 italic">"{context.templateSnippets.callToAction}"</p>
+                  <p className="text-gray-700 mt-1 italic">&quot;{context.templateSnippets.callToAction}&quot;</p>
                 </div>
               )}
             </div>

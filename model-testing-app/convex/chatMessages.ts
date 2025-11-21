@@ -8,7 +8,7 @@ export const list = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db
+    const query = ctx.db
       .query("chatMessages")
       .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
       .order("asc");

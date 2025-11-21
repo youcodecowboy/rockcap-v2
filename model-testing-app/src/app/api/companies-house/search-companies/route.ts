@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { searchCompaniesBySicCodes } from '@/lib/companiesHouse/client';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 /**
  * Search companies by SIC codes
@@ -7,6 +9,13 @@ import { searchCompaniesBySicCodes } from '@/lib/companiesHouse/client';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const body = await request.json();
     const { sicCodes, itemsPerPage = 100, startIndex = 0 } = body;
 
@@ -27,14 +36,10 @@ export async function POST(request: NextRequest) {
       success: true,
       data: result,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error searching companies:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to search companies',
-      },
-      { status: 500 }
+    return ErrorResponses.internalError(
+      error instanceof Error ? error : 'Failed to search companies'
     );
   }
 }

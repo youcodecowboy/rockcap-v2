@@ -4,6 +4,8 @@ import { fetchAllContactsFromHubSpot } from '@/lib/hubspot/contacts';
 import { extractCustomProperties, generateHubSpotContactUrl } from '@/lib/hubspot/utils';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation } from 'convex/nextjs';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 /**
  * Dedicated endpoint to sync leads from HubSpot
@@ -11,6 +13,13 @@ import { fetchMutation } from 'convex/nextjs';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const body = await request.json();
     const maxRecords = body.maxRecords || 20; // Default to 20 for testing
     

@@ -14,6 +14,8 @@ import {
 } from '@/lib/companiesHouse/client';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
+import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 /**
  * Sync companies from Companies House API
@@ -23,6 +25,13 @@ import { fetchMutation, fetchQuery } from 'convex/nextjs';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const convexClient = await getAuthenticatedConvexClient();
+    try {
+      await requireAuth(convexClient);
+    } catch (authError) {
+      return ErrorResponses.unauthenticated();
+    }
     const body = await request.json();
     const { sicCodes, maxCompanies = 10 } = body;
 
@@ -136,9 +145,10 @@ export async function POST(request: NextRequest) {
             } else {
               console.log(`✗ Skipping company (no recent charges): ${item.company_number} - ${item.title}`);
             }
-          } catch (error: any) {
+          } catch (error: unknown) {
             explorationCalls++;
-            console.log(`✗ Skipping company (error checking charges): ${item.company_number} - ${error.message}`);
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            console.log(`✗ Skipping company (error checking charges): ${item.company_number} - ${errorMsg}`);
           }
 
           // Small delay to respect rate limits
@@ -165,7 +175,8 @@ export async function POST(request: NextRequest) {
         }
       } catch (error: any) {
         console.error('Error searching companies:', error);
-        errorMessages.push(`Search error: ${error.message}`);
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        errorMessages.push(`Search error: ${errorMsg}`);
         stats.errors++;
         hasMore = false;
       }
@@ -208,7 +219,7 @@ export async function POST(request: NextRequest) {
         }
         
         // Reuse charges data from Phase 1 (saves 1 API call per company!)
-        let chargesData = companyInfo.chargesData || { items: [], total_count: 0 };
+        const chargesData = companyInfo.chargesData || { items: [], total_count: 0 };
         stats.chargesFound += chargesData.items.length;
         console.log(`  ✓ Charges data reused from Phase 1: ${chargesData.items.length} charges`);
         
@@ -342,10 +353,10 @@ export async function POST(request: NextRequest) {
                 }) as any;
                 stats.pscSynced++;
               }
-            } catch (error: any) {
+            } catch (error: unknown) {
               console.error(`  ✗ Error fetching PSC details for ${pscId}:`, error);
             }
-          } catch (error: any) {
+          } catch (error: unknown) {
             console.error(`  ✗ Error processing PSC item:`, error);
           }
         }
@@ -375,7 +386,7 @@ export async function POST(request: NextRequest) {
               dateOfBirth: officerItem.date_of_birth,
             }) as any;
             stats.officersSynced++;
-          } catch (error: any) {
+          } catch (error: unknown) {
             console.error(`  ✗ Error processing officer:`, error);
           }
         }
@@ -431,7 +442,7 @@ export async function POST(request: NextRequest) {
             });
 
             console.log(`  ✓ Gauntlet triggered for company ${companyNumber}`);
-          } catch (error: any) {
+          } catch (error: unknown) {
             console.error(`Error promoting to prospect/triggering gauntlet:`, error);
             // Don't fail the sync if prospect creation fails
           }
@@ -439,9 +450,10 @@ export async function POST(request: NextRequest) {
 
         // Rate limiting - delay between companies (small delay to stay under limit)
         await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(`Error syncing company ${companyNumber}:`, error);
-        errorMessages.push(`Company ${companyNumber}: ${error.message}`);
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        errorMessages.push(`Company ${companyNumber}: ${errorMsg}`);
         stats.errors++;
       }
     }
@@ -462,7 +474,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to sync companies',
+        error: error instanceof Error ? error.message : 'Failed to sync companies',
       },
       { status: 500 }
     );

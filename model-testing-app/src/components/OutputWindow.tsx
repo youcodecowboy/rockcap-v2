@@ -37,7 +37,7 @@ export default function OutputWindow({ analysisLog }: OutputWindowProps) {
         {analysisLog.length === 0 ? (
           <div className="text-gray-500">
             <p>No files analyzed yet.</p>
-            <p className="mt-2">Drop a file to see the model's analysis here.</p>
+            <p className="mt-2">Drop a file to see the model&apos;s analysis here.</p>
           </div>
         ) : (
           <div className="space-y-6">

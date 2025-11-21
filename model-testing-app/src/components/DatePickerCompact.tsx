@@ -57,14 +57,16 @@ export default function DatePickerCompact({ value, onChange, minDate }: DatePick
       if (!isNaN(date.getTime())) {
         const newMonth = date.getMonth() + 1;
         const newDay = date.getDate();
-        // Only update if different
+        // Only update if different - use setTimeout to avoid synchronous setState
         if (newMonth !== selectedMonth || newDay !== selectedDay) {
-          setSelectedMonth(newMonth);
-          setSelectedDay(newDay);
+          setTimeout(() => {
+            setSelectedMonth(newMonth);
+            setSelectedDay(newDay);
+          }, 0);
         }
       }
     }
-  }, [value]);
+  }, [value, isInternalChange, selectedMonth, selectedDay]);
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',

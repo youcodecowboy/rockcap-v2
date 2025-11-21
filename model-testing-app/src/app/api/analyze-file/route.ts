@@ -9,6 +9,7 @@ import { verifyExtractedData } from '@/lib/dataVerification';
 import { getClientsServer, getProjectsServer } from '@/lib/convexServer';
 import { classifySpreadsheet } from '@/lib/spreadsheetClassifier';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ErrorResponses } from '@/lib/api/errorResponse';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds max for file processing
@@ -31,10 +32,7 @@ export async function POST(request: NextRequest) {
     try {
       await requireAuth(client);
     } catch (authError) {
-      return NextResponse.json(
-        { error: 'Unauthenticated' },
-        { status: 401 }
-      );
+      return ErrorResponses.unauthenticated();
     }
 
     const formData = await request.formData();
@@ -44,19 +42,13 @@ export async function POST(request: NextRequest) {
     console.log('[API] Received custom instructions:', customInstructions ? `"${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? '...' : ''}"` : 'none');
 
     if (!file) {
-      return NextResponse.json(
-        { error: 'No file provided' },
-        { status: 400 }
-      );
+      return ErrorResponses.badRequest('No file provided');
     }
 
     // Validate file
     const validation = validateFile(file);
     if (!validation.valid) {
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      );
+      return ErrorResponses.badRequest(validation.error || 'Invalid file');
     }
 
     // Extract text from file
@@ -64,15 +56,11 @@ export async function POST(request: NextRequest) {
     try {
       textContent = await extractTextFromFile(file);
       if (!textContent || textContent.trim().length === 0) {
-        return NextResponse.json(
-          { error: 'File appears to be empty or could not extract text' },
-          { status: 400 }
-        );
+        return ErrorResponses.badRequest('File appears to be empty or could not extract text');
       }
     } catch (error) {
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to extract text from file' },
-        { status: 400 }
+      return ErrorResponses.badRequest(
+        error instanceof Error ? error.message : 'Failed to extract text from file'
       );
     }
 
@@ -288,20 +276,14 @@ export async function POST(request: NextRequest) {
       });
     } catch (error) {
       console.error('Error analyzing file:', error);
-      return NextResponse.json(
-        { 
-          error: error instanceof Error ? error.message : 'Failed to analyze file',
-          details: error instanceof Error ? error.stack : undefined
-        },
-        { status: 500 }
+      return ErrorResponses.internalError(
+        error instanceof Error ? error : 'Failed to analyze file',
+        error instanceof Error ? { stack: error.stack } : undefined
       );
     }
   } catch (error) {
     console.error('Error processing request:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return ErrorResponses.internalError('Internal server error');
   }
 }
 
