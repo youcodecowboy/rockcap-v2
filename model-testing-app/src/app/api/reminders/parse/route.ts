@@ -1,12 +1,117 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 import { api } from '../../../../../convex/_generated/api';
+import { addDays, addHours, setHours, setMinutes } from 'date-fns';
 
 const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
 const MODEL_NAME = 'openai/gpt-oss-20b'; // GPT-OSS-20B via Together.ai
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+// Helper function to extract time from text
+function extractTime(text: string): { hours: number; minutes: number } | null {
+  const lowerText = text.toLowerCase();
+  
+  // Improved regex to match various time formats: "at 3pm", "3pm", "at 3:00pm", "3:00pm", "at 15:00", etc.
+  const timePatterns = [
+    // Pattern 1: "at 3pm", "3pm", "at 3:00pm", "3:00pm" - with AM/PM (most common)
+    /(?:at|@)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i,
+    /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i,  // Without "at" prefix
+    // Pattern 2: "at 15:00", "15:30" - 24-hour format
+    /(?:at|@)\s*(\d{1,2}):(\d{2})/i,
+  ];
+  
+  for (const pattern of timePatterns) {
+    const match = lowerText.match(pattern);
+    if (match) {
+      let hours = parseInt(match[1]);
+      const minutes = match[2] ? parseInt(match[2]) : 0;
+      const ampm = match[3]?.toLowerCase();
+      
+      // Convert to 24-hour format if AM/PM specified
+      if (ampm) {
+        if (ampm === 'pm' && hours !== 12) hours += 12;
+        if (ampm === 'am' && hours === 12) hours = 0;
+        return { hours, minutes };
+      } else {
+        // For 24-hour format pattern, assume it's already 24-hour
+        // Only use if hours are reasonable (0-23)
+        if (hours >= 0 && hours <= 23) {
+          return { hours, minutes };
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to parse natural language dates/times
+function parseNaturalDateTime(text: string): Date | null {
+  const now = new Date();
+  const lowerText = text.toLowerCase().trim();
+  
+  // Handle "tomorrow" or "tomorrow at [time]" or "at [time] tomorrow"
+  if (lowerText.includes('tomorrow')) {
+    let targetDate = addDays(now, 1);
+    
+    const extractedTime = extractTime(text);
+    if (extractedTime) {
+      targetDate = setHours(targetDate, extractedTime.hours);
+      targetDate = setMinutes(targetDate, extractedTime.minutes);
+    }
+    
+    return targetDate;
+  }
+  
+  // Handle "today at [time]" or "at [time] today"
+  if (lowerText.includes('today')) {
+    let targetDate = new Date(now);
+    
+    const extractedTime = extractTime(text);
+    if (extractedTime) {
+      targetDate = setHours(targetDate, extractedTime.hours);
+      targetDate = setMinutes(targetDate, extractedTime.minutes);
+      
+      // If time has passed today, assume tomorrow
+      if (targetDate.getTime() < now.getTime()) {
+        targetDate = addDays(targetDate, 1);
+      }
+    }
+    
+    return targetDate;
+  }
+  
+  // Handle standalone time (e.g., "at 3pm" without "today" or "tomorrow")
+  const extractedTime = extractTime(text);
+  if (extractedTime) {
+    let targetDate = new Date(now);
+    targetDate = setHours(targetDate, extractedTime.hours);
+    targetDate = setMinutes(targetDate, extractedTime.minutes);
+    
+    // If time has passed today, assume tomorrow
+    if (targetDate.getTime() < now.getTime()) {
+      targetDate = addDays(targetDate, 1);
+    }
+    
+    return targetDate;
+  }
+  
+  // Handle "in X hours"
+  const hoursMatch = lowerText.match(/in\s+(\d+)\s+hours?/i);
+  if (hoursMatch) {
+    return addHours(now, parseInt(hoursMatch[1]));
+  }
+  
+  // Handle "in X days"
+  const daysMatch = lowerText.match(/in\s+(\d+)\s+days?/i);
+  if (daysMatch) {
+    return addDays(now, parseInt(daysMatch[1]));
+  }
+  
+  return null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,12 +189,15 @@ Parse the reminder description and extract the following information:
 
 1. Title: Extract a clear, concise reminder title (required)
 2. Description: Extract or generate a detailed description of what the reminder is for
-3. Scheduled Time: Extract the time/date when reminder should trigger:
-   - Look for: "at [time]", "on [date]", "by [date]", "tomorrow", "next week", "in X hours", "today at X"
-   - Handle times like "18:00", "6pm", "6:00 PM", "at 6", etc.
-   - Return ISO timestamp format (REQUIRED for reminders)
-   - If only time is mentioned (e.g., "at 18:00"), use today's date with that time
+3. Scheduled Time: Extract the time/date when reminder should trigger (CRITICAL - BE PRECISE):
+   - Look for: "at [time]", "on [date]", "by [date]", "tomorrow", "tomorrow at [time]", "today at [time]", "next week", "in X hours", "in X days"
+   - Handle times like "18:00", "6pm", "6:00 PM", "at 6", "at 3pm", "at 3:00pm", "at 15:00"
+   - IMPORTANT: "tomorrow at 3pm" means tomorrow's date at 3:00 PM (15:00)
+   - IMPORTANT: "today at 3pm" means today's date at 3:00 PM (15:00), but if that time has passed, use tomorrow
+   - Return ISO timestamp format (REQUIRED for reminders) - MUST be a valid ISO 8601 string
+   - If only time is mentioned (e.g., "at 18:00"), use today's date with that time (or tomorrow if time has passed)
    - Default to 1 hour from now if no time is specified
+   - Current date/time context: ${new Date().toISOString()}
 4. Client Matching (CRITICAL - BE SMART):
    - Match client names even with partial matches, typos, or variations
    - Check both client.name and client.companyName fields
@@ -165,6 +273,56 @@ CRITICAL MATCHING INSTRUCTIONS:
     }
 
     const result = JSON.parse(jsonContent);
+    
+    // Check if the description contains natural language date/time keywords
+    const lowerDescription = reminderDescription.toLowerCase();
+    const hasNaturalLanguageDate = 
+      lowerDescription.includes('tomorrow') ||
+      lowerDescription.includes('today') ||
+      lowerDescription.includes('at ') ||
+      lowerDescription.match(/\d{1,2}(:\d{2})?\s*(am|pm)/i) !== null ||
+      lowerDescription.includes('in ') && (lowerDescription.includes('hour') || lowerDescription.includes('day'));
+    
+    // ALWAYS try natural language parsing first if keywords detected - it's more reliable
+    const naturalLanguageDate = parseNaturalDateTime(reminderDescription);
+    
+    // Post-process: Validate and fix scheduledTime
+    if (hasNaturalLanguageDate && naturalLanguageDate) {
+      // If we detected natural language keywords and parsed successfully, ALWAYS use it
+      result.scheduledTime = naturalLanguageDate.toISOString();
+    } else if (result.scheduledTime) {
+      try {
+        // Try to parse the scheduledTime from LLM
+        let scheduledDate = new Date(result.scheduledTime);
+        
+        // If invalid date, try natural language parsing or default to 1 hour from now
+        if (isNaN(scheduledDate.getTime())) {
+          if (naturalLanguageDate) {
+            result.scheduledTime = naturalLanguageDate.toISOString();
+          } else {
+            scheduledDate = addHours(new Date(), 1);
+            result.scheduledTime = scheduledDate.toISOString();
+          }
+        } else {
+          // Ensure it's a valid ISO string
+          result.scheduledTime = scheduledDate.toISOString();
+        }
+      } catch (error) {
+        // If parsing fails, try natural language parsing or default to 1 hour from now
+        if (naturalLanguageDate) {
+          result.scheduledTime = naturalLanguageDate.toISOString();
+        } else {
+          result.scheduledTime = addHours(new Date(), 1).toISOString();
+        }
+      }
+    } else {
+      // No scheduledTime provided, try natural language parsing or default to 1 hour from now
+      if (naturalLanguageDate) {
+        result.scheduledTime = naturalLanguageDate.toISOString();
+      } else {
+        result.scheduledTime = addHours(new Date(), 1).toISOString();
+      }
+    }
     
     // Post-process: Improve client/project matching with fuzzy search
     if (!result.clientId && result.clientName) {

@@ -6,7 +6,6 @@ import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { Loader2, Calendar, User, Building2, FolderKanban, Tag, Flag, Clock, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import DatePickerCompact from './DatePickerCompact';
 import ClientProjectSearch from './ClientProjectSearch';
 
 interface TaskFormCompactProps {
@@ -301,18 +300,25 @@ export default function TaskFormCompact({
               className="w-full px-2 py-1 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Reminder title (optional)"
             />
-            <div className="flex items-center gap-3">
-              <DatePickerCompact
-                value={reminderDate}
-                onChange={setReminderDate}
-              />
-              <input
-                type="time"
-                value={reminderTime}
-                onChange={(e) => setReminderTime(e.target.value)}
-                className="px-2 py-1 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Time"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={reminderDate}
+                  onChange={(e) => setReminderDate(e.target.value)}
+                  className="w-full px-2 py-1 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+                <input
+                  type="time"
+                  value={reminderTime}
+                  onChange={(e) => setReminderTime(e.target.value)}
+                  className="w-full px-2 py-1 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
           </div>
         )}

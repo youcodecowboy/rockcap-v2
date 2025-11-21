@@ -5,6 +5,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { Loader2 } from 'lucide-react';
+import { DateTimePicker } from './DateTimePicker';
 
 interface ReminderFormProps {
   reminderId?: Id<'reminders'>;
@@ -15,6 +16,7 @@ interface ReminderFormProps {
     description?: string;
     scheduledDate?: string;
     scheduledTime?: string;
+    scheduledDateTime?: Date; // Date object for DateTimePicker
     clientId?: Id<'clients'>;
     projectId?: Id<'projects'>;
     notes?: string;
@@ -39,12 +41,86 @@ export default function ReminderForm({
 
   const [title, setTitle] = useState(initialData?.title || '');
   const [description, setDescription] = useState(initialData?.description || '');
-  const [scheduledDate, setScheduledDate] = useState(initialData?.scheduledDate || '');
-  const [scheduledTime, setScheduledTime] = useState(initialData?.scheduledTime || '');
-  const [clientId, setClientId] = useState<Id<'clients'> | undefined>(initialData?.clientId || initialClientId);
+  
+  // Convert initial date/time strings to Date object and time string
+  const getInitialDate = () => {
+    // Prefer scheduledDateTime if provided (from parsed data)
+    if (initialData?.scheduledDateTime) {
+      return initialData.scheduledDateTime;
+    }
+    // Otherwise, construct from date/time strings
+    if (initialData?.scheduledDate && initialData?.scheduledTime) {
+      const date = new Date(`${initialData.scheduledDate}T${initialData.scheduledTime}`);
+      return isNaN(date.getTime()) ? undefined : date;
+    }
+    return undefined;
+  };
+  
+  const getInitialTime = () => {
+    if (initialData?.scheduledTime) {
+      return initialData.scheduledTime;
+    }
+    if (initialData?.scheduledDateTime) {
+      const hours = String(initialData.scheduledDateTime.getHours()).padStart(2, '0');
+      const minutes = String(initialData.scheduledDateTime.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
+    }
+    if (initialData?.scheduledDate) {
+      const date = new Date(`${initialData.scheduledDate}T00:00`);
+      if (!isNaN(date.getTime())) {
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+      }
+    }
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+  
+  const [scheduledDateTime, setScheduledDateTime] = useState<Date | undefined>(getInitialDate());
+  const [scheduledTime, setScheduledTime] = useState(getInitialTime());
+  
+  // Helper to validate and resolve clientId - handle case where it might be a name string
+  const resolveClientId = (value: any): Id<'clients'> | undefined => {
+    if (!value) return initialClientId;
+    
+    // If it's already a valid ID format (starts with 'j' for Convex IDs), use it
+    if (typeof value === 'string' && value.startsWith('j')) {
+      return value as Id<'clients'>;
+    }
+    
+    // If it's a name string, look it up
+    if (typeof value === 'string' && clients) {
+      const foundClient = clients.find(
+        c => c.name.toLowerCase() === value.toLowerCase() ||
+             c.companyName?.toLowerCase() === value.toLowerCase()
+      );
+      if (foundClient) {
+        return foundClient._id;
+      }
+    }
+    
+    return initialClientId;
+  };
+  
+  const [clientId, setClientId] = useState<Id<'clients'> | undefined>(
+    resolveClientId(initialData?.clientId)
+  );
   const [projectId, setProjectId] = useState<Id<'projects'> | undefined>(initialData?.projectId || initialProjectId);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  
+  // Update clientId when clients data loads or initialData changes
+  useEffect(() => {
+    if (initialData?.clientId && clients) {
+      const resolvedId = resolveClientId(initialData.clientId);
+      if (resolvedId && resolvedId !== clientId) {
+        setClientId(resolvedId);
+      }
+    }
+  }, [initialData?.clientId, clients]);
 
   // Load reminder data if editing
   useEffect(() => {
@@ -52,8 +128,10 @@ export default function ReminderForm({
       setTitle(reminder.title);
       setDescription(reminder.description || '');
       const scheduledDateObj = new Date(reminder.scheduledFor);
-      setScheduledDate(scheduledDateObj.toISOString().split('T')[0]);
-      setScheduledTime(scheduledDateObj.toTimeString().slice(0, 5));
+      setScheduledDateTime(scheduledDateObj);
+      const hours = String(scheduledDateObj.getHours()).padStart(2, '0');
+      const minutes = String(scheduledDateObj.getMinutes()).padStart(2, '0');
+      setScheduledTime(`${hours}:${minutes}`);
       setClientId(reminder.clientId);
       setProjectId(reminder.projectId);
     }
@@ -61,12 +139,14 @@ export default function ReminderForm({
 
   // Set initial date/time to now if creating new reminder
   useEffect(() => {
-    if (!reminderId && !scheduledDate) {
+    if (!reminderId && !scheduledDateTime) {
       const now = new Date();
-      setScheduledDate(now.toISOString().split('T')[0]);
-      setScheduledTime(now.toTimeString().slice(0, 5));
+      setScheduledDateTime(now);
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      setScheduledTime(`${hours}:${minutes}`);
     }
-  }, [reminderId, scheduledDate]);
+  }, [reminderId, scheduledDateTime]);
 
   const handleEnhance = async () => {
     if (!title.trim()) {
@@ -118,14 +198,23 @@ export default function ReminderForm({
       return;
     }
 
-    if (!scheduledDate || !scheduledTime) {
-      alert('Date and time are required');
+    if (!scheduledDateTime) {
+      alert('Date is required');
+      return;
+    }
+
+    if (!scheduledTime) {
+      alert('Time is required');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const scheduledFor = new Date(`${scheduledDate}T${scheduledTime}`).toISOString();
+      // Combine date and time into ISO string
+      const [hours, minutes] = scheduledTime.split(':').map(Number);
+      const finalDate = new Date(scheduledDateTime);
+      finalDate.setHours(hours, minutes, 0, 0);
+      const scheduledFor = finalDate.toISOString();
 
       if (reminderId) {
         await updateReminder({
@@ -137,12 +226,30 @@ export default function ReminderForm({
           projectId: projectId || null,
         });
       } else {
+        // Validate clientId is actually an ID, not a name string (but allow undefined/null)
+        let validClientId: Id<'clients'> | undefined = undefined;
+        if (clientId) {
+          // Check if it's a valid Convex ID format
+          if (typeof clientId === 'string' && clientId.startsWith('j')) {
+            validClientId = clientId;
+          } else if (clients) {
+            // Try to find by name
+            const foundClient = clients.find(
+              c => c.name === clientId || c.companyName === clientId
+            );
+            if (foundClient) {
+              validClientId = foundClient._id;
+            }
+          }
+        }
+        // If clientId is invalid but was provided, we'll just skip it (optional field)
+        
         await createReminder({
           title,
           description: description || undefined,
           scheduledFor,
-          clientId,
-          projectId,
+          clientId: validClientId, // Can be undefined - optional field
+          projectId, // Can be undefined - optional field
         });
       }
 
@@ -205,31 +312,16 @@ export default function ReminderForm({
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Date *
-          </label>
-          <input
-            type="date"
-            value={scheduledDate}
-            onChange={(e) => setScheduledDate(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Time *
-          </label>
-          <input
-            type="time"
-            value={scheduledTime}
-            onChange={(e) => setScheduledTime(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
-        </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Date & Time *
+        </label>
+        <DateTimePicker
+          date={scheduledDateTime}
+          time={scheduledTime}
+          onDateChange={setScheduledDateTime}
+          onTimeChange={setScheduledTime}
+        />
       </div>
 
       <div>

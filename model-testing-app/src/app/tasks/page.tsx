@@ -70,12 +70,50 @@ export default function TasksPage() {
   })) || [];
 
   const handleNaturalLanguageParse = (parsedData: any) => {
+    // Helper function to resolve clientId from name or ID
+    const resolveClientId = (clientId: any, clientName?: string): Id<'clients'> | undefined => {
+      let resolved: Id<'clients'> | undefined = undefined;
+      if (clientId) {
+        // Check if it's a valid Convex ID (starts with 'j')
+        if (typeof clientId === 'string' && clientId.startsWith('j')) {
+          resolved = clientId as Id<'clients'>;
+        } else if (clients && typeof clientId === 'string') {
+          // Try to find client by name
+          const foundClient = clients.find(
+            c => c.name.toLowerCase() === clientId.toLowerCase() ||
+                 c.companyName?.toLowerCase() === clientId.toLowerCase()
+          );
+          if (foundClient) {
+            resolved = foundClient._id;
+          }
+        }
+      }
+      
+      // Also try clientName if clientId wasn't found
+      if (!resolved && clientName && clients) {
+        const foundClient = clients.find(
+          c => c.name.toLowerCase() === clientName.toLowerCase() ||
+               c.companyName?.toLowerCase() === clientName.toLowerCase()
+        );
+        if (foundClient) {
+          resolved = foundClient._id;
+        }
+      }
+      
+      return resolved;
+    };
+
+    let resolvedClientId: Id<'clients'> | undefined = undefined;
+
     if (activeTab === 'tasks') {
       // Handle task parsing
       let assignedTo = undefined;
       if (parsedData.assignedToMe && currentUser?._id) {
         assignedTo = currentUser._id;
       }
+
+      // Resolve clientId for tasks
+      resolvedClientId = resolveClientId(parsedData.clientId, parsedData.clientName);
 
       // Handle reminder - if "remind me" was mentioned, set up reminder
       const hasReminder = parsedData.hasReminder || false;
@@ -98,7 +136,7 @@ export default function TasksPage() {
         description: parsedData.description || '',
         priority: parsedData.priority || 'medium',
         dueDate: parsedData.dueDate ? new Date(parsedData.dueDate).toISOString().split('T')[0] : '',
-        clientId: parsedData.clientId || undefined,
+        clientId: resolvedClientId,
         projectId: parsedData.projectId || undefined,
         tags: parsedData.tags || [],
         assignedTo: assignedTo,
@@ -109,27 +147,39 @@ export default function TasksPage() {
       });
     } else {
       // Handle reminder parsing
-      const scheduledDateTime = parsedData.scheduledTime 
+      const parsedDateTime = parsedData.scheduledTime 
         ? new Date(parsedData.scheduledTime)
         : new Date(Date.now() + 60 * 60 * 1000); // Default to 1 hour from now
       
-      const scheduledDate = scheduledDateTime.toISOString().split('T')[0];
-      const scheduledTime = scheduledDateTime.toTimeString().slice(0, 5);
+      // Use local date/time methods to avoid timezone issues
+      const year = parsedDateTime.getFullYear();
+      const month = String(parsedDateTime.getMonth() + 1).padStart(2, '0');
+      const day = String(parsedDateTime.getDate()).padStart(2, '0');
+      const scheduledDate = `${year}-${month}-${day}`;
+      
+      const hours = String(parsedDateTime.getHours()).padStart(2, '0');
+      const minutes = String(parsedDateTime.getMinutes()).padStart(2, '0');
+      const scheduledTime = `${hours}:${minutes}`;
 
+      // Resolve clientId for reminders
+      resolvedClientId = resolveClientId(parsedData.clientId, parsedData.clientName);
+
+      // Use the parsed DateTime directly for DateTimePicker
       setFormData({
         title: parsedData.title || '',
         description: parsedData.description || '',
         scheduledDate: scheduledDate,
         scheduledTime: scheduledTime,
-        clientId: parsedData.clientId || undefined,
+        scheduledDateTime: parsedDateTime, // Date object for DateTimePicker
+        clientId: resolvedClientId,
         projectId: parsedData.projectId || undefined,
         notes: parsedData.notes || '',
       });
     }
     
-    // Set suggested client/project if LLM found them
-    if (parsedData.clientId) {
-      setSuggestedClientId(parsedData.clientId);
+    // Set suggested client/project if LLM found them (use resolved IDs)
+    if (resolvedClientId) {
+      setSuggestedClientId(resolvedClientId);
     }
     if (parsedData.projectId) {
       setSuggestedProjectId(parsedData.projectId);
@@ -257,7 +307,7 @@ export default function TasksPage() {
               className="flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
-              Add Task
+              {activeTab === 'tasks' ? 'Add Task' : 'Add Reminder'}
             </Button>
           </div>
         </div>
