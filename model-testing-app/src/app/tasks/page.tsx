@@ -14,7 +14,7 @@ import CompactMetricCard from '@/components/CompactMetricCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Plus, Filter, CheckSquare, Circle, Clock, Flag, Building2, FolderKanban, Tag, Settings, Bell } from 'lucide-react';
+import { Plus, Filter, CheckSquare, Circle, Clock, Flag, Building2, FolderKanban, Tag, Settings, Bell, ArrowRight, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TasksPage() {
@@ -63,6 +63,9 @@ export default function TasksPage() {
       : undefined,
     projectName: reminder.projectId
       ? projects?.find(p => p._id === reminder.projectId)?.name
+      : undefined,
+    taskName: reminder.taskId
+      ? tasks?.find(t => t._id === reminder.taskId)?.title
       : undefined,
   })) || [];
 
@@ -292,25 +295,28 @@ export default function TasksPage() {
                     ? { text: taskMetrics.upNext.title, variant: 'outline' }
                     : undefined
                 }
-                className="md:col-span-1"
+                className="md:col-span-1 bg-black text-white"
               />
               <CompactMetricCard
                 label="Active Tasks"
                 value={taskMetrics.activeTasks}
                 icon={CheckSquare}
                 iconColor="blue"
+                className="bg-black text-white"
               />
               <CompactMetricCard
                 label="Active Reminders"
                 value={reminderMetrics.activeReminders}
                 icon={Bell}
                 iconColor="orange"
+                className="bg-black text-white"
               />
               <CompactMetricCard
                 label="Completed"
                 value={taskMetrics.completed}
                 icon={CheckSquare}
                 iconColor="green"
+                className="bg-black text-white"
               />
             </>
           )}
@@ -319,11 +325,17 @@ export default function TasksPage() {
         {/* Tabs - Select between Tasks and Reminders */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'tasks' | 'reminders')}>
           <TabsList>
-            <TabsTrigger value="tasks">
+            <TabsTrigger 
+              value="tasks"
+              className="data-[state=active]:!bg-black data-[state=active]:!text-white data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700"
+            >
               <CheckSquare className="w-4 h-4 mr-2" />
               Tasks
             </TabsTrigger>
-            <TabsTrigger value="reminders">
+            <TabsTrigger 
+              value="reminders"
+              className="data-[state=active]:!bg-black data-[state=active]:!text-white data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700"
+            >
               <Bell className="w-4 h-4 mr-2" />
               Reminders
             </TabsTrigger>
@@ -331,13 +343,21 @@ export default function TasksPage() {
         </Tabs>
 
         {/* Natural Language Input */}
-        <Card>
-          <CardContent className="pt-6 space-y-3">
-            <div className="mb-3">
-              <h3 className="text-lg font-semibold text-gray-900">
+        <Card className="hover:shadow-lg transition-shadow rounded-xl p-0 gap-0" style={{ overflow: 'visible' }}>
+          <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="w-4 h-4 text-white" />
+              <span className="text-xs font-semibold uppercase tracking-wide">
                 {activeTab === 'tasks' ? 'Create a Task' : 'Create a Reminder'}
-              </h3>
-              <p className="text-sm text-gray-600 mt-1">
+              </span>
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wide">
+              AI Powered
+            </span>
+          </div>
+          <CardContent className="pt-6 pb-6 px-6 space-y-4" style={{ overflow: 'visible' }}>
+            <div>
+              <p className="text-sm text-gray-600">
                 {activeTab === 'tasks' 
                   ? 'Describe your task in natural language and let AI parse the details'
                   : 'Describe your reminder in natural language and let AI parse the details'}
@@ -472,11 +492,20 @@ export default function TasksPage() {
               </CardContent>
             </Card>
           ) : (
-              <Card>
-                <CardContent className="pt-0">
+              <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+                <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-white" />
+                    <span className="text-xs font-semibold uppercase tracking-wide">Tasks</span>
+                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    {enhancedTasks.length} {enhancedTasks.length === 1 ? 'Task' : 'Tasks'}
+                  </span>
+                </div>
+                <CardContent className="pt-0 pb-6">
                   <Table>
                     <TableHeader>
-                      <TableRow>
+                      <TableRow className="border-b border-gray-200">
                         <TableHead className="w-12"></TableHead>
                         <TableHead>Task</TableHead>
                         <TableHead>Assigned To</TableHead>
@@ -488,7 +517,7 @@ export default function TasksPage() {
                         <TableHead>Tags</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="min-h-[600px]">
                       {enhancedTasks.map((task) => (
                         <TableRow key={task._id} className="hover:bg-gray-50">
                           <TableCell>
@@ -589,11 +618,20 @@ export default function TasksPage() {
                 </CardContent>
               </Card>
             ) : (
-              <Card>
-                <CardContent className="pt-0">
+              <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+                <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-white" />
+                    <span className="text-xs font-semibold uppercase tracking-wide">Reminders</span>
+                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    {enhancedReminders.length} {enhancedReminders.length === 1 ? 'Reminder' : 'Reminders'}
+                  </span>
+                </div>
+                <CardContent className="pt-0 pb-6">
                   <Table>
                     <TableHeader>
-                      <TableRow>
+                      <TableRow className="border-b border-gray-200">
                         <TableHead className="w-12"></TableHead>
                         <TableHead>Reminder</TableHead>
                         <TableHead>Status</TableHead>
@@ -602,7 +640,7 @@ export default function TasksPage() {
                         <TableHead>Project</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="min-h-[600px]">
                       {enhancedReminders.map((reminder) => (
                         <TableRow key={reminder._id} className="hover:bg-gray-50">
                           <TableCell>

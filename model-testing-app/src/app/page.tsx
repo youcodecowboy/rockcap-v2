@@ -21,7 +21,10 @@ import {
   Clock,
   Inbox,
   ArrowRight,
-  X
+  X,
+  FolderKanban,
+  Building2,
+  ListTodo
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
 import CreateRolodexModal from '@/components/CreateRolodexModal';
@@ -104,6 +107,11 @@ export default function Dashboard() {
   const getTaskProjectName = (projectId?: Id<'projects'>) => {
     if (!projectId) return null;
     return projects?.find(p => p._id === projectId)?.name;
+  };
+
+  const getTaskName = (taskId?: Id<'tasks'>) => {
+    if (!taskId) return null;
+    return upcomingTasks?.find(t => t._id === taskId)?.title;
   };
 
   const getPriorityColor = (priority: string) => {
@@ -230,7 +238,7 @@ export default function Dashboard() {
         {/* Dynamic Cards - 3 Rectangular Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 items-stretch">
           {/* Next Task Card */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 h-full flex flex-col">
+          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckSquare className="w-4 h-4 text-white" />
@@ -244,26 +252,45 @@ export default function Dashboard() {
                   : 'NO TASK'}
               </span>
             </div>
-            <div className="px-4 pb-3 flex-1 flex flex-col">
+            <div className="px-4 pt-3 pb-3 flex-1 flex flex-col">
               <div className="flex flex-col h-full">
-                <div>
+                <div className="mb-3">
                   {taskMetrics?.upNext ? (
                     <>
-                      <h2 className="text-base font-bold text-gray-900 mb-1">
+                      <h2 className="text-base font-bold text-gray-900 mb-2">
                         {taskMetrics.upNext.title}
                       </h2>
                       {taskMetrics.upNext.description && (
-                        <p className="text-xs text-gray-600 mb-1.5 line-clamp-2">
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
                           {taskMetrics.upNext.description}
                         </p>
                       )}
-                      {(getTaskClientName(taskMetrics.upNext.clientId) || getTaskProjectName(taskMetrics.upNext.projectId)) && (
-                        <p className="text-xs text-gray-500 mb-1">
-                          {getTaskClientName(taskMetrics.upNext.clientId) && getTaskProjectName(taskMetrics.upNext.projectId)
-                            ? `${getTaskClientName(taskMetrics.upNext.clientId)} • ${getTaskProjectName(taskMetrics.upNext.projectId)}`
-                            : getTaskClientName(taskMetrics.upNext.clientId) || getTaskProjectName(taskMetrics.upNext.projectId)}
-                        </p>
-                      )}
+                      <div className="space-y-1.5">
+                        {getTaskClientName(taskMetrics.upNext.clientId) && (
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Client:</span>
+                            <Link 
+                              href={`/clients/${taskMetrics.upNext.clientId}`}
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                            >
+                              {getTaskClientName(taskMetrics.upNext.clientId)}
+                            </Link>
+                          </div>
+                        )}
+                        {getTaskProjectName(taskMetrics.upNext.projectId) && (
+                          <div className="flex items-center gap-1.5">
+                            <FolderKanban className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Project:</span>
+                            <Link 
+                              href={`/projects/${taskMetrics.upNext.projectId}`}
+                              className="text-xs font-bold text-gray-700 hover:text-blue-600 hover:underline"
+                            >
+                              {getTaskProjectName(taskMetrics.upNext.projectId)}
+                            </Link>
+                          </div>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <h2 className="text-base font-bold text-gray-500 mb-0.5">
@@ -272,8 +299,8 @@ export default function Dashboard() {
                   )}
                 </div>
                 
-                <div className="pt-2 border-t border-gray-200 mt-auto">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="pt-2 border-t border-gray-200 mt-auto flex items-center justify-between">
+                  <div className="flex items-center gap-2">
                     {taskMetrics?.upNext?.dueDate ? (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-gray-400" />
@@ -294,7 +321,7 @@ export default function Dashboard() {
                   </div>
                   <Button
                     onClick={() => router.push('/tasks')}
-                    className="w-full bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs"
+                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
                   >
                     {taskMetrics?.upNext ? 'View Task' : 'Create Task'}
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -305,7 +332,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Next Reminder Card */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 h-full flex flex-col">
+          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-white" />
@@ -319,26 +346,57 @@ export default function Dashboard() {
                   : 'NO REMINDER'}
               </span>
             </div>
-            <div className="px-4 pb-3 flex-1 flex flex-col">
+            <div className="px-4 pt-3 pb-3 flex-1 flex flex-col">
               <div className="flex flex-col h-full">
-                <div>
+                <div className="mb-3">
                   {nextReminder && nextReminder.length > 0 ? (
                     <>
-                      <h2 className="text-base font-bold text-gray-900 mb-1">
+                      <h2 className="text-base font-bold text-gray-900 mb-2">
                         {nextReminder[0].title}
                       </h2>
                       {nextReminder[0].description && (
-                        <p className="text-xs text-gray-600 mb-1.5 line-clamp-2">
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
                           {nextReminder[0].description}
                         </p>
                       )}
-                      {(getTaskClientName(nextReminder[0].clientId) || getTaskProjectName(nextReminder[0].projectId)) && (
-                        <p className="text-xs text-gray-500 mb-1">
-                          {getTaskClientName(nextReminder[0].clientId) && getTaskProjectName(nextReminder[0].projectId)
-                            ? `${getTaskClientName(nextReminder[0].clientId)} • ${getTaskProjectName(nextReminder[0].projectId)}`
-                            : getTaskClientName(nextReminder[0].clientId) || getTaskProjectName(nextReminder[0].projectId)}
-                        </p>
-                      )}
+                      <div className="space-y-1.5">
+                        {getTaskName(nextReminder[0].taskId) && (
+                          <div className="flex items-center gap-1.5">
+                            <ListTodo className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Task:</span>
+                            <Link 
+                              href={`/tasks`}
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                            >
+                              {getTaskName(nextReminder[0].taskId)}
+                            </Link>
+                          </div>
+                        )}
+                        {getTaskClientName(nextReminder[0].clientId) && (
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Client:</span>
+                            <Link 
+                              href={`/clients/${nextReminder[0].clientId}`}
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                            >
+                              {getTaskClientName(nextReminder[0].clientId)}
+                            </Link>
+                          </div>
+                        )}
+                        {getTaskProjectName(nextReminder[0].projectId) && (
+                          <div className="flex items-center gap-1.5">
+                            <FolderKanban className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Project:</span>
+                            <Link 
+                              href={`/projects/${nextReminder[0].projectId}`}
+                              className="text-xs font-bold text-gray-700 hover:text-blue-600 hover:underline"
+                            >
+                              {getTaskProjectName(nextReminder[0].projectId)}
+                            </Link>
+                          </div>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <h2 className="text-base font-bold text-gray-500 mb-0.5">
@@ -347,8 +405,8 @@ export default function Dashboard() {
                   )}
                 </div>
                 
-                <div className="pt-2 border-t border-gray-200 mt-auto">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="pt-2 border-t border-gray-200 mt-auto flex items-center justify-between">
+                  <div className="flex items-center gap-2">
                     {nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor ? (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-gray-400" />
@@ -364,7 +422,7 @@ export default function Dashboard() {
                   </div>
                   <Button
                     onClick={() => router.push('/tasks')}
-                    className="w-full bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs"
+                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
                   >
                     {nextReminder && nextReminder.length > 0 ? 'View Reminder' : 'Create Reminder'}
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -375,7 +433,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Next Event Card */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 h-full flex flex-col">
+          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-white" />
@@ -389,32 +447,51 @@ export default function Dashboard() {
                   : 'NO EVENT'}
               </span>
             </div>
-            <div className="px-4 pb-3 flex-1 flex flex-col">
+            <div className="px-4 pt-3 pb-3 flex-1 flex flex-col">
               <div className="flex flex-col h-full">
-                <div>
+                <div className="mb-3">
                   {nextEvent ? (
                     <>
-                      <h2 className="text-base font-bold text-gray-900 mb-1">
+                      <h2 className="text-base font-bold text-gray-900 mb-2">
                         {nextEvent.title}
                       </h2>
                       {nextEvent.description && (
-                        <p className="text-xs text-gray-600 mb-1.5 line-clamp-2">
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
                           {nextEvent.description}
                         </p>
                       )}
                       {nextEvent.location && (
-                        <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
                           <span className="w-3 h-3">📍</span>
                           {nextEvent.location}
                         </p>
                       )}
-                      {(getTaskClientName(nextEvent.clientId) || getTaskProjectName(nextEvent.projectId)) && (
-                        <p className="text-xs text-gray-500 mb-1">
-                          {getTaskClientName(nextEvent.clientId) && getTaskProjectName(nextEvent.projectId)
-                            ? `${getTaskClientName(nextEvent.clientId)} • ${getTaskProjectName(nextEvent.projectId)}`
-                            : getTaskClientName(nextEvent.clientId) || getTaskProjectName(nextEvent.projectId)}
-                        </p>
-                      )}
+                      <div className="space-y-1.5">
+                        {getTaskClientName(nextEvent.clientId) && (
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Client:</span>
+                            <Link 
+                              href={`/clients/${nextEvent.clientId}`}
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                            >
+                              {getTaskClientName(nextEvent.clientId)}
+                            </Link>
+                          </div>
+                        )}
+                        {getTaskProjectName(nextEvent.projectId) && (
+                          <div className="flex items-center gap-1.5">
+                            <FolderKanban className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Project:</span>
+                            <Link 
+                              href={`/projects/${nextEvent.projectId}`}
+                              className="text-xs font-bold text-gray-700 hover:text-blue-600 hover:underline"
+                            >
+                              {getTaskProjectName(nextEvent.projectId)}
+                            </Link>
+                          </div>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <h2 className="text-base font-bold text-gray-500 mb-0.5">
@@ -423,8 +500,8 @@ export default function Dashboard() {
                   )}
                 </div>
                 
-                <div className="pt-2 border-t border-gray-200 mt-auto">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="pt-2 border-t border-gray-200 mt-auto flex items-center justify-between">
+                  <div className="flex items-center gap-2">
                     {nextEvent?.startTime ? (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-gray-400" />
@@ -440,7 +517,7 @@ export default function Dashboard() {
                   </div>
                   <Button
                     onClick={() => router.push('/calendar')}
-                    className="w-full bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs"
+                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
                   >
                     {nextEvent ? 'View Event' : 'Create Event'}
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -454,101 +531,122 @@ export default function Dashboard() {
         {/* Tables Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Inbox */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Inbox className="w-5 h-5" />
-                Inbox
-              </CardTitle>
-              <CardDescription>App notifications and emails</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-gray-500">
-                <Inbox className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <p className="text-sm">Coming soon</p>
-                <p className="text-xs text-gray-400 mt-2">Email integration and notifications will appear here</p>
+          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
+            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Inbox className="w-4 h-4 text-white" />
+                <span className="text-xs font-semibold uppercase tracking-wide">Inbox</span>
               </div>
-            </CardContent>
+              <span className="text-xs font-semibold uppercase tracking-wide">Notifications & Emails</span>
+            </div>
+            <div className="px-4 pb-3 flex-1 flex flex-col">
+              <div className="flex flex-col h-full">
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center py-8 text-gray-500">
+                    <Inbox className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p className="text-sm">Coming soon</p>
+                    <p className="text-xs text-gray-400 mt-2">Email integration and notifications will appear here</p>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-gray-200 mt-auto flex flex-col">
+                  <Button
+                    onClick={() => router.push('/inbox')}
+                    className="ml-auto bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
+                  >
+                    View Inbox
+                    <ArrowRight className="w-3 h-3 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           </Card>
 
           {/* Upcoming Tasks */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckSquare className="w-5 h-5" />
-                Upcoming Tasks
-              </CardTitle>
-              <CardDescription>Tasks due soon</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {upcomingTasks === undefined ? (
-                <div className="text-center py-8 text-gray-500">Loading...</div>
-              ) : filteredUpcomingTasks.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <CheckSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-sm">No upcoming tasks</p>
+          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
+            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-white" />
+                <span className="text-xs font-semibold uppercase tracking-wide">Upcoming Tasks</span>
+              </div>
+              <span className="text-xs font-semibold uppercase tracking-wide">
+                {upcomingTasks === undefined 
+                  ? 'Loading...' 
+                  : filteredUpcomingTasks.length > 0 
+                  ? `${filteredUpcomingTasks.length} Tasks` 
+                  : 'No Tasks'}
+              </span>
+            </div>
+            <div className="px-4 pb-3 flex-1 flex flex-col">
+              <div className="flex flex-col h-full">
+                <div className="flex-1 overflow-y-auto">
+                  {upcomingTasks === undefined ? (
+                    <div className="text-center py-8 text-gray-500">Loading...</div>
+                  ) : filteredUpcomingTasks.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <CheckSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p className="text-sm">No upcoming tasks</p>
+                    </div>
+                  ) : (
+                    <div className="pb-2 pt-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Task</TableHead>
+                            <TableHead className="text-xs">Due Date</TableHead>
+                            <TableHead className="text-xs">Priority</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredUpcomingTasks.slice(0, 5).map((task) => (
+                            <TableRow key={task._id}>
+                              <TableCell className="py-2">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium">{task.title}</span>
+                                  {(getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)) && (
+                                    <span className="text-xs text-gray-500 mt-1">
+                                      {getTaskClientName(task.clientId) && getTaskProjectName(task.projectId)
+                                        ? `${getTaskClientName(task.clientId)} • ${getTaskProjectName(task.projectId)}`
+                                        : getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-2">
+                                <div className="flex items-center gap-2">
+                                  <Clock className="w-3 h-3 text-gray-400" />
+                                  <span className="text-xs">
+                                    {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-2">
+                                <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${getPriorityColor(task.priority || 'medium')}`}>
+                                  {task.priority || 'medium'}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      {filteredUpcomingTasks.length > 5 && (
+                        <p className="text-xs text-gray-500 text-center mt-2">
+                          +{filteredUpcomingTasks.length - 5} more tasks
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="pt-2 border-t border-gray-200 mt-auto flex flex-col">
                   <Button
-                    variant="outline"
-                    size="sm"
                     onClick={() => router.push('/tasks')}
-                    className="mt-4"
+                    className="ml-auto bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
                   >
-                    Create Task
-                    <Plus className="w-4 h-4 ml-2" />
+                    {filteredUpcomingTasks && filteredUpcomingTasks.length > 0 ? 'View All Tasks' : 'Create Task'}
+                    <ArrowRight className="w-3 h-3 ml-1" />
                   </Button>
                 </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Task</TableHead>
-                      <TableHead>Due Date</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredUpcomingTasks.map((task) => (
-                      <TableRow key={task._id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{task.title}</span>
-                            {(getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)) && (
-                              <span className="text-xs text-gray-500 mt-1">
-                                {getTaskClientName(task.clientId) && getTaskProjectName(task.projectId)
-                                  ? `${getTaskClientName(task.clientId)} • ${getTaskProjectName(task.projectId)}`
-                                  : getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm">
-                              {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 text-xs rounded-full ${getPriorityColor(task.priority || 'medium')}`}>
-                            {task.priority || 'medium'}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Link href="/tasks">
-                            <Button variant="ghost" size="sm" className="flex items-center gap-1">
-                              View
-                              <ArrowRight className="w-3 h-3" />
-                            </Button>
-                          </Link>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
+              </div>
+            </div>
           </Card>
         </div>
 

@@ -132,7 +132,7 @@ export default function ClientProjectSearch({
 
         {/* Dropdown Results */}
         {showClientResults && filteredClients.length > 0 && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
             {filteredClients.map((client) => (
               <button
                 key={client._id}
@@ -216,7 +216,7 @@ export default function ClientProjectSearch({
 
         {/* Dropdown Results */}
         {showProjectResults && filteredProjects.length > 0 && selectedClientId && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
             {filteredProjects.map((project) => (
               <button
                 key={project._id}

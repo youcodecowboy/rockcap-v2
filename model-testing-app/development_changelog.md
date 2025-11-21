@@ -1,6 +1,97 @@
 # Development Changelog
 
-## [Latest] - 2025-01-28 (Current Date/Time)
+## [Latest] - 2025-11-20 20:55
+
+### Task Page UI Redesign - Card-Based Layout Matching Homepage Style
+
+**Overview**: Completely restyled the Tasks page to match the homepage card design pattern, replacing table-based layout with modern card-based UI featuring blue banners, icons, and clickable links.
+
+**Changes:**
+1. **Task Cards Redesign**:
+   - Converted table rows to individual cards with blue banner headers
+   - Blue banner (`bg-blue-600`) with task type left-aligned and status right-aligned
+   - Status indicators: "OVERDUE", "IN PROGRESS", "TODO", "COMPLETED", "CANCELLED"
+   - Card layout: `grid grid-cols-1 lg:grid-cols-2` for responsive display
+   - Consistent styling: `rounded-xl`, `overflow-hidden`, `p-0`, `gap-0`
+
+2. **Content Structure**:
+   - Bold title at top (`text-base font-bold`)
+   - Description with `line-clamp-2` for truncation
+   - Icons with labels for metadata:
+     - Building2 icon + "Client:" with clickable link
+     - FolderKanban icon + "Project:" (bold) with clickable link
+     - Circle icon + "Assigned:" for assigned user
+     - Tag icon + tags display
+   - Proper spacing (`mb-3` between content sections)
+
+3. **Bottom Row Layout**:
+   - Border-top separator (`border-t border-gray-200`)
+   - Left side: Clock icon + due date/status (red if overdue)
+   - Right side: Priority badge + "View Task" button
+   - Horizontal alignment with `flex items-center justify-between`
+
+4. **Reminder Cards Redesign**:
+   - Matching blue banner style with Bell icon
+   - Status indicators: "OVERDUE", "PENDING", "COMPLETED", "DISMISSED"
+   - Task link display (if reminder linked to task) with ListTodo icon
+   - Client and Project links with icons
+   - Scheduled time display with Clock icon
+
+5. **Visual Consistency**:
+   - All cards use same hover effects (`hover:shadow-lg transition-shadow`)
+   - Consistent button styling (`bg-black hover:bg-gray-800`)
+   - Matching padding (`px-4 pt-3 pb-3`)
+   - Same icon sizes (`w-3 h-3` for metadata icons, `w-4 h-4` for banner icons)
+
+**Files Modified**:
+- `src/app/tasks/page.tsx` - Complete redesign from table to card-based layout
+
+**UI Improvements**:
+- More scannable and visually appealing task display
+- Better use of space with card grid layout
+- Consistent design language across homepage and tasks page
+- Improved information hierarchy with icons and clear sections
+- Enhanced clickability with styled links and buttons
+
+## [Previous] - 2025-11-20 20:44
+
+### Homepage UI Style Uniformity - Blue Banner Cards
+
+**Overview**: Updated the Inbox and Upcoming Tasks sections on the homepage to match the uniform blue banner card style used in the center cards (Next Task, Next Reminder, Next Event), creating a more cohesive dashboard design.
+
+**Changes:**
+1. **Inbox Card Redesign**:
+   - Added blue banner header (`bg-blue-600`) matching center card style
+   - Title "Inbox" left-aligned with icon
+   - Description "Notifications & Emails" right-aligned in banner
+   - Added button panel below content with "View Inbox" button
+   - Maintained existing "Coming soon" placeholder content
+
+2. **Upcoming Tasks Card Redesign**:
+   - Added blue banner header matching center card style
+   - Title "Upcoming Tasks" left-aligned with icon
+   - Dynamic task count right-aligned in banner (shows "X Tasks" or "No Tasks")
+   - Compact table display with smaller text and spacing
+   - Limited to 5 tasks with "+X more tasks" indicator if more exist
+   - Added button panel below with "View All Tasks" or "Create Task" button
+
+3. **Visual Consistency**:
+   - Both cards now use `rounded-xl` corners
+   - Matching `hover:shadow-lg` transition effects
+   - Consistent padding and spacing (`px-4 pb-3`)
+   - Uniform button styling (`bg-black hover:bg-gray-800`)
+   - Border separator between content and button panel
+
+**Files Modified**:
+- `src/app/page.tsx` - Updated Inbox and Upcoming Tasks card components to match center card styling
+
+**UI Improvements**:
+- Dashboard now has uniform card styling throughout
+- Better visual hierarchy with consistent blue banners
+- Improved navigation with clear action buttons
+- More compact and scannable task list display
+
+## [Previous] - 2025-01-28 (Current Date/Time)
 
 ### Code Quality Improvement Plan Progress Tracking
 
