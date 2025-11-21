@@ -434,7 +434,7 @@ export const create = mutation({
 
     // Invalidate context cache for client if provided
     if (args.clientId) {
-      // @ts-expect-error - TypeScript has issues with deep type instantiation for Convex scheduler
+      // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
       await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
         contextType: "client",
         contextId: args.clientId,
@@ -443,6 +443,7 @@ export const create = mutation({
 
     // Invalidate context cache for project if provided
     if (args.projectId) {
+      // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
       await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
         contextType: "project",
         contextId: args.projectId,
