@@ -6,9 +6,16 @@ const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx');
 
-// CRITICAL: Legacy build doesn't use workers - it runs everything in the main thread
-// This is perfect for serverless environments where worker files can't be loaded
-// No need to configure GlobalWorkerOptions with legacy build
+// CRITICAL: Explicitly disable worker initialization to prevent "setting up fake worker failed" errors
+// This is essential for serverless environments where workers cannot be initialized
+if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
+  // Disable worker by setting workerSrc to empty string or disabling it
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+  // Also try to disable worker initialization completely
+  if (typeof pdfjsLib.GlobalWorkerOptions.workerPort !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerPort = null;
+  }
+}
 
 export async function extractTextFromFile(file: File): Promise<string> {
   const fileType = file.type;
@@ -21,33 +28,36 @@ export async function extractTextFromFile(file: File): Promise<string> {
 
   // Handle PDF files
   if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
+    // Convert ArrayBuffer to Uint8Array outside try block so it's accessible in catch
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Ensure data is valid and not empty
+    if (!uint8Array || uint8Array.length === 0) {
+      throw new Error('PDF file appears to be empty or invalid');
+    }
+    
+    // Verify it's a valid PDF by checking the header
+    const pdfHeader = String.fromCharCode(...uint8Array.slice(0, 4));
+    if (pdfHeader !== '%PDF') {
+      throw new Error('File does not appear to be a valid PDF');
+    }
+    
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      
-      // Convert ArrayBuffer to Uint8Array (pdfjs-dist requires Uint8Array, not Buffer)
-      const uint8Array = new Uint8Array(arrayBuffer);
-      
-      // Ensure data is valid and not empty
-      if (!uint8Array || uint8Array.length === 0) {
-        throw new Error('PDF file appears to be empty or invalid');
-      }
-      
-      // Verify it's a valid PDF by checking the header
-      const pdfHeader = String.fromCharCode(...uint8Array.slice(0, 4));
-      if (pdfHeader !== '%PDF') {
-        throw new Error('File does not appear to be a valid PDF');
-      }
-      
       // Load PDF document - configure to run without workers
+      // Explicitly disable all worker-related features for serverless environments
       const loadingTask = pdfjsLib.getDocument({
         data: uint8Array,
         useWorkerFetch: false,
         isEvalSupported: false,
         useSystemFonts: true,
         verbosity: 0, // Suppress warnings
-        // Explicitly disable worker
+        // Explicitly disable worker and related features
         disableAutoFetch: true,
         disableStream: true,
+        // Additional options to prevent worker initialization
+        useWorker: false,
+        worker: null,
       });
       
       const pdf = await loadingTask.promise;
@@ -77,14 +87,66 @@ export async function extractTextFromFile(file: File): Promise<string> {
       return fullText.trim();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      // Log the full error for debugging
+      const errorString = String(error).toLowerCase();
+      
+      // Check for worker-related errors and handle them gracefully
+      if (
+        errorMessage.includes('worker') || 
+        errorMessage.includes('pdf.worker') ||
+        errorString.includes('setting up fake worker') ||
+        errorString.includes('worker failed') ||
+        errorString.includes('worker initialization')
+      ) {
+        // Log the error but don't expose it to the user - try to continue without worker
+        console.warn('PDF worker initialization warning (suppressed):', errorMessage);
+        
+        // Retry without worker by ensuring worker is disabled
+        try {
+          if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+          }
+          
+          // Retry loading the PDF
+          const retryLoadingTask = pdfjsLib.getDocument({
+            data: uint8Array,
+            useWorkerFetch: false,
+            isEvalSupported: false,
+            useSystemFonts: true,
+            verbosity: 0,
+            disableAutoFetch: true,
+            disableStream: true,
+            useWorker: false,
+            worker: null,
+          });
+          
+          const retryPdf = await retryLoadingTask.promise;
+          let fullText = '';
+          for (let pageNum = 1; pageNum <= retryPdf.numPages; pageNum++) {
+            const page = await retryPdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items
+              .map((item: any) => {
+                if ('str' in item) {
+                  return item.str || '';
+                }
+                return '';
+              })
+              .join(' ');
+            fullText += pageText + '\n';
+          }
+          await retryPdf.destroy();
+          return fullText.trim();
+        } catch (retryError) {
+          // If retry also fails, throw a user-friendly error
+          throw new Error('PDF parsing failed. The file may be corrupted or in an unsupported format. Please try converting the PDF to text format or use a different file type.');
+        }
+      }
+      
+      // Log other errors for debugging
       console.error('PDF parsing error details:', error);
       console.error('Error message:', errorMessage);
       console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
       
-      if (errorMessage.includes('worker') || errorMessage.includes('pdf.worker')) {
-        throw new Error(`PDF parsing worker error: ${errorMessage}. Please try converting the PDF to text format or use a different file type.`);
-      }
       throw new Error(`Failed to parse PDF: ${errorMessage}`);
     }
   }
