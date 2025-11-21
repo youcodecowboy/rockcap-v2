@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['pdfjs-dist'],
+  // pdf-parse handles its own pdfjs-dist version internally
+  serverExternalPackages: ['pdf-parse'],
   webpack: (config, { isServer }) => {
     if (isServer) {
       // Exclude canvas from server-side bundle (if needed)

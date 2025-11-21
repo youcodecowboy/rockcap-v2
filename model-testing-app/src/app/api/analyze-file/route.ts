@@ -14,17 +14,6 @@ import { ErrorResponses } from '@/lib/api/errorResponse';
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds max for file processing
 
-// Suppress pdfjs-dist worker errors in server environment
-if (typeof process !== 'undefined') {
-  const originalEmitWarning = process.emitWarning;
-  process.emitWarning = function(warning: any, ...args: any[]) {
-    if (typeof warning === 'string' && warning.includes('worker')) {
-      return false; // Suppress worker-related warnings
-    }
-    return originalEmitWarning.call(process, warning, ...args);
-  };
-}
-
 export async function POST(request: NextRequest) {
   try {
     // Check authentication

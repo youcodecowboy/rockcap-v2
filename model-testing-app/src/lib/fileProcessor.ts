@@ -1,10 +1,9 @@
 import mammoth from 'mammoth';
 // Use pdf-parse for PDF parsing - it's simpler, more reliable, and works well in serverless environments
 // pdf-parse uses pdfjs-dist internally but handles worker setup automatically
-// Note: pdf-parse exports the function as default, so we need to access .default when using require()
+// Note: pdf-parse exports PDFParse as a named export
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParseModule = require('pdf-parse');
-const pdfParse = pdfParseModule.default || pdfParseModule;
+const { PDFParse } = require('pdf-parse');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx');
 
@@ -38,13 +37,14 @@ export async function extractTextFromFile(file: File): Promise<string> {
     // pdfjs-dist has worker issues in Vercel/serverless, so we use pdf-parse as primary
     try {
       console.log('Attempting PDF parsing with pdf-parse (primary parser)...');
-      const pdfData = await pdfParse(buffer);
+      const parser = new PDFParse({ data: buffer });
+      const pdfData = await parser.getText();
       const extractedText = pdfData.text || '';
       if (extractedText.trim().length > 0) {
         console.log('Successfully parsed PDF using pdf-parse');
         return extractedText.trim();
       } else {
-        console.warn('pdf-parse returned empty text, trying pdfjs-dist fallback...');
+        console.warn('pdf-parse returned empty text...');
         throw new Error('PDF parsed but no text content found');
       }
     } catch (pdfParseError) {
