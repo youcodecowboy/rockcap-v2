@@ -156,51 +156,67 @@ export default function DocsPage() {
         </div>
 
         {/* Compact Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-          <RecentUploadCard />
-          <CompactMetricCard
-            label="Client Docs"
-            value={metrics.clientDocuments}
-            icon={Building2}
-            iconColor="green"
-          />
-          <CompactMetricCard
-            label="Internal"
-            value={metrics.internalDocuments}
-            icon={FileText}
-            iconColor="purple"
-          />
-          <CompactMetricCard
-            label="Unclassified"
-            value={metrics.unclassifiedDocuments}
-            icon={AlertCircle}
-            iconColor="orange"
-          />
-          <CompactMetricCard
-            label="Total"
-            value={metrics.totalDocuments}
-            icon={FileText}
-            iconColor="blue"
-          />
+        <div className="flex flex-col md:flex-row gap-3 mb-6">
+          <div className="flex-1">
+            <RecentUploadCard />
+          </div>
+          <div className="flex gap-3 flex-wrap md:flex-nowrap">
+            <div className="w-full md:w-auto md:min-w-[140px]">
+              <CompactMetricCard
+                label="Client Docs"
+                value={metrics.clientDocuments}
+                icon={Building2}
+                iconColor="green"
+                className="bg-black text-white"
+              />
+            </div>
+            <div className="w-full md:w-auto md:min-w-[140px]">
+              <CompactMetricCard
+                label="Internal"
+                value={metrics.internalDocuments}
+                icon={FileText}
+                iconColor="purple"
+                className="bg-black text-white"
+              />
+            </div>
+            <div className="w-full md:w-auto md:min-w-[140px]">
+              <CompactMetricCard
+                label="Unclassified"
+                value={metrics.unclassifiedDocuments}
+                icon={AlertCircle}
+                iconColor="orange"
+                className="bg-black text-white"
+              />
+            </div>
+            <div className="w-full md:w-auto md:min-w-[140px]">
+              <CompactMetricCard
+                label="Total"
+                value={metrics.totalDocuments}
+                icon={FileText}
+                iconColor="blue"
+                className="bg-black text-white"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="border-b border-gray-200">
+          <div className="bg-blue-600">
             <div className="flex items-center justify-between">
               <nav className="flex -mb-px">
                 <button
                   onClick={() => setActiveTab('client')}
                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'client'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-white text-white'
+                      : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <Building2 className="w-4 h-4" />
                     Client Documents
-                    <Badge variant="outline" className="ml-2">
+                    <Badge variant="outline" className="ml-2 bg-white/20 text-white border-white/30">
                       {metrics.clientDocuments}
                     </Badge>
                   </div>
@@ -209,14 +225,14 @@ export default function DocsPage() {
                   onClick={() => setActiveTab('internal')}
                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'internal'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-white text-white'
+                      : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4" />
                     Internal Documents
-                    <Badge variant="outline" className="ml-2">
+                    <Badge variant="outline" className="ml-2 bg-white/20 text-white border-white/30">
                       {metrics.internalDocuments}
                     </Badge>
                   </div>
@@ -225,14 +241,14 @@ export default function DocsPage() {
                   onClick={() => setActiveTab('unclassified')}
                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'unclassified'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-white text-white'
+                      : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4" />
                     Unclassified
-                    <Badge variant="outline" className="ml-2">
+                    <Badge variant="outline" className="ml-2 bg-white/20 text-white border-white/30">
                       {metrics.unclassifiedDocuments}
                     </Badge>
                   </div>
@@ -302,7 +318,7 @@ export default function DocsPage() {
                 placeholder="Search documents by name, code, category, client, or project..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-400"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-400 bg-white"
               />
             </div>
           </div>

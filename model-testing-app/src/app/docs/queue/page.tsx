@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { useRouter } from 'next/navigation';
@@ -16,9 +16,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { FileText, Clock, CheckCircle2, AlertCircle, ArrowRight, Building2, Edit, ChevronRight } from 'lucide-react';
+import { FileText, Clock, CheckCircle2, AlertCircle, ArrowRight, Building2, Edit, ChevronRight, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import InstructionsModal from '@/components/InstructionsModal';
+import CompactMetricCard from '@/components/CompactMetricCard';
 
 export default function DocsQueuePage() {
   const router = useRouter();
@@ -26,6 +27,9 @@ export default function DocsQueuePage() {
   const [selectedJobId, setSelectedJobId] = useState<Id<"fileUploadQueue"> | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>('');
   const [selectedInstructions, setSelectedInstructions] = useState<string | undefined>(undefined);
+  
+  // Mutations
+  const deleteJob = useMutation(api.fileQueue.deleteJob);
   
   // Get all jobs that need confirmation
   const pendingJobs = useQuery(api.fileQueue.getJobs, { 
@@ -78,13 +82,29 @@ export default function DocsQueuePage() {
     // The query will automatically refetch
   };
 
+  const handleDeleteJob = async (jobId: Id<"fileUploadQueue">, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (confirm('Are you sure you want to delete this document from the queue?')) {
+      await deleteJob({ jobId });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Breadcrumbs */}
         <div className="mb-4">
           <nav className="flex items-center gap-2 text-sm text-gray-600">
-            <Link href="/docs" className="hover:text-gray-900 transition-colors">
+            <Link 
+              href="/docs" 
+              className="hover:text-gray-900 transition-colors"
+              onClick={(e) => {
+                e.preventDefault();
+                router.push('/docs');
+              }}
+            >
               Docs
             </Link>
             <ChevronRight className="w-4 h-4" />
@@ -110,77 +130,51 @@ export default function DocsQueuePage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Pending Review</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{pendingCount}</p>
-                  <p className="text-sm text-gray-500">Awaiting assignment</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Completed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-                  <CheckCircle2 className="w-6 h-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{completedCount}</p>
-                  <p className="text-sm text-gray-500">Recently filed</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Processed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-                  <FileText className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{pendingCount + completedCount}</p>
-                  <p className="text-sm text-gray-500">In queue</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8">
+          <CompactMetricCard
+            label="Pending Review"
+            value={pendingCount}
+            icon={Clock}
+            iconColor="yellow"
+            className="bg-black text-white"
+          />
+          <CompactMetricCard
+            label="Completed"
+            value={completedCount}
+            icon={CheckCircle2}
+            iconColor="green"
+            className="bg-black text-white"
+          />
+          <CompactMetricCard
+            label="Total Processed"
+            value={pendingCount + completedCount}
+            icon={FileText}
+            iconColor="blue"
+            className="bg-black text-white"
+          />
         </div>
 
         {/* Pending Documents */}
         {pendingCount > 0 && (
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Pending Review ({pendingCount})
-              </h2>
-            </div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <Table>
+            <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+              <div className="bg-blue-600 text-white px-6 py-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">
+                  Pending Review ({pendingCount})
+                </h2>
+              </div>
+              <div className="overflow-hidden">
+                <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[300px]">File Name</TableHead>
-                    <TableHead className="w-[150px]">Client</TableHead>
-                    <TableHead className="w-[120px]">Type</TableHead>
-                    <TableHead className="w-[120px]">Category</TableHead>
-                    <TableHead className="w-[100px]">Size</TableHead>
-                    <TableHead className="w-[100px]">Uploaded</TableHead>
-                    <TableHead className="w-[100px]">Status</TableHead>
-                    <TableHead className="w-[80px]"></TableHead>
+                    <TableHead>File Name</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Uploaded</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -195,7 +189,7 @@ export default function DocsQueuePage() {
                         onClick={() => router.push(`/uploads/${job._id}`)}
                       >
                         <TableCell className="font-medium">
-                          <div className="max-w-[300px]">
+                          <div className="max-w-[200px]">
                             <div className="truncate" title={job.fileName}>
                               {job.fileName}
                             </div>
@@ -203,9 +197,9 @@ export default function DocsQueuePage() {
                         </TableCell>
                         <TableCell>
                           {clientName !== '—' ? (
-                            <div className="flex items-center gap-1.5">
-                              <Building2 className="w-3.5 h-3.5 text-gray-400" />
-                              <span className="text-sm text-gray-700">{clientName}</span>
+                            <div className="flex items-center gap-1.5 max-w-[150px]">
+                              <Building2 className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                              <span className="text-sm text-gray-700 truncate" title={clientName}>{clientName}</span>
                             </div>
                           ) : (
                             <span className="text-sm text-gray-400">—</span>
@@ -238,60 +232,70 @@ export default function DocsQueuePage() {
                           </Badge>
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          {needsInstructions ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => handleOpenInstructionsModal(job._id, job.fileName, job.customInstructions, e)}
-                              className="text-xs"
-                            >
-                              <Edit className="w-3 h-3 mr-1" />
-                              Add Instructions
-                            </Button>
-                          ) : job.hasCustomInstructions && job.customInstructions ? (
+                          <div className="flex items-center gap-1">
+                            {needsInstructions ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => handleOpenInstructionsModal(job._id, job.fileName, job.customInstructions, e)}
+                                className="text-xs"
+                              >
+                                <Edit className="w-3 h-3 mr-1" />
+                                Add Instructions
+                              </Button>
+                            ) : job.hasCustomInstructions && job.customInstructions ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => handleOpenInstructionsModal(job._id, job.fileName, job.customInstructions, e)}
+                                className="text-xs"
+                              >
+                                <Edit className="w-3 h-3 mr-1" />
+                                Edit
+                              </Button>
+                            ) : null}
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={(e) => handleOpenInstructionsModal(job._id, job.fileName, job.customInstructions, e)}
-                              className="text-xs"
+                              onClick={(e) => handleDeleteJob(job._id, e)}
+                              className="text-xs text-red-600 hover:text-red-700"
+                              title="Delete"
                             >
-                              <Edit className="w-3 h-3 mr-1" />
-                              Edit
+                              <Trash2 className="w-3 h-3" />
                             </Button>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>
-                          <ArrowRight className="w-4 h-4 text-gray-400" />
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
-            </div>
+              </div>
+            </Card>
           </div>
         )}
 
         {/* Completed Documents (Recent) */}
         {completedCount > 0 && (
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Recently Completed ({completedCount})
-              </h2>
-            </div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <Table>
+            <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+              <div className="bg-blue-600 text-white px-6 py-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">
+                  Recently Completed ({completedCount})
+                </h2>
+              </div>
+              <div className="overflow-hidden">
+                <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[300px]">File Name</TableHead>
-                    <TableHead className="w-[150px]">Client</TableHead>
-                    <TableHead className="w-[120px]">Type</TableHead>
-                    <TableHead className="w-[120px]">Category</TableHead>
-                    <TableHead className="w-[100px]">Size</TableHead>
-                    <TableHead className="w-[100px]">Uploaded</TableHead>
-                    <TableHead className="w-[100px]">Status</TableHead>
-                    <TableHead className="w-[80px]"></TableHead>
+                    <TableHead>File Name</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Uploaded</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -305,7 +309,7 @@ export default function DocsQueuePage() {
                         onClick={() => router.push(`/uploads/${job._id}`)}
                       >
                         <TableCell className="font-medium">
-                          <div className="max-w-[300px]">
+                          <div className="max-w-[200px]">
                             <div className="truncate" title={job.fileName}>
                               {job.fileName}
                             </div>
@@ -313,9 +317,9 @@ export default function DocsQueuePage() {
                         </TableCell>
                         <TableCell>
                           {clientName !== '—' ? (
-                            <div className="flex items-center gap-1.5">
-                              <Building2 className="w-3.5 h-3.5 text-gray-400" />
-                              <span className="text-sm text-gray-700">{clientName}</span>
+                            <div className="flex items-center gap-1.5 max-w-[150px]">
+                              <Building2 className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                              <span className="text-sm text-gray-700 truncate" title={clientName}>{clientName}</span>
                             </div>
                           ) : (
                             <span className="text-sm text-gray-400">—</span>
@@ -347,25 +351,37 @@ export default function DocsQueuePage() {
                             Filed
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          {job.documentId ? (
-                            <Link 
-                              href={`/docs/${job.documentId}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-blue-600 hover:text-blue-700"
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1">
+                            {job.documentId ? (
+                              <Link 
+                                href={`/docs/${job.documentId}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                <ArrowRight className="w-4 h-4" />
+                              </Link>
+                            ) : (
+                              <ArrowRight className="w-4 h-4 text-gray-400" />
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleDeleteJob(job._id, e)}
+                              className="text-xs text-red-600 hover:text-red-700"
+                              title="Delete"
                             >
-                              <ArrowRight className="w-4 h-4" />
-                            </Link>
-                          ) : (
-                            <ArrowRight className="w-4 h-4 text-gray-400" />
-                          )}
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
-            </div>
+              </div>
+            </Card>
           </div>
         )}
 

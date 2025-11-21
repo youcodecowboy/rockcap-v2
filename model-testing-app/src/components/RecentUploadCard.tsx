@@ -82,11 +82,11 @@ export default function RecentUploadCard() {
   
   if (!recentJob) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 py-2.5 flex items-center gap-3 border-dashed">
-        <Clock className="w-5 h-5 flex-shrink-0 text-gray-400" />
+      <div className="bg-black rounded-lg border border-gray-800 shadow-sm px-3 py-2 flex items-center gap-3 border-dashed h-[42px]">
+        <Clock className="w-4 h-4 flex-shrink-0 text-gray-400" />
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Recent Upload:</span>
-          <span className="text-sm text-gray-500 italic">No recent uploads</span>
+          <span className="text-xs font-medium text-gray-300 whitespace-nowrap">Recent Upload:</span>
+          <span className="text-xs text-gray-400 italic">No recent uploads</span>
         </div>
       </div>
     );
@@ -95,19 +95,19 @@ export default function RecentUploadCard() {
   return (
     <div
       className={cn(
-        'bg-white rounded-lg border shadow-sm px-4 py-2.5 transition-all flex items-center gap-3',
+        'bg-black rounded-lg border shadow-sm px-3 py-2 transition-all flex items-center gap-3 h-[42px]',
         recentJob.status === 'needs_confirmation' 
-          ? 'border-orange-300 bg-orange-50 hover:shadow-md hover:border-orange-400 cursor-pointer' 
-          : 'border-gray-200 hover:shadow-md hover:border-gray-300 cursor-pointer'
+          ? 'border-orange-600 hover:shadow-md hover:border-orange-500 cursor-pointer' 
+          : 'border-gray-800 hover:shadow-md hover:border-gray-700 cursor-pointer'
       )}
       onClick={handleClick}
     >
-      <Icon className={cn('w-5 h-5 flex-shrink-0', statusInfo.iconColor)} />
+      <Icon className={cn('w-4 h-4 flex-shrink-0', statusInfo.iconColor)} />
       <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-        <span className="text-sm font-medium text-gray-600 whitespace-nowrap">{statusInfo.label}:</span>
-        <span className="text-sm font-semibold text-gray-900 truncate">{recentJob.fileName}</span>
+        <span className="text-xs font-medium text-gray-300 whitespace-nowrap">{statusInfo.label}:</span>
+        <span className="text-xs font-semibold text-white truncate">{recentJob.fileName}</span>
       </div>
-      <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0 ml-auto">
+      <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0 ml-auto">
         {formatTimeAgo(recentJob.createdAt)}
       </span>
     </div>

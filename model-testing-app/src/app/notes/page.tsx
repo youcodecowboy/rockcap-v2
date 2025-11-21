@@ -6,15 +6,18 @@ import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import NotesEditor from '@/components/NotesEditor';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Trash2, X, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Trash2, X, Filter, File, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 function NotesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedNoteId, setSelectedNoteId] = useState<Id<"notes"> | null>(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<Id<"documents"> | null>(null);
+  const [activeTab, setActiveTab] = useState<'notes' | 'docs'>('notes');
   
   // Read note ID from URL params
   useEffect(() => {
@@ -45,6 +48,7 @@ function NotesPageContent() {
   const createNote = useMutation(api.notes.create);
   const deleteNote = useMutation(api.notes.remove);
   const notes = useQuery(api.notes.getAll, {});
+  // Documents will be generated documents (not library documents) - empty for now
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
 
@@ -135,6 +139,7 @@ function NotesPageContent() {
     filterProjectIds.length > 0 || filterTags.length > 0 || filterDateStart || filterDateEnd;
 
   const handleCreateNote = async () => {
+    setActiveTab('notes');
     try {
       const noteId = await createNote({
         title: 'Untitled Note',
@@ -147,6 +152,21 @@ function NotesPageContent() {
       console.error('Failed to create note:', error);
     }
   };
+
+  const handleNewDocument = () => {
+    setActiveTab('docs');
+    setSelectedDocumentId(null);
+    setSelectedNoteId(null); // Clear note selection when switching to docs
+  };
+
+  // Clear selections when switching tabs
+  useEffect(() => {
+    if (activeTab === 'notes') {
+      setSelectedDocumentId(null);
+    } else {
+      setSelectedNoteId(null);
+    }
+  }, [activeTab]);
 
   const handleDeleteNote = async (noteId: Id<"notes">) => {
     if (!confirm('Are you sure you want to delete this note?')) return;
@@ -167,9 +187,46 @@ function NotesPageContent() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-gray-50">
-      {/* Left Sidebar - Notes List */}
-      <div className={`${isSidebarMinimized ? 'w-16' : 'w-96'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out relative overflow-visible`}>
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50">
+      {/* Header Bar */}
+      <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'notes' | 'docs')}>
+          <TabsList className="bg-white/20 border-white/30 [&>*]:text-white [&>*[data-state=active]]:bg-white [&>*[data-state=active]]:text-blue-600 [&>*[data-state=inactive]]:text-white/80">
+            <TabsTrigger value="notes">
+              <FileText className="w-4 h-4 mr-2" />
+              Notes
+            </TabsTrigger>
+            <TabsTrigger value="docs">
+              <File className="w-4 h-4 mr-2" />
+              Docs
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleNewDocument}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 bg-white text-blue-600 border-white hover:bg-white/90"
+          >
+            <Plus className="w-4 h-4" />
+            New Document
+          </Button>
+          <Button
+            onClick={handleCreateNote}
+            size="sm"
+            className="flex items-center gap-2 bg-white text-blue-600 hover:bg-white/90"
+          >
+            <Plus className="w-4 h-4" />
+            New Note
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar - Notes/Documents List */}
+        <div className={`${isSidebarMinimized ? 'w-16' : 'w-96'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out relative overflow-visible`}>
         {/* Minimize Toggle Button */}
         <button
           onClick={() => setIsSidebarMinimized(!isSidebarMinimized)}
@@ -186,35 +243,31 @@ function NotesPageContent() {
         {!isSidebarMinimized ? (
           <>
             <div className="p-4 border-b border-gray-200">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-gray-900">Notes</h2>
-                  {hasActiveFilters && (
-                    <Badge variant="secondary" className="text-xs">
-                      <Filter className="w-3 h-3 mr-1" />
-                      {filteredNotes.length}
-                    </Badge>
-                  )}
-                </div>
-                <button
-                  onClick={handleCreateNote}
-                  className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  New Note
-                </button>
-              </div>
+              {activeTab === 'notes' ? (
+                <>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold text-gray-900">Notes</h2>
+                      {hasActiveFilters && (
+                        <Badge variant="secondary" className="text-xs">
+                          <Filter className="w-3 h-3 mr-1" />
+                          {filteredNotes.length}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
 
-              {/* Search */}
-              <Input
-                type="text"
-                placeholder="Search notes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full mb-3"
-              />
+                  {/* Search */}
+                  <Input
+                    type="text"
+                    placeholder="Search notes..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full mb-3"
+                  />
 
-              {/* Collapsible Filters Section */}
-              <div className="mb-4">
+                  {/* Collapsible Filters Section */}
+                  <div className="mb-4">
                 <button
                   onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
                   className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors"
@@ -469,151 +522,213 @@ function NotesPageContent() {
                   </div>
                 )}
               </div>
+            </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold text-gray-900">Documents</h2>
+                    </div>
+                  </div>
+                  
+                </>
+              )}
             </div>
           </>
         ) : (
           <div className="p-2 border-b border-gray-200 flex justify-center">
-            <FileText className="w-5 h-5 text-gray-600" />
+            {activeTab === 'notes' ? (
+              <FileText className="w-5 h-5 text-gray-600" />
+            ) : (
+              <File className="w-5 h-5 text-gray-600" />
+            )}
           </div>
         )}
 
-        {/* Notes List */}
+        {/* Notes/Documents List */}
         {!isSidebarMinimized && (
           <div className="flex-1 overflow-y-auto overflow-x-visible">
-            {notes === undefined ? (
-              <div className="p-4 text-sm text-gray-500">Loading...</div>
-            ) : filteredNotes.length === 0 ? (
-              <div className="p-4 text-sm text-gray-500">
-                {hasActiveFilters || searchQuery
-                  ? 'No notes match your filters.'
-                  : 'No notes yet. Create your first note!'}
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-200">
-                {filteredNotes.map((note) => (
-                  <div key={note._id} className="group relative overflow-visible">
-                    <button
-                      onClick={() => setSelectedNoteId(note._id)}
-                      className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
-                        selectedNoteId === note._id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between mb-1">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          {note.emoji && <span className="text-lg">{note.emoji}</span>}
-                          <div className="font-medium text-gray-900 truncate">{note.title}</div>
-                        </div>
-                        {note.isDraft && (
-                          <Badge variant="secondary" className="text-xs ml-2 shrink-0">
-                            Draft
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 mb-2">
-                        {new Date(note.updatedAt).toLocaleDateString()}
-                      </div>
-                      {note.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {note.tags.slice(0, 3).map((tag, idx) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                          {note.tags.length > 3 && (
-                            <span className="px-2 py-0.5 text-xs text-gray-400">
-                              +{note.tags.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {(note.clientId || note.projectId) && (
-                        <div className="text-xs text-gray-400 space-y-0.5">
-                          {note.clientId && (
-                            <div className="truncate">
-                              Client: {clients?.find(c => c._id === note.clientId)?.name || note.clientId}
-                            </div>
-                          )}
-                          {note.projectId && (
-                            <div className="truncate">
-                              Project: {projects?.find(p => p._id === note.projectId)?.name || note.projectId}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteNote(note._id);
-                      }}
-                      className="absolute right-2 top-2 z-50 p-1 opacity-0 group-hover:opacity-100 bg-white rounded shadow-lg hover:bg-red-50 transition-all border border-gray-200"
-                      title="Delete note"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </button>
+            {activeTab === 'notes' ? (
+              <>
+                {notes === undefined ? (
+                  <div className="p-4 text-sm text-gray-500">Loading...</div>
+                ) : filteredNotes.length === 0 ? (
+                  <div className="p-4 text-sm text-gray-500">
+                    {hasActiveFilters || searchQuery
+                      ? 'No notes match your filters.'
+                      : 'No notes yet. Create your first note!'}
                   </div>
-                ))}
-              </div>
+                ) : (
+                  <div className="divide-y divide-gray-200">
+                    {filteredNotes.map((note) => (
+                      <div key={note._id} className="group relative overflow-visible">
+                        <button
+                          onClick={() => setSelectedNoteId(note._id)}
+                          className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
+                            selectedNoteId === note._id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between mb-1">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              {note.emoji && <span className="text-lg">{note.emoji}</span>}
+                              <div className="font-medium text-gray-900 truncate">{note.title}</div>
+                            </div>
+                            {note.isDraft && (
+                              <Badge variant="secondary" className="text-xs ml-2 shrink-0">
+                                Draft
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 mb-2">
+                            {new Date(note.updatedAt).toLocaleDateString()}
+                          </div>
+                          {note.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {note.tags.slice(0, 3).map((tag, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                              {note.tags.length > 3 && (
+                                <span className="px-2 py-0.5 text-xs text-gray-400">
+                                  +{note.tags.length - 3} more
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {(note.clientId || note.projectId) && (
+                            <div className="text-xs text-gray-400 space-y-0.5">
+                              {note.clientId && (
+                                <div className="truncate">
+                                  Client: {clients?.find(c => c._id === note.clientId)?.name || note.clientId}
+                                </div>
+                              )}
+                              {note.projectId && (
+                                <div className="truncate">
+                                  Project: {projects?.find(p => p._id === note.projectId)?.name || note.projectId}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNote(note._id);
+                          }}
+                          className="absolute right-2 top-2 z-50 p-1 opacity-0 group-hover:opacity-100 bg-white rounded shadow-lg hover:bg-red-50 transition-all border border-gray-200"
+                          title="Delete note"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Documents sidebar - empty for now (will show generated documents) */}
+                <div className="p-4 text-sm text-gray-500">
+                  <div className="text-center py-8">
+                    <File className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                    <p className="font-medium text-gray-900 mb-1">No generated documents</p>
+                    <p className="text-xs text-gray-500">
+                      Documents you create from templates will appear here
+                    </p>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}
         
-        {/* Minimized view - show note icons */}
+        {/* Minimized view - show note/document icons */}
         {isSidebarMinimized && (
           <div className="flex-1 overflow-y-auto py-2">
-            {notes === undefined ? (
-              <div className="flex justify-center p-2">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-              </div>
-            ) : filteredNotes.length === 0 ? (
-              <div className="flex justify-center p-2">
-                <FileText className="w-5 h-5 text-gray-400" />
-              </div>
+            {activeTab === 'notes' ? (
+              <>
+                {notes === undefined ? (
+                  <div className="flex justify-center p-2">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                  </div>
+                ) : filteredNotes.length === 0 ? (
+                  <div className="flex justify-center p-2">
+                    <FileText className="w-5 h-5 text-gray-400" />
+                  </div>
+                ) : (
+                  <div className="space-y-1 px-2">
+                    {filteredNotes.map((note) => (
+                      <button
+                        key={note._id}
+                        onClick={() => {
+                          setSelectedNoteId(note._id);
+                          setIsSidebarMinimized(false);
+                        }}
+                        className={`w-full p-2 rounded-md transition-colors flex justify-center ${
+                          selectedNoteId === note._id
+                            ? 'bg-blue-100 text-blue-600'
+                            : 'hover:bg-gray-100 text-gray-600'
+                        }`}
+                        title={note.title}
+                      >
+                        <FileText className="w-5 h-5" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="space-y-1 px-2">
-                {filteredNotes.map((note) => (
-                  <button
-                    key={note._id}
-                    onClick={() => {
-                      setSelectedNoteId(note._id);
-                      setIsSidebarMinimized(false);
-                    }}
-                    className={`w-full p-2 rounded-md transition-colors flex justify-center ${
-                      selectedNoteId === note._id
-                        ? 'bg-blue-100 text-blue-600'
-                        : 'hover:bg-gray-100 text-gray-600'
-                    }`}
-                    title={note.title}
-                  >
-                    <FileText className="w-5 h-5" />
-                  </button>
-                ))}
-              </div>
+              <>
+                {/* Documents minimized view - empty for now */}
+                <div className="flex justify-center p-2">
+                  <File className="w-5 h-5 text-gray-400" />
+                </div>
+              </>
             )}
           </div>
         )}
       </div>
 
-      {/* Center - Editor */}
-      <div className="flex-1 flex flex-col bg-white">
-        {selectedNoteId && selectedNote ? (
-          <NotesEditor
-            noteId={selectedNoteId}
-            note={selectedNote}
-            clientId={selectedNote.clientId}
-            projectId={selectedNote.projectId}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            <div className="text-center">
-              <p className="text-lg mb-2">Select a note to edit</p>
-              <p className="text-sm">or create a new note</p>
+        {/* Center - Editor */}
+        <div className="flex-1 flex flex-col bg-white">
+          {activeTab === 'notes' ? (
+            <>
+              {selectedNoteId && selectedNote ? (
+                <NotesEditor
+                  noteId={selectedNoteId}
+                  note={selectedNote}
+                  clientId={selectedNote.clientId}
+                  projectId={selectedNote.projectId}
+                />
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <p className="text-lg mb-2">Select a note to edit</p>
+                    <p className="text-sm">or create a new note</p>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              <div className="text-center max-w-md">
+                <File className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                <p className="text-xl font-semibold mb-2">Coming Soon</p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Template-based document creation is coming soon. You'll be able to select from a variety of templates, 
+                  such as lender's notes, and use AI to automatically populate them with information about your companies.
+                </p>
+                <p className="text-xs text-gray-500">
+                  Documents will be saved to the documents library, client documents, and project documents.
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

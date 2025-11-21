@@ -946,7 +946,7 @@ async function parseAndValidateReminderParams(
     taskId: params.taskId,
   };
 
-  // Handle client ID
+  // Handle client ID - client is optional, so we'll try to find it but won't fail if we can't
   let clientId = params.clientId;
   
   // If clientId is provided, validate it's a valid Convex ID
@@ -958,21 +958,13 @@ async function parseAndValidateReminderParams(
       // Might be a client name - try to search for it
       const clientSearch = await searchClientByName(clientId, client);
       if (clientSearch.found && clientSearch.clientId) {
+        // Found exact match - use it
         validatedParams.clientId = clientSearch.clientId;
-      } else if (clientSearch.matches && clientSearch.matches.length > 1) {
-        // Multiple matches - need confirmation
-        return {
-          valid: false,
-          error: `Multiple clients found matching "${clientId}". Please specify which client you mean.`,
-          needsClientConfirmation: true,
-          clientMatches: clientSearch.matches,
-        };
-      } else {
-        return {
-          valid: false,
-          error: `Client "${clientId}" not found. Please search for clients first using searchClients tool.`,
-        };
+      } else if (clientSearch.matches && clientSearch.matches.length === 1) {
+        // Single match - use it
+        validatedParams.clientId = clientSearch.matches[0]._id;
       }
+      // If multiple matches or no matches, proceed without clientId (it's optional)
     }
   } else {
     // Try to extract client name from description or title
@@ -980,17 +972,13 @@ async function parseAndValidateReminderParams(
     const clientSearch = await searchClientByName(textToSearch, client);
     
     if (clientSearch.found && clientSearch.clientId) {
+      // Found exact match - use it
       validatedParams.clientId = clientSearch.clientId;
-    } else if (clientSearch.matches && clientSearch.matches.length > 1) {
-      // Multiple matches - need confirmation
-      return {
-        valid: false,
-        error: `Found multiple possible clients in the reminder text. Please specify which client you mean.`,
-        needsClientConfirmation: true,
-        clientMatches: clientSearch.matches,
-      };
+    } else if (clientSearch.matches && clientSearch.matches.length === 1) {
+      // Single match - use it
+      validatedParams.clientId = clientSearch.matches[0]._id;
     }
-    // If no client found, that's okay - clientId is optional
+    // If multiple matches or no matches, proceed without clientId (it's optional)
   }
 
   return { valid: true, validatedParams };
@@ -1033,29 +1021,24 @@ async function parseAndValidateTaskParams(
     validatedParams.dueDate = params.dueDate;
   }
 
-  // Handle client ID (same logic as reminders)
+  // Handle client ID - client is optional, so we'll try to find it but won't fail if we can't
   let clientId = params.clientId;
   
   if (clientId) {
     if (typeof clientId === 'string' && clientId.startsWith('j')) {
+      // Valid Convex ID format
       validatedParams.clientId = clientId;
     } else {
+      // Might be a client name - try to search for it
       const clientSearch = await searchClientByName(clientId, client);
       if (clientSearch.found && clientSearch.clientId) {
+        // Found exact match - use it
         validatedParams.clientId = clientSearch.clientId;
-      } else if (clientSearch.matches && clientSearch.matches.length > 1) {
-        return {
-          valid: false,
-          error: `Multiple clients found matching "${clientId}". Please specify which client you mean.`,
-          needsClientConfirmation: true,
-          clientMatches: clientSearch.matches,
-        };
-      } else {
-        return {
-          valid: false,
-          error: `Client "${clientId}" not found. Please search for clients first using searchClients tool.`,
-        };
+      } else if (clientSearch.matches && clientSearch.matches.length === 1) {
+        // Single match - use it
+        validatedParams.clientId = clientSearch.matches[0]._id;
       }
+      // If multiple matches or no matches, proceed without clientId (it's optional)
     }
   } else {
     // Try to extract client name from description or title
@@ -1063,15 +1046,13 @@ async function parseAndValidateTaskParams(
     const clientSearch = await searchClientByName(textToSearch, client);
     
     if (clientSearch.found && clientSearch.clientId) {
+      // Found exact match - use it
       validatedParams.clientId = clientSearch.clientId;
-    } else if (clientSearch.matches && clientSearch.matches.length > 1) {
-      return {
-        valid: false,
-        error: `Found multiple possible clients in the task text. Please specify which client you mean.`,
-        needsClientConfirmation: true,
-        clientMatches: clientSearch.matches,
-      };
+    } else if (clientSearch.matches && clientSearch.matches.length === 1) {
+      // Single match - use it
+      validatedParams.clientId = clientSearch.matches[0]._id;
     }
+    // If multiple matches or no matches, proceed without clientId (it's optional)
   }
 
   return { valid: true, validatedParams };
@@ -1269,15 +1250,8 @@ export async function executeTool(
           throw new Error(reminderValidation.error || 'Invalid reminder parameters');
         }
         
-        if (reminderValidation.needsClientConfirmation && reminderValidation.clientMatches) {
-          const clientNames = reminderValidation.clientMatches
-            .map((c: any) => c.name || c.companyName)
-            .join(', ');
-          throw new Error(
-            `Multiple clients found. Please specify which client: ${clientNames}. ` +
-            `Use searchClients tool first to find the exact client ID.`
-          );
-        }
+        // Client is optional - proceed even if not found or multiple matches
+        // The validation function will set clientId only if there's a clear match
         
         return await client.mutation(api.reminders.create, {
           title: reminderValidation.validatedParams!.title,
@@ -1311,15 +1285,8 @@ export async function executeTool(
           throw new Error(taskValidation.error || 'Invalid task parameters');
         }
         
-        if (taskValidation.needsClientConfirmation && taskValidation.clientMatches) {
-          const clientNames = taskValidation.clientMatches
-            .map((c: any) => c.name || c.companyName)
-            .join(', ');
-          throw new Error(
-            `Multiple clients found. Please specify which client: ${clientNames}. ` +
-            `Use searchClients tool first to find the exact client ID.`
-          );
-        }
+        // Client is optional - proceed even if not found or multiple matches
+        // The validation function will set clientId only if there's a clear match
         
         return await client.mutation(api.tasks.create, {
           title: taskValidation.validatedParams!.title,

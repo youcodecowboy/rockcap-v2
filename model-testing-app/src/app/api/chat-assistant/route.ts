@@ -753,9 +753,22 @@ export async function POST(request: NextRequest) {
 
     // If this is an action execution request
     if (executeAction && actionId) {
+      let action: {
+        _id: Id<"chatActions">;
+        sessionId: Id<"chatSessions">;
+        messageId: Id<"chatMessages">;
+        actionType: string;
+        actionData: any;
+        status: "pending" | "confirmed" | "cancelled" | "executed" | "failed";
+        result?: any;
+        error?: string;
+        createdAt: string;
+        updatedAt: string;
+      } | null = null;
+
       try {
         // Get the action details
-        const action = await client.query(api.chatActions.get, {
+        action = await client.query(api.chatActions.get, {
           id: actionId as Id<"chatActions">,
         }) as {
           _id: Id<"chatActions">;
@@ -772,6 +785,24 @@ export async function POST(request: NextRequest) {
 
         if (!action) {
           throw new Error('Action not found');
+        }
+
+        // Check if action is already executed or cancelled
+        if (action.status === 'executed') {
+          return NextResponse.json({
+            success: true,
+            result: action.result,
+            message: `Action already executed: ${action.actionType}`,
+            itemId: action.result,
+          });
+        }
+
+        if (action.status === 'cancelled') {
+          throw new Error('Action was cancelled');
+        }
+
+        if (action.status === 'failed') {
+          throw new Error(action.error || 'Action previously failed');
         }
 
         // Execute the tool with authenticated client
@@ -809,6 +840,10 @@ export async function POST(request: NextRequest) {
             if (action.actionData.clientId) {
               clientId = action.actionData.clientId;
             }
+          } else if (action.actionType === 'createReminder') {
+            itemId = result as string;
+            itemType = 'reminder';
+            // Reminders don't have a dedicated page, so we'll just show success message
           }
         }
 
@@ -821,18 +856,32 @@ export async function POST(request: NextRequest) {
           clientId,
         });
       } catch (error) {
+        // Log the full error for debugging
+        console.error('Error executing action:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Error details:', {
+          actionId,
+          actionType: action?.actionType,
+          actionData: action?.actionData,
+          error: errorMessage,
+        });
+
         // Mark action as failed
         if (actionId) {
-          await client.mutation(api.chatActions.markFailed, {
-            id: actionId as Id<"chatActions">,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
+          try {
+            await client.mutation(api.chatActions.markFailed, {
+              id: actionId as Id<"chatActions">,
+              error: errorMessage,
+            });
+          } catch (markFailedError) {
+            console.error('Failed to mark action as failed:', markFailedError);
+          }
         }
 
         return NextResponse.json(
           {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to execute action',
+            error: errorMessage,
           },
           { status: 500 }
         );
@@ -1027,6 +1076,22 @@ Assistant: I'll help you create that reminder. First, let me search for the clie
 </TOOL_CALL>
 [After getting client results, use the client ID in createReminder]
 
+User: "Create 4 reminders: Call Alex at 10pm, Send proposal at 11pm, Review emails at midnight, Post to LinkedIn at 1am"
+Assistant: I'll create all 4 reminders for you. Let me create them all at once:
+<TOOL_CALL>
+{"name": "createReminder", "arguments": {"title": "Call Alex", "scheduledFor": "2025-11-21T22:00:00Z"}}
+</TOOL_CALL>
+<TOOL_CALL>
+{"name": "createReminder", "arguments": {"title": "Send proposal", "scheduledFor": "2025-11-21T23:00:00Z"}}
+</TOOL_CALL>
+<TOOL_CALL>
+{"name": "createReminder", "arguments": {"title": "Review emails", "scheduledFor": "2025-11-22T00:00:00Z"}}
+</TOOL_CALL>
+<TOOL_CALL>
+{"name": "createReminder", "arguments": {"title": "Post to LinkedIn", "scheduledFor": "2025-11-22T01:00:00Z"}}
+</TOOL_CALL>
+[All 4 reminders will be created together - don't ask for confirmation one-by-one]
+
 AVAILABLE TOOLS:
 ${CHAT_TOOLS.map(tool => `
 - ${tool.name}: ${tool.description}
@@ -1046,14 +1111,32 @@ IMPORTANT RULES:
 
 CRITICAL RULES FOR CREATING REMINDERS AND TASKS:
 
-1. CLIENT SEARCH (MANDATORY):
-   - ALWAYS search for clients FIRST using searchClients tool before creating reminders or tasks
-   - If a user mentions a client name (e.g., "Kristian", "ABC Company"), you MUST call searchClients with searchTerm to find the exact client ID
-   - NEVER use client names directly in createReminder or createTask - always use the client ID from searchClients results
-   - If multiple clients match, ask the user which one they mean before proceeding
-   - If no client is found, ask the user to clarify or create the client first
+1. BULK CREATION (IMPORTANT):
+   - When a user requests MULTIPLE reminders or tasks (e.g., "create 4 reminders", "make me reminders for X, Y, Z"), you MUST create ALL of them in a SINGLE response
+   - Use MULTIPLE <TOOL_CALL> tags, one for each reminder/task
+   - Example for 4 reminders:
+     <TOOL_CALL>
+     {"name": "createReminder", "arguments": {"title": "Reminder 1", "scheduledFor": "..."}}
+     </TOOL_CALL>
+     <TOOL_CALL>
+     {"name": "createReminder", "arguments": {"title": "Reminder 2", "scheduledFor": "..."}}
+     </TOOL_CALL>
+     <TOOL_CALL>
+     {"name": "createReminder", "arguments": {"title": "Reminder 3", "scheduledFor": "..."}}
+     </TOOL_CALL>
+     <TOOL_CALL>
+     {"name": "createReminder", "arguments": {"title": "Reminder 4", "scheduledFor": "..."}}
+     </TOOL_CALL>
+   - Do NOT ask for confirmation one-by-one - create all of them and let the system handle bulk confirmation
+   - If there are client ambiguities across multiple items, ask ONCE about all of them together (e.g., "I found multiple possible clients for these reminders. Should I proceed without linking them to specific clients?")
 
-2. DATE VALIDATION (MANDATORY):
+2. CLIENT SEARCH (OPTIONAL BUT RECOMMENDED):
+   - Try to search for clients FIRST using searchClients tool before creating reminders or tasks
+   - If a user mentions a client name (e.g., "Kristian", "ABC Company"), you SHOULD call searchClients with searchTerm to find the exact client ID
+   - If multiple clients match or no client is found, proceed WITHOUT a clientId - client linking is optional
+   - If you can't determine the client clearly, proceed without it - don't block creation
+
+3. DATE VALIDATION (MANDATORY):
    - Dates MUST be in ISO 8601 format: YYYY-MM-DDTHH:mm:ssZ (e.g., "2025-11-20T15:00:00Z")
    - NEVER use shell command syntax like $(date +'%Y-%m-%dT15:00:00Z') - this is invalid
    - ALWAYS use the CURRENT DATE AND TIME CONTEXT provided above when converting relative dates

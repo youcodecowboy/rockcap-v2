@@ -74,19 +74,19 @@ export default function CompactMetricCard({
   return (
     <div
       className={cn(
-        'rounded-lg border border-gray-200 shadow-sm px-4 py-2.5 transition-shadow hover:shadow-md flex items-center gap-3',
-        !isBlack && 'bg-white',
+        'rounded-lg border border-gray-200 shadow-sm transition-shadow hover:shadow-md flex items-center gap-3',
+        isBlack ? 'px-3 py-2 bg-black border-gray-800' : 'px-4 py-2.5 bg-white',
         onClick && 'cursor-pointer hover:border-gray-300',
         className
       )}
       onClick={onClick}
     >
       {Icon && (
-        <Icon className={cn('w-5 h-5 flex-shrink-0', isBlack ? iconColorClasses[iconColor] : iconColorClasses[iconColor])} />
+        <Icon className={cn('flex-shrink-0', isBlack ? 'w-4 h-4' : 'w-5 h-5', iconColorClasses[iconColor])} />
       )}
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        <span className={cn('text-sm font-medium whitespace-nowrap shrink-0', isBlack ? 'text-gray-300' : 'text-gray-600')}>{label}:</span>
-        <span className={cn('text-lg font-bold truncate min-w-0', isBlack ? 'text-white' : 'text-gray-900')}>{value}</span>
+        <span className={cn('font-medium whitespace-nowrap shrink-0', isBlack ? 'text-xs text-gray-300' : 'text-sm text-gray-600')}>{label}:</span>
+        <span className={cn('font-bold truncate min-w-0', isBlack ? 'text-base text-white' : 'text-lg text-gray-900')}>{value}</span>
         {badge && (
           <Badge variant={badge.variant || 'outline'} className="ml-1 shrink-0 max-w-[200px] truncate text-xs">
             {badge.text}

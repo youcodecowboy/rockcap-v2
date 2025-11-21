@@ -11,6 +11,7 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import ContextSelector from './ContextSelector';
 import ActionConfirmationModal from './ActionConfirmationModal';
+import BulkActionConfirmationModal from './BulkActionConfirmationModal';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
 
 // Context Badge Component
@@ -74,6 +75,7 @@ export default function ChatAssistantDrawer() {
   const [isGatheringContext, setIsGatheringContext] = useState(false);
   const [contextProgress, setContextProgress] = useState<string>('');
   const [pendingAction, setPendingAction] = useState<any>(null);
+  const [pendingBulkActions, setPendingBulkActions] = useState<Array<{ id: string; type: string; data: any }>>([]);
   const [showContextSelector, setShowContextSelector] = useState(false);
   const [activityMessages, setActivityMessages] = useState<Array<{ activity: string; id: string }>>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -305,24 +307,48 @@ export default function ChatAssistantDrawer() {
 
       // Handle pending actions that require confirmation
       if (data.pendingActions && data.pendingActions.length > 0) {
-        for (const action of data.pendingActions) {
-          if (action.requiresConfirmation) {
-            // Create pending action in database
+        const confirmedActions = data.pendingActions.filter((a: { toolName: string; parameters: any; requiresConfirmation: boolean }) => a.requiresConfirmation);
+        
+        if (confirmedActions.length === 0) {
+          // No actions requiring confirmation
+          return;
+        }
+
+        // If we have multiple actions, treat as bulk operation
+        if (confirmedActions.length > 1) {
+          const bulkActionIds: Array<{ id: string; type: string; data: any }> = [];
+          
+          // Create all actions and group them for bulk confirmation
+          for (const action of confirmedActions) {
             const actionId = await createAction({
               sessionId: sessionIdToUse,
               messageId: assistantMessageId,
               actionType: action.toolName,
               actionData: action.parameters,
             });
-
-            // Show confirmation modal for the first action
-            setPendingAction({
+            bulkActionIds.push({
               id: actionId,
               type: action.toolName,
               data: action.parameters,
             });
-            break; // Only show one at a time
           }
+          
+          // Show bulk confirmation modal
+          setPendingBulkActions(bulkActionIds);
+        } else {
+          // Single action - use regular confirmation modal
+          const firstAction = confirmedActions[0];
+          const actionId = await createAction({
+            sessionId: sessionIdToUse,
+            messageId: assistantMessageId,
+            actionType: firstAction.toolName,
+            actionData: firstAction.parameters,
+          });
+          setPendingAction({
+            id: actionId,
+            type: firstAction.toolName,
+            data: firstAction.parameters,
+          });
         }
       }
     } catch (error) {
@@ -363,7 +389,17 @@ export default function ChatAssistantDrawer() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to execute action');
+        // Try to read the error message from the response
+        let errorMessage = 'Failed to execute action';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          // If response is not JSON, use the status text
+          errorMessage = `${errorMessage}: ${response.statusText}`;
+        }
+        console.error('Action execution failed:', errorMessage);
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -417,14 +453,99 @@ export default function ChatAssistantDrawer() {
       setPendingAction(null);
     } catch (error) {
       console.error('Error executing action:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to execute action. Please try again.';
       await addMessage({
         sessionId: currentSessionId,
         role: 'system',
-        content: 'Failed to execute action. Please try again.',
+        content: errorMessage,
       });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleBulkActionConfirm = async () => {
+    if (!pendingBulkActions || pendingBulkActions.length === 0 || !currentSessionId) return;
+
+    setIsLoading(true);
+
+    try {
+      const results: Array<{ success: boolean; message: string; error?: string }> = [];
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Execute all actions sequentially
+      for (const action of pendingBulkActions) {
+        try {
+          const response = await fetch('/api/chat-assistant', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: currentSessionId,
+              executeAction: true,
+              actionId: action.id,
+            }),
+          });
+
+          if (!response.ok) {
+            let errorMessage = 'Failed to execute action';
+            try {
+              const errorData = await response.json();
+              errorMessage = errorData.error || errorMessage;
+            } catch (e) {
+              errorMessage = `${errorMessage}: ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
+          }
+
+          const data = await response.json();
+          results.push({ success: true, message: data.message || 'Action completed successfully.' });
+          successCount++;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to execute action';
+          results.push({ success: false, message: errorMessage, error: errorMessage });
+          failureCount++;
+        }
+      }
+
+      // Build summary message
+      const actionType = pendingBulkActions[0]?.type || 'actions';
+      const actionTypeName = actionType.replace('create', '').replace(/([A-Z])/g, ' $1').trim().toLowerCase() || 'items';
+      
+      let summaryMessage = '';
+      if (successCount > 0 && failureCount === 0) {
+        summaryMessage = `Successfully created ${successCount} ${actionTypeName}${successCount > 1 ? 's' : ''}.`;
+      } else if (successCount > 0 && failureCount > 0) {
+        summaryMessage = `Created ${successCount} ${actionTypeName}${successCount > 1 ? 's' : ''}, but ${failureCount} failed.`;
+      } else {
+        summaryMessage = `Failed to create ${actionTypeName}${pendingBulkActions.length > 1 ? 's' : ''}.`;
+      }
+
+      // Add summary message
+      await addMessage({
+        sessionId: currentSessionId,
+        role: 'system',
+        content: summaryMessage,
+      });
+
+      setPendingBulkActions([]);
+    } catch (error) {
+      console.error('Error executing bulk actions:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to execute bulk actions. Please try again.';
+      await addMessage({
+        sessionId: currentSessionId,
+        role: 'system',
+        content: errorMessage,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBulkActionCancel = () => {
+    setPendingBulkActions([]);
   };
 
   const handleActionCancel = () => {

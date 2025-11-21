@@ -24,6 +24,7 @@ import {
   ChevronLeft,
   Settings,
   Move,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Id } from '../../convex/_generated/dataModel';
@@ -36,6 +37,7 @@ import DirectUploadButton from '@/components/DirectUploadButton';
 import MoveDocumentModal from '@/components/MoveDocumentModal';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { useDeleteDocument } from '@/lib/documentStorage';
 
 // Types
 interface Document {
@@ -86,6 +88,7 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
   // Fetch clients data for status/type
   const allClients = useClients();
   const updateClient = useUpdateClient();
+  const deleteDocument = useDeleteDocument();
   
   // Create client lookup map
   const clientMap = useMemo(() => {
@@ -412,6 +415,12 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
     });
   };
   
+  const handleDeleteDocument = async (id: Id<"documents">) => {
+    if (confirm('Are you sure you want to delete this document?')) {
+      await deleteDocument({ id });
+    }
+  };
+  
   return (
     <div className="space-y-4">
       {/* Breadcrumbs and Navigation */}
@@ -735,6 +744,18 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
                             title="Move document"
                           >
                             <Move className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteDocument(doc._id);
+                            }}
+                            className="gap-1 text-red-600 hover:text-red-700"
+                            title="Delete document"
+                          >
+                            <Trash2 className="w-3 h-3" />
                           </Button>
                         </div>
                       </TableCell>
