@@ -72,6 +72,7 @@ import {
   StickyNote,
   ChevronRight,
   FolderKanban as FolderKanbanIcon,
+  Calendar,
 } from 'lucide-react';
 
 type TabType = 'overview' | 'projects' | 'documents' | 'communications' | 'contacts' | 'enrichment' | 'knowledge-bank';
@@ -412,10 +413,13 @@ export default function ClientProfilePage() {
 
         {/* Header Section */}
         <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-3xl font-bold text-gray-900">{client.name}</h1>
-              <div className="flex items-center gap-2">
+          {/* Title, Badges, and Action Buttons Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
+            <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+              <h1 className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
+                {client.name}
+              </h1>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <EditableStatusBadge 
                   status={client.status as 'prospect' | 'active' | 'archived' | 'past' | undefined}
                   onStatusChange={handleStatusChange}
@@ -435,30 +439,27 @@ export default function ClientProfilePage() {
             {/* Action Buttons */}
             <div className="flex items-center gap-2 flex-shrink-0">
               <Button
-                variant="outline"
                 size="sm"
                 onClick={handleCreateProject}
-                className="whitespace-nowrap"
+                className="bg-black text-white hover:bg-gray-800 whitespace-nowrap"
               >
                 <FolderKanbanIcon className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">New Project</span>
                 <span className="sm:hidden">Project</span>
               </Button>
               <Button
-                variant="outline"
                 size="sm"
                 onClick={handleContactClient}
-                className="whitespace-nowrap"
+                className="bg-black text-white hover:bg-gray-800 whitespace-nowrap"
               >
                 <Mail className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">Contact Client</span>
                 <span className="sm:hidden">Contact</span>
               </Button>
               <Button
-                variant="outline"
                 size="sm"
                 onClick={() => setIsAddingNote(true)}
-                className="whitespace-nowrap"
+                className="bg-black text-white hover:bg-gray-800 whitespace-nowrap"
               >
                 <StickyNote className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">New Note</span>
@@ -467,19 +468,28 @@ export default function ClientProfilePage() {
             </div>
           </div>
 
-          {/* Info Row */}
+          {/* Info Row with Icons */}
           <div className="flex flex-wrap items-center gap-6 text-sm text-gray-600 mb-4">
-            <span>Created: {new Date(client.createdAt).toLocaleDateString()}</span>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-500" />
+              <span>Created: {new Date(client.createdAt).toLocaleDateString()}</span>
+            </div>
             {formatAddress() && (
               <>
                 <span className="text-gray-400">•</span>
-                <span>{formatAddress()}</span>
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-gray-500" />
+                  <span>{formatAddress()}</span>
+                </div>
               </>
             )}
             {currentProjects.length > 0 && (
               <>
                 <span className="text-gray-400">•</span>
-                <span>{currentProjects.length} {currentProjects.length === 1 ? 'Active Project' : 'Active Projects'}</span>
+                <div className="flex items-center gap-2">
+                  <FolderKanban className="w-4 h-4 text-gray-500" />
+                  <span>{currentProjects.length} {currentProjects.length === 1 ? 'Active Project' : 'Active Projects'}</span>
+                </div>
               </>
             )}
           </div>
@@ -524,99 +534,109 @@ export default function ClientProfilePage() {
             value={projects.length}
             icon={FolderKanban}
             iconColor="purple"
+            className="bg-black text-white border-black"
           />
           <MetricCard
             label="Active Projects"
             value={currentProjects.length}
             icon={FolderKanban}
             iconColor="green"
+            className="bg-black text-white border-black"
           />
           <MetricCard
             label="Total Documents"
             value={documents.length}
             icon={FileText}
             iconColor="blue"
+            className="bg-black text-white border-black"
           />
           <MetricCard
             label="Communications"
             value={communications.length}
             icon={MessageSquare}
             iconColor="orange"
+            className="bg-black text-white border-black"
           />
         </div>
 
         {/* Tabs Navigation */}
-        <div className="bg-white border-b border-gray-200 mb-6">
-          {/* Mobile: Dropdown */}
-          <div className="lg:hidden px-4 py-3">
-            <Select value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(() => {
-                    const currentTab = tabs.find(t => t.id === activeTab);
-                    const Icon = currentTab?.icon;
-                    return (
-                      <div className="flex items-center gap-2">
-                        {Icon && <Icon className="w-4 h-4" />}
-                        <span>{currentTab?.label}</span>
-                        {currentTab?.count !== undefined && currentTab.count > 0 && (
-                          <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
-                            {currentTab.count}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div className="bg-blue-600">
+            <div className="flex items-center justify-between">
+              {/* Mobile: Dropdown */}
+              <div className="lg:hidden px-4 py-3 flex-1">
+                <Select value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue>
+                      {(() => {
+                        const currentTab = tabs.find(t => t.id === activeTab);
+                        const Icon = currentTab?.icon;
+                        return (
+                          <div className="flex items-center gap-2">
+                            {Icon && <Icon className="w-4 h-4" />}
+                            <span>{currentTab?.label}</span>
+                            {currentTab?.count !== undefined && currentTab.count > 0 && (
+                              <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
+                                {currentTab.count}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tabs.map((tab) => {
+                      const Icon = tab.icon;
+                      return (
+                        <SelectItem key={tab.id} value={tab.id}>
+                          <div className="flex items-center gap-2">
+                            <Icon className="w-4 h-4" />
+                            <span>{tab.label}</span>
+                            {tab.count !== undefined && tab.count > 0 && (
+                              <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
+                                {tab.count}
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Desktop: Tabs */}
+              <nav className="hidden lg:flex flex-1">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   return (
-                    <SelectItem key={tab.id} value={tab.id}>
-                      <div className="flex items-center gap-2">
-                        <Icon className="w-4 h-4" />
-                        <span>{tab.label}</span>
-                        {tab.count !== undefined && tab.count > 0 && (
-                          <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
-                            {tab.count}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex-1 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
+                        activeTab === tab.id
+                          ? 'border-white text-white'
+                          : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">{tab.label}</span>
+                      {tab.count !== undefined && tab.count > 0 && (
+                        <Badge variant="outline" className={`ml-1 flex-shrink-0 text-[10px] px-1 py-0 ${
+                          activeTab === tab.id 
+                            ? 'bg-white/20 text-white border-white/30' 
+                            : 'bg-white/10 text-white/80 border-white/20'
+                        }`}>
+                          {tab.count}
+                        </Badge>
+                      )}
+                    </button>
                   );
                 })}
-              </SelectContent>
-            </Select>
+              </nav>
+            </div>
           </div>
-
-          {/* Desktop: Tabs */}
-          <nav className="hidden lg:flex">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center justify-center gap-2 ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate">{tab.label}</span>
-                  {tab.count !== undefined && tab.count > 0 && (
-                    <span className={`px-1.5 py-0.5 text-xs rounded-full flex-shrink-0 ${
-                      activeTab === tab.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
         </div>
 
         {/* Content Area */}

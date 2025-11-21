@@ -44,7 +44,6 @@ import ProspectingContextCard from '@/components/ProspectingContextCard';
 import CommunicationTimeline from '@/components/CommunicationTimeline';
 import FileUpload from '@/components/FileUpload';
 import KnowledgeBankView from '@/components/KnowledgeBankView';
-import MetricCardsSlideshow, { MetricCardsControls } from '@/components/MetricCardsSlideshow';
 import {
   Dialog,
   DialogContent,
@@ -69,6 +68,9 @@ import {
     Mail,
     StickyNote,
     Upload,
+    DollarSign,
+    PieChart,
+    Building2,
 } from 'lucide-react';
 
 type TabType = 'overview' | 'documents' | 'extracted' | 'communications' | 'contacts' | 'info' | 'enrichment' | 'knowledge-bank';
@@ -124,7 +126,6 @@ export default function ProjectDetailPage() {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
-  const [metricCardsIndex, setMetricCardsIndex] = useState(0);
   const [projectFormData, setProjectFormData] = useState({
     name: '',
     description: '',
@@ -332,24 +333,151 @@ export default function ProjectDetailPage() {
     (doc: any) => doc.extractedData
   );
 
-  // Calculate total metric cards for slideshow controls
-  const calculateMetricCardsCount = () => {
-    if (!project) return 1; // Return minimum count if project not loaded yet
-    let count = 1; // Always show Total Documents
-    if (project.loanAmount || documents.some((d: any) => d.extractedData?.financing?.loanAmount)) count++;
-    if (documents.some((d: any) => d.extractedData?.costsTotal?.amount)) count++;
-    if (documents.some((d: any) => d.extractedData?.financing?.interestPercentage || d.extractedData?.averageInterest?.percentage)) count++;
-    if (documents.some((d: any) => d.extractedData?.profit?.total)) count++;
-    if (documents.some((d: any) => d.extractedData?.units?.count || d.extractedData?.plots?.length)) count++;
-    if (documents.some((d: any) => d.extractedData?.revenue?.totalSales)) count++;
-    count++; // Communications
-    if (documents.length > 0) count++; // Last Activity
-    return count;
-  };
+  // Build metric cards based on available data
+  const metricCards = useMemo(() => {
+    if (!project) return [];
+    
+    const cards: Array<{
+      label: string;
+      value: string | number;
+      icon: typeof FileText;
+      iconColor: 'blue' | 'green' | 'purple' | 'orange' | 'yellow' | 'gray';
+    }> = [];
 
-  const totalMetricCards = calculateMetricCardsCount();
-  const canGoBackMetric = metricCardsIndex > 0;
-  const canGoForwardMetric = metricCardsIndex + 4 < totalMetricCards;
+    // Aggregate extracted data from all documents
+    const docsWithData = documents.filter((doc: any) => doc.extractedData);
+    const aggregatedData = docsWithData.length > 0
+      ? docsWithData.sort((a: any, b: any) => 
+          new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+        )[0].extractedData
+      : null;
+
+    // Always show document count
+    cards.push({
+      label: 'Total Documents',
+      value: documents.length,
+      icon: FileText,
+      iconColor: 'blue',
+    });
+
+    // Loan Amount - prioritize project.loanAmount, then extracted data
+    const loanAmount = project.loanAmount || aggregatedData?.financing?.loanAmount;
+    if (loanAmount) {
+      const currency = aggregatedData?.financing?.currency || 'USD';
+      cards.push({
+        label: 'Loan Amount',
+        value: new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency === 'GBP' ? 'GBP' : currency === 'EUR' ? 'EUR' : 'USD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(loanAmount),
+        icon: DollarSign,
+        iconColor: 'green',
+      });
+    }
+
+    // Total Costs
+    if (aggregatedData?.costsTotal?.amount) {
+      const currency = aggregatedData.costsTotal.currency || 'USD';
+      cards.push({
+        label: 'Total Costs',
+        value: new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency === 'GBP' ? 'GBP' : currency === 'EUR' ? 'EUR' : 'USD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(aggregatedData.costsTotal.amount),
+        icon: TrendingUp,
+        iconColor: 'orange',
+      });
+    }
+
+    // Interest Rate
+    const interestRate = aggregatedData?.financing?.interestPercentage || 
+                        aggregatedData?.averageInterest?.percentage ||
+                        (aggregatedData?.financing?.interestRate ? aggregatedData.financing.interestRate * 100 : null);
+    if (interestRate) {
+      cards.push({
+        label: 'Interest Rate',
+        value: `${interestRate.toFixed(2)}%`,
+        icon: PieChart,
+        iconColor: 'purple',
+      });
+    }
+
+    // Profit
+    if (aggregatedData?.profit?.total) {
+      const currency = aggregatedData.profit.currency || 'USD';
+      cards.push({
+        label: 'Profit',
+        value: new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency === 'GBP' ? 'GBP' : currency === 'EUR' ? 'EUR' : 'USD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(aggregatedData.profit.total),
+        icon: TrendingUp,
+        iconColor: 'green',
+      });
+    }
+
+    // Units/Plots Count
+    if (aggregatedData?.units?.count) {
+      cards.push({
+        label: `${aggregatedData.units.count} ${aggregatedData.units.type || 'Units'}`,
+        value: aggregatedData.units.count,
+        icon: Building2,
+        iconColor: 'blue',
+      });
+    } else if (aggregatedData?.plots && aggregatedData.plots.length > 0) {
+      cards.push({
+        label: `${aggregatedData.plots.length} ${aggregatedData.plots.length === 1 ? 'Plot' : 'Plots'}`,
+        value: aggregatedData.plots.length,
+        icon: Building2,
+        iconColor: 'blue',
+      });
+    }
+
+    // Revenue
+    if (aggregatedData?.revenue?.totalSales) {
+      const currency = aggregatedData.revenue.currency || 'USD';
+      cards.push({
+        label: 'Total Revenue',
+        value: new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency === 'GBP' ? 'GBP' : currency === 'EUR' ? 'EUR' : 'USD',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(aggregatedData.revenue.totalSales),
+        icon: DollarSign,
+        iconColor: 'green',
+      });
+    }
+
+    // Communications (always show)
+    cards.push({
+      label: 'Communications',
+      value: communications.length,
+      icon: MessageSquare,
+      iconColor: 'orange',
+    });
+
+    // Last Activity
+    if (documents.length > 0) {
+      const lastDoc = documents.sort((a: any, b: any) => 
+        new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+      )[0];
+      cards.push({
+        label: 'Last Activity',
+        value: new Date(lastDoc.uploadedAt).toLocaleDateString(),
+        icon: Calendar,
+        iconColor: 'purple',
+      });
+    }
+
+    return cards;
+  }, [documents, project, communications]);
 
   const tabs: Array<{ id: TabType; label: string; icon: typeof FileText; count?: number }> = [
     { id: 'overview', label: 'Overview', icon: FolderKanban },
@@ -452,10 +580,13 @@ export default function ProjectDetailPage() {
 
         {/* Header Section */}
         <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-              <div className="flex items-center gap-2">
+          {/* Title, Badges, and Action Buttons Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
+            <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+              <h1 className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
+                {project.name}
+              </h1>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <EditableProjectStatusBadge 
                   status={project.status as 'active' | 'inactive' | 'completed' | 'on-hold' | 'cancelled' | undefined}
                   onStatusChange={handleStatusChange}
@@ -470,10 +601,9 @@ export default function ProjectDetailPage() {
             {/* Action Buttons */}
             <div className="flex items-center gap-2 flex-shrink-0">
               <Button
-                variant="outline"
                 size="sm"
                 onClick={handleContactProject}
-                className="whitespace-nowrap"
+                className="bg-black text-white hover:bg-gray-800 whitespace-nowrap"
                 disabled={!firstClientId}
               >
                 <Mail className="w-4 h-4 mr-2" />
@@ -481,20 +611,18 @@ export default function ProjectDetailPage() {
                 <span className="sm:hidden">Contact</span>
               </Button>
               <Button
-                variant="outline"
                 size="sm"
                 onClick={() => setIsAddingNote(true)}
-                className="whitespace-nowrap"
+                className="bg-black text-white hover:bg-gray-800 whitespace-nowrap"
               >
                 <StickyNote className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">New Note</span>
                 <span className="sm:hidden">Note</span>
               </Button>
               <Button
-                variant="outline"
                 size="sm"
                 onClick={() => setIsAnalysisOpen(true)}
-                className="whitespace-nowrap"
+                className="bg-black text-white hover:bg-gray-800 whitespace-nowrap"
               >
                 <Upload className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">New Analysis</span>
@@ -503,15 +631,21 @@ export default function ProjectDetailPage() {
             </div>
           </div>
 
-          {/* Info Row */}
-          <div className="flex flex-wrap items-center gap-6 text-sm text-gray-600 mb-4">
-            <span>Created: {new Date(project.createdAt).toLocaleDateString()}</span>
+          {/* Info Row with Icons */}
+          <div className="flex flex-wrap items-center gap-6 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-500" />
+              <span>Created: {new Date(project.createdAt).toLocaleDateString()}</span>
+            </div>
             {client && (
               <>
                 <span className="text-gray-400">•</span>
-                <span>
-                  Client: <Link href={`/clients/${firstClientId}`} className="text-blue-600 hover:text-blue-700">{client.name}</Link>
-                </span>
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-gray-500" />
+                  <span>
+                    Client: <Link href={`/clients/${firstClientId}`} className="text-blue-600 hover:text-blue-700">{client.name}</Link>
+                  </span>
+                </div>
               </>
             )}
             {formatProjectAddress() && (
@@ -538,103 +672,101 @@ export default function ProjectDetailPage() {
           )}
         </div>
 
-        {/* Metric Cards Slideshow */}
-        <div className="relative mb-8">
-          <MetricCardsSlideshow
-            documents={documents}
-            projectLoanAmount={project.loanAmount}
-            communicationsCount={communications.length}
-            showControls={false}
-            currentIndex={metricCardsIndex}
-            onControlsChange={setMetricCardsIndex}
-          />
-          {/* Metric Cards Controls - positioned above rightmost card */}
-          {totalMetricCards > 4 && (
-            <div className="absolute -top-10 right-0 lg:right-0">
-              <MetricCardsControls
-                currentIndex={metricCardsIndex}
-                totalCards={totalMetricCards}
-                onPrevious={() => setMetricCardsIndex(Math.max(0, metricCardsIndex - 4))}
-                onNext={() => setMetricCardsIndex(Math.min(totalMetricCards - 4, metricCardsIndex + 4))}
-                canGoBack={canGoBackMetric}
-                canGoForward={canGoForwardMetric}
+        {/* Metric Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {metricCards.map((card, index) => {
+            const Icon = card.icon;
+            return (
+              <MetricCard
+                key={`${card.label}-${index}`}
+                label={card.label}
+                value={card.value}
+                icon={Icon}
+                iconColor={card.iconColor}
+                className="bg-black text-white border-black"
               />
-            </div>
-          )}
+            );
+          })}
         </div>
 
         {/* Tabs Navigation */}
-        <div className="bg-white border-b border-gray-200 mb-6">
-          {/* Mobile: Dropdown */}
-          <div className="lg:hidden px-4 py-3">
-            <Select value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(() => {
-                    const currentTab = tabs.find(t => t.id === activeTab);
-                    const Icon = currentTab?.icon;
-                    return (
-                      <div className="flex items-center gap-2">
-                        {Icon && <Icon className="w-4 h-4" />}
-                        <span>{currentTab?.label}</span>
-                        {currentTab?.count !== undefined && currentTab.count > 0 && (
-                          <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
-                            {currentTab.count}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div className="bg-blue-600">
+            <div className="flex items-center justify-between">
+              {/* Mobile: Dropdown */}
+              <div className="lg:hidden px-4 py-3 flex-1">
+                <Select value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue>
+                      {(() => {
+                        const currentTab = tabs.find(t => t.id === activeTab);
+                        const Icon = currentTab?.icon;
+                        return (
+                          <div className="flex items-center gap-2">
+                            {Icon && <Icon className="w-4 h-4" />}
+                            <span>{currentTab?.label}</span>
+                            {currentTab?.count !== undefined && currentTab.count > 0 && (
+                              <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
+                                {currentTab.count}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tabs.map((tab) => {
+                      const Icon = tab.icon;
+                      return (
+                        <SelectItem key={tab.id} value={tab.id}>
+                          <div className="flex items-center gap-2">
+                            <Icon className="w-4 h-4" />
+                            <span>{tab.label}</span>
+                            {tab.count !== undefined && tab.count > 0 && (
+                              <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
+                                {tab.count}
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Desktop: Tabs */}
+              <nav className="hidden lg:flex flex-1">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   return (
-                    <SelectItem key={tab.id} value={tab.id}>
-                      <div className="flex items-center gap-2">
-                        <Icon className="w-4 h-4" />
-                        <span>{tab.label}</span>
-                        {tab.count !== undefined && tab.count > 0 && (
-                          <span className="ml-2 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
-                            {tab.count}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex-1 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
+                        activeTab === tab.id
+                          ? 'border-white text-white'
+                          : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">{tab.label}</span>
+                      {tab.count !== undefined && tab.count > 0 && (
+                        <Badge variant="outline" className={`ml-1 flex-shrink-0 text-[10px] px-1 py-0 ${
+                          activeTab === tab.id 
+                            ? 'bg-white/20 text-white border-white/30' 
+                            : 'bg-white/10 text-white/80 border-white/20'
+                        }`}>
+                          {tab.count}
+                        </Badge>
+                      )}
+                    </button>
                   );
                 })}
-              </SelectContent>
-            </Select>
+              </nav>
+            </div>
           </div>
-
-          {/* Desktop: Tabs */}
-          <nav className="hidden lg:flex">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center justify-center gap-2 ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate">{tab.label}</span>
-                  {tab.count !== undefined && tab.count > 0 && (
-                    <span className={`px-1.5 py-0.5 text-xs rounded-full flex-shrink-0 ${
-                      activeTab === tab.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
         </div>
 
         {/* Content Area */}
