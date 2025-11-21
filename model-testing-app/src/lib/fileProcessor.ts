@@ -1,24 +1,10 @@
 import mammoth from 'mammoth';
-// Use pdfjs-dist legacy build (version 3.x) which doesn't require workers - perfect for serverless
-// The legacy build runs everything in the main thread, making it ideal for serverless environments
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-// Fallback PDF parser - simpler and more reliable in serverless environments
+// Use pdf-parse for PDF parsing - it's simpler, more reliable, and works well in serverless environments
+// pdf-parse uses pdfjs-dist internally but handles worker setup automatically
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require('pdf-parse');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx');
-
-// CRITICAL: Explicitly disable worker initialization to prevent "setting up fake worker failed" errors
-// This is essential for serverless environments where workers cannot be initialized
-if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
-  // Disable worker by setting workerSrc to empty string or disabling it
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-  // Also try to disable worker initialization completely
-  if (typeof pdfjsLib.GlobalWorkerOptions.workerPort !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerPort = null;
-  }
-}
 
 export async function extractTextFromFile(file: File): Promise<string> {
   const fileType = file.type;
@@ -31,219 +17,41 @@ export async function extractTextFromFile(file: File): Promise<string> {
 
   // Handle PDF files
   if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
-    // Convert ArrayBuffer to Uint8Array outside try block so it's accessible in catch
+    // Convert ArrayBuffer to Buffer for pdf-parse (primary parser)
     const arrayBuffer = await file.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
+    const buffer = Buffer.from(arrayBuffer);
     
     // Ensure data is valid and not empty
-    if (!uint8Array || uint8Array.length === 0) {
+    if (!buffer || buffer.length === 0) {
       throw new Error('PDF file appears to be empty or invalid');
     }
     
     // Verify it's a valid PDF by checking the header
-    const pdfHeader = String.fromCharCode(...uint8Array.slice(0, 4));
+    const pdfHeader = buffer.slice(0, 4).toString('ascii');
     if (pdfHeader !== '%PDF') {
       throw new Error('File does not appear to be a valid PDF');
     }
     
+    // PRIMARY: Use pdf-parse first - it's more reliable in serverless environments
+    // pdfjs-dist has worker issues in Vercel/serverless, so we use pdf-parse as primary
     try {
-      // Load PDF document - configure to run without workers
-      // Explicitly disable all worker-related features for serverless environments
-      const loadingTask = pdfjsLib.getDocument({
-        data: uint8Array,
-        useWorkerFetch: false,
-        isEvalSupported: false,
-        useSystemFonts: true,
-        verbosity: 0, // Suppress warnings
-        // Explicitly disable worker and related features
-        disableAutoFetch: true,
-        disableStream: true,
-        // Additional options to prevent worker initialization
-        useWorker: false,
-        worker: null,
-      });
-      
-      const pdf = await loadingTask.promise;
-      
-      // Extract text from all pages
-      let fullText = '';
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const textContent = await page.getTextContent();
-        
-        // Combine all text items
-        const pageText = textContent.items
-          .map((item: any) => {
-            if ('str' in item) {
-              return item.str || '';
-            }
-            return '';
-          })
-          .join(' ');
-        
-        fullText += pageText + '\n';
+      console.log('Attempting PDF parsing with pdf-parse (primary parser)...');
+      const pdfData = await pdfParse(buffer);
+      const extractedText = pdfData.text || '';
+      if (extractedText.trim().length > 0) {
+        console.log('Successfully parsed PDF using pdf-parse');
+        return extractedText.trim();
+      } else {
+        console.warn('pdf-parse returned empty text, trying pdfjs-dist fallback...');
+        throw new Error('PDF parsed but no text content found');
       }
+    } catch (pdfParseError) {
+      const pdfParseErrorMessage = pdfParseError instanceof Error ? pdfParseError.message : String(pdfParseError);
+      console.error('pdf-parse failed:', pdfParseError);
       
-      // Cleanup
-      await pdf.destroy();
-      
-      return fullText.trim();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorString = String(error).toLowerCase();
-      
-      // Check for worker-related errors and handle them gracefully
-      if (
-        errorMessage.includes('worker') || 
-        errorMessage.includes('pdf.worker') ||
-        errorString.includes('setting up fake worker') ||
-        errorString.includes('worker failed') ||
-        errorString.includes('worker initialization')
-      ) {
-        // Log the error but don't expose it to the user - try to continue without worker
-        console.warn('PDF worker initialization warning (suppressed):', errorMessage);
-        
-        // Retry without worker by ensuring worker is disabled
-        try {
-          if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-          }
-          
-          // Retry loading the PDF
-          const retryLoadingTask = pdfjsLib.getDocument({
-            data: uint8Array,
-            useWorkerFetch: false,
-            isEvalSupported: false,
-            useSystemFonts: true,
-            verbosity: 0,
-            disableAutoFetch: true,
-            disableStream: true,
-            useWorker: false,
-            worker: null,
-          });
-          
-          const retryPdf = await retryLoadingTask.promise;
-          let fullText = '';
-          for (let pageNum = 1; pageNum <= retryPdf.numPages; pageNum++) {
-            const page = await retryPdf.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items
-              .map((item: any) => {
-                if ('str' in item) {
-                  return item.str || '';
-                }
-                return '';
-              })
-              .join(' ');
-            fullText += pageText + '\n';
-          }
-          await retryPdf.destroy();
-          return fullText.trim();
-        } catch (retryError) {
-          // Log the retry error for debugging
-          const retryErrorMessage = retryError instanceof Error ? retryError.message : String(retryError);
-          console.error('PDF retry parsing error:', retryError);
-          console.error('Retry error message:', retryErrorMessage);
-          console.error('Retry error stack:', retryError instanceof Error ? retryError.stack : 'No stack');
-          
-          // If retry also fails, throw a user-friendly error with more context
-          throw new Error(`PDF parsing failed: ${retryErrorMessage}. The file may be corrupted or in an unsupported format. Please try converting the PDF to text format or use a different file type.`);
-        }
-      }
-      
-      // Log other errors for debugging - include full error object
-      console.error('PDF parsing error details:', {
-        error,
-        errorMessage,
-        errorString,
-        stack: error instanceof Error ? error.stack : 'No stack',
-        name: error instanceof Error ? error.name : 'Unknown',
-        toString: String(error),
-      });
-      
-      // Check if this might be a worker error that wasn't caught by the string matching
-      // Some errors might be thrown as objects or have different formats
-      const errorObj = error as any;
-      if (errorObj?.message && typeof errorObj.message === 'string') {
-        const objMessage = errorObj.message.toLowerCase();
-        if (objMessage.includes('worker') || objMessage.includes('pdf.worker')) {
-          console.warn('Detected worker error in error object:', errorObj.message);
-          // Try one more time with completely fresh configuration
-          try {
-            // Reset GlobalWorkerOptions completely
-            if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
-              pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-              pdfjsLib.GlobalWorkerOptions.workerPort = null;
-            }
-            
-            const finalRetryTask = pdfjsLib.getDocument({
-              data: uint8Array,
-              useWorkerFetch: false,
-              isEvalSupported: false,
-              useSystemFonts: true,
-              verbosity: 0,
-              disableAutoFetch: true,
-              disableStream: true,
-              useWorker: false,
-              worker: null,
-            });
-            
-            const finalPdf = await finalRetryTask.promise;
-            let fullText = '';
-            for (let pageNum = 1; pageNum <= finalPdf.numPages; pageNum++) {
-              const page = await finalPdf.getPage(pageNum);
-              const textContent = await page.getTextContent();
-              const pageText = textContent.items
-                .map((item: any) => {
-                  if ('str' in item) {
-                    return item.str || '';
-                  }
-                  return '';
-                })
-                .join(' ');
-              fullText += pageText + '\n';
-            }
-            await finalPdf.destroy();
-            return fullText.trim();
-          } catch (finalError) {
-            const finalErrorMessage = finalError instanceof Error ? finalError.message : String(finalError);
-            console.error('Final PDF parsing retry failed:', finalError);
-            console.log('Attempting fallback PDF parser (pdf-parse)...');
-            
-            // Try pdf-parse as a fallback - it's simpler and works better in serverless
-            try {
-              const pdfData = await pdfParse(Buffer.from(uint8Array));
-              const extractedText = pdfData.text || '';
-              if (extractedText.trim().length > 0) {
-                console.log('Successfully parsed PDF using pdf-parse fallback');
-                return extractedText.trim();
-              } else {
-                throw new Error('PDF parsed but no text content found');
-              }
-            } catch (fallbackError) {
-              const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-              console.error('Fallback PDF parser also failed:', fallbackError);
-              throw new Error(`PDF parsing failed after multiple attempts: ${finalErrorMessage}. Fallback parser error: ${fallbackErrorMessage}. The file may be corrupted or in an unsupported format.`);
-            }
-          }
-        }
-      }
-      
-      // If error is not worker-related, try pdf-parse as fallback before giving up
-      console.log('Non-worker PDF error detected, attempting fallback parser (pdf-parse)...');
-      try {
-        const pdfData = await pdfParse(Buffer.from(uint8Array));
-        const extractedText = pdfData.text || '';
-        if (extractedText.trim().length > 0) {
-          console.log('Successfully parsed PDF using pdf-parse fallback');
-          return extractedText.trim();
-        }
-      } catch (fallbackError) {
-        console.error('Fallback PDF parser failed:', fallbackError);
-        // Continue to throw original error
-      }
-      
-      throw new Error(`Failed to parse PDF: ${errorMessage}`);
+      // If pdf-parse fails, the PDF might be corrupted or in an unsupported format
+      // pdfjs-dist has persistent worker issues in serverless, so we don't use it as fallback
+      throw new Error(`PDF parsing failed: ${pdfParseErrorMessage}. The file may be corrupted, password-protected, or in an unsupported format. Please try converting the PDF to text format or use a different file type.`);
     }
   }
 
