@@ -11,7 +11,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 /**
- * Gather context for the chat based on session context
+ * Gather comprehensive context for the chat based on session context
+ * Uses caching to avoid re-gathering data on every request
  */
 async function gatherChatContext(
   client: any,
@@ -19,56 +20,625 @@ async function gatherChatContext(
   clientId?: string,
   projectId?: string
 ): Promise<string> {
-  let context = '';
+  // If no context specified, return empty
+  if (!clientId && !projectId) {
+    return '';
+  }
+
+  const contextType = clientId ? 'client' : 'project';
+  const contextId = (clientId || projectId) as string;
 
   try {
-    // Get client info if available
+    // Check cache first
+    const cached = await client.query(api.contextCache.get, {
+      contextType,
+      contextId,
+    });
+
+    // Check if cache is valid
+    if (cached) {
+      const isValid = await client.query(api.contextCache.isValid, {
+        contextType,
+        contextId,
+      });
+
+      if (isValid) {
+        console.log(`[Context Cache] Cache hit for ${contextType}:${contextId}`);
+        return cached.cachedContext;
+      } else {
+        console.log(`[Context Cache] Cache invalid for ${contextType}:${contextId}, rebuilding...`);
+      }
+    } else {
+      console.log(`[Context Cache] Cache miss for ${contextType}:${contextId}, building...`);
+    }
+
+    // Cache miss or invalid - gather fresh context
+    let context = '';
+    let metadata = {
+      knowledgeBankCount: 0,
+      documentsCount: 0,
+      notesCount: 0,
+      contactsCount: 0,
+      dealsCount: 0,
+      tasksCount: 0,
+      eventsCount: 0,
+      lastDataUpdate: new Date(0).toISOString(),
+    };
+
     if (clientId) {
+      // Gather comprehensive client context
       const clientData = await client.query(api.clients.get, {
         id: clientId as Id<"clients">,
       });
+
       if (clientData) {
-        context += `\n\nCLIENT CONTEXT:\n`;
+        context += `\n\n=== CLIENT CONTEXT ===\n`;
         context += `Name: ${clientData.name}\n`;
         if (clientData.type) context += `Type: ${clientData.type}\n`;
         if (clientData.status) context += `Status: ${clientData.status}\n`;
+        if (clientData.companyName) context += `Company: ${clientData.companyName}\n`;
         if (clientData.email) context += `Email: ${clientData.email}\n`;
         if (clientData.phone) context += `Phone: ${clientData.phone}\n`;
+        if (clientData.address) context += `Address: ${clientData.address}\n`;
+        if (clientData.city) context += `City: ${clientData.city}\n`;
+        if (clientData.state) context += `State: ${clientData.state}\n`;
+        if (clientData.zip) context += `ZIP: ${clientData.zip}\n`;
+        if (clientData.country) context += `Country: ${clientData.country}\n`;
+        if (clientData.website) context += `Website: ${clientData.website}\n`;
+        if (clientData.industry) context += `Industry: ${clientData.industry}\n`;
+        if (clientData.tags && clientData.tags.length > 0) {
+          context += `Tags: ${clientData.tags.join(', ')}\n`;
+        }
         if (clientData.notes) context += `Notes: ${clientData.notes}\n`;
+        if (clientData.lastContactDate) context += `Last Contact: ${clientData.lastContactDate}\n`;
       }
 
-      // Get knowledge bank entries for this client
+      // Get ALL knowledge bank entries
       const knowledgeEntries = await client.query(api.knowledgeBank.getByClient, {
         clientId: clientId as Id<"clients">,
       });
+      metadata.knowledgeBankCount = knowledgeEntries?.length || 0;
       if (knowledgeEntries && knowledgeEntries.length > 0) {
-        context += `\n\nKNOWLEDGE BANK (Recent ${Math.min(5, knowledgeEntries.length)} entries):\n`;
-        knowledgeEntries.slice(0, 5).forEach((entry: any) => {
-          context += `- ${entry.title}: ${entry.content.substring(0, 200)}...\n`;
+        context += `\n\n=== KNOWLEDGE BANK (${knowledgeEntries.length} entries) ===\n`;
+        // Sort by date, newest first
+        const sortedEntries = [...knowledgeEntries].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        
+        // Include full content for most recent 30 entries, summarize older ones
+        sortedEntries.forEach((entry: any, index: number) => {
+          const entryDate = new Date(entry.updatedAt || entry.createdAt);
+          if (entryDate > new Date(metadata.lastDataUpdate)) {
+            metadata.lastDataUpdate = entryDate.toISOString();
+          }
+
+          if (index < 30) {
+            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()})\n`;
+            context += `Content: ${entry.content}\n`;
+            if (entry.keyPoints && entry.keyPoints.length > 0) {
+              context += `Key Points: ${entry.keyPoints.join('; ')}\n`;
+            }
+            if (entry.tags && entry.tags.length > 0) {
+              context += `Tags: ${entry.tags.join(', ')}\n`;
+            }
+          } else {
+            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()}): ${entry.content.substring(0, 500)}...\n`;
+          }
+        });
+        if (knowledgeEntries.length > 30) {
+          context += `\n[Note: Showing full content for 30 most recent entries, ${knowledgeEntries.length - 30} older entries summarized]\n`;
+        }
+      }
+
+      // Get ALL documents
+      const documents = await client.query(api.documents.list, {
+        clientId: clientId as Id<"clients">,
+        status: 'completed',
+      });
+      metadata.documentsCount = documents?.length || 0;
+      if (documents && documents.length > 0) {
+        context += `\n\n=== DOCUMENTS (${documents.length} documents) ===\n`;
+        const sortedDocs = [...documents].sort((a, b) => 
+          new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
+        );
+        sortedDocs.forEach((doc: any) => {
+          const docDate = new Date(doc.savedAt);
+          if (docDate > new Date(metadata.lastDataUpdate)) {
+            metadata.lastDataUpdate = docDate.toISOString();
+          }
+          context += `\n[${doc.category}] ${doc.fileName} (${new Date(doc.savedAt).toLocaleDateString()})\n`;
+          context += `Summary: ${doc.summary}\n`;
+          if (doc.extractedData) {
+            const extractedStr = JSON.stringify(doc.extractedData);
+            if (extractedStr.length < 500) {
+              context += `Extracted Data: ${extractedStr}\n`;
+            } else {
+              context += `Extracted Data: ${extractedStr.substring(0, 500)}...\n`;
+            }
+          }
         });
       }
-    }
 
-    // Get project info if available
-    if (projectId) {
+      // Get ALL notes
+      const notes = await client.query(api.notes.getAll, {
+        clientId: clientId as Id<"clients">,
+      });
+      metadata.notesCount = notes?.length || 0;
+      if (notes && notes.length > 0) {
+        context += `\n\n=== NOTES (${notes.length} notes) ===\n`;
+        const sortedNotes = [...notes].sort((a, b) => 
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        sortedNotes.forEach((note: any) => {
+          const noteDate = new Date(note.updatedAt);
+          if (noteDate > new Date(metadata.lastDataUpdate)) {
+            metadata.lastDataUpdate = noteDate.toISOString();
+          }
+          context += `\n${note.title || 'Untitled'} (${new Date(note.updatedAt).toLocaleDateString()})\n`;
+          // Extract text from note content (it's TipTap JSON)
+          const noteText = extractTextFromNoteContent(note.content);
+          if (noteText) {
+            context += `Content: ${noteText.substring(0, 500)}${noteText.length > 500 ? '...' : ''}\n`;
+          }
+          if (note.tags && note.tags.length > 0) {
+            context += `Tags: ${note.tags.join(', ')}\n`;
+          }
+        });
+      }
+
+      // Get ALL contacts
+      const contacts = await client.query(api.contacts.getByClient, {
+        clientId: clientId as Id<"clients">,
+      });
+      metadata.contactsCount = contacts?.length || 0;
+      if (contacts && contacts.length > 0) {
+        context += `\n\n=== CONTACTS (${contacts.length} contacts) ===\n`;
+        contacts.forEach((contact: any) => {
+          context += `\n${contact.name}`;
+          if (contact.role) context += ` - ${contact.role}`;
+          if (contact.email) context += ` (${contact.email})`;
+          if (contact.phone) context += ` - ${contact.phone}`;
+          if (contact.company) context += ` at ${contact.company}`;
+          if (contact.notes) context += `\n  Notes: ${contact.notes}`;
+          context += `\n`;
+        });
+      }
+
+      // Get deals (filter from all deals)
+      const allDeals = await client.query(api.deals.getAllDeals, {});
+      const clientDeals = allDeals?.filter((deal: any) => 
+        deal.linkedCompanyIds?.some((cid: Id<"companies">) => {
+          // We'd need to check if company is linked to client, but for now just check if deal has client context
+          return false; // Simplified - deals might not have direct client link
+        })
+      ) || [];
+      metadata.dealsCount = clientDeals.length;
+      if (clientDeals.length > 0) {
+        context += `\n\n=== DEALS (${clientDeals.length} deals) ===\n`;
+        clientDeals.forEach((deal: any) => {
+          context += `\n${deal.name || 'Unnamed Deal'}`;
+          if (deal.stage) context += ` - Stage: ${deal.stage}`;
+          if (deal.amount) context += ` - Amount: ${deal.amount}`;
+          if (deal.pipeline) context += ` - Pipeline: ${deal.pipeline}`;
+          context += `\n`;
+        });
+      }
+
+      // Get tasks for this client
+      const allTasks = await client.query(api.tasks.getByUser, {
+        clientId: clientId as Id<"clients">,
+      });
+      metadata.tasksCount = allTasks?.length || 0;
+      if (allTasks && allTasks.length > 0) {
+        context += `\n\n=== TASKS (${allTasks.length} tasks) ===\n`;
+        const activeTasks = allTasks.filter((t: any) => t.status !== 'completed' && t.status !== 'cancelled');
+        if (activeTasks.length > 0) {
+          context += `Active Tasks:\n`;
+          activeTasks.slice(0, 20).forEach((task: any) => {
+            context += `\n- ${task.title}`;
+            if (task.dueDate) context += ` (Due: ${new Date(task.dueDate).toLocaleDateString()})`;
+            if (task.priority) context += ` [${task.priority}]`;
+            if (task.status) context += ` - ${task.status}`;
+            context += `\n`;
+          });
+        }
+      }
+
+      // Get events for this client
+      const allEvents = await client.query(api.events.list, {
+        clientId: clientId as Id<"clients">,
+      });
+      metadata.eventsCount = allEvents?.length || 0;
+      if (allEvents && allEvents.length > 0) {
+        context += `\n\n=== EVENTS (${allEvents.length} events) ===\n`;
+        const upcomingEvents = allEvents
+          .filter((e: any) => new Date(e.startTime) > new Date())
+          .sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+          .slice(0, 20);
+        if (upcomingEvents.length > 0) {
+          upcomingEvents.forEach((event: any) => {
+            context += `\n${event.title} - ${new Date(event.startTime).toLocaleString()}`;
+            if (event.location) context += ` at ${event.location}`;
+            if (event.description) context += `\n  ${event.description.substring(0, 200)}`;
+            context += `\n`;
+          });
+        }
+      }
+
+      // Get related projects
+      const allProjects = await client.query(api.projects.list, {});
+      const relatedProjects = allProjects?.filter((p: any) =>
+        p.clientRoles?.some((cr: any) => cr.clientId === clientId)
+      ) || [];
+      if (relatedProjects.length > 0) {
+        context += `\n\n=== RELATED PROJECTS (${relatedProjects.length} projects) ===\n`;
+        relatedProjects.forEach((project: any) => {
+          const role = project.clientRoles.find((cr: any) => cr.clientId === clientId)?.role;
+          context += `\n${project.name}`;
+          if (role) context += ` (Role: ${role})`;
+          if (project.status) context += ` - Status: ${project.status}`;
+          if (project.loanAmount) context += ` - Loan: ${project.loanAmount}`;
+          context += `\n`;
+        });
+      }
+
+    } else if (projectId) {
+      // Gather comprehensive project context
       const projectData = await client.query(api.projects.get, {
         id: projectId as Id<"projects">,
       });
+
       if (projectData) {
-        context += `\n\nPROJECT CONTEXT:\n`;
+        context += `\n\n=== PROJECT CONTEXT ===\n`;
         context += `Name: ${projectData.name}\n`;
         if (projectData.description) context += `Description: ${projectData.description}\n`;
         if (projectData.status) context += `Status: ${projectData.status}\n`;
+        if (projectData.lifecycleStage) context += `Lifecycle Stage: ${projectData.lifecycleStage}\n`;
         if (projectData.address) context += `Address: ${projectData.address}\n`;
+        if (projectData.city) context += `City: ${projectData.city}\n`;
+        if (projectData.state) context += `State: ${projectData.state}\n`;
+        if (projectData.zip) context += `ZIP: ${projectData.zip}\n`;
+        if (projectData.country) context += `Country: ${projectData.country}\n`;
         if (projectData.loanAmount) context += `Loan Amount: ${projectData.loanAmount}\n`;
         if (projectData.loanNumber) context += `Loan Number: ${projectData.loanNumber}\n`;
+        if (projectData.interestRate) context += `Interest Rate: ${projectData.interestRate}%\n`;
+        if (projectData.startDate) context += `Start Date: ${projectData.startDate}\n`;
+        if (projectData.endDate) context += `End Date: ${projectData.endDate}\n`;
+        if (projectData.expectedCompletionDate) context += `Expected Completion: ${projectData.expectedCompletionDate}\n`;
+        if (projectData.tags && projectData.tags.length > 0) {
+          context += `Tags: ${projectData.tags.join(', ')}\n`;
+        }
+        if (projectData.notes) context += `Notes: ${projectData.notes}\n`;
+        if (projectData.clientRoles && projectData.clientRoles.length > 0) {
+          context += `Client Roles:\n`;
+          projectData.clientRoles.forEach((cr: any) => {
+            context += `  - Client ID ${cr.clientId}: ${cr.role}\n`;
+          });
+        }
+      }
+
+      // Get ALL knowledge bank entries
+      const knowledgeEntries = await client.query(api.knowledgeBank.getByProject, {
+        projectId: projectId as Id<"projects">,
+      });
+      metadata.knowledgeBankCount = knowledgeEntries?.length || 0;
+      if (knowledgeEntries && knowledgeEntries.length > 0) {
+        context += `\n\n=== KNOWLEDGE BANK (${knowledgeEntries.length} entries) ===\n`;
+        const sortedEntries = [...knowledgeEntries].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        
+        sortedEntries.forEach((entry: any, index: number) => {
+          const entryDate = new Date(entry.updatedAt || entry.createdAt);
+          if (entryDate > new Date(metadata.lastDataUpdate)) {
+            metadata.lastDataUpdate = entryDate.toISOString();
+          }
+
+          if (index < 30) {
+            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()})\n`;
+            context += `Content: ${entry.content}\n`;
+            if (entry.keyPoints && entry.keyPoints.length > 0) {
+              context += `Key Points: ${entry.keyPoints.join('; ')}\n`;
+            }
+            if (entry.tags && entry.tags.length > 0) {
+              context += `Tags: ${entry.tags.join(', ')}\n`;
+            }
+          } else {
+            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()}): ${entry.content.substring(0, 500)}...\n`;
+          }
+        });
+        if (knowledgeEntries.length > 30) {
+          context += `\n[Note: Showing full content for 30 most recent entries, ${knowledgeEntries.length - 30} older entries summarized]\n`;
+        }
+      }
+
+      // Get ALL documents
+      const documents = await client.query(api.documents.list, {
+        projectId: projectId as Id<"projects">,
+        status: 'completed',
+      });
+      metadata.documentsCount = documents?.length || 0;
+      if (documents && documents.length > 0) {
+        context += `\n\n=== DOCUMENTS (${documents.length} documents) ===\n`;
+        const sortedDocs = [...documents].sort((a, b) => 
+          new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
+        );
+        sortedDocs.forEach((doc: any) => {
+          const docDate = new Date(doc.savedAt);
+          if (docDate > new Date(metadata.lastDataUpdate)) {
+            metadata.lastDataUpdate = docDate.toISOString();
+          }
+          context += `\n[${doc.category}] ${doc.fileName} (${new Date(doc.savedAt).toLocaleDateString()})\n`;
+          context += `Summary: ${doc.summary}\n`;
+          if (doc.extractedData) {
+            const extractedStr = JSON.stringify(doc.extractedData);
+            if (extractedStr.length < 500) {
+              context += `Extracted Data: ${extractedStr}\n`;
+            } else {
+              context += `Extracted Data: ${extractedStr.substring(0, 500)}...\n`;
+            }
+          }
+        });
+      }
+
+      // Get ALL notes
+      const notes = await client.query(api.notes.getAll, {
+        projectId: projectId as Id<"projects">,
+      });
+      metadata.notesCount = notes?.length || 0;
+      if (notes && notes.length > 0) {
+        context += `\n\n=== NOTES (${notes.length} notes) ===\n`;
+        const sortedNotes = [...notes].sort((a, b) => 
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        sortedNotes.forEach((note: any) => {
+          const noteDate = new Date(note.updatedAt);
+          if (noteDate > new Date(metadata.lastDataUpdate)) {
+            metadata.lastDataUpdate = noteDate.toISOString();
+          }
+          context += `\n${note.title || 'Untitled'} (${new Date(note.updatedAt).toLocaleDateString()})\n`;
+          const noteText = extractTextFromNoteContent(note.content);
+          if (noteText) {
+            context += `Content: ${noteText.substring(0, 500)}${noteText.length > 500 ? '...' : ''}\n`;
+          }
+          if (note.tags && note.tags.length > 0) {
+            context += `Tags: ${note.tags.join(', ')}\n`;
+          }
+        });
+      }
+
+      // Get tasks for this project
+      const allTasks = await client.query(api.tasks.getByUser, {
+        projectId: projectId as Id<"projects">,
+      });
+      metadata.tasksCount = allTasks?.length || 0;
+      if (allTasks && allTasks.length > 0) {
+        context += `\n\n=== TASKS (${allTasks.length} tasks) ===\n`;
+        const activeTasks = allTasks.filter((t: any) => t.status !== 'completed' && t.status !== 'cancelled');
+        if (activeTasks.length > 0) {
+          context += `Active Tasks:\n`;
+          activeTasks.slice(0, 20).forEach((task: any) => {
+            context += `\n- ${task.title}`;
+            if (task.dueDate) context += ` (Due: ${new Date(task.dueDate).toLocaleDateString()})`;
+            if (task.priority) context += ` [${task.priority}]`;
+            if (task.status) context += ` - ${task.status}`;
+            context += `\n`;
+          });
+        }
+      }
+
+      // Get events for this project
+      const allEvents = await client.query(api.events.list, {
+        projectId: projectId as Id<"projects">,
+      });
+      metadata.eventsCount = allEvents?.length || 0;
+      if (allEvents && allEvents.length > 0) {
+        context += `\n\n=== EVENTS (${allEvents.length} events) ===\n`;
+        const upcomingEvents = allEvents
+          .filter((e: any) => new Date(e.startTime) > new Date())
+          .sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+          .slice(0, 20);
+        if (upcomingEvents.length > 0) {
+          upcomingEvents.forEach((event: any) => {
+            context += `\n${event.title} - ${new Date(event.startTime).toLocaleString()}`;
+            if (event.location) context += ` at ${event.location}`;
+            if (event.description) context += `\n  ${event.description.substring(0, 200)}`;
+            context += `\n`;
+          });
+        }
+      }
+
+      // Get related clients
+      if (projectData?.clientRoles && projectData.clientRoles.length > 0) {
+        context += `\n\n=== RELATED CLIENTS (${projectData.clientRoles.length} clients) ===\n`;
+        for (const cr of projectData.clientRoles) {
+          const relatedClient = await client.query(api.clients.get, {
+            id: cr.clientId as Id<"clients">,
+          });
+          if (relatedClient) {
+            context += `\n${relatedClient.name} (Role: ${cr.role})`;
+            if (relatedClient.type) context += ` - Type: ${relatedClient.type}`;
+            if (relatedClient.status) context += ` - Status: ${relatedClient.status}`;
+            context += `\n`;
+          }
+        }
       }
     }
+
+    // Store in cache
+    await client.mutation(api.contextCache.set, {
+      contextType,
+      contextId,
+      cachedContext: context,
+      metadata,
+    });
+
+    console.log(`[Context Cache] Built and cached context for ${contextType}:${contextId}`, metadata);
+
+    return context;
   } catch (error) {
     console.error('Error gathering context:', error);
+    return '';
+  }
+}
+
+/**
+ * Restrict tool access based on context - add filters to tool parameters
+ */
+function restrictToolAccess(toolName: string, params: any, clientId?: string, projectId?: string): any {
+  const restricted = { ...params };
+
+  if (clientId) {
+    // When in client context, restrict tools to this client
+    switch (toolName) {
+      case 'searchClients':
+        // Only return the current client
+        restricted.searchTerm = undefined;
+        restricted.status = undefined;
+        restricted.type = undefined;
+        // We'll filter results instead
+        break;
+      case 'searchProjects':
+        // Only return projects where client has a role - force the clientId
+        restricted.clientId = clientId;
+        break;
+      case 'searchDocuments':
+        restricted.clientId = clientId;
+        break;
+      case 'getKnowledgeBank':
+        restricted.clientId = clientId;
+        break;
+      case 'getNotes':
+        restricted.clientId = clientId;
+        break;
+      case 'getEvents':
+        restricted.clientId = clientId;
+        break;
+      case 'createNote':
+      case 'createKnowledgeBankEntry':
+      case 'createEvent':
+      case 'createTask':
+        // Automatically link to current client
+        if (!restricted.clientId) {
+          restricted.clientId = clientId;
+        }
+        break;
+    }
+  } else if (projectId) {
+    // When in project context, restrict tools to this project
+    switch (toolName) {
+      case 'searchProjects':
+        // Only return the current project - force the projectId filter
+        restricted.projectId = projectId;
+        break;
+      case 'searchDocuments':
+        restricted.projectId = projectId;
+        break;
+      case 'getKnowledgeBank':
+        restricted.projectId = projectId;
+        break;
+      case 'getNotes':
+        restricted.projectId = projectId;
+        break;
+      case 'getEvents':
+        restricted.projectId = projectId;
+        break;
+      case 'createNote':
+      case 'createKnowledgeBankEntry':
+      case 'createEvent':
+      case 'createTask':
+        // Automatically link to current project
+        if (!restricted.projectId) {
+          restricted.projectId = projectId;
+        }
+        break;
+    }
   }
 
-  return context;
+  return restricted;
+}
+
+/**
+ * Filter tool results based on context
+ */
+function filterToolResults(toolName: string, result: any, clientId?: string, projectId?: string): any {
+  if (!result) return result;
+
+  if (clientId) {
+    switch (toolName) {
+      case 'searchClients':
+        // Only return the current client
+        if (Array.isArray(result)) {
+          return result.filter((c: any) => c._id === clientId);
+        }
+        break;
+      case 'searchProjects':
+        // Only return projects where client has a role
+        if (Array.isArray(result)) {
+          return result.filter((p: any) =>
+            p.clientRoles?.some((cr: any) => cr.clientId === clientId)
+          );
+        }
+        break;
+    }
+  } else if (projectId) {
+    switch (toolName) {
+      case 'searchProjects':
+        // Only return the current project
+        if (Array.isArray(result)) {
+          return result.filter((p: any) => p._id === projectId);
+        }
+        break;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Helper function to extract text from TipTap note content JSON
+ */
+function extractTextFromNoteContent(content: any): string {
+  if (!content || !content.content) return '';
+  
+  let text = '';
+  const processNode = (node: any) => {
+    if (node.type === 'text') {
+      text += node.text + ' ';
+    } else if (node.type === 'heading') {
+      const level = node.attrs?.level || 1;
+      const headingText = '#'.repeat(level) + ' ';
+      text += headingText;
+      if (node.content) {
+        node.content.forEach(processNode);
+      }
+      text += '\n';
+    } else if (node.type === 'paragraph') {
+      if (node.content) {
+        node.content.forEach(processNode);
+      }
+      text += '\n';
+    } else if (node.type === 'bulletList' || node.type === 'orderedList') {
+      if (node.content) {
+        node.content.forEach((item: any) => {
+          text += '- ';
+          if (item.content) {
+            item.content.forEach((p: any) => {
+              if (p.content) p.content.forEach(processNode);
+            });
+          }
+          text += '\n';
+        });
+      }
+    } else if (node.content) {
+      node.content.forEach(processNode);
+    }
+  };
+  
+  if (Array.isArray(content.content)) {
+    content.content.forEach(processNode);
+  }
+  return text.trim();
 }
 
 /**
@@ -324,6 +894,20 @@ export async function POST(request: NextRequest) {
     // Gather context
     const context = await gatherChatContext(client, sessionId, clientId, projectId);
 
+    // Get client/project name for system prompt
+    let contextName = '';
+    if (clientId) {
+      const clientData = await client.query(api.clients.get, {
+        id: clientId as Id<"clients">,
+      });
+      contextName = clientData?.name || 'this client';
+    } else if (projectId) {
+      const projectData = await client.query(api.projects.get, {
+        id: projectId as Id<"projects">,
+      });
+      contextName = projectData?.name || 'this project';
+    }
+
     // Add file metadata to context if present
     let fileContext = '';
     if (fileMetadata) {
@@ -336,7 +920,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Build system prompt with tools
-    const systemPrompt = `You are an AI assistant for a real estate financing application. You help users manage clients, projects, documents, knowledge bank entries, and notes.
+    let systemPromptBase = '';
+    if (clientId) {
+      systemPromptBase = `You are an AI assistant specialized in ${contextName}. You have comprehensive knowledge about this client including:
+- All knowledge bank entries, documents, notes, contacts, deals, tasks, and events
+- Related projects where this client has a role
+- You should NOT access information about other clients unless explicitly asked
+- You are an expert in this client's history, projects, and relationship
+- When using tools, you should focus on data related to ${contextName} only
+- IMPORTANT: When calling tools like searchProjects, searchDocuments, getKnowledgeBank, etc., you do NOT need to specify the clientId parameter - it will be automatically filtered to this client (${clientId}). Just call the tool without clientId.`;
+    } else if (projectId) {
+      systemPromptBase = `You are an AI assistant specialized in ${contextName}. You have comprehensive knowledge about this project including:
+- All knowledge bank entries, documents, notes, tasks, and events
+- Related clients and their roles in this project
+- You should NOT access information about other projects unless explicitly asked
+- You are an expert in this project's details, status, and history
+- When using tools, you should focus on data related to ${contextName} only
+- IMPORTANT: When calling tools like searchDocuments, getKnowledgeBank, getNotes, etc., you do NOT need to specify the projectId parameter - it will be automatically filtered to this project (${projectId}). Just call the tool without projectId.`;
+    } else {
+      systemPromptBase = `You are an AI assistant for a real estate financing application. You help users manage clients, projects, documents, knowledge bank entries, and notes.`;
+    }
+
+    const systemPrompt = `${systemPromptBase}
 
 CRITICAL: You have access to tools that let you actually retrieve and modify data. You MUST use these tools to answer user questions - don't just say you will do something, actually DO IT by calling the appropriate tool.
 
@@ -486,11 +1091,17 @@ ${context}${fileContext}`;
             });
             
             try {
-              const result = await executeTool(toolCall.name, params, client);
+              // Restrict tool access based on context
+              const restrictedParams = restrictToolAccess(toolCall.name, params, clientId, projectId);
+              const result = await executeTool(toolCall.name, restrictedParams, client);
+              
+              // Filter results if in context mode
+              const filteredResult = filterToolResults(toolCall.name, result, clientId, projectId);
+              
               toolResults.push({
                 toolCallId: toolCall.id,
                 toolName: toolCall.name,
-                result: result,
+                result: filteredResult,
               });
             } catch (error) {
               console.error(`Error executing tool ${toolCall.name}:`, error);
@@ -621,11 +1232,18 @@ CRITICAL INSTRUCTIONS:
             });
             
             try {
-              const result = await executeTool(toolCall.name, JSON.parse(toolCall.arguments), client);
+              const params = JSON.parse(toolCall.arguments);
+              // Restrict tool access based on context
+              const restrictedParams = restrictToolAccess(toolCall.name, params, clientId, projectId);
+              const result = await executeTool(toolCall.name, restrictedParams, client);
+              
+              // Filter results if in context mode
+              const filteredResult = filterToolResults(toolCall.name, result, clientId, projectId);
+              
               toolResults.push({
                 toolCallId: toolCall.id,
                 toolName: toolCall.name,
-                result: result,
+                result: filteredResult,
               });
               console.log('[Chat API] Executed tool:', toolCall.name);
             } catch (error) {

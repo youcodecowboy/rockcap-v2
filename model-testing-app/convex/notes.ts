@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 
 // Mutation: Create new note
 export const create = mutation({
@@ -56,6 +57,23 @@ export const create = mutation({
       updatedAt: now,
       lastSavedAt: now,
     });
+
+    // Invalidate context cache for client if provided
+    if (args.clientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: args.clientId,
+      });
+    }
+
+    // Invalidate context cache for project if provided
+    if (args.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: args.projectId,
+      });
+    }
+
     return noteId;
   },
 });
@@ -128,6 +146,39 @@ export const update = mutation({
     if (patchData.userId === null) patchData.userId = undefined;
     
     await ctx.db.patch(id, patchData);
+
+    // Invalidate context cache for client if changed
+    const finalClientId = patchData.clientId !== undefined ? patchData.clientId : existing.clientId;
+    if (finalClientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: finalClientId,
+      });
+    }
+    // Also invalidate old client if changed
+    if (existing.clientId && existing.clientId !== finalClientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: existing.clientId,
+      });
+    }
+
+    // Invalidate context cache for project if changed
+    const finalProjectId = patchData.projectId !== undefined ? patchData.projectId : existing.projectId;
+    if (finalProjectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: finalProjectId,
+      });
+    }
+    // Also invalidate old project if changed
+    if (existing.projectId && existing.projectId !== finalProjectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: existing.projectId,
+      });
+    }
+
     return id;
   },
 });
@@ -165,6 +216,22 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(args.id);
+
+    // Invalidate context cache for client
+    if (note.clientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: note.clientId,
+      });
+    }
+
+    // Invalidate context cache for project
+    if (note.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: note.projectId,
+      });
+    }
   },
 });
 

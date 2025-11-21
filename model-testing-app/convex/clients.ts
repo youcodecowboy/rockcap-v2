@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { api } from "./_generated/api";
 
 // Query: Get all clients
 export const list = query({
@@ -169,6 +170,13 @@ export const update = mutation({
     }
     
     await ctx.db.patch(id, updates);
+
+    // Invalidate context cache for this client
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: id,
+    });
+
     return id;
   },
 });
@@ -380,6 +388,12 @@ export const remove = mutation({
   args: { id: v.id("clients") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.id);
+
+    // Invalidate context cache for this client
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: args.id,
+    });
   },
 });
 

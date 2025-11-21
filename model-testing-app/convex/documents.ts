@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 
 // Helper functions for document code generation
 function abbreviateText(text: string, maxLength: number): string {
@@ -431,6 +432,23 @@ export const create = mutation({
       }
     }
 
+    // Invalidate context cache for client if provided
+    if (args.clientId) {
+      // @ts-expect-error - TypeScript has issues with deep type instantiation for Convex scheduler
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: args.clientId,
+      });
+    }
+
+    // Invalidate context cache for project if provided
+    if (args.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: args.projectId,
+      });
+    }
+
     return documentId;
   },
 });
@@ -560,6 +578,25 @@ export const update = mutation({
     });
     
     await ctx.db.patch(id, cleanUpdates);
+
+    // Invalidate context cache for client if changed
+    const finalClientId = cleanUpdates.clientId !== undefined ? cleanUpdates.clientId : existing.clientId;
+    if (finalClientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: finalClientId,
+      });
+    }
+
+    // Invalidate context cache for project if changed
+    const finalProjectId = cleanUpdates.projectId !== undefined ? cleanUpdates.projectId : existing.projectId;
+    if (finalProjectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: finalProjectId,
+      });
+    }
+
     return id;
   },
 });
@@ -691,7 +728,28 @@ export const updateDocumentCodesForProject = mutation({
 export const remove = mutation({
   args: { id: v.id("documents") },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (!existing) {
+      return;
+    }
+
     await ctx.db.delete(args.id);
+
+    // Invalidate context cache for client
+    if (existing.clientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: existing.clientId,
+      });
+    }
+
+    // Invalidate context cache for project
+    if (existing.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: existing.projectId,
+      });
+    }
   },
 });
 

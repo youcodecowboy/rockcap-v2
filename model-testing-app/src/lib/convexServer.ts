@@ -18,7 +18,6 @@ export async function getClientsServer(status?: string, type?: string): Promise<
   }
   const statusEnum = status as 'prospect' | 'active' | 'archived' | 'past' | undefined;
   const queryParams: any = { status: statusEnum, type };
-  // @ts-expect-error TS2589 - Type instantiation depth issue with Convex generics
   const queryFn: any = api.clients.list;
   const server: any = convexServer;
   const result = await server.query(queryFn, queryParams);

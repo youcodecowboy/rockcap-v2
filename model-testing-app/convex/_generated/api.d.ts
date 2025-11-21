@@ -16,6 +16,7 @@ import type * as clients from "../clients.js";
 import type * as companies from "../companies.js";
 import type * as companiesHouse from "../companiesHouse.js";
 import type * as contacts from "../contacts.js";
+import type * as contextCache from "../contextCache.js";
 import type * as dealHelpers from "../dealHelpers.js";
 import type * as deals from "../deals.js";
 import type * as directUpload from "../directUpload.js";
@@ -75,6 +76,7 @@ declare const fullApi: ApiFromModules<{
   companies: typeof companies;
   companiesHouse: typeof companiesHouse;
   contacts: typeof contacts;
+  contextCache: typeof contextCache;
   dealHelpers: typeof dealHelpers;
   deals: typeof deals;
   directUpload: typeof directUpload;

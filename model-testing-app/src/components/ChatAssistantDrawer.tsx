@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Settings2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Settings2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
@@ -12,6 +12,54 @@ import ChatInput from './ChatInput';
 import ContextSelector from './ContextSelector';
 import ActionConfirmationModal from './ActionConfirmationModal';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
+
+// Context Badge Component
+function ContextBadge({
+  contextType,
+  clientId,
+  projectId,
+}: {
+  contextType: 'global' | 'client' | 'project';
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
+}) {
+  const client = useQuery(api.clients.get, clientId ? { id: clientId } : 'skip');
+  const project = useQuery(api.projects.get, projectId ? { id: projectId } : 'skip');
+  // Cache query is completely optional - don't block UI, don't wait for it
+  // Use a try-catch pattern to handle errors gracefully
+  let cache: any = undefined;
+  try {
+    // Only try to get cache if we have the data, but don't block on it
+    if ((contextType === 'client' && clientId) || (contextType === 'project' && projectId)) {
+      // We'll fetch this lazily, not blocking the render
+    }
+  } catch (e) {
+    // Ignore cache errors
+  }
+
+  if (contextType === 'client' && client) {
+    // Don't show counts for now - they can be added later if needed
+    return (
+      <div className="px-6 py-2 bg-blue-50 border-b border-blue-100">
+        <div className="text-xs text-blue-700 font-medium">
+          Chatting about <span className="font-semibold">{client.name}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (contextType === 'project' && project) {
+    return (
+      <div className="px-6 py-2 bg-blue-50 border-b border-blue-100">
+        <div className="text-xs text-blue-700 font-medium">
+          Chatting about <span className="font-semibold">{project.name}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export default function ChatAssistantDrawer() {
   const router = useRouter();
@@ -23,6 +71,8 @@ export default function ChatAssistantDrawer() {
   const [contextClientId, setContextClientId] = useState<Id<"clients"> | undefined>();
   const [contextProjectId, setContextProjectId] = useState<Id<"projects"> | undefined>();
   const [isLoading, setIsLoading] = useState(false);
+  const [isGatheringContext, setIsGatheringContext] = useState(false);
+  const [contextProgress, setContextProgress] = useState<string>('');
   const [pendingAction, setPendingAction] = useState<any>(null);
   const [showContextSelector, setShowContextSelector] = useState(false);
   const [activityMessages, setActivityMessages] = useState<Array<{ activity: string; id: string }>>([]);
@@ -60,6 +110,21 @@ export default function ChatAssistantDrawer() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Get current session details to restore context
+  const currentSession = useQuery(
+    api.chatSessions.get,
+    currentSessionId ? { id: currentSessionId } : 'skip'
+  );
+
+  // Restore context from session when it loads
+  useEffect(() => {
+    if (currentSession) {
+      setContextType(currentSession.contextType);
+      setContextClientId(currentSession.clientId);
+      setContextProjectId(currentSession.projectId);
+    }
+  }, [currentSession]);
 
   // Open most recent session when drawer opens (instead of creating new one)
   useEffect(() => {
@@ -135,7 +200,33 @@ export default function ChatAssistantDrawer() {
     content: string,
     fileMetadata?: { fileName: string; fileStorageId: string; fileSize: number; fileType: string }
   ) => {
-    if (!currentSessionId) return;
+    // Create session if it doesn't exist
+    let sessionIdToUse = currentSessionId;
+    if (!sessionIdToUse) {
+      try {
+        sessionIdToUse = await createSession({
+          contextType,
+          clientId: contextClientId,
+          projectId: contextProjectId,
+        });
+        setCurrentSessionId(sessionIdToUse);
+      } catch (error) {
+        console.error('Error creating session:', error);
+        alert('Failed to create chat session. Please try again.');
+        return;
+      }
+    }
+    
+    if (!sessionIdToUse) return;
+
+    // Check if this is the first message and we have a context - might need to gather context
+    const isFirstMessage = !messages || messages.length === 0;
+    const hasContext = contextClientId || contextProjectId;
+    
+    if (isFirstMessage && hasContext) {
+      setIsGatheringContext(true);
+      setContextProgress('Checking cache...');
+    }
 
     setIsLoading(true);
     setActivityMessages([]); // Clear previous activity messages
@@ -143,7 +234,7 @@ export default function ChatAssistantDrawer() {
     try {
       // Add user message to database
       await addMessage({
-        sessionId: currentSessionId,
+        sessionId: sessionIdToUse,
         role: 'user',
         content,
       });
@@ -154,6 +245,11 @@ export default function ChatAssistantDrawer() {
         content: msg.content,
       })) || [];
 
+      // Update progress
+      if (isFirstMessage && hasContext) {
+        setContextProgress('Gathering context data...');
+      }
+
       // Call AI assistant API
       const response = await fetch('/api/chat-assistant', {
         method: 'POST',
@@ -161,7 +257,7 @@ export default function ChatAssistantDrawer() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sessionId: currentSessionId,
+          sessionId: sessionIdToUse,
           message: content,
           clientId: contextClientId,
           projectId: contextProjectId,
@@ -177,6 +273,12 @@ export default function ChatAssistantDrawer() {
       }
 
       const data = await response.json();
+
+      // Context gathering is complete
+      if (isGatheringContext) {
+        setIsGatheringContext(false);
+        setContextProgress('');
+      }
 
       // Show activity messages if any
       if (data.activityLog && data.activityLog.length > 0) {
@@ -194,7 +296,7 @@ export default function ChatAssistantDrawer() {
 
       // Add assistant response to database
       const assistantMessageId = await addMessage({
-        sessionId: currentSessionId,
+        sessionId: sessionIdToUse,
         role: 'assistant',
         content: data.content,
         toolCalls: data.toolCalls,
@@ -207,7 +309,7 @@ export default function ChatAssistantDrawer() {
           if (action.requiresConfirmation) {
             // Create pending action in database
             const actionId = await createAction({
-              sessionId: currentSessionId,
+              sessionId: sessionIdToUse,
               messageId: assistantMessageId,
               actionType: action.toolName,
               actionData: action.parameters,
@@ -226,13 +328,17 @@ export default function ChatAssistantDrawer() {
     } catch (error) {
       console.error('Error sending message:', error);
       // Add error message
-      await addMessage({
-        sessionId: currentSessionId,
-        role: 'system',
-        content: 'Sorry, there was an error processing your request. Please try again.',
-      });
+      if (sessionIdToUse) {
+        await addMessage({
+          sessionId: sessionIdToUse,
+          role: 'system',
+          content: 'Sorry, there was an error processing your request. Please try again.',
+        });
+      }
     } finally {
       setIsLoading(false);
+      setIsGatheringContext(false);
+      setContextProgress('');
       setActivityMessages([]); // Clear activity messages
     }
   };
@@ -325,7 +431,7 @@ export default function ChatAssistantDrawer() {
     setPendingAction(null);
   };
 
-  const handleContextChange = (
+  const handleContextChange = async (
     type: 'global' | 'client' | 'project',
     clientId?: Id<"clients">,
     projectId?: Id<"projects">
@@ -333,8 +439,21 @@ export default function ChatAssistantDrawer() {
     setContextType(type);
     setContextClientId(clientId);
     setContextProjectId(projectId);
-    setCurrentSessionId(null); // Reset session when context changes
     setShowContextSelector(false);
+    
+    // Create a new session with the new context to persist it
+    try {
+      const newSessionId = await createSession({
+        contextType: type,
+        clientId: clientId,
+        projectId: projectId,
+      });
+      setCurrentSessionId(newSessionId);
+    } catch (error) {
+      console.error('Error creating session with new context:', error);
+      // If session creation fails, still allow user to continue
+      setCurrentSessionId(null);
+    }
   };
 
   return (
@@ -421,10 +540,29 @@ export default function ChatAssistantDrawer() {
 
             {/* Context Badge */}
             {(contextType !== 'global' || contextClientId || contextProjectId) && (
-              <div className="px-6 py-2 bg-blue-50 border-b border-blue-100">
-                <div className="text-xs text-blue-700">
-                  {contextType === 'client' && contextClientId && 'Chatting about a specific client'}
-                  {contextType === 'project' && contextProjectId && 'Chatting about a specific project'}
+              <ContextBadge
+                contextType={contextType}
+                clientId={contextClientId}
+                projectId={contextProjectId}
+              />
+            )}
+
+            {/* Context Gathering Progress */}
+            {isGatheringContext && (
+              <div className="px-6 py-4 bg-blue-50 border-b border-blue-100">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-blue-900">
+                      Preparing AI context...
+                    </div>
+                    <div className="text-xs text-blue-700 mt-1">
+                      {contextProgress || 'Gathering knowledge bank entries, documents, notes, and related data...'}
+                    </div>
+                    <div className="mt-2 text-xs text-blue-600">
+                      This may take a few moments. You can start typing your message below.
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -471,8 +609,14 @@ export default function ChatAssistantDrawer() {
             <ChatInput
               onSend={handleSendMessage}
               onFileSelect={handleFileUpload}
-              disabled={isLoading || !currentSessionId}
-              placeholder={isLoading ? 'AI is thinking...' : 'Ask me anything...'}
+              disabled={isLoading}
+              placeholder={
+                isLoading 
+                  ? 'AI is thinking...' 
+                  : isGatheringContext
+                  ? 'Preparing context... (you can still type)'
+                  : 'Ask me anything...'
+              }
             />
           </div>
         </div>

@@ -1311,5 +1311,26 @@ export default defineSchema({
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_google_event_id", ["googleEventId"]),
+
+  // Context cache for AI assistant - caches gathered context for clients/projects
+  contextCache: defineTable({
+    contextType: v.union(v.literal("client"), v.literal("project")),
+    contextId: v.string(), // Store as string to handle both client and project IDs
+    cachedContext: v.string(), // The formatted context string
+    metadata: v.object({
+      knowledgeBankCount: v.number(),
+      documentsCount: v.number(),
+      notesCount: v.number(),
+      contactsCount: v.optional(v.number()),
+      dealsCount: v.optional(v.number()),
+      tasksCount: v.optional(v.number()),
+      eventsCount: v.optional(v.number()),
+      lastDataUpdate: v.string(), // Timestamp of most recent data item
+    }),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    expiresAt: v.string(), // TTL for cache invalidation (e.g., 24 hours)
+  })
+    .index("by_context", ["contextType", "contextId"]),
 });
 

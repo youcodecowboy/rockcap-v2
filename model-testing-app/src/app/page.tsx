@@ -5,7 +5,7 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,9 @@ export default function Dashboard() {
   // State for modals
   const [isCreateContactModalOpen, setIsCreateContactModalOpen] = useState(false);
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+  
+  // State for today's date (client-side only to avoid hydration mismatch)
+  const [todayDate, setTodayDate] = useState<string>('');
   
   // Fetch dashboard data
   const taskMetrics = useQuery(api.tasks.getMetrics, {});
@@ -80,11 +83,11 @@ export default function Dashboard() {
     return { text: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), urgent: false, isOverdue: false };
   };
 
-  // Get today's date formatted
-  const getTodayDate = () => {
+  // Set today's date on client side only (to avoid hydration mismatch)
+  useEffect(() => {
     const today = new Date();
-    return today.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  };
+    setTodayDate(today.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+  }, []);
 
   // Filter upcoming tasks (non-completed, include all tasks including overdue)
   const filteredUpcomingTasks = upcomingTasks?.filter(task => {
@@ -163,15 +166,15 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="bg-gray-50 min-h-screen" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-3xl text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
             Hello {isLoaded ? firstName : '...'}
           </h1>
-          <p className="mt-2 text-lg text-gray-600">
-            Here is what you have to do today — {getTodayDate()}
+          <p className="mt-2 text-lg text-gray-600" style={{ fontWeight: 400 }}>
+            Here is what you have to do today — {todayDate || '...'}
           </p>
         </div>
 
@@ -185,7 +188,7 @@ export default function Dashboard() {
               className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
             >
               <FileText className="w-4 h-4 text-blue-400" />
-              <span>New Note</span>
+                <span style={{ fontWeight: 500 }}>New Note</span>
             </Button>
             <Button
               variant="default"
@@ -194,7 +197,7 @@ export default function Dashboard() {
               className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
             >
               <UserPlus className="w-4 h-4 text-green-400" />
-              <span>New Contact</span>
+                <span style={{ fontWeight: 500 }}>New Contact</span>
             </Button>
             <Button
               variant="default"
@@ -203,7 +206,7 @@ export default function Dashboard() {
               className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg opacity-50"
             >
               <Mail className="w-4 h-4 text-purple-400" />
-              <span>New E-mail</span>
+                <span style={{ fontWeight: 500 }}>New E-mail</span>
             </Button>
             <Button
               variant="default"
@@ -212,7 +215,7 @@ export default function Dashboard() {
               className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
             >
               <Plus className="w-4 h-4 text-yellow-400" />
-              <span>New Task</span>
+                <span style={{ fontWeight: 500 }}>New Task</span>
             </Button>
             <Button
               variant="default"
@@ -221,7 +224,7 @@ export default function Dashboard() {
               className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
             >
               <Bell className="w-4 h-4 text-orange-400" />
-              <span>New Reminder</span>
+                <span style={{ fontWeight: 500 }}>New Reminder</span>
             </Button>
             <Button
               variant="default"
@@ -230,7 +233,7 @@ export default function Dashboard() {
               className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
             >
               <Upload className="w-4 h-4 text-red-400" />
-              <span>New Upload</span>
+                <span style={{ fontWeight: 500 }}>New Upload</span>
             </Button>
           </div>
         </div>
@@ -242,9 +245,9 @@ export default function Dashboard() {
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckSquare className="w-4 h-4 text-white" />
-                <span className="text-xs font-semibold uppercase tracking-wide">Next Task</span>
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Next Task</span>
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wide">
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
                 {taskMetrics?.upNext?.dueDate && isOverdue(taskMetrics.upNext.dueDate)
                   ? 'OVERDUE'
                   : taskMetrics?.upNext
@@ -257,11 +260,11 @@ export default function Dashboard() {
                 <div className="mb-3">
                   {taskMetrics?.upNext ? (
                     <>
-                      <h2 className="text-base font-bold text-gray-900 mb-2">
+                      <h2 className="text-base text-gray-900 mb-2" style={{ fontWeight: 700 }}>
                         {taskMetrics.upNext.title}
                       </h2>
                       {taskMetrics.upNext.description && (
-                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2" style={{ fontWeight: 400 }}>
                           {taskMetrics.upNext.description}
                         </p>
                       )}
@@ -269,10 +272,10 @@ export default function Dashboard() {
                         {getTaskClientName(taskMetrics.upNext.clientId) && (
                           <div className="flex items-center gap-1.5">
                             <Building2 className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">Client:</span>
+                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Client:</span>
                             <Link 
                               href={`/clients/${taskMetrics.upNext.clientId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
                             >
                               {getTaskClientName(taskMetrics.upNext.clientId)}
                             </Link>
@@ -281,10 +284,10 @@ export default function Dashboard() {
                         {getTaskProjectName(taskMetrics.upNext.projectId) && (
                           <div className="flex items-center gap-1.5">
                             <FolderKanban className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">Project:</span>
+                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Project:</span>
                             <Link 
                               href={`/projects/${taskMetrics.upNext.projectId}`}
-                              className="text-xs font-bold text-gray-700 hover:text-blue-600 hover:underline"
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 700 }}
                             >
                               {getTaskProjectName(taskMetrics.upNext.projectId)}
                             </Link>
@@ -293,7 +296,7 @@ export default function Dashboard() {
                       </div>
                     </>
                   ) : (
-                    <h2 className="text-base font-bold text-gray-500 mb-0.5">
+                    <h2 className="text-base text-gray-500 mb-0.5" style={{ fontWeight: 700 }}>
                       No tasks scheduled
                     </h2>
                   )}
@@ -304,9 +307,9 @@ export default function Dashboard() {
                     {taskMetrics?.upNext?.dueDate ? (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-gray-400" />
-                        <span className={`text-xs font-medium ${
+                        <span className={`text-xs ${
                           formatTimeRemaining(taskMetrics.upNext.dueDate).urgent ? 'text-red-600' : 'text-gray-600'
-                        }`}>
+                        }`} style={{ fontWeight: 500 }}>
                           {formatTimeRemaining(taskMetrics.upNext.dueDate).text}
                         </span>
                       </div>
@@ -314,14 +317,14 @@ export default function Dashboard() {
                       <span className="text-xs text-gray-400">No scheduled time</span>
                     )}
                     {taskMetrics?.upNext?.priority && (
-                      <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${getPriorityColor(taskMetrics.upNext.priority)}`}>
+                      <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPriorityColor(taskMetrics.upNext.priority)}`} style={{ fontWeight: 500 }}>
                         {taskMetrics.upNext.priority}
                       </span>
                     )}
                   </div>
                   <Button
                     onClick={() => router.push('/tasks')}
-                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
+                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3" style={{ fontWeight: 500 }}
                   >
                     {taskMetrics?.upNext ? 'View Task' : 'Create Task'}
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -336,9 +339,9 @@ export default function Dashboard() {
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-white" />
-                <span className="text-xs font-semibold uppercase tracking-wide">Next Reminder</span>
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Next Reminder</span>
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wide">
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
                 {nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor && isOverdue(nextReminder[0].scheduledFor)
                   ? 'OVERDUE'
                   : nextReminder && nextReminder.length > 0
@@ -351,11 +354,11 @@ export default function Dashboard() {
                 <div className="mb-3">
                   {nextReminder && nextReminder.length > 0 ? (
                     <>
-                      <h2 className="text-base font-bold text-gray-900 mb-2">
+                      <h2 className="text-base text-gray-900 mb-2" style={{ fontWeight: 700 }}>
                         {nextReminder[0].title}
                       </h2>
                       {nextReminder[0].description && (
-                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2" style={{ fontWeight: 400 }}>
                           {nextReminder[0].description}
                         </p>
                       )}
@@ -363,10 +366,10 @@ export default function Dashboard() {
                         {getTaskName(nextReminder[0].taskId) && (
                           <div className="flex items-center gap-1.5">
                             <ListTodo className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">Task:</span>
+                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Task:</span>
                             <Link 
                               href={`/tasks`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
                             >
                               {getTaskName(nextReminder[0].taskId)}
                             </Link>
@@ -375,10 +378,10 @@ export default function Dashboard() {
                         {getTaskClientName(nextReminder[0].clientId) && (
                           <div className="flex items-center gap-1.5">
                             <Building2 className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">Client:</span>
+                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Client:</span>
                             <Link 
                               href={`/clients/${nextReminder[0].clientId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
                             >
                               {getTaskClientName(nextReminder[0].clientId)}
                             </Link>
@@ -387,10 +390,10 @@ export default function Dashboard() {
                         {getTaskProjectName(nextReminder[0].projectId) && (
                           <div className="flex items-center gap-1.5">
                             <FolderKanban className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">Project:</span>
+                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Project:</span>
                             <Link 
                               href={`/projects/${nextReminder[0].projectId}`}
-                              className="text-xs font-bold text-gray-700 hover:text-blue-600 hover:underline"
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 700 }}
                             >
                               {getTaskProjectName(nextReminder[0].projectId)}
                             </Link>
@@ -399,7 +402,7 @@ export default function Dashboard() {
                       </div>
                     </>
                   ) : (
-                    <h2 className="text-base font-bold text-gray-500 mb-0.5">
+                    <h2 className="text-base text-gray-500 mb-0.5" style={{ fontWeight: 700 }}>
                       No reminders scheduled
                     </h2>
                   )}
@@ -410,9 +413,9 @@ export default function Dashboard() {
                     {nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor ? (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-gray-400" />
-                        <span className={`text-xs font-medium ${
+                        <span className={`text-xs ${
                           formatTimeRemaining(nextReminder[0].scheduledFor).urgent ? 'text-red-600' : 'text-gray-600'
-                        }`}>
+                        }`} style={{ fontWeight: 500 }}>
                           {formatTimeRemaining(nextReminder[0].scheduledFor).text}
                         </span>
                       </div>
@@ -422,7 +425,7 @@ export default function Dashboard() {
                   </div>
                   <Button
                     onClick={() => router.push('/tasks')}
-                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
+                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3" style={{ fontWeight: 500 }}
                   >
                     {nextReminder && nextReminder.length > 0 ? 'View Reminder' : 'Create Reminder'}
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -437,9 +440,9 @@ export default function Dashboard() {
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-white" />
-                <span className="text-xs font-semibold uppercase tracking-wide">Next Event</span>
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Next Event</span>
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wide">
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
                 {nextEvent && nextEvent.startTime && isOverdue(nextEvent.startTime)
                   ? 'OVERDUE'
                   : nextEvent
@@ -452,16 +455,16 @@ export default function Dashboard() {
                 <div className="mb-3">
                   {nextEvent ? (
                     <>
-                      <h2 className="text-base font-bold text-gray-900 mb-2">
+                      <h2 className="text-base text-gray-900 mb-2" style={{ fontWeight: 700 }}>
                         {nextEvent.title}
                       </h2>
                       {nextEvent.description && (
-                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2" style={{ fontWeight: 400 }}>
                           {nextEvent.description}
                         </p>
                       )}
                       {nextEvent.location && (
-                        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1" style={{ fontWeight: 400 }}>
                           <span className="w-3 h-3">📍</span>
                           {nextEvent.location}
                         </p>
@@ -470,10 +473,10 @@ export default function Dashboard() {
                         {getTaskClientName(nextEvent.clientId) && (
                           <div className="flex items-center gap-1.5">
                             <Building2 className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">Client:</span>
+                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Client:</span>
                             <Link 
                               href={`/clients/${nextEvent.clientId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline"
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
                             >
                               {getTaskClientName(nextEvent.clientId)}
                             </Link>
@@ -482,10 +485,10 @@ export default function Dashboard() {
                         {getTaskProjectName(nextEvent.projectId) && (
                           <div className="flex items-center gap-1.5">
                             <FolderKanban className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500">Project:</span>
+                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Project:</span>
                             <Link 
                               href={`/projects/${nextEvent.projectId}`}
-                              className="text-xs font-bold text-gray-700 hover:text-blue-600 hover:underline"
+                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 700 }}
                             >
                               {getTaskProjectName(nextEvent.projectId)}
                             </Link>
@@ -494,7 +497,7 @@ export default function Dashboard() {
                       </div>
                     </>
                   ) : (
-                    <h2 className="text-base font-bold text-gray-500 mb-0.5">
+                    <h2 className="text-base text-gray-500 mb-0.5" style={{ fontWeight: 700 }}>
                       No events scheduled
                     </h2>
                   )}
@@ -505,9 +508,9 @@ export default function Dashboard() {
                     {nextEvent?.startTime ? (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-gray-400" />
-                        <span className={`text-xs font-medium ${
+                        <span className={`text-xs ${
                           formatTimeRemaining(nextEvent.startTime).urgent ? 'text-red-600' : 'text-gray-600'
-                        }`}>
+                        }`} style={{ fontWeight: 500 }}>
                           {formatTimeRemaining(nextEvent.startTime).text}
                         </span>
                       </div>
@@ -517,7 +520,7 @@ export default function Dashboard() {
                   </div>
                   <Button
                     onClick={() => router.push('/calendar')}
-                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
+                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3" style={{ fontWeight: 500 }}
                   >
                     {nextEvent ? 'View Event' : 'Create Event'}
                     <ArrowRight className="w-3 h-3 ml-1" />
@@ -535,17 +538,17 @@ export default function Dashboard() {
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Inbox className="w-4 h-4 text-white" />
-                <span className="text-xs font-semibold uppercase tracking-wide">Inbox</span>
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Inbox</span>
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wide">Notifications & Emails</span>
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Notifications & Emails</span>
             </div>
             <div className="px-4 pb-3 flex-1 flex flex-col">
               <div className="flex flex-col h-full">
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center py-8 text-gray-500">
                     <Inbox className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p className="text-sm">Coming soon</p>
-                    <p className="text-xs text-gray-400 mt-2">Email integration and notifications will appear here</p>
+                    <p className="text-sm" style={{ fontWeight: 500 }}>Coming soon</p>
+                    <p className="text-xs text-gray-400 mt-2" style={{ fontWeight: 400 }}>Email integration and notifications will appear here</p>
                   </div>
                 </div>
                 <div className="pt-2 border-t border-gray-200 mt-auto flex flex-col">
@@ -566,9 +569,9 @@ export default function Dashboard() {
             <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckSquare className="w-4 h-4 text-white" />
-                <span className="text-xs font-semibold uppercase tracking-wide">Upcoming Tasks</span>
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Upcoming Tasks</span>
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wide">
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
                 {upcomingTasks === undefined 
                   ? 'Loading...' 
                   : filteredUpcomingTasks.length > 0 
@@ -580,20 +583,20 @@ export default function Dashboard() {
               <div className="flex flex-col h-full">
                 <div className="flex-1 overflow-y-auto">
                   {upcomingTasks === undefined ? (
-                    <div className="text-center py-8 text-gray-500">Loading...</div>
+                    <div className="text-center py-8 text-gray-500" style={{ fontWeight: 400 }}>Loading...</div>
                   ) : filteredUpcomingTasks.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <CheckSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p className="text-sm">No upcoming tasks</p>
+                      <p className="text-sm" style={{ fontWeight: 500 }}>No upcoming tasks</p>
                     </div>
                   ) : (
                     <div className="pb-2 pt-0">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="text-xs">Task</TableHead>
-                            <TableHead className="text-xs">Due Date</TableHead>
-                            <TableHead className="text-xs">Priority</TableHead>
+                            <TableHead className="text-xs" style={{ fontWeight: 600 }}>Task</TableHead>
+                            <TableHead className="text-xs" style={{ fontWeight: 600 }}>Due Date</TableHead>
+                            <TableHead className="text-xs" style={{ fontWeight: 600 }}>Priority</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -601,9 +604,9 @@ export default function Dashboard() {
                             <TableRow key={task._id}>
                               <TableCell className="py-2">
                                 <div className="flex flex-col">
-                                  <span className="text-sm font-medium">{task.title}</span>
+                                  <span className="text-sm" style={{ fontWeight: 500 }}>{task.title}</span>
                                   {(getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)) && (
-                                    <span className="text-xs text-gray-500 mt-1">
+                                    <span className="text-xs text-gray-500 mt-1" style={{ fontWeight: 400 }}>
                                       {getTaskClientName(task.clientId) && getTaskProjectName(task.projectId)
                                         ? `${getTaskClientName(task.clientId)} • ${getTaskProjectName(task.projectId)}`
                                         : getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)}
@@ -614,13 +617,13 @@ export default function Dashboard() {
                               <TableCell className="py-2">
                                 <div className="flex items-center gap-2">
                                   <Clock className="w-3 h-3 text-gray-400" />
-                                  <span className="text-xs">
+                                  <span className="text-xs" style={{ fontWeight: 400 }}>
                                     {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
                                   </span>
                                 </div>
                               </TableCell>
                               <TableCell className="py-2">
-                                <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${getPriorityColor(task.priority || 'medium')}`}>
+                                <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPriorityColor(task.priority || 'medium')}`} style={{ fontWeight: 500 }}>
                                   {task.priority || 'medium'}
                                 </span>
                               </TableCell>
@@ -629,7 +632,7 @@ export default function Dashboard() {
                         </TableBody>
                       </Table>
                       {filteredUpcomingTasks.length > 5 && (
-                        <p className="text-xs text-gray-500 text-center mt-2">
+                        <p className="text-xs text-gray-500 text-center mt-2" style={{ fontWeight: 400 }}>
                           +{filteredUpcomingTasks.length - 5} more tasks
                         </p>
                       )}
@@ -671,7 +674,7 @@ export default function Dashboard() {
             <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Create New Task</CardTitle>
+                  <CardTitle style={{ fontWeight: 700 }}>Create New Task</CardTitle>
                   <Button
                     variant="ghost"
                     size="icon"

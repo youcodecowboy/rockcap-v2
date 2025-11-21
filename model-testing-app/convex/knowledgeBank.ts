@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 
 // Mutation: Create knowledge bank entry from document
 export const createFromDocument = mutation({
@@ -38,6 +39,21 @@ export const createFromDocument = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Invalidate context cache for client
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: args.clientId,
+    });
+
+    // Invalidate context cache for project if provided
+    if (args.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: args.projectId,
+      });
+    }
+
     return entryId;
   },
 });
@@ -266,6 +282,21 @@ export const createFromEmail = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Invalidate context cache for client
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: args.clientId,
+    });
+
+    // Invalidate context cache for project if provided
+    if (args.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: args.projectId,
+      });
+    }
+
     return entryId;
   },
 });
@@ -304,6 +335,21 @@ export const createManual = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Invalidate context cache for client
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: args.clientId,
+    });
+
+    // Invalidate context cache for project if provided
+    if (args.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: args.projectId,
+      });
+    }
+
     return entryId;
   },
 });
@@ -415,6 +461,21 @@ export const update = mutation({
       ...updates,
       updatedAt: new Date().toISOString(),
     });
+
+    // Invalidate context cache for client
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: existing.clientId,
+    });
+
+    // Invalidate context cache for project if provided
+    if (existing.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: existing.projectId,
+      });
+    }
+
     return id;
   },
 });
@@ -423,7 +484,26 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("knowledgeBankEntries") },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (!existing) {
+      return;
+    }
+
     await ctx.db.delete(args.id);
+
+    // Invalidate context cache for client
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: existing.clientId,
+    });
+
+    // Invalidate context cache for project if provided
+    if (existing.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: existing.projectId,
+      });
+    }
   },
 });
 

@@ -10,7 +10,7 @@ export default function NavigationBar() {
     <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 shadow-sm z-30">
       <div className="h-full flex items-center justify-between px-6">
         {/* Logo */}
-        <Link href="/" className="text-xl font-bold text-gray-900">
+        <Link href="/" className="text-[1.5625rem] font-normal text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
           RockCap
         </Link>
 

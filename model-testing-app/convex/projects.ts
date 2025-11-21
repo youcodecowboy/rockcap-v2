@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 
 // Query: Get all projects
 export const list = query({
@@ -166,6 +167,24 @@ export const update = mutation({
     }
     
     await ctx.db.patch(id, updates);
+
+    // Invalidate context cache for this project
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "project",
+      contextId: id,
+    });
+
+    // Also invalidate cache for all related clients
+    const finalClientRoles = updates.clientRoles !== undefined ? updates.clientRoles : existing.clientRoles;
+    if (finalClientRoles) {
+      for (const cr of finalClientRoles) {
+        await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+          contextType: "client",
+          contextId: cr.clientId,
+        });
+      }
+    }
+
     return id;
   },
 });
@@ -174,7 +193,24 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
     await ctx.db.delete(args.id);
+
+    // Invalidate context cache for this project
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "project",
+      contextId: args.id,
+    });
+
+    // Also invalidate cache for all related clients
+    if (existing?.clientRoles) {
+      for (const cr of existing.clientRoles) {
+        await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+          contextType: "client",
+          contextId: cr.clientId,
+        });
+      }
+    }
   },
 });
 
