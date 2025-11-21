@@ -3,7 +3,7 @@ import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 
 // Initialize Convex client for server-side operations
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || '';
 
 /**
  * Tool definitions for the AI chat assistant
