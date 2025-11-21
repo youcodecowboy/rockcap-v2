@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { getAuthenticatedUser } from "./authHelpers";
 
 // Query: Get all messages for a session
 export const list = query({
@@ -8,6 +9,19 @@ export const list = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Verify session belongs to user
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
     const query = ctx.db
       .query("chatMessages")
       .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
@@ -51,6 +65,19 @@ export const add = mutation({
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Verify session belongs to user
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
     const now = new Date().toISOString();
     
     const messageId = await ctx.db.insert("chatMessages", {
@@ -64,14 +91,11 @@ export const add = mutation({
     });
     
     // Update session's last message time and message count
-    const session = await ctx.db.get(args.sessionId);
-    if (session) {
-      await ctx.db.patch(args.sessionId, {
-        lastMessageAt: now,
-        messageCount: session.messageCount + 1,
-        updatedAt: now,
-      });
-    }
+    await ctx.db.patch(args.sessionId, {
+      lastMessageAt: now,
+      messageCount: session.messageCount + 1,
+      updatedAt: now,
+    });
     
     return messageId;
   },
@@ -104,9 +128,22 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("chatMessages") },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
     const message = await ctx.db.get(args.id);
     if (!message) {
       throw new Error("Message not found");
+    }
+    
+    // Verify session belongs to user
+    const session = await ctx.db.get(message.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
     }
     
     // Delete any actions associated with this message
@@ -123,8 +160,7 @@ export const remove = mutation({
     await ctx.db.delete(args.id);
     
     // Update session message count
-    const session = await ctx.db.get(message.sessionId);
-    if (session && session.messageCount > 0) {
+    if (session.messageCount > 0) {
       await ctx.db.patch(message.sessionId, {
         messageCount: session.messageCount - 1,
         updatedAt: new Date().toISOString(),

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { getAuthenticatedUser } from "./authHelpers";
 
 // Query: Get all pending actions for a session
 export const listPending = query({
@@ -7,6 +8,19 @@ export const listPending = query({
     sessionId: v.id("chatSessions"),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Verify session belongs to user
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
     return await ctx.db
       .query("chatActions")
       .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
@@ -45,6 +59,19 @@ export const create = mutation({
     actionData: v.any(),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Verify session belongs to user
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
     const now = new Date().toISOString();
     
     const actionId = await ctx.db.insert("chatActions", {
@@ -76,6 +103,24 @@ export const updateStatus = mutation({
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Verify action's session belongs to user
+    const action = await ctx.db.get(args.id);
+    if (!action) {
+      throw new Error("Action not found");
+    }
+    
+    const session = await ctx.db.get(action.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
     const { id, ...updates } = args;
     const now = new Date().toISOString();
     
@@ -88,16 +133,35 @@ export const updateStatus = mutation({
   },
 });
 
+// Helper function to verify action belongs to user
+async function verifyActionOwnership(ctx: any, actionId: any, userId: any) {
+  const action = await ctx.db.get(actionId);
+  if (!action) {
+    throw new Error("Action not found");
+  }
+  
+  const session = await ctx.db.get(action.sessionId);
+  if (!session) {
+    throw new Error("Session not found");
+  }
+  
+  if (session.userId !== userId) {
+    throw new Error("Unauthorized: Session does not belong to current user");
+  }
+  
+  return { action, session };
+}
+
 // Mutation: Confirm and execute an action
 export const confirm = mutation({
   args: {
     id: v.id("chatActions"),
   },
   handler: async (ctx, args) => {
-    const action = await ctx.db.get(args.id);
-    if (!action) {
-      throw new Error("Action not found");
-    }
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    const { action } = await verifyActionOwnership(ctx, args.id, user._id);
     
     if (action.status !== "pending") {
       throw new Error("Action is not in pending state");
@@ -119,10 +183,10 @@ export const cancel = mutation({
     id: v.id("chatActions"),
   },
   handler: async (ctx, args) => {
-    const action = await ctx.db.get(args.id);
-    if (!action) {
-      throw new Error("Action not found");
-    }
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    await verifyActionOwnership(ctx, args.id, user._id);
     
     const now = new Date().toISOString();
     await ctx.db.patch(args.id, {
@@ -141,6 +205,11 @@ export const markExecuted = mutation({
     result: v.any(),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    await verifyActionOwnership(ctx, args.id, user._id);
+    
     const now = new Date().toISOString();
     
     await ctx.db.patch(args.id, {
@@ -160,6 +229,11 @@ export const markFailed = mutation({
     error: v.string(),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    await verifyActionOwnership(ctx, args.id, user._id);
+    
     const now = new Date().toISOString();
     
     await ctx.db.patch(args.id, {

@@ -749,7 +749,7 @@ export default defineSchema({
       v.literal("client"),
       v.literal("project")
     ),
-    userId: v.optional(v.string()), // User ID (string for backward compatibility, will be id("users") in future)
+    userId: v.id("users"), // User who owns this chat session
     clientId: v.optional(v.id("clients")), // If context is client-specific
     projectId: v.optional(v.id("projects")), // If context is project-specific
     lastMessageAt: v.string(), // Timestamp of last message
@@ -757,10 +757,12 @@ export default defineSchema({
     createdAt: v.string(),
     updatedAt: v.string(),
   })
+    .index("by_user", ["userId"])
     .index("by_contextType", ["contextType"])
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
-    .index("by_lastMessageAt", ["lastMessageAt"]),
+    .index("by_lastMessageAt", ["lastMessageAt"])
+    .index("by_user_contextType", ["userId", "contextType"]),
 
   // Chat Messages - Individual messages within chat sessions
   chatMessages: defineTable({

@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { getAuthenticatedUser } from "./authHelpers";
 
-// Query: Get all sessions, optionally filtered by context
+// Query: Get all sessions for the current user, optionally filtered by context
 export const list = query({
   args: {
     contextType: v.optional(v.union(
@@ -13,10 +14,14 @@ export const list = query({
     projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
     if (args.clientId) {
       return await ctx.db
         .query("chatSessions")
         .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+        .filter((q: any) => q.eq(q.field("userId"), user._id))
         .order("desc")
         .collect();
     }
@@ -25,6 +30,7 @@ export const list = query({
       return await ctx.db
         .query("chatSessions")
         .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+        .filter((q: any) => q.eq(q.field("userId"), user._id))
         .order("desc")
         .collect();
     }
@@ -32,25 +38,40 @@ export const list = query({
     if (args.contextType) {
       return await ctx.db
         .query("chatSessions")
-        .withIndex("by_contextType", (q: any) => q.eq("contextType", args.contextType!))
+        .withIndex("by_user_contextType", (q: any) => 
+          q.eq("userId", user._id).eq("contextType", args.contextType!)
+        )
         .order("desc")
         .collect();
     }
     
-    // Return all sessions ordered by last message
+    // Return all sessions for the user ordered by last message
     return await ctx.db
       .query("chatSessions")
-      .withIndex("by_lastMessageAt")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
       .order("desc")
       .collect();
   },
 });
 
-// Query: Get a specific session by ID
+// Query: Get a specific session by ID (only if owned by current user)
 export const get = query({
   args: { id: v.id("chatSessions") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    const session = await ctx.db.get(args.id);
+    if (!session) {
+      return null;
+    }
+    
+    // Verify session belongs to user
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
+    return session;
   },
 });
 
@@ -67,6 +88,9 @@ export const create = mutation({
     projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
     const now = new Date().toISOString();
     
     // Generate title if not provided
@@ -87,6 +111,7 @@ export const create = mutation({
     const sessionId = await ctx.db.insert("chatSessions", {
       title,
       contextType: args.contextType,
+      userId: user._id,
       clientId: args.clientId,
       projectId: args.projectId,
       lastMessageAt: now,
@@ -108,6 +133,19 @@ export const update = mutation({
     messageCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Verify session belongs to user
+    const session = await ctx.db.get(args.id);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
     const { id, ...updates } = args;
     const now = new Date().toISOString();
     
@@ -124,6 +162,19 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("chatSessions") },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Verify session belongs to user
+    const session = await ctx.db.get(args.id);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
+    }
+    
     // Delete all messages in the session
     const messages = await ctx.db
       .query("chatMessages")
@@ -153,9 +204,17 @@ export const remove = mutation({
 export const incrementMessageCount = mutation({
   args: { id: v.id("chatSessions") },
   handler: async (ctx, args) => {
+    // Get authenticated user
+    const user = await getAuthenticatedUser(ctx);
+    
     const session = await ctx.db.get(args.id);
     if (!session) {
       throw new Error("Session not found");
+    }
+    
+    // Verify session belongs to user
+    if (session.userId !== user._id) {
+      throw new Error("Unauthorized: Session does not belong to current user");
     }
     
     const now = new Date().toISOString();

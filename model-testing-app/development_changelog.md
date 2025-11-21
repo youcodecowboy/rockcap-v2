@@ -1,6 +1,70 @@
 # Development Changelog
 
-## [Latest] - 2025-01-28 23:30
+## [Latest] - 2025-01-29 00:00
+
+### Chat Sessions User Isolation - Multi-User Support
+
+**Overview**: Fixed critical security issue where chat sessions were being shared across all users. Implemented proper user isolation so each user only sees and can access their own chat sessions.
+
+**Changes Made:**
+
+1. **Schema Updates** (`convex/schema.ts`):
+   - Changed `chatSessions.userId` from `v.optional(v.string())` to `v.id("users")` (required)
+   - Added `by_user` index for efficient user-based queries
+   - Added `by_user_contextType` composite index for optimized filtering
+
+2. **Chat Sessions Functions** (`convex/chatSessions.ts`):
+   - **`list` query**: Now filters all sessions by authenticated user ID
+   - **`get` query**: Verifies session belongs to current user before returning
+   - **`create` mutation**: Automatically sets `userId` to current authenticated user
+   - **`update` mutation**: Verifies session ownership before allowing updates
+   - **`remove` mutation**: Verifies session ownership before deletion
+   - **`incrementMessageCount` mutation**: Verifies session ownership before incrementing
+   - All functions now use `getAuthenticatedUser()` helper for user verification
+
+3. **Chat Messages Functions** (`convex/chatMessages.ts`):
+   - **`list` query**: Verifies session belongs to user before returning messages
+   - **`add` mutation**: Verifies session ownership before adding messages
+   - **`remove` mutation**: Verifies session ownership before deleting messages
+   - Added user authentication checks to all message operations
+
+4. **Chat Actions Functions** (`convex/chatActions.ts`):
+   - **`listPending` query**: Verifies session belongs to user before returning actions
+   - **`create` mutation**: Verifies session ownership before creating actions
+   - **`updateStatus` mutation**: Verifies session ownership before updating
+   - **`confirm`, `cancel`, `markExecuted`, `markFailed` mutations**: All verify session ownership
+   - Added helper function `verifyActionOwnership()` for consistent verification
+
+**Security Improvements:**
+- All chat operations now require authentication
+- Users can only access their own chat sessions
+- Prevents unauthorized access to other users' conversations
+- Proper error messages for unauthorized access attempts
+
+**Technical Details:**
+- Uses `getAuthenticatedUser()` helper from `authHelpers.ts` for consistent user retrieval
+- User ID stored as `Id<"users">` type for proper type safety
+- Indexes optimized for user-based queries
+- Backward compatibility: Old sessions without userId will be filtered out (not accessible)
+
+**User Benefits:**
+- Complete privacy - each user's chats are isolated
+- Secure multi-user support
+- No risk of seeing other users' conversations
+- Proper access control for all chat operations
+
+**Files Modified:**
+- `convex/schema.ts` - Updated chatSessions table schema and indexes
+- `convex/chatSessions.ts` - Added user filtering and ownership verification
+- `convex/chatMessages.ts` - Added user verification for message operations
+- `convex/chatActions.ts` - Added user verification for action operations
+
+**Migration Notes:**
+- Existing sessions without `userId` will not be accessible (as expected for security)
+- New sessions automatically get `userId` set to creating user
+- No data migration needed - old sessions will simply be filtered out
+
+## [Previous] - 2025-01-28 23:30
 
 ### Task and Reminder Completion Functionality
 
