@@ -119,9 +119,12 @@ export default function DocumentCodeEditor({
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-mono text-gray-900 truncate">
+      <div className="flex-1 min-w-0 max-w-[300px]">
+        <div className="flex items-center gap-2 min-w-0">
+          <span 
+            className="text-sm font-mono text-gray-900 truncate block" 
+            title={documentCode || 'No code assigned'}
+          >
             {documentCode || <span className="text-gray-400 italic">No code assigned</span>}
           </span>
           <button
@@ -132,9 +135,9 @@ export default function DocumentCodeEditor({
             <Edit2 className="w-3 h-3" />
           </button>
         </div>
-        <div className="mt-1 text-xs text-gray-500 flex items-center gap-1">
-          <FileText className="w-3 h-3" />
-          <span className="truncate" title={fileName}>{fileName}</span>
+        <div className="mt-1 text-xs text-gray-500 flex items-center gap-1 min-w-0">
+          <FileText className="w-3 h-3 flex-shrink-0" />
+          <span className="truncate block" title={fileName}>{fileName}</span>
         </div>
       </div>
     </div>

@@ -241,7 +241,7 @@ export default function UnclassifiedDocumentsTable({
                       />
                     </TableCell>
                     <TableCell>
-                      <span className="text-xs text-gray-500 truncate max-w-xs" title={doc.fileName}>
+                      <span className="text-xs text-gray-500 truncate max-w-[300px] block" title={doc.fileName}>
                         {doc.fileName}
                       </span>
                     </TableCell>

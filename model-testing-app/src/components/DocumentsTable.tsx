@@ -577,10 +577,23 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
               variant="outline"
               size="sm"
               onClick={() => setShowConfigureModal(true)}
-              className="gap-2"
+              className="gap-2 relative"
             >
               <Settings className="w-4 h-4" />
               Configure File Names
+              {(() => {
+                const docsNeedingCodes = navState.type === 'project' || navState.type === 'baseDocuments'
+                  ? projectDocuments.filter(doc => !doc.documentCode || doc.documentCode.trim() === '').length
+                  : currentViewData.reduce((acc, client) => 
+                      acc + client.projects.flatMap(p => p.documents).filter(doc => !doc.documentCode || doc.documentCode.trim() === '').length, 
+                      0
+                    );
+                return docsNeedingCodes > 0 ? (
+                  <span className="ml-1 px-1.5 py-0.5 text-xs font-semibold bg-orange-500 text-white rounded-full">
+                    {docsNeedingCodes}
+                  </span>
+                ) : null;
+              })()}
             </Button>
             <span className="text-sm text-gray-500 whitespace-nowrap">
               {(() => {
@@ -596,12 +609,12 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
       
 
       {/* Configure File Names Modal */}
-      {(navState.type === 'client' || navState.type === 'project') && (
+      {(navState.type === 'client' || navState.type === 'project' || navState.type === 'baseDocuments') && (
         <ConfigureFileNamesModal
           isOpen={showConfigureModal}
           onClose={() => setShowConfigureModal(false)}
           documents={
-            navState.type === 'project'
+            navState.type === 'project' || navState.type === 'baseDocuments'
               ? projectDocuments
               : currentViewData[0]?.projects.flatMap(p => p.documents) || []
           }
@@ -776,12 +789,15 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
                     >
                       <TableCell></TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900 font-mono">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span 
+                            className="text-sm font-medium text-gray-900 font-mono truncate max-w-[300px]" 
+                            title={doc.documentCode || doc.fileName}
+                          >
                             {doc.documentCode || doc.fileName}
                           </span>
                           {doc.isQueued && (
-                            <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300">
+                            <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300 flex-shrink-0">
                               <AlertCircle className="w-3 h-3 mr-1" />
                               Needs Review
                             </Badge>
@@ -789,7 +805,7 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-gray-500 truncate max-w-xs" title={doc.fileName}>
+                        <span className="text-xs text-gray-500 truncate max-w-[300px] block" title={doc.fileName}>
                           {doc.fileName}
                         </span>
                       </TableCell>
