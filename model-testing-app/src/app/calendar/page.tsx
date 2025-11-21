@@ -10,6 +10,7 @@ import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { Button } from '@/components/ui/button';
 import EventModal from '@/components/EventModal';
+import './calendar.css';
 
 const localizer = momentLocalizer(moment);
 
@@ -177,13 +178,13 @@ export default function CalendarPage() {
         </div>
 
         {/* Calendar */}
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <Calendar
             localizer={localizer}
             events={calendarEvents}
             startAccessor="start"
             endAccessor="end"
-            style={{ height: 600 }}
+            style={{ height: 700 }}
             view={view}
             onView={handleViewChange}
             date={currentDate}

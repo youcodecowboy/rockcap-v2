@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 import { useClients, useProjectsByClient, useProjects } from '@/lib/clientStorage';
 import { useDocumentsByClient, useDocuments } from '@/lib/documentStorage';
 import { Id } from '../../../convex/_generated/dataModel';
@@ -16,12 +18,16 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import CompactMetricCard from '@/components/CompactMetricCard';
-import { Building2, FolderKanban, FileText, Download, Filter, ArrowUpDown } from 'lucide-react';
+import CreateClientDrawer from '@/components/CreateClientDrawer';
+import { Card, CardContent } from '@/components/ui/card';
+import { Building2, FolderKanban, FileText, Filter, ArrowUpDown, Plus, Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 // Component to get client data (projects and documents)
 function ClientDataLoader({ clientId, children }: { clientId: Id<"clients">, children: (data: any) => React.ReactNode }) {
   const projects = useProjectsByClient(clientId) || [];
   const documents = useDocumentsByClient(clientId) || [];
+  const client = useQuery(api.clients.get, { id: clientId });
   
   const data = useMemo(() => {
     // Find most recently uploaded document
@@ -30,53 +36,52 @@ function ClientDataLoader({ clientId, children }: { clientId: Id<"clients">, chi
     );
     const lastUploadedFile = sortedDocs.length > 0 ? sortedDocs[0] : null;
     
+    // Use last document upload date as activity date
+    let lastActivityDate: Date | null = null;
+    if (lastUploadedFile) {
+      lastActivityDate = new Date(lastUploadedFile.uploadedAt);
+    }
+    
     return {
       projects,
       documents,
       projectCount: projects.length,
       documentCount: documents.length,
       lastUploadedFile,
-      lastUploadedDate: lastUploadedFile ? new Date(lastUploadedFile.uploadedAt) : null,
+      lastActivityDate,
     };
-  }, [projects, documents]);
+  }, [projects, documents, client]);
   
   return <>{children(data)}</>;
 }
 
 export default function ClientsPage() {
   const router = useRouter();
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'lastActivity' | 'projects'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 15;
+  
   const clients = useClients() || [];
   const allProjects = useProjects() || [];
   const allDocuments = useDocuments() || [];
 
   // Calculate metrics
   const metrics = useMemo(() => {
+    const activeClients = clients.filter(c => c.status === 'active').length;
     return {
       totalClients: clients.length,
       totalProjects: allProjects.length,
       totalDocuments: allDocuments.length,
-      activeClients: clients.length, // Could be calculated based on recent activity
+      activeClients,
     };
   }, [clients, allProjects, allDocuments]);
 
-  const formatDate = (date: Date | null) => {
-    if (!date) return '—';
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) {
-      return 'Today';
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return `${diffDays} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
-  };
-
-  const formatDateTime = (date: Date | null) => {
+  const formatLastActivity = (date: Date | null) => {
     if (!date) return '—';
     return date.toLocaleString('en-US', { 
       month: 'short', 
@@ -87,234 +92,347 @@ export default function ClientsPage() {
     });
   };
 
-  // Get last updated time (most recent client creation or update)
-  const lastUpdated = useMemo(() => {
-    if (clients.length === 0) return null;
-    const dates = clients.map(c => new Date(c.createdAt).getTime());
-    const mostRecent = new Date(Math.max(...dates));
-    const now = new Date();
-    const diffHours = Math.floor((now.getTime() - mostRecent.getTime()) / (1000 * 60 * 60));
+  // Filter and sort clients
+  const filteredAndSortedClients = useMemo(() => {
+    let filtered = [...clients];
     
-    if (diffHours < 1) return 'Just now';
-    if (diffHours === 1) return '1 hour ago';
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return '1 day ago';
-    return `${diffDays} days ago`;
-  }, [clients]);
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(c => 
+        c.name?.toLowerCase().includes(query) ||
+        c.companyName?.toLowerCase().includes(query) ||
+        c.email?.toLowerCase().includes(query) ||
+        c.phone?.toLowerCase().includes(query) ||
+        c.city?.toLowerCase().includes(query) ||
+        c.state?.toLowerCase().includes(query)
+      );
+    }
+    
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(c => c.status === statusFilter);
+    }
+    
+    // Apply type filter
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(c => c.type === typeFilter);
+    }
+    
+    // Sort clients
+    filtered.sort((a, b) => {
+      if (sortBy === 'name') {
+        const comparison = a.name.localeCompare(b.name);
+        return sortOrder === 'asc' ? comparison : -comparison;
+      }
+      // For other sorts, we'd need to load the data first
+      return 0;
+    });
+    
+    return filtered;
+  }, [clients, searchQuery, statusFilter, typeFilter, sortBy, sortOrder]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredAndSortedClients.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedClients = filteredAndSortedClients.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, typeFilter, sortBy, sortOrder]);
+
+  const getStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'active':
+        return <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>;
+      case 'archived':
+        return <Badge className="bg-gray-100 text-gray-800 border-gray-200">Archived</Badge>;
+      case 'past':
+        return <Badge className="bg-gray-100 text-gray-800 border-gray-200">Past</Badge>;
+      case 'prospect':
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Prospect</Badge>;
+      default:
+        return null;
+    }
+  };
+
+  const getTypeBadge = (type?: string) => {
+    if (!type) return null;
+    const normalizedType = type.toLowerCase();
+    if (normalizedType.includes('lender')) {
+      return <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200">Lender</Badge>;
+    } else if (normalizedType.includes('broker')) {
+      return <Badge className="bg-teal-100 text-teal-800 border-teal-200">Broker</Badge>;
+    } else if (normalizedType.includes('developer') || normalizedType.includes('real-estate')) {
+      return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Developer</Badge>;
+    } else if (normalizedType.includes('borrower')) {
+      return <Badge className="bg-purple-100 text-purple-800 border-purple-200">Borrower</Badge>;
+    }
+    return <Badge variant="outline">{type}</Badge>;
+  };
 
   return (
-    <div className="bg-gray-50">
+    <div className="bg-gray-50 min-h-screen" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Client Database</h1>
-              <p className="mt-2 text-gray-600">
-                Manage and view all clients
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm">
-                <Filter className="w-4 h-4 mr-2" />
-                Filter
-              </Button>
-              <Button variant="outline" size="sm">
-                <ArrowUpDown className="w-4 h-4 mr-2" />
-                Sort
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Export
-              </Button>
-            </div>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
+              Client Database
+            </h1>
+            <p className="mt-2 text-gray-600" style={{ fontWeight: 400 }}>
+              Manage and view all clients
+            </p>
           </div>
-          {lastUpdated && (
-            <p className="text-sm text-gray-500">Last updated: {lastUpdated}</p>
-          )}
+          <Button
+            onClick={() => setIsCreateDrawerOpen(true)}
+            className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            New Client
+          </Button>
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <CompactMetricCard
             label="Total Clients"
             value={metrics.totalClients}
             icon={Building2}
             iconColor="blue"
+            className="bg-black text-white"
           />
           <CompactMetricCard
             label="Active Clients"
             value={metrics.activeClients}
             icon={Building2}
             iconColor="green"
+            className="bg-black text-white"
           />
           <CompactMetricCard
             label="Total Projects"
             value={metrics.totalProjects}
             icon={FolderKanban}
             iconColor="purple"
+            className="bg-black text-white"
           />
           <CompactMetricCard
             label="Total Documents"
             value={metrics.totalDocuments}
             icon={FileText}
             iconColor="orange"
+            className="bg-black text-white"
           />
         </div>
 
         {/* Table Section */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          {clients.length === 0 ? (
-            <div className="p-12 text-center">
-              <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-900 font-medium mb-1">No clients found</p>
-              <p className="text-sm text-gray-500 mb-4">
-                Upload files to create clients automatically.
-              </p>
+        <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+          <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-white" />
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                Clients
+              </span>
             </div>
-          ) : (
-            <>
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">
-                    {clients.length} {clients.length === 1 ? 'Client' : 'Clients'}
-                  </h2>
-                </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                {filteredAndSortedClients.length} {filteredAndSortedClients.length === 1 ? 'Client' : 'Clients'}
+              </span>
+            </div>
+          </div>
+          <CardContent className="pt-0 pb-6">
+            {filteredAndSortedClients.length === 0 ? (
+              <div className="p-12 text-center">
+                <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-900 font-medium mb-1">No clients found</p>
+                <p className="text-sm text-gray-500 mb-4">
+                  {searchQuery.trim() || statusFilter !== 'all' || typeFilter !== 'all' 
+                    ? 'Try adjusting your search or filters'
+                    : 'Create your first client or upload files to create clients automatically.'}
+                </p>
+                {!searchQuery.trim() && statusFilter === 'all' && typeFilter === 'all' && (
+                  <Button onClick={() => setIsCreateDrawerOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Client
+                  </Button>
+                )}
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="text-xs font-semibold text-gray-700 uppercase">Client Name</TableHead>
-                    <TableHead className="text-xs font-semibold text-gray-700 uppercase">Projects</TableHead>
-                    <TableHead className="text-xs font-semibold text-gray-700 uppercase">Documents</TableHead>
-                    <TableHead className="text-xs font-semibold text-gray-700 uppercase">Last Uploaded File</TableHead>
-                    <TableHead className="text-xs font-semibold text-gray-700 uppercase">Last Uploaded</TableHead>
-                    <TableHead className="text-right text-xs font-semibold text-gray-700 uppercase">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-              <TableBody>
-                {clients.map((client) => {
-                  const clientId = client._id as Id<"clients">;
-                  return (
-                    <ClientDataLoader key={clientId} clientId={clientId}>
-                      {(data) => (
-                        <TableRow 
-                          className="cursor-pointer hover:bg-gray-50"
-                          onClick={() => router.push(`/clients/${clientId}`)}
-                        >
-                          <TableCell>
-                            <div className="flex items-center">
-                              <div className="flex-shrink-0 h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-blue-600 font-semibold text-sm">
-                                  {client.name.charAt(0).toUpperCase()}
-                                </span>
-                              </div>
-                              <div className="ml-4">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {client.name}
-                                </div>
-                                <div className="text-sm text-gray-500">
-                                  Created {new Date(client.createdAt).toLocaleDateString()}
-                                </div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-gray-900">
-                              {data.projectCount > 0 ? (
-                                <div className="space-y-1">
-                                  <div className="font-medium">{data.projectCount} {data.projectCount === 1 ? 'project' : 'projects'}</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {data.projects.slice(0, 2).map((project: any) => {
-                                      const projectId = project._id as Id<"projects">;
-                                      return (
-                                        <Button
-                                          key={projectId}
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            router.push(`/projects/${projectId}`);
-                                          }}
-                                          className="text-xs px-2 py-1 h-auto bg-blue-50 text-blue-700 hover:bg-blue-100"
-                                        >
-                                          {project.name}
-                                        </Button>
-                                      );
-                                    })}
-                                    {data.projects.length > 2 && (
-                                      <span className="text-xs text-gray-500">
-                                        +{data.projects.length - 2} more
-                                      </span>
-                                    )}
+            ) : (
+              <>
+                {/* Filter and Sort Controls */}
+                <div className="px-2 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
+                  {/* Search Bar - Left Side */}
+                  <div className="relative flex-1 max-w-xs">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <Input
+                      placeholder="Search clients..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="text-sm pl-10"
+                    />
+                  </div>
+                  
+                  {/* Filters and Sort - Right Side */}
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="active">Active</option>
+                      <option value="prospect">Prospect</option>
+                      <option value="archived">Archived</option>
+                      <option value="past">Past</option>
+                    </select>
+                    <select
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                    >
+                      <option value="all">All Types</option>
+                      <option value="lender">Lender</option>
+                      <option value="broker">Broker</option>
+                      <option value="developer">Developer</option>
+                      <option value="borrower">Borrower</option>
+                    </select>
+                    <ArrowUpDown className="w-4 h-4 text-gray-500 ml-2" />
+                    <select
+                      value={`${sortBy}-${sortOrder}`}
+                      onChange={(e) => {
+                        const [newSortBy, newSortOrder] = e.target.value.split('-');
+                        setSortBy(newSortBy as any);
+                        setSortOrder(newSortOrder as any);
+                      }}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                    >
+                      <option value="name-asc">Name (A-Z)</option>
+                      <option value="name-desc">Name (Z-A)</option>
+                      <option value="lastActivity-desc">Last Activity (Newest)</option>
+                      <option value="lastActivity-asc">Last Activity (Oldest)</option>
+                      <option value="projects-desc">Projects (Most)</option>
+                      <option value="projects-asc">Projects (Fewest)</option>
+                    </select>
+                  </div>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-200">
+                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Client Name</TableHead>
+                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Projects</TableHead>
+                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Last Activity</TableHead>
+                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Tags</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-700 uppercase">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedClients.map((client) => {
+                      const clientId = client._id as Id<"clients">;
+                      return (
+                        <ClientDataLoader key={clientId} clientId={clientId}>
+                          {(data) => (
+                            <TableRow 
+                              className="cursor-pointer hover:bg-gray-50"
+                              onClick={() => router.push(`/clients/${clientId}`)}
+                            >
+                              <TableCell>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {client.name}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    Created {new Date(client.createdAt).toLocaleDateString()}
                                   </div>
                                 </div>
-                              ) : (
-                                <span className="text-gray-400">No projects</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-gray-900">
-                              <span className="font-medium">{data.documentCount}</span>
-                              <span className="text-gray-500 ml-1">
-                                {data.documentCount === 1 ? 'document' : 'documents'}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {data.lastUploadedFile ? (
-                              <div className="text-sm">
-                                <div className="text-gray-900 font-medium truncate max-w-xs">
-                                  {data.lastUploadedFile.fileName}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm text-gray-900">
+                                  {data.projectCount > 0 ? (
+                                    <span className="font-medium">{data.projectCount} {data.projectCount === 1 ? 'project' : 'projects'}</span>
+                                  ) : (
+                                    <span className="text-gray-400">No projects</span>
+                                  )}
                                 </div>
-                                <div className="flex gap-2 mt-1">
-                                  <Badge variant="secondary" className="text-xs">
-                                    {data.lastUploadedFile.fileTypeDetected}
-                                  </Badge>
-                                  <Badge variant="outline" className="text-xs">
-                                    {data.lastUploadedFile.category}
-                                  </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm text-gray-600">
+                                  {formatLastActivity(data.lastActivityDate)}
                                 </div>
-                              </div>
-                            ) : (
-                              <span className="text-sm text-gray-400">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-gray-500">
-                              {formatDate(data.lastUploadedDate)}
-                            </div>
-                            {data.lastUploadedDate && (
-                              <div className="text-xs text-gray-400 mt-0.5">
-                                {formatDateTime(data.lastUploadedDate)}
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/clients/${clientId}`);
-                              }}
-                              className="text-blue-600 hover:text-blue-900 hover:bg-blue-50"
-                            >
-                              View
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </ClientDataLoader>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            </>
-          )}
-        </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap gap-1">
+                                  {getStatusBadge(client.status)}
+                                  {getTypeBadge(client.type)}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(`/clients/${clientId}`);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-900 hover:bg-blue-50"
+                                >
+                                  View
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </ClientDataLoader>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                
+                {/* Pagination */}
+                {filteredAndSortedClients.length > ITEMS_PER_PAGE && (
+                  <div className="px-2 py-4 border-t border-gray-200 flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      Showing {startIndex + 1}-{Math.min(endIndex, filteredAndSortedClients.length)} of {filteredAndSortedClients.length} clients
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="h-8 px-3 text-xs"
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-gray-600 px-2">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage === totalPages}
+                        className="h-8 px-3 text-xs"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Create Client Drawer */}
+        <CreateClientDrawer
+          isOpen={isCreateDrawerOpen}
+          onClose={() => setIsCreateDrawerOpen(false)}
+          onSuccess={() => {
+            setIsCreateDrawerOpen(false);
+          }}
+        />
       </div>
     </div>
   );

@@ -598,6 +598,81 @@ export const CHAT_TOOLS: Tool[] = [
     requiresConfirmation: false
   },
   
+  // TASK OPERATIONS
+  {
+    name: "createTask",
+    description: "Create a new task with optional due date, priority, and client/project association.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Task title (required)"
+        },
+        description: {
+          type: "string",
+          description: "Task description (optional)"
+        },
+        notes: {
+          type: "string",
+          description: "Additional notes (optional)"
+        },
+        dueDate: {
+          type: "string",
+          description: "Due date/time in ISO timestamp format (optional)"
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description: "Task priority (default: medium)"
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Tags for categorization (optional)"
+        },
+        clientId: {
+          type: "string",
+          description: "Link task to a client (optional)"
+        },
+        projectId: {
+          type: "string",
+          description: "Link task to a project (optional)"
+        },
+        assignedTo: {
+          type: "string",
+          description: "User ID to assign task to (optional, defaults to current user)"
+        }
+      },
+      required: ["title"]
+    },
+    requiresConfirmation: true
+  },
+  {
+    name: "getTasks",
+    description: "Get user's tasks with optional filters (status, client, project).",
+    parameters: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["todo", "in-progress", "completed", "cancelled"],
+          description: "Filter by task status"
+        },
+        clientId: {
+          type: "string",
+          description: "Filter by client ID"
+        },
+        projectId: {
+          type: "string",
+          description: "Filter by project ID"
+        }
+      },
+      required: []
+    },
+    requiresConfirmation: false
+  },
+  
   // EVENT OPERATIONS
   {
     name: "createEvent",
@@ -744,6 +819,265 @@ export const CHAT_TOOLS: Tool[] = [
 ];
 
 /**
+ * Validation helper functions
+ */
+
+/**
+ * Validate that a string is a valid ISO timestamp
+ */
+function validateISODate(dateString: string): { valid: boolean; error?: string; date?: Date } {
+  if (!dateString || typeof dateString !== 'string') {
+    return { valid: false, error: 'Date is required and must be a string' };
+  }
+
+  // Check for shell command syntax (like $(date +'%Y-%m-%dT15:00:00Z'))
+  if (dateString.includes('$(') || dateString.includes('date +')) {
+    return { valid: false, error: 'Invalid date format: shell command syntax detected. Use ISO 8601 format (e.g., 2025-11-20T15:00:00Z)' };
+  }
+
+  // Try to parse as ISO date
+  const date = new Date(dateString);
+  
+  if (isNaN(date.getTime())) {
+    return { valid: false, error: `Invalid date format: "${dateString}". Use ISO 8601 format (e.g., 2025-11-20T15:00:00Z)` };
+  }
+
+  // Check if it's a valid ISO string format (more lenient - allow various ISO formats)
+  const isoRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})?$/;
+  if (!isoRegex.test(dateString)) {
+    // If date parses correctly but doesn't match regex, still accept it (might be a valid variant)
+    // But warn about format
+    const parsedDate = new Date(dateString);
+    if (!isNaN(parsedDate.getTime())) {
+      // Date is valid, but format might not be standard - accept it but suggest better format
+      return { valid: true, date: parsedDate };
+    }
+    return { valid: false, error: `Invalid ISO timestamp format: "${dateString}". Use format: YYYY-MM-DDTHH:mm:ssZ` };
+  }
+
+  return { valid: true, date };
+}
+
+/**
+ * Search for a client by name (fuzzy matching)
+ */
+async function searchClientByName(
+  clientName: string,
+  client: ConvexHttpClient
+): Promise<{ found: boolean; clientId?: Id<"clients">; matches?: any[] }> {
+  if (!clientName || typeof clientName !== 'string') {
+    return { found: false };
+  }
+
+  try {
+    // Get all clients
+    const allClients = await client.query(api.clients.list, {});
+    
+    // Normalize search term
+    const normalizedSearch = clientName.toLowerCase().trim();
+    
+    // Try exact match first
+    let exactMatch = allClients.find(
+      (c: any) => c.name?.toLowerCase() === normalizedSearch ||
+                  c.companyName?.toLowerCase() === normalizedSearch
+    );
+    
+    if (exactMatch) {
+      return { found: true, clientId: exactMatch._id };
+    }
+    
+    // Try partial match
+    const partialMatches = allClients.filter(
+      (c: any) => c.name?.toLowerCase().includes(normalizedSearch) ||
+                  c.companyName?.toLowerCase().includes(normalizedSearch) ||
+                  normalizedSearch.includes(c.name?.toLowerCase() || '') ||
+                  normalizedSearch.includes(c.companyName?.toLowerCase() || '')
+    );
+    
+    if (partialMatches.length === 1) {
+      return { found: true, clientId: partialMatches[0]._id, matches: partialMatches };
+    }
+    
+    if (partialMatches.length > 1) {
+      return { found: false, matches: partialMatches };
+    }
+    
+    return { found: false };
+  } catch (error) {
+    console.error('Error searching for client:', error);
+    return { found: false };
+  }
+}
+
+/**
+ * Parse and validate reminder parameters
+ * Extracts client names from description if clientId is not provided
+ */
+async function parseAndValidateReminderParams(
+  params: any,
+  client: ConvexHttpClient
+): Promise<{
+  valid: boolean;
+  error?: string;
+  validatedParams?: any;
+  needsClientConfirmation?: boolean;
+  clientMatches?: any[];
+}> {
+  // Validate required fields
+  if (!params.title || typeof params.title !== 'string' || !params.title.trim()) {
+    return { valid: false, error: 'Reminder title is required' };
+  }
+
+  if (!params.scheduledFor) {
+    return { valid: false, error: 'Scheduled date/time is required' };
+  }
+
+  // Validate date
+  const dateValidation = validateISODate(params.scheduledFor);
+  if (!dateValidation.valid) {
+    return { valid: false, error: dateValidation.error };
+  }
+
+  const validatedParams: any = {
+    title: params.title.trim(),
+    description: params.description,
+    scheduledFor: params.scheduledFor,
+    projectId: params.projectId,
+    taskId: params.taskId,
+  };
+
+  // Handle client ID
+  let clientId = params.clientId;
+  
+  // If clientId is provided, validate it's a valid Convex ID
+  if (clientId) {
+    if (typeof clientId === 'string' && clientId.startsWith('j')) {
+      // Valid Convex ID format
+      validatedParams.clientId = clientId;
+    } else {
+      // Might be a client name - try to search for it
+      const clientSearch = await searchClientByName(clientId, client);
+      if (clientSearch.found && clientSearch.clientId) {
+        validatedParams.clientId = clientSearch.clientId;
+      } else if (clientSearch.matches && clientSearch.matches.length > 1) {
+        // Multiple matches - need confirmation
+        return {
+          valid: false,
+          error: `Multiple clients found matching "${clientId}". Please specify which client you mean.`,
+          needsClientConfirmation: true,
+          clientMatches: clientSearch.matches,
+        };
+      } else {
+        return {
+          valid: false,
+          error: `Client "${clientId}" not found. Please search for clients first using searchClients tool.`,
+        };
+      }
+    }
+  } else {
+    // Try to extract client name from description or title
+    const textToSearch = `${params.title} ${params.description || ''}`.toLowerCase();
+    const clientSearch = await searchClientByName(textToSearch, client);
+    
+    if (clientSearch.found && clientSearch.clientId) {
+      validatedParams.clientId = clientSearch.clientId;
+    } else if (clientSearch.matches && clientSearch.matches.length > 1) {
+      // Multiple matches - need confirmation
+      return {
+        valid: false,
+        error: `Found multiple possible clients in the reminder text. Please specify which client you mean.`,
+        needsClientConfirmation: true,
+        clientMatches: clientSearch.matches,
+      };
+    }
+    // If no client found, that's okay - clientId is optional
+  }
+
+  return { valid: true, validatedParams };
+}
+
+/**
+ * Parse and validate task parameters
+ */
+async function parseAndValidateTaskParams(
+  params: any,
+  client: ConvexHttpClient
+): Promise<{
+  valid: boolean;
+  error?: string;
+  validatedParams?: any;
+  needsClientConfirmation?: boolean;
+  clientMatches?: any[];
+}> {
+  // Validate required fields
+  if (!params.title || typeof params.title !== 'string' || !params.title.trim()) {
+    return { valid: false, error: 'Task title is required' };
+  }
+
+  const validatedParams: any = {
+    title: params.title.trim(),
+    description: params.description,
+    notes: params.notes,
+    priority: params.priority || 'medium',
+    tags: params.tags || [],
+    assignedTo: params.assignedTo,
+    projectId: params.projectId,
+  };
+
+  // Validate due date if provided
+  if (params.dueDate) {
+    const dateValidation = validateISODate(params.dueDate);
+    if (!dateValidation.valid) {
+      return { valid: false, error: dateValidation.error };
+    }
+    validatedParams.dueDate = params.dueDate;
+  }
+
+  // Handle client ID (same logic as reminders)
+  let clientId = params.clientId;
+  
+  if (clientId) {
+    if (typeof clientId === 'string' && clientId.startsWith('j')) {
+      validatedParams.clientId = clientId;
+    } else {
+      const clientSearch = await searchClientByName(clientId, client);
+      if (clientSearch.found && clientSearch.clientId) {
+        validatedParams.clientId = clientSearch.clientId;
+      } else if (clientSearch.matches && clientSearch.matches.length > 1) {
+        return {
+          valid: false,
+          error: `Multiple clients found matching "${clientId}". Please specify which client you mean.`,
+          needsClientConfirmation: true,
+          clientMatches: clientSearch.matches,
+        };
+      } else {
+        return {
+          valid: false,
+          error: `Client "${clientId}" not found. Please search for clients first using searchClients tool.`,
+        };
+      }
+    }
+  } else {
+    // Try to extract client name from description or title
+    const textToSearch = `${params.title} ${params.description || ''}`.toLowerCase();
+    const clientSearch = await searchClientByName(textToSearch, client);
+    
+    if (clientSearch.found && clientSearch.clientId) {
+      validatedParams.clientId = clientSearch.clientId;
+    } else if (clientSearch.matches && clientSearch.matches.length > 1) {
+      return {
+        valid: false,
+        error: `Found multiple possible clients in the task text. Please specify which client you mean.`,
+        needsClientConfirmation: true,
+        clientMatches: clientSearch.matches,
+      };
+    }
+  }
+
+  return { valid: true, validatedParams };
+}
+
+/**
  * Execute a tool with the given parameters
  * This is called after user confirmation for tools that require it
  * @param authenticatedClient - Optional authenticated Convex client. If provided, uses this instead of creating a new one.
@@ -760,10 +1094,22 @@ export async function executeTool(
     switch (toolName) {
       // DATA RETRIEVAL
       case "searchClients":
-        return await client.query(api.clients.list, {
+        const allClients = await client.query(api.clients.list, {
           status: parameters.status,
           type: parameters.type,
         });
+        
+        // Filter by searchTerm if provided
+        if (parameters.searchTerm && typeof parameters.searchTerm === 'string') {
+          const searchTerm = parameters.searchTerm.toLowerCase().trim();
+          return allClients.filter((c: any) => 
+            c.name?.toLowerCase().includes(searchTerm) ||
+            c.companyName?.toLowerCase().includes(searchTerm) ||
+            c.email?.toLowerCase().includes(searchTerm)
+          );
+        }
+        
+        return allClients;
       
       case "getClient":
         return await client.query(api.clients.get, {
@@ -917,13 +1263,29 @@ export async function executeTool(
       
       // REMINDER OPERATIONS
       case "createReminder":
+        // Validate and parse parameters
+        const reminderValidation = await parseAndValidateReminderParams(parameters, client);
+        if (!reminderValidation.valid) {
+          throw new Error(reminderValidation.error || 'Invalid reminder parameters');
+        }
+        
+        if (reminderValidation.needsClientConfirmation && reminderValidation.clientMatches) {
+          const clientNames = reminderValidation.clientMatches
+            .map((c: any) => c.name || c.companyName)
+            .join(', ');
+          throw new Error(
+            `Multiple clients found. Please specify which client: ${clientNames}. ` +
+            `Use searchClients tool first to find the exact client ID.`
+          );
+        }
+        
         return await client.mutation(api.reminders.create, {
-          title: parameters.title,
-          description: parameters.description,
-          scheduledFor: parameters.scheduledFor,
-          clientId: parameters.clientId as Id<"clients"> | undefined,
-          projectId: parameters.projectId as Id<"projects"> | undefined,
-          taskId: parameters.taskId as Id<"tasks"> | undefined,
+          title: reminderValidation.validatedParams!.title,
+          description: reminderValidation.validatedParams!.description,
+          scheduledFor: reminderValidation.validatedParams!.scheduledFor,
+          clientId: reminderValidation.validatedParams!.clientId as Id<"clients"> | undefined,
+          projectId: reminderValidation.validatedParams!.projectId as Id<"projects"> | undefined,
+          taskId: reminderValidation.validatedParams!.taskId as Id<"tasks"> | undefined,
         });
       
       case "getReminders":
@@ -939,6 +1301,43 @@ export async function executeTool(
         return await client.query(api.reminders.getUpcoming, {
           days: parameters.days,
           limit: parameters.limit,
+        });
+      
+      // TASK OPERATIONS
+      case "createTask":
+        // Validate and parse parameters
+        const taskValidation = await parseAndValidateTaskParams(parameters, client);
+        if (!taskValidation.valid) {
+          throw new Error(taskValidation.error || 'Invalid task parameters');
+        }
+        
+        if (taskValidation.needsClientConfirmation && taskValidation.clientMatches) {
+          const clientNames = taskValidation.clientMatches
+            .map((c: any) => c.name || c.companyName)
+            .join(', ');
+          throw new Error(
+            `Multiple clients found. Please specify which client: ${clientNames}. ` +
+            `Use searchClients tool first to find the exact client ID.`
+          );
+        }
+        
+        return await client.mutation(api.tasks.create, {
+          title: taskValidation.validatedParams!.title,
+          description: taskValidation.validatedParams!.description,
+          notes: taskValidation.validatedParams!.notes,
+          dueDate: taskValidation.validatedParams!.dueDate,
+          priority: taskValidation.validatedParams!.priority,
+          tags: taskValidation.validatedParams!.tags,
+          clientId: taskValidation.validatedParams!.clientId as Id<"clients"> | undefined,
+          projectId: taskValidation.validatedParams!.projectId as Id<"projects"> | undefined,
+          assignedTo: taskValidation.validatedParams!.assignedTo as Id<"users"> | undefined,
+        });
+      
+      case "getTasks":
+        return await client.query(api.tasks.getByUser, {
+          status: parameters.status as "todo" | "in_progress" | "completed" | "cancelled" | undefined,
+          clientId: parameters.clientId as Id<"clients"> | undefined,
+          projectId: parameters.projectId as Id<"projects"> | undefined,
         });
       
       // EVENT OPERATIONS

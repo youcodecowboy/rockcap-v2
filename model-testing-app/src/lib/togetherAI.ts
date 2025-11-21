@@ -1,6 +1,7 @@
 import { ModelResponse } from '@/types';
 import { FILE_CATEGORIES } from './categories';
-import { getRelevantFileTypeHints } from './fileTypeDefinitions';
+import { getRelevantFileTypeHints, FILE_TYPE_DEFINITIONS } from './fileTypeDefinitions';
+import { getFileTypeDefinitionsServer } from './convexServer';
 
 const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
 const MODEL_NAME = 'openai/gpt-oss-20b'; // GPT-OSS-20B via Together.ai
@@ -35,8 +36,18 @@ export async function analyzeFileContent(
 
   const categoriesList = FILE_CATEGORIES.join(', ');
 
+  // Load file type definitions from database (merge with hardcoded ones)
+  let databaseDefinitions: any[] = [];
+  try {
+    databaseDefinitions = await getFileTypeDefinitionsServer();
+  } catch (error) {
+    console.warn('[Together.ai] Failed to load file type definitions from database, using hardcoded only:', error);
+    // Continue with hardcoded definitions only
+  }
+
   // Get relevant file type hints based on content and filename
-  const fileTypeHints = getRelevantFileTypeHints(textContent, fileName);
+  // Merge database definitions with hardcoded ones
+  const fileTypeHints = getRelevantFileTypeHints(textContent, fileName, databaseDefinitions);
   const fileTypeGuidance = fileTypeHints.length > 0
     ? `\n\nFILE TYPE GUIDANCE (CRITICAL - USE THESE IF CONTENT MATCHES):\nThe following file types are DEFINITELY relevant based on the content and filename:\n\n${fileTypeHints.join('\n\n')}\n\nCRITICAL INSTRUCTIONS:\n- If the content matches ANY of the file types above, you MUST use that exact file type name\n- Use the category specified in the FILE TYPE GUIDANCE above (do NOT use a different category)\n- If "Initial Monitoring Report" is listed above, use fileType: "Initial Monitoring Report" and category: "Inspections"\n- If "Interim Monitoring Report" is listed above, use fileType: "Interim Monitoring Report" and category: "Inspections"\n- If "RedBook Valuation" is listed above, use fileType: "RedBook Valuation" and category: "Appraisals"\n- If "Plans" is listed above, use fileType: "Plans" and category: "Property Documents"\n- If "Legal Documents" is listed above, use fileType: "Legal Documents" or "Legal Documents - [Subcategory]" and category: "Legal Documents"\n- If "Indicative Terms" is listed above, use fileType: "Indicative Terms" and category: "Loan Terms"\n- Do NOT use generic file types like "Appraisal Report" if a specific file type definition matches\n- The FILE TYPE GUIDANCE takes absolute precedence over general assumptions`
     : '';

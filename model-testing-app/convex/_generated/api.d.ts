@@ -9,6 +9,7 @@
  */
 
 import type * as authHelpers from "../authHelpers.js";
+import type * as categorySettings from "../categorySettings.js";
 import type * as chatActions from "../chatActions.js";
 import type * as chatMessages from "../chatMessages.js";
 import type * as chatSessions from "../chatSessions.js";
@@ -26,6 +27,7 @@ import type * as enrichment from "../enrichment.js";
 import type * as events from "../events.js";
 import type * as excelTemplates from "../excelTemplates.js";
 import type * as fileQueue from "../fileQueue.js";
+import type * as fileTypeDefinitions from "../fileTypeDefinitions.js";
 import type * as files from "../files.js";
 import type * as funnels from "../funnels.js";
 import type * as googleCalendar from "../googleCalendar.js";
@@ -43,6 +45,7 @@ import type * as internalDocuments from "../internalDocuments.js";
 import type * as knowledgeBank from "../knowledgeBank.js";
 import type * as leads from "../leads.js";
 import type * as migrations_addDocumentCodes from "../migrations/addDocumentCodes.js";
+import type * as migrations_seedFileTypeDefinitions from "../migrations/seedFileTypeDefinitions.js";
 import type * as modelRuns from "../modelRuns.js";
 import type * as noteTemplates from "../noteTemplates.js";
 import type * as notes from "../notes.js";
@@ -69,6 +72,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   authHelpers: typeof authHelpers;
+  categorySettings: typeof categorySettings;
   chatActions: typeof chatActions;
   chatMessages: typeof chatMessages;
   chatSessions: typeof chatSessions;
@@ -86,6 +90,7 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   excelTemplates: typeof excelTemplates;
   fileQueue: typeof fileQueue;
+  fileTypeDefinitions: typeof fileTypeDefinitions;
   files: typeof files;
   funnels: typeof funnels;
   googleCalendar: typeof googleCalendar;
@@ -103,6 +108,7 @@ declare const fullApi: ApiFromModules<{
   knowledgeBank: typeof knowledgeBank;
   leads: typeof leads;
   "migrations/addDocumentCodes": typeof migrations_addDocumentCodes;
+  "migrations/seedFileTypeDefinitions": typeof migrations_seedFileTypeDefinitions;
   modelRuns: typeof modelRuns;
   noteTemplates: typeof noteTemplates;
   notes: typeof notes;

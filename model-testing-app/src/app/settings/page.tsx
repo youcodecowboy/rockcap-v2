@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, Link2, User, Bell, Shield, ChevronRight } from 'lucide-react';
+import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -14,6 +14,20 @@ const settingsSections = [
     description: 'Sync contacts, companies, and deals from HubSpot',
     icon: Link2,
     href: '/settings/hubspot',
+  },
+  {
+    id: 'file-summary-agent',
+    title: 'File Summary Agent',
+    description: 'Manage file types and examples for automatic file categorization',
+    icon: FileText,
+    href: '/settings/file-summary-agent',
+  },
+  {
+    id: 'category-settings',
+    title: 'Category Settings',
+    description: 'Manage client statuses, types, tags, and prospecting stages',
+    icon: Tag,
+    href: '/settings/category-settings',
   },
   {
     id: 'profile',

@@ -941,7 +941,30 @@ export async function POST(request: NextRequest) {
       systemPromptBase = `You are an AI assistant for a real estate financing application. You help users manage clients, projects, documents, knowledge bank entries, and notes.`;
     }
 
+    // Get current date/time for date parsing context
+    const currentDateTime = new Date();
+    const currentDateISO = currentDateTime.toISOString();
+    const currentDateReadable = currentDateTime.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    const currentTimeReadable = currentDateTime.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      timeZoneName: 'short' 
+    });
+
     const systemPrompt = `${systemPromptBase}
+
+CURRENT DATE AND TIME CONTEXT (CRITICAL FOR DATE PARSING):
+- Current date/time (ISO): ${currentDateISO}
+- Current date (readable): ${currentDateReadable}
+- Current time (readable): ${currentTimeReadable}
+- When user says "today", it means: ${currentDateReadable}
+- When user says "tomorrow", it means: ${new Date(currentDateTime.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+- Always use the current date/time above when converting relative dates like "today", "tomorrow", "next week", etc.
 
 CRITICAL: You have access to tools that let you actually retrieve and modify data. You MUST use these tools to answer user questions - don't just say you will do something, actually DO IT by calling the appropriate tool.
 
@@ -992,6 +1015,18 @@ Assistant: I'll create a new client named XYZ Corp for you. Please confirm the f
 }
 </TOOL_CALL>
 
+User: "Create a reminder to call Kristian tomorrow at 3pm"
+Assistant: I'll help you create that reminder. First, let me search for the client "Kristian" to link the reminder properly.
+<TOOL_CALL>
+{
+  "name": "searchClients",
+  "arguments": {
+    "searchTerm": "Kristian"
+  }
+}
+</TOOL_CALL>
+[After getting client results, use the client ID in createReminder]
+
 AVAILABLE TOOLS:
 ${CHAT_TOOLS.map(tool => `
 - ${tool.name}: ${tool.description}
@@ -1008,6 +1043,52 @@ IMPORTANT RULES:
 5. You can provide conversational text before or after the tool call
 6. Always use the context provided to give personalized assistance
 7. If a file has been uploaded, help the user process and file it appropriately using available tools
+
+CRITICAL RULES FOR CREATING REMINDERS AND TASKS:
+
+1. CLIENT SEARCH (MANDATORY):
+   - ALWAYS search for clients FIRST using searchClients tool before creating reminders or tasks
+   - If a user mentions a client name (e.g., "Kristian", "ABC Company"), you MUST call searchClients with searchTerm to find the exact client ID
+   - NEVER use client names directly in createReminder or createTask - always use the client ID from searchClients results
+   - If multiple clients match, ask the user which one they mean before proceeding
+   - If no client is found, ask the user to clarify or create the client first
+
+2. DATE VALIDATION (MANDATORY):
+   - Dates MUST be in ISO 8601 format: YYYY-MM-DDTHH:mm:ssZ (e.g., "2025-11-20T15:00:00Z")
+   - NEVER use shell command syntax like $(date +'%Y-%m-%dT15:00:00Z') - this is invalid
+   - ALWAYS use the CURRENT DATE AND TIME CONTEXT provided above when converting relative dates
+   - Convert natural language dates to ISO format using the current date/time context:
+     * "today" → use ${currentDateReadable} (${currentDateISO.split('T')[0]})
+     * "tomorrow" → use ${new Date(currentDateTime.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} (${new Date(currentDateTime.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]})
+     * "today at 3pm" → ${currentDateISO.split('T')[0]}T15:00:00Z (if time hasn't passed) or tomorrow if time has passed
+     * "tomorrow at 3pm" → ${new Date(currentDateTime.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}T15:00:00Z
+     * "next Monday at 10am" → calculate the date from today and use 10:00:00Z
+   - Always use UTC timezone (Z suffix) unless user specifies otherwise
+   - CRITICAL: When user says "today", you MUST use the current date shown above, NOT yesterday or any other date
+   - If date parsing fails, ask the user to clarify the exact date and time
+
+3. FOLLOW-UP QUESTIONS:
+   - If a client name is ambiguous (multiple matches), ask: "I found multiple clients matching '[name]'. Which one did you mean: [list options]?"
+   - If a client is not found, ask: "I couldn't find a client named '[name]'. Would you like me to search again with different terms, or create a new client?"
+   - If a date is unclear or invalid, ask: "I need clarification on the date/time. Could you specify: [what's unclear]?"
+   - If creating a reminder/task without a client but context suggests one, ask: "Should I link this to [client name]?"
+
+4. ERROR HANDLING:
+   - If tool execution fails with a validation error, read the error message carefully
+   - Common errors:
+     * Invalid date format → convert to ISO format and try again
+     * Client not found → use searchClients first, then retry
+     * Multiple clients found → ask user to specify which one
+   - Always provide helpful error messages to the user explaining what went wrong and how to fix it
+
+5. WORKFLOW FOR REMINDERS/TASKS:
+   Step 1: Extract client name from user request (if mentioned)
+   Step 2: If client mentioned → call searchClients with searchTerm
+   Step 3: If multiple matches → ask user to clarify
+   Step 4: If no matches → ask user to clarify or create client
+   Step 5: Convert date/time to ISO format
+   Step 6: Validate date format is correct
+   Step 7: Call createReminder or createTask with validated parameters
 
 ${context}${fileContext}`;
 

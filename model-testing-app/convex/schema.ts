@@ -1332,5 +1332,51 @@ export default defineSchema({
     expiresAt: v.string(), // TTL for cache invalidation (e.g., 24 hours)
   })
     .index("by_context", ["contextType", "contextId"]),
+
+  // File Type Definitions - user-defined file types for the filing agent
+  fileTypeDefinitions: defineTable({
+    fileType: v.string(), // The name of the file type (e.g., "RedBook Valuation", "Initial Monitoring Report")
+    category: v.string(), // The category it belongs to (e.g., "Appraisals", "Inspections")
+    parentType: v.optional(v.string()), // If this is a subtype, reference the parent type (e.g., "Legal Documents")
+    description: v.string(), // Description of what this file type is (minimum 100 words)
+    keywords: v.array(v.string()), // Keywords that identify this file type
+    identificationRules: v.array(v.string()), // Specific rules for identifying this file type
+    categoryRules: v.optional(v.string()), // Why it belongs to this category
+    exampleFileStorageId: v.optional(v.id("_storage")), // Reference to an example file
+    exampleFileName: v.optional(v.string()), // Name of the example file
+    isSystemDefault: v.optional(v.boolean()), // Whether this is a system default (read-only)
+    isActive: v.boolean(), // Whether this definition is active
+    createdBy: v.string(), // User ID who created this
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_file_type", ["fileType"])
+    .index("by_category", ["category"])
+    .index("by_parent_type", ["parentType"])
+    .index("by_active", ["isActive"]),
+
+  // Category Settings - Manage customizable categories for clients/projects
+  categorySettings: defineTable({
+    categoryType: v.union(
+      v.literal("client_status"),
+      v.literal("client_type"),
+      v.literal("client_tag"),
+      v.literal("prospecting_stage")
+    ), // Type of category
+    name: v.string(), // The name/value (e.g., "active", "lender", "prospect")
+    displayName: v.optional(v.string()), // Human-readable display name (e.g., "Active Client")
+    description: v.optional(v.string()), // Optional description
+    displayOrder: v.number(), // Order for display in dropdowns/lists
+    isSystemDefault: v.optional(v.boolean()), // Whether this is a system default (read-only)
+    isActive: v.boolean(), // Whether this category is active
+    hubspotMapping: v.optional(v.string()), // For prospecting stages: HubSpot stage ID this maps to
+    createdBy: v.string(), // User ID who created this
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_category_type", ["categoryType"])
+    .index("by_name", ["name"])
+    .index("by_active", ["isActive"])
+    .index("by_category_type_and_active", ["categoryType", "isActive"]),
 });
 

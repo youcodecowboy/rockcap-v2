@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Mail, Building2,
   TrendingUp,
@@ -62,7 +63,10 @@ export default function LeadsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [lifecycleFilter, setLifecycleFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'date-newest' | 'date-oldest' | 'name'>('date-newest');
+  const [sortBy, setSortBy] = useState<'date-newest' | 'date-oldest' | 'name' | 'amount'>('date-newest');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 15;
   const [isSyncingLeads, setIsSyncingLeads] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
 
@@ -96,24 +100,36 @@ export default function LeadsPage() {
 
     // Apply sorting
     filtered = [...filtered].sort((a, b) => {
-      if (sortBy === 'date-newest') {
+      if (sortBy === 'date-newest' || sortBy === 'date-oldest') {
         const dateA = new Date(a.createdAt || a.updatedAt || 0).getTime();
         const dateB = new Date(b.createdAt || b.updatedAt || 0).getTime();
-        return dateB - dateA; // Newest first
-      } else if (sortBy === 'date-oldest') {
-        const dateA = new Date(a.createdAt || a.updatedAt || 0).getTime();
-        const dateB = new Date(b.createdAt || b.updatedAt || 0).getTime();
-        return dateA - dateB; // Oldest first
+        return sortBy === 'date-newest' ? dateB - dateA : dateA - dateB;
       } else if (sortBy === 'name') {
         const nameA = a.name || '';
         const nameB = b.name || '';
-        return nameA.localeCompare(nameB);
+        const comparison = nameA.localeCompare(nameB);
+        return sortOrder === 'asc' ? comparison : -comparison;
+      } else if (sortBy === 'amount') {
+        const amountA = a.amount || 0;
+        const amountB = b.amount || 0;
+        return sortOrder === 'asc' ? amountA - amountB : amountB - amountA;
       }
       return 0;
     });
 
     return filtered;
-  }, [deals, searchQuery, statusFilter, lifecycleFilter, sortBy]);
+  }, [deals, searchQuery, statusFilter, lifecycleFilter, sortBy, sortOrder]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredDeals.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedDeals = filteredDeals.slice(startIndex, endIndex);
+
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, lifecycleFilter, sortBy, sortOrder]);
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -191,99 +207,126 @@ export default function LeadsPage() {
     );
   }
 
+  const formatLastActivity = (date: string | null | undefined) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'new':
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">New</Badge>;
+      case 'contacted':
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Contacted</Badge>;
+      case 'qualified':
+        return <Badge className="bg-green-100 text-green-800 border-green-200">Qualified</Badge>;
+      case 'closed-won':
+        return <Badge className="bg-green-100 text-green-800 border-green-200">Won</Badge>;
+      case 'closed-lost':
+        return <Badge className="bg-red-100 text-red-800 border-red-200">Lost</Badge>;
+      case 'negotiation':
+        return <Badge className="bg-purple-100 text-purple-800 border-purple-200">Negotiation</Badge>;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="bg-gray-50">
+    <div className="bg-gray-50 min-h-screen" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Deals</h1>
-              <p className="mt-2 text-gray-600">
-                Manage and track your HubSpot deals and prospects
-              </p>
+        {/* Coming Soon Disclaimer */}
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <div className="flex-shrink-0">
+              <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
             </div>
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={handleSyncLeads}
-                disabled={isSyncingLeads}
-                variant="default"
-                size="sm"
-              >
-                {isSyncingLeads ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Sync Deals
-                  </>
-                )}
-              </Button>
-              <Button variant="outline" size="sm">
-                <Filter className="w-4 h-4 mr-2" />
-                Filter
-              </Button>
-              <Button variant="outline" size="sm">
-                <ArrowUpDown className="w-4 h-4 mr-2" />
-                Sort
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Export
-              </Button>
-            </div>
+            <p className="text-sm text-yellow-800 font-medium">
+              Prospecting section incomplete. Coming soon...
+            </p>
           </div>
-          {oldestDealDate && (
-            <p className="text-sm text-gray-500">Deals from: {oldestDealDate} to present</p>
-          )}
-          
-          {/* Sync Result Message */}
-          {syncResult && (
-            <div className={`mt-4 p-4 rounded-lg border ${
-              syncResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
-            }`}>
-              <div className="flex items-center gap-2">
-                {syncResult.success ? (
-                  <>
-                    <CheckCircle2 className="size-5 text-green-600" />
-                    <span className="font-medium text-green-900">
-                      Sync Completed: {syncResult.synced || syncResult.stats?.dealsSynced || 0} deals synced
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="size-5 text-red-600" />
-                    <span className="font-medium text-red-900">
-                      Sync Failed: {syncResult.error || 'Unknown error'}
-                    </span>
-                  </>
-                )}
-              </div>
-              {syncResult.stats?.errorDetails && syncResult.stats.errorDetails.length > 0 && (
-                <div className="text-sm text-red-600 mt-2">
-                  <div className="font-medium mb-1">Error Details:</div>
-                  <ul className="list-disc list-inside space-y-1">
-                    {syncResult.stats.errorDetails.slice(0, 3).map((msg: string, i: number) => (
-                      <li key={i}>{msg}</li>
-                    ))}
-                  </ul>
-                </div>
+        </div>
+        
+        {/* Page Header */}
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
+              Deals
+            </h1>
+            <p className="mt-2 text-gray-600" style={{ fontWeight: 400 }}>
+              Manage and track your HubSpot deals and prospects
+            </p>
+          </div>
+          <Button
+            onClick={handleSyncLeads}
+            disabled={isSyncingLeads}
+            className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
+          >
+            {isSyncingLeads ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                Sync Deals
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Sync Result Message */}
+        {syncResult && (
+          <div className={`mb-6 p-4 rounded-lg border ${
+            syncResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+          }`}>
+            <div className="flex items-center gap-2">
+              {syncResult.success ? (
+                <>
+                  <CheckCircle2 className="size-5 text-green-600" />
+                  <span className="font-medium text-green-900">
+                    Sync Completed: {syncResult.synced || syncResult.stats?.dealsSynced || 0} deals synced
+                  </span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="size-5 text-red-600" />
+                  <span className="font-medium text-red-900">
+                    Sync Failed: {syncResult.error || 'Unknown error'}
+                  </span>
+                </>
               )}
             </div>
-          )}
-        </div>
+            {syncResult.stats?.errorDetails && syncResult.stats.errorDetails.length > 0 && (
+              <div className="text-sm text-red-600 mt-2">
+                <div className="font-medium mb-1">Error Details:</div>
+                <ul className="list-disc list-inside space-y-1">
+                  {syncResult.stats.errorDetails.slice(0, 3).map((msg: string, i: number) => (
+                    <li key={i}>{msg}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           <MetricCard
-            label="Total Leads"
+            label="Total Deals"
             value={metrics.total}
             icon={Users}
             iconColor="blue"
             trend={{ value: 0, isPositive: true, period: 'from HubSpot' }}
+            className="bg-black text-white border-black"
           />
           <MetricCard
             label="New"
@@ -291,6 +334,7 @@ export default function LeadsPage() {
             icon={UserPlus}
             iconColor="blue"
             trend={{ value: 0, isPositive: true, period: 'from HubSpot' }}
+            className="bg-black text-white border-black"
           />
           <MetricCard
             label="Contacted"
@@ -298,6 +342,7 @@ export default function LeadsPage() {
             icon={Mail}
             iconColor="yellow"
             trend={{ value: 0, isPositive: true, period: 'from HubSpot' }}
+            className="bg-black text-white border-black"
           />
           <MetricCard
             label="Qualified"
@@ -305,6 +350,7 @@ export default function LeadsPage() {
             icon={TrendingUp}
             iconColor="green"
             trend={{ value: 0, isPositive: true, period: 'from HubSpot' }}
+            className="bg-black text-white border-black"
           />
           <MetricCard
             label="Converted"
@@ -312,196 +358,245 @@ export default function LeadsPage() {
             icon={Building2}
             iconColor="purple"
             trend={{ value: 0, isPositive: true, period: 'from HubSpot' }}
+            className="bg-black text-white border-black"
           />
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="flex items-center gap-4 flex-wrap">
-            {/* Search */}
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search leads..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+
+        {/* Table Section */}
+        <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+          <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-white" />
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                Deals
+              </span>
             </div>
-
-            {/* Status Filter */}
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="new">New</SelectItem>
-                <SelectItem value="contacted">Contacted</SelectItem>
-                <SelectItem value="qualified">Qualified</SelectItem>
-                <SelectItem value="nurturing">Nurturing</SelectItem>
-                <SelectItem value="converted">Converted</SelectItem>
-                <SelectItem value="lost">Lost</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Lifecycle Stage Filter */}
-            <Select value={lifecycleFilter} onValueChange={setLifecycleFilter}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Lifecycle Stage" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Stages</SelectItem>
-                <SelectItem value="lead">Lead</SelectItem>
-                <SelectItem value="opportunity">Opportunity</SelectItem>
-                <SelectItem value="marketingqualifiedlead">MQL</SelectItem>
-                <SelectItem value="salesqualifiedlead">SQL</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Sort By */}
-            <Select value={sortBy} onValueChange={(value: 'date-newest' | 'date-oldest' | 'name') => setSortBy(value)}>
-              <SelectTrigger className="w-[180px]">
-                <div className="flex items-center gap-2">
-                  <ArrowUpDown className="w-4 h-4" />
-                  <SelectValue placeholder="Sort by" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="date-newest">Newest First</SelectItem>
-                <SelectItem value="date-oldest">Oldest First</SelectItem>
-                <SelectItem value="name">Name (A-Z)</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Clear Filters */}
-            {hasActiveFilters && (
-              <Button variant="outline" onClick={clearFilters} size="sm">
-                <X className="w-4 h-4 mr-2" />
-                Clear
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                {filteredDeals.length} {filteredDeals.length === 1 ? 'Deal' : 'Deals'}
+              </span>
+            </div>
           </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          {filteredDeals.length === 0 ? (
-            <div className="p-12 text-center">
-              <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-900 font-medium mb-1">No deals found</p>
-              <p className="text-sm text-gray-500 mb-4">
-                {hasActiveFilters 
-                  ? 'Try adjusting your filters.' 
-                  : 'Deals will appear here after syncing from HubSpot.'}
-              </p>
-              {hasActiveFilters && (
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Clear Filters
-                </Button>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">
-                    {filteredDeals.length} {filteredDeals.length === 1 ? 'Deal' : 'Deals'}
-                  </h2>
-                </div>
+          <CardContent className="pt-0 pb-6">
+            {filteredDeals.length === 0 ? (
+              <div className="p-12 text-center">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-900 font-medium mb-1">No deals found</p>
+                <p className="text-sm text-gray-500 mb-4">
+                  {hasActiveFilters 
+                    ? 'Try adjusting your search or filters' 
+                    : 'Deals will appear here after syncing from HubSpot.'}
+                </p>
+                {hasActiveFilters && (
+                  <Button variant="outline" size="sm" onClick={clearFilters}>
+                    Clear Filters
+                  </Button>
+                )}
               </div>
-              <div className="overflow-x-auto">
+            ) : (
+              <>
+                {/* Filter and Sort Controls */}
+                <div className="px-2 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
+                  {/* Search Bar - Left Side */}
+                  <div className="relative flex-1 max-w-xs">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <Input
+                      placeholder="Search deals..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="text-sm pl-10"
+                    />
+                  </div>
+                  
+                  {/* Filters and Sort - Right Side */}
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="new">New</option>
+                      <option value="contacted">Contacted</option>
+                      <option value="qualified">Qualified</option>
+                      <option value="negotiation">Negotiation</option>
+                      <option value="closed-won">Won</option>
+                      <option value="closed-lost">Lost</option>
+                    </select>
+                    <select
+                      value={lifecycleFilter}
+                      onChange={(e) => setLifecycleFilter(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                    >
+                      <option value="all">All Stages</option>
+                      <option value="lead">Lead</option>
+                      <option value="opportunity">Opportunity</option>
+                      <option value="marketingqualifiedlead">MQL</option>
+                      <option value="salesqualifiedlead">SQL</option>
+                    </select>
+                    <ArrowUpDown className="w-4 h-4 text-gray-500 ml-2" />
+                    <select
+                      value={`${sortBy}-${sortOrder}`}
+                      onChange={(e) => {
+                        const [newSortBy, newSortOrder] = e.target.value.split('-');
+                        if (newSortBy === 'date-newest' || newSortBy === 'date-oldest') {
+                          setSortBy(newSortBy as any);
+                        } else {
+                          setSortBy(newSortBy as any);
+                          setSortOrder(newSortOrder as any);
+                        }
+                      }}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                    >
+                      <option value="date-newest-desc">Newest First</option>
+                      <option value="date-oldest-asc">Oldest First</option>
+                      <option value="name-asc">Name (A-Z)</option>
+                      <option value="name-desc">Name (Z-A)</option>
+                      <option value="amount-desc">Amount (Highest)</option>
+                      <option value="amount-asc">Amount (Lowest)</option>
+                    </select>
+                    {hasActiveFilters && (
+                      <Button variant="outline" onClick={clearFilters} size="sm" className="ml-2">
+                        <X className="w-4 h-4 mr-1" />
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50">
+                    <TableRow className="border-b border-gray-200">
                       <TableHead className="text-xs font-semibold text-gray-700 uppercase">Deal Name</TableHead>
                       <TableHead className="text-xs font-semibold text-gray-700 uppercase">Pipeline</TableHead>
                       <TableHead className="text-xs font-semibold text-gray-700 uppercase">Stage</TableHead>
                       <TableHead className="text-xs font-semibold text-gray-700 uppercase">Amount</TableHead>
-                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Close Date</TableHead>
-                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Created</TableHead>
+                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Last Activity</TableHead>
+                      <TableHead className="text-xs font-semibold text-gray-700 uppercase">Tags</TableHead>
                       <TableHead className="text-right text-xs font-semibold text-gray-700 uppercase">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredDeals.map((deal) => {
+                    {paginatedDeals.map((deal) => {
                       const contacts = deal.contacts || [];
                       const companies = deal.companies || [];
                       return (
                         <TableRow
                           key={deal._id}
-                          className="hover:bg-gray-50"
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => router.push(`/deals/${deal._id}`)}
                         >
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              <div>
-                                <div className="text-gray-900 flex items-center gap-2">
-                                  {deal.name}
-                                  {deal.hubspotUrl && (
-                                    <HubSpotLink url={deal.hubspotUrl} />
-                                  )}
-                                </div>
-                                {contacts.length > 0 && (
-                                  <div className="text-sm text-gray-500">
-                                    {contacts.map(c => c?.name).filter(Boolean).join(', ')}
-                                  </div>
-                                )}
-                                {companies.length > 0 && (
-                                  <div className="text-sm text-gray-500 flex items-center gap-1">
-                                    <Building2 className="w-3 h-3" />
-                                    {companies.map(c => c?.name).filter(Boolean).join(', ')}
-                                  </div>
+                          <TableCell>
+                            <div>
+                              <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                                {deal.name}
+                                {deal.hubspotUrl && (
+                                  <HubSpotLink url={deal.hubspotUrl} />
                                 )}
                               </div>
+                              {contacts.length > 0 && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {contacts.map(c => c?.name).filter(Boolean).join(', ')}
+                                </div>
+                              )}
+                              {companies.length > 0 && (
+                                <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                                  <Building2 className="w-3 h-3" />
+                                  {companies.map(c => c?.name).filter(Boolean).join(', ')}
+                                </div>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {deal.pipelineName || deal.pipeline || '—'}
-                            </Badge>
+                            {deal.pipelineName || deal.pipeline ? (
+                              <Badge variant="outline" className="text-xs">
+                                {deal.pipelineName || deal.pipeline}
+                              </Badge>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {deal.stageName || deal.stage || '—'}
-                            </Badge>
+                            {deal.stageName || deal.stage ? (
+                              <Badge variant="outline" className="text-xs">
+                                {deal.stageName || deal.stage}
+                              </Badge>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
-                            {deal.amount 
-                              ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(deal.amount)
-                              : '—'}
+                            <div className="text-sm text-gray-900">
+                              {deal.amount 
+                                ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(deal.amount)
+                                : <span className="text-gray-400">—</span>}
+                            </div>
                           </TableCell>
                           <TableCell>
-                            {deal.closeDate
-                              ? new Date(deal.closeDate).toLocaleDateString()
-                              : '—'}
+                            <div className="text-sm text-gray-600">
+                              {formatLastActivity(deal.lastActivityDate)}
+                            </div>
                           </TableCell>
                           <TableCell>
-                            {deal.createdAt
-                              ? new Date(deal.createdAt).toLocaleDateString()
-                              : '—'}
+                            <div className="flex flex-wrap gap-1">
+                              {getStatusBadge(deal.status)}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.push(`/deals/${deal._id}`)}
-                              >
-                                View
-                              </Button>
-                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/deals/${deal._id}`);
+                              }}
+                              className="text-blue-600 hover:text-blue-900 hover:bg-blue-50"
+                            >
+                              View
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
-              </div>
-            </>
-          )}
-        </div>
+                
+                {/* Pagination */}
+                {filteredDeals.length > ITEMS_PER_PAGE && (
+                  <div className="px-2 py-4 border-t border-gray-200 flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      Showing {startIndex + 1}-{Math.min(endIndex, filteredDeals.length)} of {filteredDeals.length} deals
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="h-8 px-3 text-xs"
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-sm text-gray-600 px-2">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage === totalPages}
+                        className="h-8 px-3 text-xs"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

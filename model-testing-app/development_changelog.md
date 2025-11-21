@@ -1,6 +1,175 @@
 # Development Changelog
 
-## [Latest] - 2025-11-20 20:55
+## [Latest] - 2025-01-28 23:30
+
+### Task and Reminder Completion Functionality
+
+**Overview**: Added the ability to complete tasks and reminders directly from the tasks page, along with a new "Completed" tab showing the most recent 20 completed items.
+
+**New Features:**
+1. **Task Completion**:
+   - Added `complete` mutation in `convex/tasks.ts` to mark tasks as completed
+   - Clickable circle icon in tasks table - clicking the empty circle completes the task
+   - Completed tasks show a green checkmark icon instead of the circle
+   - Only creator or assigned user can complete tasks
+
+2. **Reminder Completion**:
+   - Added "Complete" button in reminders table for each non-completed reminder
+   - Button appears in new "Actions" column in reminders table
+   - Uses existing `complete` mutation from `convex/reminders.ts`
+   - Completed reminders show green checkmark icon
+
+3. **Completed Tab**:
+   - New "Completed" tab added to tasks page (alongside Tasks and Reminders tabs)
+   - Shows most recent 20 completed tasks
+   - Shows most recent 20 completed reminders
+   - Both sections displayed together when tab is active
+   - Tasks and reminders sorted by `updatedAt` descending (most recently completed first)
+   - Completed reminders show "Completed At" timestamp instead of "Scheduled For"
+
+**UI Improvements:**
+- Tasks table: Circle icon is now clickable with hover effect and cursor pointer
+- Reminders table: Added "Actions" column with Complete button
+- Completed tab: Clean display of completed items with proper visual indicators
+- Natural language input and create forms hidden on Completed tab
+- Filters hidden on Completed tab (not applicable for completed items)
+
+**Technical Details:**
+- Task completion mutation validates user permissions (creator or assigned user)
+- Reminder completion uses existing mutation with ownership verification
+- Completed items filtered and sorted client-side for performance
+- Proper loading states and empty states for all sections
+- Real-time updates via Convex subscriptions
+
+**Files Modified:**
+- `convex/tasks.ts` - Added `complete` mutation
+- `src/app/tasks/page.tsx` - Added completion handlers, Completed tab, and UI updates
+
+**User Benefits:**
+- Can now complete tasks and reminders directly from the table
+- Clear visual feedback when items are completed
+- Easy access to recently completed work via Completed tab
+- Better task management workflow with completion tracking
+
+**Next Steps:**
+- Consider adding bulk completion actions
+- Add completion statistics/metrics
+- Consider adding undo completion functionality
+- Add completion notifications/celebrations
+
+## [Previous] - 2025-01-28 22:00
+
+### File Summary Agent Settings - Modular File Type Management System
+
+**Overview**: Implemented a comprehensive settings system for managing file type definitions used by the filing agent. Users can now add, edit, view, and manage custom file types with examples, descriptions, and identification rules without requiring code changes.
+
+**New Features:**
+1. **Database-Backed File Type Definitions**:
+   - Created `fileTypeDefinitions` table in Convex schema
+   - Stores user-defined file types with keywords, descriptions, identification rules, and example files
+   - Supports parent types for subtypes (e.g., "Legal Documents - Facility Letter")
+   - System defaults marked as read-only (cannot be edited/deleted)
+   - Active/inactive status for soft deletion
+
+2. **Settings Page UI** (`/settings/file-summary-agent`):
+   - New settings section accessible from main settings page
+   - Library view showing all file types grouped by category
+   - Visual indicators for system defaults, subtypes, and inactive definitions
+   - Quick actions: View, Edit (non-system), Delete (non-system)
+   - Displays keyword count, identification rules count, and example file status
+
+3. **File Type Definition Management**:
+   - **Add Modal**: Create new file types with:
+     - File type name and category
+     - Parent type (for subtypes)
+     - Description (minimum 100 words enforced)
+     - Keywords array (multiple keywords for matching)
+     - Identification rules array (specific rules for AI identification)
+     - Category rules (optional explanation)
+     - Example file upload (optional)
+   - **Edit Modal**: Edit user-created definitions (system defaults protected)
+   - **View Modal**: Detailed view showing all definition information
+   - **Delete**: Soft delete (sets inactive) for user-created definitions
+
+4. **Integration with Filing Agent**:
+   - Modified `togetherAI.ts` to load file type definitions from database
+   - Merges database definitions with hardcoded defaults
+   - `getRelevantFileTypeHints()` function updated to accept database definitions
+   - System prompt dynamically includes user-defined file types
+   - Maintains backward compatibility with existing hardcoded definitions
+
+5. **Migration Script**:
+   - Created `seedFileTypeDefinitions.ts` migration to populate database with existing hardcoded definitions
+   - Marks seeded definitions as system defaults
+   - Prevents duplicate seeding
+
+**New Convex Functions** (`convex/fileTypeDefinitions.ts`):
+- `getAll`: Get all active file type definitions
+- `getAllIncludingInactive`: Get all definitions including inactive
+- `getById`: Get single definition by ID
+- `getByCategory`: Get definitions filtered by category
+- `create`: Create new file type definition (validates 100-word minimum)
+- `update`: Update existing definition (prevents editing system defaults)
+- `remove`: Soft delete (sets inactive, prevents deleting system defaults)
+- `hardDelete`: Hard delete for non-system defaults
+- `getFileUrl`: Get file URL for example files
+
+**New Components**:
+- `FileTypeDefinitionModal.tsx`: Add/Edit modal with form validation
+- `FileTypeDefinitionView.tsx`: Detailed view modal with example file download
+- `src/app/settings/file-summary-agent/page.tsx`: Main settings page
+
+**Enhanced Components**:
+- `src/app/settings/page.tsx`: Added File Summary Agent settings section
+- `src/lib/togetherAI.ts`: Loads and merges database definitions
+- `src/lib/fileTypeDefinitions.ts`: Updated to support database-backed definitions
+- `src/lib/convexServer.ts`: Added `getFileTypeDefinitionsServer()` helper
+
+**Schema Updates** (`convex/schema.ts`):
+- Added `fileTypeDefinitions` table with fields:
+  - Core: fileType, category, parentType, description, keywords, identificationRules, categoryRules
+  - Files: exampleFileStorageId, exampleFileName
+  - Metadata: isSystemDefault, isActive, createdBy, createdAt, updatedAt
+  - Indexes: by_file_type, by_category, by_parent_type, by_active
+
+**User Benefits**:
+- No code changes required to add new file types
+- Self-service file type management
+- Better filing accuracy with more examples and rules
+- Ability to customize file types for specific business needs
+- Example files help AI learn file type patterns
+- Subtype support for hierarchical organization
+
+**Technical Details**:
+- Database definitions merged with hardcoded defaults at runtime
+- System defaults protected from editing/deletion
+- File uploads use Convex storage with proper URL generation
+- Word count validation ensures quality descriptions
+- Real-time updates via Convex subscriptions
+- Proper TypeScript types throughout
+
+**Files Created**:
+- `convex/fileTypeDefinitions.ts` - CRUD operations for file type definitions
+- `convex/migrations/seedFileTypeDefinitions.ts` - Migration script for seeding defaults
+- `src/app/settings/file-summary-agent/page.tsx` - Settings page UI
+- `src/components/FileTypeDefinitionModal.tsx` - Add/Edit modal component
+- `src/components/FileTypeDefinitionView.tsx` - View modal component
+
+**Files Modified**:
+- `convex/schema.ts` - Added fileTypeDefinitions table
+- `src/app/settings/page.tsx` - Added File Summary Agent settings section
+- `src/lib/togetherAI.ts` - Integrated database-backed definitions
+- `src/lib/fileTypeDefinitions.ts` - Updated to merge database definitions
+- `src/lib/convexServer.ts` - Added server helper function
+
+**Next Steps**:
+- Run migration script to seed existing definitions
+- Monitor user adoption and file type additions
+- Consider adding bulk import/export functionality
+- Add analytics on file type usage and accuracy
+- Consider adding file type templates for common patterns
+
+## [Previous] - 2025-11-20 20:55
 
 ### Task Page UI Redesign - Card-Based Layout Matching Homepage Style
 

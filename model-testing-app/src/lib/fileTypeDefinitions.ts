@@ -313,13 +313,38 @@ export const FILE_TYPE_DEFINITIONS: FileTypeDefinition[] = [
  * Get relevant file type hints based on content analysis
  * Returns an array of formatted guidance strings for file types that match the content
  * Also checks filename for keyword matches
+ * Can accept additional database-backed definitions to merge with hardcoded ones
  */
-export function getRelevantFileTypeHints(textContent: string, fileName?: string): string[] {
+export function getRelevantFileTypeHints(
+  textContent: string,
+  fileName?: string,
+  databaseDefinitions?: Array<{
+    fileType: string;
+    category: string;
+    keywords: string[];
+    description: string;
+    identificationRules: string[];
+    categoryRules?: string;
+  }>
+): string[] {
   const contentLower = textContent.toLowerCase();
   const fileNameLower = fileName ? fileName.toLowerCase() : '';
   const combinedText = `${contentLower} ${fileNameLower}`; // Combine for matching
   
-  const relevantDefs = FILE_TYPE_DEFINITIONS.filter((def) =>
+  // Merge hardcoded definitions with database definitions
+  const allDefinitions = [
+    ...FILE_TYPE_DEFINITIONS,
+    ...(databaseDefinitions || []).map((dbDef) => ({
+      fileType: dbDef.fileType,
+      category: dbDef.category,
+      keywords: dbDef.keywords,
+      description: dbDef.description,
+      identificationRules: dbDef.identificationRules,
+      categoryRules: dbDef.categoryRules,
+    })),
+  ];
+  
+  const relevantDefs = allDefinitions.filter((def) =>
     def.keywords.some((keyword) => combinedText.includes(keyword.toLowerCase()))
   );
 

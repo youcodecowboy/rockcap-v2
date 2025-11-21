@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,11 +14,11 @@ import CompactMetricCard from '@/components/CompactMetricCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Plus, Filter, CheckSquare, Circle, Clock, Flag, Building2, FolderKanban, Tag, Settings, Bell, ArrowRight, ListTodo } from 'lucide-react';
+import { Plus, Filter, CheckSquare, Circle, Clock, Flag, Building2, FolderKanban, Tag, Settings, Bell, ArrowRight, ListTodo, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TasksPage() {
-  const [activeTab, setActiveTab] = useState<'tasks' | 'reminders'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'reminders' | 'completed'>('tasks');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'todo' | 'in_progress' | 'completed' | 'cancelled' | 'all'>('all');
   const [reminderStatusFilter, setReminderStatusFilter] = useState<'pending' | 'completed' | 'dismissed' | 'overdue' | 'all'>('all');
@@ -28,11 +28,22 @@ export default function TasksPage() {
   const [suggestedClientId, setSuggestedClientId] = useState<Id<'clients'> | undefined>();
   const [suggestedProjectId, setSuggestedProjectId] = useState<Id<'projects'> | undefined>();
 
+  const completeTask = useMutation(api.tasks.complete);
+  const completeReminder = useMutation(api.reminders.complete);
+
   const tasks = useQuery(api.tasks.getByUser, {
-    status: statusFilter === 'all' ? undefined : statusFilter,
+    status: activeTab === 'completed' ? undefined : (statusFilter === 'all' ? undefined : statusFilter),
   });
   const reminders = useQuery(api.reminders.getByUser, {
-    status: reminderStatusFilter === 'all' ? undefined : reminderStatusFilter,
+    status: activeTab === 'completed' ? undefined : (reminderStatusFilter === 'all' ? undefined : reminderStatusFilter),
+  });
+  
+  // Get completed items for the Completed tab
+  const completedTasks = useQuery(api.tasks.getByUser, {
+    status: 'completed',
+  });
+  const completedReminders = useQuery(api.reminders.getByUser, {
+    status: 'completed',
   });
   const taskMetrics = useQuery(api.tasks.getMetrics, {});
   const reminderMetrics = useQuery(api.reminders.getMetrics, {});
@@ -41,8 +52,14 @@ export default function TasksPage() {
   const allUsers = useQuery(api.users.getAll, {});
   const currentUser = useQuery(api.users.getCurrent, {});
 
+  // Filter tasks based on active tab
+  const displayTasks = activeTab === 'completed' ? completedTasks : tasks;
+  
+  // Filter reminders based on active tab
+  const displayReminders = activeTab === 'completed' ? completedReminders : reminders;
+
   // Enhance tasks with names
-  const enhancedTasks = tasks?.map(task => ({
+  const enhancedTasks = displayTasks?.map(task => ({
     ...task,
     clientName: task.clientId
       ? clients?.find(c => c._id === task.clientId)?.name
@@ -53,10 +70,13 @@ export default function TasksPage() {
     assignedToName: task.assignedTo
       ? allUsers?.find(u => u._id === task.assignedTo)?.name || allUsers?.find(u => u._id === task.assignedTo)?.email
       : undefined,
-  })) || [];
+  }))
+    .filter(task => activeTab === 'completed' ? task.status === 'completed' : task.status !== 'completed')
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, activeTab === 'completed' ? 20 : undefined) || [];
 
   // Enhance reminders with names
-  const enhancedReminders = reminders?.map(reminder => ({
+  const enhancedReminders = displayReminders?.map(reminder => ({
     ...reminder,
     clientName: reminder.clientId
       ? clients?.find(c => c._id === reminder.clientId)?.name
@@ -67,7 +87,26 @@ export default function TasksPage() {
     taskName: reminder.taskId
       ? tasks?.find(t => t._id === reminder.taskId)?.title
       : undefined,
-  })) || [];
+  }))
+    .filter(reminder => activeTab === 'completed' ? reminder.status === 'completed' : reminder.status !== 'completed')
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, activeTab === 'completed' ? 20 : undefined) || [];
+
+  const handleCompleteTask = async (taskId: Id<'tasks'>) => {
+    try {
+      await completeTask({ id: taskId });
+    } catch (error) {
+      console.error('Failed to complete task:', error);
+    }
+  };
+
+  const handleCompleteReminder = async (reminderId: Id<'reminders'>) => {
+    try {
+      await completeReminder({ id: reminderId });
+    } catch (error) {
+      console.error('Failed to complete reminder:', error);
+    }
+  };
 
   const handleNaturalLanguageParse = (parsedData: any) => {
     // Helper function to resolve clientId from name or ID
@@ -363,7 +402,10 @@ export default function TasksPage() {
               />
               <CompactMetricCard
                 label="Completed"
-                value={taskMetrics.completed}
+                value={
+                  (taskMetrics.completed || 0) + 
+                  (completedReminders?.length || 0)
+                }
                 icon={CheckSquare}
                 iconColor="green"
                 className="bg-black text-white"
@@ -372,8 +414,8 @@ export default function TasksPage() {
           )}
         </div>
 
-        {/* Tabs - Select between Tasks and Reminders */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'tasks' | 'reminders')}>
+        {/* Tabs - Select between Tasks, Reminders, and Completed */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'tasks' | 'reminders' | 'completed')}>
           <TabsList>
             <TabsTrigger 
               value="tasks"
@@ -389,72 +431,81 @@ export default function TasksPage() {
               <Bell className="w-4 h-4 mr-2" />
               Reminders
             </TabsTrigger>
+            <TabsTrigger 
+              value="completed"
+              className="data-[state=active]:!bg-black data-[state=active]:!text-white data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              Completed
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
-        {/* Natural Language Input */}
-        <Card className="hover:shadow-lg transition-shadow rounded-xl p-0 gap-0" style={{ overflow: 'visible' }}>
-          <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckSquare className="w-4 h-4 text-white" />
+        {/* Natural Language Input - Hide for Completed tab */}
+        {activeTab !== 'completed' && (
+          <Card className="hover:shadow-lg transition-shadow rounded-xl p-0 gap-0" style={{ overflow: 'visible' }}>
+            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-white" />
+                <span className="text-xs font-semibold uppercase tracking-wide">
+                  {activeTab === 'tasks' ? 'Create a Task' : 'Create a Reminder'}
+                </span>
+              </div>
               <span className="text-xs font-semibold uppercase tracking-wide">
-                {activeTab === 'tasks' ? 'Create a Task' : 'Create a Reminder'}
+                AI Powered
               </span>
             </div>
-            <span className="text-xs font-semibold uppercase tracking-wide">
-              AI Powered
-            </span>
-          </div>
-          <CardContent className="pt-6 pb-6 px-6 space-y-4" style={{ overflow: 'visible' }}>
-            <div>
-              <p className="text-sm text-gray-600">
-                {activeTab === 'tasks' 
-                  ? 'Describe your task in natural language and let AI parse the details'
-                  : 'Describe your reminder in natural language and let AI parse the details'}
-              </p>
-            </div>
-            <TaskNaturalLanguageInput 
-              onParse={handleNaturalLanguageParse} 
-              mode={activeTab === 'tasks' ? 'task' : 'reminder'}
-            />
-            <ClientProjectSearch
-              selectedClientId={formData?.clientId}
-              selectedProjectId={formData?.projectId}
-              suggestedClientId={suggestedClientId}
-              suggestedProjectId={suggestedProjectId}
-              onClientSelect={(clientId) => {
-                setFormData((prev: any) => ({
-                  ...prev,
-                  clientId,
-                  projectId: clientId ? prev?.projectId : undefined,
-                }));
-                if (clientId && !showCreateForm) {
-                  setShowCreateForm(true);
-                }
-                if (clientId === suggestedClientId) {
-                  setSuggestedClientId(undefined);
-                }
-              }}
-              onProjectSelect={(projectId) => {
-                setFormData((prev: any) => ({
-                  ...prev,
-                  projectId,
-                }));
-                if (projectId && !showCreateForm) {
-                  setShowCreateForm(true);
-                }
-                if (projectId === suggestedProjectId) {
-                  setSuggestedProjectId(undefined);
-                }
-              }}
-              onClientSuggestionAccept={() => setSuggestedClientId(undefined)}
-              onProjectSuggestionAccept={() => setSuggestedProjectId(undefined)}
-            />
-          </CardContent>
-        </Card>
+            <CardContent className="pt-6 pb-6 px-6 space-y-4" style={{ overflow: 'visible' }}>
+              <div>
+                <p className="text-sm text-gray-600">
+                  {activeTab === 'tasks' 
+                    ? 'Describe your task in natural language and let AI parse the details'
+                    : 'Describe your reminder in natural language and let AI parse the details'}
+                </p>
+              </div>
+              <TaskNaturalLanguageInput 
+                onParse={handleNaturalLanguageParse} 
+                mode={activeTab === 'tasks' ? 'task' : 'reminder'}
+              />
+              <ClientProjectSearch
+                selectedClientId={formData?.clientId}
+                selectedProjectId={formData?.projectId}
+                suggestedClientId={suggestedClientId}
+                suggestedProjectId={suggestedProjectId}
+                onClientSelect={(clientId) => {
+                  setFormData((prev: any) => ({
+                    ...prev,
+                    clientId,
+                    projectId: clientId ? prev?.projectId : undefined,
+                  }));
+                  if (clientId && !showCreateForm) {
+                    setShowCreateForm(true);
+                  }
+                  if (clientId === suggestedClientId) {
+                    setSuggestedClientId(undefined);
+                  }
+                }}
+                onProjectSelect={(projectId) => {
+                  setFormData((prev: any) => ({
+                    ...prev,
+                    projectId,
+                  }));
+                  if (projectId && !showCreateForm) {
+                    setShowCreateForm(true);
+                  }
+                  if (projectId === suggestedProjectId) {
+                    setSuggestedProjectId(undefined);
+                  }
+                }}
+                onClientSuggestionAccept={() => setSuggestedClientId(undefined)}
+                onProjectSuggestionAccept={() => setSuggestedProjectId(undefined)}
+              />
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Filters */}
-        {showFilters && (
+        {/* Filters - Hide for Completed tab */}
+        {showFilters && activeTab !== 'completed' && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
@@ -493,8 +544,8 @@ export default function TasksPage() {
           </Card>
         )}
 
-        {/* Create Form Modal */}
-        {showCreateForm && (
+        {/* Create Form Modal - Hide for Completed tab */}
+        {showCreateForm && activeTab !== 'completed' && (
           <Card className="border-2 border-blue-200 shadow-lg">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between mb-4">
@@ -524,7 +575,7 @@ export default function TasksPage() {
         {/* Tasks and Reminders Tables */}
         {activeTab === 'tasks' ? (
           /* Tasks Tab */
-          tasks === undefined ? (
+          displayTasks === undefined ? (
             <Card>
               <CardContent className="pt-6">
                 <div className="text-center py-8 text-gray-500">Loading tasks...</div>
@@ -571,7 +622,17 @@ export default function TasksPage() {
                       {enhancedTasks.map((task) => (
                         <TableRow key={task._id} className="hover:bg-gray-50">
                           <TableCell>
-                            {getStatusIcon(task.status)}
+                            {task.status === 'completed' ? (
+                              <CheckSquare className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <button
+                                onClick={() => handleCompleteTask(task._id)}
+                                className="hover:opacity-70 transition-opacity cursor-pointer"
+                                title="Click to complete task"
+                              >
+                                <Circle className="w-4 h-4 text-gray-600" />
+                              </button>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div>
@@ -651,9 +712,9 @@ export default function TasksPage() {
                 </CardContent>
               </Card>
             )
-        ) : (
+        ) : activeTab === 'reminders' ? (
           /* Reminders Tab */
-          reminders === undefined ? (
+          displayReminders === undefined ? (
               <Card>
                 <CardContent className="pt-6">
                   <div className="text-center py-8 text-gray-500">Loading reminders...</div>
@@ -688,6 +749,7 @@ export default function TasksPage() {
                         <TableHead>Scheduled For</TableHead>
                         <TableHead>Client</TableHead>
                         <TableHead>Project</TableHead>
+                        <TableHead className="w-24">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody className="min-h-[600px]">
@@ -739,6 +801,19 @@ export default function TasksPage() {
                               <span className="text-sm text-gray-400">—</span>
                             )}
                           </TableCell>
+                          <TableCell>
+                            {reminder.status !== 'completed' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleCompleteReminder(reminder._id)}
+                                className="flex items-center gap-1"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                Complete
+                              </Button>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -746,6 +821,242 @@ export default function TasksPage() {
                 </CardContent>
               </Card>
             )
+        ) : null}
+
+        {/* Completed Tab - Show both tasks and reminders */}
+        {activeTab === 'completed' && (
+          <>
+            {/* Completed Tasks Section */}
+            {completedTasks === undefined ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-8 text-gray-500">Loading completed tasks...</div>
+                </CardContent>
+              </Card>
+            ) : enhancedTasks.length === 0 && enhancedReminders.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-8 text-gray-500">
+                    <p>No completed tasks or reminders found</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : enhancedTasks.length > 0 ? (
+              <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+                <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-white" />
+                    <span className="text-xs font-semibold uppercase tracking-wide">Completed Tasks</span>
+                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    {enhancedTasks.length} {enhancedTasks.length === 1 ? 'Task' : 'Tasks'} (Most Recent 20)
+                  </span>
+                </div>
+                <CardContent className="pt-0 pb-6">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-b border-gray-200">
+                        <TableHead className="w-12"></TableHead>
+                        <TableHead>Task</TableHead>
+                        <TableHead>Assigned To</TableHead>
+                        <TableHead>Priority</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Tags</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {enhancedTasks.map((task) => (
+                        <TableRow key={task._id} className="hover:bg-gray-50">
+                          <TableCell>
+                            <CheckSquare className="w-4 h-4 text-green-600" />
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium text-gray-900">{task.title}</div>
+                              {task.description && (
+                                <div className="text-sm text-gray-500 mt-1">{task.description}</div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-gray-600">{task.assignedToName || 'Unassigned'}</span>
+                          </TableCell>
+                          <TableCell>
+                            {task.priority && (
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
+                                <Flag className="w-3 h-3" />
+                                {task.priority}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm capitalize">{task.status.replace('_', ' ')}</span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <Clock className="w-4 h-4" />
+                              {formatDate(task.dueDate)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {task.clientName ? (
+                              <Link
+                                href={`/clients/${task.clientId}`}
+                                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                              >
+                                <Building2 className="w-3 h-3" />
+                                {task.clientName}
+                              </Link>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {task.projectName ? (
+                              <Link
+                                href={`/projects/${task.projectId}`}
+                                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 hover:underline max-w-[200px]"
+                              >
+                                <FolderKanban className="w-3 h-3 flex-shrink-0" />
+                                <span className="truncate">{task.projectName}</span>
+                              </Link>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {task.tags && task.tags.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {task.tags.map((tag, index) => (
+                                  <span
+                                    key={index}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs"
+                                  >
+                                    <Tag className="w-3 h-3" />
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {/* Completed Reminders Section */}
+            {completedReminders === undefined ? (
+              enhancedTasks && enhancedTasks.length > 0 ? (
+                <Card className="mt-6">
+                  <CardContent className="pt-6">
+                    <div className="text-center py-8 text-gray-500">Loading completed reminders...</div>
+                  </CardContent>
+                </Card>
+              ) : null
+            ) : (() => {
+              // Enhance completed reminders with names for display
+              const completedRemindersEnhanced = completedReminders
+                .map(reminder => ({
+                  ...reminder,
+                  clientName: reminder.clientId
+                    ? clients?.find(c => c._id === reminder.clientId)?.name
+                    : undefined,
+                  projectName: reminder.projectId
+                    ? projects?.find(p => p._id === reminder.projectId)?.name
+                    : undefined,
+                }))
+                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+                .slice(0, 20);
+
+              return completedRemindersEnhanced.length > 0 ? (
+                <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 mt-6">
+                  <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-white" />
+                      <span className="text-xs font-semibold uppercase tracking-wide">Completed Reminders</span>
+                    </div>
+                    <span className="text-xs font-semibold uppercase tracking-wide">
+                      {completedRemindersEnhanced.length} {completedRemindersEnhanced.length === 1 ? 'Reminder' : 'Reminders'} (Most Recent 20)
+                    </span>
+                  </div>
+                  <CardContent className="pt-0 pb-6">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-b border-gray-200">
+                          <TableHead className="w-12"></TableHead>
+                          <TableHead>Reminder</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Completed At</TableHead>
+                          <TableHead>Client</TableHead>
+                          <TableHead>Project</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {completedRemindersEnhanced.map((reminder) => (
+                        <TableRow key={reminder._id} className="hover:bg-gray-50">
+                          <TableCell>
+                            <CheckSquare className="w-4 h-4 text-green-600" />
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium text-gray-900">{reminder.title}</div>
+                              {reminder.description && (
+                                <div className="text-sm text-gray-500 mt-1">{reminder.description}</div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm capitalize">{reminder.status}</span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <Clock className="w-4 h-4" />
+                              {formatDateTime(reminder.updatedAt)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {reminder.clientName ? (
+                              <Link
+                                href={`/clients/${reminder.clientId}`}
+                                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                              >
+                                <Building2 className="w-3 h-3" />
+                                {reminder.clientName}
+                              </Link>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {reminder.projectName ? (
+                              <Link
+                                href={`/projects/${reminder.projectId}`}
+                                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 hover:underline max-w-[200px]"
+                              >
+                                <FolderKanban className="w-3 h-3 flex-shrink-0" />
+                                <span className="truncate">{reminder.projectName}</span>
+                              </Link>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              ) : null;
+            })()}
+          </>
         )}
 
         {/* Tag Management Modal */}

@@ -82,7 +82,7 @@ export default function CompactMetricCard({
       onClick={onClick}
     >
       {Icon && (
-        <Icon className={cn('w-5 h-5 flex-shrink-0', iconColorClasses[iconColor])} />
+        <Icon className={cn('w-5 h-5 flex-shrink-0', isBlack ? iconColorClasses[iconColor] : iconColorClasses[iconColor])} />
       )}
       <div className="flex items-center gap-2 flex-1 min-w-0">
         <span className={cn('text-sm font-medium whitespace-nowrap shrink-0', isBlack ? 'text-gray-300' : 'text-gray-600')}>{label}:</span>

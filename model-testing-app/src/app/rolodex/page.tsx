@@ -41,16 +41,21 @@ import {
   Plus,
   Sparkles,
   CheckCircle2,
+  Filter,
+  RefreshCw,
 } from 'lucide-react';
 import CompactMetricCard from '@/components/CompactMetricCard';
 import { HubSpotLink } from '@/components/HubSpotLink';
 import CreateRolodexModal from '@/components/CreateRolodexModal';
+import { Card, CardContent } from '@/components/ui/card';
 
 export default function RolodexPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'companies' | 'contacts'>('companies');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [promotingCompanyId, setPromotingCompanyId] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
   
   // Fetch data
   const companies = useQuery(api.companies.getAll) || [];
@@ -60,7 +65,7 @@ export default function RolodexPage() {
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [lifecycleFilter, setLifecycleFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'date-newest' | 'date-oldest' | 'name'>('date-newest');
+  const [sortBy, setSortBy] = useState<'date-newest' | 'date-oldest' | 'name' | 'date-added'>('date-newest');
 
   // Filter and sort companies
   const filteredCompanies = useMemo(() => {
@@ -128,7 +133,7 @@ export default function RolodexPage() {
 
     // Apply sorting
     filtered = [...filtered].sort((a, b) => {
-      if (sortBy === 'date-newest') {
+      if (sortBy === 'date-newest' || sortBy === 'date-added') {
         const dateA = new Date(a.createdAt || a.updatedAt || 0).getTime();
         const dateB = new Date(b.createdAt || b.updatedAt || 0).getTime();
         return dateB - dateA;
@@ -171,6 +176,43 @@ export default function RolodexPage() {
     }
   };
 
+  const handleSyncHubSpot = async () => {
+    setIsSyncing(true);
+    setSyncResult(null);
+    
+    try {
+      // Sync both companies and contacts
+      const [companiesResponse, contactsResponse] = await Promise.all([
+        fetch("/api/hubspot/sync-companies", { method: "POST" }),
+        fetch("/api/hubspot/sync-contacts", { method: "POST" })
+      ]);
+      
+      const companiesResult = await companiesResponse.json();
+      const contactsResult = await contactsResponse.json();
+      
+      setSyncResult({
+        success: companiesResult.success && contactsResult.success,
+        companiesSynced: companiesResult.synced || companiesResult.stats?.companiesSynced || 0,
+        contactsSynced: contactsResult.synced || contactsResult.stats?.contactsSynced || 0,
+        error: companiesResult.error || contactsResult.error || null,
+      });
+      
+      // Refresh the page after successful sync
+      if (companiesResult.success && contactsResult.success) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
+    } catch (error: any) {
+      setSyncResult({
+        success: false,
+        error: error.message || "Sync failed",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Calculate metrics for companies
   const companyMetrics = useMemo(() => {
     const lifecycleStages = companies.reduce((acc: Record<string, number>, company) => {
@@ -181,7 +223,8 @@ export default function RolodexPage() {
     
     return {
       total: companies.length,
-      ...lifecycleStages,
+      opportunity: lifecycleStages['opportunity'] || lifecycleStages['Opportunity'] || 0,
+      customer: lifecycleStages['customer'] || lifecycleStages['Customer'] || 0,
     };
   }, [companies]);
 
@@ -195,9 +238,8 @@ export default function RolodexPage() {
     
     return {
       total: contacts.length,
-      withEmail: contacts.filter(c => c.email).length,
-      withPhone: contacts.filter(c => c.phone).length,
-      ...lifecycleStages,
+      opportunity: lifecycleStages['opportunity'] || lifecycleStages['Opportunity'] || 0,
+      customer: lifecycleStages['customer'] || lifecycleStages['Customer'] || 0,
     };
   }, [contacts]);
 
@@ -213,164 +255,210 @@ export default function RolodexPage() {
   }
 
   return (
-    <div className="bg-gray-50">
+    <div className="bg-gray-50 min-h-screen" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'companies' | 'contacts')} className="space-y-6">
           {/* Page Header */}
-          <div className="mb-8">
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Rolodex</h1>
-                <p className="mt-2 text-gray-600">
-                  Manage your contacts and companies database
-                </p>
-              </div>
-              <div className="flex items-center gap-4">
-                {/* Tabs */}
-                <TabsList className="grid grid-cols-2 bg-gray-100 p-1 w-auto">
-                  <TabsTrigger 
-                    value="companies" 
-                    className="flex items-center gap-2 px-8 py-2 text-sm font-medium data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors"
-                  >
-                    <Building2 className="w-4 h-4" />
-                    Companies ({companies.length})
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="contacts" 
-                    className="flex items-center gap-2 px-8 py-2 text-sm font-medium data-[state=active]:bg-black data-[state=active]:text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors"
-                  >
-                    <User className="w-4 h-4" />
-                    Contacts ({contacts.length})
-                  </TabsTrigger>
-                </TabsList>
-                {/* Create Button */}
-                <Button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Create
-                </Button>
-              </div>
+          <div className="mb-8 flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
+                Rolodex
+              </h1>
+              <p className="mt-2 text-gray-600" style={{ fontWeight: 400 }}>
+                Manage your contacts and companies database
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                {activeTab === 'companies' ? 'Create Company' : 'Create Contact'}
+              </Button>
+              <Button
+                onClick={handleSyncHubSpot}
+                disabled={isSyncing}
+                className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
+              >
+                {isSyncing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Sync HubSpot
+                  </>
+                )}
+              </Button>
             </div>
           </div>
 
+          {/* Sync Result Message */}
+          {syncResult && (
+            <div className={`mb-6 p-4 rounded-lg border ${
+              syncResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+            }`}>
+              <div className="flex items-center gap-2">
+                {syncResult.success ? (
+                  <>
+                    <CheckCircle2 className="size-5 text-green-600" />
+                    <span className="font-medium text-green-900">
+                      Sync Completed: {syncResult.companiesSynced || 0} companies, {syncResult.contactsSynced || 0} contacts synced
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <X className="size-5 text-red-600" />
+                    <span className="font-medium text-red-900">
+                      Sync Failed: {syncResult.error || 'Unknown error'}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Companies Tab */}
           <TabsContent value="companies" className="space-y-6">
-            {/* Metric Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Tabs and Metric Cards - Inline */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              {/* Tabs */}
+              <div className="flex items-stretch">
+                <TabsList className="inline-flex bg-gray-100 p-1 rounded-lg w-full h-full">
+                  <TabsTrigger 
+                    value="companies" 
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium data-[state=active]:!bg-blue-600 data-[state=active]:!text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors flex-1 h-full"
+                  >
+                    <Building2 className="w-5 h-5" />
+                    <span>Companies</span>
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="contacts" 
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium data-[state=active]:!bg-blue-600 data-[state=active]:!text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors flex-1 h-full"
+                  >
+                    <User className="w-5 h-5" />
+                    <span>Contacts</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Metric Cards */}
               <CompactMetricCard
                 label="Total Companies"
                 value={companyMetrics.total}
                 icon={Building2}
                 iconColor="blue"
+                className="bg-black text-white"
               />
-              {Object.entries(companyMetrics).filter(([key]) => key !== 'total').slice(0, 4).map(([stage, count]) => (
-                <CompactMetricCard
-                  key={stage}
-                  label={stage}
-                  value={count as number}
-                  icon={Building2}
-                  iconColor="gray"
-                />
-              ))}
+              <CompactMetricCard
+                label="Opportunity"
+                value={companyMetrics.opportunity}
+                icon={Building2}
+                iconColor="gray"
+                className="bg-black text-white"
+              />
+              <CompactMetricCard
+                label="Customer"
+                value={companyMetrics.customer}
+                icon={Building2}
+                iconColor="gray"
+                className="bg-black text-white"
+              />
             </div>
 
-            {/* Filters */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <div className="flex items-center gap-4 flex-wrap">
-                {/* Search */}
-                <div className="flex-1 min-w-[200px]">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      placeholder="Search companies..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-
-                {/* Lifecycle Stage Filter */}
-                <Select value={lifecycleFilter} onValueChange={setLifecycleFilter}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Lifecycle Stage" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Stages</SelectItem>
-                    <SelectItem value="lead">Lead</SelectItem>
-                    <SelectItem value="opportunity">Opportunity</SelectItem>
-                    <SelectItem value="customer">Customer</SelectItem>
-                    <SelectItem value="evangelist">Evangelist</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Sort By */}
-                <Select value={sortBy} onValueChange={(value: 'date-newest' | 'date-oldest' | 'name') => setSortBy(value)}>
-                  <SelectTrigger className="w-[180px]">
-                    <div className="flex items-center gap-2">
-                      <ArrowUpDown className="w-4 h-4" />
-                      <SelectValue placeholder="Sort by" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="date-newest">Newest First</SelectItem>
-                    <SelectItem value="date-oldest">Oldest First</SelectItem>
-                    <SelectItem value="name">Name (A-Z)</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Clear Filters */}
-                {hasActiveFilters && (
-                  <Button variant="outline" onClick={clearFilters} size="sm">
-                    <X className="w-4 h-4 mr-2" />
-                    Clear
-                  </Button>
-                )}
-              </div>
-            </div>
 
             {/* Companies Table */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              {filteredCompanies.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-900 font-medium mb-1">No companies found</p>
-                  <p className="text-sm text-gray-500 mb-4">
-                    {hasActiveFilters 
-                      ? 'Try adjusting your filters.' 
-                      : 'Companies will appear here after syncing from HubSpot.'}
-                  </p>
-                  {hasActiveFilters && (
-                    <Button variant="outline" size="sm" onClick={clearFilters}>
-                      Clear Filters
-                    </Button>
-                  )}
+            <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+              <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-white" />
+                  <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                    Companies
+                  </span>
                 </div>
-              ) : (
-                <>
-                  <div className="px-6 py-4 border-b border-gray-200">
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      {filteredCompanies.length} {filteredCompanies.length === 1 ? 'Company' : 'Companies'}
-                    </h2>
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                  {filteredCompanies.length} {filteredCompanies.length === 1 ? 'Company' : 'Companies'}
+                </span>
+              </div>
+              <CardContent className="pt-0 pb-6">
+                {filteredCompanies.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-900 font-medium mb-1">No companies found</p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      {hasActiveFilters 
+                        ? 'Try adjusting your search or filters' 
+                        : 'Companies will appear here after syncing from HubSpot.'}
+                    </p>
+                    {hasActiveFilters && (
+                      <Button variant="outline" size="sm" onClick={clearFilters}>
+                        Clear Filters
+                      </Button>
+                    )}
                   </div>
-                  <div className="overflow-hidden">
-                    <Table className="table-fixed w-full">
+                ) : (
+                  <>
+                    {/* Filter and Sort Controls */}
+                    <div className="px-2 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
+                      {/* Search Bar - Left Side */}
+                      <div className="relative flex-1 max-w-xs">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                        <Input
+                          placeholder="Search companies..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="text-sm pl-10"
+                        />
+                      </div>
+                      
+                      {/* Filters and Sort - Right Side */}
+                      <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-gray-500" />
+                        <select
+                          value={lifecycleFilter}
+                          onChange={(e) => setLifecycleFilter(e.target.value)}
+                          className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                        >
+                          <option value="all">All Stages</option>
+                          <option value="lead">Lead</option>
+                          <option value="opportunity">Opportunity</option>
+                          <option value="customer">Customer</option>
+                          <option value="evangelist">Evangelist</option>
+                        </select>
+                        <ArrowUpDown className="w-4 h-4 text-gray-500 ml-2" />
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as any)}
+                          className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                        >
+                          <option value="date-added">Date Added (Newest)</option>
+                          <option value="date-oldest">Date Added (Oldest)</option>
+                          <option value="name">Name (A-Z)</option>
+                        </select>
+                        {hasActiveFilters && (
+                          <Button variant="outline" onClick={clearFilters} size="sm" className="ml-2">
+                            <X className="w-4 h-4 mr-1" />
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <Table>
                       <TableHeader>
-                        <TableRow className="bg-gray-50">
-                          <TableHead className="text-xs font-semibold text-gray-700 uppercase" style={{ width: '20%' }}>Company Name</TableHead>
-                          <TableHead className="text-xs font-semibold text-gray-700 uppercase" style={{ width: '15%' }}>Website</TableHead>
-                          <TableHead className="text-xs font-semibold text-gray-700 uppercase" style={{ width: '12%' }}>Type</TableHead>
-                          <TableHead className="text-xs font-semibold text-gray-700 uppercase" style={{ width: '15%' }}>Lifecycle Stage</TableHead>
-                          <TableHead className="text-xs font-semibold text-gray-700 uppercase" style={{ width: '15%' }}>Location</TableHead>
-                          <TableHead className="text-xs font-semibold text-gray-700 uppercase" style={{ width: '13%' }}>Created</TableHead>
-                          <TableHead className="text-right text-xs font-semibold text-gray-700 uppercase" style={{ width: '10%' }}>Actions</TableHead>
+                        <TableRow className="border-b border-gray-200">
+                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Company Name</TableHead>
+                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Website</TableHead>
+                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Type</TableHead>
+                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Lifecycle Stage</TableHead>
+                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Location</TableHead>
+                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Date Added</TableHead>
+                          <TableHead className="text-right text-xs font-semibold text-gray-700 uppercase">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredCompanies.map((company) => {
-                          // Truncate website URL for display
                           const truncateUrl = (url: string, maxLength: number = 20) => {
                             if (url.length <= maxLength) return url;
                             return url.substring(0, maxLength - 3) + '...';
@@ -380,22 +468,22 @@ export default function RolodexPage() {
                           return (
                             <TableRow
                               key={company._id}
-                              className="hover:bg-gray-50 cursor-pointer"
+                              className="cursor-pointer hover:bg-gray-50"
                               onClick={() => router.push(`/companies/${company._id}`)}
                             >
-                              <TableCell className="font-medium text-sm">
+                              <TableCell>
                                 <div className="flex items-center gap-2">
-                                  <span className="truncate">{company.name}</span>
+                                  <span className="text-sm font-medium text-gray-900">{company.name}</span>
                                   {company.hubspotUrl && <HubSpotLink url={company.hubspotUrl} />}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-sm">
+                              <TableCell>
                                 {company.website ? (
                                   <a
                                     href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-primary hover:underline flex items-center gap-1"
+                                    className="text-sm text-blue-600 hover:underline flex items-center gap-1"
                                     onClick={(e) => e.stopPropagation()}
                                     title={company.website}
                                   >
@@ -403,24 +491,30 @@ export default function RolodexPage() {
                                     <ExternalLink className="w-3 h-3 flex-shrink-0" />
                                   </a>
                                 ) : (
-                                  '—'
+                                  <span className="text-sm text-gray-400">—</span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-sm">{company.type || '—'}</TableCell>
-                              <TableCell className="text-sm">
-                                {company.hubspotLifecycleStageName && (
+                              <TableCell>
+                                <span className="text-sm text-gray-900">{company.type || '—'}</span>
+                              </TableCell>
+                              <TableCell>
+                                {company.hubspotLifecycleStageName ? (
                                   <Badge variant="outline" className="text-xs">{company.hubspotLifecycleStageName}</Badge>
+                                ) : (
+                                  <span className="text-sm text-gray-400">—</span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-sm">
-                                <span className="truncate block">
+                              <TableCell>
+                                <span className="text-sm text-gray-600 truncate block">
                                   {[company.city, company.state].filter(Boolean).join(', ') || '—'}
                                 </span>
                               </TableCell>
-                              <TableCell className="text-sm whitespace-nowrap">
-                                {company.createdAt
-                                  ? new Date(company.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                  : '—'}
+                              <TableCell>
+                                <span className="text-sm text-gray-600">
+                                  {company.createdAt
+                                    ? new Date(company.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                    : '—'}
+                                </span>
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -452,7 +546,7 @@ export default function RolodexPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-8 px-3 text-xs"
+                                    className="h-8 px-3 text-xs text-blue-600 hover:text-blue-900 hover:bg-blue-50"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       router.push(`/companies/${company._id}`);
@@ -467,135 +561,145 @@ export default function RolodexPage() {
                         })}
                       </TableBody>
                     </Table>
-                  </div>
-                </>
-              )}
-            </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Contacts Tab */}
           <TabsContent value="contacts" className="space-y-6">
-            {/* Metric Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Tabs and Metric Cards - Inline */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              {/* Tabs */}
+              <div className="flex items-stretch">
+                <TabsList className="inline-flex bg-gray-100 p-1 rounded-lg w-full h-full">
+                  <TabsTrigger 
+                    value="companies" 
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium data-[state=active]:!bg-blue-600 data-[state=active]:!text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors flex-1 h-full"
+                  >
+                    <Building2 className="w-5 h-5" />
+                    <span>Companies</span>
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="contacts" 
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium data-[state=active]:!bg-blue-600 data-[state=active]:!text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-gray-600 hover:data-[state=inactive]:bg-gray-200 transition-colors flex-1 h-full"
+                  >
+                    <User className="w-5 h-5" />
+                    <span>Contacts</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              {/* Metric Cards */}
               <CompactMetricCard
                 label="Total Contacts"
                 value={contactMetrics.total}
                 icon={User}
                 iconColor="blue"
+                className="bg-black text-white"
               />
               <CompactMetricCard
-                label="With Email"
-                value={contactMetrics.withEmail}
-                icon={Mail}
-                iconColor="green"
+                label="Opportunity"
+                value={contactMetrics.opportunity}
+                icon={User}
+                iconColor="gray"
+                className="bg-black text-white"
               />
               <CompactMetricCard
-                label="With Phone"
-                value={contactMetrics.withPhone}
-                icon={Phone}
-                iconColor="purple"
+                label="Customer"
+                value={contactMetrics.customer}
+                icon={User}
+                iconColor="gray"
+                className="bg-black text-white"
               />
-              {Object.entries(contactMetrics).filter(([key]) => !['total', 'withEmail', 'withPhone'].includes(key)).slice(0, 2).map(([stage, count]) => (
-                <CompactMetricCard
-                  key={stage}
-                  label={stage}
-                  value={count as number}
-                  icon={User}
-                  iconColor="gray"
-                />
-              ))}
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <div className="flex items-center gap-4 flex-wrap">
-                {/* Search */}
-                <div className="flex-1 min-w-[200px]">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      placeholder="Search contacts..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-
-                {/* Lifecycle Stage Filter */}
-                <Select value={lifecycleFilter} onValueChange={setLifecycleFilter}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Lifecycle Stage" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Stages</SelectItem>
-                    <SelectItem value="lead">Lead</SelectItem>
-                    <SelectItem value="opportunity">Opportunity</SelectItem>
-                    <SelectItem value="customer">Customer</SelectItem>
-                    <SelectItem value="evangelist">Evangelist</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Sort By */}
-                <Select value={sortBy} onValueChange={(value: 'date-newest' | 'date-oldest' | 'name') => setSortBy(value)}>
-                  <SelectTrigger className="w-[180px]">
-                    <div className="flex items-center gap-2">
-                      <ArrowUpDown className="w-4 h-4" />
-                      <SelectValue placeholder="Sort by" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="date-newest">Newest First</SelectItem>
-                    <SelectItem value="date-oldest">Oldest First</SelectItem>
-                    <SelectItem value="name">Name (A-Z)</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Clear Filters */}
-                {hasActiveFilters && (
-                  <Button variant="outline" onClick={clearFilters} size="sm">
-                    <X className="w-4 h-4 mr-2" />
-                    Clear
-                  </Button>
-                )}
-              </div>
             </div>
 
             {/* Contacts Table */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              {filteredContacts.length === 0 ? (
-                <div className="p-12 text-center">
-                  <User className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-900 font-medium mb-1">No contacts found</p>
-                  <p className="text-sm text-gray-500 mb-4">
-                    {hasActiveFilters 
-                      ? 'Try adjusting your filters.' 
-                      : 'Contacts will appear here after syncing from HubSpot.'}
-                  </p>
-                  {hasActiveFilters && (
-                    <Button variant="outline" size="sm" onClick={clearFilters}>
-                      Clear Filters
-                    </Button>
-                  )}
+            <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+              <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-white" />
+                  <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                    Contacts
+                  </span>
                 </div>
-              ) : (
-                <>
-                  <div className="px-6 py-4 border-b border-gray-200">
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      {filteredContacts.length} {filteredContacts.length === 1 ? 'Contact' : 'Contacts'}
-                    </h2>
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                  {filteredContacts.length} {filteredContacts.length === 1 ? 'Contact' : 'Contacts'}
+                </span>
+              </div>
+              <CardContent className="pt-0 pb-6">
+                {filteredContacts.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <User className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-900 font-medium mb-1">No contacts found</p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      {hasActiveFilters 
+                        ? 'Try adjusting your search or filters' 
+                        : 'Contacts will appear here after syncing from HubSpot.'}
+                    </p>
+                    {hasActiveFilters && (
+                      <Button variant="outline" size="sm" onClick={clearFilters}>
+                        Clear Filters
+                      </Button>
+                    )}
                   </div>
-                  <div className="overflow-x-auto">
+                ) : (
+                  <>
+                    {/* Filter and Sort Controls */}
+                    <div className="px-2 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
+                      {/* Search Bar - Left Side */}
+                      <div className="relative flex-1 max-w-xs">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                        <Input
+                          placeholder="Search contacts..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="text-sm pl-10"
+                        />
+                      </div>
+                      
+                      {/* Filters and Sort - Right Side */}
+                      <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-gray-500" />
+                        <select
+                          value={lifecycleFilter}
+                          onChange={(e) => setLifecycleFilter(e.target.value)}
+                          className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                        >
+                          <option value="all">All Stages</option>
+                          <option value="lead">Lead</option>
+                          <option value="opportunity">Opportunity</option>
+                          <option value="customer">Customer</option>
+                          <option value="evangelist">Evangelist</option>
+                        </select>
+                        <ArrowUpDown className="w-4 h-4 text-gray-500 ml-2" />
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as any)}
+                          className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
+                        >
+                          <option value="date-added">Date Added (Newest)</option>
+                          <option value="date-oldest">Date Added (Oldest)</option>
+                          <option value="name">Name (A-Z)</option>
+                        </select>
+                        {hasActiveFilters && (
+                          <Button variant="outline" onClick={clearFilters} size="sm" className="ml-2">
+                            <X className="w-4 h-4 mr-1" />
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                     <Table>
                       <TableHeader>
-                        <TableRow className="bg-gray-50">
+                        <TableRow className="border-b border-gray-200">
                           <TableHead className="text-xs font-semibold text-gray-700 uppercase">Name</TableHead>
                           <TableHead className="text-xs font-semibold text-gray-700 uppercase">Email</TableHead>
                           <TableHead className="text-xs font-semibold text-gray-700 uppercase">Phone</TableHead>
                           <TableHead className="text-xs font-semibold text-gray-700 uppercase">Company</TableHead>
                           <TableHead className="text-xs font-semibold text-gray-700 uppercase">Role</TableHead>
                           <TableHead className="text-xs font-semibold text-gray-700 uppercase">Lifecycle Stage</TableHead>
-                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Created</TableHead>
+                          <TableHead className="text-xs font-semibold text-gray-700 uppercase">Date Added</TableHead>
                           <TableHead className="text-right text-xs font-semibold text-gray-700 uppercase">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -603,12 +707,12 @@ export default function RolodexPage() {
                         {filteredContacts.map((contact) => (
                           <TableRow
                             key={contact._id}
-                            className="hover:bg-gray-50 cursor-pointer"
+                            className="cursor-pointer hover:bg-gray-50"
                             onClick={() => router.push(`/contacts/${contact._id}`)}
                           >
-                            <TableCell className="font-medium">
+                            <TableCell>
                               <div className="flex items-center gap-2">
-                                {contact.name}
+                                <span className="text-sm font-medium text-gray-900">{contact.name}</span>
                                 {contact.hubspotUrl && <HubSpotLink url={contact.hubspotUrl} />}
                               </div>
                             </TableCell>
@@ -616,57 +720,62 @@ export default function RolodexPage() {
                               {contact.email ? (
                                 <a
                                   href={`mailto:${contact.email}`}
-                                  className="text-primary hover:underline flex items-center gap-1"
+                                  className="text-sm text-blue-600 hover:underline flex items-center gap-1"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   {contact.email}
                                   <Mail className="w-3 h-3" />
                                 </a>
                               ) : (
-                                '—'
+                                <span className="text-sm text-gray-400">—</span>
                               )}
                             </TableCell>
                             <TableCell>
                               {contact.phone ? (
                                 <a
                                   href={`tel:${contact.phone}`}
-                                  className="text-primary hover:underline flex items-center gap-1"
+                                  className="text-sm text-blue-600 hover:underline flex items-center gap-1"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   {contact.phone}
                                   <Phone className="w-3 h-3" />
                                 </a>
                               ) : (
-                                '—'
+                                <span className="text-sm text-gray-400">—</span>
                               )}
                             </TableCell>
                             <TableCell>
-                              {contact.company || '—'}
+                              <span className="text-sm text-gray-900">{contact.company || '—'}</span>
                             </TableCell>
                             <TableCell>
                               {contact.role ? (
                                 <div className="flex items-center gap-1">
                                   <Briefcase className="w-3 h-3 text-gray-400" />
-                                  {contact.role}
+                                  <span className="text-sm text-gray-900">{contact.role}</span>
                                 </div>
                               ) : (
-                                '—'
+                                <span className="text-sm text-gray-400">—</span>
                               )}
                             </TableCell>
                             <TableCell>
-                              {contact.hubspotLifecycleStageName && (
-                                <Badge variant="outline">{contact.hubspotLifecycleStageName}</Badge>
+                              {contact.hubspotLifecycleStageName ? (
+                                <Badge variant="outline" className="text-xs">{contact.hubspotLifecycleStageName}</Badge>
+                              ) : (
+                                <span className="text-sm text-gray-400">—</span>
                               )}
                             </TableCell>
                             <TableCell>
-                              {contact.createdAt
-                                ? new Date(contact.createdAt).toLocaleDateString()
-                                : '—'}
+                              <span className="text-sm text-gray-600">
+                                {contact.createdAt
+                                  ? new Date(contact.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                  : '—'}
+                              </span>
                             </TableCell>
                             <TableCell className="text-right">
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                className="h-8 px-3 text-xs text-blue-600 hover:text-blue-900 hover:bg-blue-50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   router.push(`/contacts/${contact._id}`);
@@ -679,10 +788,10 @@ export default function RolodexPage() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
-                </>
-              )}
-            </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
 
@@ -698,4 +807,6 @@ export default function RolodexPage() {
     </div>
   );
 }
+
+
 

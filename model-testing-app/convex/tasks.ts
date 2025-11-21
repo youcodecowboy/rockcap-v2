@@ -240,6 +240,31 @@ export const removeReminder = mutation({
   },
 });
 
+// Mutation: Mark task as completed
+export const complete = mutation({
+  args: { id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+
+    const task = await ctx.db.get(args.id);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    // Verify user can complete: creator or assigned user can complete
+    if (task.createdBy !== user._id && task.assignedTo !== user._id) {
+      throw new Error("Unauthorized: You can only complete tasks you created or are assigned to");
+    }
+
+    await ctx.db.patch(args.id, {
+      status: "completed",
+      updatedAt: new Date().toISOString(),
+    });
+
+    return args.id;
+  },
+});
+
 // Mutation: Delete task
 export const remove = mutation({
   args: { id: v.id("tasks") },

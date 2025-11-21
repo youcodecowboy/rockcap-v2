@@ -181,10 +181,10 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
     }
   };
 
-  // Filter queue jobs to only show active ones (not completed)
-  // Completed items should be removed from the queue display
+  // Filter queue jobs to only show active ones (pending, uploading, analyzing)
+  // Completed and needs_confirmation items should NOT appear in queue - they go to "Recently Analyzed"
   const activeJobs = queueJobs?.filter(
-    job => job.status !== 'completed'
+    job => job.status === 'pending' || job.status === 'uploading' || job.status === 'analyzing' || job.status === 'error'
   ).slice(0, 20) || [];
   const currentQueueSize = isReady ? getQueueSize() : 0;
   const isDisabled = !isReady || currentQueueSize >= MAX_FILES;
@@ -259,21 +259,22 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
         </label>
       </div>
 
-      {/* Queue Status - Only show active jobs (not completed) */}
-      {activeJobs.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-700">
-              Upload Queue {isProcessing() && <span className="text-blue-600">(Processing...)</span>}
-            </h3>
-            <span className="text-xs text-gray-500">
-              {activeJobs.filter(j => j.status === 'pending' || j.status === 'uploading' || j.status === 'analyzing').length} active
-            </span>
-          </div>
+      {/* Queue Status - Always show, even if empty */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">
+            Upload Queue {isProcessing() && <span className="text-blue-600">(Processing...)</span>}
+          </h3>
+          <span className="text-xs text-gray-500">
+            {activeJobs.filter(j => j.status === 'pending' || j.status === 'uploading' || j.status === 'analyzing').length} active
+          </span>
+        </div>
+        {activeJobs.length > 0 ? (
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {activeJobs.map((job) => {
               const file = localFiles.get(job._id);
-              const canRemove = job.status === 'pending' || job.status === 'error';
+              // Allow removing pending, error, and needs_confirmation items
+              const canRemove = job.status === 'pending' || job.status === 'error' || job.status === 'needs_confirmation';
               
               return (
                 <div
@@ -326,8 +327,13 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
               );
             })}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <p className="text-sm">No files in queue</p>
+            <p className="text-xs text-gray-400 mt-1">Files will appear here while processing</p>
+          </div>
+        )}
+      </div>
 
       {/* Instructions Modal for single file uploads on main page */}
       {pendingJobId && pendingJob && (

@@ -160,3 +160,11 @@ export async function getDocumentsServer(params: {
   return result;
 }
 
+export async function getFileTypeDefinitionsServer() {
+  if (!convexServer) {
+    throw new Error("Convex server client not configured");
+  }
+  const result = await convexServer.query(api.fileTypeDefinitions.getAll, {}) as any;
+  return result;
+}
+

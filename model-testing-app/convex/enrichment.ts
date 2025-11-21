@@ -247,7 +247,7 @@ export const accept = mutation({
           // Use the internal migration mutation to clean up the client
           // This uses delete + insert to bypass replace validation issues
           try {
-            // @ts-expect-error - Type inference issue with Convex internal mutations
+            // @ts-ignore - Type instantiation issue with Convex internal mutations
             const migrationResult = await ctx.runMutation(internal.clients.migrateInvalidFields, {
               id: suggestion.clientId,
             }) as { migrated: boolean; oldId?: string; newId?: string; invalidFields?: string[] };
