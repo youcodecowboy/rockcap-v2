@@ -7,6 +7,7 @@ import NavigationBar from "@/components/NavigationBar";
 import Sidebar from "@/components/Sidebar";
 import ChatAssistantButton from "@/components/ChatAssistantButton";
 import { ChatDrawerProvider } from "@/contexts/ChatDrawerContext";
+import { GlobalSearchProvider } from "@/contexts/GlobalSearchContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,13 +36,15 @@ export default function RootLayout({
       >
         <ConvexProvider>
           <ChatDrawerProvider>
-            <UserSync />
-            <Sidebar />
-            <NavigationBar />
-            <main className="ml-20 pt-16 min-h-screen">
-              {children}
-            </main>
-            <ChatAssistantButton />
+            <GlobalSearchProvider>
+              <UserSync />
+              <Sidebar />
+              <NavigationBar />
+              <main className="ml-20 pt-16 min-h-screen">
+                {children}
+              </main>
+              <ChatAssistantButton />
+            </GlobalSearchProvider>
           </ChatDrawerProvider>
         </ConvexProvider>
       </body>

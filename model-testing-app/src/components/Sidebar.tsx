@@ -21,6 +21,7 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
+import { useGlobalSearch } from '@/contexts/GlobalSearchContext';
 
 interface NavItem {
   href: string;
@@ -32,6 +33,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [isHovered, setIsHovered] = useState(false);
   const { isOpen: isChatOpen } = useChatDrawer();
+  const { isOpen: isGlobalSearchOpen } = useGlobalSearch();
 
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/';
@@ -58,7 +60,7 @@ export default function Sidebar() {
     <aside
       className={`fixed left-0 top-16 h-[calc(100vh-4rem)] bg-black text-white transition-all duration-300 ease-in-out z-50 ${
         isHovered ? 'w-64' : 'w-20'
-      } ${isChatOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+      } ${isChatOpen || isGlobalSearchOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{ zIndex: 50 }}
@@ -107,7 +109,7 @@ export default function Sidebar() {
             <Settings className={`h-4 w-4 flex-shrink-0 stroke-[1.5] text-white`} />
             {isHovered && (
               <span className="text-sm font-normal whitespace-nowrap ml-3 text-white">
-                Settings
+                Settings VERSION 2.1
               </span>
             )}
           </Link>

@@ -7,6 +7,7 @@ import { Id } from '../../convex/_generated/dataModel';
 import { useRouter } from 'next/navigation';
 import { Search, X, Users, Building2, Briefcase, FileText, Loader2, User, BookOpen } from 'lucide-react';
 import { Input } from './ui/input';
+import { useGlobalSearch } from '@/contexts/GlobalSearchContext';
 
 interface SearchResult {
   clients: Array<{
@@ -68,7 +69,7 @@ interface SearchResult {
 }
 
 export default function GlobalSearch() {
-  const [isOpen, setIsOpen] = useState(false);
+  const { isOpen, setIsOpen } = useGlobalSearch();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -230,21 +231,22 @@ export default function GlobalSearch() {
       {/* Search Icon Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-        aria-label="Search"
+        className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors border border-gray-200 bg-white"
+        aria-label="Global Search"
       >
-        <Search className="h-5 w-5" />
+        <Search className="h-4 w-4" />
+        <span className="text-sm font-normal">Global Search</span>
       </button>
 
       {/* Slide-out Search Bar */}
       <div
-        className={`fixed inset-0 z-50 bg-black/20 transition-opacity duration-300 ${
+        className={`fixed inset-0 z-[60] bg-black/20 transition-opacity duration-300 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={() => setIsOpen(false)}
       >
         <div 
-          className={`absolute top-0 left-0 right-0 bg-white border-b border-gray-200 shadow-lg transform transition-transform duration-300 ease-in-out ${
+          className={`absolute top-0 left-0 right-0 bg-white border-b border-gray-200 shadow-lg transform transition-transform duration-300 ease-in-out z-[61] ${
             isOpen ? 'translate-y-0' : '-translate-y-full'
           }`}
           onClick={(e) => e.stopPropagation()}
