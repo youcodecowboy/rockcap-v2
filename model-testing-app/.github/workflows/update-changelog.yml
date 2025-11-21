@@ -1,0 +1,34 @@
+name: Update Changelog
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  update-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract commit messages
+        id: extract-commits
+        run: |
+          # Get commits since last push (or last 10 commits if first run)
+          COMMITS=$(git log --pretty=format:"%s" -10)
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Update Changelog via API
+        env:
+          CHANGELOG_API_URL: ${{ secrets.CHANGELOG_API_URL || 'https://your-domain.com/api/changelog/github-webhook' }}
+        run: |
+          # Read commits and send to API
+          while IFS= read -r commit_msg; do
+            if [ ! -z "$commit_msg" ]; then
+              curl -X PUT "$CHANGELOG_API_URL" \
+                -H "Content-Type: application/json" \
+                -d "{\"description\": \"$commit_msg\"}"
+            fi
+          done <<< "${{ steps.extract-commits.outputs.commits }}"
+

@@ -14,8 +14,21 @@ export const list = query({
     projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
+    // Check authentication - return empty array if not authenticated
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return [];
+    }
+
     // Get authenticated user
-    const user = await getAuthenticatedUser(ctx);
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+    
+    if (!user) {
+      return []; // Return empty array if user not found
+    }
     
     if (args.clientId) {
       return await ctx.db
@@ -58,8 +71,21 @@ export const list = query({
 export const get = query({
   args: { id: v.id("chatSessions") },
   handler: async (ctx, args) => {
+    // Check authentication - return null if not authenticated
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+
     // Get authenticated user
-    const user = await getAuthenticatedUser(ctx);
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+    
+    if (!user) {
+      return null; // Return null if user not found
+    }
     
     const session = await ctx.db.get(args.id);
     if (!session) {
@@ -68,7 +94,7 @@ export const get = query({
     
     // Verify session belongs to user
     if (session.userId !== user._id) {
-      throw new Error("Unauthorized: Session does not belong to current user");
+      return null; // Return null instead of throwing error for better UX
     }
     
     return session;
@@ -226,3 +252,50 @@ export const incrementMessageCount = mutation({
   },
 });
 
+// Admin mutation: Clean up orphaned chat sessions (sessions without userId)
+// This is a one-time cleanup mutation that can be called to fix old data
+export const cleanupOrphanedSessions = mutation({
+  handler: async (ctx) => {
+    // Get authenticated user (must be logged in)
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get all chatSessions
+    const allSessions = await ctx.db.query("chatSessions").collect();
+    
+    let deletedCount = 0;
+    
+    for (const session of allSessions) {
+      // If session doesn't have userId, delete it and its messages/actions
+      if (!session.userId) {
+        // Delete all messages in the session
+        const messages = await ctx.db
+          .query("chatMessages")
+          .withIndex("by_session", (q: any) => q.eq("sessionId", session._id))
+          .collect();
+        
+        for (const message of messages) {
+          await ctx.db.delete(message._id);
+        }
+        
+        // Delete all actions in the session
+        const actions = await ctx.db
+          .query("chatActions")
+          .withIndex("by_session", (q: any) => q.eq("sessionId", session._id))
+          .collect();
+        
+        for (const action of actions) {
+          await ctx.db.delete(action._id);
+        }
+        
+        // Delete the session itself
+        await ctx.db.delete(session._id);
+        deletedCount++;
+      }
+    }
+    
+    return { deletedCount, message: `Deleted ${deletedCount} orphaned chat session(s)` };
+  },
+});

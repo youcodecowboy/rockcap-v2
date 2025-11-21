@@ -749,7 +749,7 @@ export default defineSchema({
       v.literal("client"),
       v.literal("project")
     ),
-    userId: v.id("users"), // User who owns this chat session
+    userId: v.optional(v.id("users")), // User who owns this chat session (temporarily optional - will be required after cleanup)
     clientId: v.optional(v.id("clients")), // If context is client-specific
     projectId: v.optional(v.id("projects")), // If context is project-specific
     lastMessageAt: v.string(), // Timestamp of last message
@@ -1211,7 +1211,8 @@ export default defineSchema({
     type: v.union(
       v.literal("file_upload"),
       v.literal("reminder"),
-      v.literal("task")
+      v.literal("task"),
+      v.literal("changelog")
     ),
     title: v.string(),
     message: v.string(),
@@ -1380,5 +1381,12 @@ export default defineSchema({
     .index("by_name", ["name"])
     .index("by_active", ["isActive"])
     .index("by_category_type_and_active", ["categoryType", "isActive"]),
+
+  // Changelog table - tracks application changes and updates
+  changelog: defineTable({
+    description: v.string(), // Short description of the change
+    createdAt: v.string(), // ISO timestamp (server time)
+  })
+    .index("by_createdAt", ["createdAt"]),
 });
 

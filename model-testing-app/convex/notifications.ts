@@ -27,7 +27,8 @@ export const create = mutation({
     type: v.union(
       v.literal("file_upload"),
       v.literal("reminder"),
-      v.literal("task")
+      v.literal("task"),
+      v.literal("changelog")
     ),
     title: v.string(),
     message: v.string(),

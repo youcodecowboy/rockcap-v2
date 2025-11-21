@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag } from 'lucide-react';
+import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -28,6 +28,13 @@ const settingsSections = [
     description: 'Manage client statuses, types, tags, and prospecting stages',
     icon: Tag,
     href: '/settings/category-settings',
+  },
+  {
+    id: 'changelog',
+    title: 'Changelog',
+    description: 'View application changes and updates',
+    icon: History,
+    href: '/settings/changelog',
   },
   {
     id: 'profile',

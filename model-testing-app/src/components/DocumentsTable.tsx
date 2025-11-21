@@ -25,6 +25,7 @@ import {
   Settings,
   Move,
   Trash2,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Id } from '../../convex/_generated/dataModel';
@@ -38,6 +39,7 @@ import MoveDocumentModal from '@/components/MoveDocumentModal';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useDeleteDocument } from '@/lib/documentStorage';
+import { Badge } from '@/components/ui/badge';
 
 // Types
 interface Document {
@@ -52,6 +54,8 @@ interface Document {
   clientName?: string;
   projectName?: string;
   isBaseDocument?: boolean;
+  isQueued?: boolean; // Flag for queued documents
+  queueJobId?: Id<"fileUploadQueue">; // Queue job ID for queued documents
 }
 
 interface ProjectGroup {
@@ -89,6 +93,12 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
   const allClients = useClients();
   const updateClient = useUpdateClient();
   const deleteDocument = useDeleteDocument();
+  
+  // Query queued documents (needs_confirmation status)
+  const queuedJobs = useQuery(api.fileQueue.getJobs, { 
+    status: 'needs_confirmation',
+    limit: 100 
+  }) || [];
   
   // Create client lookup map
   const clientMap = useMemo(() => {
@@ -213,16 +223,80 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
     }
   };
   
+  // Convert queued jobs to document-like objects, filtered by navigation state
+  const queuedDocuments = useMemo(() => {
+    return queuedJobs
+      .filter(job => {
+        const analysisResult = job.analysisResult as any;
+        const jobClientId = analysisResult?.clientId;
+        const jobProjectId = analysisResult?.projectId;
+        
+        // Only include queued documents that match current navigation state
+        if (navState.type === 'all') {
+          // Show all queued documents with a client
+          return !!jobClientId;
+        } else if (navState.type === 'client') {
+          // Show queued documents for this client (with or without project)
+          return jobClientId === navState.clientId;
+        } else if (navState.type === 'project') {
+          // Show queued documents for this client and project
+          if (navState.projectId === 'no-project') {
+            // Show queued documents with this client and no project
+            return jobClientId === navState.clientId && (!jobProjectId || jobProjectId === null || jobProjectId === undefined);
+          } else {
+            // Show queued documents with this client and project
+            return jobClientId === navState.clientId && jobProjectId === navState.projectId;
+          }
+        } else if (navState.type === 'baseDocuments') {
+          // Base documents don't have queued items typically, but include if they match client
+          return jobClientId === navState.clientId && (!jobProjectId || jobProjectId === null || jobProjectId === undefined);
+        }
+        return false;
+      })
+      .map(job => {
+        const analysisResult = job.analysisResult as any;
+        return {
+          _id: `queue-${job._id}` as Id<"documents">, // Temporary ID for queued items
+          fileName: job.fileName,
+          documentCode: undefined,
+          summary: analysisResult?.summary || '',
+          category: analysisResult?.category || 'Uncategorized',
+          uploadedAt: job.createdAt,
+          clientId: analysisResult?.clientId as Id<"clients"> | undefined,
+          projectId: analysisResult?.projectId as Id<"projects"> | undefined,
+          clientName: analysisResult?.clientName || analysisResult?.suggestedClientName || undefined,
+          projectName: analysisResult?.projectName || analysisResult?.suggestedProjectName || undefined,
+          isBaseDocument: false,
+          isQueued: true,
+          queueJobId: job._id,
+        } as Document;
+      });
+  }, [queuedJobs, navState]);
+
   // Group and filter documents
   const groupedData = useMemo(() => {
+    // Merge regular documents with queued documents
+    const allDocs = [...documents, ...queuedDocuments];
+    
     // Filter documents based on navigation state
-    let filtered = documents.filter(doc => {
+    let filtered = allDocs.filter(doc => {
       // Apply navigation filter
       if (navState.type === 'client' && doc.clientId !== navState.clientId) {
         return false;
       }
-      if (navState.type === 'project' && (doc.clientId !== navState.clientId || doc.projectId !== navState.projectId)) {
-        return false;
+      if (navState.type === 'project') {
+        // Handle "no-project" case: check if projectId is undefined/null when navState.projectId is 'no-project'
+        if (navState.projectId === 'no-project') {
+          // Keep documents with matching client and no project (undefined or null)
+          if (doc.clientId !== navState.clientId || (doc.projectId !== undefined && doc.projectId !== null)) {
+            return false;
+          }
+        } else {
+          // Regular project filter
+          if (doc.clientId !== navState.clientId || doc.projectId !== navState.projectId) {
+            return false;
+          }
+        }
       }
       
       // Apply column filters
@@ -367,7 +441,7 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
     });
     
     return grouped;
-  }, [documents, filters, sortColumn, sortDirection, navState]);
+  }, [documents, queuedDocuments, filters, sortColumn, sortDirection, navState]);
   
   // Get current view data based on navigation state
   const currentViewData = useMemo(() => {
@@ -702,9 +776,17 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
                     >
                       <TableCell></TableCell>
                       <TableCell>
-                        <span className="text-sm font-medium text-gray-900 font-mono">
-                          {doc.documentCode || doc.fileName}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 font-mono">
+                            {doc.documentCode || doc.fileName}
+                          </span>
+                          {doc.isQueued && (
+                            <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300">
+                              <AlertCircle className="w-3 h-3 mr-1" />
+                              Needs Review
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <span className="text-xs text-gray-500 truncate max-w-xs" title={doc.fileName}>
@@ -719,44 +801,58 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push(`/docs/${doc._id}`)}
-                            className="gap-1"
-                          >
-                            <Eye className="w-3 h-3" />
-                            View
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDocumentForMove({
-                                id: doc._id,
-                                clientId: navState.clientId as Id<"clients">,
-                                projectId: navState.type === 'project' ? navState.projectId as Id<"projects"> : 'base-documents',
-                                isBaseDocument: navState.type === 'baseDocuments' || doc.isBaseDocument,
-                              });
-                              setMoveModalOpen(true);
-                            }}
-                            className="gap-1"
-                            title="Move document"
-                          >
-                            <Move className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteDocument(doc._id);
-                            }}
-                            className="gap-1 text-red-600 hover:text-red-700"
-                            title="Delete document"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
+                          {doc.isQueued ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => router.push(`/uploads/${doc.queueJobId}`)}
+                              className="gap-1"
+                            >
+                              <Eye className="w-3 h-3" />
+                              Review
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => router.push(`/docs/${doc._id}`)}
+                                className="gap-1"
+                              >
+                                <Eye className="w-3 h-3" />
+                                View
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedDocumentForMove({
+                                    id: doc._id,
+                                    clientId: navState.clientId as Id<"clients">,
+                                    projectId: navState.type === 'project' ? navState.projectId as Id<"projects"> : 'base-documents',
+                                    isBaseDocument: navState.type === 'baseDocuments' || doc.isBaseDocument,
+                                  });
+                                  setMoveModalOpen(true);
+                                }}
+                                className="gap-1"
+                                title="Move document"
+                              >
+                                <Move className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteDocument(doc._id);
+                                }}
+                                className="gap-1 text-red-600 hover:text-red-700"
+                                title="Delete document"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

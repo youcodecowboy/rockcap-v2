@@ -1,6 +1,97 @@
 # Development Changelog
 
-## [Latest] - 2025-01-29 13:00
+## [Latest] - 2025-01-29 14:00
+
+### In-App Changelog Feature with GitHub Integration
+
+**Overview**: Implemented a comprehensive in-app changelog system accessible from Settings, with automatic updates via GitHub webhooks on every push. Changelog entries are displayed as cards with server timestamps and can be manually added or automatically populated from commit messages.
+
+**New Features:**
+1. **Changelog Database Schema** (`convex/schema.ts`):
+   - Added `changelog` table with `description` and `createdAt` fields
+   - Indexed by `createdAt` for efficient chronological queries
+   - Server-side timestamps ensure accurate date/time tracking
+
+2. **Changelog Convex Functions** (`convex/changelog.ts`):
+   - `add`: Create new changelog entry with description
+   - `getAll`: Retrieve all entries ordered by most recent first
+   - `getRecent`: Get last N entries (default: 10)
+
+3. **Changelog Settings Page** (`/settings/changelog`):
+   - New settings section accessible from main settings page
+   - Card-based display of changelog entries
+   - Each card shows description and formatted timestamp
+   - Chronological display (newest first)
+   - Empty state handling for no entries
+
+4. **GitHub Webhook Integration** (`/api/changelog/github-webhook`):
+   - POST endpoint for GitHub push events
+   - Webhook signature verification using `GITHUB_WEBHOOK_SECRET`
+   - Automatically creates changelog entry for each commit
+   - Format: `[branch] commit message`
+   - PUT endpoint for manual entry creation
+
+5. **GitHub Actions Workflow** (`.github/workflows/update-changelog.yml`):
+   - Alternative to webhook (runs on push to main/master)
+   - Extracts commit messages and sends to API
+   - Configurable via `CHANGELOG_API_URL` secret
+
+6. **Cursor Rules Documentation** (`.cursorrules`):
+   - Added changelog management guidelines
+   - Instructions for manual entries
+   - Best practices for commit messages
+   - GitHub webhook setup instructions
+
+**Settings Menu Integration:**
+- Added "Changelog" section to settings page with History icon
+- Positioned between Category Settings and Profile
+- Follows existing settings card pattern
+
+**Technical Details:**
+- Changelog entries use ISO timestamp strings for server-side accuracy
+- Webhook endpoint verifies GitHub signature for security
+- Supports both webhook and GitHub Actions workflows
+- Manual entries can be added via Convex mutation or API PUT endpoint
+- Real-time updates via Convex subscriptions
+
+**User Benefits:**
+- Centralized view of all application changes
+- Automatic tracking of code changes via GitHub
+- Clear timeline of updates and improvements
+- Easy access from Settings page
+- Server timestamps ensure accurate date/time
+
+**Setup Instructions:**
+1. **GitHub Webhook** (Recommended):
+   - Add `GITHUB_WEBHOOK_SECRET` to environment variables
+   - Configure webhook in GitHub repository settings:
+     - URL: `https://your-domain.com/api/changelog/github-webhook`
+     - Content type: `application/json`
+     - Secret: (same as `GITHUB_WEBHOOK_SECRET`)
+     - Events: Select "push" event only
+
+2. **GitHub Actions** (Alternative):
+   - Add `CHANGELOG_API_URL` secret to GitHub repository
+   - Workflow automatically runs on push to main/master
+
+**Files Created:**
+- `convex/changelog.ts` - Changelog CRUD operations
+- `src/app/settings/changelog/page.tsx` - Changelog settings page
+- `src/app/api/changelog/github-webhook/route.ts` - GitHub webhook endpoint
+- `.github/workflows/update-changelog.yml` - GitHub Actions workflow
+- `.cursorrules` - Cursor IDE rules for changelog management
+
+**Files Modified:**
+- `convex/schema.ts` - Added changelog table
+- `src/app/settings/page.tsx` - Added changelog settings section
+
+**Next Steps:**
+- Monitor webhook/actions to ensure automatic updates work
+- Consider adding filtering/search functionality
+- Add ability to categorize entries (feature, bug fix, etc.)
+- Consider adding entry editing/deletion for admins
+
+## [Previous] - 2025-01-29 13:00
 
 ### Deals Table Pagination & HubSpot Sync Fix
 

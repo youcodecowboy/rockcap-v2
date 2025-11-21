@@ -10,6 +10,7 @@
 
 import type * as authHelpers from "../authHelpers.js";
 import type * as categorySettings from "../categorySettings.js";
+import type * as changelog from "../changelog.js";
 import type * as chatActions from "../chatActions.js";
 import type * as chatMessages from "../chatMessages.js";
 import type * as chatSessions from "../chatSessions.js";
@@ -45,6 +46,7 @@ import type * as internalDocuments from "../internalDocuments.js";
 import type * as knowledgeBank from "../knowledgeBank.js";
 import type * as leads from "../leads.js";
 import type * as migrations_addDocumentCodes from "../migrations/addDocumentCodes.js";
+import type * as migrations_fixChatSessionsUserId from "../migrations/fixChatSessionsUserId.js";
 import type * as migrations_seedFileTypeDefinitions from "../migrations/seedFileTypeDefinitions.js";
 import type * as modelRuns from "../modelRuns.js";
 import type * as noteTemplates from "../noteTemplates.js";
@@ -73,6 +75,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   authHelpers: typeof authHelpers;
   categorySettings: typeof categorySettings;
+  changelog: typeof changelog;
   chatActions: typeof chatActions;
   chatMessages: typeof chatMessages;
   chatSessions: typeof chatSessions;
@@ -108,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   knowledgeBank: typeof knowledgeBank;
   leads: typeof leads;
   "migrations/addDocumentCodes": typeof migrations_addDocumentCodes;
+  "migrations/fixChatSessionsUserId": typeof migrations_fixChatSessionsUserId;
   "migrations/seedFileTypeDefinitions": typeof migrations_seedFileTypeDefinitions;
   modelRuns: typeof modelRuns;
   noteTemplates: typeof noteTemplates;
