@@ -1384,7 +1384,10 @@ export default defineSchema({
 
   // Changelog table - tracks application changes and updates
   changelog: defineTable({
-    description: v.string(), // Short description of the change
+    title: v.optional(v.string()), // Title of the change (optional for backward compatibility)
+    description: v.string(), // Detailed description of the change
+    pagesAffected: v.optional(v.array(v.string())), // Array of page names affected
+    featuresAffected: v.optional(v.array(v.string())), // Array of feature names affected
     createdAt: v.string(), // ISO timestamp (server time)
   })
     .index("by_createdAt", ["createdAt"]),

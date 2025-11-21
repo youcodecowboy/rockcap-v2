@@ -3,18 +3,27 @@ import { mutation, query } from "./_generated/server";
 
 /**
  * Add a new changelog entry
- * @param description - Short description of the change
+ * @param title - Title of the change
+ * @param description - Detailed description of the change
+ * @param pagesAffected - Optional array of page names affected
+ * @param featuresAffected - Optional array of feature names affected
  */
 export const add = mutation({
   args: {
+    title: v.string(),
     description: v.string(),
+    pagesAffected: v.optional(v.array(v.string())),
+    featuresAffected: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
     
     // Insert changelog entry
     const changelogId = await ctx.db.insert("changelog", {
+      title: args.title,
       description: args.description,
+      pagesAffected: args.pagesAffected,
+      featuresAffected: args.featuresAffected,
       createdAt: now,
     });
     
@@ -28,8 +37,8 @@ export const add = mutation({
         userId: user._id,
         type: "changelog",
         title: "New Update Available",
-        message: args.description,
-        relatedId: changelogId, // Convex will convert Id to string automatically
+        message: args.title,
+        relatedId: changelogId.toString(),
         isRead: false,
         createdAt: now,
       });
@@ -70,6 +79,16 @@ export const getRecent = query({
       .take(limit);
     
     return entries;
+  },
+});
+
+/**
+ * Remove a changelog entry
+ */
+export const remove = mutation({
+  args: { id: v.id("changelog") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
   },
 });
 

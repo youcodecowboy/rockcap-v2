@@ -2,30 +2,5 @@
 
 ## Changelog Management
 
-When making changes to the application, especially for new features, new pages, or larger changes:
-
-1. **Automatic Updates**: The changelog is automatically updated via GitHub webhook on every push to the repository. Each commit message becomes a changelog entry.
-
-2. **Manual Updates**: For manual changelog entries, use the Convex mutation:
-   ```typescript
-   import { useMutation } from 'convex/react';
-   import { api } from '@/convex/_generated/api';
-   
-   const addChangelogEntry = useMutation(api.changelog.add);
-   await addChangelogEntry({ description: 'Short description of the change' });
-   ```
-
-3. **Changelog Location**: The changelog is accessible at `/settings/changelog` in the application.
-
-4. **Best Practices**:
-   - Write clear, descriptive commit messages as they become changelog entries
-   - Include the branch name in commit messages when relevant
-   - Keep descriptions concise but informative
-   - Use present tense (e.g., "Add new feature" not "Added new feature")
-
-5. **GitHub Webhook Setup**:
-   - Webhook URL: `/api/changelog/github-webhook`
-   - Requires `GITHUB_WEBHOOK_SECRET` environment variable
-   - Configure in GitHub repository settings → Webhooks
-   - Select "push" events only
+The changelog is accessible at `/settings/changelog` in the application. Entries can be added manually through the UI on that page. When entries are added, all users automatically receive notifications.
 
