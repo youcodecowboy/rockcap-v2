@@ -1,6 +1,58 @@
 # Development Changelog
 
-## [Latest] - 2025-01-29 14:00
+## [Latest] - 2025-11-21 17:49
+
+### Fixed Document Table Display and Enhanced File Naming Configuration
+
+**Overview**: Fixed critical table display issues where long document names caused horizontal overflow, making controls unusable. Enhanced the Configure File Names modal with auto-population and automatic code generation capabilities for legacy documents.
+
+**Bug Fixes:**
+1. **Table Display Fix** (`src/components/DocumentsTable.tsx`, `DocumentCodeEditor.tsx`, `InternalDocumentsTable.tsx`, `UnclassifiedDocumentsTable.tsx`):
+   - Added `max-w-[300px]` constraint to document name columns
+   - Applied `truncate` class for text overflow with ellipsis
+   - Added `title` attributes for full name display on hover
+   - Prevents long file names from stretching tables horizontally
+
+**New Features:**
+1. **Enhanced Configure File Names Modal** (`src/components/ConfigureFileNamesModal.tsx`):
+   - Auto-population of client code from `clientName` using `abbreviateText()`
+   - Auto-population of project code from `projectName` (when available)
+   - Auto-population of type code from most common category
+   - Statistics banner showing documents needing codes
+
+2. **Auto-Generate Functionality**:
+   - New "Auto-Generate Codes" button with sparkle icon
+   - Automatically generates document codes using client/project names and document categories
+   - Uses each document's own category for accurate type codes
+   - Server-side uniqueness checking
+
+3. **Bulk Update Capability**:
+   - Radio button options: "Only documents without codes" vs "All documents (regenerate existing codes)"
+   - Shows count of documents that will be affected
+   - Error handling with retry logic for uniqueness conflicts
+   - Success/error messages with detailed counts
+
+**UI Improvements:**
+1. **Missing Code Indicator** (`src/components/DocumentsTable.tsx`):
+   - Orange badge on "Configure File Names" button showing count of documents needing codes
+   - Works for project, baseDocuments, and client views
+   - Only displays when count > 0
+
+2. **Scrollable Modal**:
+   - Made modal content scrollable with `max-h-[90vh]`
+   - Fixed header and footer remain visible
+   - Content area scrolls independently
+   - Prevents modal from extending beyond viewport
+
+**Pages Affected:**
+- Document Library
+- Documents (client/project views)
+
+**Features Affected:**
+- Document Management
+- File Naming
+
+## [Previous] - 2025-01-29 14:00
 
 ### In-App Changelog Feature with GitHub Integration
 
