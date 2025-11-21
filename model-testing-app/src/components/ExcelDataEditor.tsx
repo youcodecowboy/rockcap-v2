@@ -47,13 +47,23 @@ export default function ExcelDataEditor({ data, onDataChange, readOnly = false }
   // Convert extractedData to 2D array format for Handsontable
   useEffect(() => {
     if (data) {
-      const converted = convertExtractedDataToArray(data);
-      isUpdatingFromProps.current = true;
-      setHotData(converted);
-      // Reset flag after a short delay to allow Handsontable to update
-      setTimeout(() => {
-        isUpdatingFromProps.current = false;
-      }, 100);
+      // Check if data is already a 2D array (like a blank grid or scenario data)
+      if (Array.isArray(data) && data.length > 0 && Array.isArray(data[0])) {
+        // It's already a 2D array - use it directly
+        isUpdatingFromProps.current = true;
+        setHotData(data);
+        setTimeout(() => {
+          isUpdatingFromProps.current = false;
+        }, 100);
+      } else {
+        // It's extracted data - convert it
+        const converted = convertExtractedDataToArray(data);
+        isUpdatingFromProps.current = true;
+        setHotData(converted);
+        setTimeout(() => {
+          isUpdatingFromProps.current = false;
+        }, 100);
+      }
     } else {
       // Default empty spreadsheet
       isUpdatingFromProps.current = true;

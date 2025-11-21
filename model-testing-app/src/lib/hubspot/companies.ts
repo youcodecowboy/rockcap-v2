@@ -88,6 +88,8 @@ export async function fetchCompaniesFromHubSpot(
       hasResults: !!directData.results,
       resultsCount: directData.results?.length || 0,
       hasPaging: !!directData.paging,
+      pagingNext: directData.paging?.next?.after ? `${directData.paging.next.after.substring(0, 20)}...` : 'none',
+      pagingPrev: directData.paging?.prev?.after ? `${directData.paging.prev.after.substring(0, 20)}...` : 'none',
     });
     
     // Handle case where response might not have results property
@@ -207,10 +209,16 @@ export async function fetchAllCompaniesFromHubSpot(
   const allCompanies: HubSpotCompany[] = [];
   let after: string | undefined;
   let fetched = 0;
+  let pageCount = 0;
+  
+  console.log(`[HubSpot Companies] Starting pagination fetch, maxRecords: ${maxRecords}`);
   
   while (fetched < maxRecords) {
+    pageCount++;
     const remaining = maxRecords - fetched;
     const batchSize = Math.min(remaining, 100); // HubSpot max per request
+    
+    console.log(`[HubSpot Companies] Page ${pageCount}: Fetching ${batchSize} companies${after ? ` (after: ${after.substring(0, 20)}...)` : ' (first page)'}`);
     
     const { companies, nextAfter } = await fetchCompaniesFromHubSpot(
       client,
@@ -218,20 +226,40 @@ export async function fetchAllCompaniesFromHubSpot(
       after
     );
     
+    console.log(`[HubSpot Companies] Page ${pageCount}: Received ${companies.length} companies${nextAfter ? `, nextAfter: ${nextAfter.substring(0, 20)}...` : ', no more pages'}`);
+    
+    // Check for duplicate IDs (indicates pagination issue)
+    const newCompanyIds = new Set(companies.map(c => c.id));
+    const existingIds = new Set(allCompanies.map(c => c.id));
+    const duplicates = companies.filter(c => existingIds.has(c.id));
+    if (duplicates.length > 0) {
+      console.warn(`[HubSpot Companies] WARNING: Found ${duplicates.length} duplicate companies on page ${pageCount}. This indicates a pagination issue.`);
+      console.warn(`[HubSpot Companies] Duplicate IDs: ${duplicates.slice(0, 5).map(c => c.id).join(', ')}`);
+    }
+    
     allCompanies.push(...companies);
     fetched += companies.length;
     
-    if (!nextAfter || companies.length === 0) {
-      break; // No more records
+    // If we got fewer companies than requested and there's no nextAfter, we're done
+    if (!nextAfter) {
+      console.log(`[HubSpot Companies] No more pages available. Total fetched: ${fetched}`);
+      break;
     }
     
+    // If we got 0 companies, we're done
+    if (companies.length === 0) {
+      console.log(`[HubSpot Companies] Received 0 companies, stopping pagination. Total fetched: ${fetched}`);
+      break;
+    }
+    
+    // Update pagination token
     after = nextAfter;
     
     // Rate limiting: wait 100ms between requests
-    if (nextAfter) {
-      await delay(100);
-    }
+    await delay(100);
   }
+  
+  console.log(`[HubSpot Companies] Pagination complete. Total companies fetched: ${fetched} (requested: ${maxRecords})`);
   
   return allCompanies;
 }

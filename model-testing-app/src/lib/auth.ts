@@ -34,6 +34,7 @@ export async function requireAuth(convexClient?: ConvexHttpClient) {
     const client = convexClient || await getAuthenticatedConvexClient();
     
     // Try to get current user - this will fail if not authenticated
+    // @ts-ignore - TypeScript has issues with deep type instantiation for Convex queries
     const user = await client.query(api.users.getCurrent, {});
     
     if (!user) {

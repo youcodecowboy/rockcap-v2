@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -49,6 +49,8 @@ import { HubSpotLink } from '@/components/HubSpotLink';
 import CreateRolodexModal from '@/components/CreateRolodexModal';
 import { Card, CardContent } from '@/components/ui/card';
 
+const ITEMS_PER_PAGE = 25;
+
 export default function RolodexPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'companies' | 'contacts'>('companies');
@@ -66,6 +68,10 @@ export default function RolodexPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [lifecycleFilter, setLifecycleFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-newest' | 'date-oldest' | 'name' | 'date-added'>('date-newest');
+  
+  // Pagination state
+  const [companiesPage, setCompaniesPage] = useState(1);
+  const [contactsPage, setContactsPage] = useState(1);
 
   // Filter and sort companies
   const filteredCompanies = useMemo(() => {
@@ -110,6 +116,17 @@ export default function RolodexPage() {
     return filtered;
   }, [companies, searchQuery, lifecycleFilter, sortBy]);
 
+  // Pagination calculations for companies
+  const companiesTotalPages = Math.ceil(filteredCompanies.length / ITEMS_PER_PAGE);
+  const companiesStartIndex = (companiesPage - 1) * ITEMS_PER_PAGE;
+  const companiesEndIndex = companiesStartIndex + ITEMS_PER_PAGE;
+  const paginatedCompanies = filteredCompanies.slice(companiesStartIndex, companiesEndIndex);
+
+  // Reset companies page to 1 when filters change
+  useEffect(() => {
+    setCompaniesPage(1);
+  }, [searchQuery, lifecycleFilter, sortBy]);
+
   // Filter and sort contacts
   const filteredContacts = useMemo(() => {
     let filtered = contacts;
@@ -152,6 +169,17 @@ export default function RolodexPage() {
     return filtered;
   }, [contacts, searchQuery, lifecycleFilter, sortBy]);
 
+  // Pagination calculations for contacts
+  const contactsTotalPages = Math.ceil(filteredContacts.length / ITEMS_PER_PAGE);
+  const contactsStartIndex = (contactsPage - 1) * ITEMS_PER_PAGE;
+  const contactsEndIndex = contactsStartIndex + ITEMS_PER_PAGE;
+  const paginatedContacts = filteredContacts.slice(contactsStartIndex, contactsEndIndex);
+
+  // Reset contacts page to 1 when filters change
+  useEffect(() => {
+    setContactsPage(1);
+  }, [searchQuery, lifecycleFilter, sortBy]);
+
   const clearFilters = () => {
     setSearchQuery('');
     setLifecycleFilter('all');
@@ -183,8 +211,20 @@ export default function RolodexPage() {
     try {
       // Sync both companies and contacts
       const [companiesResponse, contactsResponse] = await Promise.all([
-        fetch("/api/hubspot/sync-companies", { method: "POST" }),
-        fetch("/api/hubspot/sync-contacts", { method: "POST" })
+        fetch("/api/hubspot/sync-companies", { 
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ maxRecords: 500 })
+        }),
+        fetch("/api/hubspot/sync-contacts", { 
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ maxRecords: 500 })
+        })
       ]);
       
       const companiesResult = await companiesResponse.json();
@@ -380,6 +420,11 @@ export default function RolodexPage() {
                 </div>
                 <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
                   {filteredCompanies.length} {filteredCompanies.length === 1 ? 'Company' : 'Companies'}
+                  {filteredCompanies.length > ITEMS_PER_PAGE && (
+                    <span className="ml-2 text-xs font-normal">
+                      (Showing {companiesStartIndex + 1}-{Math.min(companiesEndIndex, filteredCompanies.length)})
+                    </span>
+                  )}
                 </span>
               </div>
               <CardContent className="pt-0 pb-6">
@@ -458,7 +503,7 @@ export default function RolodexPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredCompanies.map((company) => {
+                        {paginatedCompanies.map((company) => {
                           const truncateUrl = (url: string, maxLength: number = 20) => {
                             if (url.length <= maxLength) return url;
                             return url.substring(0, maxLength - 3) + '...';
@@ -561,6 +606,38 @@ export default function RolodexPage() {
                         })}
                       </TableBody>
                     </Table>
+                    
+                    {/* Pagination */}
+                    {filteredCompanies.length > ITEMS_PER_PAGE && (
+                      <div className="px-2 py-4 border-t border-gray-200 flex items-center justify-between">
+                        <div className="text-sm text-gray-600">
+                          Showing {companiesStartIndex + 1}-{Math.min(companiesEndIndex, filteredCompanies.length)} of {filteredCompanies.length} companies
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCompaniesPage(prev => Math.max(1, prev - 1))}
+                            disabled={companiesPage === 1}
+                            className="h-8 px-3 text-xs"
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-sm text-gray-600 px-2">
+                            Page {companiesPage} of {companiesTotalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCompaniesPage(prev => Math.min(companiesTotalPages, prev + 1))}
+                            disabled={companiesPage === companiesTotalPages}
+                            className="h-8 px-3 text-xs"
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </CardContent>
@@ -625,6 +702,11 @@ export default function RolodexPage() {
                 </div>
                 <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
                   {filteredContacts.length} {filteredContacts.length === 1 ? 'Contact' : 'Contacts'}
+                  {filteredContacts.length > ITEMS_PER_PAGE && (
+                    <span className="ml-2 text-xs font-normal">
+                      (Showing {contactsStartIndex + 1}-{Math.min(contactsEndIndex, filteredContacts.length)})
+                    </span>
+                  )}
                 </span>
               </div>
               <CardContent className="pt-0 pb-6">
@@ -704,7 +786,7 @@ export default function RolodexPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredContacts.map((contact) => (
+                        {paginatedContacts.map((contact) => (
                           <TableRow
                             key={contact._id}
                             className="cursor-pointer hover:bg-gray-50"
@@ -788,6 +870,38 @@ export default function RolodexPage() {
                         ))}
                       </TableBody>
                     </Table>
+                    
+                    {/* Pagination */}
+                    {filteredContacts.length > ITEMS_PER_PAGE && (
+                      <div className="px-2 py-4 border-t border-gray-200 flex items-center justify-between">
+                        <div className="text-sm text-gray-600">
+                          Showing {contactsStartIndex + 1}-{Math.min(contactsEndIndex, filteredContacts.length)} of {filteredContacts.length} contacts
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setContactsPage(prev => Math.max(1, prev - 1))}
+                            disabled={contactsPage === 1}
+                            className="h-8 px-3 text-xs"
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-sm text-gray-600 px-2">
+                            Page {contactsPage} of {contactsTotalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setContactsPage(prev => Math.min(contactsTotalPages, prev + 1))}
+                            disabled={contactsPage === contactsTotalPages}
+                            className="h-8 px-3 text-xs"
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </CardContent>

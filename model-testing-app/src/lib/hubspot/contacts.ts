@@ -88,6 +88,14 @@ export async function fetchContactsFromHubSpot(
     
     const directData = await directResponse.json();
     
+    console.log('[HubSpot Contacts] Response received:', {
+      hasResults: !!directData.results,
+      resultsCount: directData.results?.length || 0,
+      hasPaging: !!directData.paging,
+      pagingNext: directData.paging?.next?.after ? `${directData.paging.next.after.substring(0, 20)}...` : 'none',
+      pagingPrev: directData.paging?.prev?.after ? `${directData.paging.prev.after.substring(0, 20)}...` : 'none',
+    });
+    
     // Handle case where response might not have results property
     if (!directData || !directData.results) {
       console.warn('Empty HubSpot contacts response');
@@ -205,10 +213,16 @@ export async function fetchAllContactsFromHubSpot(
   const allContacts: HubSpotContact[] = [];
   let after: string | undefined;
   let fetched = 0;
+  let pageCount = 0;
+  
+  console.log(`[HubSpot Contacts] Starting pagination fetch, maxRecords: ${maxRecords}`);
   
   while (fetched < maxRecords) {
+    pageCount++;
     const remaining = maxRecords - fetched;
     const batchSize = Math.min(remaining, 100); // HubSpot max per request
+    
+    console.log(`[HubSpot Contacts] Page ${pageCount}: Fetching ${batchSize} contacts${after ? ` (after: ${after.substring(0, 20)}...)` : ' (first page)'}`);
     
     const { contacts, nextAfter } = await fetchContactsFromHubSpot(
       client,
@@ -216,20 +230,40 @@ export async function fetchAllContactsFromHubSpot(
       after
     );
     
+    console.log(`[HubSpot Contacts] Page ${pageCount}: Received ${contacts.length} contacts${nextAfter ? `, nextAfter: ${nextAfter.substring(0, 20)}...` : ', no more pages'}`);
+    
+    // Check for duplicate IDs (indicates pagination issue)
+    const newContactIds = new Set(contacts.map(c => c.id));
+    const existingIds = new Set(allContacts.map(c => c.id));
+    const duplicates = contacts.filter(c => existingIds.has(c.id));
+    if (duplicates.length > 0) {
+      console.warn(`[HubSpot Contacts] WARNING: Found ${duplicates.length} duplicate contacts on page ${pageCount}. This indicates a pagination issue.`);
+      console.warn(`[HubSpot Contacts] Duplicate IDs: ${duplicates.slice(0, 5).map(c => c.id).join(', ')}`);
+    }
+    
     allContacts.push(...contacts);
     fetched += contacts.length;
     
-    if (!nextAfter || contacts.length === 0) {
-      break; // No more records
+    // If we got fewer contacts than requested and there's no nextAfter, we're done
+    if (!nextAfter) {
+      console.log(`[HubSpot Contacts] No more pages available. Total fetched: ${fetched}`);
+      break;
     }
     
+    // If we got 0 contacts, we're done
+    if (contacts.length === 0) {
+      console.log(`[HubSpot Contacts] Received 0 contacts, stopping pagination. Total fetched: ${fetched}`);
+      break;
+    }
+    
+    // Update pagination token
     after = nextAfter;
     
     // Rate limiting: wait 100ms between requests
-    if (nextAfter) {
-      await delay(100);
-    }
+    await delay(100);
   }
+  
+  console.log(`[HubSpot Contacts] Pagination complete. Total contacts fetched: ${fetched} (requested: ${maxRecords})`);
   
   return allContacts;
 }

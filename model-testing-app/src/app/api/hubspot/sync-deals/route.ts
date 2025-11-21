@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
       return ErrorResponses.unauthenticated();
     }
     const body = await request.json().catch(() => ({}));
-    const maxRecords = body.maxRecords || 20; // Default to 20 for testing
+    const maxRecords = body.maxRecords || 100; // Default to 100 deals
+    const after = body.after || undefined; // Pagination token (null means start from beginning)
     
     const client = getHubSpotClient();
     
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       // For now, we'll just use IDs
     }
     
-    const deals = await fetchAllDealsFromHubSpot(client, maxRecords);
+    const { deals, nextAfter } = await fetchAllDealsFromHubSpot(client, maxRecords, after);
     
     let synced = 0;
     let updated = 0;
@@ -261,6 +262,7 @@ export async function POST(request: NextRequest) {
       updated,
       errors,
       errorMessages: errorMessages.slice(0, 10), // Limit error messages
+      nextAfter, // Return pagination token for continuing later
     });
   } catch (error: any) {
     console.error('Sync error:', error);

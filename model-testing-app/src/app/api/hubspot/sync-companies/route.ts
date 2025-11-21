@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     } catch (authError) {
       return ErrorResponses.unauthenticated();
     }
-    const { maxRecords = 100 } = await request.json().catch(() => ({}));
+    const { maxRecords = 500 } = await request.json().catch(() => ({}));
     
     // Verify API key is available
     const apiKey = process.env.HUBSPOT_API_KEY;

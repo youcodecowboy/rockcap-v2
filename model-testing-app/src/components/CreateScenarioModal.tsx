@@ -50,10 +50,15 @@ export default function CreateScenarioModal({
 
     setIsSubmitting(true);
     try {
+      // Create a blank 50x10 grid (50 rows, 10 columns)
+      // Use Array.from to ensure each row is a new array instance
+      const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+      
       const scenarioId = await createScenario({
         projectId,
         name: name.trim(),
         description: description.trim() || undefined,
+        data: blankGrid, // Initialize with blank 50x10 spreadsheet
       });
       handleClose();
       onSuccess?.(scenarioId);

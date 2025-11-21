@@ -1,6 +1,160 @@
 # Development Changelog
 
-## [Latest] - 2025-01-29 00:00
+## [Latest] - 2025-01-29 13:00
+
+### Deals Table Pagination & HubSpot Sync Fix
+
+**Overview**: Fixed pagination on Prospects page deals table (changed from 15 to 25 items per page), enhanced HubSpot deals sync pagination with logging and duplicate detection, and updated sync buttons to sync 100 deals at a time.
+
+**Changes Made:**
+
+1. **Prospects Page Pagination Update**:
+   - Changed `ITEMS_PER_PAGE` from 15 to 25 to match Rolodex page
+   - Added item count display in table header showing current range (e.g., "Showing 1-25")
+   - Pagination controls already existed and work correctly
+
+2. **HubSpot Deals Sync Pagination Enhancement** (`src/lib/hubspot/deals.ts`):
+   - Added comprehensive logging to track pagination progress (same as companies/contacts)
+   - Added duplicate detection to identify when same deals are returned
+   - Enhanced pagination token handling with better error detection
+   - Added page count tracking and detailed logging for each page fetch
+   - Logs show pagination tokens, record counts, and completion status
+
+3. **Sync Limits Updated**:
+   - Updated `sync-deals` route default from 20 to 100 records
+   - Updated Prospects page sync button to request 100 deals (was incorrectly syncing leads with 1000 records)
+   - Updated Settings page deals sync button to request 100 deals (was 20)
+
+4. **Bug Fix**:
+   - Fixed Prospects page "Sync Deals" button to use correct endpoint (`/api/hubspot/sync-deals` instead of `/api/hubspot/sync-leads`)
+
+**Technical Details:**
+- Deals pagination uses same pattern as companies/contacts
+- Pagination token (`after`) properly advances through pages
+- Duplicate detection warns if same deal IDs appear across pages
+- Rate limiting: 100ms delay between pagination requests
+
+**User Benefits:**
+- Deals table displays 25 items per page (consistent with Rolodex)
+- Can sync 100 deals at a time without pagination issues
+- Better visibility into sync progress with detailed logging
+- Early detection of pagination issues through duplicate warnings
+- Correct sync endpoint ensures deals are actually synced
+
+**Files Modified:**
+- `src/app/prospects/page.tsx` - Updated pagination to 25 items, fixed sync endpoint
+- `src/lib/hubspot/deals.ts` - Enhanced pagination logic and logging
+- `src/app/api/hubspot/sync-deals/route.ts` - Increased default maxRecords to 100
+- `src/app/settings/hubspot/page.tsx` - Updated deals sync to request 100 records
+
+**Next Steps:**
+- Monitor sync logs to verify deals pagination is working correctly
+- Consider adding progress indicators in UI for large deal syncs
+
+## [Previous] - 2025-01-29 12:30
+
+### Rolodex Page Pagination - Display 25 Items Per Page
+
+**Overview**: Added pagination to the Rolodex page tables to prevent performance issues when syncing 500+ companies and contacts. Both companies and contacts tables now display 25 items per page with pagination controls.
+
+**Changes Made:**
+
+1. **Pagination State Management**:
+   - Added separate pagination state for companies (`companiesPage`) and contacts (`contactsPage`)
+   - Set `ITEMS_PER_PAGE` constant to 25 items per page
+   - Pages automatically reset to page 1 when filters or search query changes
+
+2. **Pagination Logic**:
+   - Calculate total pages based on filtered results
+   - Slice filtered arrays to show only current page items
+   - Display "Showing X-Y of Z" in table headers when pagination is active
+   - Show pagination controls only when there are more than 25 items
+
+3. **Pagination Controls UI**:
+   - Added pagination controls below each table (companies and contacts)
+   - Previous/Next buttons with proper disabled states
+   - Page indicator showing "Page X of Y"
+   - Item count display showing range and total (e.g., "Showing 1-25 of 500 companies")
+   - Controls styled consistently with other pages (clients, projects, prospects)
+
+**Technical Details:**
+- Uses `useEffect` to reset page to 1 when filters change
+- Pagination calculations use `useMemo` for performance
+- Separate pagination state for each tab (companies/contacts) maintains independent page numbers
+- Pagination controls only render when `filteredItems.length > ITEMS_PER_PAGE`
+
+**User Benefits:**
+- Tables no longer break with large datasets (500+ items)
+- Better performance with only 25 items rendered at a time
+- Easy navigation through large lists with Previous/Next buttons
+- Clear indication of current position in dataset
+- Filters automatically reset to page 1 for better UX
+
+**Files Modified:**
+- `src/app/rolodex/page.tsx` - Added pagination state, logic, and UI controls
+
+**Next Steps:**
+- Consider adding page number input for direct navigation
+- Add "Go to first page" / "Go to last page" buttons for very large datasets
+- Consider adding items per page selector (25, 50, 100)
+
+## [Previous] - 2025-01-29 12:00
+
+### HubSpot Sync Pagination Fix - Support for 500+ Records
+
+**Overview**: Fixed HubSpot sync pagination issue where the same 50 companies were being synced repeatedly. Enhanced pagination logic with better logging and duplicate detection, and increased default sync limits to support syncing 500+ companies and contacts.
+
+**Changes Made:**
+
+1. **Pagination Logic Improvements** (`src/lib/hubspot/companies.ts` & `src/lib/hubspot/contacts.ts`):
+   - Added comprehensive logging to track pagination progress
+   - Added duplicate detection to identify when the same records are returned (indicates pagination issue)
+   - Improved pagination token handling with better error detection
+   - Added page count tracking and detailed logging for each page fetch
+   - Enhanced logging shows pagination tokens, record counts, and completion status
+
+2. **Default Sync Limits Increased**:
+   - Updated `sync-companies` route default from 100 to 500 records
+   - Updated `sync-contacts` route default from 100 to 500 records
+   - Frontend sync buttons now explicitly request 500 records
+
+3. **Frontend Updates**:
+   - Updated HubSpot settings page to request 500 companies and 500 contacts
+   - Updated rolodex page sync to explicitly request 500 records for both companies and contacts
+   - All sync endpoints now support larger batch sizes
+
+**Technical Details:**
+- Pagination uses HubSpot's `after` parameter for cursor-based pagination
+- Each page fetches up to 100 records (HubSpot's maximum per request)
+- Pagination continues until `nextAfter` token is no longer provided or maxRecords is reached
+- Duplicate detection warns if same company/contact IDs appear across pages
+- Rate limiting: 100ms delay between pagination requests
+
+**Debugging Features:**
+- Console logs show page number, batch size, pagination token preview, and record counts
+- Duplicate detection identifies pagination issues early
+- Clear logging of when pagination stops and why (no more pages vs max records reached)
+
+**User Benefits:**
+- Can now sync 500+ companies and contacts in a single sync operation
+- Better visibility into sync progress with detailed logging
+- Early detection of pagination issues through duplicate warnings
+- More efficient syncing with proper pagination token advancement
+
+**Files Modified:**
+- `src/lib/hubspot/companies.ts` - Enhanced pagination logic and logging
+- `src/lib/hubspot/contacts.ts` - Enhanced pagination logic and logging
+- `src/app/api/hubspot/sync-companies/route.ts` - Increased default maxRecords to 500
+- `src/app/api/hubspot/sync-contacts/route.ts` - Increased default maxRecords to 500
+- `src/app/settings/hubspot/page.tsx` - Updated sync buttons to request 500 records
+- `src/app/rolodex/page.tsx` - Updated sync to request 500 records
+
+**Next Steps:**
+- Monitor sync logs to verify pagination is working correctly
+- Consider adding progress indicators in UI for large syncs
+- Add ability to resume interrupted syncs from last pagination token
+
+## [Previous] - 2025-01-29 00:00
 
 ### Chat Sessions User Isolation - Multi-User Support
 

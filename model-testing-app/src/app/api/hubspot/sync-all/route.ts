@@ -257,7 +257,8 @@ export async function POST(request: NextRequest) {
         // Try to fetch deals, but don't fail the whole sync if it errors
         let deals: any[] = [];
         try {
-          deals = await fetchAllDealsFromHubSpot(client, maxRecords);
+          const dealsResult = await fetchAllDealsFromHubSpot(client, maxRecords);
+          deals = dealsResult.deals;
         } catch (dealsError: any) {
           console.error('Failed to fetch deals, skipping:', dealsError.message);
           errorMessages.push(`Deals sync skipped: ${dealsError.message}`);

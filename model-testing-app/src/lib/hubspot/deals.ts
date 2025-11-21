@@ -76,6 +76,14 @@ export async function fetchDealsFromHubSpot(
     
     const directData = await directResponse.json();
     
+    console.log('[HubSpot Deals] Response received:', {
+      hasResults: !!directData.results,
+      resultsCount: directData.results?.length || 0,
+      hasPaging: !!directData.paging,
+      pagingNext: directData.paging?.next?.after ? `${directData.paging.next.after.substring(0, 20)}...` : 'none',
+      pagingPrev: directData.paging?.prev?.after ? `${directData.paging.prev.after.substring(0, 20)}...` : 'none',
+    });
+    
     // Debug: Log first deal to see structure
     if (directData.results && directData.results.length > 0) {
       console.log('Sample deal from HubSpot API:', {
@@ -224,18 +232,27 @@ export async function fetchDealsFromHubSpot(
 /**
  * Fetch all deals (with pagination handling)
  * Respects rate limits by adding delays
+ * Returns deals and the last pagination token for continuing later
  */
 export async function fetchAllDealsFromHubSpot(
   client: Client,
-  maxRecords: number = 100
-): Promise<HubSpotDeal[]> {
+  maxRecords: number = 100,
+  startAfter?: string
+): Promise<{ deals: HubSpotDeal[]; nextAfter?: string }> {
   const allDeals: HubSpotDeal[] = [];
-  let after: string | undefined;
+  let after: string | undefined = startAfter;
   let fetched = 0;
+  let pageCount = 0;
+  let lastNextAfter: string | undefined;
+  
+  console.log(`[HubSpot Deals] Starting pagination fetch, maxRecords: ${maxRecords}${after ? `, starting after: ${after.substring(0, 20)}...` : ' (from beginning)'}`);
   
   while (fetched < maxRecords) {
+    pageCount++;
     const remaining = maxRecords - fetched;
     const batchSize = Math.min(remaining, 100); // HubSpot max per request
+    
+    console.log(`[HubSpot Deals] Page ${pageCount}: Fetching ${batchSize} deals${after ? ` (after: ${after.substring(0, 20)}...)` : ' (first page)'}`);
     
     const { deals, nextAfter } = await fetchDealsFromHubSpot(
       client,
@@ -243,21 +260,47 @@ export async function fetchAllDealsFromHubSpot(
       after
     );
     
+    console.log(`[HubSpot Deals] Page ${pageCount}: Received ${deals.length} deals${nextAfter ? `, nextAfter: ${nextAfter.substring(0, 20)}...` : ', no more pages'}`);
+    
+    // Check for duplicate IDs (indicates pagination issue)
+    const newDealIds = new Set(deals.map(d => d.id));
+    const existingIds = new Set(allDeals.map(d => d.id));
+    const duplicates = deals.filter(d => existingIds.has(d.id));
+    if (duplicates.length > 0) {
+      console.warn(`[HubSpot Deals] WARNING: Found ${duplicates.length} duplicate deals on page ${pageCount}. This indicates a pagination issue.`);
+      console.warn(`[HubSpot Deals] Duplicate IDs: ${duplicates.slice(0, 5).map(d => d.id).join(', ')}`);
+    }
+    
     allDeals.push(...deals);
     fetched += deals.length;
     
-    if (!nextAfter || deals.length === 0) {
-      break; // No more records
+    // Store the last nextAfter token
+    lastNextAfter = nextAfter;
+    
+    // If we got fewer deals than requested and there's no nextAfter, we're done
+    if (!nextAfter) {
+      console.log(`[HubSpot Deals] No more pages available. Total fetched: ${fetched}`);
+      break;
     }
     
+    // If we got 0 deals, we're done
+    if (deals.length === 0) {
+      console.log(`[HubSpot Deals] Received 0 deals, stopping pagination. Total fetched: ${fetched}`);
+      break;
+    }
+    
+    // Update pagination token
     after = nextAfter;
     
     // Rate limiting: wait 100ms between requests
-    if (nextAfter) {
-      await delay(100);
-    }
+    await delay(100);
   }
   
-  return allDeals;
+  console.log(`[HubSpot Deals] Pagination complete. Total deals fetched: ${fetched} (requested: ${maxRecords})${lastNextAfter ? `, nextAfter: ${lastNextAfter.substring(0, 20)}...` : ', no more pages'}`);
+  
+  return {
+    deals: allDeals,
+    nextAfter: lastNextAfter,
+  };
 }
 

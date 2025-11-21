@@ -106,7 +106,7 @@ export default function HubSpotSettingsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          maxRecords: 20, // Test with 20 deals
+          maxRecords: 100, // Sync 100 deals
         }),
       });
 
@@ -133,7 +133,7 @@ export default function HubSpotSettingsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          maxRecords: 50, // Sync 50 companies
+          maxRecords: 500, // Sync 500 companies
         }),
       });
 
@@ -160,7 +160,7 @@ export default function HubSpotSettingsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          maxRecords: 50, // Sync 50 contacts
+          maxRecords: 500, // Sync 500 contacts
         }),
       });
 
@@ -622,7 +622,7 @@ export default function HubSpotSettingsPage() {
                 ) : (
                   <>
                     <RefreshCw className="size-4 mr-2" />
-                    Sync Companies (50)
+                    Sync Companies (500)
                   </>
                 )}
               </Button>
@@ -640,7 +640,7 @@ export default function HubSpotSettingsPage() {
                 ) : (
                   <>
                     <RefreshCw className="size-4 mr-2" />
-                    Sync Contacts (50)
+                    Sync Contacts (500)
                   </>
                 )}
               </Button>

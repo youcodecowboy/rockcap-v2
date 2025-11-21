@@ -58,6 +58,7 @@ const lifecycleStageLabels: Record<string, string> = {
 export default function LeadsPage() {
   const router = useRouter();
   // Use deals instead of leads for prospecting
+  // @ts-ignore - TypeScript has issues with deep type instantiation for Convex queries
   const deals = useQuery(api.deals.getAllDeals) || [];
   const leads = []; // Keep for backward compatibility but don't use
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,9 +67,11 @@ export default function LeadsPage() {
   const [sortBy, setSortBy] = useState<'date-newest' | 'date-oldest' | 'name' | 'amount'>('date-newest');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 15;
+  const ITEMS_PER_PAGE = 25;
   const [isSyncingLeads, setIsSyncingLeads] = useState(false);
+  const [isAddingMoreDeals, setIsAddingMoreDeals] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
+  const [lastPaginationToken, setLastPaginationToken] = useState<string | null>(null);
 
   const filteredDeals = useMemo(() => {
     let filtered = deals;
@@ -143,20 +146,27 @@ export default function LeadsPage() {
   const handleSyncLeads = async () => {
     setIsSyncingLeads(true);
     setSyncResult(null);
+    setLastPaginationToken(null); // Reset pagination token for full sync
 
     try {
-      const response = await fetch("/api/hubspot/sync-leads", {
+      const response = await fetch("/api/hubspot/sync-deals", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          maxRecords: 1000, // Sync all leads
+          maxRecords: 100, // Sync 100 deals
+          after: null, // Start from beginning
         }),
       });
 
       const result = await response.json();
       setSyncResult(result);
+      
+      // Store pagination token if provided
+      if (result.nextAfter) {
+        setLastPaginationToken(result.nextAfter);
+      }
       
       // Refresh the page after successful sync to show new leads
       if (result.success) {
@@ -171,6 +181,55 @@ export default function LeadsPage() {
       });
     } finally {
       setIsSyncingLeads(false);
+    }
+  };
+
+  const handleAddMoreDeals = async () => {
+    if (!lastPaginationToken && deals.length === 0) {
+      // If no token and no deals, do a full sync first
+      alert('Please sync deals first before adding more records.');
+      return;
+    }
+
+    setIsAddingMoreDeals(true);
+    setSyncResult(null);
+
+    try {
+      const response = await fetch("/api/hubspot/sync-deals", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          maxRecords: 100, // Add 100 more deals
+          after: lastPaginationToken || undefined, // Continue from last position
+        }),
+      });
+
+      const result = await response.json();
+      setSyncResult(result);
+      
+      // Store pagination token for next time
+      if (result.nextAfter) {
+        setLastPaginationToken(result.nextAfter);
+      } else {
+        // No more pages, clear token
+        setLastPaginationToken(null);
+      }
+      
+      // Refresh the page after successful sync to show new deals
+      if (result.success) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
+    } catch (error: any) {
+      setSyncResult({
+        success: false,
+        error: error.message || "Failed to add more deals",
+      });
+    } finally {
+      setIsAddingMoreDeals(false);
     }
   };
 
@@ -264,23 +323,43 @@ export default function LeadsPage() {
               Manage and track your HubSpot deals and prospects
             </p>
           </div>
-          <Button
-            onClick={handleSyncLeads}
-            disabled={isSyncingLeads}
-            className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
-          >
-            {isSyncingLeads ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Syncing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4" />
-                Sync Deals
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleSyncLeads}
+              disabled={isSyncingLeads || isAddingMoreDeals}
+              className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
+            >
+              {isSyncingLeads ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  Sync Deals
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleAddMoreDeals}
+              disabled={isSyncingLeads || isAddingMoreDeals || (!lastPaginationToken && deals.length === 0)}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              {isAddingMoreDeals ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  Add 100 More Records
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Sync Result Message */}
@@ -375,6 +454,11 @@ export default function LeadsPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
                 {filteredDeals.length} {filteredDeals.length === 1 ? 'Deal' : 'Deals'}
+                {filteredDeals.length > ITEMS_PER_PAGE && (
+                  <span className="ml-2 text-xs font-normal">
+                    (Showing {startIndex + 1}-{Math.min(endIndex, filteredDeals.length)})
+                  </span>
+                )}
               </span>
             </div>
           </div>

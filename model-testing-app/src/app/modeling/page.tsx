@@ -29,6 +29,7 @@ export default function ModelingPage() {
   const [isSaveVersionOpen, setIsSaveVersionOpen] = useState(false);
   const [isPlaceholderModalOpen, setIsPlaceholderModalOpen] = useState(false);
   const [spreadsheetData, setSpreadsheetData] = useState<any[][]>([]);
+  const [isStandaloneDocument, setIsStandaloneDocument] = useState(false); // Track if we're viewing a standalone blank document
   const [templateSheets, setTemplateSheets] = useState<SheetData[] | null>(null);
   const [originalTemplateSheets, setOriginalTemplateSheets] = useState<SheetData[] | null>(null);
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
@@ -142,13 +143,33 @@ export default function ModelingPage() {
 
   // Handle scenario selection
   useEffect(() => {
-    if (selectedScenario?.data && Array.isArray(selectedScenario.data)) {
-      setSpreadsheetData(selectedScenario.data);
+    // If we're viewing a standalone document, don't override it
+    if (isStandaloneDocument) {
+      return;
+    }
+    
+    if (selectedScenario) {
+      // When a scenario is selected, ALWAYS use scenario data (never extracted data)
+      if (selectedScenario.data && Array.isArray(selectedScenario.data) && selectedScenario.data.length > 0) {
+        // Check if it's a proper grid (not just a single cell)
+        if (selectedScenario.data.length === 1 && selectedScenario.data[0]?.length === 1 && selectedScenario.data[0][0] === '') {
+          // Single empty cell - initialize with blank 50x10 grid
+          const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+          setSpreadsheetData(blankGrid);
+        } else {
+          // Use the scenario's actual data
+          setSpreadsheetData(selectedScenario.data);
+        }
+      } else {
+        // Scenario exists but has no data - initialize with blank 50x10 grid
+        const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+        setSpreadsheetData(blankGrid);
+      }
     } else {
-      // Reset to empty, ExcelDataEditor will handle conversion from extractedData
+      // No scenario selected - reset to empty
       setSpreadsheetData([]);
     }
-  }, [selectedScenario]);
+  }, [selectedScenario, isStandaloneDocument]);
 
   // Auto-save spreadsheet data - useCallback to prevent unnecessary re-renders
   const handleDataChange = useCallback(async (data: any[][]) => {
@@ -475,6 +496,7 @@ export default function ModelingPage() {
                         onClick={() => {
                           setSelectedProjectId(project._id);
                           setSelectedScenarioId(null);
+                          setIsStandaloneDocument(false); // Clear standalone document when selecting a project
                         }}
                         className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
                           isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
@@ -510,6 +532,7 @@ export default function ModelingPage() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedScenarioId(scenario._id);
+                                  setIsStandaloneDocument(false); // Clear standalone document when selecting a scenario
                                 }}
                                 className={`w-full text-left px-6 py-2 hover:bg-gray-100 transition-colors text-sm ${
                                   isScenarioSelected ? 'bg-blue-100 border-l-2 border-blue-600' : ''
@@ -579,18 +602,50 @@ export default function ModelingPage() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-white relative z-10" style={{ width: 0, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
-        {!selectedProjectId ? (
+        {/* Coming Soon Disclaimer */}
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="flex-shrink-0">
+              <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <p className="text-sm text-yellow-800 font-medium">
+              Modeling section incomplete. Coming soon...
+            </p>
+          </div>
+        </div>
+        
+        {!selectedProjectId && !isStandaloneDocument ? (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             <div className="text-center w-full max-w-md px-4">
               <Calculator className="w-16 h-16 mx-auto mb-4 text-gray-400" />
               <p className="text-lg mb-2">Select a project to begin modeling</p>
               <p className="text-sm mb-6">Choose a project with Excel extracted data from the sidebar</p>
               <Button
-                onClick={() => setIsCreateScenarioOpen(true)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('New Document button clicked (empty state)');
+                  // Create a standalone blank document (not connected to any project)
+                  const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+                  console.log('Created blank grid:', blankGrid.length, 'rows x', blankGrid[0]?.length, 'cols');
+                  setSpreadsheetData(blankGrid);
+                  setIsStandaloneDocument(true);
+                  setSelectedProjectId(null);
+                  setSelectedScenarioId(null);
+                  setTemplateSheets(null);
+                  setLazyWorkbook(null);
+                  setLazyMetadata(null);
+                  setLoadedSheets(new Set());
+                  setActiveTab('input');
+                  console.log('State updated, isStandaloneDocument should be true');
+                }}
                 className="w-full flex items-center justify-center gap-2"
+                type="button"
               >
                 <Plus className="w-4 h-4" />
-                New Scenario
+                New Document
               </Button>
             </div>
           </div>
@@ -621,13 +676,39 @@ export default function ModelingPage() {
                 {isLoadingTemplate ? 'Loading...' : 'Run Operating Model'}
               </Button>
               <Button
+                variant="default"
+                size="default"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('New Document button clicked');
+                  // Create a standalone blank document (not connected to any project)
+                  const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+                  console.log('Created blank grid:', blankGrid.length, 'rows x', blankGrid[0]?.length, 'cols');
+                  setSpreadsheetData(blankGrid);
+                  setIsStandaloneDocument(true);
+                  setSelectedScenarioId(null);
+                  setTemplateSheets(null);
+                  setLazyWorkbook(null);
+                  setLazyMetadata(null);
+                  setLoadedSheets(new Set());
+                  setActiveTab('input');
+                  console.log('State updated, isStandaloneDocument should be true');
+                }}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+                type="button"
+              >
+                <Plus className="w-4 h-4" />
+                New Document
+              </Button>
+              <Button
                 variant="outline"
-                size="sm"
+                size="default"
                 onClick={() => setIsCreateScenarioOpen(true)}
                 className="flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
-                Build Scenario
+                New Scenario
               </Button>
               <Button
                 variant="outline"
@@ -732,7 +813,7 @@ export default function ModelingPage() {
             )}
 
             {/* Tabs with Sheet Dropdown - when template is loaded */}
-            {!isLoadingTemplate && templateSheets && templateSheets.length > 0 ? (
+            {!isLoadingTemplate && !isStandaloneDocument && templateSheets && templateSheets.length > 0 ? (
               <Tabs 
                 value={activeTab} 
                 onValueChange={(value) => {
@@ -846,9 +927,19 @@ export default function ModelingPage() {
 
                 <TabsContent value="input" className="flex-1 overflow-hidden mt-0 p-0" style={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
                   <div className="h-full w-full" style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
-                    {selectedScenario ? (
+                    {isStandaloneDocument ? (
+                      // Standalone blank document - show Excel editor with blank 50x10 grid
                       <ExcelDataEditor
-                        data={selectedScenario.data}
+                        data={spreadsheetData.length > 0 ? spreadsheetData : Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''))}
+                        onDataChange={(data) => {
+                          setSpreadsheetData(data);
+                          // Don't auto-save standalone documents to scenarios
+                        }}
+                        readOnly={false}
+                      />
+                    ) : selectedScenario ? (
+                      <ExcelDataEditor
+                        data={spreadsheetData.length > 0 ? spreadsheetData : Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''))}
                         onDataChange={handleDataChange}
                         readOnly={false}
                       />
@@ -860,9 +951,25 @@ export default function ModelingPage() {
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-gray-500">
-                        <div className="text-center">
-                          <p className="mb-2">No data available</p>
-                          <p className="text-sm">Create a scenario or click "Run Appraisal Model" to load a template</p>
+                        <div className="text-center max-w-md px-4">
+                          <Calculator className="w-20 h-20 mx-auto mb-6 text-gray-400" />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-2">Create Your First Document</h3>
+                          <p className="text-sm text-gray-600 mb-8">Start with a blank Excel-like spreadsheet. Use formulas, formatting, and all the features you're familiar with.</p>
+                          <Button
+                            onClick={() => {
+                              const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+                              setSpreadsheetData(blankGrid);
+                              setIsStandaloneDocument(true);
+                              setSelectedScenarioId(null);
+                              setTemplateSheets(null);
+                            }}
+                            size="lg"
+                            className="flex items-center justify-center gap-2 px-8 py-6 text-lg"
+                          >
+                            <Plus className="w-5 h-5" />
+                            New Document
+                          </Button>
+                          <p className="text-xs text-gray-500 mt-4">Or click "Run Appraisal Model" or "Run Operating Model" to load a template</p>
                         </div>
                       </div>
                     )}
@@ -884,22 +991,30 @@ export default function ModelingPage() {
       </div>
 
       {/* Modals */}
-      <CreateScenarioModal
-        isOpen={isCreateScenarioOpen}
-        onClose={() => setIsCreateScenarioOpen(false)}
-        onSuccess={async (scenarioId?: Id<"scenarios">) => {
-          setIsCreateScenarioOpen(false);
-          if (scenarioId) {
-            setSelectedScenarioId(scenarioId);
-            // Initialize scenario with extracted data if available
-            if (excelDocument?.extractedData) {
-              // The ExcelDataEditor will convert and we'll save it
-              // For now, just select the scenario
+      {selectedProjectId && (
+        <CreateScenarioModal
+          isOpen={isCreateScenarioOpen}
+          onClose={() => setIsCreateScenarioOpen(false)}
+          onSuccess={async (scenarioId?: Id<"scenarios">) => {
+            setIsCreateScenarioOpen(false);
+            if (scenarioId) {
+              // Clear template sheets to ensure ExcelDataEditor mode is shown
+              setTemplateSheets(null);
+              setLazyWorkbook(null);
+              setLazyMetadata(null);
+              setLoadedSheets(new Set());
+              // Set active tab to input
+              setActiveTab('input');
+              // Initialize with blank 50x10 grid for immediate display
+              const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+              setSpreadsheetData(blankGrid);
+              // Select the scenario (this will trigger the useEffect to load scenario data)
+              setSelectedScenarioId(scenarioId);
             }
-          }
-        }}
-        projectId={selectedProjectId!}
-      />
+          }}
+          projectId={selectedProjectId}
+        />
+      )}
 
       <SaveVersionModal
         isOpen={isSaveVersionOpen}

@@ -75,7 +75,8 @@ export async function performFullSync(
     // Sync deals
     if (syncDeals) {
       try {
-        const deals = await fetchAllDealsFromHubSpot(client, maxRecords);
+        const dealsResult = await fetchAllDealsFromHubSpot(client, maxRecords);
+        const deals = dealsResult.deals;
         // Deals will be synced via API route that calls Convex mutations
         progress.dealsSynced = deals.length;
       } catch (error: any) {
