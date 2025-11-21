@@ -274,7 +274,17 @@ export default function ChatAssistantDrawer() {
         throw new Error(`Failed to get AI response: ${response.status} ${errorText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as {
+        content: string;
+        toolCalls?: any[];
+        tokensUsed?: number;
+        activityLog?: Array<{ activity: string; timestamp: string }>;
+        pendingActions?: Array<{
+          toolName: string;
+          parameters: any;
+          requiresConfirmation: boolean;
+        }>;
+      };
 
       // Context gathering is complete
       if (isGatheringContext) {
@@ -307,7 +317,7 @@ export default function ChatAssistantDrawer() {
 
       // Handle pending actions that require confirmation
       if (data.pendingActions && data.pendingActions.length > 0) {
-        const confirmedActions = data.pendingActions.filter((a: { toolName: string; parameters: any; requiresConfirmation: boolean }) => a.requiresConfirmation);
+        const confirmedActions = data.pendingActions.filter((a) => a.requiresConfirmation);
         
         if (confirmedActions.length === 0) {
           // No actions requiring confirmation
