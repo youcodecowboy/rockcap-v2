@@ -1,8 +1,10 @@
 import mammoth from 'mammoth';
 // Use pdf-parse for PDF parsing - it's simpler, more reliable, and works well in serverless environments
 // pdf-parse uses pdfjs-dist internally but handles worker setup automatically
+// Note: pdf-parse exports the function as default, so we need to access .default when using require()
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse');
+const pdfParseModule = require('pdf-parse');
+const pdfParse = pdfParseModule.default || pdfParseModule;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx');
 
