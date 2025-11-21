@@ -3,6 +3,9 @@ import mammoth from 'mammoth';
 // The legacy build runs everything in the main thread, making it ideal for serverless environments
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+// Fallback PDF parser - simpler and more reliable in serverless environments
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx');
 
@@ -137,15 +140,108 @@ export async function extractTextFromFile(file: File): Promise<string> {
           await retryPdf.destroy();
           return fullText.trim();
         } catch (retryError) {
-          // If retry also fails, throw a user-friendly error
-          throw new Error('PDF parsing failed. The file may be corrupted or in an unsupported format. Please try converting the PDF to text format or use a different file type.');
+          // Log the retry error for debugging
+          const retryErrorMessage = retryError instanceof Error ? retryError.message : String(retryError);
+          console.error('PDF retry parsing error:', retryError);
+          console.error('Retry error message:', retryErrorMessage);
+          console.error('Retry error stack:', retryError instanceof Error ? retryError.stack : 'No stack');
+          
+          // If retry also fails, throw a user-friendly error with more context
+          throw new Error(`PDF parsing failed: ${retryErrorMessage}. The file may be corrupted or in an unsupported format. Please try converting the PDF to text format or use a different file type.`);
         }
       }
       
-      // Log other errors for debugging
-      console.error('PDF parsing error details:', error);
-      console.error('Error message:', errorMessage);
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+      // Log other errors for debugging - include full error object
+      console.error('PDF parsing error details:', {
+        error,
+        errorMessage,
+        errorString,
+        stack: error instanceof Error ? error.stack : 'No stack',
+        name: error instanceof Error ? error.name : 'Unknown',
+        toString: String(error),
+      });
+      
+      // Check if this might be a worker error that wasn't caught by the string matching
+      // Some errors might be thrown as objects or have different formats
+      const errorObj = error as any;
+      if (errorObj?.message && typeof errorObj.message === 'string') {
+        const objMessage = errorObj.message.toLowerCase();
+        if (objMessage.includes('worker') || objMessage.includes('pdf.worker')) {
+          console.warn('Detected worker error in error object:', errorObj.message);
+          // Try one more time with completely fresh configuration
+          try {
+            // Reset GlobalWorkerOptions completely
+            if (typeof pdfjsLib.GlobalWorkerOptions !== 'undefined') {
+              pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+              pdfjsLib.GlobalWorkerOptions.workerPort = null;
+            }
+            
+            const finalRetryTask = pdfjsLib.getDocument({
+              data: uint8Array,
+              useWorkerFetch: false,
+              isEvalSupported: false,
+              useSystemFonts: true,
+              verbosity: 0,
+              disableAutoFetch: true,
+              disableStream: true,
+              useWorker: false,
+              worker: null,
+            });
+            
+            const finalPdf = await finalRetryTask.promise;
+            let fullText = '';
+            for (let pageNum = 1; pageNum <= finalPdf.numPages; pageNum++) {
+              const page = await finalPdf.getPage(pageNum);
+              const textContent = await page.getTextContent();
+              const pageText = textContent.items
+                .map((item: any) => {
+                  if ('str' in item) {
+                    return item.str || '';
+                  }
+                  return '';
+                })
+                .join(' ');
+              fullText += pageText + '\n';
+            }
+            await finalPdf.destroy();
+            return fullText.trim();
+          } catch (finalError) {
+            const finalErrorMessage = finalError instanceof Error ? finalError.message : String(finalError);
+            console.error('Final PDF parsing retry failed:', finalError);
+            console.log('Attempting fallback PDF parser (pdf-parse)...');
+            
+            // Try pdf-parse as a fallback - it's simpler and works better in serverless
+            try {
+              const pdfData = await pdfParse(Buffer.from(uint8Array));
+              const extractedText = pdfData.text || '';
+              if (extractedText.trim().length > 0) {
+                console.log('Successfully parsed PDF using pdf-parse fallback');
+                return extractedText.trim();
+              } else {
+                throw new Error('PDF parsed but no text content found');
+              }
+            } catch (fallbackError) {
+              const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+              console.error('Fallback PDF parser also failed:', fallbackError);
+              throw new Error(`PDF parsing failed after multiple attempts: ${finalErrorMessage}. Fallback parser error: ${fallbackErrorMessage}. The file may be corrupted or in an unsupported format.`);
+            }
+          }
+        }
+      }
+      
+      // If error is not worker-related, try pdf-parse as fallback before giving up
+      console.log('Non-worker PDF error detected, attempting fallback parser (pdf-parse)...');
+      try {
+        const pdfData = await pdfParse(Buffer.from(uint8Array));
+        const extractedText = pdfData.text || '';
+        if (extractedText.trim().length > 0) {
+          console.log('Successfully parsed PDF using pdf-parse fallback');
+          return extractedText.trim();
+        }
+      } catch (fallbackError) {
+        console.error('Fallback PDF parser failed:', fallbackError);
+        // Continue to throw original error
+      }
       
       throw new Error(`Failed to parse PDF: ${errorMessage}`);
     }

@@ -54,6 +54,7 @@
     "mammoth": "^1.11.0",
     "moment": "^2.30.1",
     "next": "16.0.1",
+    "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^3.11.174",
     "react": "19.2.0",
     "react-big-calendar": "^1.19.4",
