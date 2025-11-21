@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
 
     // Run the migration using the public wrapper mutation
     try {
+      // @ts-ignore - TypeScript has issues with deep type instantiation for Convex mutations
       const result = await client.mutation(api.fileTypeDefinitions.seedDefinitions, {});
       
       return NextResponse.json({
