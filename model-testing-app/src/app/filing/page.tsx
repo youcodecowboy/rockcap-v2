@@ -23,7 +23,7 @@ export default function FilingAgent() {
               Drag and drop files to automatically categorize and associate them with clients
             </p>
           </div>
-          <Link href="/library">
+          <Link href="/docs">
             <Button className="bg-black text-white hover:bg-gray-800 flex items-center gap-2">
               <FileText className="w-4 h-4" />
               View Library
