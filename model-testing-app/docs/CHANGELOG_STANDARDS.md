@@ -243,3 +243,6 @@ If you're unsure about:
 - What to include → Include: What changed, why it matters, what's affected
 - How to categorize → Let auto-detection work, or adjust keywords if needed
 
+
+
+

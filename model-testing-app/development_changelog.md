@@ -1,6 +1,39 @@
 # Development Changelog
 
-## [Latest] - 2025-11-21 17:49
+## [Latest] - 2025-01-27
+
+### Improved File Upload Error Handling and Diagnostics
+
+**Overview**: Enhanced error handling across all file upload components to provide better diagnostics for HTTP errors, particularly the HTTP 405 "Method Not Allowed" error that was occurring during document uploads.
+
+**Bug Fixes:**
+1. **Enhanced Error Handling** (`src/lib/fileQueueProcessor.ts`, `src/components/DirectUploadButton.tsx`, `src/components/ChatAssistantDrawer.tsx`, `src/components/FileTypeDefinitionDrawer.tsx`, `src/components/FileTypeDefinitionModal.tsx`):
+   - Added detailed error messages that include HTTP status codes (e.g., "HTTP 405 Method Not Allowed")
+   - Capture and display error response body text for better debugging
+   - Added validation for upload URL format before attempting upload
+   - Enhanced console logging with detailed error information including status, statusText, and error response
+   - Error messages now show: `Failed to upload file: HTTP {status} {statusText} - {error details}`
+
+**Improvements:**
+1. **Better Diagnostics**:
+   - Upload URL validation before fetch request
+   - Detailed logging of upload attempts (fileName, fileSize, fileType, uploadUrlLength)
+   - Error response text capture for troubleshooting
+   - Console error logging with structured data for easier debugging
+
+**Pages Affected:**
+- File Upload Queue
+- Document Upload
+- Chat Assistant File Uploads
+- File Type Definition Uploads
+
+**Technical Details:**
+- All upload locations now validate upload URL format
+- Error handling captures full HTTP response details
+- Console logging helps identify root causes of upload failures
+- Error messages are user-friendly while maintaining technical details for debugging
+
+## [Previous] - 2025-11-21 17:49
 
 ### Fixed Document Table Display and Enhanced File Naming Configuration
 

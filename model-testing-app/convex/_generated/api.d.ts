@@ -15,6 +15,7 @@ import type * as chatActions from "../chatActions.js";
 import type * as chatMessages from "../chatMessages.js";
 import type * as chatSessions from "../chatSessions.js";
 import type * as clients from "../clients.js";
+import type * as comments from "../comments.js";
 import type * as companies from "../companies.js";
 import type * as companiesHouse from "../companiesHouse.js";
 import type * as contacts from "../contacts.js";
@@ -80,6 +81,7 @@ declare const fullApi: ApiFromModules<{
   chatMessages: typeof chatMessages;
   chatSessions: typeof chatSessions;
   clients: typeof clients;
+  comments: typeof comments;
   companies: typeof companies;
   companiesHouse: typeof companiesHouse;
   contacts: typeof contacts;

@@ -88,3 +88,18 @@ export const getAll = query({
   },
 });
 
+// Query: Get users by IDs
+export const getByIds = query({
+  args: { userIds: v.array(v.id("users")) },
+  handler: async (ctx, args) => {
+    const users = [];
+    for (const userId of args.userIds) {
+      const user = await ctx.db.get(userId);
+      if (user) {
+        users.push(user);
+      }
+    }
+    return users;
+  },
+});
+

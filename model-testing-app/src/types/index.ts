@@ -23,6 +23,7 @@ export interface SavedDocument {
   status?: 'pending' | 'processing' | 'completed' | 'error';
   error?: string;
   savedAt: string;
+  uploadedBy?: Id<"users">;
 }
 
 export interface Client {

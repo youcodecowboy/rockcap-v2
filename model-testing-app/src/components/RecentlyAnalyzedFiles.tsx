@@ -74,6 +74,46 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
     return map;
   }, [allDocuments, documentIds]);
 
+  // Get unique user IDs from documents and jobs
+  const userIds = useMemo(() => {
+    const ids = new Set<Id<'users'>>();
+    documentsMap.forEach(doc => {
+      if (doc.uploadedBy) {
+        ids.add(doc.uploadedBy);
+      }
+    });
+    // Also include userIds from jobs (for documents that might not have uploadedBy set yet)
+    completedJobs.forEach(job => {
+      if (job.userId) {
+        try {
+          ids.add(job.userId as Id<'users'>);
+        } catch (e) {
+          // Skip invalid user IDs
+        }
+      }
+    });
+    return Array.from(ids);
+  }, [documentsMap, completedJobs]);
+
+  // Query users for display
+  const users = useQuery(api.users.getByIds, userIds.length > 0 ? { userIds } : "skip");
+  const usersMap = useMemo(() => {
+    const map = new Map<Id<'users'>, { name?: string; email: string }>();
+    users?.forEach(user => {
+      if (user) {
+        map.set(user._id, { name: user.name, email: user.email });
+      }
+    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[RecentlyAnalyzedFiles] Users map:', {
+        userIdsToQuery: userIds,
+        usersFound: users?.length || 0,
+        usersMapSize: map.size,
+      });
+    }
+    return map;
+  }, [users, userIds]);
+
   const deleteJob = useMutation(api.fileQueue.deleteJob);
   const markAsRead = useMutation(api.fileQueue.markAsRead);
   const updateDocument = useMutation(api.documents.update);
@@ -285,6 +325,21 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                                 </span>
                               </>
                             )}
+                            {(() => {
+                              const userId = document?.uploadedBy || (job.userId ? (job.userId as Id<'users'>) : undefined);
+                              if (!userId) return null;
+                              const user = usersMap.get(userId);
+                              const displayName = user?.name || user?.email || (job.userId ? 'Loading...' : 'Unknown');
+                              return (
+                                <>
+                                  <span>•</span>
+                                  <span className="flex items-center gap-1">
+                                    <span className="font-medium">Uploaded by:</span>
+                                    {displayName}
+                                  </span>
+                                </>
+                              );
+                            })()}
                             <span>•</span>
                             <span>{formatFileSize(job.fileSize)}</span>
                             <span>•</span>

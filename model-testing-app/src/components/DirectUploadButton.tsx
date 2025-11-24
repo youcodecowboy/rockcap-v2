@@ -55,6 +55,10 @@ export default function DirectUploadButton({
     try {
       // Step 1: Generate upload URL and upload file to Convex storage
       const uploadUrl = await generateUploadUrl();
+      
+      if (!uploadUrl || typeof uploadUrl !== 'string') {
+        throw new Error('Invalid upload URL received from Convex');
+      }
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -63,7 +67,15 @@ export default function DirectUploadButton({
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
+        const statusText = uploadResponse.statusText || 'Unknown error';
+        const errorText = await uploadResponse.text().catch(() => 'Could not read error response');
+        const errorMessage = `Failed to upload file: HTTP ${uploadResponse.status} ${statusText}${errorText ? ` - ${errorText.substring(0, 200)}` : ''}`;
+        console.error('[DirectUploadButton] Upload failed:', {
+          status: uploadResponse.status,
+          statusText,
+          errorText: errorText.substring(0, 500),
+        });
+        throw new Error(errorMessage);
       }
 
       const storageIdText = await uploadResponse.text();

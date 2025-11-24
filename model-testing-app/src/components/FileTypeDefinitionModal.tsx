@@ -130,6 +130,10 @@ export default function FileTypeDefinitionModal({
       // Generate upload URL from Convex
       const uploadUrl = await generateUploadUrl();
       
+      if (!uploadUrl || typeof uploadUrl !== 'string') {
+        throw new Error('Invalid upload URL received from Convex');
+      }
+      
       // Upload file to Convex storage
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -138,7 +142,15 @@ export default function FileTypeDefinitionModal({
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
+        const statusText = uploadResponse.statusText || 'Unknown error';
+        const errorText = await uploadResponse.text().catch(() => 'Could not read error response');
+        const errorMessage = `Failed to upload file: HTTP ${uploadResponse.status} ${statusText}${errorText ? ` - ${errorText.substring(0, 200)}` : ''}`;
+        console.error('[FileTypeDefinitionModal] Upload failed:', {
+          status: uploadResponse.status,
+          statusText,
+          errorText: errorText.substring(0, 500),
+        });
+        throw new Error(errorMessage);
       }
 
       const responseText = await uploadResponse.text();

@@ -188,6 +188,8 @@ export default defineSchema({
     )),
     error: v.optional(v.string()),
     savedAt: v.string(),
+    // User who uploaded the document
+    uploadedBy: v.optional(v.id("users")),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -1231,6 +1233,20 @@ export default defineSchema({
     tags: v.array(v.string()), // Array of tag strings (e.g., ["email", "call", "meeting", "follow-up"])
     updatedAt: v.string(),
   })
+    .index("by_user", ["userId"]),
+
+  // Comments table - comments on documents and file upload jobs
+  comments: defineTable({
+    jobId: v.optional(v.id("fileUploadQueue")), // For comments on unfiled uploads
+    documentId: v.optional(v.id("documents")), // For comments on filed documents
+    userId: v.id("users"), // Who commented
+    content: v.string(), // Comment text
+    taggedUserIds: v.optional(v.array(v.id("users"))), // Users mentioned in comment
+    createdAt: v.string(),
+    updatedAt: v.optional(v.string()),
+  })
+    .index("by_job", ["jobId"])
+    .index("by_document", ["documentId"])
     .index("by_user", ["userId"]),
 
   // Events table - Calendar events with Google Calendar compatibility

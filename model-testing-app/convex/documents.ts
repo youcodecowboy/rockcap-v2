@@ -319,6 +319,7 @@ export const create = mutation({
     error: v.optional(v.string()),
     documentCode: v.optional(v.string()), // Optional - will auto-generate if not provided
     isBaseDocument: v.optional(v.boolean()),
+    uploadedBy: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     const uploadedAt = new Date().toISOString();
@@ -369,6 +370,7 @@ export const create = mutation({
       status: args.status || "completed",
       error: args.error,
       savedAt: uploadedAt,
+      uploadedBy: args.uploadedBy,
     });
 
     // Automatically create knowledge bank entry if document is linked to a client
@@ -482,6 +484,7 @@ export const uploadFileAndCreateDocument = mutation({
     )),
     error: v.optional(v.string()),
     isBaseDocument: v.optional(v.boolean()),
+    uploadedBy: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     const uploadedAt = new Date().toISOString();
@@ -533,6 +536,7 @@ export const uploadFileAndCreateDocument = mutation({
       status: args.status || "completed",
       error: args.error,
       savedAt: uploadedAt,
+      uploadedBy: args.uploadedBy,
     });
     return documentId;
   },
@@ -548,6 +552,8 @@ export const update = mutation({
     projectName: v.optional(v.string()),
     fileTypeDetected: v.optional(v.string()),
     category: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    reasoning: v.optional(v.string()),
     status: v.optional(v.union(
       v.literal("pending"),
       v.literal("processing"),

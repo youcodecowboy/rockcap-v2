@@ -17,7 +17,7 @@ import { Building2, FolderKanban, CheckCircle2, AlertCircle, Plus } from 'lucide
 import { useCreateDocument, useCreateInternalDocument } from '@/lib/documentStorage';
 import { useSaveProspectingContext } from '@/lib/prospectingStorage';
 import { useCreateEnrichment } from '@/lib/clientStorage';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { generateInternalDocumentCode } from '@/lib/documentCodeUtils';
 
@@ -66,6 +66,7 @@ export default function FileAssignmentCard({
   const createEnrichment = useCreateEnrichment();
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const updateJobStatus = useMutation(api.fileQueue.updateJobStatus);
+  const job = useQuery(api.fileQueue.getJob, { jobId });
   const selectedClientData = useClient(selectedClientId ? (selectedClientId as Id<"clients">) : undefined);
   const selectedProjectData = useProject(selectedProjectId ? (selectedProjectId as Id<"projects">) : undefined);
 
@@ -175,6 +176,9 @@ export default function FileAssignmentCard({
         // Internal documents don't use the onFiled callback
         return;
       } else {
+        // Get userId from job for uploadedBy
+        const uploadedBy = job?.userId ? (job.userId as Id<"users">) : undefined;
+        
         // Create regular document record
         const documentId = await createDocument({
           fileStorageId,
@@ -195,6 +199,7 @@ export default function FileAssignmentCard({
           suggestedProjectName: analysisResult.suggestedProjectName || undefined,
           extractedData: analysisResult.extractedData || undefined,
           status: 'completed',
+          uploadedBy: uploadedBy,
         });
 
         // Create enrichment suggestions if any

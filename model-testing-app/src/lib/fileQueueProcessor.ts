@@ -187,6 +187,19 @@ export class FileQueueProcessor {
       });
 
       const uploadUrl = await this.callbacks.generateUploadUrl();
+      
+      // Validate upload URL
+      if (!uploadUrl || typeof uploadUrl !== 'string') {
+        throw new Error('Invalid upload URL received from Convex');
+      }
+      
+      console.log('[FileQueueProcessor] Uploading file to Convex storage:', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        uploadUrlLength: uploadUrl.length,
+      });
+      
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
         headers: { 'Content-Type': file.type },
@@ -194,7 +207,16 @@ export class FileQueueProcessor {
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file to Convex storage');
+        const statusText = uploadResponse.statusText || 'Unknown error';
+        const errorText = await uploadResponse.text().catch(() => 'Could not read error response');
+        const errorMessage = `Failed to upload file to Convex storage: HTTP ${uploadResponse.status} ${statusText}${errorText ? ` - ${errorText.substring(0, 200)}` : ''}`;
+        console.error('[FileQueueProcessor] Upload failed:', {
+          status: uploadResponse.status,
+          statusText,
+          errorText: errorText.substring(0, 500),
+          uploadUrl: uploadUrl.substring(0, 100) + '...',
+        });
+        throw new Error(errorMessage);
       }
 
       const responseText = await uploadResponse.text();
@@ -307,6 +329,10 @@ export class FileQueueProcessor {
     }
 
     try {
+      // Get job to retrieve userId
+      const job = await this.callbacks.getJob(jobId);
+      const uploadedBy = job?.userId ? (job.userId as Id<"users">) : undefined;
+      
       // Create document record
       const documentId = await this.callbacks.createDocument({
         fileStorageId,
@@ -327,6 +353,7 @@ export class FileQueueProcessor {
         suggestedProjectName: analysisResult.suggestedProjectName || undefined,
         extractedData: analysisResult.extractedData || undefined,
         status: 'completed',
+        uploadedBy: uploadedBy,
       });
 
       // Create enrichment suggestions if any

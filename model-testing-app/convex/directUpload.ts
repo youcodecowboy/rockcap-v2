@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { getAuthenticatedUser } from "./authHelpers";
 
 // Helper functions for document code generation (same as in documents.ts)
 function abbreviateText(text: string, maxLength: number): string {
@@ -92,6 +93,16 @@ export const uploadDocumentDirect = mutation({
   handler: async (ctx, args) => {
     const uploadedAt = new Date().toISOString();
     
+    // Capture authenticated user
+    let uploadedBy: Id<"users"> | undefined = undefined;
+    try {
+      const user = await getAuthenticatedUser(ctx);
+      uploadedBy = user._id;
+    } catch (error) {
+      // If user is not authenticated, uploadedBy will remain undefined
+      // This allows for backward compatibility
+    }
+    
     // Generate document code
     let documentCode: string | undefined = undefined;
     if (args.clientName) {
@@ -137,6 +148,7 @@ export const uploadDocumentDirect = mutation({
       extractedData: args.extractedData,
       status: "completed",
       savedAt: uploadedAt,
+      uploadedBy: uploadedBy,
     });
 
     // Automatically create knowledge bank entry if document is linked to a client

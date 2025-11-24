@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { getAuthenticatedUser } from "./authHelpers";
 
 // Mutation: Create a new queue job
 export const createJob = mutation({
@@ -12,6 +13,21 @@ export const createJob = mutation({
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
+    
+    // Capture authenticated user ID if not provided
+    let userId = args.userId;
+    if (!userId) {
+      try {
+        const user = await getAuthenticatedUser(ctx);
+        userId = user._id; // Store Convex user ID as string
+        console.log('[fileQueue.createJob] Captured userId:', userId);
+      } catch (error) {
+        // If user is not authenticated, userId will remain undefined
+        // This allows for backward compatibility
+        console.log('[fileQueue.createJob] Failed to get authenticated user:', error);
+      }
+    }
+    
     const jobId = await ctx.db.insert("fileUploadQueue", {
       fileName: args.fileName,
       fileSize: args.fileSize,
@@ -19,7 +35,7 @@ export const createJob = mutation({
       status: "pending",
       progress: 0,
       isRead: false,
-      userId: args.userId,
+      userId: userId,
       hasCustomInstructions: args.hasCustomInstructions || false,
       createdAt: now,
       updatedAt: now,
