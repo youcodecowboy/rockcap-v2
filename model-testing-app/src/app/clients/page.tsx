@@ -20,8 +20,20 @@ import { Badge } from '@/components/ui/badge';
 import CompactMetricCard from '@/components/CompactMetricCard';
 import CreateClientDrawer from '@/components/CreateClientDrawer';
 import { Card, CardContent } from '@/components/ui/card';
-import { Building2, FolderKanban, FileText, Filter, ArrowUpDown, Plus, Search } from 'lucide-react';
+import { Building2, FolderKanban, FileText, Filter, ArrowUpDown, Plus, Search, MoreVertical, Archive, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useDeleteClient, useUpdateClient } from '@/lib/clientStorage';
 
 // Component to get client data (projects and documents)
 function ClientDataLoader({ clientId, children }: { clientId: Id<"clients">, children: (data: any) => React.ReactNode }) {
@@ -64,11 +76,17 @@ export default function ClientsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveClientId, setArchiveClientId] = useState<Id<"clients"> | null>(null);
+  const [deleteClientId, setDeleteClientId] = useState<Id<"clients"> | null>(null);
+  const [openPopoverId, setOpenPopoverId] = useState<Id<"clients"> | null>(null);
   const ITEMS_PER_PAGE = 15;
   
   const clients = useClients() || [];
   const allProjects = useProjects() || [];
   const allDocuments = useDocuments() || [];
+  const updateClient = useUpdateClient();
+  const deleteClient = useDeleteClient();
 
   // Calculate metrics
   const metrics = useMemo(() => {
@@ -96,6 +114,13 @@ export default function ClientsPage() {
   const filteredAndSortedClients = useMemo(() => {
     let filtered = [...clients];
     
+    // Archive toggle: when ON, show ONLY archived clients; when OFF, exclude archived clients
+    if (showArchived) {
+      filtered = filtered.filter(c => c.status === 'archived');
+    } else {
+      filtered = filtered.filter(c => c.status !== 'archived');
+    }
+    
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -109,8 +134,8 @@ export default function ClientsPage() {
       );
     }
     
-    // Apply status filter
-    if (statusFilter !== 'all') {
+    // Apply status filter (only if Archive toggle is OFF, otherwise we're already showing only archived)
+    if (statusFilter !== 'all' && !showArchived) {
       filtered = filtered.filter(c => c.status === statusFilter);
     }
     
@@ -130,7 +155,7 @@ export default function ClientsPage() {
     });
     
     return filtered;
-  }, [clients, searchQuery, statusFilter, typeFilter, sortBy, sortOrder]);
+  }, [clients, searchQuery, statusFilter, typeFilter, sortBy, sortOrder, showArchived]);
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredAndSortedClients.length / ITEMS_PER_PAGE);
@@ -141,7 +166,30 @@ export default function ClientsPage() {
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, typeFilter, sortBy, sortOrder]);
+  }, [searchQuery, statusFilter, typeFilter, sortBy, sortOrder, showArchived]);
+
+  const handleArchive = async (clientId: Id<"clients">) => {
+    try {
+      await updateClient({
+        id: clientId,
+        status: 'archived',
+      });
+      setArchiveClientId(null);
+    } catch (error) {
+      console.error('Error archiving client:', error);
+      alert('Failed to archive client. Please try again.');
+    }
+  };
+
+  const handleDelete = async (clientId: Id<"clients">) => {
+    try {
+      await deleteClient({ id: clientId });
+      setDeleteClientId(null);
+    } catch (error) {
+      console.error('Error deleting client:', error);
+      alert('Failed to delete client. Please try again.');
+    }
+  };
 
   const getStatusBadge = (status?: string) => {
     switch (status) {
@@ -316,6 +364,15 @@ export default function ClientsPage() {
                       <option value="projects-desc">Projects (Most)</option>
                       <option value="projects-asc">Projects (Fewest)</option>
                     </select>
+                    <Button
+                      variant={showArchived ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setShowArchived(!showArchived)}
+                      className="ml-2 h-8 px-3 text-xs"
+                    >
+                      <Archive className="w-3 h-3 mr-1" />
+                      Archive
+                    </Button>
                   </div>
                 </div>
                 <Table>
@@ -368,18 +425,52 @@ export default function ClientsPage() {
                                   {getTypeBadge(client.type)}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    router.push(`/clients/${clientId}`);
-                                  }}
-                                  className="text-blue-600 hover:text-blue-900 hover:bg-blue-50"
-                                >
-                                  View
-                                </Button>
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => router.push(`/clients/${clientId}`)}
+                                    className="text-blue-600 hover:text-blue-900 hover:bg-blue-50"
+                                  >
+                                    View
+                                  </Button>
+                                  <Popover open={openPopoverId === clientId} onOpenChange={(open) => setOpenPopoverId(open ? clientId : null)}>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                      >
+                                        <MoreVertical className="w-4 h-4" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-48 p-1" align="end">
+                                      <div className="flex flex-col">
+                                        <button
+                                          onClick={() => {
+                                            setArchiveClientId(clientId);
+                                            setOpenPopoverId(null);
+                                          }}
+                                          className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 rounded-md text-left"
+                                        >
+                                          <Archive className="w-4 h-4" />
+                                          Archive
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setDeleteClientId(clientId);
+                                            setOpenPopoverId(null);
+                                          }}
+                                          className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 rounded-md text-left text-red-600"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
                               </TableCell>
                             </TableRow>
                           )}
@@ -433,6 +524,45 @@ export default function ClientsPage() {
             setIsCreateDrawerOpen(false);
           }}
         />
+
+        {/* Archive Confirmation Dialog */}
+        <AlertDialog open={!!archiveClientId} onOpenChange={(open) => !open && setArchiveClientId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Archive Client?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will archive the client. You can restore them later by changing their status.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => archiveClientId && handleArchive(archiveClientId)}>
+                Archive
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!deleteClientId} onOpenChange={(open) => !open && setDeleteClientId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Client?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete the client and all associated data. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => deleteClientId && handleDelete(deleteClientId)}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

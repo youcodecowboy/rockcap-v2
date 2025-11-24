@@ -16,6 +16,7 @@ import {
   useRejectEnrichment,
   useClientStats,
   useCreateProject,
+  useDeleteClient,
 } from '@/lib/clientStorage';
 import {
   useDocumentsByClient,
@@ -44,6 +45,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import StatusBadge from '@/components/StatusBadge';
 import EditableStatusBadge from '@/components/EditableStatusBadge';
@@ -73,6 +84,8 @@ import {
   ChevronRight,
   FolderKanban as FolderKanbanIcon,
   Calendar,
+  Archive,
+  Trash2,
 } from 'lucide-react';
 
 type TabType = 'overview' | 'projects' | 'documents' | 'communications' | 'contacts' | 'enrichment' | 'knowledge-bank';
@@ -101,6 +114,7 @@ export default function ClientProfilePage() {
   const rejectEnrichment = useRejectEnrichment();
   const deleteDocumentMutation = useDeleteDocument();
   const createProject = useCreateProject();
+  const deleteClientMutation = useDeleteClient();
 
   // Computed values
   const communications = useMemo(() => {
@@ -126,6 +140,8 @@ export default function ClientProfilePage() {
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [newNote, setNewNote] = useState('');
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [companyFormData, setCompanyFormData] = useState({
     companyName: '',
     address: '',
@@ -321,6 +337,33 @@ export default function ClientProfilePage() {
     }
   };
 
+  const handleArchiveClient = async () => {
+    if (!client) return;
+    try {
+      await updateClientMutation({
+        id: clientId,
+        status: 'archived',
+      });
+      setShowArchiveDialog(false);
+      router.push('/clients');
+    } catch (error) {
+      console.error('Error archiving client:', error);
+      alert('Failed to archive client. Please try again.');
+    }
+  };
+
+  const handleDeleteClient = async () => {
+    if (!client) return;
+    try {
+      await deleteClientMutation({ id: clientId });
+      setShowDeleteDialog(false);
+      router.push('/clients');
+    } catch (error) {
+      console.error('Error deleting client:', error);
+      alert('Failed to delete client. Please try again.');
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
@@ -464,6 +507,26 @@ export default function ClientProfilePage() {
                 <StickyNote className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">New Note</span>
                 <span className="sm:hidden">Note</span>
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowArchiveDialog(true)}
+                variant="outline"
+                className="whitespace-nowrap"
+              >
+                <Archive className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">Archive</span>
+                <span className="sm:hidden">Archive</span>
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowDeleteDialog(true)}
+                variant="outline"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 whitespace-nowrap"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">Delete</span>
+                <span className="sm:hidden">Delete</span>
               </Button>
             </div>
           </div>
@@ -1385,6 +1448,45 @@ export default function ClientProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Archive Confirmation Dialog */}
+      <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive Client?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will archive the client. You can restore them later by changing their status.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleArchiveClient}>
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Client?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the client and all associated data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteClient}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
