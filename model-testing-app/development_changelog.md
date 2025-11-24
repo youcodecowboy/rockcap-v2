@@ -1,6 +1,56 @@
 # Development Changelog
 
-## [Latest] - 2025-01-27
+## [Latest] - 2025-11-24 14:00
+
+### Add Archive and Delete Functionality for Clients
+
+**Overview**: Added comprehensive archive and delete functionality for clients, allowing users to manage client lifecycle from both the clients table and individual client detail pages.
+
+**New Features:**
+1. **Client Archive Functionality** (`src/app/clients/page.tsx`, `src/app/clients/[clientId]/page.tsx`):
+   - Added Archive toggle button next to filters to show/hide archived clients
+   - When Archive toggle is ON, displays only archived clients
+   - When Archive toggle is OFF, excludes archived clients from view
+   - Archive action sets client status to "archived" (reversible)
+   - Archive button available in both table action menu and client detail page
+
+2. **Client Delete Functionality**:
+   - Added Delete option in action menu dropdown (three-dot menu) in clients table
+   - Added Delete button on client detail page
+   - Permanently removes client from database with strong confirmation warning
+   - Includes confirmation dialogs to prevent accidental deletions
+
+3. **Action Menu Dropdown** (`src/app/clients/page.tsx`):
+   - Added Popover-based action menu with Archive and Delete options
+   - Menu appears as three-dot icon next to View button in table
+   - Properly handles click events to prevent row navigation when using menu
+
+**UI Improvements:**
+1. **Archive Toggle Button**:
+   - Visual indicator when active (default variant) vs inactive (outline variant)
+   - Positioned next to filter controls for easy access
+   - Clear Archive icon for visual recognition
+
+2. **Confirmation Dialogs**:
+   - Archive confirmation explains that action is reversible
+   - Delete confirmation includes strong warning about permanent deletion
+   - Uses AlertDialog component for consistent UI
+
+**Technical Details:**
+- Updated filtering logic to properly handle archived client visibility
+- Fixed naming conflict with existing `handleDelete` function (renamed to `handleDeleteClient`)
+- Proper state management for popover menus and confirmation dialogs
+- Error handling with user-friendly messages
+- Redirects to clients list page after archive/delete on detail page
+
+**Pages Affected:**
+- Clients (table view)
+- Client Detail Page
+
+**Features Affected:**
+- Clients
+
+## [Previous] - 2025-01-27
 
 ### Improved File Upload Error Handling and Diagnostics
 
