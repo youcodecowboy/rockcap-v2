@@ -4,7 +4,7 @@ import { useMemo, useCallback, useState, useEffect } from 'react';
 import DocumentTabs, { DocumentTab } from './DocumentTabs';
 import { Id } from '../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
-import { Download, AlertTriangle, Check, Loader2, ChevronDown, ChevronRight, Plus, Layers } from 'lucide-react';
+import { Download, AlertTriangle, Check, Loader2, ChevronDown, ChevronRight, Plus, Layers, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -318,8 +318,8 @@ export default function DataLibrary({
     }
   }, [needsSmartPass, activeDocument]);
 
-  // Run Smart Pass
-  const runSmartPass = async () => {
+  // Run Smart Pass (force = true to re-run even if already completed)
+  const runSmartPass = async (force: boolean = false) => {
     if (!activeDocument || isRunningSmartPass) return;
     
     setIsRunningSmartPass(true);
@@ -332,11 +332,13 @@ export default function DataLibrary({
         body: JSON.stringify({
           action: 'smart-pass',
           documentId: activeDocument._id,
+          force, // Allow re-running even if completed
         }),
       });
       
       if (!response.ok) {
-        throw new Error('Smart Pass failed');
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Smart Pass failed');
       }
       
       // Convex will automatically update the query
@@ -477,17 +479,33 @@ export default function DataLibrary({
               )}
             </div>
 
-            {/* Review button */}
-            {itemsNeedingReview > 0 && (
-              <Button
-                onClick={() => setShowMappingModal(true)}
-                className="bg-amber-600 hover:bg-amber-500 text-white"
-                size="sm"
-              >
-                <AlertTriangle className="w-4 h-4 mr-2" />
-                Review {itemsNeedingReview} items
-              </Button>
-            )}
+            {/* Action buttons */}
+            <div className="flex items-center gap-2">
+              {/* Retry Smart Pass button */}
+              {itemsNeedingReview > 0 && !isRunningSmartPass && (
+                <Button
+                  onClick={() => runSmartPass(true)}
+                  variant="outline"
+                  size="sm"
+                  title="Re-run AI matching with latest codes and rules"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retry Smart Pass
+                </Button>
+              )}
+              
+              {/* Review button */}
+              {itemsNeedingReview > 0 && (
+                <Button
+                  onClick={() => setShowMappingModal(true)}
+                  className="bg-amber-600 hover:bg-amber-500 text-white"
+                  size="sm"
+                >
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  Review {itemsNeedingReview} items
+                </Button>
+              )}
+            </div>
 
             {codifiedExtraction.isFullyConfirmed && (
               <span className="flex items-center gap-2 text-sm text-green-600 font-medium">

@@ -1,6 +1,42 @@
 # Development Changelog
 
-## [Latest] - 2025-12-03 14:30
+## [Latest] - 2025-12-03 16:00
+
+### Data Library UX Improvements
+
+**Enhanced Normalization Layer** (`src/lib/fastPassCodification.ts`):
+- Added `STRIP_PATTERNS` to remove noise from item names during matching:
+  - Percentages: "Contingency 7.5%" matches as "contingency"
+  - Bed counts: "Plot 2 - 5 bed" matches as "plot 2"
+  - Parenthetical info: "Fees (x2)" matches as "fees"
+  - Property types: strips "detached", "semi", "terraced", etc.
+- Added `PLURAL_TO_SINGULAR` mapping for 20+ common variations
+- New `isCompoundItem()` function to detect combined categories
+
+**Compound Item Warning** (`src/components/DataLibrary.tsx`):
+- Items containing `&`, `,`, `/` or "and" now show a "Combined" badge
+- Tooltip explains: "This item contains multiple categories. The full value will be used."
+
+**Manual Item Entry** (`src/components/AddDataLibraryItemModal.tsx`):
+- New "Add Item" button in Data Library header
+- Enter name, value, category, data type
+- AI-powered code suggestion via "Get AI Suggestion" button
+- Can accept suggestion, search for existing codes, or create new
+- Creates alias on confirmation for future matching
+
+**New API Actions** (`src/app/api/codify-extraction/route.ts`):
+- `suggest-single`: Get LLM code suggestion for a single item name
+- `add-item`: Add a manual item to the extraction with proper codification
+
+**New Convex Mutation** (`convex/codifiedExtractions.ts`):
+- `addItem`: Add a manually created item to an existing extraction
+
+**New UI Component** (`src/components/ui/tooltip.tsx`):
+- Standard Radix UI tooltip component for consistent hover tooltips
+
+---
+
+## [Previous] - 2025-12-03 14:30
 
 ### Template Population with Codified Data & Settings Update
 

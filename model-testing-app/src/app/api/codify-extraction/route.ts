@@ -136,12 +136,14 @@ async function handleFastPass(body: {
 /**
  * Handle Smart Pass codification
  * Called when user opens Data Library with pending items
+ * Set force=true to re-run even if already completed
  */
 async function handleSmartPass(body: {
   documentId: string;
   extractionId?: string;
+  force?: boolean;
 }): Promise<NextResponse> {
-  const { documentId, extractionId } = body;
+  const { documentId, extractionId, force = false } = body;
   
   if (!documentId) {
     return NextResponse.json(
@@ -150,7 +152,7 @@ async function handleSmartPass(body: {
     );
   }
   
-  console.log('[SmartPass] Starting for document:', documentId);
+  console.log('[SmartPass] Starting for document:', documentId, force ? '(FORCED)' : '');
   const startTime = Date.now();
   
   const client = getConvexClient();
@@ -174,8 +176,8 @@ async function handleSmartPass(body: {
     );
   }
   
-  // Check if Smart Pass already ran
-  if (extraction.smartPassCompleted) {
+  // Check if Smart Pass already ran (skip if force=true)
+  if (extraction.smartPassCompleted && !force) {
     return NextResponse.json({
       success: true,
       message: 'Smart Pass already completed',
