@@ -1,6 +1,138 @@
 # Development Changelog
 
-## [Latest] - 2025-11-24 14:00
+## [Latest] - 2025-12-03 14:30
+
+### Template Population with Codified Data & Settings Update
+
+**New Codified Template Populator** (`src/lib/codifiedTemplatePopulator.ts`):
+- Created new population function that uses codified extraction data directly
+- Maps itemCode → value (e.g., `<build.cost>` → `1204000`)
+- Scans templates for placeholder patterns (`<...>`)
+- Supports case-insensitive matching as fallback
+- Provides detailed console logging for debugging
+- Returns population result with matched/unmatched stats
+
+**Modeling Page Integration** (`src/app/modeling/page.tsx`):
+- Template loading now prioritizes codified data over legacy extractedData
+- Falls back to legacy path-based system if no codified data exists
+- Added `codifiedExtraction` to effect dependency array for reactivity
+
+**Updated Modeling Settings** (`src/components/ModelingSettings.tsx`):
+- Replaced old `modelingCodeMappings` tab with new **Item Codes** tab
+- Shows all codes from `extractedItemCodes` table organized by category
+- Full CRUD capabilities: Add, Edit (fix typos), Delete item codes
+- Category filtering and search functionality
+- New **Alias Dictionary** tab showing all aliases from `itemCodeAliases`
+- Visual confidence indicator for each alias
+- Source tracking (system_seed, llm_suggested, user_confirmed, manual)
+
+---
+
+## [Previous] - 2025-12-02 16:00
+
+### Modeling System Overhaul - Two-Pass Codification System
+
+**Overview**: Implemented a comprehensive two-pass codification system for the modeling section. This system bridges the gap between extracted financial data and template placeholders, enabling intelligent mapping of varied Excel terminology to normalized canonical codes.
+
+**Architecture:**
+The system uses a two-pass approach:
+1. **Fast Pass** (Instant): Alias dictionary lookup during extraction - no LLM, ~50ms
+2. **Smart Pass** (On-Demand): LLM-powered codification using OSS-120B when Data Library opens
+
+**New Database Tables** (`convex/schema.ts`):
+1. **extractedItemCodes**: Canonical code library (normalized, clean codes only)
+   - Fields: code, displayName, category, dataType, isSystemDefault, isActive
+   - Example: `<stamp.duty>` → "Stamp Duty" in "Purchase Costs" category
+   
+2. **itemCodeAliases**: Normalization layer (learning system)
+   - Maps varied input terms to canonical codes
+   - Fields: alias, aliasNormalized, canonicalCodeId, canonicalCode, confidence, source
+   - Sources: system_seed, llm_suggested, user_confirmed, manual
+   - Tracks usageCount for learning analytics
+   
+3. **codifiedExtractions**: Per-document codified data
+   - Stores items with mappingStatus: matched, suggested, pending_review, confirmed, unmatched
+   - Tracks fastPassCompleted, smartPassCompleted, isFullyConfirmed
+   - Contains mappingStats for dashboard display
+
+**New Convex Functions Created**:
+- `convex/extractedItemCodes.ts`: CRUD operations for code library
+- `convex/itemCodeAliases.ts`: CRUD operations for alias dictionary with bulk lookup
+- `convex/codifiedExtractions.ts`: Codified data management with confirmation workflows
+
+**New Codification Engines**:
+- `src/lib/fastPassCodification.ts`: Fast alias lookup with fuzzy matching (Levenshtein)
+- `src/lib/smartPassCodification.ts`: LLM-powered codification using Together.ai OSS-120B
+
+**New API Route**:
+- `/api/codify-extraction`: Handles fast-pass, smart-pass, confirm, and confirm-all actions
+  - Fast Pass called after extraction to instantly match known aliases
+  - Smart Pass called when Data Library opens with pending items
+  - Confirm creates new aliases in dictionary (learning system)
+
+**Enhanced Extraction Pipeline** (`src/app/api/analyze-file/route.ts`):
+- Added Fast Pass preview after extraction
+- Returns codificationPreview with stats (matched vs pending)
+- Integrates with alias dictionary for instant matching
+
+**New UI Components**:
+1. **MappingConfirmationModal.tsx**: Review and confirm code mappings
+   - Shows items needing review grouped by category
+   - Options: Accept suggestion, Map to different code, Create new code, Skip
+   - Creates aliases on confirmation (system learns)
+   - "Accept All Suggested" button for bulk confirmation
+   
+2. **Overhauled DataLibrary.tsx**: 
+   - Displays codified items grouped by category
+   - Status indicators: matched (green), suggested (amber), pending (red), confirmed (blue)
+   - Smart Pass trigger on load when items need review
+   - Review banner with item count needing attention
+   - "Ready to run model" indicator when fully confirmed
+
+3. **Updated Item Code Management UI** (`/settings/modeling-codes`):
+   - Two tabs: Item Codes and Alias Dictionary
+   - Item Codes: Grouped by category, create/edit/delete
+   - Alias Dictionary: Grouped by canonical code, view usage stats
+   - Search and filter functionality
+
+**Updated Modeling Page** (`src/app/modeling/page.tsx`):
+- Added confirmation check before running models
+- Queries codifiedExtraction for active document
+- Blocks model run if items need confirmation
+- Shows pending count in alert message
+
+**User Experience Flow**:
+1. Upload Excel → Extraction → Fast Pass (instant alias lookup)
+2. Open Data Library → Smart Pass runs if items pending (30s LLM)
+3. Review banner appears → Open MappingConfirmationModal
+4. Confirm/map/create codes → Aliases saved (system learns)
+5. All confirmed → "Ready to run model" indicator
+6. Click Run Model → Template populated with codified data
+
+**Learning System**:
+- Month 1: 0% auto-matched (cold start), 100% needs LLM
+- Month 2: 60% auto-matched as aliases accumulate
+- Month 6: 95%+ auto-matched (only novel terms need LLM)
+
+**Technical Details**:
+- Fuzzy matching uses Levenshtein distance with 0.85 threshold
+- OSS-120B model via Together.ai for smart codification
+- Confidence scores tracked (0-1) for all mappings
+- Alias usageCount incremented on each match
+
+**Pages Affected**:
+- Modeling
+- Settings (Modeling Codes)
+
+**Features Affected**:
+- Data Library
+- Financial Modeling
+- File Upload/Extraction
+- Code Management
+
+---
+
+## [Previous] - 2025-11-24 14:00
 
 ### Add Archive and Delete Functionality for Clients
 

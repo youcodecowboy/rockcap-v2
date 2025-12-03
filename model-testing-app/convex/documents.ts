@@ -847,3 +847,63 @@ export const moveDocument = mutation({
     return args.documentId;
   },
 });
+
+// Query: Get extraction history for a project
+export const getExtractionHistory = query({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    // Get all documents for this project
+    const documents = await ctx.db
+      .query("documents")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+    
+    // Get all extractions for these documents
+    const allExtractions = await ctx.db.query("documentExtractions").collect();
+    
+    // Filter to extractions for documents in this project
+    const documentIds = new Set(documents.map(d => d._id));
+    const projectExtractions = allExtractions.filter(e => 
+      documentIds.has(e.documentId) || e.projectId === args.projectId
+    );
+    
+    // Sort by extractedAt (most recent first)
+    projectExtractions.sort((a, b) => 
+      new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime()
+    );
+    
+    // Group by document
+    const groupedByDocument = new Map<string, typeof projectExtractions>();
+    projectExtractions.forEach(extraction => {
+      const docId = extraction.documentId;
+      if (!groupedByDocument.has(docId)) {
+        groupedByDocument.set(docId, []);
+      }
+      groupedByDocument.get(docId)!.push(extraction);
+    });
+    
+    // Get document details
+    const result = Array.from(groupedByDocument.entries()).map(([documentId, extractions]) => {
+      const document = documents.find(d => d._id === documentId);
+      return {
+        documentId,
+        document: document ? {
+          _id: document._id,
+          fileName: document.fileName,
+          uploadedAt: document.uploadedAt,
+        } : null,
+        extractions: extractions.map(e => ({
+          _id: e._id,
+          version: e.version,
+          extractedAt: e.extractedAt,
+          sourceFileName: e.sourceFileName,
+        })),
+        latestExtraction: extractions[0], // Most recent is first
+      };
+    });
+    
+    return result;
+  },
+});

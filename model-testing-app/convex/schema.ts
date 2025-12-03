@@ -1407,5 +1407,149 @@ export default defineSchema({
     createdAt: v.string(), // ISO timestamp (server time)
   })
     .index("by_createdAt", ["createdAt"]),
+
+  // Modeling Templates - Store financial model templates
+  modelingTemplates: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    modelType: v.union(
+      v.literal("appraisal"),
+      v.literal("operating"),
+      v.literal("custom")
+    ),
+    fileStorageId: v.id("_storage"), // Convex storage reference to .xlsx file
+    version: v.string(), // Version string (e.g., "1.0.0")
+    isActive: v.boolean(), // Whether template is active and available for use
+    placeholderCodes: v.optional(v.array(v.string())), // Array of input codes used in template (e.g., ["<interest.rate>", "<costs>"])
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_modelType", ["modelType"])
+    .index("by_active", ["isActive"])
+    .index("by_createdAt", ["createdAt"]),
+
+  // Modeling Code Mappings - Category code to input code mappings
+  modelingCodeMappings: defineTable({
+    categoryCode: v.string(), // From extracted data (e.g., "financing.interestRate")
+    inputCode: v.string(), // Template placeholder (e.g., "<interest.rate>")
+    displayName: v.optional(v.string()), // Human-readable display name
+    description: v.optional(v.string()), // Description of what this mapping does
+    dataType: v.union(
+      v.literal("string"),
+      v.literal("number"),
+      v.literal("date"),
+      v.literal("boolean"),
+      v.literal("array")
+    ),
+    format: v.optional(v.string()), // Format hint (e.g., "currency", "percentage")
+    priority: v.number(), // Priority for ambiguous matches (higher = more important, default: 0)
+    isActive: v.boolean(), // Whether this mapping is active
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_categoryCode", ["categoryCode"])
+    .index("by_inputCode", ["inputCode"])
+    .index("by_active", ["isActive"])
+    .index("by_priority", ["priority"]),
+
+  // Document Extractions - Track extraction history per document
+  documentExtractions: defineTable({
+    documentId: v.id("documents"), // Reference to source document
+    projectId: v.optional(v.id("projects")), // Project this extraction belongs to
+    extractedData: v.any(), // The extracted data (JSON)
+    extractedAt: v.string(), // ISO timestamp of extraction
+    version: v.number(), // Version number for this extraction (increments per document)
+    sourceFileName: v.string(), // Original file name
+  })
+    .index("by_document", ["documentId"])
+    .index("by_project", ["projectId"])
+    .index("by_extractedAt", ["extractedAt"]),
+
+  // Extracted Item Codes - CANONICAL, NORMALIZED CODES ONLY
+  // This is the master code library - clean, no duplicates
+  extractedItemCodes: defineTable({
+    code: v.string(), // e.g., "<stamp.duty>" - the canonical code
+    displayName: v.string(), // e.g., "Stamp Duty" - human-readable name
+    category: v.string(), // e.g., "Purchase Costs" - for grouping
+    dataType: v.union(
+      v.literal("currency"),
+      v.literal("number"),
+      v.literal("percentage"),
+      v.literal("string")
+    ),
+    isSystemDefault: v.optional(v.boolean()), // Whether this is a system-seeded code
+    isActive: v.boolean(), // Whether this code is active
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_code", ["code"])
+    .index("by_category", ["category"])
+    .index("by_active", ["isActive"]),
+
+  // Item Code Aliases - NORMALIZATION LAYER (Learning System)
+  // Maps various terms to their canonical codes
+  // This is how the system learns from user confirmations
+  itemCodeAliases: defineTable({
+    alias: v.string(), // Original term (e.g., "site costs", "SDLT", "unit costs")
+    aliasNormalized: v.string(), // Lowercase, trimmed for matching
+    canonicalCodeId: v.id("extractedItemCodes"), // Reference to the canonical code
+    canonicalCode: v.string(), // Denormalized for quick access (e.g., "<stamp.duty>")
+    confidence: v.number(), // 0.0 - 1.0 confidence in this mapping
+    source: v.union(
+      v.literal("system_seed"), // Initial seed data
+      v.literal("llm_suggested"), // LLM suggested, not yet confirmed
+      v.literal("user_confirmed"), // User confirmed LLM suggestion
+      v.literal("manual") // User manually added
+    ),
+    usageCount: v.optional(v.number()), // How many times this alias was matched
+    createdAt: v.string(),
+  })
+    .index("by_alias_normalized", ["aliasNormalized"])
+    .index("by_canonical_code", ["canonicalCodeId"])
+    .index("by_source", ["source"]),
+
+  // Codified Extractions - Per-Document Codified Data
+  // Stores the result of codification for each document
+  codifiedExtractions: defineTable({
+    documentId: v.id("documents"), // Reference to source document
+    projectId: v.optional(v.id("projects")), // Project this belongs to
+    items: v.array(v.object({
+      id: v.string(), // Unique ID for this item within the extraction
+      originalName: v.string(), // Original name from spreadsheet (e.g., "Site Purchase Price")
+      itemCode: v.optional(v.string()), // Assigned canonical code (if matched/confirmed)
+      suggestedCode: v.optional(v.string()), // LLM suggestion (if pending)
+      suggestedCodeId: v.optional(v.id("extractedItemCodes")), // Reference to suggested code
+      value: v.any(), // The extracted value
+      dataType: v.string(), // Detected data type (currency, number, percentage, string)
+      category: v.string(), // Category from extraction (for grouping)
+      mappingStatus: v.union(
+        v.literal("matched"), // Fast pass found alias match
+        v.literal("suggested"), // Smart pass suggested code
+        v.literal("pending_review"), // Needs LLM (between passes)
+        v.literal("confirmed"), // User confirmed mapping
+        v.literal("unmatched") // LLM couldn't suggest, user skipped
+      ),
+      confidence: v.number(), // 0-1 confidence in the mapping
+    })),
+    mappingStats: v.object({
+      matched: v.number(), // Count of auto-matched items
+      suggested: v.number(), // Count of LLM-suggested items
+      pendingReview: v.number(), // Count of items needing review
+      confirmed: v.number(), // Count of user-confirmed items
+      unmatched: v.number(), // Count of unmatched/skipped items
+    }),
+    fastPassCompleted: v.boolean(), // Whether fast pass has run
+    smartPassCompleted: v.boolean(), // Whether smart pass has run
+    isFullyConfirmed: v.boolean(), // All items confirmed (ready for model run)
+    codifiedAt: v.string(), // When fast pass completed
+    smartPassAt: v.optional(v.string()), // When smart pass completed
+    confirmedAt: v.optional(v.string()), // When user confirmed all
+  })
+    .index("by_document", ["documentId"])
+    .index("by_project", ["projectId"])
+    .index("by_confirmed", ["isFullyConfirmed"]),
 });
 

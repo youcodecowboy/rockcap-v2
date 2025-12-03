@@ -6,10 +6,11 @@ import { normalizeExtractedData } from '@/lib/dataNormalization';
 import { verifyExtractedData } from '@/lib/dataVerification';
 // Note: API route uses server-side Convex client for reading data
 // Enrichment suggestions are created on client-side after document is saved
-import { getClientsServer, getProjectsServer } from '@/lib/convexServer';
+import { getClientsServer, getProjectsServer, getAllAliasesServer } from '@/lib/convexServer';
 import { classifySpreadsheet } from '@/lib/spreadsheetClassifier';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 import { ErrorResponses } from '@/lib/api/errorResponse';
+import { runFastPassWithFuzzy, buildAliasLookupMap } from '@/lib/fastPassCodification';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds max for file processing
@@ -246,6 +247,43 @@ export async function POST(request: NextRequest) {
       // This allows us to link them to the actual document ID from Convex
       const enrichmentSuggestions = analysisResult.enrichmentSuggestions || [];
 
+      // Run Fast Pass codification preview if we have extracted data
+      let codificationPreview = null;
+      if (extractedData && extractedData.costs && extractedData.costs.length > 0) {
+        try {
+          console.log('[API] Running Fast Pass codification preview...');
+          const fastPassStartTime = Date.now();
+          
+          // Get aliases for Fast Pass lookup
+          const aliases = await getAllAliasesServer();
+          
+          // Build alias lookup map
+          const aliasLookup = buildAliasLookupMap(aliases.map((a: any) => ({
+            aliasNormalized: a.aliasNormalized,
+            canonicalCode: a.canonicalCode,
+            canonicalCodeId: a.canonicalCodeId,
+            confidence: a.confidence,
+            source: a.source,
+          })));
+          
+          // Run Fast Pass to get preview stats
+          const fastPassResult = runFastPassWithFuzzy(extractedData, aliasLookup, 0.85);
+          const fastPassTime = Date.now() - fastPassStartTime;
+          
+          console.log('[API] Fast Pass completed in:', fastPassTime, 'ms');
+          console.log('[API] Fast Pass stats:', fastPassResult.stats);
+          
+          codificationPreview = {
+            items: fastPassResult.items,
+            stats: fastPassResult.stats,
+            aliasesAvailable: aliases.length,
+          };
+        } catch (fastPassError) {
+          console.error('[API] Error during Fast Pass preview (non-fatal):', fastPassError);
+          // Don't fail the request - Fast Pass preview is optional
+        }
+      }
+
       // Return unified output format
       return NextResponse.json({
         summary: analysisResult.summary,
@@ -262,6 +300,7 @@ export async function POST(request: NextRequest) {
         tokensUsed: totalTokensUsed,
         extractedData,
         enrichmentSuggestions: enrichmentSuggestions.length > 0 ? enrichmentSuggestions : undefined,
+        codificationPreview,
       });
     } catch (error) {
       console.error('Error analyzing file:', error);

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History } from 'lucide-react';
+import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -35,6 +35,20 @@ const settingsSections = [
     description: 'View application changes and updates',
     icon: History,
     href: '/settings/changelog',
+  },
+  {
+    id: 'modeling-templates',
+    title: 'Modeling Templates',
+    description: 'Manage financial model templates',
+    icon: Calculator,
+    href: '/settings/modeling-templates',
+  },
+  {
+    id: 'modeling-codes',
+    title: 'Modeling Code Mappings',
+    description: 'Manage category code to input code mappings',
+    icon: Calculator,
+    href: '/settings/modeling-codes',
   },
   {
     id: 'profile',

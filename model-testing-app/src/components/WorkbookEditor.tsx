@@ -241,12 +241,15 @@ export default function WorkbookEditor({
           sheets.forEach(sheet => {
             // Only include sheets with data (skip empty placeholders)
             if (sheet.data && sheet.data.length > 0) {
-              // Limit data size for HyperFormula - only include first 5000 rows per sheet for performance
-              const maxRows = 5000;
-              const limitedData = sheet.data.length > maxRows 
-                ? sheet.data.slice(0, maxRows)
-                : sheet.data;
-              sheetsData[sheet.name] = limitedData;
+              // Limit data size for HyperFormula - only include sheets with data and limit rows for performance
+              // Only add sheets with data to HyperFormula to reduce memory usage
+              if (sheet.data && sheet.data.length > 0) {
+                const maxRows = 2000; // Reduced from 5000 for better performance
+                const limitedData = sheet.data.length > maxRows 
+                  ? sheet.data.slice(0, maxRows)
+                  : sheet.data;
+                sheetsData[sheet.name] = limitedData;
+              }
             }
           });
 
@@ -882,6 +885,9 @@ export default function WorkbookEditor({
                 style={{ width: '100%', maxWidth: '100%', height: tableHeight ? `${tableHeight}px` : '100%', boxSizing: 'border-box' }}
                 licenseKey="non-commercial-and-evaluation"
                 readOnly={readOnly}
+                // Performance optimizations for large sheets
+                viewportRowRenderingOffset={50} // Render 50 rows above/below viewport
+                viewportColumnRenderingOffset={10} // Render 10 columns left/right of viewport
                 // Enable Excel-like features (carefully to avoid conflicts)
                 copyPaste={true}
                 undo={true}

@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
-import { ChevronLeft, ChevronRight, Calculator, Play, Save, Plus, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calculator, Play, Save, Plus, Download, Settings, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -15,9 +15,14 @@ import ModelOutputSummary from '@/components/ModelOutputSummary';
 import CreateScenarioModal from '@/components/CreateScenarioModal';
 import SaveVersionModal from '@/components/SaveVersionModal';
 import PlaceholderMappingModal from '@/components/PlaceholderMappingModal';
+import DataLibrary from '@/components/DataLibrary';
+import ModelLibraryDropdown from '@/components/ModelLibraryDropdown';
+import ModelingSettings from '@/components/ModelingSettings';
 import { loadExcelTemplate, loadExcelTemplateMetadata, loadSheetData, SheetData, exportToExcel, ExportOptions, SheetMetadata } from '@/lib/templateLoader';
 import { populateTemplateWithPlaceholders, PopulationResult } from '@/lib/placeholderMapper';
 import { getPlaceholderConfig } from '@/lib/placeholderConfigs';
+import { buildPlaceholderConfigFromMappings } from '@/lib/mappingConfigBuilder';
+import { populateTemplateWithCodifiedData, toLegacyPopulationResult, CodifiedItem } from '@/lib/codifiedTemplatePopulator';
 
 export default function ModelingPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<Id<"projects"> | null>(null);
@@ -41,6 +46,10 @@ export default function ModelingPage() {
   const [populationResult, setPopulationResult] = useState<PopulationResult | null>(null);
   const [exportMetadata, setExportMetadata] = useState<ExportOptions | null>(null);
   const [hyperFormulaEngine, setHyperFormulaEngine] = useState<any>(null);
+  const [activeDocumentId, setActiveDocumentId] = useState<Id<"documents"> | null>(null);
+  const [viewMode, setViewMode] = useState<'data-library' | 'scenario' | 'settings'>('data-library');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<Id<"modelingTemplates"> | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Queries
   const projectsWithData = useQuery(
@@ -71,6 +80,19 @@ export default function ModelingPage() {
 
   // Mutations
   const updateScenarioData = useMutation(api.scenarios.updateData);
+  
+  // Query code mappings for templates
+  const codeMappings = useQuery(api.modelingCodeMappings.list, { activeOnly: true });
+  
+  // Query selected template and URL
+  const selectedTemplate = useQuery(
+    api.modelingTemplates.get,
+    selectedTemplateId ? { id: selectedTemplateId } : "skip"
+  );
+  const selectedTemplateUrl = useQuery(
+    api.modelingTemplates.getTemplateUrl,
+    selectedTemplateId ? { id: selectedTemplateId } : "skip"
+  );
 
   // Query for Excel template - using direct storage ID as fallback
   const APPRAISAL_TEMPLATE_STORAGE_ID = 'kg2ejfhc72k3qhvbn2ahgmnhys7vh4r1' as Id<"_storage">;
@@ -99,10 +121,10 @@ export default function ModelingPage() {
     }
   }, [allTemplates?.length]); // Only log when the count changes, not on every render
 
-  // Get Excel document with extracted data for selected project
-  const excelDocument = useMemo(() => {
-    if (!documents) return null;
-    return documents.find(doc => {
+  // Get Excel documents with extracted data for selected project
+  const excelDocuments = useMemo(() => {
+    if (!documents) return [];
+    return documents.filter(doc => {
       const fileType = doc.fileType?.toLowerCase() || "";
       const isExcel = fileType.includes("spreadsheet") || 
                       fileType.includes("excel") || 
@@ -111,6 +133,32 @@ export default function ModelingPage() {
       return isExcel && doc.extractedData;
     });
   }, [documents]);
+  
+  // Get active document
+  const activeDocument = useMemo(() => {
+    if (!activeDocumentId && excelDocuments.length > 0) {
+      // Use most recent document if none selected
+      return excelDocuments.sort((a, b) => 
+        new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+      )[0];
+    }
+    return excelDocuments.find(doc => doc._id === activeDocumentId) || null;
+  }, [excelDocuments, activeDocumentId]);
+  
+  // Query codified extraction for active document (to check confirmation status)
+  const codifiedExtraction = useQuery(
+    api.codifiedExtractions.getByDocument,
+    activeDocument ? { documentId: activeDocument._id } : "skip"
+  );
+  
+  // Get client name for selected project
+  const clientName = useMemo(() => {
+    if (!selectedProject || !clients) return null;
+    if (!selectedProject.clientRoles || selectedProject.clientRoles.length === 0) return null;
+    const firstClientId = selectedProject.clientRoles[0].clientId;
+    const client = clients.find(c => c._id === firstClientId);
+    return client?.name || null;
+  }, [selectedProject, clients]);
 
   // Get unique clients and projects for dropdowns
   const uniqueClients = useMemo(() => {
@@ -194,7 +242,161 @@ export default function ModelingPage() {
     return runsForScenario.sort((a, b) => b.version - a.version)[0];
   };
 
-  // Handle Run Appraisal Model
+  // Handle Run Model from Template Library
+  const handleRunModel = useCallback((templateId: Id<"modelingTemplates">) => {
+    if (!activeDocument?.extractedData || !selectedProjectId) {
+      alert('Please select a project with extracted data first.');
+      return;
+    }
+    
+    // Check if codified extraction exists and is confirmed
+    if (codifiedExtraction) {
+      if (!codifiedExtraction.isFullyConfirmed) {
+        const pendingCount = (codifiedExtraction.mappingStats?.pendingReview || 0) + 
+                           (codifiedExtraction.mappingStats?.suggested || 0);
+        alert(`${pendingCount} items need confirmation before running the model.\n\nPlease review and confirm the code mappings in the Data Library first.`);
+        return;
+      }
+    } else {
+      // No codified extraction - warn but allow (will use raw data)
+      console.warn('No codified extraction found. Running model with raw extracted data.');
+    }
+    
+    // Set template ID to trigger queries
+    setSelectedTemplateId(templateId);
+    setViewMode('scenario');
+  }, [activeDocument, selectedProjectId, codifiedExtraction]);
+  
+  // Effect to load template when selectedTemplateId and URL are available
+  useEffect(() => {
+    if (!selectedTemplateId || !selectedTemplateUrl || !selectedTemplate || !activeDocument?.extractedData) {
+      return;
+    }
+    
+    const loadTemplate = async () => {
+      setIsLoadingTemplate(true);
+      try {
+        // Load template metadata
+        const lazyData = await loadExcelTemplateMetadata(selectedTemplateUrl);
+        
+        if (lazyData.metadata.length === 0) {
+          alert('Template loaded but no sheets were found.');
+          setIsLoadingTemplate(false);
+          return;
+        }
+        
+        // Store workbook and metadata for lazy loading
+        setLazyWorkbook(lazyData.workbook);
+        setLazyMetadata(lazyData.metadata);
+        setLoadedSheets(new Set());
+        
+        // Load first sheet immediately
+        const firstSheetName = lazyData.metadata[0].name;
+        const firstSheet = loadSheetData(lazyData.workbook, firstSheetName, lazyData.metadata[0]);
+        
+        // Create initial sheets array
+        const initialSheets: SheetData[] = lazyData.metadata.map(meta => {
+          if (meta.name === firstSheetName) {
+            return firstSheet;
+          }
+          return {
+            name: meta.name,
+            data: [],
+            columnWidths: meta.columnWidths,
+          };
+        });
+        
+        setTemplateSheets(initialSheets);
+        setLoadedSheets(new Set([firstSheetName]));
+        setSelectedSheet(firstSheetName);
+        setViewMode('scenario');
+        
+        // Build placeholder config from database mappings
+        let placeholderConfig;
+        if (codeMappings && codeMappings.length > 0 && selectedTemplate) {
+          // Get mappings for this template's placeholder codes
+          const templateCodes = selectedTemplate.placeholderCodes || [];
+          const relevantMappings = codeMappings.filter(m => 
+            templateCodes.includes(m.inputCode)
+          );
+          if (relevantMappings.length > 0) {
+            placeholderConfig = buildPlaceholderConfigFromMappings(relevantMappings);
+          } else {
+            // Fallback to default config
+            placeholderConfig = getPlaceholderConfig(selectedTemplate.modelType);
+          }
+        } else if (selectedTemplate) {
+          // Fallback to default config
+          placeholderConfig = getPlaceholderConfig(selectedTemplate.modelType);
+        } else {
+          placeholderConfig = getPlaceholderConfig('appraisal');
+        }
+        
+        // Populate template with codified data (preferred) or fall back to legacy extracted data
+        if (codifiedExtraction?.isFullyConfirmed && codifiedExtraction.items && codifiedExtraction.items.length > 0) {
+          // Use the new codified data system
+          console.log('[ModelingPage] Using codified data for template population');
+          console.log('[ModelingPage] Codified items:', codifiedExtraction.items.length);
+          
+          const codifiedResult = populateTemplateWithCodifiedData(
+            initialSheets,
+            codifiedExtraction.items as CodifiedItem[]
+          );
+          
+          // Convert to legacy format for UI compatibility
+          const result = toLegacyPopulationResult(codifiedResult);
+          setPopulationResult(result);
+          setTemplateSheets(result.sheets);
+          
+          console.log('[ModelingPage] Codified population result:', {
+            matched: codifiedResult.stats.matched,
+            unmatched: codifiedResult.stats.unmatched,
+          });
+        } else if (activeDocument.extractedData) {
+          // Legacy fallback - use path-based extraction
+          console.log('[ModelingPage] Using legacy extracted data for template population');
+          const result = populateTemplateWithPlaceholders(
+            initialSheets,
+            activeDocument.extractedData as any,
+            placeholderConfig
+          );
+          setPopulationResult(result);
+          setTemplateSheets(result.sheets);
+        }
+        
+        // Load remaining sheets in background
+        setTimeout(() => {
+          const remainingSheets = lazyData.metadata.filter(meta => meta.name !== firstSheetName);
+          remainingSheets.forEach((meta, index) => {
+            setTimeout(() => {
+              try {
+                const loadedSheet = loadSheetData(lazyData.workbook, meta.name, meta);
+                setTemplateSheets(prevSheets => {
+                  if (!prevSheets) return prevSheets;
+                  return prevSheets.map(sheet => 
+                    sheet.name === meta.name ? loadedSheet : sheet
+                  );
+                });
+                setLoadedSheets(prev => new Set([...prev, meta.name]));
+              } catch (error) {
+                console.error(`Failed to load sheet ${meta.name}:`, error);
+              }
+            }, index * 50);
+          });
+        }, 500);
+      } catch (error) {
+        console.error('Failed to load template:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        alert(`Failed to load template: ${errorMessage}`);
+      } finally {
+        setIsLoadingTemplate(false);
+      }
+    };
+    
+    loadTemplate();
+  }, [selectedTemplateId, selectedTemplateUrl, selectedTemplate, activeDocument, codeMappings, codifiedExtraction]);
+
+  // Handle Run Appraisal Model (legacy - kept for backward compatibility)
   const handleRunAppraisalModel = useCallback(async () => {
     if (!effectiveTemplateData?.url) {
       console.error('Template not found');
@@ -291,11 +493,11 @@ export default function ModelingPage() {
     } finally {
       setIsLoadingTemplate(false);
     }
-  }, [effectiveTemplateData, excelDocument, selectedProjectId]);
+  }, [effectiveTemplateData, activeDocument, selectedProjectId]);
 
   // Handle Run Operating Model
   const handleRunOperatingModel = useCallback(async () => {
-    if (!excelDocument?.extractedData) {
+    if (!activeDocument?.extractedData) {
       console.error('No extracted data available');
       alert('Please select a project with extracted data first.');
       return;
@@ -318,12 +520,12 @@ export default function ModelingPage() {
       })));
       
       // Populate templates with placeholders
-      if (excelDocument.extractedData && selectedProjectId) {
+      if (activeDocument.extractedData && selectedProjectId) {
         try {
           const placeholderConfig = getPlaceholderConfig('operating');
           const result = populateTemplateWithPlaceholders(
             workbook.sheets,
-            excelDocument.extractedData as any,
+            activeDocument.extractedData as any,
             placeholderConfig
           );
           
@@ -351,15 +553,15 @@ export default function ModelingPage() {
           // Fall back to unpopulated sheets
           setTemplateSheets(workbook.sheets);
         }
-      } else {
-        // No extracted data, use sheets as-is
-        setTemplateSheets(workbook.sheets);
-      }
+        } else {
+          // No extracted data, use sheets as-is
+          setTemplateSheets(workbook.sheets);
+        }
       
       // Switch to original template tab if we stored it (operating model with data), otherwise populated tab
       if (workbook.sheets.length > 0) {
         // If we have extracted data, we stored the original template, so show that first
-        if (excelDocument.extractedData && selectedProjectId) {
+        if (activeDocument.extractedData && selectedProjectId) {
           setActiveTab(`${workbook.sheets[0].name}-original`);
         } else {
           setActiveTab(workbook.sheets[0].name);
@@ -371,7 +573,7 @@ export default function ModelingPage() {
     } finally {
       setIsLoadingTemplate(false);
     }
-  }, [excelDocument, selectedProjectId]);
+  }, [activeDocument, selectedProjectId]);
 
   // Handle workbook data changes
   const handleWorkbookDataChange = useCallback((sheetName: string, data: any[][]) => {
@@ -427,7 +629,19 @@ export default function ModelingPage() {
         {!isSidebarMinimized ? (
           <>
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Modeling</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-gray-900">Modeling</h2>
+                <button
+                  onClick={() => {
+                    setIsSettingsOpen(true);
+                    setViewMode('settings');
+                  }}
+                  className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+                  title="Modeling Settings"
+                >
+                  <Settings className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
               
               {/* Filters */}
               <div className="space-y-2 mb-3">
@@ -496,7 +710,15 @@ export default function ModelingPage() {
                         onClick={() => {
                           setSelectedProjectId(project._id);
                           setSelectedScenarioId(null);
-                          setIsStandaloneDocument(false); // Clear standalone document when selecting a project
+                          setIsStandaloneDocument(false);
+                          setViewMode('data-library');
+                          // Set active document to most recent
+                          if (excelDocuments && excelDocuments.length > 0) {
+                            const mostRecent = excelDocuments.sort((a, b) => 
+                              new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+                            )[0];
+                            setActiveDocumentId(mostRecent._id);
+                          }
                         }}
                         className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
                           isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
@@ -602,21 +824,29 @@ export default function ModelingPage() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-white relative z-10" style={{ width: 0, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
-        {/* Coming Soon Disclaimer */}
-        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="flex-shrink-0">
-              <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
+        {/* Settings View */}
+        {viewMode === 'settings' ? (
+          <ModelingSettings onClose={() => {
+            setIsSettingsOpen(false);
+            setViewMode('data-library');
+          }} />
+        ) : (
+          <>
+            {/* Coming Soon Disclaimer */}
+            <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="flex-shrink-0">
+                  <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <p className="text-sm text-yellow-800 font-medium">
+                  Modeling section incomplete. Coming soon...
+                </p>
+              </div>
             </div>
-            <p className="text-sm text-yellow-800 font-medium">
-              Modeling section incomplete. Coming soon...
-            </p>
-          </div>
-        </div>
-        
-        {!selectedProjectId && !isStandaloneDocument ? (
+            
+            {!selectedProjectId && !isStandaloneDocument ? (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             <div className="text-center w-full max-w-md px-4">
               <Calculator className="w-16 h-16 mx-auto mb-4 text-gray-400" />
@@ -652,121 +882,83 @@ export default function ModelingPage() {
         ) : (
           <>
             {/* Action Buttons */}
-            <div className="p-4 border-b border-gray-200 flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRunAppraisalModel}
-                disabled={isLoadingTemplate || !effectiveTemplateData}
-                className="flex items-center gap-2"
-                title={!effectiveTemplateData ? 'Upload test-sheet.xlsx to enable this feature' : 'Load appraisal model template (will include second sheet if available)'}
-              >
-                <Play className="w-4 h-4" />
-                {isLoadingTemplate ? 'Loading...' : 'Run Appraisal Model'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRunOperatingModel}
-                disabled={isLoadingTemplate || !excelDocument?.extractedData}
-                className="flex items-center gap-2"
-                title={!excelDocument?.extractedData ? 'Select a project with extracted data to enable this feature' : 'Load operating model test template'}
-              >
-                <Play className="w-4 h-4" />
-                {isLoadingTemplate ? 'Loading...' : 'Run Operating Model'}
-              </Button>
-              <Button
-                variant="default"
-                size="default"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log('New Document button clicked');
-                  // Create a standalone blank document (not connected to any project)
-                  const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
-                  console.log('Created blank grid:', blankGrid.length, 'rows x', blankGrid[0]?.length, 'cols');
-                  setSpreadsheetData(blankGrid);
-                  setIsStandaloneDocument(true);
-                  setSelectedScenarioId(null);
-                  setTemplateSheets(null);
-                  setLazyWorkbook(null);
-                  setLazyMetadata(null);
-                  setLoadedSheets(new Set());
-                  setActiveTab('input');
-                  console.log('State updated, isStandaloneDocument should be true');
-                }}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
-                type="button"
-              >
-                <Plus className="w-4 h-4" />
-                New Document
-              </Button>
+            <div className="p-4 border-b border-gray-200 flex items-center gap-2 flex-wrap">
+              <ModelLibraryDropdown
+                onModelSelect={handleRunModel}
+                disabled={isLoadingTemplate || !activeDocument || !selectedProjectId}
+              />
+              {templateSheets && templateSheets.length > 0 && (
+                <>
+                  <Button
+                    variant="default"
+                    size="default"
+                    onClick={() => setIsCreateScenarioOpen(true)}
+                    disabled={!selectedProjectId}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save Scenario
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportToExcel}
+                    className="flex items-center gap-2"
+                    title="Export current data to Excel"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export to Excel
+                  </Button>
+                  {activeDocument?.extractedData && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (activeDocument?.extractedData && selectedProjectId && templateSheets) {
+                          try {
+                            // Build config from mappings or use default
+                            let placeholderConfig;
+                            if (codeMappings && codeMappings.length > 0) {
+                              placeholderConfig = buildPlaceholderConfigFromMappings(codeMappings);
+                            } else {
+                              placeholderConfig = getPlaceholderConfig('appraisal');
+                            }
+                            
+                            const result = populateTemplateWithPlaceholders(
+                              templateSheets,
+                              activeDocument.extractedData as any,
+                              placeholderConfig
+                            );
+                            setPopulationResult(result);
+                            setTemplateSheets(result.sheets);
+                            
+                            if (result.unmatchedPlaceholders.length > 0) {
+                              console.warn('Unmatched placeholders:', result.unmatchedPlaceholders);
+                            }
+                          } catch (error) {
+                            console.error('Error refreshing data:', error);
+                            alert('Failed to refresh data. Please try again.');
+                          }
+                        }
+                      }}
+                      className="flex items-center gap-2"
+                      title="Refresh template with latest extracted data"
+                    >
+                      Refresh Data
+                    </Button>
+                  )}
+                </>
+              )}
               <Button
                 variant="outline"
                 size="default"
                 onClick={() => setIsCreateScenarioOpen(true)}
+                disabled={!selectedProjectId}
                 className="flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 New Scenario
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsSaveVersionOpen(true)}
-                disabled={!selectedScenarioId}
-                className="flex items-center gap-2"
-              >
-                <Save className="w-4 h-4" />
-                Save Version
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportToExcel}
-                disabled={(!templateSheets || templateSheets.length === 0) && (!spreadsheetData || spreadsheetData.length === 0)}
-                className="flex items-center gap-2"
-                title="Export current data to Excel"
-              >
-                <Download className="w-4 h-4" />
-                Export to Excel
-              </Button>
-              {templateSheets && templateSheets.length > 0 && excelDocument?.extractedData && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (excelDocument?.extractedData && selectedProjectId) {
-                      try {
-                        const placeholderConfig = getPlaceholderConfig('appraisal');
-                        const result = populateTemplateWithPlaceholders(
-                          templateSheets,
-                          excelDocument.extractedData as any,
-                          placeholderConfig
-                        );
-                        setPopulationResult(result);
-                        setTemplateSheets(result.sheets);
-                        
-                        // Show feedback
-                        if (result.unmatchedPlaceholders.length > 0) {
-                          console.warn('Unmatched placeholders:', result.unmatchedPlaceholders);
-                        }
-                        const totalCleaned = result.cleanupReport.rowsHidden.length + result.cleanupReport.rowsDeleted.length;
-                        if (totalCleaned > 0) {
-                          console.log(`Cleaned up ${totalCleaned} unpopulated rows`);
-                        }
-                      } catch (error) {
-                        console.error('Error refreshing data:', error);
-                        alert('Failed to refresh data. Please try again.');
-                      }
-                    }
-                  }}
-                  className="flex items-center gap-2"
-                  title="Refresh template with latest extracted data"
-                >
-                  Refresh Data
-                </Button>
-              )}
             </div>
             
             {/* Population Status */}
@@ -812,8 +1004,20 @@ export default function ModelingPage() {
               </div>
             )}
 
-            {/* Tabs with Sheet Dropdown - when template is loaded */}
-            {!isLoadingTemplate && !isStandaloneDocument && templateSheets && templateSheets.length > 0 ? (
+            {/* Main Content Area */}
+            {!isLoadingTemplate && viewMode === 'data-library' && selectedProjectId && excelDocuments.length > 0 ? (
+              <DataLibrary
+                projectId={selectedProjectId}
+                clientName={clientName}
+                documents={excelDocuments}
+                activeDocumentId={activeDocumentId}
+                onDocumentChange={(docId) => {
+                  setActiveDocumentId(docId);
+                  setViewMode('data-library');
+                }}
+              />
+            ) : !isLoadingTemplate && templateSheets && templateSheets.length > 0 ? (
+              /* Tabs with Sheet Dropdown - when template is loaded */
               <Tabs 
                 value={activeTab} 
                 onValueChange={(value) => {
@@ -916,76 +1120,30 @@ export default function ModelingPage() {
                   />
                 </TabsContent>
               </Tabs>
+            ) : selectedProjectId && excelDocuments.length > 0 ? (
+              /* Data Library View */
+              <DataLibrary
+                projectId={selectedProjectId}
+                clientName={clientName}
+                documents={excelDocuments}
+                activeDocumentId={activeDocumentId || excelDocuments[0]._id}
+                onDocumentChange={(docId) => {
+                  setActiveDocumentId(docId);
+                  setViewMode('data-library');
+                }}
+              />
             ) : (
-              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)} className="flex-1 flex flex-col overflow-hidden" style={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
-                <div className="px-4 pt-4 border-b border-gray-200">
-                  <TabsList>
-                    <TabsTrigger value="input">Input</TabsTrigger>
-                    <TabsTrigger value="output">Output</TabsTrigger>
-                  </TabsList>
+              /* Empty State */
+              <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="text-center max-w-md px-4">
+                  <Calculator className="w-20 h-20 mx-auto mb-6 text-gray-400" />
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Select a Project</h3>
+                  <p className="text-sm text-gray-600 mb-8">Choose a project with extracted data from the sidebar to begin modeling</p>
                 </div>
-
-                <TabsContent value="input" className="flex-1 overflow-hidden mt-0 p-0" style={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
-                  <div className="h-full w-full" style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
-                    {isStandaloneDocument ? (
-                      // Standalone blank document - show Excel editor with blank 50x10 grid
-                      <ExcelDataEditor
-                        data={spreadsheetData.length > 0 ? spreadsheetData : Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''))}
-                        onDataChange={(data) => {
-                          setSpreadsheetData(data);
-                          // Don't auto-save standalone documents to scenarios
-                        }}
-                        readOnly={false}
-                      />
-                    ) : selectedScenario ? (
-                      <ExcelDataEditor
-                        data={spreadsheetData.length > 0 ? spreadsheetData : Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''))}
-                        onDataChange={handleDataChange}
-                        readOnly={false}
-                      />
-                    ) : excelDocument?.extractedData ? (
-                      <ExcelDataEditor
-                        data={excelDocument.extractedData}
-                        onDataChange={handleDataChange}
-                        readOnly={false}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-gray-500">
-                        <div className="text-center max-w-md px-4">
-                          <Calculator className="w-20 h-20 mx-auto mb-6 text-gray-400" />
-                          <h3 className="text-xl font-semibold text-gray-900 mb-2">Create Your First Document</h3>
-                          <p className="text-sm text-gray-600 mb-8">Start with a blank Excel-like spreadsheet. Use formulas, formatting, and all the features you're familiar with.</p>
-                          <Button
-                            onClick={() => {
-                              const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
-                              setSpreadsheetData(blankGrid);
-                              setIsStandaloneDocument(true);
-                              setSelectedScenarioId(null);
-                              setTemplateSheets(null);
-                            }}
-                            size="lg"
-                            className="flex items-center justify-center gap-2 px-8 py-6 text-lg"
-                          >
-                            <Plus className="w-5 h-5" />
-                            New Document
-                          </Button>
-                          <p className="text-xs text-gray-500 mt-4">Or click "Run Appraisal Model" or "Run Operating Model" to load a template</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="output" className="flex-1 overflow-hidden mt-0">
-                  <ModelOutputSummary
-                    scenarioName={selectedScenario?.name}
-                    modelType={getLatestRun(selectedScenarioId!)?.modelType || 'appraisal'}
-                    version={getLatestRun(selectedScenarioId!)?.version}
-                    versionName={getLatestRun(selectedScenarioId!)?.versionName}
-                  />
-                </TabsContent>
-              </Tabs>
+              </div>
             )}
+          </>
+          )}
           </>
         )}
       </div>
@@ -1032,7 +1190,7 @@ export default function ModelingPage() {
         isOpen={isPlaceholderModalOpen}
         onClose={() => setIsPlaceholderModalOpen(false)}
         populationResult={populationResult}
-        extractedData={excelDocument?.extractedData}
+        extractedData={activeDocument?.extractedData}
       />
     </div>
   );

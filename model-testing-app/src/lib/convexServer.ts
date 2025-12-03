@@ -168,3 +168,19 @@ export async function getFileTypeDefinitionsServer() {
   return result;
 }
 
+export async function getAllAliasesServer() {
+  if (!convexServer) {
+    throw new Error("Convex server client not configured");
+  }
+  const result = await convexServer.query(api.itemCodeAliases.list, {}) as any;
+  return result;
+}
+
+export async function getAllItemCodesServer() {
+  if (!convexServer) {
+    throw new Error("Convex server client not configured");
+  }
+  const result = await convexServer.query(api.extractedItemCodes.list, { activeOnly: true }) as any;
+  return result;
+}
+
