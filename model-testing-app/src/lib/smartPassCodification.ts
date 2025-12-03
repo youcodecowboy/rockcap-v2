@@ -14,7 +14,7 @@
 import { CodifiedItem } from './fastPassCodification';
 
 const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const MODEL_NAME = 'openai/gpt-oss-120b'; // OSS-120B via Together.ai
+const MODEL_NAME = 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free'; // Free Llama 3.3 70B via Together.ai
 
 // Types for Smart Pass
 export interface ItemCode {

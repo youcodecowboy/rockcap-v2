@@ -187,9 +187,12 @@ async function handleSmartPass(body: {
     });
   }
   
-  // Get pending items
+  // Get items that need processing (pending_review or suggested status)
+  // On force retry, we also re-process 'suggested' items to try matching again
   const pendingItems = extraction.items.filter(
-    (item: CodifiedItem) => item.mappingStatus === 'pending_review'
+    (item: CodifiedItem) => 
+      item.mappingStatus === 'pending_review' || 
+      (force && item.mappingStatus === 'suggested')
   );
   
   if (pendingItems.length === 0) {
@@ -202,48 +205,60 @@ async function handleSmartPass(body: {
     });
   }
   
-  // Get existing codes and aliases
-  const [existingCodes, existingAliases] = await Promise.all([
-    client.query(api.extractedItemCodes.list, { activeOnly: true }),
-    client.query(api.itemCodeAliases.list, {}),
-  ]);
+  console.log('[SmartPass] Processing', pendingItems.length, 'items');
   
-  // Run Smart Pass
-  const smartResult = await runSmartPass(
-    pendingItems as CodifiedItem[],
-    existingCodes as ItemCode[],
-    existingAliases as ItemCodeAlias[]
-  );
-  
-  // Apply suggestions to items
-  const updatedItems = applySmartPassSuggestions(
-    extraction.items as CodifiedItem[],
-    smartResult.suggestions
-  );
-  
-  // Map items to Convex-compatible format (cast suggestedCodeId to proper Id type)
-  const convexItems = updatedItems.map(item => ({
-    ...item,
-    suggestedCodeId: item.suggestedCodeId as Id<"extractedItemCodes"> | undefined,
-  }));
-  
-  // Update the extraction
-  await client.mutation(api.codifiedExtractions.updateAfterSmartPass, {
-    id: extraction._id,
-    items: convexItems,
-  });
-  
-  const elapsed = Date.now() - startTime;
-  console.log('[SmartPass] Completed in', elapsed, 'ms');
-  
-  return NextResponse.json({
-    success: true,
-    extractionId: extraction._id,
-    suggestions: smartResult.suggestions,
-    newCodeSuggestions: smartResult.newCodeSuggestions,
-    tokensUsed: smartResult.tokensUsed,
-    items: updatedItems,
-  });
+  try {
+    // Get existing codes and aliases
+    const [existingCodes, existingAliases] = await Promise.all([
+      client.query(api.extractedItemCodes.list, { activeOnly: true }),
+      client.query(api.itemCodeAliases.list, {}),
+    ]);
+    
+    console.log('[SmartPass] Found', existingCodes?.length || 0, 'codes and', existingAliases?.length || 0, 'aliases');
+    
+    // Run Smart Pass
+    const smartResult = await runSmartPass(
+      pendingItems as CodifiedItem[],
+      (existingCodes || []) as ItemCode[],
+      (existingAliases || []) as ItemCodeAlias[]
+    );
+    
+    // Apply suggestions to items
+    const updatedItems = applySmartPassSuggestions(
+      extraction.items as CodifiedItem[],
+      smartResult.suggestions
+    );
+    
+    // Map items to Convex-compatible format (cast suggestedCodeId to proper Id type)
+    const convexItems = updatedItems.map(item => ({
+      ...item,
+      suggestedCodeId: item.suggestedCodeId as Id<"extractedItemCodes"> | undefined,
+    }));
+    
+    // Update the extraction
+    await client.mutation(api.codifiedExtractions.updateAfterSmartPass, {
+      id: extraction._id,
+      items: convexItems,
+    });
+    
+    const elapsed = Date.now() - startTime;
+    console.log('[SmartPass] Completed in', elapsed, 'ms');
+    
+    return NextResponse.json({
+      success: true,
+      extractionId: extraction._id,
+      suggestions: smartResult.suggestions,
+      newCodeSuggestions: smartResult.newCodeSuggestions,
+      tokensUsed: smartResult.tokensUsed,
+      items: updatedItems,
+    });
+  } catch (smartPassError) {
+    console.error('[SmartPass] Error during processing:', smartPassError);
+    return NextResponse.json(
+      { error: smartPassError instanceof Error ? smartPassError.message : 'Smart Pass processing failed' },
+      { status: 500 }
+    );
+  }
 }
 
 /**
