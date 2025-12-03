@@ -295,8 +295,8 @@ export default function ModelingSettings({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+    <div className="flex flex-col h-full bg-gray-50 overflow-auto" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full pb-24">
         {/* Page Title */}
         <div className="mb-8 flex items-center justify-between">
           <div>
