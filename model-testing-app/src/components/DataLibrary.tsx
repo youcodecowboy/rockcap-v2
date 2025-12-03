@@ -4,11 +4,14 @@ import { useMemo, useCallback, useState, useEffect } from 'react';
 import DocumentTabs, { DocumentTab } from './DocumentTabs';
 import { Id } from '../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
-import { Download, AlertTriangle, Check, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Download, AlertTriangle, Check, Loader2, ChevronDown, ChevronRight, Plus, Layers } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { MappingConfirmationModal } from './MappingConfirmationModal';
+import { AddDataLibraryItemModal } from './AddDataLibraryItemModal';
+import { isCompoundItem } from '@/lib/fastPassCodification';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Types for codified items
 interface CodifiedItem {
@@ -145,13 +148,35 @@ const CategoryGroup: React.FC<{
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {items.map((item) => (
+              {items.map((item) => {
+                const isCompound = isCompoundItem(item.originalName);
+                return (
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <StatusBadge status={item.mappingStatus} confidence={item.confidence} />
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                    {item.originalName}
+                    <div className="flex items-center gap-2">
+                      <span>{item.originalName}</span>
+                      {isCompound && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-xs font-medium cursor-help">
+                                <Layers className="w-3 h-3" />
+                                Combined
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p className="text-sm">
+                                This item appears to combine multiple categories. 
+                                The full value will be used when matched to a single code.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {item.itemCode ? (
@@ -182,7 +207,8 @@ const CategoryGroup: React.FC<{
                     </span>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>
@@ -201,6 +227,7 @@ export default function DataLibrary({
 }: DataLibraryProps) {
   const [isRunningSmartPass, setIsRunningSmartPass] = useState(false);
   const [showMappingModal, setShowMappingModal] = useState(false);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [smartPassError, setSmartPassError] = useState<string | null>(null);
 
   // Convert documents to tab format - group by fileName and show versions
@@ -381,16 +408,28 @@ export default function DataLibrary({
               </div>
             )}
             {codifiedExtraction && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportToExcel}
-                className="flex items-center gap-2"
-                title="Export codified data to Excel"
-              >
-                <Download className="w-4 h-4" />
-                Export
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddItemModal(true)}
+                  className="flex items-center gap-2"
+                  title="Manually add an item"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Item
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportToExcel}
+                  className="flex items-center gap-2"
+                  title="Export codified data to Excel"
+                >
+                  <Download className="w-4 h-4" />
+                  Export
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -538,6 +577,20 @@ export default function DataLibrary({
           documentId={activeDocument._id}
           items={codifiedExtraction.items}
           onConfirmComplete={handleMappingComplete}
+        />
+      )}
+
+      {/* Add Item Modal */}
+      {showAddItemModal && codifiedExtraction && activeDocument && (
+        <AddDataLibraryItemModal
+          isOpen={showAddItemModal}
+          onClose={() => setShowAddItemModal(false)}
+          extractionId={codifiedExtraction._id}
+          documentId={activeDocument._id}
+          onItemAdded={() => {
+            setShowAddItemModal(false);
+            // Convex will automatically refresh the data
+          }}
         />
       )}
     </div>

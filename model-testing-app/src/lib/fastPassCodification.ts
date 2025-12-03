@@ -55,11 +55,97 @@ export interface AliasLookupMap {
 }
 
 /**
- * Normalize text for alias matching
- * Lowercase, trim, collapse whitespace
+ * Patterns to strip from names before matching (internal normalization only)
+ * The original name is preserved for user display
+ */
+const STRIP_PATTERNS: RegExp[] = [
+  /\d+(\.\d+)?%/g,                      // Percentages: 7.5%, 10%
+  /x\s?\d+/gi,                           // Quantities: x4, x 12
+  /\(\d+\s*bed(room)?s?\)/gi,            // (5 bed), (3 bedrooms)
+  /-\s*\d+\s*bed(room)?s?(\s+\w+)?/gi,   // - 5 bed, - 5 bedroom detached
+  /\d+\s*bed(room)?s?(\s+\w+)?/gi,       // 5 bed detached, 3 bedroom semi
+  /\([^)]*\)/g,                          // Anything in parentheses: (notes), (x2)
+  /\s*(detached|semi-detached|semi|terraced|apartment|flat|house)\s*/gi, // Property types
+];
+
+/**
+ * Common plural → singular mappings for normalization
+ * These handle variations like "interest.rates" → "interest.rate"
+ */
+const PLURAL_TO_SINGULAR: Record<string, string> = {
+  'costs': 'cost',
+  'rates': 'rate',
+  'fees': 'fee',
+  'works': 'work',
+  'duties': 'duty',
+  'charges': 'charge',
+  'expenses': 'expense',
+  'payments': 'payment',
+  'amounts': 'amount',
+  'values': 'value',
+  'prices': 'price',
+  'totals': 'total',
+  'sales': 'sale',
+  'profits': 'profit',
+  'loans': 'loan',
+  'units': 'unit',
+  'plots': 'plot',
+  'sites': 'site',
+  'buildings': 'building',
+  'services': 'service',
+  'externals': 'external',
+  'utilities': 'utility',
+  'preliminaries': 'preliminary',
+  'prelims': 'prelim',
+};
+
+/**
+ * Normalize a single word (handle plurals)
+ */
+function normalizeWord(word: string): string {
+  const lower = word.toLowerCase();
+  return PLURAL_TO_SINGULAR[lower] || lower;
+}
+
+/**
+ * Normalize text for alias matching (internal use only)
+ * - Lowercase, trim, collapse whitespace
+ * - Strip percentages, bed counts, property types
+ * - Convert plurals to singular
+ * - Normalize separators (dots, underscores, hyphens → spaces)
+ * 
+ * NOTE: The original name is preserved in CodifiedItem.originalName for user display
  */
 export function normalizeText(text: string): string {
-  return text.toLowerCase().trim().replace(/\s+/g, ' ');
+  // Start with lowercase and trim
+  let normalized = text.toLowerCase().trim();
+  
+  // Apply strip patterns to remove noise
+  for (const pattern of STRIP_PATTERNS) {
+    normalized = normalized.replace(pattern, ' ');
+  }
+  
+  // Replace common separators with spaces
+  normalized = normalized.replace(/[._-]+/g, ' ');
+  
+  // Collapse multiple spaces
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+  
+  // Split into words and normalize each (plurals → singular)
+  const words = normalized.split(' ');
+  const normalizedWords = words.map(normalizeWord);
+  
+  // Rejoin with spaces
+  return normalizedWords.join(' ');
+}
+
+/**
+ * Check if an item name appears to be a compound item
+ * (contains multiple categories combined)
+ */
+export function isCompoundItem(text: string): boolean {
+  // Check for common compound separators
+  return /[&,\/]|(\s+and\s+)/i.test(text);
 }
 
 /**

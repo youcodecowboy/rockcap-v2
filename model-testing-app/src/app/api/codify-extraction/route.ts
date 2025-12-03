@@ -51,6 +51,10 @@ export async function POST(request: NextRequest) {
         return handleConfirm(body);
       case 'confirm-all':
         return handleConfirmAll(body);
+      case 'suggest-single':
+        return handleSuggestSingle(body);
+      case 'add-item':
+        return handleAddItem(body);
       default:
         return NextResponse.json(
           { error: `Unknown action: ${action}` },
@@ -373,6 +377,225 @@ async function handleConfirmAll(body: {
     isFullyConfirmed: result.isFullyConfirmed,
     stats: result.stats,
     aliasesCreated: suggestedItems.length,
+  });
+}
+
+/**
+ * Handle single item suggestion
+ * Uses LLM to suggest a code for a manually entered item
+ */
+async function handleSuggestSingle(body: {
+  itemName: string;
+  itemValue?: number;
+  itemCategory?: string;
+}): Promise<NextResponse> {
+  const { itemName, itemValue, itemCategory } = body;
+  
+  if (!itemName) {
+    return NextResponse.json(
+      { error: 'itemName is required' },
+      { status: 400 }
+    );
+  }
+  
+  const client = getConvexClient();
+  const startTime = Date.now();
+  
+  // Get existing codes and aliases for context
+  const existingCodes = await client.query(api.extractedItemCodes.list, {}) as ItemCode[];
+  const existingAliases = await client.query(api.itemCodeAliases.list, {}) as ItemCodeAlias[];
+  
+  // Build a simple prompt for single item suggestion
+  const codesByCategory: Record<string, ItemCode[]> = {};
+  existingCodes.forEach(code => {
+    if (!codesByCategory[code.category]) {
+      codesByCategory[code.category] = [];
+    }
+    codesByCategory[code.category].push(code);
+  });
+  
+  const existingCodesText = existingCodes.length > 0 
+    ? Object.entries(codesByCategory).map(([category, codes]) => 
+        `${category}:\n${codes.map(c => `  - ${c.code} (${c.displayName})`).join('\n')}`
+      ).join('\n\n')
+    : 'No existing codes yet.';
+  
+  const prompt = `You are a financial data codification assistant.
+
+EXISTING CODES IN THE SYSTEM:
+${existingCodesText}
+
+USER WANTS TO ADD THIS ITEM:
+- Name: "${itemName}"
+${itemValue !== undefined ? `- Value: ${itemValue}` : ''}
+${itemCategory ? `- Category: ${itemCategory}` : ''}
+
+TASK:
+1. If an existing code matches this item, return that code
+2. If no existing code matches, suggest a new code format: <category.name>
+
+RESPOND IN JSON FORMAT ONLY:
+{
+  "suggestedCode": "<the.code>",
+  "suggestedDisplayName": "Display Name",
+  "suggestedCategory": "Category Name",
+  "suggestedDataType": "currency|number|percentage|string",
+  "confidence": 0.0-1.0,
+  "isNewCode": true/false,
+  "existingCodeId": "id if matching existing code, otherwise null",
+  "reasoning": "Brief explanation"
+}`;
+
+  try {
+    const apiKey = process.env.TOGETHER_API_KEY;
+    if (!apiKey) {
+      throw new Error('TOGETHER_API_KEY not configured');
+    }
+    
+    const response = await fetch('https://api.together.xyz/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+        messages: [
+          { role: 'system', content: 'You are a financial data codification assistant. Always respond with valid JSON only.' },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 500,
+        temperature: 0.3,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`LLM API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    
+    // Parse the JSON response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No valid JSON in LLM response');
+    }
+    
+    const suggestion = JSON.parse(jsonMatch[0]);
+    
+    // Try to find the existing code ID if the LLM matched to an existing code
+    if (!suggestion.isNewCode && suggestion.suggestedCode) {
+      const matchingCode = existingCodes.find(c => c.code === suggestion.suggestedCode);
+      if (matchingCode) {
+        suggestion.existingCodeId = matchingCode._id;
+      }
+    }
+    
+    const elapsed = Date.now() - startTime;
+    console.log('[SuggestSingle] Completed in', elapsed, 'ms');
+    
+    return NextResponse.json({
+      success: true,
+      suggestion,
+    });
+  } catch (error) {
+    console.error('[SuggestSingle] Error:', error);
+    
+    // Return a fallback suggestion based on the item name
+    const fallbackCode = `<${itemName.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
+      .replace(/\s+/g, '.')}>`;
+    
+    return NextResponse.json({
+      success: true,
+      suggestion: {
+        suggestedCode: fallbackCode,
+        suggestedDisplayName: itemName,
+        suggestedCategory: itemCategory || 'Manual Entry',
+        suggestedDataType: 'currency',
+        confidence: 0.5,
+        isNewCode: true,
+        existingCodeId: null,
+        reasoning: 'Fallback suggestion based on item name (LLM unavailable)',
+      },
+    });
+  }
+}
+
+/**
+ * Handle adding a manual item to an extraction
+ */
+async function handleAddItem(body: {
+  extractionId: string;
+  documentId: string;
+  item: {
+    originalName: string;
+    value: number;
+    category: string;
+    dataType: string;
+    itemCode?: string;
+    codeId?: string;
+    isNewCode?: boolean;
+  };
+}): Promise<NextResponse> {
+  const { extractionId, documentId, item } = body;
+  
+  if (!extractionId || !documentId || !item) {
+    return NextResponse.json(
+      { error: 'extractionId, documentId, and item are required' },
+      { status: 400 }
+    );
+  }
+  
+  const client = getConvexClient();
+  
+  let canonicalCodeId = item.codeId;
+  
+  // Create new code if needed
+  if (item.isNewCode && item.itemCode) {
+    const newCode = await client.mutation(api.extractedItemCodes.create, {
+      code: item.itemCode,
+      displayName: item.originalName,
+      category: item.category,
+      dataType: item.dataType as 'currency' | 'number' | 'percentage' | 'string',
+    });
+    canonicalCodeId = newCode;
+  }
+  
+  // Generate a unique ID for the new item
+  const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  
+  // Add the item to the extraction
+  const result = await client.mutation(api.codifiedExtractions.addItem, {
+    extractionId: extractionId as Id<"codifiedExtractions">,
+    item: {
+      id: itemId,
+      originalName: item.originalName,
+      itemCode: item.itemCode,
+      value: item.value,
+      dataType: item.dataType,
+      category: item.category,
+      mappingStatus: item.itemCode ? 'confirmed' : 'pending_review',
+      confidence: 1.0,
+    },
+  });
+  
+  // Create alias if we have a code
+  if (canonicalCodeId) {
+    await client.mutation(api.itemCodeAliases.create, {
+      alias: item.originalName,
+      canonicalCodeId: canonicalCodeId as Id<"extractedItemCodes">,
+      confidence: 1.0,
+      source: 'manual',
+    });
+  }
+  
+  return NextResponse.json({
+    success: true,
+    itemId,
+    stats: result.stats,
   });
 }
 

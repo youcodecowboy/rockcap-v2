@@ -420,3 +420,49 @@ export const getConfirmedItems = query({
   },
 });
 
+// Mutation: Add a manual item to the extraction
+export const addItem = mutation({
+  args: {
+    extractionId: v.id("codifiedExtractions"),
+    item: codifiedItemValidator,
+  },
+  handler: async (ctx, args) => {
+    const extraction = await ctx.db.get(args.extractionId);
+    if (!extraction) {
+      throw new Error("Codified extraction not found");
+    }
+    
+    // Add the new item to the list
+    const updatedItems = [...extraction.items, args.item];
+    
+    // Recalculate stats
+    const stats = {
+      matched: 0,
+      suggested: 0,
+      pendingReview: 0,
+      confirmed: 0,
+      unmatched: 0,
+    };
+    
+    updatedItems.forEach(item => {
+      switch (item.mappingStatus) {
+        case "matched": stats.matched++; break;
+        case "suggested": stats.suggested++; break;
+        case "pending_review": stats.pendingReview++; break;
+        case "confirmed": stats.confirmed++; break;
+        case "unmatched": stats.unmatched++; break;
+      }
+    });
+    
+    const isFullyConfirmed = stats.pendingReview === 0 && stats.suggested === 0;
+    
+    await ctx.db.patch(args.extractionId, {
+      items: updatedItems,
+      mappingStats: stats,
+      isFullyConfirmed,
+    });
+    
+    return { stats, isFullyConfirmed };
+  },
+});
+
