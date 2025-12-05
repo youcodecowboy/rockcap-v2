@@ -1,17 +1,18 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, ChevronDown, ChevronRight, ArrowLeft, FolderOpen, Lock, MoveRight } from 'lucide-react';
 import Link from 'next/link';
 import {
   Dialog,
@@ -58,13 +59,27 @@ interface ItemCodeAlias {
   createdAt: string;
 }
 
+interface ItemCategory {
+  _id: Id<'itemCategories'>;
+  name: string;
+  normalizedName: string;
+  description: string;
+  examples: string[];
+  isSystem: boolean;
+  displayOrder?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Category group component for Item Codes
 const CategoryGroup: React.FC<{
   category: string;
   codes: ItemCode[];
+  allCategories: string[];
   onEdit: (code: ItemCode) => void;
   onDelete: (id: Id<'extractedItemCodes'>) => void;
-}> = ({ category, codes, onEdit, onDelete }) => {
+  onMoveToCategory: (codeId: Id<'extractedItemCodes'>, newCategory: string) => void;
+}> = ({ category, codes, allCategories, onEdit, onDelete, onMoveToCategory }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
@@ -103,7 +118,25 @@ const CategoryGroup: React.FC<{
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <Select
+                  value=""
+                  onValueChange={(newCat) => {
+                    if (newCat && newCat !== category) {
+                      onMoveToCategory(code._id, newCat);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <MoveRight className="w-3 h-3 mr-1" />
+                    <span className="text-gray-500">Move to...</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allCategories.filter(c => c !== category).map(cat => (
+                      <SelectItem key={cat} value={cat} className="text-xs">{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button variant="ghost" size="sm" onClick={() => onEdit(code)}>
                   <Edit className="w-4 h-4" />
                 </Button>
@@ -213,6 +246,7 @@ export default function ModelingCodesPage() {
   // Delete confirmation
   const [deleteCodeId, setDeleteCodeId] = useState<Id<'extractedItemCodes'> | null>(null);
   const [deleteAliasId, setDeleteAliasId] = useState<Id<'itemCodeAliases'> | null>(null);
+  const [deleteCategoryId, setDeleteCategoryId] = useState<Id<'itemCategories'> | null>(null);
 
   // Create Alias Dialog state
   const [isAliasDialogOpen, setIsAliasDialogOpen] = useState(false);
@@ -221,18 +255,40 @@ export default function ModelingCodesPage() {
     canonicalCodeId: '' as string,
   });
 
+  // Create/Edit Category Dialog state
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<ItemCategory | null>(null);
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    examples: '',
+  });
+
   // Queries
   const itemCodes = useQuery(api.extractedItemCodes.list, {}) as ItemCode[] | undefined;
   const codesGroupedByCategory = useQuery(api.extractedItemCodes.getGroupedByCategory, {});
   const aliasesGroupedByCode = useQuery(api.itemCodeAliases.getGroupedByCode, {});
   const categories = useQuery(api.extractedItemCodes.getCategories, {});
+  const itemCategories = useQuery(api.itemCategories.list, {}) as ItemCategory[] | undefined;
 
   // Mutations
   const createCode = useMutation(api.extractedItemCodes.create);
   const updateCode = useMutation(api.extractedItemCodes.update);
   const removeCode = useMutation(api.extractedItemCodes.remove);
+  const changeCodeCategory = useMutation(api.extractedItemCodes.changeCategory);
   const createAlias = useMutation(api.itemCodeAliases.create);
   const removeAlias = useMutation(api.itemCodeAliases.remove);
+  const createCategory = useMutation(api.itemCategories.create);
+  const updateCategory = useMutation(api.itemCategories.update);
+  const removeCategory = useMutation(api.itemCategories.remove);
+  const seedCategories = useMutation(api.itemCategories.checkAndSeed);
+
+  // Seed categories on first load if empty
+  useEffect(() => {
+    if (itemCategories && itemCategories.length === 0) {
+      seedCategories();
+    }
+  }, [itemCategories, seedCategories]);
 
   // Filtered codes
   const filteredCodes = useMemo(() => {
@@ -384,10 +440,90 @@ export default function ModelingCodesPage() {
     }
   };
 
+  // Category handlers
+  const handleCreateCategory = () => {
+    setEditingCategory(null);
+    setCategoryForm({
+      name: '',
+      description: '',
+      examples: '',
+    });
+    setIsCategoryDialogOpen(true);
+  };
+
+  const handleEditCategory = (category: ItemCategory) => {
+    setEditingCategory(category);
+    setCategoryForm({
+      name: category.name,
+      description: category.description,
+      examples: category.examples.join(', '),
+    });
+    setIsCategoryDialogOpen(true);
+  };
+
+  const handleSubmitCategory = async () => {
+    if (!categoryForm.name.trim() || !categoryForm.description.trim()) {
+      alert('Please fill in name and description');
+      return;
+    }
+
+    try {
+      const examples = categoryForm.examples
+        .split(',')
+        .map(e => e.trim())
+        .filter(Boolean);
+
+      if (editingCategory) {
+        await updateCategory({
+          id: editingCategory._id,
+          name: categoryForm.name.trim(),
+          description: categoryForm.description.trim(),
+          examples,
+        });
+      } else {
+        await createCategory({
+          name: categoryForm.name.trim(),
+          description: categoryForm.description.trim(),
+          examples,
+        });
+      }
+      setIsCategoryDialogOpen(false);
+    } catch (error: any) {
+      alert(`Failed to save category: ${error.message}`);
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deleteCategoryId) return;
+    try {
+      await removeCategory({ id: deleteCategoryId });
+      setDeleteCategoryId(null);
+    } catch (error: any) {
+      alert(`Failed to delete category: ${error.message}`);
+    }
+  };
+
+  const handleMoveCodeToCategory = async (codeId: Id<'extractedItemCodes'>, newCategory: string) => {
+    try {
+      await changeCodeCategory({ id: codeId, newCategory });
+    } catch (error: any) {
+      alert(`Failed to move code: ${error.message}`);
+    }
+  };
+
+  // Get all category names for dropdown
+  const allCategoryNames = useMemo(() => {
+    if (itemCategories) {
+      return itemCategories.map(c => c.name);
+    }
+    return categories || [];
+  }, [itemCategories, categories]);
+
   const totalCodes = itemCodes?.length || 0;
   const totalAliases = aliasesGroupedByCode 
     ? Object.values(aliasesGroupedByCode).reduce((sum, aliases) => sum + aliases.length, 0) 
     : 0;
+  const totalCategories = itemCategories?.length || 0;
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -408,6 +544,8 @@ export default function ModelingCodesPage() {
             <span>{totalCodes} codes</span>
             <span>•</span>
             <span>{totalAliases} aliases</span>
+            <span>•</span>
+            <span>{totalCategories} categories</span>
           </div>
         </div>
 
@@ -417,57 +555,68 @@ export default function ModelingCodesPage() {
             <TabsList>
               <TabsTrigger value="codes">Item Codes</TabsTrigger>
               <TabsTrigger value="aliases">Alias Dictionary</TabsTrigger>
+              <TabsTrigger value="categories">Categories</TabsTrigger>
+              <TabsTrigger value="instructions">Instructions</TabsTrigger>
             </TabsList>
             
-            {activeTab === 'codes' ? (
+            {activeTab === 'codes' && (
               <Button onClick={handleCreateCode}>
                 <Plus className="w-4 h-4 mr-2" />
                 New Code
               </Button>
-            ) : (
+            )}
+            {activeTab === 'aliases' && (
               <Button onClick={handleCreateAlias}>
                 <Plus className="w-4 h-4 mr-2" />
                 New Alias
               </Button>
             )}
+            {activeTab === 'categories' && (
+              <Button onClick={handleCreateCategory}>
+                <Plus className="w-4 h-4 mr-2" />
+                New Category
+              </Button>
+            )}
           </div>
 
-          {/* Filters */}
-          <Card className="mb-6">
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="search">Search</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      id="search"
-                      placeholder={activeTab === 'codes' ? "Search codes..." : "Search aliases..."}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-                {activeTab === 'codes' && (
+          {/* Filters - hide for instructions tab */}
+          {activeTab !== 'instructions' && (
+            <Card className="mb-6">
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="filter-category">Category</Label>
-                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                      <SelectTrigger id="filter-category">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Categories</SelectItem>
-                        {categories?.map(cat => (
-                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="search">Search</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <Input
+                        id="search"
+                        placeholder={activeTab === 'codes' ? "Search codes..." : "Search aliases..."}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                  {activeTab === 'codes' && (
+                    <div>
+                      <Label htmlFor="filter-category">Category</Label>
+                      <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        <SelectTrigger id="filter-category">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Categories</SelectItem>
+                          {categories?.map(cat => (
+                            <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Item Codes Tab */}
           <TabsContent value="codes">
@@ -493,8 +642,10 @@ export default function ModelingCodesPage() {
                   key={category}
                   category={category}
                   codes={codes}
+                  allCategories={allCategoryNames}
                   onEdit={handleEditCode}
                   onDelete={setDeleteCodeId}
+                  onMoveToCategory={handleMoveCodeToCategory}
                 />
               ))
             )}
@@ -528,6 +679,263 @@ export default function ModelingCodesPage() {
                 />
               ))
             )}
+          </TabsContent>
+
+          {/* Categories Tab */}
+          <TabsContent value="categories">
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                Categories help organize item codes and improve LLM codification accuracy. 
+                Add descriptions and examples to teach the AI what types of items belong in each category.
+              </p>
+            </div>
+            
+            {!itemCategories || itemCategories.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <p className="text-gray-600 mb-4">No categories found. Click below to seed default categories.</p>
+                  <Button onClick={() => seedCategories()}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Seed Default Categories
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {itemCategories.map((category) => (
+                  <Card key={category._id} className="overflow-hidden">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <FolderOpen className="w-5 h-5 text-blue-600" />
+                          <CardTitle className="text-lg">{category.name}</CardTitle>
+                          {category.isSystem && (
+                            <Badge variant="outline" className="text-xs flex items-center gap-1">
+                              <Lock className="w-3 h-3" />
+                              System
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditCategory(category)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          {!category.isSystem && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => setDeleteCategoryId(category._id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <CardDescription className="mt-2">{category.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div>
+                        <span className="text-xs font-medium text-gray-500 uppercase">Examples:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {category.examples.map((example, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs">
+                              {example}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="mt-3 text-xs text-gray-400">
+                        Normalized: <code className="bg-gray-100 px-1 rounded">{category.normalizedName}</code>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Instructions Tab */}
+          <TabsContent value="instructions">
+            <div className="space-y-6">
+              {/* Overview */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-2xl">📚</span>
+                    Codification System Overview
+                  </CardTitle>
+                  <CardDescription>
+                    Learn how the extraction and codification system works to standardize financial data across your projects.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="prose prose-sm max-w-none">
+                  <p className="text-gray-700">
+                    The codification system automatically extracts financial data from uploaded documents (Excel files, PDFs) 
+                    and maps them to standardized item codes. This enables consistent data aggregation across multiple 
+                    sources and seamless export to financial models.
+                  </p>
+                  <h4 className="font-semibold text-gray-900 mt-4 mb-2">How It Works</h4>
+                  <ol className="list-decimal list-inside space-y-2 text-gray-700">
+                    <li><strong>Upload:</strong> Drop an Excel or PDF containing financial data</li>
+                    <li><strong>Extract:</strong> AI analyzes the document and extracts line items</li>
+                    <li><strong>Codify:</strong> Items are matched to standard codes using Fast Pass (aliases) and Smart Pass (AI)</li>
+                    <li><strong>Review:</strong> Unmatched items are flagged for manual confirmation</li>
+                    <li><strong>Aggregate:</strong> Confirmed items are added to the project&apos;s unified Data Library</li>
+                    <li><strong>Export:</strong> Run models using the aggregated data</li>
+                  </ol>
+                </CardContent>
+              </Card>
+
+              {/* Item Codes */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-xl">🏷️</span>
+                    Item Codes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="prose prose-sm max-w-none">
+                  <p className="text-gray-700">
+                    Item codes are standardized identifiers for financial line items. They follow the format{' '}
+                    <code className="bg-gray-100 px-1.5 py-0.5 rounded text-sm">&lt;category.item&gt;</code>
+                  </p>
+                  <h4 className="font-semibold text-gray-900 mt-4 mb-2">Examples</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="bg-gray-50 p-2 rounded"><code className="text-green-700">&lt;stamp.duty&gt;</code> - Stamp Duty Land Tax</div>
+                    <div className="bg-gray-50 p-2 rounded"><code className="text-green-700">&lt;groundworks&gt;</code> - Groundworks costs</div>
+                    <div className="bg-gray-50 p-2 rounded"><code className="text-green-700">&lt;professional.fees&gt;</code> - Professional fees</div>
+                    <div className="bg-gray-50 p-2 rounded"><code className="text-green-700">&lt;site.labour&gt;</code> - Site labour and prelims</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Category Totals */}
+              <Card className="border-blue-200 bg-blue-50/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-xl">📊</span>
+                    Category Totals (Auto-Computed)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="prose prose-sm max-w-none">
+                  <p className="text-gray-700">
+                    The system automatically computes totals for each category. These totals are available as exportable 
+                    item codes and can be used in your models.
+                  </p>
+                  <h4 className="font-semibold text-gray-900 mt-4 mb-2">Auto-Generated Total Codes</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm mb-4">
+                    <div className="bg-blue-100/50 p-2 rounded border border-blue-200">
+                      <code className="text-blue-700">&lt;total.construction.costs&gt;</code>
+                    </div>
+                    <div className="bg-blue-100/50 p-2 rounded border border-blue-200">
+                      <code className="text-blue-700">&lt;total.professional.fees&gt;</code>
+                    </div>
+                    <div className="bg-blue-100/50 p-2 rounded border border-blue-200">
+                      <code className="text-blue-700">&lt;total.development.costs&gt;</code>
+                    </div>
+                    <div className="bg-blue-100/50 p-2 rounded border border-blue-200">
+                      <code className="text-blue-700">&lt;total.revenue&gt;</code>
+                    </div>
+                  </div>
+                  <div className="bg-white p-3 rounded-lg border border-blue-200">
+                    <h5 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                      <span>✏️</span> Overriding Totals
+                    </h5>
+                    <p className="text-gray-700 text-sm">
+                      You can manually override any auto-computed total by clicking the edit icon next to it in the Data Library. 
+                      This is useful when you need to adjust a total without modifying individual line items. 
+                      To revert to the computed value, click &quot;Use Computed&quot; in the override dialog.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Aliases */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-xl">🔗</span>
+                    Alias Dictionary (Fast Pass)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="prose prose-sm max-w-none">
+                  <p className="text-gray-700">
+                    Aliases are alternative names that map to standard item codes. The Fast Pass system uses exact string 
+                    matching for instant codification without AI inference.
+                  </p>
+                  <h4 className="font-semibold text-gray-900 mt-4 mb-2">Example Aliases</h4>
+                  <div className="space-y-1 text-sm text-gray-600">
+                    <div>&quot;SDLT&quot; → <code className="text-green-700">&lt;stamp.duty&gt;</code></div>
+                    <div>&quot;Land Tax&quot; → <code className="text-green-700">&lt;stamp.duty&gt;</code></div>
+                    <div>&quot;Architect Fees&quot; → <code className="text-green-700">&lt;professional.fees&gt;</code></div>
+                    <div>&quot;Build Cost&quot; → <code className="text-green-700">&lt;construction.costs&gt;</code></div>
+                  </div>
+                  <p className="text-gray-700 mt-3">
+                    Adding common aliases for your organization&apos;s terminology improves matching accuracy and speed.
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Categories */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-xl">📁</span>
+                    Categories
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="prose prose-sm max-w-none">
+                  <p className="text-gray-700">
+                    Categories group related item codes together. They help the AI understand context and improve 
+                    Smart Pass accuracy by providing descriptions and examples.
+                  </p>
+                  <h4 className="font-semibold text-gray-900 mt-4 mb-2">Standard Categories</h4>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div className="bg-gray-50 p-2 rounded">Construction Costs</div>
+                    <div className="bg-gray-50 p-2 rounded">Professional Fees</div>
+                    <div className="bg-gray-50 p-2 rounded">Development Costs</div>
+                    <div className="bg-gray-50 p-2 rounded">Site Costs</div>
+                    <div className="bg-gray-50 p-2 rounded">Financing</div>
+                    <div className="bg-gray-50 p-2 rounded">Revenue</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Tips */}
+              <Card className="border-amber-200 bg-amber-50/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-xl">💡</span>
+                    Tips for Better Extraction
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2 text-sm text-gray-700">
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span><strong>Use the &quot;Extract Financial Data&quot; toggle</strong> when uploading to ensure extraction runs on all documents.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span><strong>Add aliases for common terms</strong> used in your documents to improve Fast Pass matching.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span><strong>Review unmatched items</strong> and create new codes if needed - this improves future extractions.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span><strong>Category totals auto-update</strong> when you add or modify items in that category.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span><strong>Multi-document projects</strong> aggregate data automatically - the Data Library shows all sources.</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
 
@@ -684,6 +1092,87 @@ export default function ModelingCodesPage() {
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleDeleteAlias} className="bg-red-600 hover:bg-red-700">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Create/Edit Category Dialog */}
+        <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editingCategory ? 'Edit Category' : 'Create Category'}</DialogTitle>
+              <DialogDescription>
+                {editingCategory 
+                  ? 'Update the category details. Changes will improve LLM codification accuracy.'
+                  : 'Add a new category to organize item codes. Include a description and examples to help the AI.'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label htmlFor="cat-name">Category Name *</Label>
+                <Input
+                  id="cat-name"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  placeholder="e.g., Professional Fees"
+                  disabled={editingCategory?.isSystem}
+                />
+                {editingCategory?.isSystem && (
+                  <p className="text-xs text-amber-600 mt-1">System category names cannot be changed</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="cat-description">Description *</Label>
+                <Textarea
+                  id="cat-description"
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                  placeholder="Describe what types of items belong in this category..."
+                  rows={3}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This description helps the AI understand what items to categorize here
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="cat-examples">Examples (comma-separated)</Label>
+                <Input
+                  id="cat-examples"
+                  value={categoryForm.examples}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, examples: e.target.value })}
+                  placeholder="e.g., Engineers, Architects, Solicitors"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Provide example items that would fall into this category
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSubmitCategory}>
+                {editingCategory ? 'Update' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Category Confirmation */}
+        <AlertDialog open={!!deleteCategoryId} onOpenChange={(open) => !open && setDeleteCategoryId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Category?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete this category. Make sure no item codes are using it first.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteCategory} className="bg-red-600 hover:bg-red-700">
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>

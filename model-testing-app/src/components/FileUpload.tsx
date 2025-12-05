@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useFileQueue } from '@/lib/useFileQueue';
 import { Id } from '../../convex/_generated/dataModel';
-import { X, Upload, CheckCircle2, AlertCircle, Loader2, Power } from 'lucide-react';
+import { X, Upload, CheckCircle2, AlertCircle, Loader2, Power, Database } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Switch } from '@/components/ui/switch';
@@ -21,6 +21,7 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
   const [isDragging, setIsDragging] = useState(false);
   const [localFiles, setLocalFiles] = useState<Map<Id<"fileUploadQueue">, File>>(new Map());
   const [hasCustomInstructions, setHasCustomInstructions] = useState(false);
+  const [forceExtraction, setForceExtraction] = useState(false);
   const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
   const [pendingJobId, setPendingJobId] = useState<Id<"fileUploadQueue"> | null>(null);
   const [pendingFileName, setPendingFileName] = useState<string>('');
@@ -63,7 +64,7 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
     
     for (const file of filesToUpload) {
       try {
-        const jobId = await addFile(file, hasCustomInstructions);
+        const jobId = await addFile(file, hasCustomInstructions, forceExtraction);
         if (jobId) {
           setLocalFiles(prev => new Map(prev).set(jobId, file));
           
@@ -81,7 +82,7 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
         }
       }
     }
-  }, [isReady, addFile, getQueueSize, onError, hasCustomInstructions, isMainPage]);
+  }, [isReady, addFile, getQueueSize, onError, hasCustomInstructions, forceExtraction, isMainPage]);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
@@ -198,24 +199,47 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
 
   return (
     <div className="space-y-4">
-      {/* Add Instructions Switch */}
-      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="flex items-center gap-2 flex-1">
-          <Power className={`w-4 h-4 transition-colors ${hasCustomInstructions ? 'text-blue-600' : 'text-gray-400'}`} />
-          <label htmlFor="add-instructions" className="text-sm font-medium text-gray-700 cursor-pointer">
-            Add instructions
-          </label>
+      {/* Upload Options */}
+      <div className="space-y-2">
+        {/* Add Instructions Switch */}
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2 flex-1">
+            <Power className={`w-4 h-4 transition-colors ${hasCustomInstructions ? 'text-blue-600' : 'text-gray-400'}`} />
+            <label htmlFor="add-instructions" className="text-sm font-medium text-gray-700 cursor-pointer">
+              Add instructions
+            </label>
+          </div>
+          <Switch
+            id="add-instructions"
+            checked={hasCustomInstructions}
+            onCheckedChange={setHasCustomInstructions}
+          />
+          {hasCustomInstructions && (
+            <span className="text-xs text-gray-500 ml-2">
+              {isMainPage ? 'Single file: modal will appear • Multiple files: go to queue' : 'Files will go to review queue'}
+            </span>
+          )}
         </div>
-        <Switch
-          id="add-instructions"
-          checked={hasCustomInstructions}
-          onCheckedChange={setHasCustomInstructions}
-        />
-        {hasCustomInstructions && (
-          <span className="text-xs text-gray-500 ml-2">
-            {isMainPage ? 'Single file: modal will appear • Multiple files: go to queue' : 'Files will go to review queue'}
-          </span>
-        )}
+
+        {/* Extract Financial Data Switch */}
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2 flex-1">
+            <Database className={`w-4 h-4 transition-colors ${forceExtraction ? 'text-emerald-600' : 'text-gray-400'}`} />
+            <label htmlFor="force-extraction" className="text-sm font-medium text-gray-700 cursor-pointer">
+              Extract financial data
+            </label>
+          </div>
+          <Switch
+            id="force-extraction"
+            checked={forceExtraction}
+            onCheckedChange={setForceExtraction}
+          />
+          {forceExtraction && (
+            <span className="text-xs text-gray-500 ml-2">
+              Costs, revenue, plots, and financial figures will be extracted
+            </span>
+          )}
+        </div>
       </div>
 
       <div

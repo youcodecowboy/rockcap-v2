@@ -28,8 +28,10 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const customInstructions = formData.get('customInstructions') as string | null;
+    const forceExtraction = formData.get('forceExtraction') === 'true';
 
     console.log('[API] Received custom instructions:', customInstructions ? `"${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? '...' : ''}"` : 'none');
+    console.log('[API] Force extraction:', forceExtraction);
 
     if (!file) {
       return ErrorResponses.badRequest('No file provided');
@@ -148,21 +150,33 @@ export async function POST(request: NextRequest) {
         fileNameLower.endsWith('.xls') ||
         fileNameLower.endsWith('.csv');
 
-      if (isSpreadsheet) {
+      // Determine if extraction should run
+      let shouldRunExtraction = false;
+      let extractionReason = '';
+      
+      if (forceExtraction) {
+        // User explicitly requested extraction - always run it
+        shouldRunExtraction = true;
+        extractionReason = 'User requested extraction via toggle';
+        console.log('[API] Force extraction enabled - will extract data from any file type');
+      } else if (isSpreadsheet) {
         // Classify the spreadsheet to determine if extraction is needed
         const classification = classifySpreadsheet(textContent, markdownContent, file.name);
         console.log('[API] Spreadsheet classification:', classification);
+        shouldRunExtraction = classification.requiresExtraction;
+        extractionReason = classification.reason;
         
-        if (!classification.requiresExtraction) {
+        if (!shouldRunExtraction) {
           console.log('[API] Spreadsheet does not require extraction - skipping gauntlet');
           console.log('[API] Reason:', classification.reason);
           console.log('[API] Classification confidence:', classification.confidence);
-          // Don't run extraction - just summarize and file
-        } else {
-          try {
-            console.log('[API] Spreadsheet requires extraction - starting data extraction gauntlet');
-            console.log('[API] Reason:', classification.reason);
-            console.log('[API] Classification confidence:', classification.confidence);
+        }
+      }
+
+      if (shouldRunExtraction) {
+        try {
+          console.log('[API] Starting data extraction gauntlet');
+          console.log('[API] Reason:', extractionReason);
             const extractionStartTime = Date.now();
           
           // Use markdown content if available, otherwise fallback to textContent
@@ -238,7 +252,6 @@ export async function POST(request: NextRequest) {
           };
         }
       }
-    }
 
       // Calculate total tokens used (analysis + extraction + normalization + verification)
       const totalTokensUsed = analysisResult.tokensUsed + (extractedData?.tokensUsed || 0);

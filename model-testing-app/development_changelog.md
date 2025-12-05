@@ -1,6 +1,811 @@
 # Development Changelog
 
-## [Latest] - 2025-12-03 16:00
+## [Latest] - 2025-12-05 18:15
+
+### Computed Category Totals with Override Support
+
+**Feature**: Auto-computed category totals that are exportable to models, with manual override capability.
+
+**Schema Updates** (`convex/schema.ts`):
+- Added `isComputed` and `computedFromCategory` fields to `projectDataItems` table
+
+**Backend Changes** (`convex/projectDataLibrary.ts`):
+- Updated `getProjectLibrary` query to automatically compute category totals
+  - Groups items by category and sums currency values
+  - Returns virtual computed items with codes like `<total.construction.costs>`
+  - Checks for manual overrides and uses those instead if present
+- Added `overrideCategoryTotal` mutation for manual total overrides
+- Added `clearCategoryTotalOverride` mutation to revert to computed value
+- Added `getCategoryTotalCodeQuery` helper query
+
+**UI Updates** (`src/components/DataLibrary.tsx`):
+- Redesigned `ProjectDataCategoryGroup` component:
+  - Separates regular items from computed totals
+  - Displays computed totals in distinct blue gradient row
+  - Shows "Auto" badge for computed, "Override" badge for manual values
+  - Edit icon opens override modal
+- Added override modal with:
+  - Value input for manual override
+  - "Use Computed" button to revert overrides
+  - Clear feedback on computed vs override state
+
+**Documentation** (`src/app/settings/modeling-codes/page.tsx`):
+- Added new "Instructions" tab to Modeling Code Mappings page
+- Comprehensive documentation covering:
+  - Codification system overview
+  - Item codes explanation with examples
+  - Category totals feature with auto-generated codes
+  - Override functionality documentation
+  - Alias dictionary (Fast Pass) explanation
+  - Categories explanation
+  - Tips for better extraction
+
+---
+
+## 2025-12-05 10:30
+
+### Unified Project Data Library - Multi-Document Data Aggregation
+
+**Major Feature**: Transformed the modeling section from per-document data viewing to a project-level data aggregator with full provenance tracking, revision history, and audit capabilities.
+
+**New Schema Tables** (`convex/schema.ts`):
+- `projectDataItems` - Unified data library per project (one row per item code)
+  - Full value history with source tracking
+  - Multi-source detection with variance calculation
+  - Manual override tracking with user stamps
+  - Soft delete support for recovery
+- `dataLibrarySnapshots` - Point-in-time snapshots for model runs and revert
+  - Created automatically on model runs
+  - Supports manual saves and pre-revert backups
+  - Links to model runs for traceability
+- `modelExports` - Track all exports with bill of materials
+  - Source document tracking
+  - Manual override audit trail
+  - Export type classification
+
+**Updated Schema Tables**:
+- `modelRuns` - Added sourceDocumentIds, dataLibrarySnapshotId, billOfMaterials
+- `codifiedExtractions` - Added mergedToProjectLibrary, mergedAt, soft delete fields
+
+**New Convex Files**:
+- `convex/projectDataLibrary.ts` - Core library mutations and queries
+  - mergeExtractionToLibrary, revertDocumentAddition, revertItemToVersion
+  - manualOverrideItem, addManualItem, deleteItem, restoreItem
+  - getProjectLibrary, getChangedItems, getItemHistory, getLibraryStats
+- `convex/dataLibrarySnapshots.ts` - Snapshot management
+  - createSnapshot, revertToSnapshot, compareSnapshots, cleanupOldSnapshots
+- `convex/modelExports.ts` - Export tracking
+  - recordExport, recordExportWithBOM, getExportsByProject
+
+**Updated Convex Files**:
+- `convex/codifiedExtractions.ts` - Added mergeToProjectLibrary, softDelete, getDeleteImpact
+- `convex/modelRuns.ts` - Added saveModelWithSnapshot for full provenance tracking
+
+**New UI Components**:
+- `src/components/DataLibraryHistoryModal.tsx` - Revision timeline with revert capability
+- `src/components/DocumentContributionsPanel.tsx` - Batch revert for document data
+- `src/components/DeleteExtractionModal.tsx` - Multi-step deletion with impact preview
+
+**Updated UI Components**:
+- `src/components/DataLibrary.tsx` - Complete overhaul with three view modes:
+  - **All Data**: Unified projectDataItems view with source column
+  - **By Document**: Existing per-document codifiedExtractions view
+  - **Changes**: Filter to items with multiple sources/values
+  - "Add to Library" button for confirmed extractions
+  - Library stats banner showing items, documents, overrides
+  - Expandable value history per item
+
+**SmartPass Enhancement** (`src/lib/smartPassCodification.ts`):
+- Added projectLibraryItems parameter for consistency checking
+- SmartPass now considers existing project library codes
+- Prefers reusing existing codes over creating new ones
+
+**Key Features**:
+1. Data aggregates across all project documents (100+ items supported)
+2. Every value knows its source document
+3. Value history tracks all changes with timestamps
+4. Document-level and item-level revert capability
+5. Automatic snapshots on model runs
+6. Bill of materials for every export
+7. Manual override tracking with notes
+8. Soft delete with recovery option
+
+---
+
+## [Previous] - 2025-12-05 00:15
+
+### Extraction Pipeline Upgrade - Maverick 4 & Force Extraction Toggle
+
+**Model Upgrade**: Upgraded all extraction routes to use Llama 4 Maverick (meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8):
+- 17B active parameters, 128 experts, 400B total params
+- 1M token context window - handles large workbooks without truncation
+- Superior reasoning for complex financial documents
+
+**New File**: `src/lib/modelConfig.ts`
+- Centralized model configuration for all AI operations
+- Configurable maxTokens per use case:
+  - Extraction/Normalization/Verification: 65,000 tokens
+  - Analysis: 8,000 tokens
+  - Codification: 32,000 tokens
+  - Chat: 4,000 tokens
+
+**Updated Files** (model imports):
+- `src/lib/dataExtraction.ts`
+- `src/lib/dataNormalization.ts`
+- `src/lib/dataVerification.ts`
+- `src/lib/smartPassCodification.ts`
+- `src/lib/togetherAI.ts`
+- `src/app/api/ai-assistant/route.ts`
+- `src/app/api/codify-extraction/route.ts`
+
+**New Feature**: "Extract Financial Data" Toggle
+- Added toggle in FileUpload.tsx next to "Add Instructions"
+- When enabled, forces extraction on ANY file type (not just spreadsheets)
+- Bypasses automatic classification checks
+- New `forceExtraction` field in fileUploadQueue schema
+
+**Updated Files** (extraction toggle):
+- `convex/schema.ts` - Added forceExtraction field
+- `convex/fileQueue.ts` - Handle forceExtraction in createJob
+- `src/lib/useFileQueue.ts` - Pass forceExtraction to processor
+- `src/lib/fileQueueProcessor.ts` - Include forceExtraction in API calls
+- `src/components/FileUpload.tsx` - New toggle UI with Database icon
+- `src/app/api/analyze-file/route.ts` - Respect forceExtraction flag
+
+**Enhanced Spreadsheet Classifier** (`src/lib/spreadsheetClassifier.ts`):
+- Added complexity detection (simple/moderate/complex)
+- Sheet count detection for multi-sheet workbooks
+- Summary sheet detection (looks for "Summary", "Appraisal", etc.)
+- New extraction keywords: revenue, profit, stamp duty, residual valuation
+- Complex workbooks with summary sheets auto-trigger extraction
+
+---
+
+## [Previous] - 2025-12-04 23:45
+
+### Quick Export Enhancements - Currency Formatting & Cleanup
+
+**Currency Formatting** (`src/lib/xlsmPopulator.ts`):
+- Currency values now display with £ symbol when inserted
+- Applied Excel number format `£#,##0.00` to currency cells
+- Percentage values get `0.00%` format
+- Formatting applied in both specific code matches and category fallbacks
+
+**Placeholder Cleanup** (`src/lib/xlsmPopulator.ts`):
+- Added PASS 3: Comprehensive cleanup of all remaining placeholders
+- Scans all sheets after population and clears any `<...>` patterns
+- Handles both specific code placeholders and category fallbacks that weren't filled
+- New stat: `placeholdersCleared` tracks how many were cleaned up
+
+**Rich Text Cell Support** (`src/lib/xlsmPopulator.ts`):
+- Fixed issue where cells with Rich Text formatting weren't being read
+- Extracts text content from RichText objects (used for cells with fonts/colors/hyperlinks)
+- Enables `.name` placeholders with formatting to be properly detected and replaced
+
+**Typo Tolerance** (`src/lib/xlsmPopulator.ts`):
+- Added common typo variations for category names
+- "profesional.fees" and "professioal.fees" now map to "professional.fees"
+- Template categories are normalized before lookup to handle spelling variations
+
+---
+
+## [Previous] - 2025-12-04 22:30
+
+### Quick Export Feature - Server-Side Template Population
+
+**New Feature**: Quick Export mode allows populating XLSM templates with codified data on the server and downloading directly, bypassing the web visualization layer while preserving all macros, styles, images, and charts.
+
+**New Package**:
+- Added `xlsx-populate` for XLSM file manipulation that preserves macros and formatting
+
+**New Files**:
+- `src/lib/xlsmPopulator.ts`: Server-side XLSM population utility
+  - Scans for placeholders (`<item.code>` patterns) in all sheets
+  - Matches codified items by code with case-insensitive fallback
+  - Handles category fallbacks (`<all.category.name>`, `<all.category.value>`)
+  - Preserves all non-data elements (macros, styles, images, charts)
+  - Returns population statistics
+
+- `src/app/api/quick-export/route.ts`: API endpoint for quick export
+  - Accepts templateId and codifiedItems
+  - Fetches template from Convex storage
+  - Populates and returns populated XLSM file
+
+**UI Changes**:
+- `src/components/DataLibrary.tsx`: Added Quick Export toggle in toolbar
+  - Toggle shows lightning bolt icon and switch
+  - Appears only when items are fully confirmed
+  - Passes mode to Run Model button
+
+- `src/components/ModelLibraryDropdown.tsx`: Updated for quick export mode
+  - Button changes from "Run Model" to "Quick Export" with amber styling
+  - Dropdown header shows "Quick Export to Excel" with macro preservation note
+  - Template items show "Quick" badge when in quick export mode
+
+- `src/app/modeling/page.tsx`: Added quick export flow handling
+  - New state: `isQuickExportMode`, `isQuickExporting`
+  - `handleRunModel` now handles quick export path
+  - Calls API, triggers file download, skips WorkbookEditor
+
+**Bug Fix** (`src/components/SheetClassificationModal.tsx`):
+- Fixed nested button hydration error where TooltipTrigger was inside a button
+- Changed outer button to div with role="button" and proper keyboard handling
+
+**Bug Fix** (`src/components/TemplateUploadModal.tsx`):
+- Fixed "Object has too many fields (1379 > maximum 1024)" error when uploading large templates
+- Now uploads sheets in chunks of 3 to avoid Convex field limit
+- Aggregates results from all chunks to maintain same API behavior
+
+---
+
+## [Previous] - 2025-12-04 20:45
+
+### Move Optimized Templates to Modeling Settings
+
+**UX Improvement** (`src/components/ModelingSettings.tsx`):
+- Moved the new Optimized Templates feature from global settings to the Modeling Settings panel
+- Added sub-tabs within Templates tab: "Optimized Templates" and "Legacy Templates"
+- Users can now upload optimized templates directly from the Modeling section
+- Added template list view with dynamic group badges and sheet counts
+- Added delete confirmation dialog with proper cleanup
+- Legacy templates still work with amber color scheme to distinguish from new system
+- Info banners explain the difference between optimized and legacy templates
+
+**Bug Fix** (`src/components/AssignToClientModal.tsx`):
+- Fixed TypeScript error where `useQuery(api.clients.list)` needed empty object argument
+
+---
+
+## [Previous] - 2025-12-04 20:15
+
+### Template System Refactor - Dynamic Sheet Generation
+
+**New Convex Schema** (`convex/schema.ts`):
+- Added `templateDefinitions` table for template metadata with core/dynamic sheet classification
+- Added `templateSheets` table for individual sheet storage (JSON format, lazy loading support)
+- Supports dynamic groups with min/max/default counts and placeholder patterns
+
+**New Convex APIs**:
+- `convex/templateDefinitions.ts`: CRUD operations for template definitions
+  - `listActive`, `listAll`, `getById`, `getByName`
+  - `create`, `update`, `updateSheetConfiguration`, `incrementVersion`
+  - `activate`, `deactivate`, `deleteTemplate`
+- `convex/templateSheets.ts`: Individual sheet operations
+  - `listByTemplate`, `getById`, `getSheetData`, `getMultipleSheetsData`
+  - `create`, `batchCreate`, `updateMetadata`, `updateData`
+  - `deleteSheet`, `cloneSheet` (with placeholder replacement)
+
+**New UI Components**:
+- `SheetClassificationModal.tsx`: Classify sheets as core vs dynamic during upload
+  - Group configuration: min/max count, placeholder pattern (e.g., `{N}`)
+  - Visual preview of sheet assignments
+- `TemplateUploadModal.tsx`: Enhanced upload flow
+  - Parse Excel → Classify Sheets → Create template with JSON storage
+  - Progress indicators and validation
+- `ConfigureModelModal.tsx`: Configure model generation
+  - Select count for each dynamic group
+  - Preview generated sheet names
+  - Generate button with total count
+- Added `ui/scroll-area.tsx` and `ui/progress.tsx` components
+
+**Template Loading** (`src/lib/templateLoader.ts`):
+- Added `loadSheetFromStorageUrl()` for lazy loading large sheets
+- Added `convertOptimizedToSheetData()` for JSON → SheetData conversion
+- Added `loadOptimizedSheets()` for parallel loading
+- Added `generateDynamicSheets()` for multi-site template generation
+- Added `validateDynamicTemplate()` for configuration validation
+
+**Dynamic Sheet Generator** (`src/lib/dynamicSheetGenerator.ts`):
+- `generateModelSheets()`: Core generation function
+- `cloneSheetWithReplacement()`: Deep clone with placeholder replacement
+- `validateDynamicConfig()`: Pre-generation validation
+- `previewGeneratedSheets()`: UI preview helper
+- `getOptimalSheetOrder()`: Optimal sheet ordering
+
+**Settings Page Update** (`src/app/settings/modeling-templates/page.tsx`):
+- Added tabs: "Optimized Templates" vs "Legacy Templates"
+- Optimized templates use new JSON storage with dynamic support
+- Legacy templates continue using Excel file storage
+
+---
+
+## [Previous] - 2025-12-04 18:30
+
+### Workbook Editor Performance Improvements
+
+**Phase 1 - Pre-computed Cell Metadata** (`src/components/WorkbookEditor.tsx`):
+- Added `precomputedStyleMeta` useMemo that pre-builds renderers for cells with Excel styles
+- Reduced `cells()` callback from O(n) style computation to O(1) Map lookup
+- Style renderers are created once when sheets load, not on every cell render
+
+**Phase 2 - HyperFormula Batch Operations** (`src/lib/hyperFormulaService.ts`):
+- Added `runWithSuspendedEvaluation()` helper method for bulk operations
+- Lowered batch threshold from 50 to 10 for earlier optimization in `syncCellChanges()`
+- Prevents unnecessary recalculations during bulk cell updates
+
+**Phase 3 - Optimized HyperFormula Configuration** (`src/lib/hyperFormulaService.ts`):
+- Enabled `smartRounding: true` for faster financial calculations
+
+**Phase 4 - Reduced Viewport Rendering** (`src/components/WorkbookEditor.tsx`):
+- Reduced `viewportRowRenderingOffset` from 100 to 50
+- Reduced `viewportColumnRenderingOffset` from 15 to 10
+- Decreases initial render load and memory usage
+
+**Phase 5 - Sheet Switch Optimization** (`src/components/WorkbookEditor.tsx`):
+- Added effect to clear editing state on sheet switch
+- Clears `editingCellRef`, formula bar, and selection when changing sheets
+- Uses `batch()` for grouped operations on sheet switch
+- Preserves formula bar and formatting functionality on current sheet
+
+**Preservation Notes**:
+- All formula bar functionality preserved (Enter commits, Escape cancels)
+- Formula mode cell reference insertion still works
+- Formatting toolbar buttons apply correctly
+- Cross-sheet formulas calculate correctly (all sheets loaded into HyperFormula)
+
+---
+
+## [Previous] - 2025-12-04 17:00
+
+### Three-Level Sidebar Navigation
+
+**Navigation Hierarchy** (`src/app/modeling/page.tsx`):
+- **Level 1 - Clients**: Lists all clients with extracted data, shows project count
+- **Level 2 - Projects**: Lists projects for selected client, back to "All Clients"
+- **Level 3 - Models**: Lists saved model versions, back to client name
+
+**UI Improvements**:
+- Each level has smooth slide animation on transition
+- Arrow indicators on client/project cards
+- Settings cog available on all levels
+- "Data Library" button in Level 3 header for quick access
+- Compact headers - removed "Modeling" title from Level 2/3
+
+**Data Structure**:
+- Added `clientsWithProjects` computed array grouping projects by client
+- Added `projectsForSelectedClient` for filtered project list
+- Added `selectedClientName` state for client selection
+
+---
+
+## [Previous] - 2025-12-04 16:15
+
+### Multi-Stage Sidebar Navigation (2-Level)
+
+**Drill-Down Navigation Pattern** (`src/app/modeling/page.tsx`):
+- Level 1 (Projects): Shows all projects with extracted data
+- Level 2 (Versions): Click project → shows all saved model versions for that project
+- Back button "← All Projects" to return to Level 1
+- Project header shows name and client in Level 2
+
+**Level 2 - Saved Versions View**:
+- Lists all saved model runs for the project
+- Each item shows: template name, version badge, date saved
+- Version name displayed in monospace (e.g., `v1-appraisal-2025-12-04`)
+- Click to load saved version directly into the editor
+
+**UI Improvements**:
+- Filters (client, project) only shown in Level 1
+- Level 2 header shows "Saved model versions" hint
+- "View saved models →" indicator on each project card
+- Clean separation between navigation levels
+
+---
+
+## [Previous] - 2025-12-04 15:30
+
+### Fix Scenario Saving with Auto-Versioning
+
+**Schema Update** (`convex/schema.ts`):
+- Added `fileStorageId` field to `modelRuns` for Excel file storage in Convex
+- Added `projectId` field for easier version queries per project
+- Added new indexes: `by_project`, `by_project_modelType`
+
+**Auto-Versioning System** (`convex/modelRuns.ts`):
+- New `getNextVersion` query: auto-calculates next version number per project + model type
+- New `getProjectVersions` query: gets all versions for a project
+- New `saveModelVersion` mutation: saves with auto-versioning (`v{N}-{modelType}-{date}`)
+- New `generateModelUploadUrl` mutation: generates upload URL for Excel files
+- New `attachFileToModelRun` mutation: links uploaded file to model run
+- New `getModelFileUrl` query: gets download URL for saved Excel files
+
+**Save Model Modal** (`src/components/SaveModelModal.tsx` - NEW):
+- Proper "Save Model" flow with auto-generated version names
+- Shows version info: number, type, auto-generated name (e.g., `v1-appraisal-2025-12-04`)
+- Optional description for notes
+- Checkbox to save Excel file to Convex cloud storage
+- Saves full workbook structure (all sheets, column widths, data)
+
+**Excel File Storage** (`src/lib/templateLoader.ts`):
+- New `exportToExcelBlob` function: exports workbook to Blob for upload
+- Files stored in Convex storage with linked `fileStorageId`
+
+**Version Naming Convention**:
+- Format: `v{N}-{model-type}-{YYYY-MM-DD}`
+- Auto-increments per project + model type
+- Examples: `v1-appraisal-2025-12-04`, `v15-appraisal-2025-12-10`
+
+---
+
+## [Previous] - 2025-12-04 14:30
+
+### Modeling Page UI Polish
+
+**Unified Action Toolbar** (`src/components/DataLibrary.tsx`):
+- Reorganized header with all action buttons on one line: Run Model, Reset, Add Item, Export
+- Moved Run Model dropdown from main toolbar into DataLibrary header
+- Reset button now part of the main toolbar row instead of floating in status banner
+- Cleaner layout with left/center/right alignment
+
+**Compact Version History Selector** (`src/components/DocumentTabs.tsx`):
+- Replaced full-width tabs with compact dropdown selector
+- Shows current file name, version badge, and date in a single button
+- Popover opens to show all versions with search capability
+- "Version History" label in dropdown for clarity
+- Single document shows simple inline indicator (no dropdown)
+
+**Fixed Scenario Click Behavior** (`src/app/modeling/page.tsx`):
+- Clicking a scenario in sidebar now sets `viewMode: 'scenario'` 
+- Direct access to workbook/sheet view instead of going to data library
+- Client click still goes to data library (expected behavior)
+- Added ExcelDataEditor view for scenarios without template sheets
+
+**Scenarios Management Modal** (`src/components/ScenariosListModal.tsx` - NEW):
+- New modal for viewing all scenarios when project has many (3+ shown in sidebar)
+- Search functionality to filter scenarios by name or description
+- Shows version, creation date, and update date for each scenario
+- Sorted by most recently updated
+- "View all X scenarios" link in sidebar opens modal
+
+---
+
+## [Previous] - 2025-12-03 18:45
+
+### Excel Clone Fixes - Formula Bar, Formatting Toolbar & Zoom
+
+**Fixed Formula Bar Not Displaying Cell Values** (`src/components/WorkbookEditor.tsx`):
+- Root cause: Stale closure in `afterSelection` callback was capturing outdated refs
+- Fix: Now gets cell values directly from `hotTableRefs.current.get(sheet.name).hotInstance`
+- Formula detection still works via HyperFormula service
+- No more `setTimeout` delay - immediate value display
+
+**Fixed Formatting Toolbar (Bold, Italic, Colors)** (`src/components/WorkbookEditor.tsx`, `src/app/globals.css`):
+- Root cause: Custom renderers in `cells` callback were applying inline styles that overrode CSS classes
+- Fix: Removed inline style application from custom renderers
+- `handleFormatChange` now only uses `setCellMeta(row, col, 'className', ...)` 
+- Added CSS classes: `.cell-bold`, `.cell-italic`, `.cell-underline`, `.cell-color-*`, `.cell-bg-*`
+- Handsontable now automatically applies className from metadata (no custom renderer interference)
+- Number formatting (currency, percentage, date) still uses custom renderer but ONLY for textContent modification
+
+**Fixed Zoom Using Native Handsontable Properties** (`src/components/WorkbookEditor.tsx`, `src/app/globals.css`):
+- Replaced CSS `transform: scale()` with native Handsontable approach
+- Added `rowHeights={Math.round(23 * zoomLevel)}` for scaled row heights
+- Added `colWidths` function that scales with zoomLevel
+- Added `.zoom-level-*` CSS classes for font-size scaling
+- Container maintains 100% dimensions at all zoom levels
+
+**Fixed Formula Autocomplete Selection** (`src/components/FormulaEditor.tsx`):
+- Added `mousedown` event prevention on autocomplete container
+- Prevents editor from losing focus when clicking on formula suggestions
+- Reordered operations in `selectFunction()` for reliable insertion
+
+**New CSS Classes** (`src/app/globals.css`):
+- `.cell-bold`, `.cell-italic`, `.cell-underline` - text formatting
+- `.cell-color-*` (black, white, red, orange, yellow, green, blue, purple, pink, gray) - text colors
+- `.cell-bg-*` (same colors) - background colors  
+- `.zoom-level-50` through `.zoom-level-100` - font size scaling
+- `.formula-cell-highlight` - formula cell styling
+
+---
+
+## [Previous] - 2025-12-03 16:30
+
+### Excel Clone Overhaul - Phase 1: UI, Formatting & Performance
+
+**Major UI Consolidation** (`src/app/modeling/page.tsx`):
+- Unified toolbar: Removed separate "Run Model" dropdown and "New Scenario" button when viewing a model
+- Renamed "Save Scenario" → "Save Model" for clarity
+- Moved sheet dropdown to right side of unified toolbar
+- Removed Input/Output tabs - streamlined to single model view
+- Added model name display when a template is loaded
+- Toolbar uses flex layout with proper overflow handling to prevent page-level horizontal scroll
+
+**FormulaBar Improvements** (`src/components/FormulaBar.tsx`):
+- Made formula input responsive: `flex: 1` with `min-width: 120px` and `max-width: 400px`
+- Container uses `overflow: hidden` to prevent toolbar overflow
+- All child elements properly use `flex-shrink-0` or `min-width: 0` for responsive behavior
+- Improved formula autocomplete trigger - now shows for any formula query
+
+**Enhanced Formula Autocomplete** (`src/components/FormulaAutocomplete.tsx`):
+- Expanded from 9 to 100+ formulas covering: Math, Statistical, Logical, Text, Date/Time, Lookup, Financial, Information
+- Added category tabs for easy filtering (All, Math, Statistical, Logical, Text, Date, Lookup, Financial)
+- Improved search: exact match priority, then starts-with, then includes
+- Added keyboard navigation hints in footer
+- Tab key cycles through categories
+- Viewport-aware positioning to prevent overflow
+- Shows up to 20 results with "+X more" indicator
+
+**Formatting Toolbar Compactness** (`src/components/FormattingToolbar.tsx`, `src/components/NumberFormatToolbar.tsx`):
+- Reduced button sizes: `h-7 w-7` with `w-3.5 h-3.5` icons
+- Removed text labels - icons only with tooltips
+- Color pickers positioned to right to prevent overflow
+- Higher z-index for dropdowns to avoid clipping
+
+**Fixed Number Formatting Persistence** (`src/components/WorkbookEditor.tsx`):
+- Fixed closure issue in cell renderers - formats now stored directly in cell metadata via `cellProperties.numberFormat`
+- Added Excel serial date conversion helper `excelSerialToDate()`
+- Improved currency formatting with proper negative number handling (shows in red)
+- Fixed percentage formatting (value × 100)
+- Added proper thousands separator handling with decimal support
+
+**Performance Optimizations**:
+- Increased viewport offsets: `viewportRowRenderingOffset: 100`, `viewportColumnRenderingOffset: 15`
+- Added `renderAllRows: false`, `renderAllColumns: false` for virtualization
+- Enhanced `HyperFormulaService.syncCellChanges()` - suspends evaluation for batches > 50 changes
+- Added `bulkSetCells()` method for efficient initial data loading
+- Data change handler already has 200ms throttling per sheet
+
+---
+
+## [Previous] - 2025-12-04 00:15
+
+### Advanced Placeholder Priority Rules & Multi-Sheet Support
+
+**Three Distinct Placeholder Behaviors** (`src/lib/codifiedTemplatePopulator.ts`):
+
+1. **Specific Codes** - Fill ALL occurrences everywhere, unlimited
+   - `<stamp.duty>` can appear 100 times across all sheets
+   - Every occurrence gets the same value
+
+2. **Default Category Fallbacks** - Per-sheet deduplication
+   - `<all.plots.name>` excludes items matched to specific placeholders ON THE SAME SHEET
+   - Same item CAN appear in fallbacks on different sheets
+
+3. **Numbered Sets** - Full copy, no deduplication
+   - `<all.plots.name.1>` gets ALL items regardless of specific placements
+   - Use for summary sections that need complete lists even when items appear elsewhere
+
+**Per-Sheet Tracking**:
+- Changed from global `matchedItemIds` Set to per-sheet `Map<sheetIndex, Set<string>>`
+- Track which items are matched on each specific sheet
+- Enable items to appear on multiple sheets via both specific and fallback placeholders
+
+**New Regex Patterns**:
+- `CATEGORY_FALLBACK_PATTERN`: Matches default fallbacks `<all.category.name>` (excludes numbered)
+- `NUMBERED_SET_PATTERN`: Matches numbered sets `<all.category.name.1>`
+
+**Updated Instructions Tab** (`src/components/ModelingSettings.tsx`):
+- Added "Section 5: Advanced Multi-Sheet & Numbered Sets"
+- Clear documentation of three placeholder types with examples
+- Example table showing specific + default + numbered behavior on same sheet
+- When to use numbered sets guidance
+
+**Example Scenario**:
+```
+Sheet 1:
+  <plot.1>                    → Plot 1 (specific)
+  <plot.2>                    → Plot 2 (specific)
+  <all.plots.name>            → Plot 3, Unit Count (excludes 1 & 2)
+  <all.plots.name.1>          → Plot 1, 2, 3, Unit Count (full copy)
+
+Sheet 2:
+  <all.plots.name>            → Plot 1, 2, 3, Unit Count (ALL items - no specifics on Sheet 2)
+```
+
+---
+
+## [Previous] - 2025-12-03 23:00
+
+### End-to-End System Health Check & Category Fixes
+
+**Expanded Category Normalizations** (`src/lib/codifiedTemplatePopulator.ts`):
+- Added comprehensive category mapping for all variations:
+  - Site Costs: site costs, purchase costs, land costs, land acquisition, etc.
+  - Professional Fees: professional fees, consultants, consultant fees, etc.
+  - Construction Costs: build costs, building costs, construction, etc.
+  - Financing Costs: finance, finance costs, loan costs, interest, etc.
+  - Disposal Costs: sales costs, selling costs, marketing, etc.
+  - **Plots/Units**: plots, units, houses, homes, properties, dwellings, development
+  - Revenue: sales, income, gross development value, gdv
+  - Profit: profits, margin, returns
+  - Other: uncategorized, miscellaneous, misc, general
+
+**Detailed Population Summary Logging**:
+- Added comprehensive logging at start of template population
+- Shows items by status (matched, confirmed, suggested, pending_review, unmatched)
+- Shows items by raw category with their normalized form
+- Shows usable items ready for category fallback by normalized category
+- Helps diagnose why categories aren't populating
+
+**Auto Fast Pass on Document Save**:
+- Fast Pass codification now automatically triggered when documents are saved
+- Added to `src/app/uploads/[jobId]/page.tsx` after document creation
+- Added to `src/components/FileAssignmentCard.tsx` after document creation
+- Creates `codifiedExtractions` record in database immediately (not just preview)
+- Non-blocking - doesn't slow down document save flow
+
+**Debug Codification Endpoint** (`src/app/api/debug-codification/route.ts`):
+- New endpoint: GET `/api/debug-codification?documentId=xxx`
+- Returns detailed diagnostic information:
+  - Current extraction items with categories and statuses
+  - Category normalization mappings
+  - Usable items by normalized category
+  - Items grouped by status
+  - Supported fallback patterns
+  - Troubleshooting tips
+
+**Refresh Population Button** (`src/app/modeling/page.tsx`):
+- Replaced legacy "Refresh Data" button with green refresh icon
+- Uses new codified data system (not legacy placeholder mapping)
+- Re-runs `populateTemplateWithCodifiedData()` from original template
+- Shows amber color when not all items are confirmed
+- Works with confirmed and matched items only
+
+**Categories Tab UX Improvement** (`src/components/ModelingSettings.tsx`):
+- Each category card now shows the fallback placeholder codes clearly
+- Shows `<all.{category}.name>` and `<all.{category}.value>` patterns
+- Highlighted in amber for visibility
+
+---
+
+## [Previous] - 2025-12-03 22:00
+
+### Simplified Category Fallback Placeholders
+
+**New Simplified Format** (`src/lib/codifiedTemplatePopulator.ts`):
+- Changed from numbered format `<all.category.1.name>` to simplified `<all.category.name>`
+- Same placeholder can be used on multiple rows - system fills them sequentially (FIFO)
+- Rows are detected by scanning all sheets for paired name/value placeholders on the same row
+- Top-to-bottom filling: first row gets first unmatched item, second row gets second, etc.
+
+**Manual Cleanup Button** (`src/app/modeling/page.tsx`):
+- Added "Clear Unused" button in the Population Status bar
+- Shows count of remaining unfilled placeholders
+- User can see what's missing before manually clearing
+- Clicking clears all remaining `<...>` placeholders from the template
+
+**New Utility Functions**:
+- `clearUnusedPlaceholders()` - Removes all unfilled placeholder patterns from sheets
+- `countRemainingPlaceholders()` - Returns count and breakdown of unfilled placeholders
+
+**Updated Instructions** (`src/components/ModelingSettings.tsx`):
+- Instructions tab now documents the simplified format
+- Example shows identical placeholders on consecutive rows
+- FIFO row filling explained clearly
+
+**Example Template Setup**:
+```
+Row 5: <all.professional.fees.name>  | <all.professional.fees.value>
+Row 6: <all.professional.fees.name>  | <all.professional.fees.value>
+Row 7: <all.professional.fees.name>  | <all.professional.fees.value>
+```
+When populated with 2 items (Architect £5000, Surveyor £3000):
+```
+Row 5: Architect Fees              | 5000
+Row 6: Surveyor Fees               | 3000
+Row 7: <all.professional.fees.name>| <all.professional.fees.value>  <- unfilled, click "Clear Unused"
+```
+
+---
+
+## [Previous] - 2025-12-03 21:30
+
+### HyperFormula Integration Refactor & Fortification
+
+**New HyperFormulaService** (`src/lib/hyperFormulaService.ts`):
+- Created centralized service class for HyperFormula engine management
+- Synchronous engine initialization (critical for proper Handsontable integration)
+- Proper lifecycle management with safe destruction to prevent "Cannot read properties of undefined" errors
+- Built-in sheetId lookups for multi-sheet workbooks
+- Bidirectional data synchronization methods (`syncSheetData`, `syncCellChanges`)
+- Formula value change subscription via `onValuesUpdated` listener
+- Batch operations support with `suspendEvaluation`/`resumeEvaluation`
+- Proper `licenseKey: 'gpl-v3'` configuration
+
+**WorkbookEditor Refactor** (`src/components/WorkbookEditor.tsx`):
+- Migrated from direct HyperFormula usage to HyperFormulaService
+- Added `sheetId` to formulas plugin config (critical fix - was missing before)
+- Added `afterChange` hook to sync user edits to HyperFormula engine
+- Added `onValuesUpdated` listener for formula result propagation back to Handsontable
+- Removed row truncation limit (was 2000 rows) - formulas now work on full sheets
+- Conditional rendering: HotTable only renders when engine is fully ready
+- Proper cleanup on unmount - clears Formulas plugin engine reference before destroying
+- Fixed formula bar display for formula cells
+
+**Key Fixes**:
+1. **Missing `sheetId`**: Each HotTable now correctly references its sheet in the shared engine
+2. **Async init race condition**: Engine now initializes synchronously before render
+3. **No bidirectional sync**: User edits are now synced to HyperFormula via `setCellContents`
+4. **Data copy mismatch**: When sheets change, engine is re-initialized with new data
+5. **Formula display**: Formula bar correctly shows formula text for formula cells
+
+**Technical Details**:
+- HyperFormula maintains its OWN internal copy of data
+- When `populateTemplateWithCodifiedData` modifies sheet.data, WorkbookEditor detects the change and re-initializes the engine
+- Formulas starting with `=` are automatically recognized by `buildFromSheets`
+- Each `HotTable` gets formulas config with `{ engine, sheetId, sheetName }`
+
+---
+
+## [Previous] - 2025-12-03 19:00
+
+### Category Fallback System & Dynamic Categories
+
+**Dynamic Categories System** (`convex/itemCategories.ts`, `convex/schema.ts`):
+- Added new `itemCategories` table to schema for user-configurable categories
+- Categories include: name, normalizedName, description, examples, isSystem flag
+- System default categories seeded on first use (Site Costs, Professional Fees, Construction Costs, Financing Costs, Disposal Costs, Plots, Revenue, Other)
+- Full CRUD operations for categories with protection for system defaults
+- Categories improve LLM codification accuracy by providing context and examples
+
+**Settings UI - Categories Tab** (`src/app/settings/modeling-codes/page.tsx`):
+- New "Categories" tab alongside Item Codes and Alias Dictionary
+- Card-based display of all categories with description and examples
+- Add/Edit category modal with name, description, and comma-separated examples
+- System categories marked with lock icon and cannot be deleted
+- Description helps train the LLM to categorize items correctly
+
+**Move Item Codes Between Categories**:
+- Added "Move to..." dropdown on each item code in settings
+- `changeCategory` and `bulkChangeCategory` mutations in `convex/extractedItemCodes.ts`
+- Easy reorganization of misplaced codes without delete/recreate
+
+**Smart Pass Dynamic Categories** (`src/lib/smartPassCodification.ts`, `src/app/api/codify-extraction/route.ts`):
+- Smart Pass now fetches dynamic categories from database
+- LLM prompt includes category descriptions and examples for better accuracy
+- Falls back to hardcoded categories if none in database
+
+**Category Fallback Placeholder System** (`src/lib/codifiedTemplatePopulator.ts`):
+- New placeholder format: `<all.{category}.{n}.name>` and `<all.{category}.{n}.value>`
+- Paired placeholders for inserting unmatched items by category
+- FIFO population: items fill slots 1, 2, 3... in order
+- Unfilled slots are cleared (empty string)
+- Supports category normalization (e.g., "Professional Fees" → "professional.fees")
+
+**Population Logic (Three-Pass)**:
+1. **Pass 1**: Match specific codes (`<engineers>` → value)
+2. **Pass 2**: Collect unmatched items grouped by category
+3. **Pass 3**: Fill category fallback slots sequentially (FIFO)
+
+**Overflow Warning Display** (`src/app/modeling/page.tsx`):
+- Tracks items that couldn't fit in category fallback slots
+- Displays amber warning banner when overflow occurs
+- Lists affected categories and item names
+- Suggests adding more fallback rows to template
+
+**Template Example**:
+```
+| Professional Fees                      |                                         |
+| Engineers                              | <engineers>                             |
+| Solicitors                             | <solicitors>                            |
+| <all.professional.fees.1.name>         | <all.professional.fees.1.value>         |
+| <all.professional.fees.2.name>         | <all.professional.fees.2.value>         |
+```
+
+**Files Created:**
+- `convex/itemCategories.ts` - Category CRUD operations
+
+**Files Modified:**
+- `convex/schema.ts` - Added itemCategories table
+- `convex/extractedItemCodes.ts` - Added changeCategory mutations
+- `src/app/settings/modeling-codes/page.tsx` - Added Categories tab, move functionality
+- `src/lib/smartPassCodification.ts` - Dynamic category support in prompts
+- `src/lib/codifiedTemplatePopulator.ts` - Category fallback detection and FIFO population
+- `src/app/api/codify-extraction/route.ts` - Fetch categories for Smart Pass
+- `src/app/modeling/page.tsx` - Overflow warning display
+
+**Pages Affected:**
+- Modeling
+- Settings (Modeling Codes)
+
+**Features Affected:**
+- Data Library
+- Financial Modeling
+- Code Management
+
+---
+
+## [Previous] - 2025-12-03 16:00
 
 ### Data Library UX Improvements
 

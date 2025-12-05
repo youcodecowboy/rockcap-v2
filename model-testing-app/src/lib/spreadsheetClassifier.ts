@@ -8,6 +8,9 @@ export interface SpreadsheetClassification {
   requiresExtraction: boolean;
   reason: string;
   confidence: number;
+  complexity: 'simple' | 'moderate' | 'complex';
+  sheetCount?: number;
+  hasSummarySheet?: boolean;
 }
 
 /**
@@ -39,6 +42,8 @@ const EXTRACTION_KEYWORDS = [
   'financing cost',
   'legal fee',
   'site purchase',
+  'stamp duty',
+  'sdlt',
   
   // Plot/development specific
   'plot cost',
@@ -47,6 +52,8 @@ const EXTRACTION_KEYWORDS = [
   'unit cost',
   'house cost',
   'property cost',
+  'number of units',
+  'no. units',
   
   // Square footage and pricing
   'square feet',
@@ -64,12 +71,38 @@ const EXTRACTION_KEYWORDS = [
   'net construction cost',
   'gross development value',
   'gdv',
+  'total costs',
+  
+  // Revenue and profit
+  'total sales',
+  'sales value',
+  'revenue',
+  'profit',
+  'profit margin',
+  'developer profit',
+  'net profit',
   
   // Appraisal specific
   'appraisal',
   'valuation breakdown',
   'property valuation',
   'cost estimate',
+  'residual valuation',
+  'development appraisal',
+];
+
+/**
+ * Keywords that indicate summary sheets (preferred for extraction)
+ */
+const SUMMARY_SHEET_KEYWORDS = [
+  'summary',
+  'overview',
+  'appraisal',
+  'costs summary',
+  'cost summary',
+  'development summary',
+  'project summary',
+  'executive summary',
 ];
 
 /**
@@ -107,6 +140,48 @@ const NON_EXTRACTION_KEYWORDS = [
 ];
 
 /**
+ * Detect the number of sheets in a workbook from the content
+ */
+function detectSheetCount(textContent: string, markdownContent: string | null): number {
+  const content = `${textContent} ${markdownContent || ''}`;
+  // Look for sheet markers like "=== Sheet: Name ===" or "## Sheet: Name"
+  const sheetPattern = /(?:===\s*Sheet:|##\s*Sheet:)/gi;
+  const matches = content.match(sheetPattern);
+  return matches ? matches.length : 1;
+}
+
+/**
+ * Check if the workbook has a summary sheet
+ */
+function hasSummarySheet(textContent: string, markdownContent: string | null): boolean {
+  const content = `${textContent} ${markdownContent || ''}`.toLowerCase();
+  
+  for (const keyword of SUMMARY_SHEET_KEYWORDS) {
+    // Look for sheet headers containing summary keywords
+    const pattern = new RegExp(`(?:sheet:|===\\s*).*${keyword}`, 'i');
+    if (pattern.test(content)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Determine workbook complexity based on sheet count and content patterns
+ */
+function determineComplexity(sheetCount: number, textContent: string): 'simple' | 'moderate' | 'complex' {
+  const contentLength = textContent.length;
+  
+  if (sheetCount === 1 && contentLength < 10000) {
+    return 'simple';
+  } else if (sheetCount <= 3 && contentLength < 50000) {
+    return 'moderate';
+  } else {
+    return 'complex';
+  }
+}
+
+/**
  * Classifies a spreadsheet to determine if it requires detailed extraction
  * or should just be summarized and filed.
  * 
@@ -122,6 +197,11 @@ export function classifySpreadsheet(
 ): SpreadsheetClassification {
   // Combine all content for analysis
   const combinedContent = `${textContent} ${markdownContent || ''} ${fileName}`.toLowerCase();
+  
+  // Detect workbook characteristics
+  const sheetCount = detectSheetCount(textContent, markdownContent);
+  const summarySheetPresent = hasSummarySheet(textContent, markdownContent);
+  const complexity = determineComplexity(sheetCount, textContent);
   
   // Count extraction indicators
   let extractionScore = 0;
@@ -161,6 +241,9 @@ export function classifySpreadsheet(
       requiresExtraction: false,
       reason: `Loan comparison table detected (found keywords: ${foundNonExtractionKeywords.slice(0, 3).join(', ')})`,
       confidence: 0.9,
+      complexity,
+      sheetCount,
+      hasSummarySheet: summarySheetPresent,
     };
   }
   
@@ -169,6 +252,21 @@ export function classifySpreadsheet(
       requiresExtraction: true,
       reason: `Construction cost breakdown detected (found keywords: ${foundExtractionKeywords.slice(0, 5).join(', ')})`,
       confidence: 0.95,
+      complexity,
+      sheetCount,
+      hasSummarySheet: summarySheetPresent,
+    };
+  }
+  
+  // Complex workbooks with summary sheets are likely development appraisals
+  if (complexity === 'complex' && summarySheetPresent && extractionScore >= 2) {
+    return {
+      requiresExtraction: true,
+      reason: `Complex workbook with summary sheet detected (${sheetCount} sheets, found keywords: ${foundExtractionKeywords.slice(0, 3).join(', ')})`,
+      confidence: 0.85,
+      complexity,
+      sheetCount,
+      hasSummarySheet: summarySheetPresent,
     };
   }
   
@@ -178,6 +276,9 @@ export function classifySpreadsheet(
       requiresExtraction: true,
       reason: `Multiple construction/appraisal indicators found (${extractionScore} extraction keywords vs ${nonExtractionScore} non-extraction keywords)`,
       confidence: 0.85,
+      complexity,
+      sheetCount,
+      hasSummarySheet: summarySheetPresent,
     };
   }
   
@@ -187,6 +288,9 @@ export function classifySpreadsheet(
       requiresExtraction: false,
       reason: `Loan/accounting spreadsheet detected (found keywords: ${foundNonExtractionKeywords.slice(0, 3).join(', ')})`,
       confidence: 0.85,
+      complexity,
+      sheetCount,
+      hasSummarySheet: summarySheetPresent,
     };
   }
   
@@ -196,6 +300,9 @@ export function classifySpreadsheet(
       requiresExtraction: true,
       reason: `Construction/appraisal indicators found (${extractionScore} keywords)`,
       confidence: 0.7,
+      complexity,
+      sheetCount,
+      hasSummarySheet: summarySheetPresent,
     };
   }
   
@@ -204,6 +311,9 @@ export function classifySpreadsheet(
     requiresExtraction: false,
     reason: `No clear construction/appraisal indicators found. This appears to be a regular spreadsheet (${extractionScore} extraction keywords, ${nonExtractionScore} non-extraction keywords)`,
     confidence: 0.6,
+    complexity,
+    sheetCount,
+    hasSummarySheet: summarySheetPresent,
   };
 }
 

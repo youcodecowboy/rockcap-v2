@@ -17,6 +17,7 @@ interface AddDataLibraryItemModalProps {
   extractionId: Id<'codifiedExtractions'>;
   documentId: Id<'documents'>;
   onItemAdded: () => void;
+  defaultCategory?: string;
 }
 
 type DataType = 'currency' | 'number' | 'percentage' | 'string';
@@ -46,12 +47,20 @@ export function AddDataLibraryItemModal({
   extractionId,
   documentId,
   onItemAdded,
+  defaultCategory,
 }: AddDataLibraryItemModalProps) {
   // Form state
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState(defaultCategory || '');
   const [dataType, setDataType] = useState<DataType>('currency');
+  
+  // Update category when defaultCategory changes
+  useEffect(() => {
+    if (defaultCategory && !category) {
+      setCategory(defaultCategory);
+    }
+  }, [defaultCategory]);
   
   // Suggestion state
   const [isGettingSuggestion, setIsGettingSuggestion] = useState(false);

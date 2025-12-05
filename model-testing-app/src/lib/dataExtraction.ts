@@ -1,7 +1,5 @@
 import { ExtractedData } from '@/types';
-
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const MODEL_NAME = 'openai/gpt-oss-120b'; // GPT-OSS-120B via Together.ai
+import { TOGETHER_API_URL, MODEL_CONFIG } from '@/lib/modelConfig';
 
 export async function extractSpreadsheetData(
   markdownContent: string,
@@ -307,7 +305,7 @@ If no data is found, return:
   try {
     console.log('[Data Extraction] Making API request to:', TOGETHER_API_URL);
     const requestBody = {
-      model: MODEL_NAME,
+      model: MODEL_CONFIG.extraction.model,
       messages: [
         {
           role: 'system',
@@ -318,8 +316,8 @@ If no data is found, return:
           content: prompt,
         },
       ],
-      temperature: 0.2, // Lower temperature for more consistent extraction
-      max_tokens: 15000, // Increased to handle large extractions and prevent truncation
+      temperature: MODEL_CONFIG.extraction.temperature,
+      max_tokens: MODEL_CONFIG.extraction.maxTokens,
     };
     console.log('[Data Extraction] Request body size:', JSON.stringify(requestBody).length, 'bytes');
     

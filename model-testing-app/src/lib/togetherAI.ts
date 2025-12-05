@@ -2,9 +2,7 @@ import { ModelResponse } from '@/types';
 import { FILE_CATEGORIES } from './categories';
 import { getRelevantFileTypeHints, FILE_TYPE_DEFINITIONS } from './fileTypeDefinitions';
 import { getFileTypeDefinitionsServer } from './convexServer';
-
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const MODEL_NAME = 'openai/gpt-oss-20b'; // GPT-OSS-20B via Together.ai
+import { TOGETHER_API_URL, MODEL_CONFIG } from '@/lib/modelConfig';
 
 interface ClientWithProjects {
   id: string;
@@ -205,7 +203,7 @@ CRITICAL: Always extract contact information (emails, phone numbers, contact nam
   try {
     console.log('[Together.ai] Making API request to:', TOGETHER_API_URL);
     const requestBody = {
-      model: MODEL_NAME,
+      model: MODEL_CONFIG.analysis.model,
       messages: [
         {
           role: 'system',
@@ -216,8 +214,8 @@ CRITICAL: Always extract contact information (emails, phone numbers, contact nam
           content: prompt,
         },
       ],
-      temperature: 0.3,
-      max_tokens: 2000,
+      temperature: MODEL_CONFIG.analysis.temperature,
+      max_tokens: MODEL_CONFIG.analysis.maxTokens,
     };
     console.log('[Together.ai] Request body size:', JSON.stringify(requestBody).length, 'bytes');
     
@@ -439,7 +437,7 @@ Note: Only include fields where you found relevant information. Use empty arrays
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL_NAME,
+        model: MODEL_CONFIG.analysis.model,
         messages: [
           {
             role: 'system',
@@ -450,8 +448,8 @@ Note: Only include fields where you found relevant information. Use empty arrays
             content: prompt,
           },
         ],
-        temperature: 0.3,
-        max_tokens: 2000,
+        temperature: MODEL_CONFIG.analysis.temperature,
+        max_tokens: MODEL_CONFIG.analysis.maxTokens,
       }),
     });
 

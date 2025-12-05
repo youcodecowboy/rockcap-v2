@@ -202,6 +202,28 @@ export default function FileAssignmentCard({
           uploadedBy: uploadedBy,
         });
 
+        // Trigger Fast Pass codification if we have extracted data (non-blocking)
+        if (analysisResult.extractedData && documentId) {
+          fetch('/api/codify-extraction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'fast-pass',
+              documentId: documentId,
+              projectId: selectedProjectId,
+              extractedData: analysisResult.extractedData,
+            }),
+          }).then(response => {
+            if (response.ok) {
+              console.log('[FileAssignment] Fast Pass codification triggered for document:', documentId);
+            } else {
+              console.warn('[FileAssignment] Fast Pass codification failed for document:', documentId);
+            }
+          }).catch(err => {
+            console.error('[FileAssignment] Error triggering Fast Pass:', err);
+          });
+        }
+
         // Create enrichment suggestions if any
       if (analysisResult.enrichmentSuggestions && analysisResult.enrichmentSuggestions.length > 0) {
         for (const suggestion of analysisResult.enrichmentSuggestions) {

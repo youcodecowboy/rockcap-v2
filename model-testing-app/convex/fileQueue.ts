@@ -10,6 +10,7 @@ export const createJob = mutation({
     fileType: v.string(),
     userId: v.optional(v.string()),
     hasCustomInstructions: v.optional(v.boolean()),
+    forceExtraction: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -37,6 +38,7 @@ export const createJob = mutation({
       isRead: false,
       userId: userId,
       hasCustomInstructions: args.hasCustomInstructions || false,
+      forceExtraction: args.forceExtraction || false,
       createdAt: now,
       updatedAt: now,
     });

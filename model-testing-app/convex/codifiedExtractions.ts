@@ -466,3 +466,243 @@ export const addItem = mutation({
   },
 });
 
+// ============================================================================
+// PROJECT DATA LIBRARY INTEGRATION
+// ============================================================================
+
+/**
+ * Merge confirmed extraction items to the project data library
+ * Call this after all items are confirmed to add them to the unified library
+ */
+export const mergeToProjectLibrary = mutation({
+  args: {
+    extractionId: v.id("codifiedExtractions"),
+    projectId: v.optional(v.id("projects")), // Can be provided if extraction doesn't have one
+  },
+  handler: async (ctx, args) => {
+    const extraction = await ctx.db.get(args.extractionId);
+    if (!extraction) {
+      throw new Error("Extraction not found");
+    }
+    
+    // Use provided projectId or fall back to extraction's projectId
+    const projectId = args.projectId || extraction.projectId;
+    
+    if (!projectId) {
+      throw new Error("No project ID available - provide projectId or ensure extraction has one");
+    }
+    
+    // Update extraction with projectId if it was missing
+    if (!extraction.projectId && args.projectId) {
+      await ctx.db.patch(args.extractionId, { projectId: args.projectId });
+    }
+    
+    if (extraction.mergedToProjectLibrary) {
+      return { merged: 0, updated: 0, created: 0, alreadyMerged: true };
+    }
+    
+    // Get document info for provenance
+    const document = await ctx.db.get(extraction.documentId);
+    if (!document) {
+      throw new Error("Source document not found");
+    }
+    
+    const now = new Date().toISOString();
+    let created = 0;
+    let updated = 0;
+    
+    // Process each confirmed/matched item
+    for (const item of extraction.items) {
+      // Skip items without confirmed codes
+      if (!item.itemCode && !item.suggestedCode) continue;
+      if (item.mappingStatus === "unmatched" || item.mappingStatus === "pending_review") continue;
+      
+      const itemCode = item.itemCode || item.suggestedCode!;
+      
+      // Check if item exists in project library
+      const existing = await ctx.db
+        .query("projectDataItems")
+        .withIndex("by_project_code", (q) => 
+          q.eq("projectId", projectId).eq("itemCode", itemCode)
+        )
+        .first();
+      
+      // Normalize value to number
+      const rawValue = item.value;
+      let normalizedValue = 0;
+      if (typeof rawValue === "number") {
+        normalizedValue = rawValue;
+      } else if (typeof rawValue === "string") {
+        normalizedValue = parseFloat(rawValue.replace(/[^0-9.-]/g, "")) || 0;
+      }
+      
+      const historyEntry = {
+        value: rawValue,
+        valueNormalized: normalizedValue,
+        sourceDocumentId: extraction.documentId,
+        sourceDocumentName: document.fileName,
+        sourceExtractionId: args.extractionId,
+        originalName: item.originalName,
+        addedAt: now,
+        addedBy: "extraction" as const,
+        addedByUserId: undefined,
+        isCurrentValue: true,
+        wasReverted: false,
+      };
+      
+      if (existing && !existing.isDeleted) {
+        // Item exists - update with new value from new source
+        const existingHistory = existing.valueHistory.map(h => ({
+          ...h,
+          isCurrentValue: false, // Mark old entries as not current
+        }));
+        
+        // Calculate variance if values differ
+        let variance: number | undefined;
+        const allValues = [...existingHistory.map(h => h.valueNormalized), normalizedValue];
+        if (allValues.length > 1) {
+          const min = Math.min(...allValues);
+          const max = Math.max(...allValues);
+          if (min !== 0) {
+            variance = ((max - min) / Math.abs(min)) * 100;
+          }
+        }
+        
+        await ctx.db.patch(existing._id, {
+          currentValue: rawValue,
+          currentValueNormalized: normalizedValue,
+          currentSourceDocumentId: extraction.documentId,
+          currentSourceDocumentName: document.fileName,
+          currentDataType: item.dataType,
+          originalName: item.originalName,
+          lastUpdatedAt: now,
+          lastUpdatedBy: "extraction",
+          hasMultipleSources: true,
+          valueVariance: variance,
+          valueHistory: [...existingHistory, historyEntry],
+        });
+        
+        updated++;
+      } else {
+        // New item - create
+        await ctx.db.insert("projectDataItems", {
+          projectId: projectId,
+          itemCode,
+          category: item.category,
+          originalName: item.originalName,
+          currentValue: rawValue,
+          currentValueNormalized: normalizedValue,
+          currentSourceDocumentId: extraction.documentId,
+          currentSourceDocumentName: document.fileName,
+          currentDataType: item.dataType,
+          lastUpdatedAt: now,
+          lastUpdatedBy: "extraction",
+          hasMultipleSources: false,
+          valueHistory: [historyEntry],
+        });
+        
+        created++;
+      }
+    }
+    
+    // Mark extraction as merged
+    await ctx.db.patch(args.extractionId, {
+      mergedToProjectLibrary: true,
+      mergedAt: now,
+      projectId: projectId, // Ensure projectId is set
+    });
+    
+    return { merged: created + updated, updated, created, alreadyMerged: false };
+  },
+});
+
+/**
+ * Soft delete an extraction (for bad data)
+ */
+export const softDelete = mutation({
+  args: {
+    extractionId: v.id("codifiedExtractions"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const extraction = await ctx.db.get(args.extractionId);
+    if (!extraction) {
+      throw new Error("Extraction not found");
+    }
+    
+    await ctx.db.patch(args.extractionId, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: args.reason || "User deleted",
+    });
+    
+    return { success: true };
+  },
+});
+
+/**
+ * Check if extraction can be safely deleted
+ * Returns info about what would be affected in the project library
+ */
+export const getDeleteImpact = query({
+  args: {
+    extractionId: v.id("codifiedExtractions"),
+  },
+  handler: async (ctx, args) => {
+    const extraction = await ctx.db.get(args.extractionId);
+    if (!extraction) {
+      return null;
+    }
+    
+    if (!extraction.projectId || !extraction.mergedToProjectLibrary) {
+      // Not merged, safe to delete
+      return {
+        canDelete: true,
+        mergedItems: 0,
+        wouldRemoveItems: 0,
+        wouldRevertItems: 0,
+      };
+    }
+    
+    // Get all project data items
+    const items = await ctx.db
+      .query("projectDataItems")
+      .withIndex("by_project", (q) => q.eq("projectId", extraction.projectId!))
+      .collect();
+    
+    let wouldRemoveItems = 0;
+    let wouldRevertItems = 0;
+    
+    for (const item of items) {
+      if (item.isDeleted) continue;
+      
+      // Check if this extraction is in the history
+      const fromThisExtraction = item.valueHistory.filter(
+        h => h.sourceExtractionId === args.extractionId
+      );
+      
+      if (fromThisExtraction.length === 0) continue;
+      
+      // Check if there are other sources
+      const otherSources = item.valueHistory.filter(
+        h => h.sourceExtractionId !== args.extractionId && !h.wasReverted
+      );
+      
+      if (otherSources.length === 0) {
+        wouldRemoveItems++;
+      } else {
+        wouldRevertItems++;
+      }
+    }
+    
+    return {
+      canDelete: true,
+      mergedItems: extraction.items.filter(i => 
+        i.mappingStatus === "confirmed" || i.mappingStatus === "matched"
+      ).length,
+      wouldRemoveItems,
+      wouldRevertItems,
+    };
+  },
+});
+

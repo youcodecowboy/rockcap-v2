@@ -49,7 +49,7 @@ export function useFileQueue() {
   // Convex mutations are always available, so we can create callbacks immediately
   const callbacks = useMemo(() => {
     const callbacksObj: QueueProcessorCallbacks = {
-      createJob: async (args: { fileName: string; fileSize: number; fileType: string; hasCustomInstructions?: boolean }) => {
+      createJob: async (args: { fileName: string; fileSize: number; fileType: string; hasCustomInstructions?: boolean; forceExtraction?: boolean }) => {
         return await createJob(args) as Id<"fileUploadQueue">;
       },
       updateJobStatus: async (args: {
@@ -105,11 +105,11 @@ export function useFileQueue() {
 
   return {
     // Queue operations
-    addFile: async (file: File, hasCustomInstructions?: boolean) => {
+    addFile: async (file: File, hasCustomInstructions?: boolean, forceExtraction?: boolean) => {
       if (!isReady || !processor) {
         throw new Error("Queue processor not initialized. Please wait a moment and try again.");
       }
-      return await processor.addFile(file, hasCustomInstructions);
+      return await processor.addFile(file, hasCustomInstructions, forceExtraction);
     },
     removeFile: async (jobId: Id<"fileUploadQueue">) => {
       if (!isReady || !processor) return false;

@@ -429,11 +429,74 @@ aside[class*="fixed"][class*="left-0"] {
 }
 
 .formula-autocomplete {
-  position: relative;
+  /* Don't use position: relative here - it interferes with fixed positioning inside */
   z-index: 10001;
 }
 
 .ProseMirror a:hover {
   color: #2563eb;
+}
+
+/* ============================================
+   Handsontable Cell Formatting Classes
+   Used by the formatting toolbar for text styling
+   ============================================ */
+
+/* Text formatting */
+.handsontable td.cell-bold {
+  font-weight: bold !important;
+}
+
+.handsontable td.cell-italic {
+  font-style: italic !important;
+}
+
+.handsontable td.cell-underline {
+  text-decoration: underline !important;
+}
+
+/* Text colors - common palette */
+.handsontable td.cell-color-black { color: #000000 !important; }
+.handsontable td.cell-color-white { color: #ffffff !important; }
+.handsontable td.cell-color-red { color: #dc2626 !important; }
+.handsontable td.cell-color-orange { color: #ea580c !important; }
+.handsontable td.cell-color-yellow { color: #ca8a04 !important; }
+.handsontable td.cell-color-green { color: #16a34a !important; }
+.handsontable td.cell-color-blue { color: #2563eb !important; }
+.handsontable td.cell-color-purple { color: #9333ea !important; }
+.handsontable td.cell-color-pink { color: #db2777 !important; }
+.handsontable td.cell-color-gray { color: #6b7280 !important; }
+
+/* Background colors - common palette */
+.handsontable td.cell-bg-none { background-color: transparent !important; }
+.handsontable td.cell-bg-white { background-color: #ffffff !important; }
+.handsontable td.cell-bg-red { background-color: #fecaca !important; }
+.handsontable td.cell-bg-orange { background-color: #fed7aa !important; }
+.handsontable td.cell-bg-yellow { background-color: #fef08a !important; }
+.handsontable td.cell-bg-green { background-color: #bbf7d0 !important; }
+.handsontable td.cell-bg-blue { background-color: #bfdbfe !important; }
+.handsontable td.cell-bg-purple { background-color: #e9d5ff !important; }
+.handsontable td.cell-bg-pink { background-color: #fbcfe8 !important; }
+.handsontable td.cell-bg-gray { background-color: #e5e7eb !important; }
+
+/* Zoom level font scaling classes */
+.zoom-level-50 .handsontable td,
+.zoom-level-50 .handsontable th { font-size: 6px !important; }
+.zoom-level-60 .handsontable td,
+.zoom-level-60 .handsontable th { font-size: 7px !important; }
+.zoom-level-70 .handsontable td,
+.zoom-level-70 .handsontable th { font-size: 8px !important; }
+.zoom-level-80 .handsontable td,
+.zoom-level-80 .handsontable th { font-size: 9px !important; }
+.zoom-level-90 .handsontable td,
+.zoom-level-90 .handsontable th { font-size: 10px !important; }
+.zoom-level-100 .handsontable td,
+.zoom-level-100 .handsontable th { font-size: 11px !important; }
+
+/* Formula cell highlight */
+.handsontable td.formula-cell-highlight {
+  background-color: #e7f3ff !important;
+  color: #0066cc !important;
+  font-style: italic !important;
 }
 

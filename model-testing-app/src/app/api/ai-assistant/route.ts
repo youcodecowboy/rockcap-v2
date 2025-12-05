@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { gatherContextForNote, formatContextForLLM, estimateTokens } from '@/lib/aiNotesContext';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
-
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const MODEL_NAME = 'openai/gpt-oss-120b'; // OSS-120B via Together.ai
+import { TOGETHER_API_URL, MODEL_CONFIG } from '@/lib/modelConfig';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -141,7 +139,7 @@ Return your response in plain text format. Use markdown-style formatting indicat
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL_NAME,
+        model: MODEL_CONFIG.chat.model,
         messages: [
           {
             role: 'system',
@@ -152,8 +150,8 @@ Return your response in plain text format. Use markdown-style formatting indicat
             content: contextString,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        temperature: MODEL_CONFIG.chat.temperature,
+        max_tokens: MODEL_CONFIG.chat.maxTokens,
       }),
     });
 
@@ -216,7 +214,7 @@ Return your response in plain text format. Use markdown-style formatting indicat
             'Authorization': `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: MODEL_NAME,
+            model: MODEL_CONFIG.chat.model,
             messages: [
               {
                 role: 'system',

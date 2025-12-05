@@ -12,9 +12,7 @@
  */
 
 import { CodifiedItem } from './fastPassCodification';
-
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const MODEL_NAME = 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free'; // Free Llama 3.3 70B via Together.ai
+import { TOGETHER_API_URL, MODEL_CONFIG } from '@/lib/modelConfig';
 
 // Types for Smart Pass
 export interface ItemCode {
@@ -30,6 +28,20 @@ export interface ItemCodeAlias {
   aliasNormalized: string;
   canonicalCode: string;
   canonicalCodeId: string;
+}
+
+export interface CategoryInfo {
+  name: string;
+  normalizedName: string;
+  description: string;
+  examples: string[];
+}
+
+// Project library item for consistency checking
+export interface ProjectLibraryItem {
+  itemCode: string;
+  category: string;
+  originalName: string;
 }
 
 export interface SmartPassSuggestion {
@@ -69,11 +81,15 @@ function formatCodeFromName(name: string): string {
 
 /**
  * Build the prompt for the LLM
+ * Now uses dynamic categories from the database
+ * Also considers existing project library items for consistency
  */
 function buildCodificationPrompt(
   pendingItems: CodifiedItem[],
   existingCodes: ItemCode[],
-  existingAliases: ItemCodeAlias[]
+  existingAliases: ItemCodeAlias[],
+  categories?: CategoryInfo[],
+  projectLibraryItems?: ProjectLibraryItem[]
 ): string {
   // Group existing codes by category for better context
   const codesByCategory: Record<string, ItemCode[]> = {};
@@ -120,6 +136,53 @@ ${Object.entries(aliasByCode).map(([code, aliases]) =>
 `;
   }
   
+  // Build dynamic category guidelines from database
+  let categoryGuidelinesText = '';
+  if (categories && categories.length > 0) {
+    categoryGuidelinesText = `
+CATEGORY GUIDELINES (use these to categorize items correctly):
+${categories.map(cat => `
+- "${cat.name}" (normalized: ${cat.normalizedName}):
+  ${cat.description}
+  Examples: ${cat.examples.join(', ')}`).join('\n')}
+`;
+  } else {
+    // Fallback to hardcoded categories if none provided
+    categoryGuidelinesText = `
+CATEGORY GUIDELINES:
+- "Site Costs" or "Purchase Costs": Land acquisition, stamp duty, finders fees
+- "Professional Fees": Engineers, architects, solicitors, building regulations, S106/CIL
+- "Construction Costs": Build costs, groundworks, retaining works
+- "Financing Costs": Interest, loan costs, arrangement fees
+- "Disposal Costs": Agents fees, legal fees, marketing
+- "Plots": Individual unit/plot data
+- "Revenue": Sales, GDV, income
+`;
+  }
+  
+  // Build project library section (codes already in use for THIS project)
+  let projectLibraryText = '';
+  if (projectLibraryItems && projectLibraryItems.length > 0) {
+    // Group by category
+    const byCategory: Record<string, ProjectLibraryItem[]> = {};
+    projectLibraryItems.forEach(item => {
+      if (!byCategory[item.category]) {
+        byCategory[item.category] = [];
+      }
+      byCategory[item.category].push(item);
+    });
+    
+    projectLibraryText = `
+CODES ALREADY IN USE FOR THIS PROJECT (prefer these for consistency):
+${Object.entries(byCategory).map(([category, items]) => `
+${category}:
+${items.map(i => `  - ${i.itemCode} ("${i.originalName}")`).join('\n')}`).join('\n')}
+
+IMPORTANT: If the item you're codifying is semantically similar to an item already in this project's library,
+use the SAME code to maintain consistency. This is critical for accurate aggregation.
+`;
+  }
+  
   // Build items to codify section
   const itemsText = pendingItems.map((item, index) => 
     `${index + 1}. "${item.originalName}" (value: ${item.value}, category: ${item.category})`
@@ -129,7 +192,7 @@ ${Object.entries(aliasByCode).map(([code, aliases]) =>
 
 ${existingCodesText}
 ${aliasesText}
-
+${projectLibraryText}
 ITEMS TO CODIFY:
 ${itemsText}
 
@@ -144,12 +207,7 @@ CODE FORMAT RULES:
 - Examples: <stamp.duty>, <site.costs>, <engineers>, <build.cost>, <interest.rate>
 - Keep codes short and descriptive
 
-CATEGORY GUIDELINES:
-- "Site Costs" or "Purchase Costs": Land acquisition, stamp duty, finders fees
-- "Professional Fees": Engineers, architects, solicitors, building regulations, S106/CIL
-- "Construction Costs" or "Net Construction Costs": Build costs, groundworks, retaining works
-- "Financing Costs" or "Financing/Legal Fees": Interest, loan costs, arrangement fees
-- "Disposal Costs" or "Disposal Fees": Agents fees, legal fees, marketing
+${categoryGuidelinesText}
 
 DATA TYPE RULES:
 - currency: Monetary values (costs, prices, fees)
@@ -189,6 +247,7 @@ IMPORTANT:
 - Use high confidence (0.9+) for clear matches
 - Use lower confidence (0.7-0.8) for ambiguous matches
 - Always provide reasoning
+- Use the CATEGORY GUIDELINES above to select the correct category
 
 Respond with ONLY the JSON array, no other text.`;
 }
@@ -223,7 +282,63 @@ function parseLLMResponse(
     parsed = JSON.parse(jsonContent);
   } catch (error) {
     console.error('[SmartPass] Failed to parse LLM response:', error);
-    throw new Error('Failed to parse LLM response');
+    console.error('[SmartPass] Raw response:', response);
+    console.error('[SmartPass] Cleaned content:', jsonContent.substring(0, 500));
+    
+    // Try to recover partial results from truncated JSON
+    // Find all complete JSON objects in the array
+    const recoveredItems: typeof parsed = [];
+    const objectPattern = /\{\s*"itemIndex":\s*\d+[\s\S]*?"reasoning":\s*"[^"]*"\s*\}/g;
+    let match;
+    
+    while ((match = objectPattern.exec(response)) !== null) {
+      try {
+        const item = JSON.parse(match[0]);
+        recoveredItems.push(item);
+      } catch {
+        // Skip malformed objects
+      }
+    }
+    
+    if (recoveredItems.length > 0) {
+      console.log('[SmartPass] Recovered', recoveredItems.length, 'items from truncated response');
+      parsed = recoveredItems;
+    } else {
+      // Last resort: try to extract JSON array
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+          console.log('[SmartPass] Recovered JSON from response');
+        } catch {
+          console.warn('[SmartPass] Could not recover any items, returning empty');
+          parsed = [];
+        }
+      } else {
+        console.warn('[SmartPass] No recoverable items found, returning empty');
+        parsed = [];
+      }
+    }
+  }
+  
+  // Handle case where LLM returns object wrapper instead of array
+  if (!Array.isArray(parsed)) {
+    console.warn('[SmartPass] Response was not an array, attempting to extract array');
+    if (parsed && typeof parsed === 'object') {
+      // Try common wrapper keys
+      const possibleArrays = ['items', 'suggestions', 'results', 'data'];
+      for (const key of possibleArrays) {
+        if (Array.isArray((parsed as any)[key])) {
+          parsed = (parsed as any)[key];
+          console.log('[SmartPass] Found array in', key);
+          break;
+        }
+      }
+    }
+    if (!Array.isArray(parsed)) {
+      console.error('[SmartPass] Could not find array in response');
+      parsed = []; // Fallback to empty array
+    }
   }
   
   const suggestions: SmartPassSuggestion[] = [];
@@ -288,12 +403,16 @@ function parseLLMResponse(
  * @param pendingItems - Items that need codification (from Fast Pass)
  * @param existingCodes - All existing codes in the system
  * @param existingAliases - All existing aliases
+ * @param categories - Dynamic categories from database (optional, falls back to hardcoded)
+ * @param projectLibraryItems - Items already in this project's data library (for consistency)
  * @returns SmartPassResult with suggestions
  */
 export async function runSmartPass(
   pendingItems: CodifiedItem[],
   existingCodes: ItemCode[],
-  existingAliases: ItemCodeAlias[]
+  existingAliases: ItemCodeAlias[],
+  categories?: CategoryInfo[],
+  projectLibraryItems?: ProjectLibraryItem[]
 ): Promise<SmartPassResult> {
   const apiKey = process.env.TOGETHER_API_KEY;
   
@@ -310,9 +429,15 @@ export async function runSmartPass(
   }
   
   console.log('[SmartPass] Starting codification for', pendingItems.length, 'items');
+  if (categories) {
+    console.log('[SmartPass] Using', categories.length, 'dynamic categories');
+  }
+  if (projectLibraryItems && projectLibraryItems.length > 0) {
+    console.log('[SmartPass] Using', projectLibraryItems.length, 'existing project library items for consistency');
+  }
   const startTime = Date.now();
   
-  const prompt = buildCodificationPrompt(pendingItems, existingCodes, existingAliases);
+  const prompt = buildCodificationPrompt(pendingItems, existingCodes, existingAliases, categories, projectLibraryItems);
   
   try {
     const response = await fetch(TOGETHER_API_URL, {
@@ -322,7 +447,7 @@ export async function runSmartPass(
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL_NAME,
+        model: MODEL_CONFIG.codification.model,
         messages: [
           {
             role: 'system',
@@ -333,26 +458,32 @@ export async function runSmartPass(
             content: prompt,
           },
         ],
-        temperature: 0.3, // Lower temperature for more consistent results
-        max_tokens: 4000,
+        temperature: MODEL_CONFIG.codification.temperature,
+        max_tokens: MODEL_CONFIG.codification.maxTokens,
       }),
     });
     
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[SmartPass] API error:', response.status, errorText);
-      throw new Error(`Together.ai API error: ${response.status}`);
+      throw new Error(`Together.ai API error: ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
+    console.log('[SmartPass] API response structure:', JSON.stringify(data).substring(0, 500));
+    
     const content = data.choices?.[0]?.message?.content;
+    const finishReason = data.choices?.[0]?.finish_reason;
     const tokensUsed = data.usage?.total_tokens || 0;
+    const completionTokens = data.usage?.completion_tokens || 0;
     
     const elapsed = Date.now() - startTime;
-    console.log('[SmartPass] Completed in', elapsed, 'ms, tokens:', tokensUsed);
+    console.log('[SmartPass] Completed in', elapsed, 'ms');
+    console.log('[SmartPass] Tokens - total:', tokensUsed, 'completion:', completionTokens, 'finish_reason:', finishReason);
     
     if (!content) {
-      throw new Error('No response content from LLM');
+      console.error('[SmartPass] Full response:', JSON.stringify(data));
+      throw new Error(`No response content from LLM. Response: ${JSON.stringify(data).substring(0, 300)}`);
     }
     
     const result = parseLLMResponse(content, pendingItems, existingCodes);

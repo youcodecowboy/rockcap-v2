@@ -103,17 +103,17 @@ export default function FormattingToolbar({
   const isDisabled = !selectedCell;
 
   return (
-    <div className="flex items-center gap-1 border-l border-gray-300 pl-2 ml-2">
+    <div className="flex items-center gap-0.5 border-l border-gray-300 pl-2">
       {/* Bold */}
       <Button
         variant="ghost"
         size="sm"
         onClick={handleToggleBold}
         disabled={isDisabled}
-        className={`h-8 w-8 p-0 ${format.bold ? 'bg-gray-200' : ''}`}
-        title="Bold"
+        className={`h-7 w-7 p-0 ${format.bold ? 'bg-gray-200' : ''}`}
+        title="Bold (Ctrl+B)"
       >
-        <Bold className="w-4 h-4" />
+        <Bold className="w-3.5 h-3.5" />
       </Button>
 
       {/* Italic */}
@@ -122,10 +122,10 @@ export default function FormattingToolbar({
         size="sm"
         onClick={handleToggleItalic}
         disabled={isDisabled}
-        className={`h-8 w-8 p-0 ${format.italic ? 'bg-gray-200' : ''}`}
-        title="Italic"
+        className={`h-7 w-7 p-0 ${format.italic ? 'bg-gray-200' : ''}`}
+        title="Italic (Ctrl+I)"
       >
-        <Italic className="w-4 h-4" />
+        <Italic className="w-3.5 h-3.5" />
       </Button>
 
       {/* Underline */}
@@ -134,10 +134,10 @@ export default function FormattingToolbar({
         size="sm"
         onClick={handleToggleUnderline}
         disabled={isDisabled}
-        className={`h-8 w-8 p-0 ${format.underline ? 'bg-gray-200' : ''}`}
-        title="Underline"
+        className={`h-7 w-7 p-0 ${format.underline ? 'bg-gray-200' : ''}`}
+        title="Underline (Ctrl+U)"
       >
-        <Underline className="w-4 h-4" />
+        <Underline className="w-3.5 h-3.5" />
       </Button>
 
       {/* Text Color */}
@@ -145,23 +145,23 @@ export default function FormattingToolbar({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
+          className="h-7 w-7 p-0"
           title="Text Color"
           disabled={isDisabled}
           onClick={() => !isDisabled && setTextColorPickerOpen(!textColorPickerOpen)}
         >
-          <Palette className="w-4 h-4" />
+          <Palette className="w-3.5 h-3.5" />
         </Button>
         {textColorPickerOpen && (
-          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-50 p-3 w-64">
+          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-[10000] p-2 w-52">
             <div className="space-y-2">
-              <div className="text-xs font-medium text-gray-700 mb-2">Text Color</div>
+              <div className="text-xs font-medium text-gray-700">Text Color</div>
               <div className="grid grid-cols-8 gap-1">
                 {commonColors.map((color) => (
                   <button
                     key={color}
                     onClick={() => handleTextColorChange(color)}
-                    className={`w-6 h-6 rounded border ${
+                    className={`w-5 h-5 rounded border ${
                       format.textColor === color ? 'ring-2 ring-blue-500' : 'border-gray-300'
                     }`}
                     style={{ backgroundColor: color }}
@@ -174,7 +174,7 @@ export default function FormattingToolbar({
                   type="color"
                   value={format.textColor || '#000000'}
                   onChange={(e) => handleTextColorChange(e.target.value)}
-                  className="w-full h-8 cursor-pointer"
+                  className="w-full h-6 cursor-pointer"
                 />
               </div>
             </div>
@@ -187,23 +187,23 @@ export default function FormattingToolbar({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
+          className="h-7 w-7 p-0"
           title="Background Color"
           disabled={isDisabled}
           onClick={() => !isDisabled && setBgColorPickerOpen(!bgColorPickerOpen)}
         >
-          <Highlighter className="w-4 h-4" />
+          <Highlighter className="w-3.5 h-3.5" />
         </Button>
         {bgColorPickerOpen && (
-          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-50 p-3 w-64">
+          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-[10000] p-2 w-52">
             <div className="space-y-2">
-              <div className="text-xs font-medium text-gray-700 mb-2">Background Color</div>
+              <div className="text-xs font-medium text-gray-700">Background Color</div>
               <div className="grid grid-cols-8 gap-1">
                 {commonColors.map((color) => (
                   <button
                     key={color}
                     onClick={() => handleBackgroundColorChange(color)}
-                    className={`w-6 h-6 rounded border ${
+                    className={`w-5 h-5 rounded border ${
                       format.backgroundColor === color ? 'ring-2 ring-blue-500' : 'border-gray-300'
                     }`}
                     style={{ backgroundColor: color }}
@@ -216,7 +216,7 @@ export default function FormattingToolbar({
                   type="color"
                   value={format.backgroundColor || '#FFFFFF'}
                   onChange={(e) => handleBackgroundColorChange(e.target.value)}
-                  className="w-full h-8 cursor-pointer"
+                  className="w-full h-6 cursor-pointer"
                 />
               </div>
             </div>

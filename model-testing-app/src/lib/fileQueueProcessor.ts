@@ -6,10 +6,11 @@ interface QueueJob {
   jobId: Id<"fileUploadQueue">;
   file: File;
   hasCustomInstructions?: boolean;
+  forceExtraction?: boolean;
 }
 
 export interface QueueProcessorCallbacks {
-  createJob: (args: { fileName: string; fileSize: number; fileType: string; hasCustomInstructions?: boolean }) => Promise<Id<"fileUploadQueue">>;
+  createJob: (args: { fileName: string; fileSize: number; fileType: string; hasCustomInstructions?: boolean; forceExtraction?: boolean }) => Promise<Id<"fileUploadQueue">>;
   updateJobStatus: (args: {
     jobId: Id<"fileUploadQueue">;
     status?: "pending" | "uploading" | "analyzing" | "completed" | "error" | "needs_confirmation";
@@ -45,7 +46,7 @@ export class FileQueueProcessor {
   /**
    * Add a file to the queue
    */
-  async addFile(file: File, hasCustomInstructions?: boolean): Promise<Id<"fileUploadQueue"> | null> {
+  async addFile(file: File, hasCustomInstructions?: boolean, forceExtraction?: boolean): Promise<Id<"fileUploadQueue"> | null> {
     if (this.queue.length >= this.maxQueueSize) {
       throw new Error(`Queue is full. Maximum ${this.maxQueueSize} files allowed.`);
     }
@@ -60,10 +61,11 @@ export class FileQueueProcessor {
       fileSize: file.size,
       fileType: file.type,
       hasCustomInstructions: hasCustomInstructions || false,
+      forceExtraction: forceExtraction || false,
     });
 
     // Add to local queue
-    this.queue.push({ jobId, file, hasCustomInstructions: hasCustomInstructions || false });
+    this.queue.push({ jobId, file, hasCustomInstructions: hasCustomInstructions || false, forceExtraction: forceExtraction || false });
 
     // Start processing if not already processing
     if (!this.processing) {
@@ -100,7 +102,7 @@ export class FileQueueProcessor {
       if (!job) break;
 
       try {
-        await this.processFile(job.jobId, job.file, job.hasCustomInstructions);
+        await this.processFile(job.jobId, job.file, job.hasCustomInstructions, job.forceExtraction);
       } catch (error) {
         console.error('Error processing file:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -173,7 +175,7 @@ export class FileQueueProcessor {
   /**
    * Process a single file through the pipeline
    */
-  private async processFile(jobId: Id<"fileUploadQueue">, file: File, hasCustomInstructions?: boolean) {
+  private async processFile(jobId: Id<"fileUploadQueue">, file: File, hasCustomInstructions?: boolean, forceExtraction?: boolean) {
     if (!this.callbacks) {
       throw new Error('Queue processor not initialized');
     }
@@ -260,6 +262,9 @@ export class FileQueueProcessor {
         // Create fresh FormData for each retry attempt
         const formData = new FormData();
         formData.append('file', file);
+        if (forceExtraction) {
+          formData.append('forceExtraction', 'true');
+        }
 
         const analysisResponse = await fetch('/api/analyze-file', {
           method: 'POST',

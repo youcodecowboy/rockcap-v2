@@ -103,13 +103,21 @@ export const FormulaBar = forwardRef<any, FormulaBarProps>(({
 
     // Check if formula mode (starts with =)
     if (newValue.startsWith('=')) {
-      const query = newValue.slice(1);
+      // Extract the current function being typed (last word after operators)
+      const formulaContent = newValue.slice(1);
+      // Get the part after the last operator or parenthesis for autocomplete
+      const lastPartMatch = formulaContent.match(/[A-Za-z_][A-Za-z0-9_]*$/);
+      const query = lastPartMatch ? lastPartMatch[0] : '';
       setFormulaQuery(query);
       
-      // Show autocomplete if query is empty or matches function names
-      if (query.length === 0 || FORMULA_FUNCTIONS.some(f => 
-        f.name.toLowerCase().startsWith(query.toLowerCase())
-      )) {
+      // Show autocomplete if we're at the start or typing a function name
+      // Hide it if we're inside a function's arguments (after opening paren)
+      const openParens = (formulaContent.match(/\(/g) || []).length;
+      const closeParens = (formulaContent.match(/\)/g) || []).length;
+      const insideFunction = openParens > closeParens;
+      
+      // Show autocomplete when starting a formula OR when there's a query that might match
+      if (query.length > 0 || (formulaContent.length === 0)) {
         // Calculate autocomplete position
         if (inputRef.current) {
           const rect = inputRef.current.getBoundingClientRect();
@@ -119,6 +127,9 @@ export const FormulaBar = forwardRef<any, FormulaBarProps>(({
           });
         }
         setShowAutocomplete(true);
+      } else if (insideFunction) {
+        // Inside function arguments - hide autocomplete
+        setShowAutocomplete(false);
       } else {
         setShowAutocomplete(false);
       }
@@ -258,33 +269,38 @@ export const FormulaBar = forwardRef<any, FormulaBarProps>(({
       ref={containerRef} 
       className="formula-bar-container"
       style={{ 
-        zoom: 1,
-        WebkitTransform: 'scale(1)',
-        transform: 'scale(1)',
         width: '100%',
-        isolation: 'isolate',
-        willChange: 'transform',
-        backfaceVisibility: 'hidden' as any
+        maxWidth: '100%',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
     >
       <div 
         className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200"
         style={{ 
-          zoom: 1, 
-          WebkitTransform: 'scale(1)',
-          transform: 'scale(1)',
-          isolation: 'isolate',
           width: '100%',
-          minWidth: 'max-content'
+          maxWidth: '100%',
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+          flexWrap: 'nowrap',
         }}
       >
-        {/* Cell reference label */}
-        <div className="cell-reference-label text-sm font-medium text-gray-700 min-w-[60px]">
+        {/* Cell reference label - fixed width, won't shrink */}
+        <div 
+          className="text-sm font-medium text-gray-700 flex-shrink-0"
+          style={{ minWidth: '70px', maxWidth: '120px' }}
+        >
           {getCellReference() || '—'}
         </div>
 
-        {/* Formula input - fixed width, does not expand */}
-        <div className="relative" style={{ width: '400px', flexShrink: 0 }}>
+        {/* Formula input - flexible width, can shrink but has min/max bounds */}
+        <div 
+          className="relative flex-1"
+          style={{ 
+            minWidth: '120px', 
+            maxWidth: '400px',
+          }}
+        >
           <input
             ref={inputRef}
             type="text"
@@ -298,28 +314,27 @@ export const FormulaBar = forwardRef<any, FormulaBarProps>(({
             className={`w-full px-3 py-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
               inputValue.startsWith('=') ? 'font-mono text-blue-600' : ''
             } ${readOnly || !selectedCell ? 'bg-gray-50 cursor-not-allowed' : 'bg-white'}`}
-            style={{ width: '100%', boxSizing: 'border-box' }}
           />
         </div>
 
-        {/* Zoom controls */}
+        {/* Zoom controls - compact, won't shrink */}
         {onZoomChange && (
-          <div className="flex items-center gap-1 border-l border-gray-300 pl-2 ml-2">
+          <div className="flex items-center gap-1 border-l border-gray-300 pl-2 flex-shrink-0">
             <button
               onClick={handleZoomOut}
               disabled={zoomLevel <= 0.5}
-              className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Zoom Out"
             >
               <ZoomOut className="w-4 h-4 text-gray-600" />
             </button>
-            <span className="text-sm font-medium text-gray-700 min-w-[50px] text-center">
+            <span className="text-xs font-medium text-gray-700 w-10 text-center">
               {Math.round(zoomLevel * 100)}%
             </span>
             <button
               onClick={handleZoomIn}
               disabled={zoomLevel >= 1.0}
-              className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Zoom In (max 100%)"
             >
               <ZoomIn className="w-4 h-4 text-gray-600" />
@@ -327,32 +342,36 @@ export const FormulaBar = forwardRef<any, FormulaBarProps>(({
           </div>
         )}
 
-        {/* Formatting toolbar - next to zoom controls */}
+        {/* Formatting toolbar - can shrink slightly */}
         {onFormatChange && (
-          <FormattingToolbar
-            selectedCell={selectedCell}
-            onFormatChange={onFormatChange}
-            currentFormat={currentFormat}
-            readOnly={readOnly}
-          />
+          <div className="flex-shrink-0" style={{ minWidth: 0 }}>
+            <FormattingToolbar
+              selectedCell={selectedCell}
+              onFormatChange={onFormatChange}
+              currentFormat={currentFormat}
+              readOnly={readOnly}
+            />
+          </div>
         )}
 
-        {/* Number formatting toolbar - next to formatting toolbar */}
+        {/* Number formatting toolbar - can shrink slightly */}
         {onNumberFormatChange && (
-          <NumberFormatToolbar
-            selectedCell={selectedCell}
-            onFormatChange={onNumberFormatChange}
-            currentFormat={currentNumberFormat}
-            readOnly={readOnly}
-          />
+          <div className="flex-shrink-0" style={{ minWidth: 0 }}>
+            <NumberFormatToolbar
+              selectedCell={selectedCell}
+              onFormatChange={onNumberFormatChange}
+              currentFormat={currentNumberFormat}
+              readOnly={readOnly}
+            />
+          </div>
         )}
 
-        {/* Help button */}
+        {/* Help button - fixed size */}
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setShowShortcutsModal(true)}
-          className="h-8 w-8 p-0 border-l border-gray-300 ml-2 pl-2"
+          className="h-8 w-8 p-0 flex-shrink-0"
           title="Keyboard Shortcuts (?)"
         >
           <HelpCircle className="w-4 h-4 text-gray-600" />

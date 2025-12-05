@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Edit, Trash2, Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Plus, Edit, Trash2, Upload, FileSpreadsheet, AlertCircle, Layers, Table } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -32,13 +33,18 @@ import {
 } from '@/components/ui/alert-dialog';
 import { scanForPlaceholders } from '@/lib/placeholderMapper';
 import { loadExcelTemplateMetadata } from '@/lib/templateLoader';
+import TemplateUploadModal from '@/components/TemplateUploadModal';
 
 type ModelType = 'appraisal' | 'operating' | 'custom';
+type NewModelType = 'appraisal' | 'operating' | 'other';
 
 export default function ModelingTemplatesPage() {
+  const [activeTab, setActiveTab] = useState('optimized');
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isNewUploadOpen, setIsNewUploadOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [deleteTemplateId, setDeleteTemplateId] = useState<Id<'modelingTemplates'> | null>(null);
+  const [deleteNewTemplateId, setDeleteNewTemplateId] = useState<Id<'templateDefinitions'> | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<Id<'modelingTemplates'> | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   
@@ -49,11 +55,16 @@ export default function ModelingTemplatesPage() {
   const [templateVersion, setTemplateVersion] = useState('1.0.0');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  // Legacy templates
   const templates = useQuery(api.modelingTemplates.list, {});
   const createTemplate = useMutation(api.modelingTemplates.create);
   const updateTemplate = useMutation(api.modelingTemplates.update);
   const removeTemplate = useMutation(api.modelingTemplates.remove);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
+
+  // New optimized templates
+  const newTemplates = useQuery(api.templateDefinitions.listAll, {});
+  const deleteNewTemplate = useMutation(api.templateDefinitions.deleteTemplate);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -205,7 +216,17 @@ export default function ModelingTemplatesPage() {
     }
   };
 
-  const getModelTypeBadgeColor = (type: ModelType) => {
+  const handleDeleteNewTemplate = async () => {
+    if (!deleteNewTemplateId) return;
+    try {
+      await deleteNewTemplate({ templateId: deleteNewTemplateId });
+      setDeleteNewTemplateId(null);
+    } catch (error: any) {
+      alert(`Failed to delete template: ${error.message}`);
+    }
+  };
+
+  const getModelTypeBadgeColor = (type: ModelType | NewModelType) => {
     switch (type) {
       case 'appraisal':
         return 'bg-blue-100 text-blue-800';
@@ -227,87 +248,207 @@ export default function ModelingTemplatesPage() {
               Manage financial model templates for the modeling section
             </p>
           </div>
-          <Button onClick={() => setIsUploadDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Upload Template
-          </Button>
         </div>
 
-        {/* Templates List */}
-        {templates === undefined ? (
-          <div className="text-center py-12 text-gray-500">Loading templates...</div>
-        ) : templates.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <FileSpreadsheet className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-              <p className="text-gray-600 mb-4">No templates uploaded yet</p>
-              <Button onClick={() => setIsUploadDialogOpen(true)}>
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Your First Template
+        {/* Tabs for Old vs New System */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <div className="flex items-center justify-between mb-6">
+            <TabsList>
+              <TabsTrigger value="optimized" className="flex items-center gap-2">
+                <Layers className="w-4 h-4" />
+                Optimized Templates
+              </TabsTrigger>
+              <TabsTrigger value="legacy" className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4" />
+                Legacy Templates
+              </TabsTrigger>
+            </TabsList>
+            
+            {activeTab === 'optimized' && (
+              <Button onClick={() => setIsNewUploadOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Upload Template
               </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {templates.map((template) => (
-              <Card key={template._id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{template.name}</CardTitle>
-                      <CardDescription className="mt-1">
-                        {template.description || 'No description'}
-                      </CardDescription>
-                    </div>
-                    <Badge className={getModelTypeBadgeColor(template.modelType)}>
-                      {template.modelType}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Version:</span>
-                      <span className="font-medium">{template.version}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Status:</span>
-                      <Badge variant={template.isActive ? 'default' : 'secondary'}>
-                        {template.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </div>
-                    {template.placeholderCodes && template.placeholderCodes.length > 0 && (
-                      <div className="text-sm">
-                        <span className="text-gray-500">Placeholders:</span>
-                        <span className="ml-2 font-medium">{template.placeholderCodes.length}</span>
-                      </div>
-                    )}
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEdit(template._id)}
-                        className="flex-1"
-                      >
-                        <Edit className="w-4 h-4 mr-1" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setDeleteTemplateId(template._id)}
-                        className="flex-1 text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
+            )}
+            {activeTab === 'legacy' && (
+              <Button onClick={() => setIsUploadDialogOpen(true)} variant="outline">
+                <Plus className="w-4 h-4 mr-2" />
+                Upload Legacy Template
+              </Button>
+            )}
+          </div>
+
+          {/* Optimized Templates Tab */}
+          <TabsContent value="optimized">
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Optimized Templates</strong> use the new sheet-by-sheet architecture for faster loading, 
+                lazy sheet loading, and support for dynamic sheet generation (e.g., multi-site models).
+              </p>
+            </div>
+            
+            {newTemplates === undefined ? (
+              <div className="text-center py-12 text-gray-500">Loading templates...</div>
+            ) : newTemplates.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Layers className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                  <p className="text-gray-600 mb-4">No optimized templates uploaded yet</p>
+                  <Button onClick={() => setIsNewUploadOpen(true)}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Your First Template
+                  </Button>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {newTemplates.map((template) => (
+                  <Card key={template._id}>
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg">{template.name}</CardTitle>
+                          <CardDescription className="mt-1">
+                            {template.description || 'No description'}
+                          </CardDescription>
+                        </div>
+                        <Badge className={getModelTypeBadgeColor(template.modelType)}>
+                          {template.modelType}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Version:</span>
+                          <span className="font-medium">v{template.version}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Sheets:</span>
+                          <span className="font-medium">{template.totalSheetCount}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Status:</span>
+                          <Badge variant={template.isActive ? 'default' : 'secondary'}>
+                            {template.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
+                        {template.dynamicGroups && template.dynamicGroups.length > 0 && (
+                          <div className="text-sm">
+                            <span className="text-gray-500">Dynamic Groups:</span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {template.dynamicGroups.map((group) => (
+                                <Badge key={group.groupId} variant="outline" className="text-xs">
+                                  {group.label} ({group.sheetIds.length} sheets)
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDeleteNewTemplateId(template._id)}
+                            className="flex-1 text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Legacy Templates Tab */}
+          <TabsContent value="legacy">
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                <strong>Legacy Templates</strong> use the original Excel-based system. 
+                Consider migrating to optimized templates for better performance.
+              </p>
+            </div>
+            
+            {templates === undefined ? (
+              <div className="text-center py-12 text-gray-500">Loading templates...</div>
+            ) : templates.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <FileSpreadsheet className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                  <p className="text-gray-600 mb-4">No legacy templates uploaded</p>
+                  <Button onClick={() => setIsUploadDialogOpen(true)} variant="outline">
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Legacy Template
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {templates.map((template) => (
+                  <Card key={template._id}>
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg">{template.name}</CardTitle>
+                          <CardDescription className="mt-1">
+                            {template.description || 'No description'}
+                          </CardDescription>
+                        </div>
+                        <Badge className={getModelTypeBadgeColor(template.modelType)}>
+                          {template.modelType}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Version:</span>
+                          <span className="font-medium">{template.version}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Status:</span>
+                          <Badge variant={template.isActive ? 'default' : 'secondary'}>
+                            {template.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
+                        {template.placeholderCodes && template.placeholderCodes.length > 0 && (
+                          <div className="text-sm">
+                            <span className="text-gray-500">Placeholders:</span>
+                            <span className="ml-2 font-medium">{template.placeholderCodes.length}</span>
+                          </div>
+                        )}
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEdit(template._id)}
+                            className="flex-1"
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDeleteTemplateId(template._id)}
+                            className="flex-1 text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
 
         {/* Upload Dialog */}
         <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
@@ -448,7 +589,7 @@ export default function ModelingTemplatesPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation */}
+        {/* Delete Legacy Template Confirmation */}
         <AlertDialog open={!!deleteTemplateId} onOpenChange={(open) => !open && setDeleteTemplateId(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -465,6 +606,31 @@ export default function ModelingTemplatesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Delete Optimized Template Confirmation */}
+        <AlertDialog open={!!deleteNewTemplateId} onOpenChange={(open) => !open && setDeleteNewTemplateId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Optimized Template?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the template and all its sheet data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteNewTemplate} className="bg-red-600 hover:bg-red-700">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* New Template Upload Modal */}
+        <TemplateUploadModal
+          isOpen={isNewUploadOpen}
+          onClose={() => setIsNewUploadOpen(false)}
+          onSuccess={() => setIsNewUploadOpen(false)}
+        />
       </div>
     </div>
   );

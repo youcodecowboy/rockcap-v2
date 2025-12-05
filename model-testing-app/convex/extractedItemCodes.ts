@@ -201,6 +201,57 @@ export const remove = mutation({
   },
 });
 
+// Mutation: Change category for an item code
+export const changeCategory = mutation({
+  args: {
+    id: v.id("extractedItemCodes"),
+    newCategory: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    
+    if (!existing) {
+      throw new Error("Item code not found");
+    }
+    
+    if (existing.category === args.newCategory) {
+      return args.id; // No change needed
+    }
+    
+    await ctx.db.patch(args.id, {
+      category: args.newCategory,
+      updatedAt: new Date().toISOString(),
+    });
+    
+    return args.id;
+  },
+});
+
+// Mutation: Bulk change category for multiple item codes
+export const bulkChangeCategory = mutation({
+  args: {
+    ids: v.array(v.id("extractedItemCodes")),
+    newCategory: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    let updated = 0;
+    
+    for (const id of args.ids) {
+      const existing = await ctx.db.get(id);
+      if (existing && existing.category !== args.newCategory) {
+        await ctx.db.patch(id, {
+          category: args.newCategory,
+          updatedAt: now,
+        });
+        updated++;
+      }
+    }
+    
+    return { updated };
+  },
+});
+
 // Mutation: Bulk create item codes (for seeding)
 export const bulkCreate = mutation({
   args: {

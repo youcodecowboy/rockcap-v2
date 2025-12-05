@@ -22,8 +22,10 @@ export default function NavigationBar() {
           {/* Notification Dropdown */}
           <NotificationDropdown />
           
-          {/* Clerk User Button */}
-          <UserButton afterSignOutUrl="/" />
+          {/* Clerk User Button - suppressHydrationWarning for Clerk SSR mismatch */}
+          <div suppressHydrationWarning>
+            <UserButton afterSignOutUrl="/" />
+          </div>
         </div>
       </div>
     </header>

@@ -886,6 +886,68 @@ export function exportToExcel(
 }
 
 /**
+ * Export workbook to Excel and return as a Blob for uploading
+ */
+export async function exportToExcelBlob(
+  sheets: SheetData[], 
+  fileName: string = 'export.xlsx',
+  options: ExportOptions = {}
+): Promise<Blob | null> {
+  try {
+    const workbook = XLSX.utils.book_new();
+    
+    sheets.forEach(sheet => {
+      // Convert 2D array to worksheet
+      const worksheet = XLSX.utils.aoa_to_sheet(sheet.data);
+      
+      // Preserve formulas from SheetData if available
+      if (sheet.formulas) {
+        Object.entries(sheet.formulas).forEach(([cellAddress, formula]) => {
+          if (!worksheet[cellAddress]) {
+            worksheet[cellAddress] = {};
+          }
+          // Remove leading = if present (XLSX expects formula without =)
+          const cleanFormula = formula.startsWith('=') ? formula.substring(1) : formula;
+          worksheet[cellAddress].f = cleanFormula;
+          delete worksheet[cellAddress].v;
+        });
+      }
+      
+      // Preserve column widths
+      if (sheet.columnWidths) {
+        const maxCol = Math.max(...Object.keys(sheet.columnWidths).map(k => parseInt(k, 10)));
+        const cols: any[] = [];
+        for (let col = 0; col <= maxCol; col++) {
+          const width = sheet.columnWidths[col];
+          if (width !== undefined) {
+            cols[col] = { wch: width / 7 };
+          }
+        }
+        if (cols.length > 0) {
+          worksheet['!cols'] = cols;
+        }
+      }
+      
+      // Add the sheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
+    });
+    
+    // Write to array buffer
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    
+    // Create Blob
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    
+    return blob;
+  } catch (error) {
+    console.error('Error creating Excel blob:', error);
+    return null;
+  }
+}
+
+/**
  * Convert CellStyle to XLSX format
  */
 function convertStyleToXLSX(style: CellStyle): any {
@@ -955,5 +1017,259 @@ function convertNumberFormatToExcel(formatType: string): string {
   };
   
   return formatMap[formatType] || 'General';
+}
+
+// =============================================================================
+// OPTIMIZED JSON TEMPLATE LOADING
+// =============================================================================
+
+/**
+ * Sheet data from the optimized template storage (JSON format)
+ */
+export interface OptimizedSheetData {
+  _id?: string;
+  name: string;
+  data: any[][];
+  styles?: Record<string, CellStyle>;
+  formulas?: Record<string, string>;
+  columnWidths?: Record<number, number>;
+  rowHeights?: Record<number, number>;
+  mergedCells?: any[];
+  dimensions?: { rows: number; cols: number };
+  storageUrl?: string; // If data is stored separately
+}
+
+/**
+ * Template definition metadata from the new system
+ */
+export interface TemplateDefinitionData {
+  _id: string;
+  name: string;
+  modelType: 'appraisal' | 'operating' | 'other';
+  version: number;
+  description?: string;
+  coreSheetIds: string[];
+  dynamicGroups: Array<{
+    groupId: string;
+    label: string;
+    sheetIds: string[];
+    min: number;
+    max: number;
+    defaultCount: number;
+    namePlaceholder: string;
+  }>;
+  totalSheetCount: number;
+  isActive: boolean;
+}
+
+/**
+ * Load sheet data from a storage URL (for large sheets)
+ */
+export async function loadSheetFromStorageUrl(storageUrl: string): Promise<OptimizedSheetData> {
+  try {
+    console.log('[TemplateLoader] Fetching sheet from storage URL');
+    const response = await fetch(storageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch sheet data: ${response.status}`);
+    }
+    const data = await response.json();
+    console.log('[TemplateLoader] Sheet data loaded from storage');
+    return data;
+  } catch (error) {
+    console.error('[TemplateLoader] Error loading sheet from storage:', error);
+    throw error;
+  }
+}
+
+/**
+ * Convert OptimizedSheetData to SheetData format for Handsontable
+ * This ensures compatibility with existing WorkbookEditor
+ */
+export function convertOptimizedToSheetData(optimized: OptimizedSheetData): SheetData {
+  // The formats are already compatible, just ensure required fields
+  const sheet: SheetData = {
+    name: optimized.name,
+    data: optimized.data || [['']],
+    formulas: optimized.formulas,
+    styles: optimized.styles,
+    columnWidths: optimized.columnWidths,
+  };
+
+  // Apply trimming for consistency
+  return trimEmptyRows(sheet);
+}
+
+/**
+ * Load multiple sheets from optimized storage in parallel
+ * Handles both inline and storage-based sheets
+ */
+export async function loadOptimizedSheets(
+  sheetsData: OptimizedSheetData[]
+): Promise<SheetData[]> {
+  console.log(`[TemplateLoader] Loading ${sheetsData.length} optimized sheets`);
+
+  const loadPromises = sheetsData.map(async (sheetData) => {
+    // If sheet has a storage URL, fetch the data
+    if (sheetData.storageUrl && !sheetData.data) {
+      const fullData = await loadSheetFromStorageUrl(sheetData.storageUrl);
+      return convertOptimizedToSheetData({
+        ...sheetData,
+        ...fullData,
+      });
+    }
+    
+    // Otherwise, convert directly
+    return convertOptimizedToSheetData(sheetData);
+  });
+
+  const sheets = await Promise.all(loadPromises);
+  console.log(`[TemplateLoader] Loaded ${sheets.length} sheets successfully`);
+  
+  return sheets;
+}
+
+/**
+ * Generate sheets for a dynamic template with placeholder replacement
+ * This is the core function for multi-site template generation
+ * 
+ * @param coreSheets - Sheets that are always included (no duplication)
+ * @param dynamicSheets - Sheets that should be duplicated based on count
+ * @param dynamicGroups - Configuration for each dynamic group
+ * @param groupCounts - How many copies of each group to create (e.g., { "site": 3 })
+ */
+export function generateDynamicSheets(
+  coreSheets: SheetData[],
+  dynamicSheets: Map<string, SheetData[]>, // groupId -> sheets
+  dynamicGroups: Array<{
+    groupId: string;
+    label: string;
+    min: number;
+    max: number;
+    defaultCount: number;
+    namePlaceholder: string;
+  }>,
+  groupCounts: Record<string, number>
+): SheetData[] {
+  console.log('[TemplateLoader] Generating dynamic sheets...');
+  
+  const resultSheets: SheetData[] = [];
+  
+  // Add all core sheets first (unchanged)
+  resultSheets.push(...coreSheets);
+  console.log(`[TemplateLoader] Added ${coreSheets.length} core sheets`);
+  
+  // Process each dynamic group
+  for (const group of dynamicGroups) {
+    const count = groupCounts[group.groupId] || group.defaultCount;
+    const templateSheets = dynamicSheets.get(group.groupId) || [];
+    
+    if (templateSheets.length === 0) {
+      console.warn(`[TemplateLoader] No template sheets found for group "${group.groupId}"`);
+      continue;
+    }
+    
+    console.log(`[TemplateLoader] Generating ${count} copies of group "${group.label}" (${templateSheets.length} sheets each)`);
+    
+    // Generate N copies of each sheet in this group
+    for (let n = 1; n <= count; n++) {
+      for (const templateSheet of templateSheets) {
+        const newSheet = cloneSheetWithReplacement(
+          templateSheet,
+          group.namePlaceholder,
+          n.toString()
+        );
+        resultSheets.push(newSheet);
+      }
+    }
+  }
+  
+  console.log(`[TemplateLoader] Generated ${resultSheets.length} total sheets`);
+  return resultSheets;
+}
+
+/**
+ * Clone a sheet and replace all occurrences of a placeholder
+ * Used for dynamic sheet generation (e.g., Site{N} -> Site1, Site2, etc.)
+ */
+function cloneSheetWithReplacement(
+  sheet: SheetData,
+  placeholder: string,
+  replacement: string
+): SheetData {
+  // Replace in sheet name
+  const newName = sheet.name.replace(new RegExp(escapeRegExp(placeholder), 'g'), replacement);
+  
+  // Deep clone the data array and replace placeholders in cell values
+  const newData = sheet.data.map(row =>
+    row.map(cell => {
+      if (typeof cell === 'string') {
+        return cell.replace(new RegExp(escapeRegExp(placeholder), 'g'), replacement);
+      }
+      return cell;
+    })
+  );
+  
+  // Replace placeholders in formulas
+  let newFormulas: { [key: string]: string } | undefined;
+  if (sheet.formulas) {
+    newFormulas = {};
+    for (const [cellAddress, formula] of Object.entries(sheet.formulas)) {
+      newFormulas[cellAddress] = formula.replace(
+        new RegExp(escapeRegExp(placeholder), 'g'),
+        replacement
+      );
+    }
+  }
+  
+  // Styles and column widths don't need replacement (they're structural)
+  return {
+    name: newName,
+    data: newData,
+    formulas: newFormulas,
+    styles: sheet.styles ? { ...sheet.styles } : undefined,
+    columnWidths: sheet.columnWidths ? { ...sheet.columnWidths } : undefined,
+  };
+}
+
+/**
+ * Escape special regex characters in a string
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Validate that a template is ready for dynamic generation
+ * Checks that all dynamic sheets contain the expected placeholder
+ */
+export function validateDynamicTemplate(
+  dynamicSheets: Map<string, SheetData[]>,
+  dynamicGroups: Array<{
+    groupId: string;
+    namePlaceholder: string;
+  }>
+): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  for (const group of dynamicGroups) {
+    const sheets = dynamicSheets.get(group.groupId) || [];
+    
+    for (const sheet of sheets) {
+      // Check if sheet name contains placeholder
+      if (!sheet.name.includes(group.namePlaceholder)) {
+        errors.push(
+          `Sheet "${sheet.name}" in group "${group.groupId}" does not contain placeholder "${group.namePlaceholder}" in its name`
+        );
+      }
+      
+      // Optionally check formulas for placeholder (just a warning, not an error)
+      // Some templates might not have cross-sheet references with placeholders
+    }
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
 }
 

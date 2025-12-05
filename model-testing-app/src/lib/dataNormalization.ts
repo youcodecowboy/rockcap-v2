@@ -1,7 +1,5 @@
 import { ExtractedData } from '@/types';
-
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const MODEL_NAME = 'openai/gpt-oss-120b'; // GPT-OSS-120B via Together.ai
+import { TOGETHER_API_URL, MODEL_CONFIG } from '@/lib/modelConfig';
 
 export async function normalizeExtractedData(
   extractedData: ExtractedData,
@@ -239,7 +237,7 @@ Respond with a JSON object in this EXACT format:
   try {
     console.log('[Data Normalization] Making API request to:', TOGETHER_API_URL);
     const requestBody = {
-      model: MODEL_NAME,
+      model: MODEL_CONFIG.normalization.model,
       messages: [
         {
           role: 'system',
@@ -250,8 +248,8 @@ Respond with a JSON object in this EXACT format:
           content: prompt,
         },
       ],
-      temperature: 0.1, // Very low temperature for consistent normalization
-      max_tokens: 15000,
+      temperature: MODEL_CONFIG.normalization.temperature,
+      max_tokens: MODEL_CONFIG.normalization.maxTokens,
     };
     
     const response = await fetch(TOGETHER_API_URL, {

@@ -13,9 +13,11 @@ import {
   runSmartPass, 
   applySmartPassSuggestions,
   ItemCode,
-  ItemCodeAlias 
+  ItemCodeAlias,
+  CategoryInfo
 } from '@/lib/smartPassCodification';
 import { ExtractedData } from '@/types';
+import { TOGETHER_API_URL, MODEL_CONFIG } from '@/lib/modelConfig';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds max
@@ -208,19 +210,21 @@ async function handleSmartPass(body: {
   console.log('[SmartPass] Processing', pendingItems.length, 'items');
   
   try {
-    // Get existing codes and aliases
-    const [existingCodes, existingAliases] = await Promise.all([
+    // Get existing codes, aliases, and categories
+    const [existingCodes, existingAliases, categories] = await Promise.all([
       client.query(api.extractedItemCodes.list, { activeOnly: true }),
       client.query(api.itemCodeAliases.list, {}),
+      client.query(api.itemCategories.getForLLMPrompt, {}),
     ]);
     
-    console.log('[SmartPass] Found', existingCodes?.length || 0, 'codes and', existingAliases?.length || 0, 'aliases');
+    console.log('[SmartPass] Found', existingCodes?.length || 0, 'codes,', existingAliases?.length || 0, 'aliases, and', categories?.length || 0, 'categories');
     
-    // Run Smart Pass
+    // Run Smart Pass with dynamic categories
     const smartResult = await runSmartPass(
       pendingItems as CodifiedItem[],
       (existingCodes || []) as ItemCode[],
-      (existingAliases || []) as ItemCodeAlias[]
+      (existingAliases || []) as ItemCodeAlias[],
+      (categories || []) as CategoryInfo[]
     );
     
     // Apply suggestions to items
@@ -469,20 +473,20 @@ RESPOND IN JSON FORMAT ONLY:
       throw new Error('TOGETHER_API_KEY not configured');
     }
     
-    const response = await fetch('https://api.together.xyz/v1/chat/completions', {
+    const response = await fetch(TOGETHER_API_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+        model: MODEL_CONFIG.codification.model,
         messages: [
           { role: 'system', content: 'You are a financial data codification assistant. Always respond with valid JSON only.' },
           { role: 'user', content: prompt },
         ],
-        max_tokens: 500,
-        temperature: 0.3,
+        max_tokens: 1000, // Increased for more detailed suggestions
+        temperature: MODEL_CONFIG.codification.temperature,
       }),
     });
     

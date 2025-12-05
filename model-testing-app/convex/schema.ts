@@ -670,6 +670,7 @@ export default defineSchema({
     userId: v.optional(v.string()), // For future multi-user support
     hasCustomInstructions: v.optional(v.boolean()), // Flag to indicate if custom instructions were requested
     customInstructions: v.optional(v.string()), // Custom instructions for LLM analysis
+    forceExtraction: v.optional(v.boolean()), // Force data extraction regardless of file type
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -877,15 +878,18 @@ export default defineSchema({
 
   modelRuns: defineTable({
     scenarioId: v.id("scenarios"),
+    projectId: v.optional(v.id("projects")), // For easier version queries per project
     modelType: v.union(
       v.literal("appraisal"),
       v.literal("operating"),
+      v.literal("custom"),
       v.literal("other")
     ),
     version: v.number(),
-    versionName: v.optional(v.string()),
-    inputs: v.any(),
+    versionName: v.optional(v.string()), // Auto-generated: v{N}-{modelType}-{date}
+    inputs: v.any(), // Full sheet structure for JSON backup
     outputs: v.optional(v.any()),
+    fileStorageId: v.optional(v.id("_storage")), // Saved Excel file in Convex storage
     status: v.union(
       v.literal("pending"),
       v.literal("running"),
@@ -896,8 +900,14 @@ export default defineSchema({
     runAt: v.string(),
     runBy: v.optional(v.string()),
     metadata: v.optional(v.any()),
+    // Source tracking for data provenance
+    sourceDocumentIds: v.optional(v.array(v.id("documents"))),
+    dataLibrarySnapshotId: v.optional(v.id("dataLibrarySnapshots")),
+    billOfMaterials: v.optional(v.any()), // Embedded copy for quick access
   })
     .index("by_scenario", ["scenarioId"])
+    .index("by_project", ["projectId"])
+    .index("by_project_modelType", ["projectId", "modelType"])
     .index("by_modelType", ["modelType"])
     .index("by_version", ["version"]),
 
@@ -1511,6 +1521,21 @@ export default defineSchema({
     .index("by_canonical_code", ["canonicalCodeId"])
     .index("by_source", ["source"]),
 
+  // Item Categories - Dynamic categories for organizing item codes
+  // Users can add custom categories with descriptions to improve LLM codification
+  itemCategories: defineTable({
+    name: v.string(), // Display name (e.g., "Professional Fees")
+    normalizedName: v.string(), // Normalized for matching (e.g., "professional.fees")
+    description: v.string(), // Description of what types of items belong here
+    examples: v.array(v.string()), // Example items (e.g., ["Engineers", "Solicitors"])
+    isSystem: v.boolean(), // true for default categories, false for user-added
+    displayOrder: v.optional(v.number()), // For ordering in UI
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_normalized_name", ["normalizedName"])
+    .index("by_system", ["isSystem"]),
+
   // Codified Extractions - Per-Document Codified Data
   // Stores the result of codification for each document
   codifiedExtractions: defineTable({
@@ -1547,9 +1572,233 @@ export default defineSchema({
     codifiedAt: v.string(), // When fast pass completed
     smartPassAt: v.optional(v.string()), // When smart pass completed
     confirmedAt: v.optional(v.string()), // When user confirmed all
+    // Project data library merge tracking
+    mergedToProjectLibrary: v.optional(v.boolean()), // Whether items merged to project library
+    mergedAt: v.optional(v.string()), // When merged
+    // Soft delete for bad extractions
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_document", ["documentId"])
     .index("by_project", ["projectId"])
-    .index("by_confirmed", ["isFullyConfirmed"]),
+    .index("by_confirmed", ["isFullyConfirmed"])
+    .index("by_merged", ["mergedToProjectLibrary"]),
+
+  // Template Definitions - Template metadata for optimized loading
+  // Stores configuration about core vs dynamic sheets and their relationships
+  templateDefinitions: defineTable({
+    name: v.string(), // Template name (e.g., "Appraisal Model v2")
+    modelType: v.union(
+      v.literal("appraisal"),
+      v.literal("operating"),
+      v.literal("other")
+    ),
+    version: v.number(), // Template version number
+    description: v.optional(v.string()), // Template description
+    // Original Excel file reference (for re-parsing if needed)
+    originalFileStorageId: v.optional(v.id("_storage")),
+    originalFileName: v.optional(v.string()),
+    // Sheet configuration
+    coreSheetIds: v.array(v.id("templateSheets")), // IDs of core sheets (always included)
+    dynamicGroups: v.array(v.object({
+      groupId: v.string(), // e.g., "site"
+      label: v.string(), // e.g., "Site"
+      sheetIds: v.array(v.id("templateSheets")), // Template sheets in this group
+      min: v.number(), // Minimum count (default: 1)
+      max: v.number(), // Maximum count (default: 10)
+      defaultCount: v.number(), // Default count when running model
+      namePlaceholder: v.string(), // e.g., "{N}" - what to replace in names/formulas
+    })),
+    // Metadata
+    totalSheetCount: v.number(), // Total sheets including templates
+    isActive: v.boolean(), // Whether this template is available for use
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_modelType", ["modelType"])
+    .index("by_active", ["isActive"])
+    .index("by_name", ["name"]),
+
+  // Template Sheets - Individual sheet data (can be large, loaded on demand)
+  // Sheets are stored separately for lazy loading and efficient duplication
+  templateSheets: defineTable({
+    templateId: v.id("templateDefinitions"), // Reference to parent template
+    name: v.string(), // Sheet name (e.g., "AppraisalSite{N}" or "Control Sheet")
+    order: v.number(), // Display order within template
+    type: v.union(
+      v.literal("core"), // Always included in generated model
+      v.literal("dynamic") // Duplicated based on user selection
+    ),
+    groupId: v.optional(v.string()), // Only for dynamic sheets (e.g., "site")
+    // Sheet data storage strategy
+    // For large sheets (>100KB): store in file storage as compressed JSON
+    dataStorageId: v.optional(v.id("_storage")),
+    // For small sheets: store inline (faster to load)
+    inlineData: v.optional(v.object({
+      data: v.any(), // Cell data (any[][] format)
+      styles: v.optional(v.any()), // Cell styles (Record<string, CellStyle>)
+      formulas: v.optional(v.any()), // Original formulas (Record<string, string>)
+      columnWidths: v.optional(v.any()), // Column widths (Record<number, number>)
+      rowHeights: v.optional(v.any()), // Row heights (Record<number, number>)
+      mergedCells: v.optional(v.any()), // Merged cell ranges
+    })),
+    // Metadata for quick access (no need to load full data)
+    dimensions: v.object({
+      rows: v.number(),
+      cols: v.number(),
+    }),
+    hasFormulas: v.boolean(), // Quick check if sheet has formulas
+    hasStyles: v.boolean(), // Quick check if sheet has styling
+    hasMergedCells: v.boolean(), // Quick check for merged cells
+    // Estimated size for loading strategy decisions
+    estimatedSizeBytes: v.optional(v.number()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_template", ["templateId"])
+    .index("by_type", ["type"])
+    .index("by_template_order", ["templateId", "order"]),
+
+  // ============================================================================
+  // PROJECT DATA LIBRARY - Unified data aggregation across documents
+  // ============================================================================
+
+  // Project Data Items - Unified project data library
+  // One row per unique item code per project, aggregating across all documents
+  projectDataItems: defineTable({
+    projectId: v.id("projects"),
+    itemCode: v.string(),              // Canonical code (e.g., "SITE.001")
+    category: v.string(),              // Category for grouping
+    originalName: v.string(),          // Display name (from most recent source)
+    
+    // Current value
+    currentValue: v.any(),
+    currentValueNormalized: v.number(), // Always in base units (e.g., actual £, not thousands)
+    currentUnit: v.optional(v.string()), // "actual", "thousands", "millions"
+    currentSourceDocumentId: v.id("documents"),
+    currentSourceDocumentName: v.string(),
+    currentDataType: v.string(),       // "currency", "percentage", "number"
+    
+    // Provenance tracking
+    lastUpdatedAt: v.string(),
+    lastUpdatedBy: v.union(v.literal("extraction"), v.literal("manual")),
+    lastUpdatedByUserId: v.optional(v.id("users")),
+    manualOverrideNote: v.optional(v.string()),
+    
+    // Multi-source detection
+    hasMultipleSources: v.boolean(),
+    valueVariance: v.optional(v.number()), // % difference between min/max values
+    
+    // Full history (all values from all sources)
+    valueHistory: v.array(v.object({
+      value: v.any(),
+      valueNormalized: v.number(),
+      sourceDocumentId: v.id("documents"),
+      sourceDocumentName: v.string(),
+      sourceExtractionId: v.id("codifiedExtractions"),
+      originalName: v.string(),
+      addedAt: v.string(),
+      addedBy: v.union(v.literal("extraction"), v.literal("manual")),
+      addedByUserId: v.optional(v.id("users")),
+      isCurrentValue: v.boolean(),
+      wasReverted: v.optional(v.boolean()),
+    })),
+    
+    // Soft delete support
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedReason: v.optional(v.string()),
+    
+    // Computed totals support
+    isComputed: v.optional(v.boolean()), // True for auto-computed category totals
+    computedFromCategory: v.optional(v.string()), // Category this total is computed from
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_category", ["projectId", "category"])
+    .index("by_project_code", ["projectId", "itemCode"])
+    .index("by_source_document", ["currentSourceDocumentId"]),
+
+  // Data Library Snapshots - Point-in-time snapshots for model runs and revert
+  dataLibrarySnapshots: defineTable({
+    projectId: v.id("projects"),
+    createdAt: v.string(),
+    createdBy: v.optional(v.id("users")),
+    reason: v.union(
+      v.literal("model_run"),
+      v.literal("manual_save"),
+      v.literal("pre_revert_backup"),
+      v.literal("pre_delete_backup")
+    ),
+    
+    // Frozen copy of all projectDataItems at this moment
+    items: v.array(v.object({
+      itemCode: v.string(),
+      category: v.string(),
+      originalName: v.string(),
+      value: v.any(),
+      valueNormalized: v.number(),
+      sourceDocumentId: v.id("documents"),
+      sourceDocumentName: v.string(),
+    })),
+    
+    // Source documents that contributed to this snapshot
+    sourceDocumentIds: v.array(v.id("documents")),
+    
+    // Stats
+    itemCount: v.number(),
+    documentCount: v.number(),
+    
+    // Link to model run if applicable
+    modelRunId: v.optional(v.id("modelRuns")),
+    
+    // Description for manual saves
+    description: v.optional(v.string()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_model_run", ["modelRunId"])
+    .index("by_reason", ["reason"]),
+
+  // Model Exports - Track all exports for audit trail
+  modelExports: defineTable({
+    projectId: v.id("projects"),
+    modelRunId: v.optional(v.id("modelRuns")),
+    snapshotId: v.optional(v.id("dataLibrarySnapshots")),
+    templateId: v.optional(v.id("modelingTemplates")),
+    templateDefinitionId: v.optional(v.id("templateDefinitions")),
+    
+    exportedAt: v.string(),
+    exportedBy: v.optional(v.id("users")),
+    fileName: v.string(),
+    exportType: v.union(
+      v.literal("quick_export"),
+      v.literal("full_model"),
+      v.literal("data_only")
+    ),
+    
+    // Bill of materials (audit metadata)
+    billOfMaterials: v.object({
+      sourceDocuments: v.array(v.object({
+        documentId: v.id("documents"),
+        fileName: v.string(),
+        uploadedAt: v.string(),
+        itemsUsed: v.number(),
+      })),
+      manualOverrides: v.array(v.object({
+        itemCode: v.string(),
+        originalName: v.string(),
+        originalValue: v.any(),
+        overriddenValue: v.any(),
+        overriddenBy: v.optional(v.id("users")),
+        note: v.optional(v.string()),
+      })),
+      totalItems: v.number(),
+      totalManualOverrides: v.number(),
+    }),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_model_run", ["modelRunId"])
+    .index("by_snapshot", ["snapshotId"]),
 });
 
