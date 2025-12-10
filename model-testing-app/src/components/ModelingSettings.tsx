@@ -915,8 +915,8 @@ export default function ModelingSettings({ onClose }: { onClose: () => void }) {
                   <div className="flex items-start gap-3">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">Unfilled slots are cleared</p>
-                      <p className="text-xs text-gray-500">Empty fallback placeholders are replaced with blank values automatically</p>
+                      <p className="text-sm font-medium text-gray-900">Unfilled fallbacks are cleared, missing codes are flagged</p>
+                      <p className="text-xs text-gray-500">Category fallbacks and totals are cleared if unused. Specific item codes show as <code className="bg-orange-100 px-1 rounded text-orange-700">&lt;MISSING: code&gt;</code></p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
@@ -933,6 +933,76 @@ export default function ModelingSettings({ onClose }: { onClose: () => void }) {
                       <p className="text-xs text-gray-500">Review and manage all available codes to know what specific placeholders you can use</p>
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Missing Data Indicators Section */}
+            <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
+              <div className="bg-orange-600 text-white px-3 py-2 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-white" />
+                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                  8. Missing Data Indicators
+                </span>
+              </div>
+              <CardContent className="pt-4 pb-6 px-6 space-y-4">
+                <p className="text-gray-600">
+                  When you export a model, the system handles missing data differently based on placeholder type to help you 
+                  identify critical gaps in your data.
+                </p>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">Placeholder Type</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">If Missing</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">Why?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b">
+                        <td className="px-3 py-2 font-mono text-amber-700 text-xs">&lt;all.category.value&gt;</td>
+                        <td className="px-3 py-2 text-xs text-gray-600">Cleared (empty)</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">Category may legitimately have no items</td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="px-3 py-2 font-mono text-blue-700 text-xs">&lt;total.category&gt;</td>
+                        <td className="px-3 py-2 text-xs text-gray-600">Cleared (empty)</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">Total may be zero or category empty</td>
+                      </tr>
+                      <tr className="bg-orange-50">
+                        <td className="px-3 py-2 font-mono text-emerald-700 text-xs">&lt;site.cost&gt;</td>
+                        <td className="px-3 py-2 font-mono text-orange-700 text-xs">&lt;MISSING: site.cost&gt;</td>
+                        <td className="px-3 py-2 text-xs text-orange-700 font-medium">Critical - you intentionally placed this code</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-orange-900">Why This Matters</p>
+                      <p className="text-sm text-orange-700 mt-1">
+                        If you&apos;ve placed <code className="bg-orange-100 px-1 rounded">&lt;site.cost&gt;</code> in your template, 
+                        you&apos;re expecting that specific value. If it&apos;s missing from your Data Library, the exported file shows 
+                        <code className="bg-orange-100 px-1 rounded">&lt;MISSING: site.cost&gt;</code> so you know exactly what data 
+                        you need to add or request from your lender/developer.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">What to do when you see MISSING indicators:</p>
+                  <ul className="text-xs text-gray-600 space-y-1 ml-4 list-disc">
+                    <li>Check your Data Library for the missing item code</li>
+                    <li>If the data hasn&apos;t been extracted, upload the relevant document</li>
+                    <li>If the data doesn&apos;t exist, contact your lender/developer for the information</li>
+                    <li>If the placeholder isn&apos;t needed, remove it from your template</li>
+                  </ul>
                 </div>
               </CardContent>
             </Card>

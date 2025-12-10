@@ -25,7 +25,7 @@ import { loadExcelTemplate, loadExcelTemplateMetadata, loadSheetData, SheetData,
 import { populateTemplateWithPlaceholders, PopulationResult } from '@/lib/placeholderMapper';
 import { getPlaceholderConfig } from '@/lib/placeholderConfigs';
 import { buildPlaceholderConfigFromMappings } from '@/lib/mappingConfigBuilder';
-import { populateTemplateWithCodifiedData, toLegacyPopulationResult, CodifiedItem, getOverflowSummary, CategoryOverflow, clearUnusedPlaceholders, countRemainingPlaceholders } from '@/lib/codifiedTemplatePopulator';
+import { populateTemplateWithCodifiedData, toLegacyPopulationResult, CodifiedItem, getOverflowSummary, CategoryOverflow, clearUnusedPlaceholders, countRemainingPlaceholders, mergeComputedTotals, ProjectDataItem } from '@/lib/codifiedTemplatePopulator';
 
 export default function ModelingPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<Id<"projects"> | null>(null);
@@ -95,6 +95,12 @@ export default function ModelingPage() {
     api.modelRuns.getProjectVersions,
     selectedProjectId ? { projectId: selectedProjectId } : "skip"
   );
+
+  // Query project data library (includes computed category totals)
+  const projectDataLibrary = useQuery(
+    api.projectDataLibrary.getProjectLibrary,
+    selectedProjectId ? { projectId: selectedProjectId } : "skip"
+  ) as ProjectDataItem[] | undefined;
 
   // Mutations
   const updateScenarioData = useMutation(api.scenarios.updateData);
@@ -336,6 +342,7 @@ export default function ModelingPage() {
           body: JSON.stringify({
             templateId,
             codifiedItems: codifiedExtraction.items,
+            projectId: selectedProjectId, // For computed totals
             documentName: activeDocument.fileName.replace(/\.[^/.]+$/, ''), // Remove extension
             templateName: selectedTemplate?.name,
           }),
@@ -424,6 +431,7 @@ export default function ModelingPage() {
             templateId,
             templateType: 'optimized',
             codifiedItems: codifiedExtraction.items,
+            projectId: selectedProjectId, // For computed totals
             documentName: activeDocument.fileName.replace(/\.[^/.]+$/, ''),
           }),
         });
@@ -550,9 +558,16 @@ export default function ModelingPage() {
           console.log('[ModelingPage] Using codified data for template population');
           console.log('[ModelingPage] Codified items:', codifiedExtraction.items.length);
           
+          // Merge computed category totals from project data library
+          const itemsWithTotals = mergeComputedTotals(
+            codifiedExtraction.items as CodifiedItem[],
+            projectDataLibrary || []
+          );
+          console.log('[ModelingPage] Items with computed totals:', itemsWithTotals.length);
+          
           const codifiedResult = populateTemplateWithCodifiedData(
             initialSheets,
-            codifiedExtraction.items as CodifiedItem[]
+            itemsWithTotals
           );
           
           // Convert to legacy format for UI compatibility
@@ -869,10 +884,17 @@ export default function ModelingPage() {
         return;
       }
       
+      // Merge computed category totals from project data library
+      const itemsWithTotals = mergeComputedTotals(
+        usableItems as CodifiedItem[],
+        projectDataLibrary || []
+      );
+      console.log('[ModelingPage] Items with computed totals:', itemsWithTotals.length);
+      
       // Use original template sheets to start fresh
       const codifiedResult = populateTemplateWithCodifiedData(
         originalTemplateSheets,
-        usableItems as CodifiedItem[]
+        itemsWithTotals
       );
       
       // Convert to legacy format for UI compatibility

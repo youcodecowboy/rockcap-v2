@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { populateXlsmFromUrl, CodifiedItem } from '@/lib/xlsmPopulator';
+import { mergeComputedTotals, ProjectDataItem } from '@/lib/codifiedTemplatePopulator';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds max for large files
@@ -35,6 +36,7 @@ interface OptimizedTemplateInfo {
  * - templateId: ID of the template to use
  * - templateType: 'legacy' | 'optimized' - which template system to use
  * - codifiedItems: Array of codified items to insert
+ * - projectId: Optional project ID to include computed category totals
  * - documentName: Optional name for the output file
  * - templateName: Optional template name for the output file
  * 
@@ -43,7 +45,7 @@ interface OptimizedTemplateInfo {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { templateId, templateType = 'legacy', codifiedItems, documentName, templateName } = body;
+    const { templateId, templateType = 'legacy', codifiedItems, projectId, documentName, templateName } = body;
     
     // Validate required fields
     if (!templateId) {
@@ -145,8 +147,29 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Merge computed category totals from project data library if projectId provided
+    let itemsToPopulate = usableItems;
+    
+    if (projectId) {
+      console.log('[QuickExport] Fetching computed totals for project:', projectId);
+      try {
+        const projectDataItems: ProjectDataItem[] = await client.query(
+          api.projectDataLibrary.getProjectLibrary,
+          { projectId }
+        );
+        
+        if (projectDataItems && projectDataItems.length > 0) {
+          itemsToPopulate = mergeComputedTotals(usableItems, projectDataItems);
+          console.log('[QuickExport] Items after merging computed totals:', itemsToPopulate.length);
+        }
+      } catch (error) {
+        console.warn('[QuickExport] Could not fetch computed totals:', error);
+        // Continue without computed totals
+      }
+    }
+    
     // Populate the template
-    const result = await populateXlsmFromUrl(templateUrl, usableItems);
+    const result = await populateXlsmFromUrl(templateUrl, itemsToPopulate);
     
     console.log('[QuickExport] Population complete:', result.stats);
     

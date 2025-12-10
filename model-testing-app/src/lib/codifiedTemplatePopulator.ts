@@ -25,6 +25,76 @@ export interface CodifiedItem {
   category: string;
   mappingStatus: 'matched' | 'suggested' | 'pending_review' | 'confirmed' | 'unmatched';
   confidence: number;
+  isComputedTotal?: boolean; // Flag for computed category totals - excluded from fallbacks
+}
+
+// Types for project data items (from unified library with computed totals)
+export interface ProjectDataItem {
+  _id: string;
+  projectId: string;
+  itemCode: string;
+  category: string;
+  originalName: string;
+  currentValue: any;
+  currentValueNormalized: number;
+  currentSourceDocumentId: string;
+  currentSourceDocumentName: string;
+  currentDataType: string;
+  lastUpdatedAt: string;
+  lastUpdatedBy: 'extraction' | 'manual';
+  hasMultipleSources: boolean;
+  valueHistory: any[];
+  isDeleted?: boolean;
+  isComputed?: boolean;
+  computedFromCategory?: string;
+  computedItemCount?: number;
+  computedTotal?: number;
+}
+
+/**
+ * Merge computed category totals from projectDataLibrary into codified items
+ * This allows placeholders like <total.construction.costs> to be populated
+ * 
+ * @param codifiedItems - Original codified items from extraction
+ * @param projectDataItems - Project data items including computed totals
+ * @returns Combined array with computed totals converted to CodifiedItem format
+ */
+export function mergeComputedTotals(
+  codifiedItems: CodifiedItem[],
+  projectDataItems: ProjectDataItem[]
+): CodifiedItem[] {
+  // Filter to only computed totals
+  const computedTotals = projectDataItems.filter(
+    item => item.isComputed || (item.itemCode && item.itemCode.startsWith('<total.'))
+  );
+  
+  if (computedTotals.length === 0) {
+    console.log('[mergeComputedTotals] No computed totals found in project data');
+    return codifiedItems;
+  }
+  
+  console.log(`[mergeComputedTotals] Found ${computedTotals.length} computed totals to merge`);
+  
+  // Convert computed totals to CodifiedItem format
+  const convertedTotals: CodifiedItem[] = computedTotals.map(item => ({
+    id: String(item._id),
+    originalName: item.originalName,
+    itemCode: item.itemCode,
+    value: item.currentValue,
+    dataType: item.currentDataType || 'currency',
+    category: item.category,
+    mappingStatus: 'matched' as const, // Mark as matched so populator includes it
+    confidence: 1.0,
+    isComputedTotal: true, // Mark as computed total - should NOT be used in category fallbacks
+  }));
+  
+  // Log what we're adding
+  convertedTotals.forEach(item => {
+    console.log(`[mergeComputedTotals] Adding: ${item.itemCode} = ${item.value} (${item.originalName})`);
+  });
+  
+  // Return combined array - codified items first, then computed totals
+  return [...codifiedItems, ...convertedTotals];
 }
 
 /**
@@ -128,13 +198,20 @@ const CATEGORY_NORMALIZATIONS: Record<string, string> = {
   'consultants': 'professional.fees',
   'consultant fees': 'professional.fees',
   
-  // Construction Costs
+  // Construction Costs / Development Costs / Build Budget
   'construction costs': 'construction.costs',
   'net construction costs': 'construction.costs',
   'build costs': 'construction.costs',
   'construction': 'construction.costs',
   'building costs': 'construction.costs',
   'build': 'construction.costs',
+  'development costs': 'construction.costs',
+  'development': 'construction.costs',
+  'dev costs': 'construction.costs',
+  'construction budget': 'construction.costs',
+  'build budget': 'construction.costs',
+  'dev budget': 'construction.costs',
+  'development budget': 'construction.costs',
   
   // Financing Costs
   'financing costs': 'financing.costs',
@@ -581,6 +658,12 @@ export function populateTemplateWithCodifiedData(
     // Only include confirmed or matched items
     if (item.mappingStatus !== 'confirmed' && item.mappingStatus !== 'matched') {
       console.log(`[CodifiedPopulator] Skipping "${item.originalName}" - status is "${item.mappingStatus}" (need confirmed or matched)`);
+      return;
+    }
+    
+    // Skip computed totals - they only match specific <total.X> placeholders, not category fallbacks
+    if (item.isComputedTotal) {
+      console.log(`[CodifiedPopulator] Skipping computed total "${item.originalName}" from fallback pool`);
       return;
     }
     

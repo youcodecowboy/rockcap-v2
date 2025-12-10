@@ -25,6 +25,7 @@ export interface CodifiedItem {
   category: string;
   mappingStatus: 'matched' | 'suggested' | 'pending_review' | 'confirmed' | 'unmatched';
   confidence: number;
+  isComputedTotal?: boolean; // Flag for computed category totals - excluded from fallbacks
 }
 
 /**
@@ -92,7 +93,7 @@ const CATEGORY_NORMALIZATIONS: Record<string, string> = {
   'professioal.fees': 'professional.fees',  // Typo: missing 'n' in placeholder format
   'professioal': 'professional.fees',       // Typo: missing 'n'
   
-  // Construction Costs / Development Costs
+  // Construction Costs / Development Costs / Build Budget
   'construction costs': 'construction.costs',
   'net construction costs': 'construction.costs',
   'build costs': 'construction.costs',
@@ -102,6 +103,10 @@ const CATEGORY_NORMALIZATIONS: Record<string, string> = {
   'development costs': 'construction.costs',  // Development costs often mean construction costs
   'development': 'construction.costs',
   'dev costs': 'construction.costs',
+  'construction budget': 'construction.costs',  // Budget variations
+  'build budget': 'construction.costs',
+  'dev budget': 'construction.costs',
+  'development budget': 'construction.costs',
   
   // Financing Costs / Legal Fees (combined in extraction)
   'financing costs': 'financing.costs',
@@ -252,6 +257,10 @@ export async function populateXlsmTemplate(
   // Build lookup from codified items
   const codeLookup = buildCodeLookup(codifiedItems);
   console.log('[XlsmPopulator] Code lookup has', codeLookup.size, 'entries');
+  
+  // Log available item codes for debugging
+  const availableCodes = Array.from(codeLookup.keys()).filter(k => k.startsWith('<'));
+  console.log('[XlsmPopulator] Available item codes:', availableCodes.slice(0, 20).join(', ') + (availableCodes.length > 20 ? ` ... and ${availableCodes.length - 20} more` : ''));
   
   // Track statistics
   const matchedPlaceholders: string[] = [];
@@ -439,14 +448,16 @@ export async function populateXlsmTemplate(
           if (item) {
             const formattedValue = formatValueForExcel(item.value, item.dataType);
             
+            console.log(`[XlsmPopulator] Direct match: "${placeholder}" → "${item.originalName}" = ${formattedValue} (sheet: ${sheetName}, row: ${row}, col: ${col})`);
+            
             // Replace in the cell value
             if (cellText === placeholder) {
               // Entire cell is the placeholder - replace with the value directly
               newValue = formattedValue;
               // Note: Not applying numberFormat to preserve template's cell styling
             } else {
-              // Placeholder is part of a larger string
-              newValue = newValue.replace(placeholder, String(formattedValue));
+              // Placeholder is part of a larger string - use replaceAll for multiple occurrences
+              newValue = newValue.split(placeholder).join(String(formattedValue));
             }
             
             hasReplacements = true;
@@ -458,6 +469,7 @@ export async function populateXlsmTemplate(
             
           } else {
             // Only add to unmatched if not a fallback pattern
+            console.log(`[XlsmPopulator] Unmatched placeholder: "${placeholder}" (sheet: ${sheetName}, row: ${row}, col: ${col})`);
             if (!unmatchedPlaceholders.includes(placeholder)) {
               unmatchedPlaceholders.push(placeholder);
             }
@@ -482,6 +494,11 @@ export async function populateXlsmTemplate(
   codifiedItems.forEach(item => {
     if (item.mappingStatus !== 'confirmed' && item.mappingStatus !== 'matched') {
       console.log(`[XlsmPopulator] Skipping item "${item.originalName}" - status is "${item.mappingStatus}"`);
+      return;
+    }
+    // Skip computed totals from category fallbacks - they should only match specific placeholders
+    if (item.isComputedTotal) {
+      console.log(`[XlsmPopulator] Skipping computed total "${item.originalName}" from fallback pool`);
       return;
     }
     const normalizedCat = normalizeCategory(item.category);
@@ -541,12 +558,21 @@ export async function populateXlsmTemplate(
     let categoryItems = itemsByCategory.get(templateCategory) || [];
     if (categoryItems.length === 0 && normalizedTemplateCategory !== templateCategory) {
       categoryItems = itemsByCategory.get(normalizedTemplateCategory) || [];
+      console.log(`[XlsmPopulator] Fallback lookup: "${templateCategory}" not found, trying normalized "${normalizedTemplateCategory}" - found ${categoryItems.length} items`);
+    }
+    
+    // Debug: Show available categories if no match
+    if (categoryItems.length === 0) {
+      console.log(`[XlsmPopulator] WARNING: No items found for category "${templateCategory}" (normalized: "${normalizedTemplateCategory}")`);
+      console.log(`[XlsmPopulator] Available categories:`, Array.from(itemsByCategory.keys()));
     }
     
     // For default sets, exclude items already matched to specific placeholders
     const availableItems = isNumberedSet 
       ? [...categoryItems]
       : categoryItems.filter(item => !globalMatchedItemIds.has(item.id));
+    
+    console.log(`[XlsmPopulator] Processing fallback group "${key}": ${rows.length} rows, ${availableItems.length} available items`);
     
     const sheet = workbook.sheet(firstRow.sheetName);
     if (!sheet) continue;
@@ -557,6 +583,10 @@ export async function populateXlsmTemplate(
       
       const item = availableItems[itemIndex];
       
+      // Debug: Log item details
+      console.log(`[XlsmPopulator] Filling row ${row.row}: "${item.originalName}" = ${item.value} (${item.dataType})`);
+      console.log(`[XlsmPopulator]   nameCell: ${row.nameCell ? `col ${row.nameCell.col}` : 'NONE'}, valueCell: ${row.valueCell ? `col ${row.valueCell.col}` : 'NONE'}`);
+      
       // Fill name cell
       if (row.nameCell) {
         sheet.cell(row.row, row.nameCell.col).value(item.originalName);
@@ -565,10 +595,13 @@ export async function populateXlsmTemplate(
       // Fill value cell - trust template's existing number format for styling
       if (row.valueCell) {
         const formattedValue = formatValueForExcel(item.value, item.dataType);
+        console.log(`[XlsmPopulator]   Setting value: raw=${item.value}, formatted=${formattedValue}`);
         const valueCell = sheet.cell(row.row, row.valueCell.col);
         valueCell.value(formattedValue);
         // Note: Not applying numberFormat here to preserve template's cell styling
         // The template should already have appropriate formatting (currency, etc.)
+      } else {
+        console.log(`[XlsmPopulator]   WARNING: No valueCell detected for row ${row.row}!`);
       }
       
       fallbacksInserted++;
@@ -622,16 +655,46 @@ export async function populateXlsmTemplate(
           // Reset regex lastIndex
           anyPlaceholderPattern.lastIndex = 0;
           
-          // Clear the cell (replace entire content if it's just a placeholder, or remove placeholder from text)
+          // Patterns for "clearable" placeholders (category fallbacks and totals - not critical)
+          const isCategoryFallback = (p: string) => /<all\.[a-z.]+\.(name|value)(\.\d+)?>/i.test(p);
+          const isTotal = (p: string) => /<total\.[a-z.]+>/i.test(p);
+          
+          // Handle single placeholder (entire cell is one placeholder)
           if (cellText.match(/^<[^<>]+>$/)) {
-            // Entire cell is a placeholder - clear it
-            cell.value('');
+            const placeholder = cellText;
+            
+            if (isCategoryFallback(placeholder) || isTotal(placeholder)) {
+              // Category fallbacks and totals - just clear (not critical)
+              cell.value('');
+              console.log(`[XlsmPopulator] Cleared optional placeholder: ${placeholder}`);
+            } else {
+              // Specific item code - mark as missing (critical for user to know)
+              const codeName = placeholder.replace(/^<|>$/g, '');
+              cell.value(`<MISSING: ${codeName}>`);
+              console.log(`[XlsmPopulator] Marked missing item code: ${placeholder} → <MISSING: ${codeName}>`);
+            }
             placeholdersCleared++;
           } else {
-            // Placeholder is part of larger text - remove just the placeholders
-            const cleanedText = cellText.replace(anyPlaceholderPattern, '').trim();
-            if (cleanedText !== cellText) {
-              cell.value(cleanedText);
+            // Placeholder is part of larger text - process each placeholder individually
+            let newText = cellText;
+            let match;
+            const placeholderRegex = /<[^<>]+>/g;
+            
+            while ((match = placeholderRegex.exec(cellText)) !== null) {
+              const placeholder = match[0];
+              
+              if (isCategoryFallback(placeholder) || isTotal(placeholder)) {
+                // Clear category fallbacks and totals
+                newText = newText.replace(placeholder, '');
+              } else {
+                // Mark specific codes as missing
+                const codeName = placeholder.replace(/^<|>$/g, '');
+                newText = newText.replace(placeholder, `<MISSING: ${codeName}>`);
+              }
+            }
+            
+            if (newText !== cellText) {
+              cell.value(newText.trim());
               placeholdersCleared++;
             }
           }
