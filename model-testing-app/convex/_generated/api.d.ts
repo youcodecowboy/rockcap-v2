@@ -9,6 +9,7 @@
  */
 
 import type * as authHelpers from "../authHelpers.js";
+import type * as bulkUpload from "../bulkUpload.js";
 import type * as categorySettings from "../categorySettings.js";
 import type * as changelog from "../changelog.js";
 import type * as chatActions from "../chatActions.js";
@@ -35,6 +36,8 @@ import type * as extractedItemCodes from "../extractedItemCodes.js";
 import type * as fileQueue from "../fileQueue.js";
 import type * as fileTypeDefinitions from "../fileTypeDefinitions.js";
 import type * as files from "../files.js";
+import type * as folderStructure from "../folderStructure.js";
+import type * as folderTemplates from "../folderTemplates.js";
 import type * as funnels from "../funnels.js";
 import type * as googleCalendar from "../googleCalendar.js";
 import type * as hubspotSync from "../hubspotSync.js";
@@ -53,10 +56,14 @@ import type * as itemCodeAliases from "../itemCodeAliases.js";
 import type * as knowledgeBank from "../knowledgeBank.js";
 import type * as leads from "../leads.js";
 import type * as migrations_addDocumentCodes from "../migrations/addDocumentCodes.js";
+import type * as migrations_clearFileQueue from "../migrations/clearFileQueue.js";
+import type * as migrations_clearLegacyData from "../migrations/clearLegacyData.js";
 import type * as migrations_fixChatSessionsUserId from "../migrations/fixChatSessionsUserId.js";
 import type * as migrations_seedAppraisalTemplate from "../migrations/seedAppraisalTemplate.js";
 import type * as migrations_seedCodeMappings from "../migrations/seedCodeMappings.js";
 import type * as migrations_seedFileTypeDefinitions from "../migrations/seedFileTypeDefinitions.js";
+import type * as migrations_seedFolderTemplates from "../migrations/seedFolderTemplates.js";
+import type * as migrations_seedPlacementRules from "../migrations/seedPlacementRules.js";
 import type * as modelExports from "../modelExports.js";
 import type * as modelRuns from "../modelRuns.js";
 import type * as modelingCodeMappings from "../modelingCodeMappings.js";
@@ -64,6 +71,7 @@ import type * as modelingTemplates from "../modelingTemplates.js";
 import type * as noteTemplates from "../noteTemplates.js";
 import type * as notes from "../notes.js";
 import type * as notifications from "../notifications.js";
+import type * as placementRules from "../placementRules.js";
 import type * as planning from "../planning.js";
 import type * as projectDataLibrary from "../projectDataLibrary.js";
 import type * as projects from "../projects.js";
@@ -89,6 +97,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   authHelpers: typeof authHelpers;
+  bulkUpload: typeof bulkUpload;
   categorySettings: typeof categorySettings;
   changelog: typeof changelog;
   chatActions: typeof chatActions;
@@ -115,6 +124,8 @@ declare const fullApi: ApiFromModules<{
   fileQueue: typeof fileQueue;
   fileTypeDefinitions: typeof fileTypeDefinitions;
   files: typeof files;
+  folderStructure: typeof folderStructure;
+  folderTemplates: typeof folderTemplates;
   funnels: typeof funnels;
   googleCalendar: typeof googleCalendar;
   hubspotSync: typeof hubspotSync;
@@ -133,10 +144,14 @@ declare const fullApi: ApiFromModules<{
   knowledgeBank: typeof knowledgeBank;
   leads: typeof leads;
   "migrations/addDocumentCodes": typeof migrations_addDocumentCodes;
+  "migrations/clearFileQueue": typeof migrations_clearFileQueue;
+  "migrations/clearLegacyData": typeof migrations_clearLegacyData;
   "migrations/fixChatSessionsUserId": typeof migrations_fixChatSessionsUserId;
   "migrations/seedAppraisalTemplate": typeof migrations_seedAppraisalTemplate;
   "migrations/seedCodeMappings": typeof migrations_seedCodeMappings;
   "migrations/seedFileTypeDefinitions": typeof migrations_seedFileTypeDefinitions;
+  "migrations/seedFolderTemplates": typeof migrations_seedFolderTemplates;
+  "migrations/seedPlacementRules": typeof migrations_seedPlacementRules;
   modelExports: typeof modelExports;
   modelRuns: typeof modelRuns;
   modelingCodeMappings: typeof modelingCodeMappings;
@@ -144,6 +159,7 @@ declare const fullApi: ApiFromModules<{
   noteTemplates: typeof noteTemplates;
   notes: typeof notes;
   notifications: typeof notifications;
+  placementRules: typeof placementRules;
   planning: typeof planning;
   projectDataLibrary: typeof projectDataLibrary;
   projects: typeof projects;

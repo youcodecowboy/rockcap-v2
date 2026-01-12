@@ -1,393 +1,215 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { 
-  useDocuments, 
-  useInternalDocuments as useInternalDocumentsHook, 
-  useUnclassifiedDocuments,
-  useDeleteDocument,
-  useDeleteInternalDocument,
-  useUpdateDocumentCode,
-  useUpdateInternalDocumentCode,
-} from '@/lib/documentStorage';
+import { useState, useCallback } from 'react';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import CompactMetricCard from '@/components/CompactMetricCard';
-import RecentUploadCard from '@/components/RecentUploadCard';
-import DocumentsTable from '@/components/DocumentsTable';
-import InternalDocumentsTable from '@/components/InternalDocumentsTable';
-import UnclassifiedDocumentsTable from '@/components/UnclassifiedDocumentsTable';
-import { FileText, Building2, Clock, Search, AlertCircle, ChevronRight, Plus } from 'lucide-react';
-import { useQuery } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { Clock, FileText } from 'lucide-react';
 
-type TabType = 'client' | 'internal' | 'unclassified';
+import DocsSidebar from './components/DocsSidebar';
+import FolderBrowser from './components/FolderBrowser';
+import FileList from './components/FileList';
+import FileDetailPanel from './components/FileDetailPanel';
+import BreadcrumbNav from './components/BreadcrumbNav';
+
+interface FolderSelection {
+  type: 'client' | 'project';
+  folderId: string;
+  folderName: string;
+  projectId?: Id<"projects">;
+}
+
+interface Document {
+  _id: Id<"documents">;
+  fileName: string;
+  documentCode?: string;
+  summary: string;
+  category: string;
+  fileTypeDetected?: string;
+  fileType: string;
+  fileSize: number;
+  uploadedAt: string;
+  savedAt?: string;
+  fileStorageId?: Id<"_storage">;
+  clientName?: string;
+  projectName?: string;
+  version?: string;
+  uploaderInitials?: string;
+  isInternal?: boolean;
+}
 
 export default function DocsPage() {
-  const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>('client');
+  // State
+  const [selectedClientId, setSelectedClientId] = useState<Id<"clients"> | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<FolderSelection | null>(null);
+  const [isInboxSelected, setIsInboxSelected] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(false);
+
+  // Queries
+  const selectedClient = useQuery(
+    api.clients.get,
+    selectedClientId ? { id: selectedClientId } : "skip"
+  );
   
-  // Convex hooks
-  const allDocuments = useDocuments() || [];
-  const internalDocuments = useInternalDocumentsHook() || [];
-  const unclassifiedDocuments = useUnclassifiedDocuments() || [];
-  const deleteDocument = useDeleteDocument();
-  const deleteInternalDocument = useDeleteInternalDocument();
-  const updateDocumentCode = useUpdateDocumentCode();
-  const updateInternalDocumentCode = useUpdateInternalDocumentCode();
-  
-  // Get pending queue count
+  const selectedProject = useQuery(
+    api.projects.get,
+    selectedFolder?.projectId ? { id: selectedFolder.projectId } : "skip"
+  );
+
   const pendingJobs = useQuery(api.fileQueue.getJobs, { 
     status: 'needs_confirmation',
     limit: 100 
   });
   const queueCount = pendingJobs?.length || 0;
 
-  // Filter documents based on search
-  const filteredClientDocs = useMemo(() => {
-    if (!searchQuery.trim()) return allDocuments.filter(doc => doc.clientId);
-    const query = searchQuery.toLowerCase();
-    return allDocuments.filter(doc => 
-      doc.clientId && (
-        doc.fileName.toLowerCase().includes(query) ||
-        doc.summary.toLowerCase().includes(query) ||
-        doc.documentCode?.toLowerCase().includes(query) ||
-        doc.clientName?.toLowerCase().includes(query) ||
-        doc.projectName?.toLowerCase().includes(query)
-      )
-    );
-  }, [allDocuments, searchQuery]);
+  // Mutations
+  const deleteDocument = useMutation(api.documents.remove);
 
-  const filteredInternalDocs = useMemo(() => {
-    if (!searchQuery.trim()) return internalDocuments;
-    const query = searchQuery.toLowerCase();
-    return internalDocuments.filter(doc => 
-      doc.fileName.toLowerCase().includes(query) ||
-      doc.summary.toLowerCase().includes(query) ||
-      doc.documentCode.toLowerCase().includes(query) ||
-      doc.clientName?.toLowerCase().includes(query)
-    );
-  }, [internalDocuments, searchQuery]);
+  // Handlers
+  const handleClientSelect = useCallback((clientId: Id<"clients"> | null) => {
+    setSelectedClientId(clientId);
+    setSelectedFolder(null);
+    setIsInboxSelected(false);
+    setSelectedDocument(null);
+  }, []);
 
-  const filteredUnclassifiedDocs = useMemo(() => {
-    if (!searchQuery.trim()) return unclassifiedDocuments;
-    const query = searchQuery.toLowerCase();
-    return unclassifiedDocuments.filter(doc => 
-      doc.fileName.toLowerCase().includes(query) ||
-      doc.summary.toLowerCase().includes(query) ||
-      doc.documentCode?.toLowerCase().includes(query)
-    );
-  }, [unclassifiedDocuments, searchQuery]);
+  const handleInboxSelect = useCallback(() => {
+    setSelectedClientId(null);
+    setSelectedFolder(null);
+    setIsInboxSelected(true);
+    setSelectedDocument(null);
+  }, []);
 
-  // Calculate metrics
-  const metrics = useMemo(() => {
-    const clientDocuments = allDocuments.filter(doc => doc.clientId !== null && doc.clientId !== undefined);
+  const handleFolderSelect = useCallback((folder: FolderSelection | null) => {
+    setSelectedFolder(folder);
+    setSelectedDocument(null);
+  }, []);
+
+  const handleFileSelect = useCallback((document: Document) => {
+    setSelectedDocument(document);
+    setIsDetailPanelOpen(true);
+  }, []);
+
+  const handleCloseDetailPanel = useCallback(() => {
+    setIsDetailPanelOpen(false);
+    // Keep selectedDocument for a moment to allow animation
+    setTimeout(() => setSelectedDocument(null), 300);
+  }, []);
+
+  const handleDeleteDocument = useCallback(async () => {
+    if (!selectedDocument) return;
     
-    return {
-      totalDocuments: allDocuments.length,
-      internalDocuments: internalDocuments.length,
-      clientDocuments: clientDocuments.length,
-      unclassifiedDocuments: unclassifiedDocuments.length,
-    };
-  }, [allDocuments, internalDocuments, unclassifiedDocuments]);
-
-  const handleDeleteDocument = async (id: Id<"documents">) => {
-    if (confirm('Are you sure you want to delete this document?')) {
-      await deleteDocument({ id });
+    if (!confirm(`Are you sure you want to delete "${selectedDocument.fileName}"?`)) {
+      return;
     }
-  };
-
-  const handleDeleteInternalDocument = async (id: Id<"internalDocuments">) => {
-    if (confirm('Are you sure you want to delete this internal document?')) {
-      await deleteInternalDocument({ id });
+    
+    try {
+      await deleteDocument({ id: selectedDocument._id });
+      handleCloseDetailPanel();
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete file');
     }
-  };
+  }, [selectedDocument, deleteDocument, handleCloseDetailPanel]);
 
-  const handleUpdateDocumentCode = async (id: Id<"documents">, newCode: string) => {
-    await updateDocumentCode({ id, documentCode: newCode });
-  };
-
-  const handleUpdateInternalDocumentCode = async (id: Id<"internalDocuments">, newCode: string) => {
-    await updateInternalDocumentCode({ id, documentCode: newCode });
-  };
+  const handleHomeClick = useCallback(() => {
+    setSelectedClientId(null);
+    setSelectedFolder(null);
+    setIsInboxSelected(false);
+    setSelectedDocument(null);
+  }, []);
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Breadcrumbs */}
-        <div className="mb-4">
-          <nav className="flex items-center gap-2 text-sm text-gray-600">
-            <Link href="/docs" className="hover:text-gray-900 transition-colors">
-              Docs
-            </Link>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-gray-900 font-medium">Document Library</span>
-          </nav>
-        </div>
-
-        {/* Page Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Document Library</h1>
-              <p className="mt-2 text-gray-600">
-                Browse and manage all documents with advanced filtering and organization
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Link href="/docs/queue">
-                <Button variant="default" size="sm" className="relative">
-                  <Clock className="w-4 h-4 mr-2" />
-                  Review Queue
-                  {queueCount > 0 && (
-                    <span className="ml-2 px-1.5 py-0.5 text-xs font-semibold bg-white text-blue-600 rounded-full">
-                      {queueCount}
-                    </span>
-                  )}
-                </Button>
-              </Link>
-            </div>
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <FileText className="w-6 h-6 text-blue-600" />
+            <h1 className="text-xl font-bold text-gray-900">Document Library</h1>
+          </div>
+          
+          {/* Breadcrumb */}
+          <div className="hidden md:block">
+            <BreadcrumbNav
+              clientName={selectedClient?.name}
+              projectName={selectedProject?.name}
+              folderName={selectedFolder?.folderName}
+              isInbox={isInboxSelected}
+              onHomeClick={handleHomeClick}
+              onClientClick={() => {
+                setSelectedFolder(null);
+                setSelectedDocument(null);
+              }}
+              onProjectClick={() => {
+                if (selectedFolder?.projectId) {
+                  setSelectedFolder(null);
+                }
+              }}
+            />
           </div>
         </div>
 
-        {/* Compact Metric Cards */}
-        <div className="flex flex-col md:flex-row gap-3 mb-6">
-          <div className="flex-1">
-            <RecentUploadCard />
-          </div>
-          <div className="flex gap-3 flex-wrap md:flex-nowrap">
-            <div className="w-full md:w-auto md:min-w-[140px]">
-              <CompactMetricCard
-                label="Client Docs"
-                value={metrics.clientDocuments}
-                icon={Building2}
-                iconColor="green"
-                className="bg-black text-white"
-              />
-            </div>
-            <div className="w-full md:w-auto md:min-w-[140px]">
-              <CompactMetricCard
-                label="Internal"
-                value={metrics.internalDocuments}
-                icon={FileText}
-                iconColor="purple"
-                className="bg-black text-white"
-              />
-            </div>
-            <div className="w-full md:w-auto md:min-w-[140px]">
-              <CompactMetricCard
-                label="Unclassified"
-                value={metrics.unclassifiedDocuments}
-                icon={AlertCircle}
-                iconColor="orange"
-                className="bg-black text-white"
-              />
-            </div>
-            <div className="w-full md:w-auto md:min-w-[140px]">
-              <CompactMetricCard
-                label="Total"
-                value={metrics.totalDocuments}
-                icon={FileText}
-                iconColor="blue"
-                className="bg-black text-white"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="bg-blue-600">
-            <div className="flex items-center justify-between">
-              <nav className="flex -mb-px">
-                <button
-                  onClick={() => setActiveTab('client')}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'client'
-                      ? 'border-white text-white'
-                      : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4" />
-                    Client Documents
-                    <Badge variant="outline" className="ml-2 bg-white/20 text-white border-white/30">
-                      {metrics.clientDocuments}
-                    </Badge>
-                  </div>
-                </button>
-                <button
-                  onClick={() => setActiveTab('internal')}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'internal'
-                      ? 'border-white text-white'
-                      : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Internal Documents
-                    <Badge variant="outline" className="ml-2 bg-white/20 text-white border-white/30">
-                      {metrics.internalDocuments}
-                    </Badge>
-                  </div>
-                </button>
-                <button
-                  onClick={() => setActiveTab('unclassified')}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'unclassified'
-                      ? 'border-white text-white'
-                      : 'border-transparent text-white/80 hover:text-white hover:border-white/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" />
-                    Unclassified
-                    <Badge variant="outline" className="ml-2 bg-white/20 text-white border-white/30">
-                      {metrics.unclassifiedDocuments}
-                    </Badge>
-                  </div>
-                </button>
-              </nav>
-              {activeTab === 'client' && (
-                <div className="pr-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowFilters(!showFilters)}
-                    className="gap-2"
-                  >
-                    <Search className="w-4 h-4" />
-                    {showFilters ? 'Hide Filters' : 'Show Filters'}
-                  </Button>
-                </div>
+        <div className="flex items-center gap-3">
+          <Link href="/docs/queue">
+            <Button variant="default" size="sm" className="relative">
+              <Clock className="w-4 h-4 mr-2" />
+              Review Queue
+              {queueCount > 0 && (
+                <Badge variant="secondary" className="ml-2 bg-white text-blue-600">
+                  {queueCount}
+                </Badge>
               )}
-              {activeTab === 'internal' && (
-                <div className="pr-4 flex items-center gap-2">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => {
-                      // Trigger create folder dialog in InternalDocumentsTable
-                      const event = new CustomEvent('createFolder');
-                      window.dispatchEvent(event);
-                    }}
-                    className="gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Create Folder
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowFilters(!showFilters)}
-                    className="gap-2"
-                  >
-                    <Search className="w-4 h-4" />
-                    {showFilters ? 'Hide Filters' : 'Show Filters'}
-                  </Button>
-                </div>
-              )}
-              {activeTab === 'unclassified' && (
-                <div className="pr-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowFilters(!showFilters)}
-                    className="gap-2"
-                  >
-                    <Search className="w-4 h-4" />
-                    {showFilters ? 'Hide Filters' : 'Show Filters'}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Search Bar */}
-          <div className="p-4 border-b border-gray-200 bg-gray-50">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search documents by name, code, category, client, or project..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-400 bg-white"
-              />
-            </div>
-          </div>
-
-          {/* Tab Content */}
-          <div className="p-6">
-            {activeTab === 'client' && (
-              <div>
-                {filteredClientDocs.length === 0 ? (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                    <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-900 font-medium mb-1">No client documents</p>
-                    <p className="text-sm text-gray-500">
-                      {searchQuery 
-                        ? 'No documents match your search. Try adjusting your filters.' 
-                        : 'Client documents will appear here once uploaded and classified.'}
-                    </p>
-                  </div>
-                ) : (
-                  <DocumentsTable 
-                    documents={filteredClientDocs} 
-                    showFilters={showFilters}
-                    onFiltersChange={setShowFilters}
-                  />
-                )}
-              </div>
-            )}
-
-            {activeTab === 'internal' && (
-              <div>
-                {filteredInternalDocs.length === 0 ? (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-900 font-medium mb-1">No internal documents</p>
-                    <p className="text-sm text-gray-500">
-                      {searchQuery ? 'No documents match your search.' : 'Internal documents will appear here once uploaded.'}
-                    </p>
-                  </div>
-                ) : (
-                  <InternalDocumentsTable 
-                    documents={filteredInternalDocs} 
-                    showFilters={showFilters}
-                    onFiltersChange={setShowFilters}
-                  />
-                )}
-              </div>
-            )}
-
-            {activeTab === 'unclassified' && (
-              <div>
-                {filteredUnclassifiedDocs.length === 0 ? (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                    <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-900 font-medium mb-1">No unclassified documents</p>
-                    <p className="text-sm text-gray-500">
-                      {searchQuery ? 'No documents match your search.' : 'All documents are properly classified.'}
-                    </p>
-                  </div>
-                ) : (
-                  <UnclassifiedDocumentsTable 
-                    documents={filteredUnclassifiedDocs} 
-                    showFilters={showFilters}
-                    onFiltersChange={setShowFilters}
-                  />
-                )}
-              </div>
-            )}
-          </div>
+            </Button>
+          </Link>
         </div>
+      </header>
+
+      {/* Main Content - 3 Pane Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Column 1: Sidebar */}
+        <DocsSidebar
+          selectedClientId={selectedClientId}
+          onClientSelect={handleClientSelect}
+          onInboxSelect={handleInboxSelect}
+          isInboxSelected={isInboxSelected}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+
+        {/* Column 2: Folder Browser */}
+        {selectedClientId && selectedClient && !isInboxSelected && (
+          <FolderBrowser
+            clientId={selectedClientId}
+            clientName={selectedClient.name}
+            clientType={selectedClient.type}
+            selectedFolder={selectedFolder}
+            onFolderSelect={handleFolderSelect}
+          />
+        )}
+
+        {/* Column 3: File List */}
+        <FileList
+          clientId={selectedClientId}
+          clientName={selectedClient?.name}
+          clientType={selectedClient?.type}
+          selectedFolder={selectedFolder}
+          isInbox={isInboxSelected}
+          onFileSelect={handleFileSelect}
+        />
+
+        {/* File Detail Panel (Slide-out) */}
+        <FileDetailPanel
+          document={selectedDocument}
+          isOpen={isDetailPanelOpen}
+          onClose={handleCloseDetailPanel}
+          onDelete={handleDeleteDocument}
+        />
       </div>
     </div>
   );

@@ -1,3 +1,13 @@
+/**
+ * @deprecated This component is deprecated and will be removed in a future version.
+ * The document library has been redesigned to use a 3-pane layout with:
+ * - DocsSidebar (src/app/docs/components/DocsSidebar.tsx)
+ * - FolderBrowser (src/app/docs/components/FolderBrowser.tsx)
+ * - FileList (src/app/docs/components/FileList.tsx)
+ * 
+ * Internal documents concept has been removed - all documents are now
+ * associated with a client and stored in the unified documents table.
+ */
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';

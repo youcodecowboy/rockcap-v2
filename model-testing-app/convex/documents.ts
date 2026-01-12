@@ -300,9 +300,9 @@ export const create = mutation({
     summary: v.string(),
     fileTypeDetected: v.string(),
     category: v.string(),
-    reasoning: v.string(),
-    confidence: v.number(),
-    tokensUsed: v.number(),
+    reasoning: v.optional(v.string()), // Optional for direct uploads
+    confidence: v.optional(v.number()), // Optional for direct uploads
+    tokensUsed: v.optional(v.number()), // Optional for direct uploads
     clientId: v.optional(v.id("clients")),
     clientName: v.optional(v.string()),
     projectId: v.optional(v.id("projects")),
@@ -320,6 +320,13 @@ export const create = mutation({
     documentCode: v.optional(v.string()), // Optional - will auto-generate if not provided
     isBaseDocument: v.optional(v.boolean()),
     uploadedBy: v.optional(v.id("users")),
+    // Folder filing fields
+    folderId: v.optional(v.string()), // Folder type/key (e.g., "background", "custom_dubai_docs")
+    folderType: v.optional(v.union(v.literal("client"), v.literal("project"))),
+    isInternal: v.optional(v.boolean()),
+    uploaderInitials: v.optional(v.string()),
+    version: v.optional(v.string()),
+    previousVersionId: v.optional(v.id("documents")),
   },
   handler: async (ctx, args) => {
     const uploadedAt = new Date().toISOString();
@@ -356,9 +363,9 @@ export const create = mutation({
       summary: args.summary,
       fileTypeDetected: args.fileTypeDetected,
       category: args.category,
-      reasoning: args.reasoning,
-      confidence: args.confidence,
-      tokensUsed: args.tokensUsed,
+      reasoning: args.reasoning || "Direct upload to folder",
+      confidence: args.confidence ?? 1.0,
+      tokensUsed: args.tokensUsed ?? 0,
       clientId: args.clientId,
       clientName: args.clientName,
       projectId: args.projectId,
@@ -367,6 +374,13 @@ export const create = mutation({
       suggestedProjectName: args.suggestedProjectName,
       documentCode: documentCode,
       extractedData: args.extractedData,
+      // Folder filing fields
+      folderId: args.folderId,
+      folderType: args.folderType,
+      isInternal: args.isInternal ?? false,
+      uploaderInitials: args.uploaderInitials,
+      version: args.version,
+      previousVersionId: args.previousVersionId,
       status: args.status || "completed",
       error: args.error,
       savedAt: uploadedAt,
@@ -903,6 +917,148 @@ export const getExtractionHistory = query({
         latestExtraction: extractions[0], // Most recent is first
       };
     });
+    
+    return result;
+  },
+});
+
+// ============================================================================
+// DOCUMENT LIBRARY QUERIES - For new 3-pane document browser
+// ============================================================================
+
+// Query: Get unfiled documents (no clientId)
+export const getUnfiled = query({
+  args: {},
+  handler: async (ctx) => {
+    const allDocs = await ctx.db.query("documents").collect();
+    return allDocs.filter(doc => !doc.clientId);
+  },
+});
+
+// Query: Get count of unfiled documents
+export const getUnfiledCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const allDocs = await ctx.db.query("documents").collect();
+    return allDocs.filter(doc => !doc.clientId).length;
+  },
+});
+
+// Query: Get documents by folder (client or project level)
+export const getByFolder = query({
+  args: {
+    clientId: v.id("clients"),
+    folderType: v.string(),
+    level: v.union(v.literal("client"), v.literal("project")),
+    projectId: v.optional(v.id("projects")),
+  },
+  handler: async (ctx, args) => {
+    if (args.level === "project") {
+      if (!args.projectId) {
+        return [];
+      }
+      // Get documents for this project and folder type
+      const docs = await ctx.db
+        .query("documents")
+        .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+        .collect();
+      
+      // Filter for documents in this specific folder within the project
+      return docs.filter(doc => doc.folderId === args.folderType);
+    } else {
+      // Client-level folder
+      const docs = await ctx.db
+        .query("documents")
+        .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+        .collect();
+      
+      // Filter for documents in this folder that are NOT in a project
+      return docs.filter(doc => 
+        doc.folderId === args.folderType && 
+        doc.folderType === "client" && 
+        !doc.projectId
+      );
+    }
+  },
+});
+
+// Query: Get document counts per client
+export const getClientDocumentCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    const allDocs = await ctx.db.query("documents").collect();
+    const counts: Record<string, number> = {};
+    
+    for (const doc of allDocs) {
+      if (doc.clientId) {
+        counts[doc.clientId] = (counts[doc.clientId] || 0) + 1;
+      }
+    }
+    
+    return counts;
+  },
+});
+
+// Query: Get folder counts for a client (both client-level and project-level)
+export const getFolderCounts = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+    
+    const clientFolders: Record<string, number> = {};
+    const projectFolders: Record<string, Record<string, number>> = {};
+    
+    for (const doc of docs) {
+      if (doc.projectId) {
+        // Project-level document
+        if (!projectFolders[doc.projectId]) {
+          projectFolders[doc.projectId] = {};
+        }
+        const folderKey = doc.folderId || 'uncategorized';
+        projectFolders[doc.projectId][folderKey] = (projectFolders[doc.projectId][folderKey] || 0) + 1;
+      } else if (doc.folderId && doc.folderType === 'client') {
+        // Client-level document
+        clientFolders[doc.folderId] = (clientFolders[doc.folderId] || 0) + 1;
+      }
+    }
+    
+    return { clientFolders, projectFolders };
+  },
+});
+
+// Query: Get project folder counts for all projects under a client
+export const getProjectFolderCounts = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    // Get all projects for this client
+    const allProjects = await ctx.db.query("projects").collect();
+    const clientProjects = allProjects.filter(p => 
+      p.clientRoles.some(cr => cr.clientId === args.clientId)
+    );
+    
+    // Get all documents for this client
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+    
+    // Build counts per project
+    const result: Record<string, { folders: Record<string, number>; total: number }> = {};
+    
+    for (const project of clientProjects) {
+      result[project._id] = { folders: {}, total: 0 };
+    }
+    
+    for (const doc of docs) {
+      if (doc.projectId && result[doc.projectId]) {
+        const folderKey = doc.folderId || 'uncategorized';
+        result[doc.projectId].folders[folderKey] = (result[doc.projectId].folders[folderKey] || 0) + 1;
+        result[doc.projectId].total++;
+      }
+    }
     
     return result;
   },

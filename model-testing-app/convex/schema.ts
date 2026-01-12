@@ -104,6 +104,8 @@ export default defineSchema({
   // Projects table - supports many-to-many with clients via clientRoles
   projects: defineTable({
     name: v.string(),
+    // Project shortcode for document naming (max 10 chars, e.g., "WIMBPARK28")
+    projectShortcode: v.optional(v.string()),
     clientRoles: v.array(v.object({
       clientId: v.string(),
       role: v.string(), // e.g., "borrower", "lender", "developer"
@@ -148,7 +150,8 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_client", ["clientRoles"])
-    .index("by_hubspot_id", ["hubspotDealId"]),
+    .index("by_hubspot_id", ["hubspotDealId"])
+    .index("by_shortcode", ["projectShortcode"]),
 
   // Documents table - stores file references and analysis results
   documents: defineTable({
@@ -177,6 +180,18 @@ export default defineSchema({
     documentCode: v.optional(v.string()),
     // Flag to indicate if document belongs to client's Base Documents (not project-specific)
     isBaseDocument: v.optional(v.boolean()),
+    // Folder organization for bulk upload filing
+    folderId: v.optional(v.string()), // Reference to clientFolders or projectFolders
+    folderType: v.optional(v.union(
+      v.literal("client"),
+      v.literal("project")
+    )),
+    // Internal vs External classification
+    isInternal: v.optional(v.boolean()),
+    // Version control
+    version: v.optional(v.string()), // "V1.0", "V1.1", "V2.0"
+    uploaderInitials: v.optional(v.string()), // e.g., "JS", "AB"
+    previousVersionId: v.optional(v.id("documents")), // Link to previous version
     // Extracted data (stored as JSON)
     extractedData: v.optional(v.any()),
     // Status
@@ -194,7 +209,9 @@ export default defineSchema({
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_category", ["category"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_folder", ["folderId"])
+    .index("by_previous_version", ["previousVersionId"]),
 
   // Internal Documents table - internal documents that can link to clients/projects
   internalDocuments: defineTable({
@@ -676,6 +693,176 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_createdAt", ["createdAt"]),
+
+  // ============================================================================
+  // BULK UPLOAD SYSTEM - For uploading up to 100 documents at once
+  // ============================================================================
+
+  // Bulk Upload Batches - Groups files uploaded together
+  bulkUploadBatches: defineTable({
+    // Client/Project association (client is required, project is optional)
+    clientId: v.id("clients"),
+    clientName: v.string(),
+    projectId: v.optional(v.id("projects")),
+    projectName: v.optional(v.string()),
+    projectShortcode: v.optional(v.string()), // For document naming
+    // Batch status
+    status: v.union(
+      v.literal("uploading"), // Files being uploaded
+      v.literal("processing"), // Files being analyzed
+      v.literal("review"), // Ready for user review
+      v.literal("completed"), // All files filed
+      v.literal("partial") // Some files filed, some pending
+    ),
+    // Counts
+    totalFiles: v.number(),
+    processedFiles: v.number(),
+    filedFiles: v.number(),
+    errorFiles: v.optional(v.number()),
+    // Classification
+    isInternal: v.boolean(), // Internal vs External batch default
+    // User instructions (optional)
+    instructions: v.optional(v.string()),
+    // User tracking
+    userId: v.id("users"),
+    // Timestamps
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_status", ["status"])
+    .index("by_user", ["userId"])
+    .index("by_createdAt", ["createdAt"]),
+
+  // Bulk Upload Items - Individual files within a batch
+  bulkUploadItems: defineTable({
+    batchId: v.id("bulkUploadBatches"),
+    // File metadata
+    fileName: v.string(),
+    fileSize: v.number(),
+    fileType: v.string(),
+    fileStorageId: v.optional(v.id("_storage")),
+    // Processing status
+    status: v.union(
+      v.literal("pending"), // Not yet processed
+      v.literal("processing"), // Currently being analyzed
+      v.literal("ready_for_review"), // Analysis complete, awaiting user review
+      v.literal("filed"), // Successfully filed to documents
+      v.literal("error") // Processing failed
+    ),
+    // Analysis results (from summary-only analysis)
+    summary: v.optional(v.string()),
+    fileTypeDetected: v.optional(v.string()),
+    category: v.optional(v.string()),
+    targetFolder: v.optional(v.string()), // Suggested folder based on category
+    confidence: v.optional(v.number()),
+    // Classification (can override batch default)
+    isInternal: v.optional(v.boolean()),
+    // Manual extraction toggle (default false for bulk uploads)
+    extractionEnabled: v.optional(v.boolean()),
+    extractedData: v.optional(v.any()), // Only populated if extraction enabled
+    // Document code generation
+    generatedDocumentCode: v.optional(v.string()), // Auto-generated name
+    // Version control
+    version: v.optional(v.string()), // "V1.0", "V1.1", "V2.0"
+    isDuplicate: v.optional(v.boolean()), // Flag if duplicate detected
+    duplicateOfDocumentId: v.optional(v.id("documents")), // Reference to existing document
+    versionType: v.optional(v.union(
+      v.literal("minor"), // V1.1
+      v.literal("significant") // V2.0
+    )),
+    // Reference to filed document (populated after filing)
+    documentId: v.optional(v.id("documents")),
+    // User edits tracking
+    userEdits: v.optional(v.object({
+      fileTypeDetected: v.optional(v.boolean()),
+      category: v.optional(v.boolean()),
+      isInternal: v.optional(v.boolean()),
+      targetFolder: v.optional(v.boolean()),
+    })),
+    // Error tracking
+    error: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_batch", ["batchId"])
+    .index("by_status", ["status"])
+    .index("by_batch_status", ["batchId", "status"]),
+
+  // ============================================================================
+  // FOLDER STRUCTURE - Client and Project folders for organized filing
+  // ============================================================================
+
+  // Client Folders - Folder structure at client level
+  // Created automatically when a client is created, but users can add custom folders
+  clientFolders: defineTable({
+    clientId: v.id("clients"),
+    folderType: v.string(), // Folder identifier (e.g., "background", "kyc", or custom like "special_docs")
+    name: v.string(), // Display name
+    description: v.optional(v.string()), // Optional description for the folder
+    parentFolderId: v.optional(v.id("clientFolders")), // For nested folders
+    isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
+    createdAt: v.string(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_client_type", ["clientId", "folderType"])
+    .index("by_parent", ["parentFolderId"]),
+
+  // Project Folders - Standard 8-folder structure for each project
+  // Created automatically when a project is created, but users can add custom folders
+  projectFolders: defineTable({
+    projectId: v.id("projects"),
+    folderType: v.string(), // Folder identifier (e.g., "background", "terms_comparison", or custom)
+    name: v.string(), // Display name
+    description: v.optional(v.string()), // Optional description for the folder
+    isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
+    createdAt: v.string(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_type", ["projectId", "folderType"]),
+
+  // ============================================================================
+  // FOLDER TEMPLATES - Configurable folder structures per client type
+  // ============================================================================
+
+  // Folder Templates - Define folder structures for different client types
+  // Used when creating new clients/projects to generate appropriate folders
+  folderTemplates: defineTable({
+    clientType: v.string(), // "borrower" | "lender" | etc.
+    level: v.union(v.literal("client"), v.literal("project")),
+    folders: v.array(v.object({
+      name: v.string(), // Display name (e.g., "Background")
+      folderKey: v.string(), // Unique key (e.g., "background")
+      parentKey: v.optional(v.string()), // Parent folder key for nested folders
+      description: v.optional(v.string()), // Description of folder purpose
+      order: v.number(), // Display order
+    })),
+    isDefault: v.boolean(), // Whether this is the default template for this type
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client_type_level", ["clientType", "level"])
+    .index("by_client_type", ["clientType"]),
+
+  // Document Placement Rules - Define where document types should be filed
+  // Per client type mapping of document types to target folders
+  documentPlacementRules: defineTable({
+    clientType: v.string(), // "borrower" | "lender" | etc.
+    documentType: v.string(), // e.g., "Red Book Valuation", "Term Sheet"
+    category: v.string(), // e.g., "Appraisals", "Terms"
+    targetFolderKey: v.string(), // e.g., "appraisals", "terms_comparison"
+    targetLevel: v.union(v.literal("client"), v.literal("project")),
+    priority: v.number(), // For ordering/override (higher = more specific)
+    description: v.optional(v.string()), // Why this rule exists
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client_type", ["clientType"])
+    .index("by_document_type", ["documentType"])
+    .index("by_client_type_document", ["clientType", "documentType"])
+    .index("by_category", ["category"]),
 
   // Knowledge Bank Entries - consolidated knowledge entries per client
   knowledgeBankEntries: defineTable({

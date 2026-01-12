@@ -228,3 +228,80 @@ export const getPendingJobs = query({
   },
 });
 
+// Query: Get jobs needing review with navigation support
+export const getReviewQueueWithNav = query({
+  handler: async (ctx) => {
+    const jobs = await ctx.db
+      .query("fileUploadQueue")
+      .withIndex("by_status", (q: any) => q.eq("status", "needs_confirmation"))
+      .collect();
+    
+    // Sort by createdAt descending (newest first)
+    const sortedJobs = jobs.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    
+    return {
+      jobs: sortedJobs,
+      total: sortedJobs.length,
+    };
+  },
+});
+
+// Mutation: File a document from the queue
+export const fileDocument = mutation({
+  args: {
+    jobId: v.id("fileUploadQueue"),
+    clientId: v.id("clients"),
+    projectId: v.optional(v.id("projects")),
+    folderId: v.string(),
+    folderType: v.union(v.literal("client"), v.literal("project")),
+    summary: v.optional(v.string()),
+    category: v.optional(v.string()),
+    fileTypeDetected: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    
+    if (!job.documentId) {
+      throw new Error("Job has no associated document");
+    }
+    
+    // Update the document with filing info
+    await ctx.db.patch(job.documentId, {
+      clientId: args.clientId,
+      projectId: args.projectId,
+      folderId: args.folderId,
+      folderType: args.folderType,
+      ...(args.summary && { summary: args.summary }),
+      ...(args.category && { category: args.category }),
+      ...(args.fileTypeDetected && { fileTypeDetected: args.fileTypeDetected }),
+    });
+    
+    // Mark job as completed
+    await ctx.db.patch(args.jobId, {
+      status: "completed",
+      updatedAt: new Date().toISOString(),
+    });
+    
+    return { success: true, documentId: job.documentId };
+  },
+});
+
+// Mutation: Skip a document in the queue (mark as completed without filing)
+export const skipDocument = mutation({
+  args: {
+    jobId: v.id("fileUploadQueue"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "completed",
+      updatedAt: new Date().toISOString(),
+    });
+    return { success: true };
+  },
+});
+

@@ -5,7 +5,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { useRouter } from 'next/navigation';
-import { Bell, CheckCircle2, AlertCircle, Loader2, X, Clock, CheckSquare, History } from 'lucide-react';
+import { Bell, CheckCircle2, AlertCircle, Loader2, X, Clock, CheckSquare, History, Files, FolderOpen } from 'lucide-react';
 
 const formatTimeAgo = (dateString: string): string => {
   const date = new Date(dateString);
@@ -37,6 +37,13 @@ export default function NotificationDropdown() {
   const notificationUnreadCount = useQuery(api.notifications.getUnreadCount, {});
   const markNotificationAsRead = useMutation(api.notifications.markAsRead);
   const markAllNotificationsAsRead = useMutation(api.notifications.markAllAsRead);
+  
+  // Bulk upload batches
+  const currentUser = useQuery(api.users.getCurrent, {});
+  const pendingBatches = useQuery(
+    api.bulkUpload.getPendingBatches,
+    currentUser?._id ? { userId: currentUser._id } : "skip"
+  );
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -120,7 +127,8 @@ export default function NotificationDropdown() {
     errors: recentJobs?.filter(j => j.status === 'error') || [],
   };
 
-  const hasNotifications = (unreadCount || 0) > 0 || (notificationUnreadCount || 0) > 0;
+  const bulkBatchCount = pendingBatches?.length || 0;
+  const hasNotifications = (unreadCount || 0) > 0 || (notificationUnreadCount || 0) > 0 || bulkBatchCount > 0;
   const totalJobs = recentJobs?.length || 0;
   const totalNotifications = notifications?.length || 0;
 
@@ -358,8 +366,93 @@ export default function NotificationDropdown() {
               </div>
             )}
 
+            {/* Bulk Upload Batches Section */}
+            {bulkBatchCount > 0 && (
+              <div className="border-t border-gray-200">
+                <div className="px-4 py-2 bg-purple-50">
+                  <p className="text-xs font-medium text-purple-900 flex items-center gap-1">
+                    <Files className="w-3 h-3" />
+                    Bulk Uploads
+                  </p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {pendingBatches?.map((batch) => {
+                    const getBatchStatusIcon = () => {
+                      switch (batch.status) {
+                        case 'uploading':
+                        case 'processing':
+                          return <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />;
+                        case 'review':
+                          return <AlertCircle className="w-4 h-4 text-amber-600" />;
+                        case 'completed':
+                          return <CheckCircle2 className="w-4 h-4 text-green-600" />;
+                        case 'partial':
+                          return <AlertCircle className="w-4 h-4 text-orange-600" />;
+                        default:
+                          return <FolderOpen className="w-4 h-4 text-gray-600" />;
+                      }
+                    };
+
+                    const getBatchStatusText = () => {
+                      switch (batch.status) {
+                        case 'uploading':
+                          return 'Uploading...';
+                        case 'processing':
+                          return `Processing ${batch.processedFiles}/${batch.totalFiles}`;
+                        case 'review':
+                          return 'Ready for review';
+                        case 'completed':
+                          return 'Completed';
+                        case 'partial':
+                          return 'Partially completed';
+                        default:
+                          return batch.status;
+                      }
+                    };
+
+                    return (
+                      <button
+                        key={batch._id}
+                        onClick={() => {
+                          router.push(`/docs/bulk/${batch._id}`);
+                          setIsOpen(false);
+                        }}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start gap-3">
+                          {getBatchStatusIcon()}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {batch.clientName}
+                              {batch.projectName && (
+                                <span className="text-gray-500 font-normal"> / {batch.projectName}</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {getBatchStatusText()} • {batch.totalFiles} files
+                            </p>
+                            {batch.status === 'processing' && (
+                              <div className="mt-2 bg-gray-200 rounded-full h-1.5">
+                                <div
+                                  className="bg-purple-600 h-1.5 rounded-full transition-all duration-300"
+                                  style={{ width: `${(batch.processedFiles / batch.totalFiles) * 100}%` }}
+                                />
+                              </div>
+                            )}
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatTimeAgo(batch.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Empty State */}
-            {totalJobs === 0 && totalNotifications === 0 && (
+            {totalJobs === 0 && totalNotifications === 0 && bulkBatchCount === 0 && (
               <div className="px-4 py-8 text-center text-sm text-gray-500">
                 No notifications
               </div>

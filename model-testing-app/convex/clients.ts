@@ -65,6 +65,14 @@ export const getByType = query({
   },
 });
 
+// Fallback client folder structure (used when no template exists)
+const FALLBACK_CLIENT_FOLDERS = [
+  { name: "Background", folderKey: "background", order: 1 },
+  { name: "KYC", folderKey: "kyc", parentKey: "background", order: 2 },
+  { name: "Background Docs", folderKey: "background_docs", parentKey: "background", order: 3 },
+  { name: "Miscellaneous", folderKey: "miscellaneous", order: 4 },
+];
+
 // Mutation: Create client
 export const create = mutation({
   args: {
@@ -100,6 +108,9 @@ export const create = mutation({
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    // Normalize client type for template lookup (default to "borrower")
+    const clientType = (args.type || "borrower").toLowerCase();
+    
     const clientId = await ctx.db.insert("clients", {
       name: args.name,
       type: args.type,
@@ -122,6 +133,52 @@ export const create = mutation({
       metadata: args.metadata,
       createdAt: new Date().toISOString(),
     });
+
+    // Look up folder template for this client type
+    const templates = await ctx.db
+      .query("folderTemplates")
+      .withIndex("by_client_type_level", (q: any) => 
+        q.eq("clientType", clientType).eq("level", "client")
+      )
+      .collect();
+    
+    // Use template folders or fallback
+    const folderTemplate = templates.find(t => t.isDefault) || templates[0];
+    const folders = folderTemplate?.folders || FALLBACK_CLIENT_FOLDERS;
+    
+    // Auto-create client folder structure from template
+    const now = new Date().toISOString();
+    const folderIdMap: Record<string, any> = {};
+    
+    // Sort folders by order
+    const sortedFolders = [...folders].sort((a, b) => a.order - b.order);
+    
+    // First pass: create parent folders (no parentKey)
+    for (const folder of sortedFolders) {
+      if (!folder.parentKey) {
+        const folderId = await ctx.db.insert("clientFolders", {
+          clientId,
+          folderType: folder.folderKey as any, // The schema will validate
+          name: folder.name,
+          createdAt: now,
+        });
+        folderIdMap[folder.folderKey] = folderId;
+      }
+    }
+    
+    // Second pass: create child folders (with parentKey)
+    for (const folder of sortedFolders) {
+      if (folder.parentKey && folderIdMap[folder.parentKey]) {
+        await ctx.db.insert("clientFolders", {
+          clientId,
+          folderType: folder.folderKey as any,
+          name: folder.name,
+          parentFolderId: folderIdMap[folder.parentKey],
+          createdAt: now,
+        });
+      }
+    }
+
     return clientId;
   },
 });
@@ -454,6 +511,113 @@ export const getRecent = query({
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     return sorted.slice(0, limit);
+  },
+});
+
+// Query: Get client folders
+export const getClientFolders = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("clientFolders")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+  },
+});
+
+// Mutation: Add a custom folder to a client
+export const addCustomFolder = mutation({
+  args: {
+    clientId: v.id("clients"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    parentFolderId: v.optional(v.id("clientFolders")),
+  },
+  handler: async (ctx, args) => {
+    // Generate a folderType from the name (lowercase, underscore-separated)
+    const folderType = `custom_${args.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}`;
+    
+    // Check if folder with same type already exists for this client
+    const existing = await ctx.db
+      .query("clientFolders")
+      .withIndex("by_client_type", (q: any) => 
+        q.eq("clientId", args.clientId).eq("folderType", folderType)
+      )
+      .first();
+    
+    if (existing) {
+      throw new Error(`A folder named "${args.name}" already exists for this client`);
+    }
+    
+    return await ctx.db.insert("clientFolders", {
+      clientId: args.clientId,
+      folderType,
+      name: args.name,
+      description: args.description,
+      parentFolderId: args.parentFolderId,
+      isCustom: true,
+      createdAt: new Date().toISOString(),
+    });
+  },
+});
+
+// Mutation: Delete a custom folder from a client (only custom folders can be deleted)
+export const deleteCustomFolder = mutation({
+  args: {
+    folderId: v.id("clientFolders"),
+  },
+  handler: async (ctx, args) => {
+    const folder = await ctx.db.get(args.folderId);
+    
+    if (!folder) {
+      throw new Error("Folder not found");
+    }
+    
+    if (!folder.isCustom) {
+      throw new Error("Cannot delete template folders. Only custom folders can be deleted.");
+    }
+    
+    // Check if folder has documents
+    const documents = await ctx.db
+      .query("documents")
+      .filter((q: any) => q.eq(q.field("folderId"), folder.folderType))
+      .collect();
+    
+    const clientDocs = documents.filter(d => d.clientId === folder.clientId && !d.projectId);
+    
+    if (clientDocs.length > 0) {
+      throw new Error(`Cannot delete folder "${folder.name}". It contains ${clientDocs.length} document(s). Move or delete them first.`);
+    }
+    
+    await ctx.db.delete(args.folderId);
+    return { success: true };
+  },
+});
+
+// Mutation: Rename a custom folder
+export const renameCustomFolder = mutation({
+  args: {
+    folderId: v.id("clientFolders"),
+    name: v.string(),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const folder = await ctx.db.get(args.folderId);
+    
+    if (!folder) {
+      throw new Error("Folder not found");
+    }
+    
+    if (!folder.isCustom) {
+      throw new Error("Cannot rename template folders. Only custom folders can be renamed.");
+    }
+    
+    await ctx.db.patch(args.folderId, {
+      name: args.name,
+      description: args.description,
+    });
+    
+    return { success: true };
   },
 });
 

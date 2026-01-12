@@ -1,6 +1,146 @@
 # Development Changelog
 
-## [Latest] - 2025-12-05 18:15
+## [Latest] - 2026-01-12 16:00
+
+### Document Library Redesign - Google Drive-Inspired Interface
+
+**Major Feature**: Complete redesign of the Document Library with a modern 3-pane file browser interface inspired by Google Drive and Apple Finder. Designed to scale to thousands of files across hundreds of clients.
+
+**New UI Components** (`src/app/docs/components/`):
+- `DocsSidebar.tsx` - Left sidebar with client list
+  - Global search across clients
+  - "Inbox" section for unfiled documents with count
+  - Filter tabs (All / Borrower / Lender)
+  - Virtualized client list for performance (@tanstack/react-virtual)
+  - Document count per client
+- `FolderBrowser.tsx` - Middle pane folder navigation
+  - Client-level folders with nested structure
+  - Expandable project list with folders
+  - Project shortcode display
+  - Document counts per folder (including empty folders)
+- `FileList.tsx` - Right pane file display
+  - Grid/list view toggle
+  - Sort options (date, name, size)
+  - Upload button
+- `FileCard.tsx` - Individual file card
+  - File type icon based on MIME type
+  - Generated document name (primary) + original filename (secondary)
+  - Document type and category badges
+  - Quick actions dropdown (View, Download, Move, Delete)
+- `FileDetailPanel.tsx` - Slide-out detail drawer
+  - PDF/image preview with iframe
+  - Document metadata (type, category, size, upload date, version)
+  - Full document summary
+  - Download and delete actions
+- `BreadcrumbNav.tsx` - Path breadcrumb navigation
+
+**New Convex Queries** (`convex/documents.ts`):
+- `getUnfiled` - Get documents without a client association
+- `getUnfiledCount` - Count of unfiled documents for Inbox badge
+- `getByFolder` - Get documents by folder type and level (client/project)
+- `getClientDocumentCounts` - Document counts per client for sidebar
+- `getFolderCounts` - Document counts per folder for a client
+- `getProjectFolderCounts` - Document counts per project folder
+
+**Page Rewrite** (`src/app/docs/page.tsx`):
+- Full-height 3-pane layout
+- Header with breadcrumbs and Review Queue link
+- Integrated all new components
+- State management for client, folder, and document selection
+- File detail panel slide-out
+
+**Performance Optimizations**:
+- Virtualized client list using @tanstack/react-virtual
+- Supports hundreds of clients without DOM performance issues
+- Efficient folder count queries
+
+**Deprecated Components** (marked with @deprecated):
+- `src/components/DocumentsTable.tsx`
+- `src/components/InternalDocumentsTable.tsx`
+- `src/components/UnclassifiedDocumentsTable.tsx`
+
+**Key Design Changes**:
+- Removed "Internal Documents" concept - all documents under clients
+- Unfiled documents shown in "Inbox" instead of "Unclassified" tab
+- Folders always visible (even when empty)
+- Download functionality with proper file handling
+- File preview for PDFs and images
+
+---
+
+## 2026-01-12 12:00
+
+### Bulk Upload Feature - High Volume Document Processing
+
+**Major Feature**: Added a comprehensive bulk upload system to the File Organization Agent, enabling users to upload up to 100 documents at once with simplified analysis, client/project pre-selection, and standardized document naming.
+
+**New Schema Tables** (`convex/schema.ts`):
+- `bulkUploadBatches` - Groups files uploaded together
+  - Required client association, optional project association
+  - Status tracking: uploading, processing, review, completed, partial
+  - Internal/external classification at batch level
+  - File counts and progress tracking
+- `bulkUploadItems` - Individual files within a batch
+  - Per-file status, analysis results, and version control
+  - Duplicate detection and resolution tracking
+  - Extraction toggle per file
+- `clientFolders` - Standard folder structure for clients
+  - Background (with KYC and Background subfolders)
+  - Miscellaneous folder for unclassified files
+- `projectFolders` - 8 standard folders per project
+  - Background, Terms comparison, Terms request, Credit submission
+  - Post-completion documents, Appraisals, Notes, Operational Model
+
+**Schema Modifications**:
+- `projects` table - Added `projectShortcode` field (max 10 chars) for document naming
+- `documents` table - Added `folderId`, `folderType`, `isInternal`, `version`, `uploaderInitials`, `previousVersionId` fields
+
+**New Convex Files**:
+- `convex/bulkUpload.ts` - Batch and item CRUD operations
+  - createBatch, addItemToBatch, updateItemStatus, updateItemAnalysis
+  - checkForDuplicates, setVersionType, fileItem, fileBatch
+  - getBatch, getBatchItems, getBatchStats, getPendingBatches
+- `convex/folderStructure.ts` - Folder management utilities
+  - Category-to-folder mapping, folder creation, type abbreviations
+
+**New API Endpoints**:
+- `/api/bulk-analyze` - Summary-only analysis endpoint
+  - Faster processing (skips extraction gauntlet)
+  - Returns summary, file type, category, confidence, suggested folder
+
+**New Client-Side Files**:
+- `src/lib/bulkQueueProcessor.ts` - Sequential file processing
+- `src/lib/documentNaming.ts` - New naming convention utilities
+  - Format: `<ProjectShortcode>-<Type>-<INT/EXT>-<Initials>-<Version>-<Date>`
+  - Example: `WIMBPARK28-APPRAISAL-EXT-JS-V1.0-2026-01-12`
+  - Version control: V1.0 (new), V1.1 (minor), V2.0 (significant)
+
+**New UI Components**:
+- `src/components/BulkUpload.tsx` - Main bulk upload interface
+  - Step-by-step client/project selection
+  - Internal/external toggle
+  - Instructions input
+  - Drop zone for up to 100 files
+- `src/components/BulkReviewTable.tsx` - Table-based review
+  - Inline editing for type, category, folder, internal/external
+  - Version control for duplicates
+  - Extraction toggle per file
+
+**New Pages**:
+- `/docs/bulk/[batchId]` - Bulk review page
+  - Full batch overview and statistics
+  - File all documents button
+  - Link to document library after filing
+
+**Modified Files**:
+- `src/app/filing/page.tsx` - Added "Bulk Upload" tab
+- `src/components/NotificationDropdown.tsx` - Added bulk upload batches section
+- `convex/clients.ts` - Auto-creates client folders on client creation
+- `convex/projects.ts` - Added projectShortcode, auto-creates 8 project folders
+
+---
+
+## 2025-12-05 18:15
 
 ### Computed Category Totals with Override Support
 

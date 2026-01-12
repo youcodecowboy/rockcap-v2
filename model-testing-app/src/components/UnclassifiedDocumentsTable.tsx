@@ -1,3 +1,11 @@
+/**
+ * @deprecated This component is deprecated and will be removed in a future version.
+ * The document library has been redesigned to use a 3-pane layout.
+ * Unfiled/unclassified documents are now shown in the "Inbox" section
+ * of the new document library at src/app/docs/page.tsx
+ * 
+ * See: src/app/docs/components/ for the new implementation.
+ */
 'use client';
 
 import { useState, useMemo } from 'react';
