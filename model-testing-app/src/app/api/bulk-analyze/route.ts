@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     const apiKey = process.env.TOGETHER_API_KEY;
     if (!apiKey) {
-      return ErrorResponses.internal('TOGETHER_API_KEY not configured');
+      return ErrorResponses.internalError('TOGETHER_API_KEY not configured');
     }
 
     const formData = await request.formData();
@@ -231,14 +231,14 @@ ${truncatedText}`;
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[Bulk Analyze] API error:', errorText);
-      return ErrorResponses.internal(`AI API error: ${response.status}`);
+      return ErrorResponses.internalError(`AI API error: ${response.status}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     
     if (!content) {
-      return ErrorResponses.internal('No response from AI');
+      return ErrorResponses.internalError('No response from AI');
     }
 
     // Parse the JSON response
@@ -340,7 +340,7 @@ ${truncatedText}`;
     });
   } catch (error) {
     console.error('[Bulk Analyze] Error:', error);
-    return ErrorResponses.internal(
+    return ErrorResponses.internalError(
       error instanceof Error ? error.message : 'Analysis failed'
     );
   }

@@ -30,9 +30,6 @@ export async function POST(request: NextRequest) {
     const customInstructions = formData.get('customInstructions') as string | null;
     const forceExtraction = formData.get('forceExtraction') === 'true';
 
-    console.log('[API] Received custom instructions:', customInstructions ? `"${customInstructions.substring(0, 100)}${customInstructions.length > 100 ? '...' : ''}"` : 'none');
-    console.log('[API] Force extraction:', forceExtraction);
-
     if (!file) {
       return ErrorResponses.badRequest('No file provided');
     }
@@ -70,15 +67,9 @@ export async function POST(request: NextRequest) {
 
     if (isSpreadsheet) {
       try {
-        console.log('[API] Converting spreadsheet to Markdown...');
-        const conversionStartTime = Date.now();
         markdownContent = await convertSpreadsheetToMarkdown(file);
-        const conversionTime = Date.now() - conversionStartTime;
-        console.log('[API] Markdown conversion completed in:', conversionTime, 'ms');
-        console.log('[API] Markdown content length:', markdownContent.length, 'characters');
       } catch (error) {
-        console.error('[API] Error converting spreadsheet to Markdown (non-fatal, falling back to text):', error);
-        // Fallback to textContent - markdownContent remains null
+        console.error('[API] Error converting spreadsheet to Markdown (non-fatal):', error);
         markdownContent = null;
       }
     }
@@ -103,21 +94,12 @@ export async function POST(request: NextRequest) {
 
     // Analyze file with Together.ai
     try {
-      console.log('[API] Starting file analysis for:', file.name);
-      console.log('[API] File size:', file.size, 'bytes');
-      console.log('[API] Extracted text length:', textContent.length, 'characters');
-      console.log('[API] Number of clients:', clientsWithProjects.length);
-      
-      const analysisStartTime = Date.now();
       const analysisResult = await analyzeFileContent(
         textContent,
         file.name,
         clientsWithProjects,
         customInstructions || null
       );
-      const analysisTime = Date.now() - analysisStartTime;
-      console.log('[API] Analysis completed in:', analysisTime, 'ms');
-      console.log('[API] Tokens used:', analysisResult.tokensUsed);
 
       // Find matching client ID if client name was detected
       let clientId: string | null = null;
@@ -152,91 +134,47 @@ export async function POST(request: NextRequest) {
 
       // Determine if extraction should run
       let shouldRunExtraction = false;
-      let extractionReason = '';
       
       if (forceExtraction) {
         // User explicitly requested extraction - always run it
         shouldRunExtraction = true;
-        extractionReason = 'User requested extraction via toggle';
-        console.log('[API] Force extraction enabled - will extract data from any file type');
       } else if (isSpreadsheet) {
         // Classify the spreadsheet to determine if extraction is needed
         const classification = classifySpreadsheet(textContent, markdownContent, file.name);
-        console.log('[API] Spreadsheet classification:', classification);
         shouldRunExtraction = classification.requiresExtraction;
-        extractionReason = classification.reason;
-        
-        if (!shouldRunExtraction) {
-          console.log('[API] Spreadsheet does not require extraction - skipping gauntlet');
-          console.log('[API] Reason:', classification.reason);
-          console.log('[API] Classification confidence:', classification.confidence);
-        }
       }
 
       if (shouldRunExtraction) {
         try {
-          console.log('[API] Starting data extraction gauntlet');
-          console.log('[API] Reason:', extractionReason);
-            const extractionStartTime = Date.now();
-          
           // Use markdown content if available, otherwise fallback to textContent
           const contentForExtraction = markdownContent || textContent;
-          console.log('[API] Using', markdownContent ? 'markdown' : 'text', 'content for extraction');
-          
           const extractionResult = await extractSpreadsheetData(contentForExtraction, file.name);
-          const extractionTime = Date.now() - extractionStartTime;
-          console.log('[API] Data extraction completed in:', extractionTime, 'ms');
-          console.log('[API] Extraction tokens used:', extractionResult.tokensUsed);
-          console.log('[API] Extraction confidence:', extractionResult.confidence);
           
           // Normalize the extracted data (third call)
           if (extractionResult.extractedData) {
             try {
-              console.log('[API] Starting data normalization...');
-              const normalizationStartTime = Date.now();
-              
-              // Use markdown content if available, otherwise fallback to textContent
               const contentForNormalization = markdownContent || textContent;
-              console.log('[API] Using', markdownContent ? 'markdown' : 'text', 'content for normalization');
-              
               const normalizedData = await normalizeExtractedData(
                 extractionResult.extractedData,
                 contentForNormalization,
                 file.name
               );
-              const normalizationTime = Date.now() - normalizationStartTime;
-              console.log('[API] Data normalization completed in:', normalizationTime, 'ms');
-              console.log('[API] Normalized costs count:', normalizedData.costs?.length || 0);
-              console.log('[API] Normalized plots count:', normalizedData.plots?.length || 0);
               
               // Verify the normalized data (fourth call)
               try {
-                console.log('[API] Starting data verification...');
-                const verificationStartTime = Date.now();
-                
-                // Use markdown content if available, otherwise fallback to textContent
                 const contentForVerification = markdownContent || textContent;
-                console.log('[API] Using', markdownContent ? 'markdown' : 'text', 'content for verification');
-                
                 const verifiedData = await verifyExtractedData(
                   normalizedData,
                   contentForVerification,
                   file.name
                 );
-                const verificationTime = Date.now() - verificationStartTime;
-                console.log('[API] Data verification completed in:', verificationTime, 'ms');
-                console.log('[API] Verification confidence:', verifiedData.verificationConfidence);
-                console.log('[API] Discrepancies found:', verifiedData.verificationDiscrepancies?.length || 0);
-                
                 extractedData = verifiedData;
               } catch (verificationError) {
-                console.error('[API] Error during verification (non-fatal), using normalized data:', verificationError);
-                // Use normalized data if verification fails
+                console.error('[API] Error during verification (non-fatal):', verificationError);
                 extractedData = normalizedData;
               }
             } catch (normalizationError) {
-              console.error('[API] Error during normalization (non-fatal), using original extraction:', normalizationError);
-              // Use original extraction if normalization fails
+              console.error('[API] Error during normalization (non-fatal):', normalizationError);
               extractedData = extractionResult.extractedData;
             }
           } else {
@@ -244,7 +182,6 @@ export async function POST(request: NextRequest) {
           }
         } catch (error) {
           console.error('[API] Error during data extraction (non-fatal):', error);
-          // Don't fail the request - extraction is optional
           extractedData = {
             extractionNotes: 'Data extraction failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
             confidence: 0.0,
@@ -264,13 +201,7 @@ export async function POST(request: NextRequest) {
       let codificationPreview = null;
       if (extractedData && extractedData.costs && extractedData.costs.length > 0) {
         try {
-          console.log('[API] Running Fast Pass codification preview...');
-          const fastPassStartTime = Date.now();
-          
-          // Get aliases for Fast Pass lookup
           const aliases = await getAllAliasesServer();
-          
-          // Build alias lookup map
           const aliasLookup = buildAliasLookupMap(aliases.map((a: any) => ({
             aliasNormalized: a.aliasNormalized,
             canonicalCode: a.canonicalCode,
@@ -278,14 +209,7 @@ export async function POST(request: NextRequest) {
             confidence: a.confidence,
             source: a.source,
           })));
-          
-          // Run Fast Pass to get preview stats
           const fastPassResult = runFastPassWithFuzzy(extractedData, aliasLookup, 0.85);
-          const fastPassTime = Date.now() - fastPassStartTime;
-          
-          console.log('[API] Fast Pass completed in:', fastPassTime, 'ms');
-          console.log('[API] Fast Pass stats:', fastPassResult.stats);
-          
           codificationPreview = {
             items: fastPassResult.items,
             stats: fastPassResult.stats,
@@ -293,7 +217,6 @@ export async function POST(request: NextRequest) {
           };
         } catch (fastPassError) {
           console.error('[API] Error during Fast Pass preview (non-fatal):', fastPassError);
-          // Don't fail the request - Fast Pass preview is optional
         }
       }
 

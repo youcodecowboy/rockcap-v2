@@ -89,12 +89,6 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     api.projects.isShortcodeAvailable,
     newProjectShortcode ? { shortcode: newProjectShortcode } : "skip"
   );
-  const editShortcodeAvailable = useQuery(
-    api.projects.isShortcodeAvailable,
-    editShortcodeValue && editShortcodeValue !== selectedProject?.projectShortcode 
-      ? { shortcode: editShortcodeValue } 
-      : "skip"
-  );
   const currentUser = useQuery(api.users.getCurrent, {});
 
   // Mutations
@@ -119,6 +113,14 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     if (!selectedProjectId || selectedProjectId === 'none' || !projects) return null;
     return projects.find(p => p._id === selectedProjectId);
   }, [selectedProjectId, projects]);
+
+  // Query for edit shortcode availability (must be after selectedProject is defined)
+  const editShortcodeAvailable = useQuery(
+    api.projects.isShortcodeAvailable,
+    editShortcodeValue && editShortcodeValue !== selectedProject?.projectShortcode 
+      ? { shortcode: editShortcodeValue } 
+      : "skip"
+  );
 
   // User initials
   const uploaderInitials = useMemo(() => {

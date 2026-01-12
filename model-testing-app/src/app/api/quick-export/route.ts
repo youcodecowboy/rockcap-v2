@@ -62,9 +62,6 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log('[QuickExport] Starting export for template:', templateId, 'type:', templateType);
-    console.log('[QuickExport] Codified items count:', codifiedItems.length);
-    
     const client = getConvexClient();
     
     // Dynamically import API to avoid type instantiation issues at compile time
@@ -131,14 +128,10 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log('[QuickExport] Template URL retrieved:', templateUrl.substring(0, 50) + '...');
-    
     // Filter to only confirmed/matched items
     const usableItems = (codifiedItems as CodifiedItem[]).filter(
       item => item.mappingStatus === 'confirmed' || item.mappingStatus === 'matched'
     );
-    
-    console.log('[QuickExport] Usable items (confirmed/matched):', usableItems.length);
     
     if (usableItems.length === 0) {
       return NextResponse.json(
@@ -151,7 +144,6 @@ export async function POST(request: NextRequest) {
     let itemsToPopulate = usableItems;
     
     if (projectId) {
-      console.log('[QuickExport] Fetching computed totals for project:', projectId);
       try {
         const projectDataItems: ProjectDataItem[] = await client.query(
           api.projectDataLibrary.getProjectLibrary,
@@ -160,7 +152,6 @@ export async function POST(request: NextRequest) {
         
         if (projectDataItems && projectDataItems.length > 0) {
           itemsToPopulate = mergeComputedTotals(usableItems, projectDataItems);
-          console.log('[QuickExport] Items after merging computed totals:', itemsToPopulate.length);
         }
       } catch (error) {
         console.warn('[QuickExport] Could not fetch computed totals:', error);
@@ -170,8 +161,6 @@ export async function POST(request: NextRequest) {
     
     // Populate the template
     const result = await populateXlsmFromUrl(templateUrl, itemsToPopulate);
-    
-    console.log('[QuickExport] Population complete:', result.stats);
     
     // Generate filename
     const date = new Date().toISOString().split('T')[0];

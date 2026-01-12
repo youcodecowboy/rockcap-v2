@@ -206,7 +206,6 @@ const CATEGORY_NORMALIZATIONS: Record<string, string> = {
   'building costs': 'construction.costs',
   'build': 'construction.costs',
   'development costs': 'construction.costs',
-  'development': 'construction.costs',
   'dev costs': 'construction.costs',
   'construction budget': 'construction.costs',
   'build budget': 'construction.costs',

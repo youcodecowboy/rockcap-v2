@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import {
   Archive,
   Building,
-  FolderKanban,
   UserSearch,
   File,
   FileText,
@@ -47,7 +46,6 @@ export default function Sidebar() {
     { href: '/inbox', label: 'Inbox', icon: Mail },
     { href: '/filing', label: 'Filing Agent', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },
-    { href: '/projects', label: 'Projects', icon: FolderKanban },
     { href: '/prospects', label: 'Prospects', icon: UserSearch },
     { href: '/rolodex', label: 'Rolodex', icon: ContactRound },
     { href: '/docs', label: 'Docs', icon: File },

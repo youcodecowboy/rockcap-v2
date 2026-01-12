@@ -90,9 +90,6 @@ async function handleFastPass(body: {
     );
   }
   
-  console.log('[FastPass] Starting for document:', documentId);
-  const startTime = Date.now();
-  
   const client = getConvexClient();
   
   // Get all aliases from database
@@ -123,10 +120,6 @@ async function handleFastPass(body: {
     items: convexItems,
   });
   
-  const elapsed = Date.now() - startTime;
-  console.log('[FastPass] Completed in', elapsed, 'ms');
-  console.log('[FastPass] Stats:', result.stats);
-  
   return NextResponse.json({
     success: true,
     extractionId,
@@ -153,9 +146,6 @@ async function handleSmartPass(body: {
       { status: 400 }
     );
   }
-  
-  console.log('[SmartPass] Starting for document:', documentId, force ? '(FORCED)' : '');
-  const startTime = Date.now();
   
   const client = getConvexClient();
   
@@ -207,8 +197,6 @@ async function handleSmartPass(body: {
     });
   }
   
-  console.log('[SmartPass] Processing', pendingItems.length, 'items');
-  
   try {
     // Get existing codes, aliases, and categories
     const [existingCodes, existingAliases, categories] = await Promise.all([
@@ -216,8 +204,6 @@ async function handleSmartPass(body: {
       client.query(api.itemCodeAliases.list, {}),
       client.query(api.itemCategories.getForLLMPrompt, {}),
     ]);
-    
-    console.log('[SmartPass] Found', existingCodes?.length || 0, 'codes,', existingAliases?.length || 0, 'aliases, and', categories?.length || 0, 'categories');
     
     // Run Smart Pass with dynamic categories
     const smartResult = await runSmartPass(
@@ -244,9 +230,6 @@ async function handleSmartPass(body: {
       id: extraction._id,
       items: convexItems,
     });
-    
-    const elapsed = Date.now() - startTime;
-    console.log('[SmartPass] Completed in', elapsed, 'ms');
     
     return NextResponse.json({
       success: true,
@@ -420,7 +403,6 @@ async function handleSuggestSingle(body: {
   }
   
   const client = getConvexClient();
-  const startTime = Date.now();
   
   // Get existing codes and aliases for context
   const existingCodes = await client.query(api.extractedItemCodes.list, {}) as ItemCode[];
@@ -512,9 +494,6 @@ RESPOND IN JSON FORMAT ONLY:
         suggestion.existingCodeId = matchingCode._id;
       }
     }
-    
-    const elapsed = Date.now() - startTime;
-    console.log('[SuggestSingle] Completed in', elapsed, 'ms');
     
     return NextResponse.json({
       success: true,

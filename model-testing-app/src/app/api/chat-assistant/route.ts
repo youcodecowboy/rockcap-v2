@@ -43,16 +43,13 @@ async function gatherChatContext(
       });
 
       if (isValid) {
-        console.log(`[Context Cache] Cache hit for ${contextType}:${contextId}`);
         return cached.cachedContext;
-      } else {
-        console.log(`[Context Cache] Cache invalid for ${contextType}:${contextId}, rebuilding...`);
       }
-    } else {
-      console.log(`[Context Cache] Cache miss for ${contextType}:${contextId}, building...`);
+      // Cache invalid - will rebuild below
     }
 
-    // Cache miss or invalid - gather fresh context
+    // Cache miss or invalid - build fresh context
+
     let context = '';
     let metadata = {
       knowledgeBankCount: 0,
@@ -472,8 +469,6 @@ async function gatherChatContext(
       cachedContext: context,
       metadata,
     });
-
-    console.log(`[Context Cache] Built and cached context for ${contextType}:${contextId}`, metadata);
 
     return context;
   } catch (error) {
@@ -1282,8 +1277,6 @@ ${context}${fileContext}`;
 
     // If we executed tools, feed results back to AI for final response
     if (toolResults.length > 0) {
-      console.log('[Chat API] Executed tools, getting final response from AI...');
-      
       let iterationCount = 0;
       const maxIterations = 3; // Prevent infinite loops
       let currentMessages = [...messages];
@@ -1294,7 +1287,6 @@ ${context}${fileContext}`;
       // Keep iterating until AI stops calling tools or we hit max iterations
       while (iterationCount < maxIterations) {
         iterationCount++;
-        console.log(`[Chat API] Iteration ${iterationCount}: Processing ${toolResults.length} tool results`);
         
         // Build a message with tool results
         const toolResultsMessage = toolResults.map(tr => {
@@ -1368,17 +1360,12 @@ CRITICAL INSTRUCTIONS:
         const followUpContent = followUpData.choices[0]?.message?.content || '';
         totalTokens += followUpData.usage?.total_tokens || 0;
 
-        console.log('[Chat API] Follow-up response received, length:', followUpContent.length);
-
         // Check for more tool calls in follow-up
         const followUpToolCalls = parseToolCalls(followUpContent);
         finalContent = followUpContent.replace(/<TOOL_CALL>\s*[\s\S]*?\s*<\/TOOL_CALL>/g, '').trim();
 
-        console.log('[Chat API] Found', followUpToolCalls?.length || 0, 'tool calls in follow-up');
-
         // If no more tool calls, we're done
         if (!followUpToolCalls || followUpToolCalls.length === 0) {
-          console.log('[Chat API] No more tool calls, finishing');
           break;
         }
 
@@ -1409,7 +1396,6 @@ CRITICAL INSTRUCTIONS:
                 toolName: toolCall.name,
                 result: filteredResult,
               });
-              console.log('[Chat API] Executed tool:', toolCall.name);
             } catch (error) {
               console.error(`[Chat API] Error executing follow-up tool ${toolCall.name}:`, error);
               toolResults.push({
@@ -1429,13 +1415,11 @@ CRITICAL INSTRUCTIONS:
 
         // If we have pending actions requiring confirmation, stop here
         if (pendingActions.length > 0) {
-          console.log('[Chat API] Have pending actions, stopping iteration');
           break;
         }
 
         // If no new tool results, we're done
         if (toolResults.length === 0) {
-          console.log('[Chat API] No new tool results, finishing');
           break;
         }
 
@@ -1453,8 +1437,6 @@ CRITICAL INSTRUCTIONS:
         ];
         currentAiResponse = followUpContent;
       }
-
-      console.log('[Chat API] Completed after', iterationCount, 'iterations');
 
       return NextResponse.json({
         content: finalContent || currentAiResponse,

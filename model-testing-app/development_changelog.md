@@ -1,6 +1,117 @@
 # Development Changelog
 
-## [Latest] - 2026-01-12 16:00
+## [Latest] - 2026-01-12 23:15
+
+### UI Refinement - Tabs at Top + Slim Metrics Cards
+
+**UI Updates**: Redesigned client and project pages to match the Document Queue pattern with tabs at the very top and slim metrics cards.
+
+**Client Profile Page** (`src/app/clients/[clientId]/page.tsx`):
+- Moved tabs to the very top (below header, above all content)
+- Added slim metrics row using `CompactMetricCard` component
+- Metrics: Documents, Projects (with active badge), Contacts, Last Activity, Email, Phone
+- Removed large colorful stat cards from overview tab
+- Simplified `ClientOverviewTab` to show Company Info, Recent Documents, Projects cards
+
+**Project Detail Page** (`src/app/clients/[clientId]/projects/[projectId]/page.tsx`):
+- Same top-level tabs pattern
+- Slim metrics: Documents, Clients, Loan Amount, Last Activity, Created, Due Date
+- Purple accent color for project tabs (vs blue for clients)
+- Simplified `ProjectOverviewTab` layout
+
+**Consistent Design Pattern**:
+- All detail pages now follow same structure as Document Queue
+- Header → Tabs → Metrics Row → Content
+- Suspense boundaries added for proper SSR handling
+
+---
+
+## 2026-01-12 22:45
+
+### Clients Portal Redesign - Unified Client & Project Management
+
+**Major Feature**: Complete redesign of the clients and projects pages into a unified "Clients Portal" with modern document-centric navigation. Projects are now accessed via client profiles rather than as a separate top-level page.
+
+**Navigation Changes**:
+- Removed "Projects" from main sidebar navigation
+- Added redirect from `/projects` to `/clients` portal
+- Added redirect from `/projects/[projectId]` to client context
+
+**New Clients Portal** (`src/app/clients/page.tsx`):
+- Full-height sidebar + main content layout
+- `ClientsSidebar.tsx` - Left sidebar with virtualized client list
+  - Type filter tabs (All / Borrower / Lender)
+  - Status filter pills (Active / Prospect / Archived)
+  - Search functionality
+  - Project and document counts per client
+  - "New Client" button
+- Empty state with client creation prompt
+- Suspense boundary for `useSearchParams()`
+
+**Redesigned Client Profile** (`src/app/clients/[clientId]/page.tsx`):
+- Modern header with client info, badges, and quick actions
+- New tabbed interface with 7 tabs:
+  - **Overview** - Stats cards, company info, recent documents, projects list
+  - **Documents** - Embedded Document Library with folder browser
+  - **Projects** - Project cards with status badges, search, create dialog
+  - **Communications** - Timeline of document-based communications
+  - **Data** - Placeholder for extracted data features
+  - **Knowledge** - Placeholder for future Knowledge Library feature
+  - **Notes** - Rich notes management with CRUD operations
+
+**New Client Tab Components** (`src/app/clients/[clientId]/components/`):
+- `ClientDocumentLibrary.tsx` - Embedded document browser with FolderBrowser + FileList
+- `ClientOverviewTab.tsx` - Stats cards, company info, recent docs/projects
+- `ClientProjectsTab.tsx` - Project cards with status, search, create modal
+- `ClientCommunicationsTab.tsx` - Grouped communication timeline
+- `ClientDataTab.tsx` - Data library placeholder
+- `ClientNotesTab.tsx` - Notes grid with create/edit/delete
+
+**New Project View** (`src/app/clients/[clientId]/projects/[projectId]/page.tsx`):
+- Modern header with project info and client roles
+- Tabbed interface: Overview, Documents, Communications, Data, Notes
+- **Key Feature**: Documents grouped by client role (Borrower/Lender sections)
+
+**New Project Tab Components** (`src/app/clients/[clientId]/projects/[projectId]/components/`):
+- `ProjectOverviewTab.tsx` - Stats, project info, associated clients, recent docs
+- `ProjectDocumentsTab.tsx` - Documents organized by client role
+  - Expandable client sections
+  - Embedded FolderBrowser + FileList per client
+  - Role badges and document counts
+- `ProjectNotesTab.tsx` - Project-specific notes management
+
+**Technical Details**:
+- Reused existing FolderBrowser, FileList, FileDetailPanel from document library
+- Notes integration uses existing `api.notes` mutations
+- Projects schema already supported multi-client with `clientRoles` array
+- All new pages are dynamic routes with proper data fetching
+
+---
+
+## 2026-01-12 17:30
+
+### Codebase Quality Audit & TypeScript Fixes
+
+**Production Build Blockers Fixed**: Resolved all 7 TypeScript compilation errors that were blocking production builds.
+
+**TypeScript Fixes**:
+- `src/lib/codifiedTemplatePopulator.ts` - Removed duplicate 'development' key in CATEGORY_NORMALIZATIONS object (was mapped to both 'construction.costs' and 'plots')
+- `src/app/api/bulk-analyze/route.ts` - Fixed 4 calls to non-existent `ErrorResponses.internal()`, changed to `ErrorResponses.internalError()`
+- `src/components/BulkUpload.tsx` - Reordered variable declarations so `selectedProject` useMemo is defined before `editShortcodeAvailable` query that references it
+- `convex/clients.ts` - Added `@ts-ignore` comment for Convex scheduler deep type instantiation issue (consistent with pattern used elsewhere in codebase)
+
+**Code Cleanup - Console.log Reduction**:
+Removed verbose debug logging from production API routes (118 → 55 statements, 53% reduction):
+- `src/app/api/analyze-file/route.ts` - Removed 35 debug logs, kept error logs
+- `src/app/api/chat-assistant/route.ts` - Removed iteration tracking logs
+- `src/app/api/quick-export/route.ts` - Removed all debug logs
+- `src/app/api/codify-extraction/route.ts` - Removed timing/progress logs
+
+**Build Status**: TypeScript compiles with 0 errors (`npx tsc --noEmit` passes)
+
+---
+
+## 2026-01-12 16:00
 
 ### Document Library Redesign - Google Drive-Inspired Interface
 

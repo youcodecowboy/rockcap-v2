@@ -229,6 +229,7 @@ export const update = mutation({
     await ctx.db.patch(id, updates);
 
     // Invalidate context cache for this client
+    // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
     await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
       contextType: "client",
       contextId: id,
