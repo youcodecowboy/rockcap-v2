@@ -372,6 +372,8 @@ export const updateItemAnalysis = mutation({
     })),
     // Classification reasoning from Stage 2
     classificationReasoning: v.optional(v.string()),
+    // V4 extracted data
+    extractedData: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, ...updates } = args;
