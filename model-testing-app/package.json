@@ -57,6 +57,7 @@
     "date-fns": "^4.1.0",
     "emoji-picker-react": "^4.15.0",
     "handsontable": "^16.1.1",
+    "hyperformula": "^2.7.1",
     "lucide-react": "^0.553.0",
     "mammoth": "^1.11.0",
     "moment": "^2.30.1",
