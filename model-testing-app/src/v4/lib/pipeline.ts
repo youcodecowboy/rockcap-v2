@@ -3,18 +3,20 @@
 // =============================================================================
 // Main entry point for the V4 document processing pipeline.
 //
-// Architecture:
-// 1. Pre-process documents (truncation, hints, tag generation)
+// Architecture (7 stages):
+// 1. Pre-process documents (truncation, hints, tag generation) — no LLM
 // 2. Load references from shared library (cached, 1-hour TTL)
 // 3. Select relevant references based on batch document hints
-// 4. Chunk batch into API-call-sized groups (max 8 docs per call)
-// 5. Build system prompt (skill instructions + selected references)
-// 6. Build user message (batch documents + checklist + context)
-// 7. Call Anthropic API (batch classification)
-// 8. Parse and return structured results
+// 4. Load skill instructions (SKILL.md)
+// 5. Chunk batch & call API (or mock) for classification
+// 6. Apply deterministic placement rules (post-processing)
+// 7. Assemble and return structured results
 //
-// Key optimization: batch multiple documents into single API calls.
-// 15 documents = ~2-3 API calls instead of 15.
+// Key features:
+// - Batch processing: 15 docs = 2 API calls instead of 15
+// - Mock mode: Full pipeline without API key (for development/testing)
+// - Placement rules: Deterministic folder routing overrides model suggestion
+// - Auto-detects mock mode when ANTHROPIC_API_KEY is missing
 
 import type {
   BatchDocument,
@@ -32,6 +34,9 @@ import { loadSkill } from './skill-loader';
 import { loadReferences, selectReferencesForBatch } from './reference-library';
 import { preprocessDocument, chunkBatch, analyzeFilename } from './document-preprocessor';
 import { buildSystemPrompt, buildBatchUserMessage, callAnthropicBatch } from './anthropic-client';
+import { callMockBatch } from './mock-client';
+import { resolvePlacement, getTypeAbbreviation } from './placement-rules';
+import type { PlacementResult } from './placement-rules';
 
 // =============================================================================
 // MAIN PIPELINE FUNCTION
@@ -56,6 +61,14 @@ export interface PipelineInput {
   config: V4PipelineConfig;
 }
 
+/** Extended result that includes placement decisions */
+export interface V4PipelineResult extends BatchClassifyResult {
+  /** Per-document placement decisions (deterministic, post-classification) */
+  placements: Record<number, PlacementResult>;
+  /** Whether mock mode was used */
+  isMock: boolean;
+}
+
 /**
  * Run the V4 batch classification pipeline.
  *
@@ -63,16 +76,20 @@ export interface PipelineInput {
  * 1. Pre-processes all documents (no LLM)
  * 2. Loads relevant references (cached)
  * 3. Batches documents into optimal API call groups
- * 4. Calls Claude for batch classification
- * 5. Returns structured results for all documents
+ * 4. Calls Claude (or mock) for batch classification
+ * 5. Applies deterministic placement rules
+ * 6. Returns structured results for all documents
  */
-export async function runV4Pipeline(input: PipelineInput): Promise<BatchClassifyResult> {
+export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineResult> {
   const startTime = Date.now();
   const config = { ...DEFAULT_V4_CONFIG, ...input.config };
 
+  // Auto-detect mock mode: use mock if no API key or explicitly requested
+  const isMock = config.useMock || !config.anthropicApiKey;
+
   console.log(`\n${'='.repeat(70)}`);
   console.log(`[V4 PIPELINE] Processing ${input.files.length} document(s)`);
-  console.log(`[V4 PIPELINE] Model: ${config.primaryModel}`);
+  console.log(`[V4 PIPELINE] Mode: ${isMock ? 'MOCK (no API key)' : `LIVE (${config.primaryModel})`}`);
   console.log(`${'='.repeat(70)}`);
 
   // ──────────────────────────────────────────────────────────
@@ -129,69 +146,43 @@ export async function runV4Pipeline(input: PipelineInput): Promise<BatchClassify
     skillInstructions = skill.instructions;
     console.log(`[STAGE 4] Loaded skill: ${skill.metadata.name}`);
   } catch (error) {
-    // Fallback: use inline instructions if SKILL.md not found
-    // (e.g., when running from a different directory)
     console.warn(`[STAGE 4] Could not load SKILL.md, using inline fallback`);
     skillInstructions = getInlineSkillInstructions();
   }
 
   // ──────────────────────────────────────────────────────────
-  // STAGE 5: CHUNK BATCH & CALL API
+  // STAGE 5: CHUNK BATCH & CALL API (or MOCK)
   // ──────────────────────────────────────────────────────────
-  console.log(`\n[STAGE 5] Building API calls...`);
+  console.log(`\n[STAGE 5] ${isMock ? 'Running mock classification' : 'Building API calls'}...`);
 
-  const chunks = chunkBatch(
-    batchDocuments,
-    BATCH_LIMITS.MAX_DOCS_PER_CALL,
-    BATCH_LIMITS.MAX_INPUT_TOKENS_PER_CALL,
-  );
-
-  console.log(`[STAGE 5] Split into ${chunks.length} API call(s): ${chunks.map(c => c.length).join(' + ')} docs`);
-
-  // Build system prompt (same for all chunks — cached by Anthropic)
-  const systemPrompt = buildSystemPrompt(
-    skillInstructions,
-    selectedReferences,
-    input.availableFolders,
-  );
-
-  // Execute all chunks (sequentially for now, could parallelize)
   const allClassifications: DocumentClassification[] = [];
   const allErrors: Array<{ documentIndex: number; fileName: string; error: string }> = [];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalApiCalls = 0;
 
-  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-    const chunk = chunks[chunkIndex];
-    console.log(`\n[STAGE 5.${chunkIndex + 1}] Calling API for chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} docs)...`);
-
+  if (isMock) {
+    // ── MOCK PATH: Use heuristic classifier ──
     try {
-      const userBlocks = buildBatchUserMessage(
-        chunk,
+      const mockResult = await callMockBatch(
+        batchDocuments,
+        selectedReferences,
         input.checklistItems,
-        input.clientContext,
-        input.corrections || [],
+        config,
       );
 
-      const result = await callAnthropicBatch(systemPrompt, userBlocks, config);
+      allClassifications.push(...mockResult.classifications);
+      totalInputTokens += mockResult.usage.inputTokens;
+      totalOutputTokens += mockResult.usage.outputTokens;
+      totalApiCalls = 1;
 
-      allClassifications.push(...result.classifications);
-      totalInputTokens += result.usage.inputTokens;
-      totalOutputTokens += result.usage.outputTokens;
-      totalApiCalls++;
-
-      console.log(`[STAGE 5.${chunkIndex + 1}] Completed in ${result.latencyMs}ms (${result.usage.inputTokens} in / ${result.usage.outputTokens} out tokens)`);
-
-      // Log per-document results
-      for (const cls of result.classifications) {
+      console.log(`[STAGE 5] Mock classification completed in ${mockResult.latencyMs}ms`);
+      for (const cls of mockResult.classifications) {
         console.log(`  - [${cls.documentIndex}] "${cls.fileName}": ${cls.classification.fileType} (${cls.classification.category}) @ ${(cls.classification.confidence * 100).toFixed(0)}%`);
       }
     } catch (error) {
-      console.error(`[STAGE 5.${chunkIndex + 1}] API call failed:`, error);
-
-      // Mark all docs in this chunk as failed
-      for (const doc of chunk) {
+      console.error(`[STAGE 5] Mock classification failed:`, error);
+      for (const doc of batchDocuments) {
         allErrors.push({
           documentIndex: doc.index,
           fileName: doc.fileName,
@@ -199,15 +190,89 @@ export async function runV4Pipeline(input: PipelineInput): Promise<BatchClassify
         });
       }
     }
+  } else {
+    // ── LIVE PATH: Chunk and call Anthropic API ──
+    const chunks = chunkBatch(
+      batchDocuments,
+      BATCH_LIMITS.MAX_DOCS_PER_CALL,
+      BATCH_LIMITS.MAX_INPUT_TOKENS_PER_CALL,
+    );
+
+    console.log(`[STAGE 5] Split into ${chunks.length} API call(s): ${chunks.map(c => c.length).join(' + ')} docs`);
+
+    const systemPrompt = buildSystemPrompt(
+      skillInstructions,
+      selectedReferences,
+      input.availableFolders,
+    );
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
+      console.log(`\n[STAGE 5.${chunkIndex + 1}] Calling API for chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} docs)...`);
+
+      try {
+        const userBlocks = buildBatchUserMessage(
+          chunk,
+          input.checklistItems,
+          input.clientContext,
+          input.corrections || [],
+        );
+
+        const result = await callAnthropicBatch(systemPrompt, userBlocks, config);
+
+        allClassifications.push(...result.classifications);
+        totalInputTokens += result.usage.inputTokens;
+        totalOutputTokens += result.usage.outputTokens;
+        totalApiCalls++;
+
+        console.log(`[STAGE 5.${chunkIndex + 1}] Completed in ${result.latencyMs}ms (${result.usage.inputTokens} in / ${result.usage.outputTokens} out tokens)`);
+
+        for (const cls of result.classifications) {
+          console.log(`  - [${cls.documentIndex}] "${cls.fileName}": ${cls.classification.fileType} (${cls.classification.category}) @ ${(cls.classification.confidence * 100).toFixed(0)}%`);
+        }
+      } catch (error) {
+        console.error(`[STAGE 5.${chunkIndex + 1}] API call failed:`, error);
+
+        for (const doc of chunk) {
+          allErrors.push({
+            documentIndex: doc.index,
+            fileName: doc.fileName,
+            error: (error as Error).message,
+          });
+        }
+      }
+    }
   }
 
   // ──────────────────────────────────────────────────────────
-  // STAGE 6: ASSEMBLE RESULTS
+  // STAGE 6: APPLY DETERMINISTIC PLACEMENT RULES
+  // ──────────────────────────────────────────────────────────
+  console.log(`\n[STAGE 6] Applying placement rules...`);
+
+  const placements: Record<number, PlacementResult> = {};
+
+  for (const cls of allClassifications) {
+    const placement = resolvePlacement(cls, input.clientContext);
+    placements[cls.documentIndex] = placement;
+
+    // Update the classification with the resolved folder
+    cls.classification.suggestedFolder = placement.folderKey;
+    cls.classification.targetLevel = placement.targetLevel;
+
+    if (placement.wasOverridden) {
+      console.log(`  - [${cls.documentIndex}] OVERRIDE: "${cls.fileName}" → ${placement.folderKey} (${placement.reason})`);
+    } else {
+      console.log(`  - [${cls.documentIndex}] "${cls.fileName}" → ${placement.folderKey}`);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // STAGE 7: ASSEMBLE RESULTS
   // ──────────────────────────────────────────────────────────
   const totalLatencyMs = Date.now() - startTime;
 
   console.log(`\n${'='.repeat(70)}`);
-  console.log(`[V4 PIPELINE] Completed in ${totalLatencyMs}ms`);
+  console.log(`[V4 PIPELINE] Completed in ${totalLatencyMs}ms${isMock ? ' (MOCK)' : ''}`);
   console.log(`[V4 PIPELINE] ${allClassifications.length} classified, ${allErrors.length} errors`);
   console.log(`[V4 PIPELINE] API calls: ${totalApiCalls}, Tokens: ${totalInputTokens} in / ${totalOutputTokens} out`);
   console.log(`${'='.repeat(70)}\n`);
@@ -215,8 +280,10 @@ export async function runV4Pipeline(input: PipelineInput): Promise<BatchClassify
   return {
     success: allErrors.length === 0,
     documents: allClassifications,
+    placements,
+    isMock,
     metadata: {
-      model: config.primaryModel,
+      model: isMock ? 'mock' : config.primaryModel,
       batchSize: input.files.length,
       apiCallsMade: totalApiCalls,
       totalInputTokens,

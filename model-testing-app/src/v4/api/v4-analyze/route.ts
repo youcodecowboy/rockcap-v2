@@ -4,17 +4,24 @@
 // POST /api/v4-analyze
 //
 // Replaces /api/bulk-analyze with the V4 skills-based pipeline.
-// Key differences:
-// - Batch processing: multiple documents per API call
+// Key differences from legacy:
+// - Batch processing: multiple documents per API call (not per-file)
 // - Multimodal: Claude sees the actual document, not just extracted text
 // - Shared reference library with tag-based selection
-// - Single structured response per batch (not per-document API calls)
+// - Deterministic placement rules (folder routing)
+// - Mock mode: works without API key for development
 //
 // Request: FormData with files[] + JSON metadata
-// Response: BatchClassifyResult
+// Response: V4PipelineResult with per-document classifications + placements
+//
+// Integration points:
+// - Called by BulkQueueProcessor (replaces /api/bulk-analyze)
+// - Results mapped to Convex bulkUploadItems via result-mapper
+// - Placements drive folder assignment in the review table
 
 import { NextRequest, NextResponse } from 'next/server';
 import { runV4Pipeline } from '../../lib/pipeline';
+import { mapBatchToConvex } from '../../lib/result-mapper';
 import type {
   ChecklistItem,
   FolderInfo,
@@ -40,7 +47,6 @@ export async function POST(request: NextRequest) {
     }> = [];
 
     // Files are sent as formData entries: file_0, file_1, ...
-    // Or as a files[] array
     let fileIndex = 0;
     while (true) {
       const file = formData.get(`file_${fileIndex}`) as File | null;
@@ -62,9 +68,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Also support single 'file' field (backward compat with bulk-analyze)
+    if (files.length === 0) {
+      const singleFile = formData.get('file') as File | null;
+      if (singleFile) {
+        const extractedText = formData.get('extractedText') as string | null;
+        files.push({
+          file: singleFile,
+          extractedText: extractedText || undefined,
+        });
+      }
+    }
+
     if (files.length === 0) {
       return NextResponse.json(
-        { error: 'No files provided. Send as file_0, file_1, ... or files[]' },
+        { error: 'No files provided. Send as file_0, file_1, ..., files[], or file' },
         { status: 400 },
       );
     }
@@ -76,6 +94,10 @@ export async function POST(request: NextRequest) {
       availableFolders?: FolderInfo[];
       checklistItems?: ChecklistItem[];
       corrections?: CorrectionContext[];
+      projectShortcode?: string;
+      clientName?: string;
+      isInternal?: boolean;
+      uploaderInitials?: string;
     } = {};
 
     if (metadataStr) {
@@ -89,43 +111,112 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Build pipeline config ──
-    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicApiKey) {
-      return NextResponse.json(
-        { error: 'ANTHROPIC_API_KEY not configured' },
-        { status: 500 },
-      );
+    // Also support individual metadata fields (backward compat)
+    const clientType = formData.get('clientType') as string | null;
+    const instructions = formData.get('instructions') as string | null;
+
+    // Build client context from metadata or individual fields
+    const clientContext: ClientContext = metadata.clientContext || {};
+    if (clientType && !clientContext.clientType) {
+      clientContext.clientType = clientType;
     }
+
+    // ── Build pipeline config ──
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY || '';
+    const useMock = !anthropicApiKey;
 
     const config: V4PipelineConfig = {
       ...DEFAULT_V4_CONFIG,
       anthropicApiKey,
+      useMock,
     };
 
     // ── Run pipeline ──
-    console.log(`[V4 API] Processing ${files.length} files...`);
+    console.log(`[V4 API] Processing ${files.length} files (${useMock ? 'MOCK' : 'LIVE'})...`);
 
     const result = await runV4Pipeline({
       files,
-      clientContext: metadata.clientContext || {},
+      clientContext,
       availableFolders: metadata.availableFolders || [],
       checklistItems: metadata.checklistItems || [],
       corrections: metadata.corrections,
       config,
     });
 
-    console.log(`[V4 API] Completed in ${Date.now() - startTime}ms`);
+    // ── Map results to Convex format ──
+    const mapped = mapBatchToConvex(
+      result.documents,
+      result.placements,
+      result.errors,
+      {
+        projectShortcode: metadata.projectShortcode,
+        clientName: metadata.clientName || clientContext.clientName,
+        isInternal: metadata.isInternal,
+        uploaderInitials: metadata.uploaderInitials,
+      },
+    );
 
-    return NextResponse.json(result);
+    console.log(`[V4 API] Completed in ${Date.now() - startTime}ms — ${mapped.documents.length} classified, ${result.errors.length} errors`);
+
+    // ── Return response ──
+    // Include both raw V4 results AND Convex-mapped results
+    return NextResponse.json({
+      success: result.success,
+      isMock: result.isMock,
+
+      // Per-document results (Convex-ready format)
+      documents: mapped.documents.map(doc => ({
+        documentIndex: doc.documentIndex,
+        fileName: doc.fileName,
+        // Fields compatible with bulkUpload.updateItemAnalysis
+        summary: doc.itemAnalysis.summary,
+        fileType: doc.itemAnalysis.fileTypeDetected,
+        category: doc.itemAnalysis.category,
+        confidence: doc.itemAnalysis.confidence,
+        suggestedFolder: doc.itemAnalysis.targetFolder,
+        typeAbbreviation: doc.itemAnalysis.generatedDocumentCode.split('-')[1] || '',
+        generatedDocumentCode: doc.itemAnalysis.generatedDocumentCode,
+        version: doc.itemAnalysis.version,
+        extractedData: doc.itemAnalysis.extractedData,
+
+        // Additional V4 data
+        placement: doc.placement,
+        knowledgeBankEntry: doc.knowledgeBankEntry,
+        isLowConfidence: doc.isLowConfidence,
+        alternativeTypes: doc.alternativeTypes,
+
+        // Backward compat with existing bulk-analyze response
+        originalFileName: doc.fileName,
+        fileSize: 0, // Not available here — set by caller
+        mimeType: '', // Not available here — set by caller
+      })),
+
+      // Batch statistics
+      stats: mapped.stats,
+
+      // Pipeline metadata
+      metadata: result.metadata,
+
+      // Errors (per-document)
+      errors: result.errors,
+    });
   } catch (error) {
     console.error('[V4 API] Pipeline error:', error);
 
     return NextResponse.json(
       {
         success: false,
-        error: (error as Error).message,
+        isMock: false,
         documents: [],
+        stats: {
+          totalDocuments: 0,
+          classified: 0,
+          errors: 1,
+          lowConfidenceCount: 0,
+          placementOverrides: 0,
+          categoryCounts: {},
+          folderCounts: {},
+        },
         metadata: {
           model: 'error',
           batchSize: 0,
@@ -136,7 +227,7 @@ export async function POST(request: NextRequest) {
           referencesLoaded: [],
           cachedReferenceHit: false,
         },
-        errors: [],
+        errors: [{ documentIndex: -1, fileName: '', error: (error as Error).message }],
       },
       { status: 500 },
     );

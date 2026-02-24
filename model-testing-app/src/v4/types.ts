@@ -269,8 +269,10 @@ export interface ClientContext {
 // =============================================================================
 
 export interface V4PipelineConfig {
-  /** Anthropic API key */
+  /** Anthropic API key (optional if useMock is true) */
   anthropicApiKey: string;
+  /** Use mock client instead of real Anthropic API */
+  useMock: boolean;
   /** Model for primary classification (default: haiku) */
   primaryModel: 'claude-haiku-4-5-20251001' | 'claude-sonnet-4-6';
   /** Model for critic/disambiguation (default: sonnet, rarely used) */
@@ -292,6 +294,7 @@ export interface V4PipelineConfig {
 }
 
 export const DEFAULT_V4_CONFIG: Omit<V4PipelineConfig, 'anthropicApiKey'> = {
+  useMock: false,
   primaryModel: 'claude-haiku-4-5-20251001',
   criticModel: 'claude-sonnet-4-6',
   maxTokens: 8192,
