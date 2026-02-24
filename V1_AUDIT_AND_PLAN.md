@@ -155,22 +155,54 @@ knowledgeBankEntries: {
 4. **Summaries limited to ~500 chars** - may miss critical details in long documents
 5. **No summary templates** per document type (e.g., appraisal summary should extract different fields than a lease)
 
-### 4.3 Dynamic Checklist System - STATUS: NOT IMPLEMENTED
+### 4.3 Dynamic Checklist System - STATUS: FUNCTIONAL, MATCHING NEEDS IMPROVEMENT
 
-**Current State:** The client profile has a "Knowledge Library" tab placeholder that mentions a checklist is "coming soon." No schema, no UI, no backend logic exists.
+**The folder structure IS the checklist.** Each client and project has a standard set of folders representing required document types. The `FolderBrowser` component displays each folder with a live document count — `(0)` means unfulfilled, `(3)` means three documents filed there.
 
-**What Infrastructure Exists That Could Support It:**
-- `documentPlacementRules` table - routes documents by type to folders; could be extended with `isRequired`
-- `folderTemplates` table - defines standard folder structures per client type
-- `categorySettings` table - system-wide document categories
-- Document counts per folder/client already queryable
+**Borrower Client-Level Checklist (4 items):**
+- Background > KYC (Know Your Customer documents)
+- Background > Background Docs (Company information, corporate documents)
+- Miscellaneous
 
-**What Needs to Be Built:**
-1. **`requiredDocuments` schema/table** - define what documents are required per client type or per deal stage
-2. **Checklist evaluation logic** - compare received documents against requirements
-3. **Client profile checklist UI** - visual tracker showing received vs. missing documents
-4. **Dynamic rules engine** - allow admins to configure required docs per client type/deal stage
-5. **Completion status API** - percentage complete, missing items list
+**Borrower Project-Level Checklist (8 items):**
+- Background, Terms Comparison, Terms Request, Credit Submission
+- Post-completion Documents, Appraisals, Notes, Operational Model
+
+**Lender Client-Level Checklist (4 items):**
+- KYC, Agreements, Correspondence, Miscellaneous
+
+**Lender Project-Level Checklist (7 items):**
+- Term Sheets, Facility Documents, Security Documents, Drawdown Requests
+- Monitoring Reports, Correspondence, Miscellaneous
+
+**~20 total required document slots per client (client + project combined)**
+
+**How Documents Get Matched to Checklist Items:**
+1. **During bulk upload**: AI classifies each file via `/api/bulk-analyze` → assigns `fileTypeDetected` + `category`
+2. **In BulkReviewTable**: Users can override the AI's `fileTypeDetected` and `category` via dropdowns — this is "selecting which checklist item to associate the document with"
+3. **On filing**: `CATEGORY_TO_FOLDER_MAP` in `folderStructure.ts` maps the category to the correct folder (checklist slot)
+4. **Placement rules**: `documentPlacementRules` table provides client-type-specific routing (borrower vs. lender) with priorities
+
+**Reference Library for AI Classification (`fileTypeDefinitions`):**
+- Hardcoded definitions in `src/lib/fileTypeDefinitions.ts` (RedBook Valuation, Initial/Interim Monitoring Reports, Plans, Legal Documents, Indicative Terms)
+- Database-backed definitions in `convex/fileTypeDefinitions` table (user-extensible)
+- Each definition has: `keywords[]`, `description` (100-word min), `identificationRules[]`, `categoryRules`
+- `getRelevantFileTypeHints()` matches file content against keywords and feeds matching definitions to the AI prompt
+
+**Key Gap — Matching Quality:**
+The current system works but the AI classification isn't reliable enough:
+1. **Limited reference library** — only ~6 hardcoded file type definitions; the real estate financing domain has many more document types
+2. **Keyword-based pre-filtering** — `getRelevantFileTypeHints()` only sends relevant definitions to the AI if keywords match; if keywords don't match, the AI gets no guidance
+3. **Generic prompts** — the bulk-analyze route uses a single generic prompt for all document types rather than type-specific classification skills
+4. **No feedback loop** — when users override the AI's classification in BulkReviewTable, that correction doesn't improve future classifications
+5. **Category-to-folder mapping gaps** — `CATEGORY_TO_FOLDER_MAP` has limited aliases; many valid category names fall through to "miscellaneous"
+
+**What Needs Improvement for V1:**
+1. **Expand the fileTypeDefinitions reference library** to cover all ~20 checklist document types
+2. **Migrate classification to Haiku skills** with type-specific prompts that leverage the full definition (description + identificationRules)
+3. **Build a feedback/learning loop** — when users correct classifications, store the correction as a new alias or definition update
+4. **Add an explicit checklist completion view** on client/project profiles (the Knowledge Library tab placeholder) showing percentage complete and highlighting missing documents
+5. **Improve the category-to-folder mapping** to handle more variation in AI output categories
 
 ### 4.4 Document Library - STATUS: FUNCTIONAL
 
@@ -325,53 +357,58 @@ MODEL_CONFIG = {
 
 ## 8. V1 Delivery Gap Analysis
 
-### Critical Path: Upload -> Summarize -> Intelligence -> Checklist -> Library
+### Critical Path: Upload -> Classify -> Match to Checklist -> Summarize -> Intelligence -> Library
 
 | Step | Status | Gaps |
 |------|--------|------|
 | 1. Bulk Upload | **90% Complete** | Needs retry logic, progress indicators |
-| 2. AI Summarization | **80% Complete** | No type-specific summary templates, no quality scoring |
-| 3. Knowledge Bank Population | **85% Complete** | Auto-creates entries, but keyPoints extraction is basic |
-| 4. Client Intelligence View | **70% Complete** | Knowledge tab is placeholder; overview works |
-| 5. Dynamic Checklist | **0% Complete** | No schema, no UI, no backend - entirely missing |
-| 6. Document Library | **90% Complete** | Functional 3-pane UI, needs minor polish |
+| 2. AI Classification | **60% Complete** | Limited reference library (~6 definitions), keyword-only pre-filtering, no feedback loop |
+| 3. Checklist Matching | **70% Complete** | Folder structure works as checklist, but category-to-folder mapping has gaps; many docs fall to "miscellaneous" |
+| 4. AI Summarization | **80% Complete** | No type-specific summary templates, no quality scoring |
+| 5. Knowledge Bank Population | **85% Complete** | Auto-creates entries, but keyPoints extraction is basic |
+| 6. Client Intelligence View | **70% Complete** | Knowledge tab is placeholder; overview works |
+| 7. Document Library | **90% Complete** | Functional 3-pane UI, needs minor polish |
 
 ### Priority-Ordered V1 Gaps
 
 #### P0 - Must Have for V1
-1. **Build the Dynamic Checklist System**
-   - Schema: `requiredDocuments` table per client type / deal stage
-   - Backend: Checklist evaluation mutations/queries
-   - UI: Checklist component on client profile (replace "coming soon" placeholder)
-   - Admin: Settings page to configure required documents per type
+1. **Expand the FileTypeDefinitions Reference Library**
+   - Currently only ~6 hardcoded definitions (RedBook Valuation, Initial/Interim Monitoring Reports, Plans, Legal Documents, Indicative Terms)
+   - Need definitions for ALL ~20 checklist document types across borrower + lender flows
+   - Each definition needs: rich description (100+ words), keywords, identificationRules, categoryRules
+   - This is the foundation — better definitions = better AI classification = better checklist matching
 
-2. **Wire Knowledge Tab on Client Profile**
-   - Replace placeholder with actual Knowledge Bank view (component exists at `/knowledge-bank/[clientId]`)
-   - Add checklist widget showing document completion status
+2. **Migrate Classification to Haiku Skills**
+   - Install `@anthropic-ai/sdk`
+   - Create a `classify-document` skill with structured prompts that leverage full fileTypeDefinitions
+   - Create a `summarize-document` skill with type-specific summary templates
+   - Haiku is faster, cheaper (~10x), and better at structured classification than the current Llama 4 Maverick setup
 
-3. **Improve Summary Quality for Bulk Uploads**
-   - Add document-type-specific prompt templates (appraisal vs. lease vs. financial statement)
-   - Increase summary detail for critical document types
+3. **Improve Category-to-Folder Mapping**
+   - Expand `CATEGORY_TO_FOLDER_MAP` aliases to handle more AI output variations
+   - Add placement rules for all document types in the expanded reference library
+   - Reduce documents falling to "miscellaneous" by catching more category name variations
 
 #### P1 - Should Have for V1
-4. **Bulk Upload Reliability**
+4. **Build Checklist Completion View**
+   - Replace "coming soon" placeholder on client profile Knowledge tab
+   - Show explicit checklist with received/missing document status per folder
+   - Show completion percentage at client and project level
+   - This elevates the implicit folder-count-based checklist to a proper visual tracker
+
+5. **Build Classification Feedback Loop**
+   - When users override `fileTypeDetected`/`category` in BulkReviewTable, capture the correction
+   - Store corrections as new aliases or fileTypeDefinition updates
+   - Over time, the reference library self-improves from user corrections
+
+6. **Bulk Upload Reliability**
    - Add per-file retry logic on AI analysis failure
    - Add progress percentage and ETA display
    - Allow parallel processing (2-3 concurrent) for speed
 
-5. **Skills Migration (classify-document + summarize-document)**
-   - Install Anthropic SDK
-   - Migrate document classification to Haiku
-   - Migrate summary generation to Haiku
-   - Keep Together.ai for complex operations initially
-
-6. **Summary Re-Analysis**
-   - Ability to re-run AI analysis on a filed document
-   - Useful when initial summary is poor quality
-
 #### P2 - Nice to Have for V1
-7. **Document Preview** - inline PDF/image viewer in library
-8. **Bulk Download** - download all documents for a client/project
+7. **Summary Re-Analysis** - re-run AI on a filed document when initial summary is poor
+8. **Document Preview** - inline PDF/image viewer in library
 9. **Checklist Notifications** - alert when checklist reaches 100% or when critical docs arrive
 10. **Export Client Intelligence** - PDF/export of client knowledge bank for sharing
 
@@ -420,24 +457,27 @@ clientChecklistStatus:
 ## 10. Recommended V1 Implementation Order
 
 ```
-Phase 1: Checklist Foundation
-  ├── Add requiredDocumentDefinitions + clientChecklistStatus to Convex schema
-  ├── Build checklist evaluation query (compare received docs vs requirements)
-  ├── Create admin UI for managing required document definitions
-  └── Build client-facing checklist widget
-
-Phase 2: Client Intelligence Completion
-  ├── Wire Knowledge tab on client profile to actual KB view
-  ├── Add checklist status widget to client overview
-  ├── Add type-specific summary prompt templates
-  └── Improve keyPoints extraction quality
-
-Phase 3: Skills Migration (Haiku)
+Phase 1: Reference Library Expansion + Skills Migration
   ├── Install @anthropic-ai/sdk
-  ├── Create skill router + skill definitions
-  ├── Migrate classify-document to Haiku
-  ├── Migrate summarize-document to Haiku
-  └── Migrate evaluate-checklist to Haiku (new)
+  ├── Expand fileTypeDefinitions to cover all ~20 checklist document types
+  ├── Create skill router (src/lib/skillRouter.ts)
+  ├── Create classify-document Haiku skill with full definition context
+  ├── Create summarize-document Haiku skill with type-specific templates
+  ├── Update /api/bulk-analyze to use new skills
+  └── Expand CATEGORY_TO_FOLDER_MAP aliases
+
+Phase 2: Matching Improvement + Feedback Loop
+  ├── Improve category-to-folder mapping coverage
+  ├── Add placement rules for all new document types
+  ├── Capture user overrides in BulkReviewTable as corrections
+  ├── Store corrections as fileTypeDefinition updates/aliases
+  └── Reduce "miscellaneous" misclassification rate
+
+Phase 3: Checklist Completion View
+  ├── Build checklist component showing received vs missing per folder
+  ├── Wire Knowledge tab on client profile (replace placeholder)
+  ├── Add completion percentage to client/project overview
+  └── Add type-specific summary prompt templates
 
 Phase 4: Polish & Reliability
   ├── Add per-file retry logic in bulk processor
@@ -472,10 +512,12 @@ Phase 4: Polish & Reliability
 
 ## 12. Summary
 
-**What's working well:** The bulk upload -> analyze -> review -> file pipeline is functional end-to-end. The document library has a solid 3-pane architecture. Knowledge Bank automatically populates from filed documents. The Convex real-time backend provides a good foundation.
+**What's working well:** The bulk upload -> analyze -> review -> file pipeline is functional end-to-end. The folder-based checklist system works at both client and project levels with different templates per client type (borrower vs. lender). The document library has a solid 3-pane architecture. Knowledge Bank automatically populates from filed documents. The Convex real-time backend provides a good foundation.
 
-**What's missing for V1:** The dynamic checklist system is entirely unbuilt (the #1 gap). The Knowledge tab on client profiles is a placeholder. Summary quality varies without type-specific prompts.
+**The #1 gap is classification/matching quality.** The reference library (`fileTypeDefinitions`) only has ~6 definitions, but the checklist has ~20 document type slots. When the AI can't reliably classify a document, it falls to "miscellaneous" instead of the correct checklist slot. Expanding the reference library and migrating to Haiku skills is the highest-leverage V1 work.
 
-**What should change architecturally:** The AI layer should migrate from Together.ai/Llama to a skills-based Anthropic (Haiku/Sonnet) architecture for better quality, lower cost, and structured skill routing. This migration can happen incrementally alongside V1 feature work.
+**What should change architecturally:** The AI layer should migrate from Together.ai/Llama to a skills-based Anthropic (Haiku/Sonnet) architecture for better classification quality, lower cost (~10x cheaper), and structured skill routing. The classification feedback loop (user corrections -> improved definitions) is critical for long-term accuracy.
+
+**The Knowledge tab on client profiles** is a placeholder but the data exists — the checklist completion view just needs to be built as a UI component that reads folder counts.
 
 **What to deprioritize:** Prospects/CRM, Rolodex, Modeling, HubSpot integration, and Chat Assistant are all functional but out of V1 core scope. They should be left as-is and revisited in V2.
