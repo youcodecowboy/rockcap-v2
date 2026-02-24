@@ -160,6 +160,9 @@ export class V4BatchProcessor {
     this.queue = [];
     const totalItems = items.length;
 
+    // Track which items completed successfully (for cleanup on fatal error)
+    const completedItemIds = new Set<string>();
+
     try {
       // Update batch status to processing
       await this.callbacks.updateBatchStatus({
@@ -341,6 +344,7 @@ export class V4BatchProcessor {
           });
 
           this.processedCount++;
+          completedItemIds.add(item.itemId as string);
         } catch (error) {
           this.errorCount++;
           await this.callbacks.updateItemStatus({
@@ -385,9 +389,9 @@ export class V4BatchProcessor {
     } catch (error) {
       console.error('[V4 Batch] Fatal error:', error);
 
-      // Mark all unprocessed items as error
+      // Mark only unprocessed items as error (skip items that already succeeded)
       for (const item of items) {
-        if (!storageIdsForItem(item.itemId)) {
+        if (!completedItemIds.has(item.itemId as string)) {
           await this.callbacks.updateItemStatus({
             itemId: item.itemId,
             status: 'error',
@@ -410,11 +414,6 @@ export class V4BatchProcessor {
     this.processing = false;
     return { processed: this.processedCount, errors: this.errorCount };
   }
-}
-
-// Small helper — will be replaced with proper tracking
-function storageIdsForItem(_itemId: Id<'bulkUploadItems'>): boolean {
-  return false;
 }
 
 // =============================================================================

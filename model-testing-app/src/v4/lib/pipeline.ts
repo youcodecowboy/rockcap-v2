@@ -31,7 +31,7 @@ import type {
 } from '../types';
 import { DEFAULT_V4_CONFIG, BATCH_LIMITS } from '../types';
 import { loadSkill } from './skill-loader';
-import { loadReferences, selectReferencesForBatch } from './reference-library';
+import { loadReferencesWithMeta, selectReferencesForBatch } from './reference-library';
 import { preprocessDocument, chunkBatch, analyzeFilename } from './document-preprocessor';
 import { buildSystemPrompt, buildBatchUserMessage, callAnthropicBatch } from './anthropic-client';
 import { callMockBatch } from './mock-client';
@@ -117,8 +117,9 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
   let cachedHit = false;
 
   if (config.loadReferences) {
-    allReferences = await loadReferences(config.convexClient, config.referenceCacheTtlMs);
-    cachedHit = Date.now() - refStart < 10; // If < 10ms, was cached
+    const refResult = await loadReferencesWithMeta(config.convexClient, config.referenceCacheTtlMs);
+    allReferences = refResult.references;
+    cachedHit = refResult.cacheHit;
     console.log(`[STAGE 2] Loaded ${allReferences.length} references (cache ${cachedHit ? 'HIT' : 'MISS'}) in ${Date.now() - refStart}ms`);
   }
 

@@ -52,6 +52,7 @@ export type {
 // ── Reference Library ──
 export {
   loadReferences,
+  loadReferencesWithMeta,
   selectReferencesForBatch,
   clearReferenceCache,
 } from './lib/reference-library';

@@ -53,9 +53,20 @@ export async function loadReferences(
   convexClient?: any,
   ttlMs: number = 60 * 60 * 1000,
 ): Promise<ReferenceDocument[]> {
+  const result = await loadReferencesWithMeta(convexClient, ttlMs);
+  return result.references;
+}
+
+/**
+ * Load references with metadata about cache status.
+ */
+export async function loadReferencesWithMeta(
+  convexClient?: any,
+  ttlMs: number = 60 * 60 * 1000,
+): Promise<{ references: ReferenceDocument[]; cacheHit: boolean }> {
   // Return cached if valid
   if (isCacheValid(ttlMs) && _cache) {
-    return _cache.references;
+    return { references: _cache.references, cacheHit: true };
   }
 
   // Load from both sources
@@ -94,7 +105,7 @@ export async function loadReferences(
     ttlMs,
   };
 
-  return references;
+  return { references, cacheHit: false };
 }
 
 // =============================================================================
@@ -200,8 +211,10 @@ async function loadSystemReferences(): Promise<ReferenceDocument[]> {
  */
 async function loadConvexReferences(convexClient: any): Promise<ReferenceDocument[]> {
   try {
+    // Dynamic import to avoid circular dependency with Convex generated types
+    const { api } = await import('../../../convex/_generated/api');
     // Fetch active file type definitions from Convex
-    const definitions = await convexClient.query('fileTypeDefinitions:getAll');
+    const definitions = await convexClient.query(api.fileTypeDefinitions.getAll);
     if (!definitions || !Array.isArray(definitions)) return [];
 
     return definitions.map((def: any) => ({
