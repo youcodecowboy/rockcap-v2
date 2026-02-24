@@ -1,523 +1,988 @@
-# RockCap V1 Codebase Audit & Delivery Plan
+# RockCap V2 — Comprehensive Codebase Audit & V1 Delivery Plan
 
+**Branch:** `refactor/modular-document-agents`
 **Date:** 2026-02-24
-**Branch:** `claude/audit-codebase-v1-plan-IzH7J`
+**Status:** Active Development
+
+---
+
+## Table of Contents
+1. [Executive Summary](#1-executive-summary)
+2. [Technology Stack](#2-technology-stack)
+3. [Application Architecture](#3-application-architecture)
+4. [Navigation & Page Structure](#4-navigation--page-structure)
+5. [Core V1 Pipeline](#5-core-v1-pipeline)
+6. [Bulk Upload System](#6-bulk-upload-system)
+7. [Document Classification & AI](#7-document-classification--ai)
+8. [File Type Definitions & Reference Library](#8-file-type-definitions--reference-library)
+9. [Knowledge Library & Checklist System](#9-knowledge-library--checklist-system)
+10. [Intelligence System](#10-intelligence-system)
+11. [Document Library & Folder Structure](#11-document-library--folder-structure)
+12. [Database Schema Overview](#12-database-schema-overview)
+13. [API Routes Inventory](#13-api-routes-inventory)
+14. [Feature Completeness Assessment](#14-feature-completeness-assessment)
+15. [Gaps & Issues](#15-gaps--issues)
+16. [V1 Delivery Definition](#16-v1-delivery-definition)
+17. [Migration Plan: Haiku Skills Architecture](#17-migration-plan-haiku-skills-architecture)
 
 ---
 
 ## 1. Executive Summary
 
-RockCap is a document upload management and summarization platform for a real estate financing company. The application is built on **Next.js + Convex** (real-time backend) with AI-powered document analysis via **Together.ai** (Llama 4 Maverick model).
+RockCap V2 is a document management and intelligence platform for a real estate financing company. The application handles bulk document uploads, AI-powered classification, dynamic checklist tracking, intelligence extraction, and client/project management.
 
-The codebase is feature-rich but has accumulated scope beyond the V1 goal. This audit identifies what is **active**, what is **deprecated/dormant**, and what **gaps** remain to deliver a focused V1: **bulk upload -> AI summarization -> client intelligence -> dynamic checklist -> document library**.
+### Current State (refactor/modular-document-agents branch)
+
+The system is substantially more complete than the `main` branch. Key additions:
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Bulk Upload Pipeline | ~90% | Upload → Analyze → Review → File flow working |
+| AI Document Classification | ~85% | Together.ai + deterministic verification |
+| Dynamic Checklist System | ~80% | Full CRUD, template-based, AI matching, email requests |
+| Intelligence Extraction | ~75% | Knowledge items, field tracking, conflict resolution |
+| Document Library | ~85% | Multi-scope folders, FolderBrowser, FileList |
+| File Type Reference Library | ~90% | 55 types, auto-learning keywords, deterministic scoring |
+| Self-Teaching Loop | ~70% | Correction capture, keyword learning, consolidated rules |
+| Client/Project Management | ~80% | Overview, settings, contacts, tasks, meetings |
+| HubSpot Integration | ~60% | Sync companies/contacts/deals, but external dependency |
+| Financial Modeling | ~50% | Templates, extraction, code mapping (not V1 critical) |
+
+### V1 Core Pipeline
+
+```
+Upload → AI Classify → Review & Correct → Checklist Match → File to Library → Extract Intelligence
+```
+
+This pipeline is **functional end-to-end** but needs refinement in:
+- Classification accuracy (migrate to Haiku skills)
+- Checklist matching confidence (currently substring-based, 0.8 hardcoded)
+- Reference library completeness (55 types defined, matching rules need tuning)
 
 ---
 
-## 2. Architecture Overview
+## 2. Technology Stack
 
-```
-Frontend:  Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui
-Backend:   Convex (real-time database, file storage, mutations/queries)
-AI:        Together.ai API (Llama 4 Maverick 17B primary, GPT-OSS-20B secondary)
-Auth:      Clerk (configured but partially implemented)
-Hosting:   Vercel (deployment configured)
-```
+| Layer | Technology | Details |
+|-------|-----------|---------|
+| **Frontend** | Next.js 14 (App Router) | TypeScript, React 18 |
+| **Styling** | Tailwind CSS + shadcn/ui | Consistent component library |
+| **Backend/DB** | Convex | Real-time BaaS, ~61 tables |
+| **AI Provider** | Together.ai | Llama 4 Maverick 17B (primary) |
+| **AI Fallback** | OpenAI-compatible | GPT-OSS-20B for task parsing |
+| **File Storage** | Convex Storage | Built-in blob storage |
+| **Auth** | Clerk | User authentication |
+| **Integrations** | HubSpot, Companies House | CRM + UK company data |
 
-### Key Directories
-| Path | Purpose |
-|------|---------|
-| `model-testing-app/src/app/` | Next.js pages and API routes |
-| `model-testing-app/src/components/` | React components |
-| `model-testing-app/src/lib/` | Utility modules (AI, extraction, naming) |
-| `model-testing-app/src/types/` | TypeScript interfaces |
-| `model-testing-app/convex/` | Convex schema, queries, mutations |
+### AI Model Configuration (`src/lib/modelConfig.ts`)
 
----
+| Use Case | Model | Temperature | Max Tokens |
+|----------|-------|-------------|------------|
+| Extraction | Llama 4 Maverick 17B | 0.2 | 65,536 |
+| Analysis | Llama 4 Maverick 17B | 0.3 | 8,192 |
+| Chat | Llama 4 Maverick 17B | 0.7 | 4,096 |
 
-## 3. Navigation Map: Active vs Deprecated
-
-### Active in Sidebar (12 items)
-| Route | Label | V1 Relevance |
-|-------|-------|-------------|
-| `/` | Dashboard | **CORE** - entry point |
-| `/tasks` | Tasks | Supporting |
-| `/calendar` | Calendar | Supporting |
-| `/inbox` | Inbox | Supporting |
-| `/filing` | Filing Agent | **CORE** - bulk upload entry |
-| `/clients` | Clients | **CORE** - client intelligence hub |
-| `/prospects` | Prospects | Out of V1 scope |
-| `/rolodex` | Rolodex | Out of V1 scope |
-| `/docs` | Docs | **CORE** - document library |
-| `/notes` | Notes | Supporting |
-| `/knowledge-bank` | Knowledge Bank | **CORE** - client intelligence |
-| `/modeling` | Modeling | Out of V1 scope |
-| `/settings` | Settings (v2.1) | Supporting |
-
-### Hidden/Deprecated Routes (not in sidebar)
-| Route | Status | Notes |
-|-------|--------|-------|
-| `/projects` | **DEPRECATED** | Redirects to `/clients` |
-| `/companies` | Hidden | HubSpot entity detail pages only |
-| `/contacts` | Hidden | HubSpot entity detail pages only |
-| `/deals` | Hidden | HubSpot entity detail pages only |
-| `/test` | Hidden | Dev/testing page (SIC codes) |
-| `/templates` | Hidden | Template management |
-| `/uploads` | Hidden | Internal file queue system |
+**No Anthropic SDK installed.** Migration to Haiku would require adding `@anthropic-ai/sdk` dependency.
 
 ---
 
-## 4. V1 Core Pipeline Audit
+## 3. Application Architecture
 
-### 4.1 Bulk Upload System - STATUS: FUNCTIONAL, NEEDS REFINEMENT
-
-**Entry Point:** `/filing?tab=bulk` -> `BulkUpload.tsx` (833 lines)
-
-**Current Flow:**
 ```
-Step 1: Select Client (can create new)
-Step 2: Select Project (optional, can create new)
-Step 3: Options (internal/external toggle, instructions)
-Step 4: File Upload (drag & drop, max 100 files, 10MB each)
-        |
-        v
-Sequential Processing via BulkQueueProcessor
-  -> Upload file to Convex storage
-  -> POST /api/bulk-analyze (Together.ai Llama 4 Maverick)
-  -> Check duplicates
-  -> Generate document code
-        |
-        v
-Navigate to /docs/bulk/{batchId} for Review
-  -> BulkReviewTable (627 lines) - edit type, category, folder
-  -> Resolve duplicates (minor v1.1 / significant v2.0)
-  -> "File All Documents" button
-        |
-        v
-fileBatch() Convex mutation
-  -> Creates Document records
-  -> Creates Knowledge Bank entries
-  -> Links to client/project folders
+model-testing-app/
+├── src/
+│   ├── app/                          # Next.js App Router pages
+│   │   ├── api/                      # 50 API routes
+│   │   ├── clients/[clientId]/       # Client pages (11 tabs)
+│   │   │   └── projects/[projectId]/ # Project pages (8 tabs)
+│   │   ├── docs/                     # Document library
+│   │   ├── filing/                   # Upload & file page
+│   │   ├── modeling/                 # Financial modeling
+│   │   ├── prospects/                # Prospecting
+│   │   └── ...
+│   ├── components/                   # Shared components
+│   │   ├── BulkUpload.tsx           # Upload wizard (833 lines)
+│   │   ├── BulkReviewTable.tsx      # Review table (627+ lines)
+│   │   ├── IntelligenceTab.tsx      # Intelligence UI
+│   │   ├── ProjectSettingsPanel.tsx  # Settings panel
+│   │   └── Sidebar.tsx              # Navigation
+│   └── lib/
+│       ├── togetherAI.ts            # AI functions (498 lines)
+│       ├── modelConfig.ts           # Model configuration
+│       ├── fileTypeDefinitions.ts   # Client-side type defs (5 types)
+│       ├── bulkQueueProcessor.ts    # Queue processor (338 lines)
+│       ├── canonicalFields.ts       # Canonical field paths
+│       └── agents/                  # Modular AI agents
+│           ├── classification-agent/
+│           ├── checklist-agent/
+│           └── deterministic-verifier/
+├── convex/
+│   ├── schema.ts                    # Database schema (~2000 lines, 61 tables)
+│   ├── knowledgeLibrary.ts          # Checklist & intelligence (2,372 lines)
+│   ├── knowledgeBank.ts             # Knowledge entries
+│   ├── fileTypeDefinitions.ts       # 55 document types + learning
+│   ├── bulkUpload.ts                # Bulk upload backend (741 lines)
+│   ├── documents.ts                 # Document CRUD
+│   ├── folderStructure.ts           # Folder management
+│   └── migrations/
+│       ├── seedFileTypeDefinitions.ts
+│       ├── seedFolderTemplates.ts
+│       └── seedPlacementRules.ts
 ```
 
-**Key Files:**
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/components/BulkUpload.tsx` | 833 | Main upload UI |
-| `convex/bulkUpload.ts` | 741 | Backend operations |
-| `src/app/api/bulk-analyze/route.ts` | 348 | AI analysis endpoint |
-| `src/lib/bulkQueueProcessor.ts` | 338 | Queue processing |
-| `src/components/BulkReviewTable.tsx` | 627 | Review/edit table |
-| `src/app/docs/bulk/[batchId]/page.tsx` | 459 | Review page |
+---
 
-**Gaps & Issues:**
-1. **Sequential processing only** - no parallel file analysis; slow for large batches
-2. **Summary-only analysis** - does not run deep extraction by default (cost-saving trade-off)
-3. **No prospecting context extraction** in bulk flow
-4. **No auto-extraction toggle** - requires manual per-item toggle
-5. **30-second API timeout** - may fail on large/complex documents
-6. **No retry logic** on AI analysis failure per file
+## 4. Navigation & Page Structure
 
-### 4.2 Document Summaries & Client Intelligence - STATUS: PARTIALLY IMPLEMENTED
+### Sidebar (11 items)
 
-**How Summaries Are Generated:**
-- Together.ai analyzes each file during upload (`/api/bulk-analyze`)
-- Produces: summary (1-3 sentences), category, fileType, confidence score
-- Summary stored on the Document record AND creates a KnowledgeBankEntry
+| # | Item | Route | Status |
+|---|------|-------|--------|
+| 1 | Dashboard | `/` | Active |
+| 2 | Tasks | `/tasks` | Active (NEW) |
+| 3 | Calendar | `/calendar` | Active (NEW) |
+| 4 | Inbox | `/inbox` | Active (NEW) |
+| 5 | Upload & File | `/filing` | Active |
+| 6 | Clients | `/clients` | Active |
+| 7 | Prospects | `/prospects` | Active |
+| 8 | Rolodex | `/rolodex` | Active |
+| 9 | Docs | `/docs` | Active |
+| 10 | Notes | `/notes` | Active |
+| 11 | Modeling | `/modeling` | Active |
 
-**Knowledge Bank Schema (`convex/schema.ts`):**
+**Settings:** `/settings` (bottom of sidebar, labeled "VERSION 2.1")
+
+### Client Page Tabs (11 tabs)
+
+| Tab | Component | V1 Critical |
+|-----|-----------|-------------|
+| Overview | ClientOverviewTab | Yes |
+| Documents | ClientDocumentLibrary | Yes |
+| Projects | ClientProjectsTab | Yes |
+| Contacts | ClientContactsTab | No |
+| Tasks | ClientTasksTab | No |
+| Communications | ClientCommunicationsTab | No |
+| Meetings | ClientMeetingsTab | No |
+| Data | ClientDataTab | No |
+| Intelligence | ClientIntelligenceTab | Yes |
+| Checklist | ClientKnowledgeTab | Yes |
+| Notes | ClientNotesTab | No |
+
+### Project Page Tabs (8 tabs)
+
+| Tab | Component | V1 Critical |
+|-----|-----------|-------------|
+| Overview | ProjectOverviewTab | Yes |
+| Documents | ProjectDocumentsTab | Yes |
+| Intelligence | ProjectIntelligenceTab | Yes |
+| Checklist | ProjectKnowledgeTab | Yes |
+| Communications | (shared component) | No |
+| Data | ProjectDataTab | No |
+| Notes | ProjectNotesTab | No |
+| Tasks | ProjectTasksTab | No |
+
+---
+
+## 5. Core V1 Pipeline
+
+The V1 delivery pipeline is the end-to-end document processing flow:
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────────┐
+│ Bulk Upload  │────▶│ AI Analysis  │────▶│ User Review  │────▶│ File to Library │
+│ (BulkUpload) │     │ (/api/bulk-  │     │ (BulkReview  │     │ (fileBatch      │
+│              │     │  analyze)    │     │  Table)      │     │  mutation)      │
+└─────────────┘     └──────────────┘     └──────────────┘     └────────┬────────┘
+                                                                       │
+                    ┌──────────────┐     ┌──────────────┐             │
+                    │ Intelligence │◀────│  Checklist   │◀────────────┘
+                    │  Extraction  │     │  Matching    │
+                    │ (knowledge   │     │ (suggest     │
+                    │  Items)      │     │  Matches)    │
+                    └──────────────┘     └──────────────┘
+```
+
+### Pipeline Stages
+
+**Stage 1 — Upload** (`BulkUpload.tsx`)
+- Select scope: Client / Internal / Personal
+- Choose destination (client, project, folder)
+- Upload files (max 100, 100MB each)
+- Processing mode: Foreground (≤5 files) or Background (>5 files)
+
+**Stage 2 — AI Analysis** (`/api/bulk-analyze` → `togetherAI.ts`)
+- Text extraction from uploaded file
+- Summary Agent: executive summary, entities, key terms, dates, amounts, characteristics
+- Classification Agent: fileType, category, targetFolder, confidence, reasoning
+- Checklist Agent: match document to missing checklist items with confidence scores
+- Placement rules override folder suggestion if rule exists
+
+**Stage 3 — User Review** (`BulkReviewTable.tsx`)
+- Expandable rows with full document analysis (tabbed: Summary, Entities, Key Terms, Doc Info, Classification)
+- Editable: fileType, category, folder, internal flag, checklist items, version, notes
+- AI suggestions shown with sparkles icon; user corrections tracked for feedback loop
+- Checklist item popover: AI suggestions first (with confidence %), then all items
+
+**Stage 4 — Filing** (`convex/bulkUpload.ts` → `fileItem`/`fileBatch`)
+- Create document record with all metadata
+- Link to checklist items → mark as "fulfilled"
+- Extract intelligence from documentAnalysis (amounts, dates, entities)
+- Create knowledge items at client/project scope
+- Capture user corrections for feedback loop → trigger keyword learning
+
+---
+
+## 6. Bulk Upload System
+
+### Components
+
+| Component | File | Lines | Purpose |
+|-----------|------|-------|---------|
+| BulkUpload | `src/components/BulkUpload.tsx` | 833 | Upload wizard UI |
+| BulkReviewTable | `src/components/BulkReviewTable.tsx` | 627+ | Review/edit table |
+| BulkQueueProcessor | `src/lib/bulkQueueProcessor.ts` | 338 | Client-side queue |
+| bulk-analyze API | `src/app/api/bulk-analyze/route.ts` | 348 | AI analysis endpoint |
+| bulkUpload backend | `convex/bulkUpload.ts` | 741 | Convex mutations |
+
+### Processing Modes
+
+| Mode | Trigger | Processing | Progress |
+|------|---------|-----------|----------|
+| Foreground | ≤5 files | BulkQueueProcessor (browser) | Real-time UI updates |
+| Background | >5 files | Convex scheduler (server) | Batch status polling |
+
+### Self-Teaching Feedback Loop
+
+```
+User corrects classification
+  → filingCorrections table stores: AI prediction, user correction, document keywords
+  → Cache invalidated for this content hash
+  → If fileType changed: trigger keyword learning
+  → After 3+ corrections for same pattern: auto-learn common keywords
+  → Learned keywords boost future deterministic scoring by 0.15 each
+  → Consolidated rules passed to classification agent as examples
+```
+
+### Checklist Linking During Filing
+
+```
+For each user-selected checklist item:
+  1. Create knowledgeChecklistDocumentLinks record (isPrimary for first)
+  2. Update checklist item status → "fulfilled"
+  3. Extract intelligence fields from documentAnalysis
+  4. Create/update knowledgeItems at appropriate scope
+```
+
+---
+
+## 7. Document Classification & AI
+
+### Multi-Stage Pipeline
+
+**Stage 1 — Summary Agent** (Together.ai)
+```
+Input: Document text (or smart summary if >40KB)
+Output:
+  - documentDescription, documentPurpose
+  - executiveSummary, detailedSummary, sectionBreakdown
+  - entities: {people, companies, locations, projects}
+  - keyTerms, keyDates, keyAmounts
+  - documentCharacteristics: {isFinancial, isLegal, isIdentity, isReport, isDesign, isCorrespondence, ...}
+  - confidenceInAnalysis (0-1)
+```
+
+**Stage 2 — Classification Agent** (Together.ai)
+```
+Input: Summary output + file type definitions + folder list + client context + past corrections
+Output:
+  - fileType: e.g., "RedBook Valuation"
+  - category: e.g., "Appraisals"
+  - targetFolder: e.g., "appraisals"
+  - confidence: 0-1
+  - typeAbbreviation: e.g., "RBV"
+  - classificationReasoning: explanation
+```
+
+**Stage 3 — Deterministic Verifier** (No AI — keyword scoring)
+```
+Scoring weights:
+  - keyTermMatch: 0.4
+  - summaryMatch: 0.3
+  - filenameMatch: 0.3
+  - filenamePatternBonus: 0.3
+  - exclusionPenalty: 0.5x multiplier
+  - correctionBoost: 0.2
+  - learnedKeywordBoost: 0.15 per keyword
+
+Decision logic:
+  - LLM matches top deterministic score → VERIFIED
+  - Score difference >0.25 AND top ≥0.4 → SUGGEST CHANGE
+  - Otherwise → ACCEPT with alternative noted
+  - Top 2 scores within 0.15 → trigger critic agent for disambiguation
+```
+
+**Stage 4 — Checklist Matching Agent**
+```
+Input: Classified document + missing checklist items + filename matches
+Output: Array of {itemId, itemName, category, confidence, reasoning}
+  - Filename exact match → 0.85+ confidence
+  - Document type match → 0.75+ confidence
+  - Content serves purpose → 0.65+ confidence
+  - Semantic similarity → 0.50-0.65 confidence
+Only auto-selects highest confidence item (≥0.7) in UI
+```
+
+### Current AI Provider: Together.ai
+
+- Model: `meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8`
+- REST API calls via `src/lib/togetherAI.ts`
+- Retry with exponential backoff via `fetchWithRetry()`
+- No streaming; synchronous request-response
+- **No Anthropic SDK installed**
+
+---
+
+## 8. File Type Definitions & Reference Library
+
+### Architecture
+
+| Layer | File | Types | Purpose |
+|-------|------|-------|---------|
+| Backend (source of truth) | `convex/fileTypeDefinitions.ts` | 55 | Database persistence, CRUD, learning |
+| Frontend (hints) | `src/lib/fileTypeDefinitions.ts` | 5 | Client-side guidance, merges with DB |
+| Seed migration | `convex/migrations/seedFileTypeDefinitions.ts` | 55 | Initial database population |
+| Keyword learning | `convex/keywordLearning.ts` | — | Auto-learn from corrections |
+
+### 55 Document Types Across 12 Categories
+
+| Category | Types | Examples |
+|----------|-------|---------|
+| Appraisals | 3 | Appraisal, RedBook Valuation, Cashflow |
+| Plans | 6 | Floor Plans, Elevations, Sections, Site Plans, Location Plans |
+| Inspections | 2 | Initial Monitoring Report, Interim Monitoring Report |
+| Professional Reports | 8 | Planning Documentation, Contract Sum Analysis, Comparables, Building Survey, Report on Title, Legal Opinion, Environmental Report, Local Authority Search |
+| KYC | 10 | Passport, Driving License, Utility Bill, Bank Statement, Application Form, Assets & Liabilities, Track Record, Certificate of Incorporation, Company Search, Tax Return |
+| Loan Terms | 2 | Indicative Terms, Credit Backed Terms |
+| Legal Documents | 13 | Facility Letter, Personal Guarantee, Corporate Guarantee, T&Cs, Shareholders Agreement, Share Charge, Debenture, Corporate Authorisations, Building Contract, Professional Appointment, Collateral Warranty, Title Deed, Lease |
+| Project Documents | 2 | Accommodation Schedule, Build Programme |
+| Financial Documents | 5 | Loan Statement, Redemption Statement, Completion Statement, Invoice, Receipt |
+| Insurance | 2 | Insurance Policy, Insurance Certificate |
+| Communications | 2 | Email/Correspondence, Meeting Minutes |
+| Warranties | 2 | NHBC Warranty, Latent Defects Insurance |
+| Photographs | 1 | Site Photographs |
+
+### Each Definition Contains
+
 ```typescript
-knowledgeBankEntries: {
-  clientId, projectId?
-  sourceType: "document" | "email" | "manual" | "call_transcript"
-  entryType: "deal_update" | "call_transcript" | "email" | "document_summary" | "project_status" | "general"
-  title, content (summary text)
-  keyPoints: string[]      // Up to 5 extracted points
-  metadata: Record<string, any>  // Financial data
-  tags: string[]
+{
+  fileType: string;           // "RedBook Valuation"
+  category: string;           // "Appraisals"
+  keywords: string[];         // ["RICS", "red book", "valuation", ...]
+  description: string;        // 100+ words (enforced)
+  identificationRules: string[];  // Detection rules
+  categoryRules: string;      // Why this category
+  // Deterministic verification fields:
+  targetFolderKey?: string;   // "appraisals"
+  targetLevel?: "client" | "project";
+  filenamePatterns?: string[];
+  excludePatterns?: string[];
+  // Auto-learning:
+  learnedKeywords?: Array<{keyword, source, addedAt, correctionCount}>;
 }
 ```
 
-**Where Intelligence Surfaces:**
-| Location | What Shows | Status |
-|----------|-----------|--------|
-| `/clients/[id]` Overview tab | Client summary, recent docs | **Working** |
-| `/clients/[id]` Communications tab | Document summaries timeline | **Working** |
-| `/clients/[id]` Document Library tab | Folder browser + summaries | **Working** |
-| `/clients/[id]` Knowledge tab | "Coming Soon" placeholder | **NOT IMPLEMENTED** |
-| `/knowledge-bank` main page | All entries, search, filter | **Working** |
-| `/knowledge-bank/[clientId]` | Client-specific KB wiki | **Working** |
-| Chat Assistant context | Full KB entries for AI reasoning | **Working** |
+### Auto-Learning Keyword System
 
-**Gaps:**
-1. **Knowledge Library tab on client profile is a placeholder** - says "coming soon"
-2. **No summary quality scoring** - no way to flag poor summaries for re-analysis
-3. **No batch re-summarization** capability
-4. **Summaries limited to ~500 chars** - may miss critical details in long documents
-5. **No summary templates** per document type (e.g., appraisal summary should extract different fields than a lease)
-
-### 4.3 Dynamic Checklist System - STATUS: FUNCTIONAL, MATCHING NEEDS IMPROVEMENT
-
-**The folder structure IS the checklist.** Each client and project has a standard set of folders representing required document types. The `FolderBrowser` component displays each folder with a live document count — `(0)` means unfulfilled, `(3)` means three documents filed there.
-
-**Borrower Client-Level Checklist (4 items):**
-- Background > KYC (Know Your Customer documents)
-- Background > Background Docs (Company information, corporate documents)
-- Miscellaneous
-
-**Borrower Project-Level Checklist (8 items):**
-- Background, Terms Comparison, Terms Request, Credit Submission
-- Post-completion Documents, Appraisals, Notes, Operational Model
-
-**Lender Client-Level Checklist (4 items):**
-- KYC, Agreements, Correspondence, Miscellaneous
-
-**Lender Project-Level Checklist (7 items):**
-- Term Sheets, Facility Documents, Security Documents, Drawdown Requests
-- Monitoring Reports, Correspondence, Miscellaneous
-
-**~20 total required document slots per client (client + project combined)**
-
-**How Documents Get Matched to Checklist Items:**
-1. **During bulk upload**: AI classifies each file via `/api/bulk-analyze` → assigns `fileTypeDetected` + `category`
-2. **In BulkReviewTable**: Users can override the AI's `fileTypeDetected` and `category` via dropdowns — this is "selecting which checklist item to associate the document with"
-3. **On filing**: `CATEGORY_TO_FOLDER_MAP` in `folderStructure.ts` maps the category to the correct folder (checklist slot)
-4. **Placement rules**: `documentPlacementRules` table provides client-type-specific routing (borrower vs. lender) with priorities
-
-**Reference Library for AI Classification (`fileTypeDefinitions`):**
-- Hardcoded definitions in `src/lib/fileTypeDefinitions.ts` (RedBook Valuation, Initial/Interim Monitoring Reports, Plans, Legal Documents, Indicative Terms)
-- Database-backed definitions in `convex/fileTypeDefinitions` table (user-extensible)
-- Each definition has: `keywords[]`, `description` (100-word min), `identificationRules[]`, `categoryRules`
-- `getRelevantFileTypeHints()` matches file content against keywords and feeds matching definitions to the AI prompt
-
-**Key Gap — Matching Quality:**
-The current system works but the AI classification isn't reliable enough:
-1. **Limited reference library** — only ~6 hardcoded file type definitions; the real estate financing domain has many more document types
-2. **Keyword-based pre-filtering** — `getRelevantFileTypeHints()` only sends relevant definitions to the AI if keywords match; if keywords don't match, the AI gets no guidance
-3. **Generic prompts** — the bulk-analyze route uses a single generic prompt for all document types rather than type-specific classification skills
-4. **No feedback loop** — when users override the AI's classification in BulkReviewTable, that correction doesn't improve future classifications
-5. **Category-to-folder mapping gaps** — `CATEGORY_TO_FOLDER_MAP` has limited aliases; many valid category names fall through to "miscellaneous"
-
-**What Needs Improvement for V1:**
-1. **Expand the fileTypeDefinitions reference library** to cover all ~20 checklist document types
-2. **Migrate classification to Haiku skills** with type-specific prompts that leverage the full definition (description + identificationRules)
-3. **Build a feedback/learning loop** — when users correct classifications, store the correction as a new alias or definition update
-4. **Add an explicit checklist completion view** on client/project profiles (the Knowledge Library tab placeholder) showing percentage complete and highlighting missing documents
-5. **Improve the category-to-folder mapping** to handle more variation in AI output categories
-
-### 4.4 Document Library - STATUS: FUNCTIONAL
-
-**Entry Point:** `/docs` with 3-pane Google Drive-style interface
-
-**Architecture:**
-```
-Left Pane:    Client/Project tree navigation
-Middle Pane:  File list (sortable, searchable)
-Right Pane:   File detail panel (summary, metadata, extracted data)
-```
-
-**Key Features Working:**
-- Hierarchical folder organization (client -> project -> category folders)
-- Configurable folder templates per client type
-- Automatic document code generation: `{SHORTCODE}-{TYPE}-{INT/EXT}-{INITIALS}-{VERSION}-{DATE}`
-- Document versioning (V1.0, V1.1, V2.0)
-- Comments on documents
-- Drag-and-drop file operations
-- Batch review pages at `/docs/bulk/[batchId]`
-
-**Document Naming Example:** `WIMBPARK28-APPRAISAL-EXT-JS-V1.0-2026-01-12`
-
-**Gaps:**
-1. **No file preview** - can't preview PDFs/images inline
-2. **No download management** - no bulk download
-3. **No sharing/permissions** - all users see all docs (Clerk auth partially implemented)
-4. **No document expiry/renewal tracking**
+1. User corrects classification → correction stored in `filingCorrections`
+2. After 3+ corrections for same pattern (e.g., "Plans" → "Floor Plans"):
+   - System finds keywords appearing in 50%+ of corrections
+   - Deduplicates against existing keywords
+   - Adds to `learnedKeywords` array with source="correction"
+3. Learned keywords boost deterministic scoring by 0.15 each
+4. Users can undo learned keywords via UI notification feed
+5. Learning events tracked with stats (this week, this month)
 
 ---
 
-## 5. AI Architecture Audit
+## 9. Knowledge Library & Checklist System
 
-### Current Stack
+### Backend: `convex/knowledgeLibrary.ts` (2,372 lines)
+
+**13 Queries + 34 Mutations** managing:
+- Requirement templates
+- Checklist items (client-level and project-level)
+- Document-checklist links
+- AI suggestions
+- Email logging
+- Knowledge items (intelligence)
+- Intelligence conflicts
+- Field-based progress tracking
+
+### Checklist Architecture
+
 ```
-All AI calls -> Together.ai REST API
-                  |
-                  v
-        Llama 4 Maverick 17B (primary)
-        GPT-OSS-20B (secondary - reminders/tasks)
+knowledgeRequirementTemplates      knowledgeChecklistItems         knowledgeChecklistDocumentLinks
+┌──────────────────────────┐       ┌──────────────────────┐       ┌────────────────────────────┐
+│ clientType: "borrower"   │──────▶│ clientId             │──────▶│ checklistItemId            │
+│ level: "client"/"project"│       │ projectId?           │       │ documentId                 │
+│ requirements: [          │       │ name                 │       │ documentName               │
+│   {name, category,       │       │ category             │       │ isPrimary                  │
+│    priority, phase,      │       │ status: missing |    │       │ linkedAt                   │
+│    matchingDocTypes}     │       │   pending_review |   │       │ linkedBy                   │
+│ ]                        │       │   fulfilled          │       └────────────────────────────┘
+└──────────────────────────┘       │ priority: required | │
+                                   │   nice_to_have |     │
+                                   │   optional           │
+                                   │ phaseRequired        │
+                                   │ matchingDocTypes[]   │
+                                   │ suggestedDocId?      │
+                                   │ suggestedConfidence? │
+                                   │ isCustom             │
+                                   └──────────────────────┘
 ```
 
-**No Anthropic SDK is installed.** The `together-ai` package (v0.33.0) is the only AI dependency.
+### Checklist Initialization
 
-### AI Operations Inventory
-| Operation | Route/File | Model | Tokens | Use Case |
-|-----------|-----------|-------|--------|----------|
-| Document Analysis | `/api/bulk-analyze` | Llama 4 Maverick | 8K | Classification & summary |
-| File Analysis | `lib/togetherAI.ts` | Llama 4 Maverick | 65K extraction, 8K analysis | Deep document analysis |
-| Prospecting Context | `lib/togetherAI.ts` | Llama 4 Maverick | 12K | Sales intelligence extraction |
-| Smart Pass Codification | `lib/smartPassCodification.ts` | Llama 4 Maverick | 32K | Financial item coding |
-| Chat Assistant | `/api/chat-assistant` | Llama 4 Maverick | 4K | Conversational AI + tools |
-| Note Generation | `/api/ai-assistant` | Llama 4 Maverick | Variable | AI note drafting |
-| Task Parsing | `/api/tasks/parse` | GPT-OSS-20B | 1K | Natural language task input |
-| Reminder Parsing | `/api/reminders/parse` | GPT-OSS-20B | 1K | Reminder text enhancement |
+```
+initializeChecklistForClient(clientId, clientType)
+  → Find template for clientType + level="client"
+  → Create checklist items from template requirements
+  → All start as status="missing"
 
-### Centralized Config (`src/lib/modelConfig.ts`)
+initializeChecklistForProject(projectId, clientType)
+  → Find template for clientType + level="project"
+  → Create checklist items from template requirements
+  → All start as status="missing"
+```
+
+### Checklist Item Statuses
+
+| Status | Meaning | Trigger |
+|--------|---------|---------|
+| `missing` | No documents linked | Default state |
+| `pending_review` | AI suggested a match, awaiting user confirmation | `suggestDocumentMatches()` |
+| `fulfilled` | At least one document linked | `confirmSuggestedLink()` or `linkDocumentToChecklistItem()` |
+
+### AI Matching Logic (`suggestDocumentMatches`)
+
+```
+1. Get all MISSING checklist items for client
+2. For each item with matchingDocumentTypes:
+   a. Compare document type (substring matching, case-insensitive)
+   b. 3-way logic: docType⊂itemType OR itemType⊂docType OR category⊂itemType
+3. If match found → set item to pending_review with suggestion
+4. Default confidence: 0.8 (hardcoded)
+```
+
+### Document Linking Flow
+
+```
+User confirms match → confirmSuggestedLink()
+  → Create knowledgeChecklistDocumentLinks record
+  → If first link: mark item "fulfilled", clear suggestion
+  → If additional link: just clear suggestion
+
+User manually links → linkDocumentToChecklistItem()
+  → Create link record (isPrimary if first)
+  → Mark item "fulfilled"
+
+User unlinks → unlinkDocumentFromChecklistItem()
+  → Remove specific link
+  → If was primary, promote next link to primary
+  → If no links remain, mark item "missing"
+```
+
+### Deal Phase Filtering
+
+Items have `phaseRequired` field:
+- `indicative_terms` — Required at early proposal stage
+- `credit_submission` — Required for credit application
+- `post_credit` — Required after credit approval
+- `always` — Required regardless of phase
+
+### Custom Requirements
+
+- `addCustomRequirement()` — Manual single requirement (isCustom=true, customSource="manual")
+- `addCustomRequirementsFromLLM()` — Bulk from LLM parsing (isCustom=true, customSource="llm")
+
+### Email Request System
+
+- Email modal generates request for missing documents
+- `logEmailGeneration()` records email content, recipients, checklist items referenced
+- `getLastEmailGeneration()` shows when last email was sent
+
+### Field-Based Progress Tracking (Sprint 3)
+
+`getChecklistFieldProgress` maps checklist items to canonical fields:
 ```typescript
-MODELS = { primary: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8' }
-MODEL_CONFIG = {
-  extraction:    { temperature: 0.2, maxTokens: 65000 },
-  normalization: { temperature: 0.1, maxTokens: 65000 },
-  verification:  { temperature: 0.1, maxTokens: 65000 },
-  analysis:      { temperature: 0.3, maxTokens: 8000 },
-  codification:  { temperature: 0.3, maxTokens: 32000 },
-  chat:          { temperature: 0.7, maxTokens: 4000 },
+CHECKLIST_FIELD_HINTS = {
+  'Company Search': ['company.name', 'company.registrationNumber', ...],
+  'Development Appraisal': ['financials.gdv', 'financials.totalDevelopmentCost', ...],
+  'Planning Permission': ['timeline.planningStatus', 'overview.unitCount', ...],
+  // 25 document types mapped to canonical fields
+}
+```
+Calculates "effective status" based on which expected fields are filled in knowledgeItems.
+
+---
+
+## 10. Intelligence System
+
+### Knowledge Items (`knowledgeItems` table)
+
+Flexible normalized intelligence storage:
+```typescript
+{
+  clientId, projectId?,
+  fieldPath: "company.registrationNumber",  // canonical OR custom
+  label: "Company Registration Number",
+  category: "company",
+  value: "12345678",
+  valueType: "text" | "currency" | "percentage" | "date" | "number" | "array" | "boolean",
+  confidence: 0.85,
+  source: "document" | "manual" | "ai_extraction",
+  sourceDocumentId?, sourceText?,
+  status: "active" | "flagged" | "archived" | "superseded",
+  supersededBy?, supersededAt?,
+  flaggedReason?, flaggedAt?,
 }
 ```
 
----
+### Intelligence Tab UI (`IntelligenceTab.tsx`)
 
-## 6. Skills-Based Haiku Migration Opportunity
+- Dual-mode: Client-level and Project-level scope switching
+- 9 client categories (Contact, Company, Financial, etc.) or 10 project categories
+- Canonical field management with completion tracking
+- Value history (superseded/prior values with dates and sources)
+- Document analysis viewer (tabbed: Summary, Entities, Key Data, Characteristics)
+- AddIntelligenceModal for AI extraction
+- ConsolidationModal for duplicate/conflict resolution
 
-### Current Problem
-- All AI operations use a single large model (Llama 4 Maverick 17B) via Together.ai
-- No skills/routing framework - each API route handles its own LLM call
-- No prompt versioning or A/B testing
-- Expensive for simple operations (task parsing, title generation, classification)
-
-### Proposed Architecture: Skills-Based with Claude Haiku
-
-```
-                    ┌─────────────────────────┐
-                    │    Skill Router          │
-                    │  (model selection logic) │
-                    └────────┬────────────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              v              v              v
-    ┌─────────────┐  ┌────────────┐  ┌────────────────┐
-    │ Haiku Skills│  │Sonnet Skills│  │ Opus Skills    │
-    │ (fast/cheap)│  │ (balanced) │  │ (complex)      │
-    └─────────────┘  └────────────┘  └────────────────┘
-```
-
-### Skill Mapping
-
-| Skill | Current Implementation | Recommended Model | Rationale |
-|-------|----------------------|-------------------|-----------|
-| `classify-document` | bulk-analyze route | **Haiku** | Fast classification, structured output |
-| `summarize-document` | bulk-analyze route | **Haiku** | Summary generation is well-scoped |
-| `extract-financial-data` | togetherAI.ts extraction | **Sonnet** | Complex financial parsing |
-| `parse-task` | tasks/parse route | **Haiku** | Simple NL parsing |
-| `parse-reminder` | reminders/parse route | **Haiku** | Simple NL parsing |
-| `generate-note-title` | ai-assistant route | **Haiku** | 30-token output, trivial |
-| `generate-note-body` | ai-assistant route | **Sonnet** | Longer-form content |
-| `codify-financial-item` | smartPassCodification.ts | **Sonnet** | Nuanced matching |
-| `extract-prospecting-context` | togetherAI.ts | **Sonnet** | Complex intelligence extraction |
-| `chat-conversation` | chat-assistant route | **Sonnet/Opus** | Multi-turn, tool-using |
-| `evaluate-checklist` | NOT YET BUILT | **Haiku** | Document-vs-requirements check |
-
-### Migration Steps
-1. **Install `@anthropic-ai/sdk`** alongside `together-ai`
-2. **Create `src/lib/skillRouter.ts`** - central skill dispatcher
-3. **Create `src/lib/skills/` directory** - one file per skill with prompt, model config, input/output types
-4. **Migrate one skill at a time**, starting with `classify-document` (highest volume, lowest complexity)
-5. **Keep Together.ai as fallback** during migration; feature-flag new skills
-6. **Add prompt versioning** - store prompt templates with version IDs for A/B testing
-
-### Cost/Performance Impact (Estimated)
-| Operation | Current (Together.ai) | Proposed (Haiku) | Change |
-|-----------|----------------------|------------------|--------|
-| Document Classification | ~$0.003/doc | ~$0.0003/doc | **10x cheaper** |
-| Task Parsing | ~$0.001/task | ~$0.0001/task | **10x cheaper** |
-| Summary Generation | ~$0.005/doc | ~$0.0005/doc | **10x cheaper** |
-| Financial Extraction | ~$0.02/doc | ~$0.005/doc (Sonnet) | **4x cheaper** |
-
----
-
-## 7. Deprecated / Out-of-V1-Scope Components
-
-### Clearly Deprecated
-| Component | Evidence | Action |
-|-----------|----------|--------|
-| `/projects` route | Redirects to `/clients` with deprecation comment | Can remove route entirely |
-| `DocumentsTable` component | Marked deprecated in changelog | Verify no imports, then remove |
-| `InternalDocumentsTable` component | Marked deprecated in changelog | Verify no imports, then remove |
-| `UnclassifiedDocumentsTable` component | Marked deprecated in changelog | Verify no imports, then remove |
-
-### Out of V1 Scope (Keep but Deprioritize)
-| Feature | Why Out of Scope |
-|---------|-----------------|
-| Prospects / CRM | Email outreach, enrichment - not core upload flow |
-| Rolodex | Contact management - not core upload flow |
-| Modeling (Excel-like) | Financial modeling spreadsheets - Phase 2 feature |
-| HubSpot Integration | External sync - Phase 2 feature |
-| Companies House API | UK company data lookup - Phase 2 feature |
-| Chat Assistant | Valuable but not V1-blocking |
-| Calendar / Tasks | Supporting features, not core flow |
-
----
-
-## 8. V1 Delivery Gap Analysis
-
-### Critical Path: Upload -> Classify -> Match to Checklist -> Summarize -> Intelligence -> Library
-
-| Step | Status | Gaps |
-|------|--------|------|
-| 1. Bulk Upload | **90% Complete** | Needs retry logic, progress indicators |
-| 2. AI Classification | **60% Complete** | Limited reference library (~6 definitions), keyword-only pre-filtering, no feedback loop |
-| 3. Checklist Matching | **70% Complete** | Folder structure works as checklist, but category-to-folder mapping has gaps; many docs fall to "miscellaneous" |
-| 4. AI Summarization | **80% Complete** | No type-specific summary templates, no quality scoring |
-| 5. Knowledge Bank Population | **85% Complete** | Auto-creates entries, but keyPoints extraction is basic |
-| 6. Client Intelligence View | **70% Complete** | Knowledge tab is placeholder; overview works |
-| 7. Document Library | **90% Complete** | Functional 3-pane UI, needs minor polish |
-
-### Priority-Ordered V1 Gaps
-
-#### P0 - Must Have for V1
-1. **Expand the FileTypeDefinitions Reference Library**
-   - Currently only ~6 hardcoded definitions (RedBook Valuation, Initial/Interim Monitoring Reports, Plans, Legal Documents, Indicative Terms)
-   - Need definitions for ALL ~20 checklist document types across borrower + lender flows
-   - Each definition needs: rich description (100+ words), keywords, identificationRules, categoryRules
-   - This is the foundation — better definitions = better AI classification = better checklist matching
-
-2. **Migrate Classification to Haiku Skills**
-   - Install `@anthropic-ai/sdk`
-   - Create a `classify-document` skill with structured prompts that leverage full fileTypeDefinitions
-   - Create a `summarize-document` skill with type-specific summary templates
-   - Haiku is faster, cheaper (~10x), and better at structured classification than the current Llama 4 Maverick setup
-
-3. **Improve Category-to-Folder Mapping**
-   - Expand `CATEGORY_TO_FOLDER_MAP` aliases to handle more AI output variations
-   - Add placement rules for all document types in the expanded reference library
-   - Reduce documents falling to "miscellaneous" by catching more category name variations
-
-#### P1 - Should Have for V1
-4. **Build Checklist Completion View**
-   - Replace "coming soon" placeholder on client profile Knowledge tab
-   - Show explicit checklist with received/missing document status per folder
-   - Show completion percentage at client and project level
-   - This elevates the implicit folder-count-based checklist to a proper visual tracker
-
-5. **Build Classification Feedback Loop**
-   - When users override `fileTypeDetected`/`category` in BulkReviewTable, capture the correction
-   - Store corrections as new aliases or fileTypeDefinition updates
-   - Over time, the reference library self-improves from user corrections
-
-6. **Bulk Upload Reliability**
-   - Add per-file retry logic on AI analysis failure
-   - Add progress percentage and ETA display
-   - Allow parallel processing (2-3 concurrent) for speed
-
-#### P2 - Nice to Have for V1
-7. **Summary Re-Analysis** - re-run AI on a filed document when initial summary is poor
-8. **Document Preview** - inline PDF/image viewer in library
-9. **Checklist Notifications** - alert when checklist reaches 100% or when critical docs arrive
-10. **Export Client Intelligence** - PDF/export of client knowledge bank for sharing
-
----
-
-## 9. Convex Data Model Summary
-
-### Core Tables (V1 Relevant)
-| Table | Purpose | Key Fields |
-|-------|---------|-----------|
-| `clients` | Client records | name, shortcode, type, status |
-| `projects` | Projects per client | clientId, name, projectShortcode, status |
-| `documents` | Filed documents | clientId, projectId, folderId, summary, documentCode, extractedData |
-| `internalDocuments` | Internal docs | linkedClientId, folderId |
-| `knowledgeBankEntries` | Client intelligence | clientId, sourceType, entryType, content, keyPoints, tags |
-| `bulkUploadBatches` | Upload batches | clientId, projectId, status, itemCount |
-| `bulkUploadItems` | Individual files in batch | batchId, fileName, status, analysisResult |
-| `clientFolders` | Client folder hierarchy | clientId, folderType, parentFolderId |
-| `projectFolders` | Project folder hierarchy | projectId, folderType |
-| `folderTemplates` | Folder structure templates | clientType, level, folders[] |
-| `documentPlacementRules` | Auto-filing rules | clientType, documentType, targetFolderKey |
-| `categorySettings` | System categories | categoryType, name, displayOrder |
-
-### Tables for New Checklist Feature (Proposed)
-```
-requiredDocumentDefinitions:
-  - clientType: string (or "all")
-  - dealStage?: string
-  - documentCategory: string
-  - description: string
-  - isRequired: boolean
-  - priority: "critical" | "important" | "optional"
-  - order: number
-
-clientChecklistStatus:
-  - clientId: Id<"clients">
-  - definitionId: Id<"requiredDocumentDefinitions">
-  - status: "missing" | "received" | "expired" | "waived"
-  - documentId?: Id<"documents">
-  - lastChecked: number
-  - notes?: string
-```
-
----
-
-## 10. Recommended V1 Implementation Order
+### Conflict Resolution
 
 ```
-Phase 1: Reference Library Expansion + Skills Migration
-  ├── Install @anthropic-ai/sdk
-  ├── Expand fileTypeDefinitions to cover all ~20 checklist document types
-  ├── Create skill router (src/lib/skillRouter.ts)
-  ├── Create classify-document Haiku skill with full definition context
-  ├── Create summarize-document Haiku skill with type-specific templates
-  ├── Update /api/bulk-analyze to use new skills
-  └── Expand CATEGORY_TO_FOLDER_MAP aliases
+createIntelligenceConflict()
+  → Flag items with same fieldPath from different sources
+  → Status: "pending" | "resolved"
 
-Phase 2: Matching Improvement + Feedback Loop
-  ├── Improve category-to-folder mapping coverage
-  ├── Add placement rules for all new document types
-  ├── Capture user overrides in BulkReviewTable as corrections
-  ├── Store corrections as fileTypeDefinition updates/aliases
-  └── Reduce "miscellaneous" misclassification rate
-
-Phase 3: Checklist Completion View
-  ├── Build checklist component showing received vs missing per folder
-  ├── Wire Knowledge tab on client profile (replace placeholder)
-  ├── Add completion percentage to client/project overview
-  └── Add type-specific summary prompt templates
-
-Phase 4: Polish & Reliability
-  ├── Add per-file retry logic in bulk processor
-  ├── Add progress indicators in bulk upload
-  ├── Summary re-analysis capability
-  └── Final QA pass on complete V1 flow
+resolveIntelligenceConflict()
+  → Mark winner as "active", others as "superseded"
+  → Record resolution decision
 ```
 
----
+### Knowledge Bank vs Knowledge Library
 
-## 11. Files Reference Index
-
-### Critical V1 Files
-| File | Lines | Role |
-|------|-------|------|
-| `src/components/BulkUpload.tsx` | 833 | Bulk upload wizard UI |
-| `src/components/BulkReviewTable.tsx` | 627 | Review/edit uploaded docs |
-| `src/lib/bulkQueueProcessor.ts` | 338 | Sequential file processing |
-| `src/app/api/bulk-analyze/route.ts` | 348 | AI analysis endpoint |
-| `convex/bulkUpload.ts` | 741 | Bulk upload backend |
-| `convex/documents.ts` | ~500+ | Document CRUD |
-| `convex/knowledgeBank.ts` | ~400+ | Knowledge bank operations |
-| `convex/schema.ts` | 900+ | Full database schema |
-| `src/lib/togetherAI.ts` | 498 | AI analysis functions |
-| `src/lib/modelConfig.ts` | 57 | Model configuration |
-| `src/app/clients/[clientId]/page.tsx` | Large | Client profile hub |
-| `src/app/docs/page.tsx` | Large | Document library |
-| `src/app/knowledge-bank/page.tsx` | Large | Knowledge bank main |
-| `src/types/index.ts` | Large | All TypeScript interfaces |
+| Feature | knowledgeLibrary | knowledgeBank |
+|---------|-----------------|---------------|
+| Purpose | Structured requirements + intelligence | Unstructured knowledge entries |
+| Tables | knowledgeChecklistItems, knowledgeItems, intelligenceConflicts | knowledgeBankEntries |
+| Data Model | Strongly typed, canonical fields | Flexible JSON metadata |
+| Entry Types | Document requirements + extracted fields | deal_update, call_transcript, email, document_summary |
+| Complexity | 13 queries + 34 mutations | 4 queries + 6 mutations |
 
 ---
 
-## 12. Summary
+## 11. Document Library & Folder Structure
 
-**What's working well:** The bulk upload -> analyze -> review -> file pipeline is functional end-to-end. The folder-based checklist system works at both client and project levels with different templates per client type (borrower vs. lender). The document library has a solid 3-pane architecture. Knowledge Bank automatically populates from filed documents. The Convex real-time backend provides a good foundation.
+### Multi-Scope Architecture
 
-**The #1 gap is classification/matching quality.** The reference library (`fileTypeDefinitions`) only has ~6 definitions, but the checklist has ~20 document type slots. When the AI can't reliably classify a document, it falls to "miscellaneous" instead of the correct checklist slot. Expanding the reference library and migrating to Haiku skills is the highest-leverage V1 work.
+| Scope | Folder Table | Description |
+|-------|-------------|-------------|
+| Client | `clientFolders` | Client-specific documents |
+| Project | `projectFolders` | Project-specific documents |
+| Internal | `internalFolders` | Company-wide RockCap documents |
+| Personal | `personalFolders` | User-specific private documents |
 
-**What should change architecturally:** The AI layer should migrate from Together.ai/Llama to a skills-based Anthropic (Haiku/Sonnet) architecture for better classification quality, lower cost (~10x cheaper), and structured skill routing. The classification feedback loop (user corrections -> improved definitions) is critical for long-term accuracy.
+### FolderBrowser Component
 
-**The Knowledge tab on client profiles** is a placeholder but the data exists — the checklist completion view just needs to be built as a UI component that reads folder counts.
+- Tree view of folders organized by scope
+- Supports `projectFilter` prop to limit to single project
+- Client profile link navigation
+- Folder selection drives FileList content
 
-**What to deprioritize:** Prospects/CRM, Rolodex, Modeling, HubSpot integration, and Chat Assistant are all functional but out of V1 core scope. They should be left as-is and revisited in V2.
+### Folder Templates
+
+Seeded via `convex/migrations/seedFolderTemplates.ts`:
+- **Borrower template**: Background, Terms, Appraisals, Plans, Legal, Insurance, etc.
+- **Lender template**: Credit Papers, Due Diligence, Security, Monitoring, etc.
+
+### Document Placement Rules
+
+Seeded via `convex/migrations/seedPlacementRules.ts`:
+- Maps (clientType, documentType, category) → targetFolder
+- Applied post-classification to override AI folder suggestions
+- Priority-based when multiple rules match
+
+---
+
+## 12. Database Schema Overview
+
+**61 tables** organized by domain:
+
+### Core CRM (5 tables)
+`users`, `clients`, `companies`, `projects`, `contacts`
+
+### Document Management (7 tables)
+`documents`, `documentNotes`, `internalDocuments`, `internalFolders`, `personalFolders`, `clientFolders`, `projectFolders`
+
+### Upload & Processing (3 tables)
+`fileUploadQueue`, `bulkUploadBatches`, `bulkUploadItems`
+
+### Intelligence & Knowledge (7 tables)
+`knowledgeItems`, `intelligenceConflicts`, `clientIntelligence`, `projectIntelligence`, `knowledgeRequirementTemplates`, `knowledgeChecklistItems`, `knowledgeChecklistDocumentLinks`
+
+### Extraction & Classification (10 tables)
+`documentExtractions`, `extractionJobs`, `extractedItemCodes`, `itemCodeAliases`, `itemCategories`, `codifiedExtractions`, `intelligenceExtractionJobs`, `classificationCache`, `fileTypeDefinitions`, `categorySettings`
+
+### Activities & Communications (10 tables)
+`activities`, `dealActivities`, `emailTemplates`, `emailFunnels`, `prospectingEmails`, `chatSessions`, `chatMessages`, `chatActions`, `events`, `knowledgeBankEntries`
+
+### Tasks & Meetings (4 tables)
+`tasks`, `meetings`, `meetingExtractionJobs`, `reminders`
+
+### Data Modeling (7 tables)
+`modelingTemplates`, `modelingCodeMappings`, `templateDefinitions`, `templateSheets`, `projectDataItems`, `dataLibrarySnapshots`, `modelExports`
+
+### HubSpot & External (8+ tables)
+`hubspotSyncConfig`, `hubspotPipelines`, `companiesHouseCompanies`, `companiesHouseCharges`, `companiesHousePSC`, `companiesHouseOfficers`, `companyRelationships`, `planningApplications`
+
+---
+
+## 13. API Routes Inventory
+
+**50 API routes** across the application:
+
+### Document Processing (10 routes)
+- `POST /api/analyze-file` — Single file analysis
+- `POST /api/bulk-analyze` — Batch analysis (V1 critical)
+- `POST /api/bulk-analyze-debug` — Debug batch analysis
+- `POST /api/reanalyze-document` — Re-analyze with new instructions
+- `POST /api/intelligence-extract` — Extract intelligence fields
+- `POST /api/process-extraction-queue` — Process extraction jobs
+- `POST /api/process-intelligence-queue` — Process intelligence jobs
+- `POST /api/consolidate-intelligence` — Merge intelligence
+- `POST /api/convex-file` — Convex file operations
+- `POST /api/extract-prospecting-context` — Prospecting insights
+
+### Meeting & Task Processing (5 routes)
+- `POST /api/meeting-extract` — Extract meetings from documents
+- `POST /api/process-meeting-queue` — Process meeting queue
+- `POST /api/tasks/parse` — Parse natural language tasks
+- `POST /api/reminders/parse` — Parse reminders
+- `POST /api/reminders/enhance` — Enhance reminders
+
+### Chat & AI (2 routes)
+- `POST /api/chat-assistant` — Chat completion
+- `POST /api/ai-assistant` — General AI assistant
+
+### HubSpot (15 routes)
+Sync, test, import, explore operations for companies, contacts, deals, leads, pipelines
+
+### Companies House (6 routes)
+Search, details, charges, sync, test operations
+
+### Other (12 routes)
+Prospects, modeling, migrations, notifications, debugging
+
+---
+
+## 14. Feature Completeness Assessment
+
+### V1 Critical Features
+
+| # | Feature | Completeness | Status |
+|---|---------|-------------|--------|
+| 1 | **Bulk Upload UI** | 90% | Working: scope selection, file upload, foreground/background modes |
+| 2 | **AI Document Analysis** | 85% | Working: summary, entities, key terms, characteristics extraction |
+| 3 | **AI Classification** | 80% | Working: fileType + category + folder + confidence. Needs accuracy improvement |
+| 4 | **Deterministic Verification** | 90% | Working: keyword scoring, filename patterns, learned keywords |
+| 5 | **Review Table** | 85% | Working: edit all fields, view analysis, checklist linking |
+| 6 | **Checklist Templates** | 80% | Working: template-based init, custom requirements, phase filtering |
+| 7 | **Checklist Matching** | 70% | Working but basic: substring matching, hardcoded 0.8 confidence |
+| 8 | **Document Filing** | 85% | Working: folder placement, checklist linking, version tracking |
+| 9 | **Intelligence Extraction** | 75% | Working: amounts, dates, entities → knowledge items |
+| 10 | **Feedback Loop** | 70% | Working: correction capture, keyword learning. Needs tuning |
+| 11 | **Document Library** | 85% | Working: multi-scope folders, FolderBrowser, FileList, detail panel |
+| 12 | **Reference Library** | 90% | Working: 55 types, 12 categories, learned keywords, seed/sync |
+| 13 | **Client Overview** | 80% | Working: MissingDocumentsCard, stage notes, deal values |
+| 14 | **Project Overview** | 80% | Working: checklist progress, category breakdown, alert for missing |
+| 15 | **Checklist UI** | 80% | Working: ProjectKnowledgeTab with progress, categories, email requests |
+
+### Non-V1 Features (Active but Lower Priority)
+
+| Feature | Completeness | Notes |
+|---------|-------------|-------|
+| Financial Modeling | 50% | Templates, extraction, code mapping |
+| HubSpot Integration | 60% | Sync working, but external dependency |
+| Prospecting | 40% | Gauntlet, enrichment suggestions |
+| Chat Assistant | 50% | Context-aware chat |
+| Calendar/Inbox | 30% | Navigation exists, implementation unclear |
+| Companies House | 50% | Search, sync working |
+
+---
+
+## 15. Gaps & Issues
+
+### Critical (V1 Blockers)
+
+| # | Gap | Impact | Location |
+|---|-----|--------|----------|
+| 1 | **Checklist matching uses substring only** | Misses valid matches (e.g., "Tax Returns" vs "Tax Return"), no fuzzy matching | `knowledgeLibrary.ts:881-888` |
+| 2 | **Hardcoded 0.8 confidence** | All matches look equally confident, no way to distinguish strong vs weak | `knowledgeLibrary.ts:895` |
+| 3 | **No Anthropic SDK** | Cannot migrate to Haiku skills without adding dependency | `package.json` |
+| 4 | **AI suggestion overwrites without history** | Previous suggestion lost when new match found | `knowledgeLibrary.ts` setSuggestion |
+| 5 | **No transaction safety** | Partial failures during filing could leave inconsistent state | `bulkUpload.ts` fileBatch |
+
+### High Priority (V1 Quality)
+
+| # | Gap | Impact | Location |
+|---|-----|--------|----------|
+| 6 | **CHECKLIST_FIELD_HINTS hardcoded in Convex** | Duplicated from canonicalFields.ts, no single source of truth | `knowledgeLibrary.ts:1942-1975` |
+| 7 | **No pagination on large collections** | Performance degradation with many checklist/knowledge items | Multiple queries |
+| 8 | **Background processing has no real-time updates** | Users can't see individual file progress for background batches | `bulkUpload.ts` |
+| 9 | **Frontend file type defs drift from DB** | 5 client-side types may diverge from 55 DB types | `src/lib/fileTypeDefinitions.ts` |
+| 10 | **Debug queries exposed** | `debugGetAllKnowledgeItems` does full table scan in production | `knowledgeLibrary.ts` |
+
+### Medium Priority (Post-V1)
+
+| # | Gap | Impact |
+|---|-----|--------|
+| 11 | No document count limits per checklist item | Can't enforce "3 months bank statements" |
+| 12 | No undo/redo for mutations | Destructive operations can't be reversed |
+| 13 | No optimistic updates | UI feels slow after mutations |
+| 14 | Tasks not linked to checklist | Can't create task from missing requirement |
+| 15 | Data library not linked to intelligence | Extracted data separate from knowledge items |
+| 16 | Multiple `@ts-ignore` for Convex type depth | Type safety compromised |
+| 17 | No orphaned link cleanup | Deleted checklist items leave dangling links |
+| 18 | Conflict detection is manual only | No auto-detection when contradictory values added |
+| 19 | No rich text in tasks/notes | Plain textarea only |
+| 20 | Sidebar state not persisted | Collapse resets on page reload |
+
+---
+
+## 16. V1 Delivery Definition
+
+### What Constitutes an Acceptable V1
+
+V1 is the **core document processing pipeline** that delivers value to the RockCap team. Users should be able to:
+
+1. **Upload documents in bulk** through the upload wizard
+2. **Get AI-powered classification** with reasonable accuracy
+3. **Review and correct** AI suggestions before filing
+4. **Match documents to checklist requirements** with AI suggestions
+5. **File documents** to the correct folders in the document library
+6. **Track checklist completion** at both client and project levels
+7. **View extracted intelligence** from filed documents
+8. **Request missing documents** via email from the checklist view
+
+### V1 Acceptance Criteria
+
+| Criterion | Current State | V1 Target |
+|-----------|--------------|-----------|
+| Classification accuracy | ~70% (Llama 4) | ≥85% (Haiku) |
+| Checklist match recall | ~60% (substring) | ≥80% (semantic) |
+| End-to-end filing time | ~30s/doc (foreground) | ≤20s/doc |
+| Reference library coverage | 55 types | 55+ types (same) |
+| False positive rate | Unknown | ≤10% |
+| User correction rate | Unknown | ≤25% (down from current) |
+
+### V1 Scope Boundary
+
+**IN scope for V1:**
+- Bulk upload with foreground/background modes
+- AI classification with Haiku (migrated from Together.ai)
+- Document review table with correction UI
+- Dynamic checklist with template initialization
+- Document filing to folder library
+- Intelligence extraction from filed documents
+- Client/project overview with checklist progress
+- Email request for missing documents
+- Self-teaching keyword learning
+
+**OUT of scope for V1:**
+- Financial modeling and template population
+- HubSpot/Companies House integration
+- Prospecting and enrichment
+- Chat assistant
+- Calendar/Inbox features
+- Meeting extraction
+- Advanced conflict resolution UI
+
+---
+
+## 17. Migration Plan: Haiku Skills Architecture
+
+### Goal
+
+Replace Together.ai (Llama 4 Maverick) with Anthropic Claude Haiku for document classification and summarization, using a skills-based architecture for modular, maintainable AI operations.
+
+### Proposed Skill Architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    Skill Router                       │
+│  Determines which skill(s) to invoke per document    │
+└──────────┬───────────┬───────────┬──────────────────┘
+           │           │           │
+    ┌──────▼──────┐ ┌──▼────────┐ ┌▼────────────────┐
+    │ Summary     │ │ Classify  │ │ Checklist Match  │
+    │ Skill       │ │ Skill     │ │ Skill            │
+    │ (Haiku)     │ │ (Haiku)   │ │ (Haiku)          │
+    │             │ │           │ │                  │
+    │ Extract:    │ │ Determine:│ │ Match against:   │
+    │ - Summary   │ │ - fileType│ │ - Missing items  │
+    │ - Entities  │ │ - category│ │ - Confidence     │
+    │ - Key data  │ │ - folder  │ │ - Reasoning      │
+    │ - Chars     │ │ - abbrev  │ │                  │
+    └─────────────┘ └───────────┘ └──────────────────┘
+           │           │           │
+    ┌──────▼──────┐ ┌──▼────────┐ ┌▼────────────────┐
+    │ Intelligence│ │Deterministic│ │ Critic Skill   │
+    │ Skill       │ │ Verifier  │ │ (Sonnet, rare)  │
+    │ (Haiku)     │ │ (No AI)   │ │                  │
+    │             │ │           │ │ Disambiguate     │
+    │ Extract:    │ │ Verify:   │ │ close matches    │
+    │ - Fields    │ │ - Keyword │ │ when top 2       │
+    │ - Values    │ │   scoring │ │ scores within    │
+    │ - Confidence│ │ - Suggest │ │ 0.15             │
+    └─────────────┘ │   change  │ └──────────────────┘
+                    └───────────┘
+```
+
+### Model Assignment
+
+| Skill | Model | Temperature | Max Tokens | Cost/1K docs (est.) |
+|-------|-------|-------------|------------|---------------------|
+| Summary | Haiku | 0.2 | 4,096 | ~$0.50 |
+| Classify | Haiku | 0.1 | 1,024 | ~$0.15 |
+| Checklist Match | Haiku | 0.1 | 2,048 | ~$0.20 |
+| Intelligence Extract | Haiku | 0.2 | 4,096 | ~$0.50 |
+| Critic (rare) | Sonnet | 0.3 | 2,048 | ~$0.10 (5% of docs) |
+
+### Implementation Steps
+
+**Phase 1 — Add Anthropic SDK & Skill Framework**
+1. Install `@anthropic-ai/sdk`
+2. Create `src/lib/anthropicClient.ts` with API client setup
+3. Create `src/lib/skills/` directory with skill interface:
+   ```typescript
+   interface Skill<TInput, TOutput> {
+     name: string;
+     model: 'haiku' | 'sonnet' | 'opus';
+     temperature: number;
+     maxTokens: number;
+     buildPrompt(input: TInput): MessageParam[];
+     parseResponse(response: string): TOutput;
+   }
+   ```
+4. Create environment variable `ANTHROPIC_API_KEY`
+
+**Phase 2 — Migrate Summary Skill**
+1. Create `src/lib/skills/summarySkill.ts`
+2. Port Summary Agent prompt from `togetherAI.ts`
+3. Adapt for Haiku message format
+4. Add structured output parsing (JSON mode)
+5. A/B test: run both Together.ai and Haiku, compare quality
+6. Switch over when Haiku quality ≥ Together.ai
+
+**Phase 3 — Migrate Classification Skill**
+1. Create `src/lib/skills/classificationSkill.ts`
+2. Port Classification Agent prompt
+3. Include file type definitions in system prompt (with caching)
+4. Keep deterministic verifier as post-processing
+5. A/B test and switch over
+
+**Phase 4 — Migrate Checklist Matching Skill**
+1. Create `src/lib/skills/checklistMatchSkill.ts`
+2. Replace substring matching with semantic Haiku matching
+3. Return confidence scores per item (not hardcoded 0.8)
+4. Include reasoning for each match
+5. Auto-select threshold: configurable (default 0.7)
+
+**Phase 5 — Add Intelligence Extraction Skill**
+1. Create `src/lib/skills/intelligenceSkill.ts`
+2. Extract structured fields with canonical field paths
+3. Return confidence per field
+4. Map to knowledgeItems schema
+
+**Phase 6 — Add Critic Skill (Sonnet)**
+1. Create `src/lib/skills/criticSkill.ts`
+2. Only invoked when deterministic verifier detects ambiguity
+3. Uses Sonnet for deeper reasoning
+4. Resolves close classification matches
+
+**Phase 7 — Deprecate Together.ai**
+1. Remove Together.ai calls from pipeline
+2. Remove `TOGETHER_API_KEY` environment variable
+3. Keep `togetherAI.ts` as reference during transition
+4. Clean up model config
+
+### Prompt Caching Strategy
+
+Haiku supports prompt caching. Structure system prompts to maximize cache hits:
+
+```
+System prompt (CACHED — changes rarely):
+  - Role description
+  - File type definitions (55 types)
+  - Category list
+  - Output format specification
+
+User prompt (PER DOCUMENT — changes each time):
+  - Document text/summary
+  - Filename
+  - Client context
+  - Past corrections for this client
+  - Checklist items (if matching skill)
+```
+
+Expected cache hit rate: ~95% (only system prompt changes when definitions update).
+
+### Cost Comparison
+
+| Metric | Together.ai (Current) | Haiku (Proposed) |
+|--------|----------------------|-----------------|
+| Model | Llama 4 Maverick 17B | Claude Haiku |
+| Input cost | ~$0.27/M tokens | $0.25/M tokens (cached: $0.025/M) |
+| Output cost | ~$0.85/M tokens | $1.25/M tokens |
+| Accuracy (est.) | ~70% | ~85%+ |
+| Latency | 3-8s | 1-3s |
+| Prompt caching | No | Yes (10x cheaper repeated prompts) |
+| Structured output | JSON mode | JSON mode + tool use |
+
+**With prompt caching, effective cost per document should be comparable or lower than Together.ai while delivering significantly higher accuracy.**
+
+---
+
+## Appendix A: Key File Locations
+
+| Purpose | Path |
+|---------|------|
+| Bulk Upload UI | `src/components/BulkUpload.tsx` |
+| Review Table | `src/components/BulkReviewTable.tsx` |
+| Queue Processor | `src/lib/bulkQueueProcessor.ts` |
+| AI Analysis API | `src/app/api/bulk-analyze/route.ts` |
+| Together.ai Client | `src/lib/togetherAI.ts` |
+| Model Config | `src/lib/modelConfig.ts` |
+| File Type Defs (client) | `src/lib/fileTypeDefinitions.ts` |
+| File Type Defs (server) | `convex/fileTypeDefinitions.ts` |
+| Keyword Learning | `convex/keywordLearning.ts` |
+| Deterministic Verifier | `src/lib/agents/deterministic-verifier/index.ts` |
+| Classification Agent | `src/lib/agents/classification-agent/` |
+| Checklist Agent | `src/lib/agents/checklist-agent/` |
+| Knowledge Library | `convex/knowledgeLibrary.ts` |
+| Knowledge Bank | `convex/knowledgeBank.ts` |
+| Bulk Upload Backend | `convex/bulkUpload.ts` |
+| Schema | `convex/schema.ts` |
+| Folder Structure | `convex/folderStructure.ts` |
+| Seed Templates | `convex/migrations/seedFolderTemplates.ts` |
+| Seed Placement Rules | `convex/migrations/seedPlacementRules.ts` |
+| Seed File Types | `convex/migrations/seedFileTypeDefinitions.ts` |
+| Intelligence Tab | `src/components/IntelligenceTab.tsx` |
+| Project Checklist Tab | `src/app/clients/[clientId]/projects/[projectId]/components/ProjectKnowledgeTab.tsx` |
+| Missing Docs Card | `src/app/clients/[clientId]/components/MissingDocumentsCard.tsx` |
+| Project Overview | `src/app/clients/[clientId]/projects/[projectId]/components/ProjectOverviewTab.tsx` |
+| Client Overview | `src/app/clients/[clientId]/components/ClientOverviewTab.tsx` |
+| Project Settings | `src/components/ProjectSettingsPanel.tsx` |
+| Sidebar | `src/components/Sidebar.tsx` |
+| Canonical Fields | `src/lib/canonicalFields.ts` |
