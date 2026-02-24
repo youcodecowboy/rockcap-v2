@@ -344,23 +344,30 @@ export const processNextItem = internalAction({
 
       const fileBlob = await fileResponse.blob();
 
-      // Create FormData for the API call (matching existing API format)
+      // Create FormData for the V4 API call
       const formData = new FormData();
       formData.append("file", fileBlob, item.fileName);
 
+      // Pass rich metadata to V4 pipeline
+      const metadata: Record<string, any> = {};
+      if (batch?.clientName) {
+        metadata.clientName = batch.clientName;
+        metadata.clientContext = { clientName: batch.clientName };
+      }
+      if (batch?.projectShortcode) {
+        metadata.projectShortcode = batch.projectShortcode;
+      }
+      if (batch?.isInternal) {
+        metadata.isInternal = batch.isInternal;
+      }
       if (batch?.instructions) {
-        formData.append("instructions", batch.instructions);
+        metadata.instructions = batch.instructions;
       }
-      if (batch?.clientId) {
-        formData.append("clientId", batch.clientId);
-      }
-      if (batch?.projectId) {
-        formData.append("projectId", batch.projectId);
-      }
+      formData.append("metadata", JSON.stringify(metadata));
 
-      // Call the bulk-analyze API with internal authentication
+      // Call the V4 analyze API with internal authentication
       const internalSecret = process.env.CONVEX_INTERNAL_SECRET;
-      const analyzeResponse = await fetch(`${args.baseUrl}/api/bulk-analyze`, {
+      const analyzeResponse = await fetch(`${args.baseUrl}/api/v4-analyze`, {
         method: "POST",
         headers: {
           ...(internalSecret && { "x-convex-internal-secret": internalSecret }),
@@ -370,14 +377,34 @@ export const processNextItem = internalAction({
 
       if (!analyzeResponse.ok) {
         const errorText = await analyzeResponse.text();
-        throw new Error(`Analysis API error ${analyzeResponse.status}: ${errorText}`);
+        throw new Error(`V4 Analysis API error ${analyzeResponse.status}: ${errorText}`);
       }
 
-      const analysisData = await analyzeResponse.json();
+      const v4Data = await analyzeResponse.json();
 
-      if (!analysisData.success) {
-        throw new Error(analysisData.error || "Analysis failed");
+      if (!v4Data.success || !v4Data.documents || v4Data.documents.length === 0) {
+        const errorMsg = v4Data.errors?.[0]?.error || "V4 analysis returned no results";
+        throw new Error(errorMsg);
       }
+
+      // Map V4 response to expected format
+      const analysisData = {
+        result: {
+          summary: v4Data.documents[0].summary || "Analysis complete",
+          fileType: v4Data.documents[0].fileType || "Unknown",
+          category: v4Data.documents[0].category || "Other",
+          suggestedFolder: v4Data.documents[0].suggestedFolder,
+          confidence: v4Data.documents[0].confidence || 0.5,
+          typeAbbreviation: v4Data.documents[0].typeAbbreviation,
+          generatedDocumentCode: v4Data.documents[0].generatedDocumentCode,
+          suggestedChecklistItems: undefined,
+        },
+        extractedIntelligence: v4Data.documents[0].extractedData ? { fields: [], insights: v4Data.documents[0].extractedData } : undefined,
+        documentAnalysis: undefined,
+        classificationReasoning: undefined,
+      };
+
+      console.log(`[Background Processor] V4 result: ${analysisData.result.fileType} (${analysisData.result.confidence}% confidence, mock=${v4Data.isMock})`);
 
       // Check for duplicates if this is a client scope batch
       let isDuplicate = false;

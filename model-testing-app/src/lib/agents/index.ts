@@ -384,7 +384,7 @@ export async function runDocumentAnalysisPipeline(
           category: analysisResult.category,
           limit: 10,
         });
-        consolidatedRules = rulesResult.fileTypeRules?.map((r: any) => ({
+        consolidatedRules = (rulesResult as any).fileTypeRules?.map((r: any) => ({
           field: 'fileType' as const,
           fromValue: r.from,
           toValue: r.to,

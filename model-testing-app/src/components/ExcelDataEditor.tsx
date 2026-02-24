@@ -808,7 +808,7 @@ export default function ExcelDataEditor({ data, onDataChange, readOnly = false }
           manualColumnResize={true}
           manualRowResize={true}
           formulas={{
-            engine: HyperFormula,
+            engine: HyperFormula as any,
             sheetName: 'Sheet1'
           }}
           stretchH="all"

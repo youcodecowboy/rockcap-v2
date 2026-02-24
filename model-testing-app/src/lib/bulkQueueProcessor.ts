@@ -317,24 +317,37 @@ export class BulkQueueProcessor {
 
     const { storageId } = await uploadResponse.json();
 
-    // Call bulk-analyze API
+    // Call V4 analyze API
     const formData = new FormData();
     formData.append("file", item.file);
-    if (this.batchInfo.instructions) {
-      formData.append("instructions", this.batchInfo.instructions);
-    }
     if (this.batchInfo.clientType) {
       formData.append("clientType", this.batchInfo.clientType);
     }
-    // Pass clientId and projectId for checklist matching
-    if (this.batchInfo.clientId) {
-      formData.append("clientId", this.batchInfo.clientId);
-    }
-    if (this.batchInfo.projectId) {
-      formData.append("projectId", this.batchInfo.projectId);
-    }
 
-    const analyzeResponse = await fetch("/api/bulk-analyze", {
+    // Pass rich metadata to V4 pipeline
+    const metadata: Record<string, any> = {};
+    if (this.batchInfo.clientName) {
+      metadata.clientName = this.batchInfo.clientName;
+      metadata.clientContext = {
+        clientType: this.batchInfo.clientType,
+        clientName: this.batchInfo.clientName,
+      };
+    }
+    if (this.batchInfo.projectShortcode) {
+      metadata.projectShortcode = this.batchInfo.projectShortcode;
+    }
+    if (this.batchInfo.isInternal) {
+      metadata.isInternal = this.batchInfo.isInternal;
+    }
+    if (this.batchInfo.uploaderInitials) {
+      metadata.uploaderInitials = this.batchInfo.uploaderInitials;
+    }
+    if (this.batchInfo.instructions) {
+      metadata.instructions = this.batchInfo.instructions;
+    }
+    formData.append("metadata", JSON.stringify(metadata));
+
+    const analyzeResponse = await fetch("/api/v4-analyze", {
       method: "POST",
       body: formData,
     });
@@ -344,13 +357,29 @@ export class BulkQueueProcessor {
       throw new Error(errorData.error || "Analysis failed");
     }
 
-    const analyzeData: BulkAnalysisResponse = await analyzeResponse.json();
-    const result: BulkAnalysisResult = analyzeData.result;
-    const extractedIntelligence = analyzeData.extractedIntelligence;
-    const documentAnalysis = analyzeData.documentAnalysis;
-    const classificationReasoning = analyzeData.classificationReasoning;
+    const v4Data = await analyzeResponse.json();
 
-    console.log(`[BulkQueueProcessor] Received extractedIntelligence: ${!!extractedIntelligence}, fields: ${extractedIntelligence?.fields?.length || 0}`);
+    if (!v4Data.success || !v4Data.documents || v4Data.documents.length === 0) {
+      const errorMsg = v4Data.errors?.[0]?.error || "V4 analysis returned no results";
+      throw new Error(errorMsg);
+    }
+
+    // Map V4 response to the expected format
+    const doc = v4Data.documents[0];
+    const result: BulkAnalysisResult = {
+      summary: doc.summary || "",
+      fileType: doc.fileType || "Unknown",
+      category: doc.category || "miscellaneous",
+      confidence: doc.confidence || 0,
+      suggestedFolder: doc.suggestedFolder || "",
+      typeAbbreviation: doc.typeAbbreviation || "",
+      suggestedChecklistItems: undefined, // V4 handles this differently via knowledgeBankEntry
+    };
+    const extractedIntelligence = doc.extractedData ? { fields: [], insights: doc.extractedData } as any : undefined;
+    const documentAnalysis = undefined; // V4 doesn't return this separately
+    const classificationReasoning = undefined; // V4 doesn't return this separately
+
+    console.log(`[BulkQueueProcessor] V4 result: ${doc.fileType} (${doc.confidence}% confidence, mock=${v4Data.isMock})`);
 
     // Generate document code
     let generatedDocumentCode: string | undefined;
@@ -378,8 +407,8 @@ export class BulkQueueProcessor {
       console.log(`[Duplicate Check] ${item.file.name}: ${duplicateCheck.hasExactMatch ? 'EXACT MATCH' : 'SIMILAR MATCH'} found - ${duplicateCheck.message}`);
     }
 
-    // Always generate document name
-    generatedDocumentCode = generateDocumentName({
+    // Use V4-generated document code if available, otherwise generate locally
+    generatedDocumentCode = doc.generatedDocumentCode || generateDocumentName({
       projectShortcode: shortcode,
       category: result.category,
       isInternal: this.batchInfo.isInternal,

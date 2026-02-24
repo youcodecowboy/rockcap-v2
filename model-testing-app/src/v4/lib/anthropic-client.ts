@@ -278,7 +278,7 @@ export async function callAnthropicBatch(
     messages: [
       {
         role: 'user',
-        content: userBlocks,
+        content: userBlocks as any,
       },
     ],
   });

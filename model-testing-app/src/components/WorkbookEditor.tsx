@@ -1323,7 +1323,7 @@ export default function WorkbookEditor({
                         });
                       }}
                       // CRITICAL: Use HyperFormulaService's formulas config with sheetId
-                      formulas={getFormulasConfig(sheet.name)}
+                      formulas={getFormulasConfig(sheet.name) as any}
                       stretchH="all"
                       allowInsertRow={!readOnly}
                       allowInsertColumn={!readOnly}
