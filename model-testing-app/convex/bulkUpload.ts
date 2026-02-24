@@ -272,16 +272,17 @@ export const updateItemAnalysis = mutation({
     version: v.optional(v.string()),
     isDuplicate: v.optional(v.boolean()),
     duplicateOfDocumentId: v.optional(v.id("documents")),
+    extractedData: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const { itemId, ...updates } = args;
-    
+
     await ctx.db.patch(itemId, {
       ...updates,
       status: "ready_for_review",
       updatedAt: new Date().toISOString(),
     });
-    
+
     return itemId;
   },
 });
