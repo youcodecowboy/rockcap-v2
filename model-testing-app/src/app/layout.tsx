@@ -8,6 +8,7 @@ import Sidebar from "@/components/Sidebar";
 import ChatAssistantButton from "@/components/ChatAssistantButton";
 import { ChatDrawerProvider } from "@/contexts/ChatDrawerContext";
 import { GlobalSearchProvider } from "@/contexts/GlobalSearchContext";
+import { Toaster } from "sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,6 +45,7 @@ export default function RootLayout({
                 {children}
               </main>
               <ChatAssistantButton />
+              <Toaster position="top-right" richColors />
             </GlobalSearchProvider>
           </ChatDrawerProvider>
         </ConvexProvider>

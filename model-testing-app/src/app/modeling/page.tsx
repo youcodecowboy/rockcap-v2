@@ -923,7 +923,18 @@ export default function ModelingPage() {
   }, [templateSheets, originalTemplateSheets, codifiedExtraction]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-gray-50">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50">
+      {/* Development Banner */}
+      <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-amber-600">🚧</span>
+          <p className="text-sm text-amber-800">
+            <span className="font-medium">In Development</span> — Not all features are fully functional. Template population and export work, but advanced modeling features are coming soon.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
       {/* Left Sidebar - Projects List */}
       <div className={`${isSidebarMinimized ? 'w-16' : 'w-56'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out relative overflow-visible z-30`}>
         {/* Minimize Toggle Button */}
@@ -1717,6 +1728,7 @@ export default function ModelingPage() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }

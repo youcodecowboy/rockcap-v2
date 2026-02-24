@@ -115,7 +115,7 @@ export default function BulkBatchList({ userId }: BulkBatchListProps) {
         </p>
         <Button
           variant="outline"
-          onClick={() => router.push('/filing?tab=bulk')}
+          onClick={() => router.push('/filing')}
         >
           Go to Bulk Upload
         </Button>

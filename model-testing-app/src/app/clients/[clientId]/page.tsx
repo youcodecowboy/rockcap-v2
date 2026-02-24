@@ -3,6 +3,8 @@
 import { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useQuery } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import {
   useClient,
@@ -42,13 +44,13 @@ import {
   Mail,
   StickyNote,
   Database,
-  Lightbulb,
   LayoutGrid,
   Phone,
   Globe,
   MapPin,
   ArrowLeft,
   TrendingUp,
+  Settings,
 } from 'lucide-react';
 
 // Import tab components
@@ -58,8 +60,15 @@ import ClientProjectsTab from './components/ClientProjectsTab';
 import ClientCommunicationsTab from './components/ClientCommunicationsTab';
 import ClientDataTab from './components/ClientDataTab';
 import ClientNotesTab from './components/ClientNotesTab';
+import ClientKnowledgeTab from './components/ClientKnowledgeTab';
+import ClientContactsTab from './components/ClientContactsTab';
+import ClientMeetingsTab from './components/ClientMeetingsTab';
+import ClientTasksTab from './components/ClientTasksTab';
+import { ClientIntelligenceTab } from '@/components/IntelligenceTab';
+import ClientSettingsPanel from '@/components/ClientSettingsPanel';
+import { Brain, CheckSquare, Contact, Video, ListTodo } from 'lucide-react';
 
-type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'data' | 'knowledge' | 'notes';
+type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks';
 
 function ClientProfileContent() {
   const params = useParams();
@@ -73,12 +82,16 @@ function ClientProfileContent() {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
 
   // Convex hooks
   const client = useClient(clientId);
   const projects = useProjectsByClient(clientId) || [];
   const documents = useDocumentsByClient(clientId) || [];
   const contacts = useContactsByClient(clientId) || [];
+  const meetingsCount = useQuery(api.meetings.getCountByClient, { clientId }) || 0;
+  const activeTasksCount = useQuery(api.tasks.getActiveCountByClient, { clientId }) || 0;
 
   // Mutations
   const updateClientMutation = useUpdateClient();
@@ -191,9 +204,13 @@ function ClientProfileContent() {
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
     { id: 'documents', label: 'Documents', icon: FileText, count: documents.length },
     { id: 'projects', label: 'Projects', icon: FolderKanban, count: projects.length },
+    { id: 'contacts', label: 'Contacts', icon: Contact, count: contacts.length },
+    { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
     { id: 'communications', label: 'Communications', icon: MessageSquare, count: communications.length },
+    { id: 'meetings', label: 'Meetings', icon: Video, count: meetingsCount },
     { id: 'data', label: 'Data', icon: Database },
-    { id: 'knowledge', label: 'Knowledge', icon: Lightbulb },
+    { id: 'intelligence', label: 'Intelligence', icon: Brain },
+    { id: 'checklist', label: 'Checklist', icon: CheckSquare },
     { id: 'notes', label: 'Notes', icon: StickyNote },
   ];
 
@@ -241,6 +258,17 @@ function ClientProfileContent() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
+              variant="outline"
+              onClick={() => {
+                setSettingsDefaultTab('general');
+                setShowSettingsPanel(true);
+              }}
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
+            <Button
+              size="sm"
               onClick={() => handleTabChange('projects')}
               className="bg-black text-white hover:bg-gray-800"
             >
@@ -274,22 +302,22 @@ function ClientProfileContent() {
         onValueChange={handleTabChange}
         className="flex-1 flex flex-col overflow-hidden"
       >
-        <div className="bg-white border-b px-6 flex-shrink-0">
-          <TabsList className="h-12 bg-transparent p-0 gap-4">
+        <div className="bg-white border-b px-4 flex-shrink-0 overflow-x-auto scrollbar-hide">
+          <TabsList className="h-11 bg-transparent p-0 gap-1 min-w-max">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
-                <TabsTrigger 
+                <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  className="relative h-12 px-4 rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                  className="relative h-11 px-2.5 text-sm rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none whitespace-nowrap"
                 >
-                  <Icon className="w-4 h-4 mr-2" />
+                  <Icon className="w-3.5 h-3.5 mr-1.5" />
                   {tab.label}
                   {tab.count !== undefined && tab.count > 0 && (
-                    <Badge 
-                      variant="secondary" 
-                      className="ml-2 bg-gray-100 text-gray-700 hover:bg-gray-100"
+                    <Badge
+                      variant="secondary"
+                      className="ml-1.5 bg-gray-100 text-gray-700 hover:bg-gray-100 text-[10px] px-1.5 py-0"
                     >
                       {tab.count}
                     </Badge>
@@ -350,65 +378,106 @@ function ClientProfileContent() {
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-auto">
-          <div className="max-w-7xl mx-auto px-6 py-6">
-            <TabsContent value="overview" className="mt-0">
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {/* Edge-to-Edge Tabs */}
+          <TabsContent value="overview" className="mt-0 flex-1 overflow-auto">
+            <div className="px-6 py-6">
               <ClientOverviewTab
                 client={client}
                 clientId={clientId}
                 documents={documents}
                 projects={projects}
                 contacts={contacts}
+                onOpenSettings={() => {
+                  setSettingsDefaultTab('general');
+                  setShowSettingsPanel(true);
+                }}
               />
-            </TabsContent>
+            </div>
+          </TabsContent>
 
-            <TabsContent value="documents" className="mt-0">
-              <ClientDocumentLibrary
-                clientId={clientId}
-                clientName={client.name}
-                clientType={client.type}
-              />
-            </TabsContent>
+          <TabsContent value="intelligence" className="mt-0 flex-1 overflow-hidden">
+            <ClientIntelligenceTab
+              clientId={clientId}
+              clientName={client.name}
+              clientType={client.type}
+              projects={projects}
+            />
+          </TabsContent>
 
-            <TabsContent value="projects" className="mt-0">
-              <ClientProjectsTab
-                clientId={clientId}
-                clientName={client.name}
-                projects={projects}
-              />
-            </TabsContent>
+          <TabsContent value="documents" className="mt-0 flex-1 overflow-hidden">
+            <ClientDocumentLibrary
+              clientId={clientId}
+              clientName={client.name}
+              clientType={client.type}
+            />
+          </TabsContent>
 
-            <TabsContent value="communications" className="mt-0">
-              <ClientCommunicationsTab
-                clientId={clientId}
-                communications={communications}
-                documents={documents}
-              />
-            </TabsContent>
+          <TabsContent value="checklist" className="mt-0 flex-1 overflow-hidden">
+            <ClientKnowledgeTab
+              clientId={clientId}
+              clientName={client.name}
+              clientType={client.type}
+              projects={projects}
+            />
+          </TabsContent>
 
-            <TabsContent value="data" className="mt-0">
-              <ClientDataTab
-                clientId={clientId}
-                clientName={client.name}
-              />
-            </TabsContent>
+          <TabsContent value="notes" className="mt-0 flex-1 overflow-hidden">
+            <ClientNotesTab
+              clientId={clientId}
+              clientName={client.name}
+            />
+          </TabsContent>
 
-            <TabsContent value="knowledge" className="mt-0">
-              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                <Lightbulb className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Knowledge Library</h3>
-                <p className="text-gray-500 max-w-md mx-auto">
-                  The Knowledge Library feature is coming soon. This will show a checklist of required documents and help generate templated notes like lender's notes.
-                </p>
-              </div>
-            </TabsContent>
+          <TabsContent value="meetings" className="mt-0 flex-1 overflow-hidden">
+            <ClientMeetingsTab
+              clientId={clientId}
+              clientName={client.name}
+            />
+          </TabsContent>
 
-            <TabsContent value="notes" className="mt-0">
-              <ClientNotesTab
-                clientId={clientId}
-                clientName={client.name}
-              />
-            </TabsContent>
+          <TabsContent value="tasks" className="mt-0 flex-1 overflow-hidden">
+            <ClientTasksTab
+              clientId={clientId}
+              clientName={client.name}
+            />
+          </TabsContent>
+
+          <TabsContent value="data" className="mt-0 flex-1 overflow-hidden">
+            <ClientDataTab
+              clientId={clientId}
+              clientName={client.name}
+            />
+          </TabsContent>
+
+          {/* Contained Tabs - With Max Width Container */}
+          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data'].includes(activeTab) ? 'hidden' : ''}`}>
+            <div className="max-w-7xl mx-auto px-6 py-6">
+
+              <TabsContent value="projects" className="mt-0">
+                <ClientProjectsTab
+                  clientId={clientId}
+                  clientName={client.name}
+                  projects={projects}
+                />
+              </TabsContent>
+
+              <TabsContent value="contacts" className="mt-0">
+                <ClientContactsTab
+                  clientId={clientId}
+                  clientName={client.name}
+                  contacts={contacts}
+                />
+              </TabsContent>
+
+              <TabsContent value="communications" className="mt-0">
+                <ClientCommunicationsTab
+                  clientId={clientId}
+                  communications={communications}
+                  documents={documents}
+                />
+              </TabsContent>
+            </div>
           </div>
         </div>
       </Tabs>
@@ -442,7 +511,7 @@ function ClientProfileContent() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDeleteClient}
               className="bg-red-600 hover:bg-red-700"
             >
@@ -451,6 +520,14 @@ function ClientProfileContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Settings Panel */}
+      <ClientSettingsPanel
+        isOpen={showSettingsPanel}
+        onClose={() => setShowSettingsPanel(false)}
+        clientId={clientId}
+        defaultTab={settingsDefaultTab}
+      />
     </div>
   );
 }

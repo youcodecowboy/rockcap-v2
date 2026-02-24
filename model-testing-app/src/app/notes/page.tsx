@@ -188,6 +188,16 @@ function NotesPageContent() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50">
+      {/* Development Banner */}
+      <div className="bg-amber-50 border-b border-amber-200 px-4 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-amber-600">🚧</span>
+          <p className="text-sm text-amber-800">
+            <span className="font-medium">In Development</span> — Not all features are fully functional. Document generation from templates coming soon.
+          </p>
+        </div>
+      </div>
+
       {/* Header Bar */}
       <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between">
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'notes' | 'docs')}>

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 import { getAuthenticatedUser } from "./authHelpers";
 
 // Helper functions for document code generation (same as in documents.ts)
@@ -208,6 +209,42 @@ export const uploadDocumentDirect = mutation({
       } catch (error) {
         // Log error but don't fail document creation if knowledge bank entry fails
         console.error("Failed to create knowledge bank entry:", error);
+      }
+
+      // Meeting extraction: Check if this is a meeting document
+      const meetingTypes = ['Meeting Minutes', 'Meeting Notes', 'Minutes'];
+      const fileTypeLower = args.fileTypeDetected.toLowerCase();
+      const fileNameLower = args.fileName.toLowerCase();
+      const isMeetingDocument = meetingTypes.some(t => t.toLowerCase() === fileTypeLower) ||
+        (fileNameLower.includes('meeting') && (fileNameLower.includes('minutes') || fileNameLower.includes('notes')));
+
+      if (isMeetingDocument) {
+        try {
+          // Check if job already exists for this document
+          const existingJob = await ctx.db
+            .query("meetingExtractionJobs")
+            .withIndex("by_document", (q) => q.eq("documentId", documentId))
+            .first();
+
+          if (!existingJob) {
+            await ctx.db.insert("meetingExtractionJobs", {
+              documentId,
+              clientId: args.clientId,
+              projectId: args.projectId,
+              fileStorageId: args.fileStorageId,
+              documentName: args.fileName,
+              status: "pending",
+              attempts: 0,
+              maxAttempts: 3,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+            // Jobs are processed by /api/process-meeting-queue (handles PDFs properly)
+            console.log(`[DirectUpload] 🗓️ Created meeting extraction job for "${args.fileName}"`);
+          }
+        } catch (error) {
+          console.error("[DirectUpload] Failed to create meeting extraction job:", error);
+        }
       }
     }
 

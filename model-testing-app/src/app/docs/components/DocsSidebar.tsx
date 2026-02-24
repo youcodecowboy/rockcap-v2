@@ -15,14 +15,28 @@ import {
   Briefcase,
   Plus,
   ChevronRight,
+  Folder,
+  Building,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import InternalFolderList from './InternalFolderList';
+import PersonalFolderList from './PersonalFolderList';
+
+export type DocumentScope = 'client' | 'internal' | 'personal';
 
 interface Client {
   _id: Id<"clients">;
   name: string;
   type?: string;
   documentCount?: number;
+}
+
+interface FolderSelection {
+  type: 'client' | 'project' | 'internal' | 'personal';
+  folderId: string;
+  folderName: string;
+  projectId?: Id<"projects">;
 }
 
 interface DocsSidebarProps {
@@ -32,6 +46,13 @@ interface DocsSidebarProps {
   isInboxSelected: boolean;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  // New props for scope support
+  activeScope: DocumentScope;
+  onScopeChange: (scope: DocumentScope) => void;
+  selectedInternalFolder: FolderSelection | null;
+  onInternalFolderSelect: (folder: FolderSelection | null) => void;
+  selectedPersonalFolder: FolderSelection | null;
+  onPersonalFolderSelect: (folder: FolderSelection | null) => void;
 }
 
 type FilterType = 'all' | 'borrower' | 'lender';
@@ -43,6 +64,12 @@ export default function DocsSidebar({
   isInboxSelected,
   searchQuery,
   onSearchChange,
+  activeScope,
+  onScopeChange,
+  selectedInternalFolder,
+  onInternalFolderSelect,
+  selectedPersonalFolder,
+  onPersonalFolderSelect,
 }: DocsSidebarProps) {
   const [filterType, setFilterType] = useState<FilterType>('all');
 
@@ -54,7 +81,7 @@ export default function DocsSidebar({
   // Build client list with document counts
   const clientsWithCounts = useMemo(() => {
     if (!clients) return [];
-    
+
     const counts = documentCounts || {};
     return clients.map(client => ({
       ...client,
@@ -68,7 +95,7 @@ export default function DocsSidebar({
 
     // Filter by type
     if (filterType !== 'all') {
-      filtered = filtered.filter(client => 
+      filtered = filtered.filter(client =>
         client.type?.toLowerCase() === filterType
       );
     }
@@ -103,22 +130,81 @@ export default function DocsSidebar({
     return null;
   };
 
+  // Handle scope change - clear selections
+  const handleScopeChange = (newScope: DocumentScope) => {
+    onScopeChange(newScope);
+    // Clear client selection when switching away from client scope
+    if (newScope !== 'client') {
+      onClientSelect(null);
+    }
+    // Clear folder selections
+    onInternalFolderSelect(null);
+    onPersonalFolderSelect(null);
+  };
+
   return (
     <div className="w-[260px] border-r border-gray-200 bg-gray-50 flex flex-col h-full">
-      {/* Search */}
-      <div className="p-3 border-b border-gray-200">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <Input
-            placeholder="Search clients..."
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-8 h-9 text-sm bg-white"
-          />
+      {/* Scope Toggle */}
+      <div className="px-2 py-2 border-b border-gray-200">
+        <div className="flex bg-gray-200 rounded-lg p-0.5">
+          <button
+            onClick={() => handleScopeChange('client')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md transition-colors min-w-0",
+              activeScope === 'client'
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+            title="Client Documents"
+          >
+            <Building2 className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="truncate">Clients</span>
+          </button>
+          <button
+            onClick={() => handleScopeChange('internal')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md transition-colors min-w-0",
+              activeScope === 'internal'
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+            title="RockCap Internal Documents"
+          >
+            <Building className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="truncate">RockCap</span>
+          </button>
+          <button
+            onClick={() => handleScopeChange('personal')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md transition-colors min-w-0",
+              activeScope === 'personal'
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+            title="Personal Documents"
+          >
+            <User className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="truncate">Personal</span>
+          </button>
         </div>
       </div>
 
-      {/* Inbox */}
+      {/* Search - only show for client scope */}
+      {activeScope === 'client' && (
+        <div className="p-3 border-b border-gray-200">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search clients..."
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="pl-8 h-9 text-sm bg-white"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Inbox - show for all scopes */}
       <div className="px-2 py-2 border-b border-gray-200">
         <button
           onClick={onInboxSelect}
@@ -139,43 +225,62 @@ export default function DocsSidebar({
         </button>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="px-2 py-2 border-b border-gray-200">
-        <div className="flex gap-1 bg-gray-200 rounded-md p-0.5">
-          {(['all', 'borrower', 'lender'] as FilterType[]).map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilterType(type)}
-              className={cn(
-                "flex-1 px-2 py-1 text-xs font-medium rounded transition-colors capitalize",
-                filterType === type
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              )}
-            >
-              {type === 'all' ? 'All' : type}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Content based on scope */}
+      {activeScope === 'client' && (
+        <>
+          {/* Filter Tabs - only for client scope */}
+          <div className="px-2 py-2 border-b border-gray-200">
+            <div className="flex gap-1 bg-gray-200 rounded-md p-0.5">
+              {(['all', 'borrower', 'lender'] as FilterType[]).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setFilterType(type)}
+                  className={cn(
+                    "flex-1 px-2 py-1 text-xs font-medium rounded transition-colors capitalize",
+                    filterType === type
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  )}
+                >
+                  {type === 'all' ? 'All' : type}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {/* Client List - Virtualized for performance */}
-      <ClientList
-        clients={filteredClients}
-        selectedClientId={selectedClientId}
-        onClientSelect={onClientSelect}
-        searchQuery={searchQuery}
-        getTypeIcon={getTypeIcon}
-        getTypeBadge={getTypeBadge}
-      />
+          {/* Client List - Virtualized for performance */}
+          <ClientList
+            clients={filteredClients}
+            selectedClientId={selectedClientId}
+            onClientSelect={onClientSelect}
+            searchQuery={searchQuery}
+            getTypeIcon={getTypeIcon}
+            getTypeBadge={getTypeBadge}
+          />
 
-      {/* Add Client Button */}
-      <div className="p-3 border-t border-gray-200">
-        <Button variant="outline" size="sm" className="w-full gap-2">
-          <Plus className="w-4 h-4" />
-          Add Client
-        </Button>
-      </div>
+          {/* Add Client Button */}
+          <div className="p-3 border-t border-gray-200">
+            <Button variant="outline" size="sm" className="w-full gap-2">
+              <Plus className="w-4 h-4" />
+              Add Client
+            </Button>
+          </div>
+        </>
+      )}
+
+      {activeScope === 'internal' && (
+        <InternalFolderList
+          selectedFolder={selectedInternalFolder}
+          onFolderSelect={onInternalFolderSelect}
+        />
+      )}
+
+      {activeScope === 'personal' && (
+        <PersonalFolderList
+          selectedFolder={selectedPersonalFolder}
+          onFolderSelect={onPersonalFolderSelect}
+        />
+      )}
     </div>
   );
 }

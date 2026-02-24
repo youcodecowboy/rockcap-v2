@@ -102,3 +102,15 @@ export const getByIds = query({
     return users;
   },
 });
+
+// Query: Get user by Clerk ID
+export const getByClerkId = query({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", args.clerkId))
+      .first();
+    return user;
+  },
+});

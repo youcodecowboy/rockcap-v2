@@ -155,6 +155,16 @@ export default function CalendarPage() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Development Banner */}
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-600">🚧</span>
+            <p className="text-sm text-amber-800">
+              <span className="font-medium">In Development</span> — Not all features are fully functional. Google Calendar sync coming soon.
+            </p>
+          </div>
+        </div>
+
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>

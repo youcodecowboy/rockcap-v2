@@ -30,7 +30,7 @@ export default function FolderCard({
       onClick();
     } else {
       if (type === 'client') {
-        router.push(`/docs/client/${id}`);
+        router.push(`/docs?clientId=${id}`);
       } else {
         router.push(`/docs/project/${id}`);
       }

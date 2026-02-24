@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -22,14 +23,17 @@ import {
 } from 'lucide-react';
 import FileCard from './FileCard';
 import DirectUploadModal from './DirectUploadModal';
+import InternalUploadModal from './InternalUploadModal';
 import { cn } from '@/lib/utils';
 
 interface FolderSelection {
-  type: 'client' | 'project';
+  type: 'client' | 'project' | 'internal' | 'personal';
   folderId: string;
   folderName: string;
   projectId?: Id<"projects">;
 }
+
+type DocumentScope = 'client' | 'internal' | 'personal';
 
 interface Document {
   _id: Id<"documents">;
@@ -44,6 +48,8 @@ interface Document {
   fileStorageId?: Id<"_storage">;
   clientName?: string;
   projectName?: string;
+  hasNotes?: boolean;
+  noteCount?: number;
 }
 
 interface FileListProps {
@@ -53,6 +59,8 @@ interface FileListProps {
   selectedFolder: FolderSelection | null;
   isInbox?: boolean;
   onFileSelect: (document: Document) => void;
+  projectFilter?: Id<"projects">;
+  scope?: DocumentScope;
 }
 
 type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc';
@@ -64,12 +72,14 @@ export default function FileList({
   selectedFolder,
   isInbox = false,
   onFileSelect,
+  scope = 'client',
 }: FileListProps) {
+  const router = useRouter();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<SortOption>('date-desc');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  
+
   // Convex client for on-demand queries
   const convex = useConvex();
 
@@ -106,27 +116,46 @@ export default function FileList({
     isInbox ? {} : "skip"
   );
 
+  // Client scope - folder documents
   const folderDocuments = useQuery(
     api.documents.getByFolder,
-    selectedFolder && clientId
+    scope === 'client' && selectedFolder && clientId && (selectedFolder.type === 'client' || selectedFolder.type === 'project')
       ? {
           clientId,
           folderType: selectedFolder.folderId,
-          level: selectedFolder.type,
+          level: selectedFolder.type as 'client' | 'project',
           projectId: selectedFolder.projectId,
+        }
+      : "skip"
+  );
+
+  // Internal/Personal scope - documents by scope
+  const scopedDocuments = useQuery(
+    api.documents.getByScope,
+    (scope === 'internal' || scope === 'personal') && selectedFolder
+      ? {
+          scope: scope as 'internal' | 'personal',
+          folderId: selectedFolder.folderId,
         }
       : "skip"
   );
 
   const deleteDocument = useMutation(api.documents.remove);
 
-  // Get documents based on context
+  // Get documents based on context and scope
   const documents = useMemo(() => {
     if (isInbox) {
       return unfiledDocuments || [];
     }
+
+    // Internal or personal scope
+    if (scope === 'internal' || scope === 'personal') {
+      return scopedDocuments || [];
+    }
+
+    // Client scope (default)
     return folderDocuments || [];
-  }, [isInbox, unfiledDocuments, folderDocuments]);
+  }, [isInbox, unfiledDocuments, folderDocuments, scopedDocuments, scope]);
 
   // Sort documents
   const sortedDocuments = useMemo(() => {
@@ -202,6 +231,10 @@ export default function FileList({
     onFileSelect(doc);
   };
 
+  const handleOpenReader = (doc: Document) => {
+    router.push(`/docs/reader/${doc._id}`);
+  };
+
   // Title based on context
   const getTitle = () => {
     if (isInbox) {
@@ -228,7 +261,10 @@ export default function FileList({
     );
   }
 
-  const canUpload = selectedFolder && clientId && !isInbox;
+  // Allow upload in folder views (client scope needs clientId, internal/personal just need folder)
+  const canUpload = selectedFolder && !isInbox && (
+    scope === 'client' ? clientId : true
+  );
 
   return (
     <div className="flex-1 flex flex-col bg-white h-full min-w-0">
@@ -357,6 +393,7 @@ export default function FileList({
                 onView={() => handleView(doc)}
                 onDownload={() => handleDownload(doc)}
                 onDelete={() => handleDelete(doc)}
+                onOpenReader={() => handleOpenReader(doc)}
               />
             ))}
           </div>
@@ -371,14 +408,15 @@ export default function FileList({
                 onView={() => handleView(doc)}
                 onDownload={() => handleDownload(doc)}
                 onDelete={() => handleDelete(doc)}
+                onOpenReader={() => handleOpenReader(doc)}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Upload Modal */}
-      {canUpload && clientId && clientName && clientType && selectedFolder && (
+      {/* Upload Modal - Client scope */}
+      {canUpload && scope === 'client' && clientId && clientName && clientType && selectedFolder && (
         <DirectUploadModal
           isOpen={showUploadModal}
           onClose={() => setShowUploadModal(false)}
@@ -387,9 +425,20 @@ export default function FileList({
           clientType={clientType}
           folderType={selectedFolder.folderId}
           folderName={selectedFolder.folderName}
-          level={selectedFolder.type}
+          level={selectedFolder.type as 'client' | 'project'}
           projectId={selectedFolder.projectId}
           projectName={project?.name}
+        />
+      )}
+
+      {/* Upload Modal - Internal/Personal scope */}
+      {canUpload && (scope === 'internal' || scope === 'personal') && selectedFolder && (
+        <InternalUploadModal
+          isOpen={showUploadModal}
+          onClose={() => setShowUploadModal(false)}
+          scope={scope}
+          folderId={selectedFolder.folderId}
+          folderName={selectedFolder.folderName}
         />
       )}
     </div>

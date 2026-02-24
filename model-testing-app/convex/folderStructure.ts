@@ -313,6 +313,89 @@ export const ensureProjectFolders = mutation({
   },
 });
 
+// ============================================================================
+// VALIDATION HELPERS
+// These are internal helper functions for validating folder assignments
+// ============================================================================
+
+/**
+ * Validates that a folder exists and belongs to the correct client/project.
+ * This is an internal helper - use it in mutations that update document folder assignments.
+ *
+ * @param ctx - Convex mutation/query context
+ * @param folderId - The folder type string (e.g., "kyc", "appraisals")
+ * @param folderType - "client" or "project"
+ * @param clientId - The client ID
+ * @param projectId - The project ID (required if folderType is "project")
+ * @returns Object with valid: boolean and optional error message
+ */
+export async function validateFolderExists(
+  ctx: { db: any },
+  folderId: string,
+  folderType: "client" | "project",
+  clientId: Id<"clients">,
+  projectId?: Id<"projects">
+): Promise<{ valid: boolean; error?: string }> {
+  // Validate folderType-projectId logic
+  if (folderType === "project" && !projectId) {
+    return { valid: false, error: "Project folder requires a projectId" };
+  }
+
+  // Validate folder exists in correct table
+  if (folderType === "project" && projectId) {
+    const projectFolder = await ctx.db
+      .query("projectFolders")
+      .withIndex("by_project_type", (q: any) =>
+        q.eq("projectId", projectId).eq("folderType", folderId)
+      )
+      .first();
+    if (!projectFolder) {
+      return { valid: false, error: `Folder "${folderId}" does not exist for this project` };
+    }
+  } else if (folderType === "client") {
+    const clientFolder = await ctx.db
+      .query("clientFolders")
+      .withIndex("by_client_type", (q: any) =>
+        q.eq("clientId", clientId).eq("folderType", folderId)
+      )
+      .first();
+    if (!clientFolder) {
+      return { valid: false, error: `Folder "${folderId}" does not exist for this client` };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validates that a project belongs to a client.
+ * Projects use clientRoles array for many-to-many relationships.
+ *
+ * @param ctx - Convex mutation/query context
+ * @param projectId - The project ID to check
+ * @param clientId - The expected client ID
+ * @returns Object with valid: boolean and optional error message
+ */
+export async function validateProjectBelongsToClient(
+  ctx: { db: any },
+  projectId: Id<"projects">,
+  clientId: Id<"clients">
+): Promise<{ valid: boolean; error?: string }> {
+  const project = await ctx.db.get(projectId);
+  if (!project) {
+    return { valid: false, error: "Project not found" };
+  }
+
+  const belongsToClient = project.clientRoles.some(
+    (cr: { clientId: any }) => cr.clientId === clientId
+  );
+  if (!belongsToClient) {
+    return { valid: false, error: "Project does not belong to this client" };
+  }
+
+  return { valid: true };
+}
+
 // Query: Get folder display name
 export const getFolderDisplayNames = query({
   args: {},

@@ -90,41 +90,145 @@ async function gatherChatContext(
         if (clientData.lastContactDate) context += `Last Contact: ${clientData.lastContactDate}\n`;
       }
 
-      // Get ALL knowledge bank entries
-      const knowledgeEntries = await client.query(api.knowledgeBank.getByClient, {
-        clientId: clientId as Id<"clients">,
-      });
-      metadata.knowledgeBankCount = knowledgeEntries?.length || 0;
-      if (knowledgeEntries && knowledgeEntries.length > 0) {
-        context += `\n\n=== KNOWLEDGE BANK (${knowledgeEntries.length} entries) ===\n`;
-        // Sort by date, newest first
-        const sortedEntries = [...knowledgeEntries].sort((a, b) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        
-        // Include full content for most recent 30 entries, summarize older ones
-        sortedEntries.forEach((entry: any, index: number) => {
-          const entryDate = new Date(entry.updatedAt || entry.createdAt);
-          if (entryDate > new Date(metadata.lastDataUpdate)) {
-            metadata.lastDataUpdate = entryDate.toISOString();
-          }
-
-          if (index < 30) {
-            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()})\n`;
-            context += `Content: ${entry.content}\n`;
-            if (entry.keyPoints && entry.keyPoints.length > 0) {
-              context += `Key Points: ${entry.keyPoints.join('; ')}\n`;
-            }
-            if (entry.tags && entry.tags.length > 0) {
-              context += `Tags: ${entry.tags.join(', ')}\n`;
-            }
-          } else {
-            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()}): ${entry.content.substring(0, 500)}...\n`;
-          }
+      // Get CLIENT INTELLIGENCE (structured data)
+      try {
+        const clientIntelligence = await client.query(api.intelligence.getClientIntelligence, {
+          clientId: clientId as Id<"clients">,
         });
-        if (knowledgeEntries.length > 30) {
-          context += `\n[Note: Showing full content for 30 most recent entries, ${knowledgeEntries.length - 30} older entries summarized]\n`;
+        
+        if (clientIntelligence) {
+          context += `\n\n=== CLIENT INTELLIGENCE ===\n`;
+          
+          // Identity
+          if (clientIntelligence.identity) {
+            const id = clientIntelligence.identity;
+            if (id.legalName) context += `Legal Name: ${id.legalName}\n`;
+            if (id.tradingName) context += `Trading Name: ${id.tradingName}\n`;
+            if (id.companyNumber) context += `Company Number: ${id.companyNumber}\n`;
+            if (id.vatNumber) context += `VAT Number: ${id.vatNumber}\n`;
+          }
+          
+          // Primary Contact
+          if (clientIntelligence.primaryContact) {
+            const pc = clientIntelligence.primaryContact;
+            context += `\nPrimary Contact:\n`;
+            if (pc.name) context += `  Name: ${pc.name}\n`;
+            if (pc.role) context += `  Role: ${pc.role}\n`;
+            if (pc.email) context += `  Email: ${pc.email}\n`;
+            if (pc.phone) context += `  Phone: ${pc.phone}\n`;
+          }
+          
+          // Addresses
+          if (clientIntelligence.addresses) {
+            const addr = clientIntelligence.addresses;
+            if (addr.registered) context += `Registered Address: ${addr.registered}\n`;
+            if (addr.trading) context += `Trading Address: ${addr.trading}\n`;
+            if (addr.correspondence) context += `Correspondence Address: ${addr.correspondence}\n`;
+          }
+          
+          // Banking
+          if (clientIntelligence.banking) {
+            const bank = clientIntelligence.banking;
+            context += `\nBanking Details:\n`;
+            if (bank.bankName) context += `  Bank: ${bank.bankName}\n`;
+            if (bank.accountName) context += `  Account Name: ${bank.accountName}\n`;
+            if (bank.accountNumber) context += `  Account Number: ${bank.accountNumber}\n`;
+            if (bank.sortCode) context += `  Sort Code: ${bank.sortCode}\n`;
+          }
+          
+          // Key People
+          if (clientIntelligence.keyPeople && clientIntelligence.keyPeople.length > 0) {
+            context += `\nKey People:\n`;
+            clientIntelligence.keyPeople.forEach((person: any) => {
+              context += `  - ${person.name}`;
+              if (person.role) context += ` (${person.role})`;
+              if (person.isDecisionMaker) context += ` [Decision Maker]`;
+              if (person.email) context += ` - ${person.email}`;
+              context += `\n`;
+            });
+          }
+          
+          // Lender Profile (if lender)
+          if (clientIntelligence.lenderProfile) {
+            const lp = clientIntelligence.lenderProfile;
+            context += `\nLender Profile:\n`;
+            if (lp.dealSizeMin || lp.dealSizeMax) {
+              context += `  Deal Size: £${lp.dealSizeMin?.toLocaleString() || 'N/A'} - £${lp.dealSizeMax?.toLocaleString() || 'N/A'}\n`;
+            }
+            if (lp.propertyTypes?.length) context += `  Property Types: ${lp.propertyTypes.join(', ')}\n`;
+            if (lp.loanTypes?.length) context += `  Loan Types: ${lp.loanTypes.join(', ')}\n`;
+            if (lp.geographicRegions?.length) context += `  Regions: ${lp.geographicRegions.join(', ')}\n`;
+            if (lp.typicalLTV) context += `  Typical LTV: ${lp.typicalLTV}%\n`;
+            if (lp.decisionSpeed) context += `  Decision Speed: ${lp.decisionSpeed}\n`;
+            if (lp.relationshipNotes) context += `  Relationship Notes: ${lp.relationshipNotes}\n`;
+          }
+          
+          // Borrower Profile (if borrower)
+          if (clientIntelligence.borrowerProfile) {
+            const bp = clientIntelligence.borrowerProfile;
+            context += `\nBorrower Profile:\n`;
+            if (bp.experienceLevel) context += `  Experience: ${bp.experienceLevel}\n`;
+            if (bp.completedProjects) context += `  Completed Projects: ${bp.completedProjects}\n`;
+            if (bp.totalDevelopmentValue) context += `  Total GDV: £${bp.totalDevelopmentValue.toLocaleString()}\n`;
+            if (bp.netWorth) context += `  Net Worth: £${bp.netWorth.toLocaleString()}\n`;
+            if (bp.liquidAssets) context += `  Liquid Assets: £${bp.liquidAssets.toLocaleString()}\n`;
+          }
+          
+          // AI Summary
+          if (clientIntelligence.aiSummary?.executiveSummary) {
+            context += `\nExecutive Summary: ${clientIntelligence.aiSummary.executiveSummary}\n`;
+          }
+          if (clientIntelligence.aiSummary?.keyFacts?.length) {
+            context += `Key Facts: ${clientIntelligence.aiSummary.keyFacts.join('; ')}\n`;
+          }
+          
+          // Project Summaries
+          if (clientIntelligence.projectSummaries?.length) {
+            context += `\nLinked Projects:\n`;
+            clientIntelligence.projectSummaries.forEach((proj: any) => {
+              context += `  - ${proj.projectName} (${proj.role})`;
+              if (proj.status) context += ` - ${proj.status}`;
+              if (proj.loanAmount) context += ` - £${proj.loanAmount.toLocaleString()}`;
+              context += `\n`;
+            });
+          }
+          
+          metadata.knowledgeBankCount = 1; // Intelligence doc counts as structured knowledge
+          if (clientIntelligence.lastUpdated) {
+            const intDate = new Date(clientIntelligence.lastUpdated);
+            if (intDate > new Date(metadata.lastDataUpdate)) {
+              metadata.lastDataUpdate = intDate.toISOString();
+            }
+          }
         }
+      } catch (e) {
+        // Intelligence might not exist yet for older clients
+        console.log('No intelligence data found for client:', clientId);
+      }
+
+      // Also get legacy knowledge bank entries for backwards compatibility
+      try {
+        const knowledgeEntries = await client.query(api.knowledgeBank.getByClient, {
+          clientId: clientId as Id<"clients">,
+        });
+        
+        if (knowledgeEntries && knowledgeEntries.length > 0) {
+          context += `\n\n=== KNOWLEDGE BANK (${knowledgeEntries.length} legacy entries) ===\n`;
+          const sortedEntries = [...knowledgeEntries].sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          
+          sortedEntries.slice(0, 20).forEach((entry: any) => {
+            const entryDate = new Date(entry.updatedAt || entry.createdAt);
+            if (entryDate > new Date(metadata.lastDataUpdate)) {
+              metadata.lastDataUpdate = entryDate.toISOString();
+            }
+            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()})\n`;
+            context += `Content: ${entry.content.substring(0, 500)}${entry.content.length > 500 ? '...' : ''}\n`;
+          });
+        }
+      } catch (e) {
+        // Knowledge bank might not exist
       }
 
       // Get ALL documents
@@ -314,39 +418,141 @@ async function gatherChatContext(
         }
       }
 
-      // Get ALL knowledge bank entries
-      const knowledgeEntries = await client.query(api.knowledgeBank.getByProject, {
-        projectId: projectId as Id<"projects">,
-      });
-      metadata.knowledgeBankCount = knowledgeEntries?.length || 0;
-      if (knowledgeEntries && knowledgeEntries.length > 0) {
-        context += `\n\n=== KNOWLEDGE BANK (${knowledgeEntries.length} entries) ===\n`;
-        const sortedEntries = [...knowledgeEntries].sort((a, b) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        
-        sortedEntries.forEach((entry: any, index: number) => {
-          const entryDate = new Date(entry.updatedAt || entry.createdAt);
-          if (entryDate > new Date(metadata.lastDataUpdate)) {
-            metadata.lastDataUpdate = entryDate.toISOString();
-          }
-
-          if (index < 30) {
-            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()})\n`;
-            context += `Content: ${entry.content}\n`;
-            if (entry.keyPoints && entry.keyPoints.length > 0) {
-              context += `Key Points: ${entry.keyPoints.join('; ')}\n`;
-            }
-            if (entry.tags && entry.tags.length > 0) {
-              context += `Tags: ${entry.tags.join(', ')}\n`;
-            }
-          } else {
-            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()}): ${entry.content.substring(0, 500)}...\n`;
-          }
+      // Get PROJECT INTELLIGENCE (structured data)
+      try {
+        const projectIntelligence = await client.query(api.intelligence.getProjectIntelligence, {
+          projectId: projectId as Id<"projects">,
         });
-        if (knowledgeEntries.length > 30) {
-          context += `\n[Note: Showing full content for 30 most recent entries, ${knowledgeEntries.length - 30} older entries summarized]\n`;
+        
+        if (projectIntelligence) {
+          context += `\n\n=== PROJECT INTELLIGENCE ===\n`;
+          
+          // Overview
+          if (projectIntelligence.overview) {
+            const ov = projectIntelligence.overview;
+            if (ov.projectType) context += `Project Type: ${ov.projectType}\n`;
+            if (ov.assetClass) context += `Asset Class: ${ov.assetClass}\n`;
+            if (ov.currentPhase) context += `Current Phase: ${ov.currentPhase}\n`;
+            if (ov.description) context += `Description: ${ov.description}\n`;
+          }
+          
+          // Location
+          if (projectIntelligence.location) {
+            const loc = projectIntelligence.location;
+            if (loc.siteAddress) context += `Site Address: ${loc.siteAddress}\n`;
+            if (loc.postcode) context += `Postcode: ${loc.postcode}\n`;
+            if (loc.region) context += `Region: ${loc.region}\n`;
+            if (loc.localAuthority) context += `Local Authority: ${loc.localAuthority}\n`;
+          }
+          
+          // Financials
+          if (projectIntelligence.financials) {
+            const fin = projectIntelligence.financials;
+            context += `\nFinancials:\n`;
+            if (fin.purchasePrice) context += `  Purchase Price: £${fin.purchasePrice.toLocaleString()}\n`;
+            if (fin.totalDevelopmentCost) context += `  Total Development Cost: £${fin.totalDevelopmentCost.toLocaleString()}\n`;
+            if (fin.grossDevelopmentValue) context += `  GDV: £${fin.grossDevelopmentValue.toLocaleString()}\n`;
+            if (fin.profit) context += `  Profit: £${fin.profit.toLocaleString()}\n`;
+            if (fin.profitMargin) context += `  Profit Margin: ${fin.profitMargin}%\n`;
+            if (fin.loanAmount) context += `  Loan Amount: £${fin.loanAmount.toLocaleString()}\n`;
+            if (fin.ltv) context += `  LTV: ${fin.ltv}%\n`;
+            if (fin.ltgdv) context += `  LTGDV: ${fin.ltgdv}%\n`;
+            if (fin.interestRate) context += `  Interest Rate: ${fin.interestRate}%\n`;
+          }
+          
+          // Timeline
+          if (projectIntelligence.timeline) {
+            const tl = projectIntelligence.timeline;
+            context += `\nTimeline:\n`;
+            if (tl.acquisitionDate) context += `  Acquisition: ${tl.acquisitionDate}\n`;
+            if (tl.planningApprovalDate) context += `  Planning Approval: ${tl.planningApprovalDate}\n`;
+            if (tl.constructionStartDate) context += `  Construction Start: ${tl.constructionStartDate}\n`;
+            if (tl.practicalCompletionDate) context += `  Practical Completion: ${tl.practicalCompletionDate}\n`;
+            if (tl.loanMaturityDate) context += `  Loan Maturity: ${tl.loanMaturityDate}\n`;
+          }
+          
+          // Development Details
+          if (projectIntelligence.development) {
+            const dev = projectIntelligence.development;
+            context += `\nDevelopment:\n`;
+            if (dev.totalUnits) context += `  Total Units: ${dev.totalUnits}\n`;
+            if (dev.totalSqFt) context += `  Total Sq Ft: ${dev.totalSqFt.toLocaleString()}\n`;
+            if (dev.planningReference) context += `  Planning Ref: ${dev.planningReference}\n`;
+            if (dev.planningStatus) context += `  Planning Status: ${dev.planningStatus}\n`;
+          }
+          
+          // Key Parties
+          if (projectIntelligence.keyParties) {
+            const kp = projectIntelligence.keyParties;
+            context += `\nKey Parties:\n`;
+            if (kp.borrower?.name) context += `  Borrower: ${kp.borrower.name}${kp.borrower.contactName ? ` (${kp.borrower.contactName})` : ''}\n`;
+            if (kp.lender?.name) context += `  Lender: ${kp.lender.name}${kp.lender.contactName ? ` (${kp.lender.contactName})` : ''}\n`;
+            if (kp.solicitor?.firm) context += `  Solicitor: ${kp.solicitor.firm}${kp.solicitor.contactName ? ` (${kp.solicitor.contactName})` : ''}\n`;
+            if (kp.valuer?.firm) context += `  Valuer: ${kp.valuer.firm}\n`;
+            if (kp.contractor?.firm) context += `  Contractor: ${kp.contractor.firm}${kp.contractor.contractValue ? ` - £${kp.contractor.contractValue.toLocaleString()}` : ''}\n`;
+            if (kp.monitoringSurveyor?.firm) context += `  Monitoring Surveyor: ${kp.monitoringSurveyor.firm}\n`;
+          }
+          
+          // Data Library Summary
+          if (projectIntelligence.dataLibrarySummary) {
+            const dls = projectIntelligence.dataLibrarySummary;
+            context += `\nData Library Summary:\n`;
+            if (dls.totalDevelopmentCost) context += `  Total Dev Cost: £${dls.totalDevelopmentCost.toLocaleString()}\n`;
+            if (dls.landCost) context += `  Land Cost: £${dls.landCost.toLocaleString()}\n`;
+            if (dls.constructionCost) context += `  Construction Cost: £${dls.constructionCost.toLocaleString()}\n`;
+            if (dls.professionalFees) context += `  Professional Fees: £${dls.professionalFees.toLocaleString()}\n`;
+            if (dls.contingency) context += `  Contingency: £${dls.contingency.toLocaleString()}\n`;
+            if (dls.financeCosts) context += `  Finance Costs: £${dls.financeCosts.toLocaleString()}\n`;
+            if (dls.totalItemCount) context += `  Items: ${dls.totalItemCount}\n`;
+            if (dls.sourceDocumentCount) context += `  Source Documents: ${dls.sourceDocumentCount}\n`;
+          }
+          
+          // AI Summary
+          if (projectIntelligence.aiSummary?.executiveSummary) {
+            context += `\nExecutive Summary: ${projectIntelligence.aiSummary.executiveSummary}\n`;
+          }
+          if (projectIntelligence.aiSummary?.keyFacts?.length) {
+            context += `Key Facts: ${projectIntelligence.aiSummary.keyFacts.join('; ')}\n`;
+          }
+          if (projectIntelligence.aiSummary?.risks?.length) {
+            context += `Risks: ${projectIntelligence.aiSummary.risks.join('; ')}\n`;
+          }
+          
+          metadata.knowledgeBankCount = 1;
+          if (projectIntelligence.lastUpdated) {
+            const intDate = new Date(projectIntelligence.lastUpdated);
+            if (intDate > new Date(metadata.lastDataUpdate)) {
+              metadata.lastDataUpdate = intDate.toISOString();
+            }
+          }
         }
+      } catch (e) {
+        console.log('No intelligence data found for project:', projectId);
+      }
+
+      // Also get legacy knowledge bank entries for backwards compatibility
+      try {
+        const knowledgeEntries = await client.query(api.knowledgeBank.getByProject, {
+          projectId: projectId as Id<"projects">,
+        });
+        
+        if (knowledgeEntries && knowledgeEntries.length > 0) {
+          context += `\n\n=== KNOWLEDGE BANK (${knowledgeEntries.length} legacy entries) ===\n`;
+          const sortedEntries = [...knowledgeEntries].sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          
+          sortedEntries.slice(0, 20).forEach((entry: any) => {
+            const entryDate = new Date(entry.updatedAt || entry.createdAt);
+            if (entryDate > new Date(metadata.lastDataUpdate)) {
+              metadata.lastDataUpdate = entryDate.toISOString();
+            }
+            context += `\n[${entry.entryType || 'general'}] ${entry.title} (${new Date(entry.createdAt).toLocaleDateString()})\n`;
+            context += `Content: ${entry.content.substring(0, 500)}${entry.content.length > 500 ? '...' : ''}\n`;
+          });
+        }
+      } catch (e) {
+        // Knowledge bank might not exist
       }
 
       // Get ALL documents

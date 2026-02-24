@@ -8,6 +8,7 @@ export default defineSchema({
     email: v.string(),
     name: v.optional(v.string()),
     image: v.optional(v.string()),
+    isAdmin: v.optional(v.boolean()), // Admin flag for elevated permissions
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"]),
@@ -46,6 +47,9 @@ export default defineSchema({
     )),
     assignedTo: v.optional(v.string()),
     metadata: v.optional(v.any()), // Flexible metadata object
+    // Internal stage tracking
+    stageNote: v.optional(v.string()), // Quick note about current stage/status of client relationship
+    stageNoteUpdatedAt: v.optional(v.string()), // When the stage note was last updated
     // HubSpot integration fields
     hubspotCompanyId: v.optional(v.string()),
     hubspotUrl: v.optional(v.string()),
@@ -107,7 +111,7 @@ export default defineSchema({
     // Project shortcode for document naming (max 10 chars, e.g., "WIMBPARK28")
     projectShortcode: v.optional(v.string()),
     clientRoles: v.array(v.object({
-      clientId: v.string(),
+      clientId: v.id("clients"),
       role: v.string(), // e.g., "borrower", "lender", "developer"
     })),
     description: v.optional(v.string()),
@@ -146,12 +150,20 @@ export default defineSchema({
     lastHubSpotSync: v.optional(v.string()),
     hubspotPipeline: v.optional(v.string()),
     hubspotStage: v.optional(v.string()),
+    // Deal phase for Knowledge Library requirements tracking
+    dealPhase: v.optional(v.union(
+      v.literal("indicative_terms"),
+      v.literal("credit_submission"),
+      v.literal("post_credit"),
+      v.literal("completed")
+    )),
     createdAt: v.string(),
   })
     .index("by_status", ["status"])
     .index("by_client", ["clientRoles"])
     .index("by_hubspot_id", ["hubspotDealId"])
-    .index("by_shortcode", ["projectShortcode"]),
+    .index("by_shortcode", ["projectShortcode"])
+    .index("by_deal_phase", ["dealPhase"]),
 
   // Documents table - stores file references and analysis results
   documents: defineTable({
@@ -188,12 +200,51 @@ export default defineSchema({
     )),
     // Internal vs External classification
     isInternal: v.optional(v.boolean()),
+    // Document scope (client, internal company-wide, or personal/private)
+    scope: v.optional(v.union(
+      v.literal("client"),     // Client/project documents (default for existing)
+      v.literal("internal"),   // RockCap company-wide documents
+      v.literal("personal")    // User-specific private documents
+    )),
+    // Owner ID (required for personal scope - the user who owns this document)
+    ownerId: v.optional(v.id("users")),
     // Version control
     version: v.optional(v.string()), // "V1.0", "V1.1", "V2.0"
     uploaderInitials: v.optional(v.string()), // e.g., "JS", "AB"
     previousVersionId: v.optional(v.id("documents")), // Link to previous version
     // Extracted data (stored as JSON)
     extractedData: v.optional(v.any()),
+    // Document analysis from multi-stage pipeline (Stage 1: Summary Agent)
+    documentAnalysis: v.optional(v.object({
+      documentDescription: v.string(),
+      documentPurpose: v.string(),
+      entities: v.object({
+        people: v.array(v.string()),
+        companies: v.array(v.string()),
+        locations: v.array(v.string()),
+        projects: v.array(v.string()),
+      }),
+      keyTerms: v.array(v.string()),
+      keyDates: v.array(v.string()),
+      keyAmounts: v.array(v.string()),
+      executiveSummary: v.string(),
+      detailedSummary: v.string(),
+      sectionBreakdown: v.optional(v.array(v.string())),
+      documentCharacteristics: v.object({
+        isFinancial: v.boolean(),
+        isLegal: v.boolean(),
+        isIdentity: v.boolean(),
+        isReport: v.boolean(),
+        isDesign: v.boolean(),
+        isCorrespondence: v.boolean(),
+        hasMultipleProjects: v.boolean(),
+        isInternal: v.boolean(),
+      }),
+      rawContentType: v.string(),
+      confidenceInAnalysis: v.number(),
+    })),
+    // Classification reasoning from Stage 2
+    classificationReasoning: v.optional(v.string()),
     // Status
     status: v.optional(v.union(
       v.literal("pending"),
@@ -205,13 +256,47 @@ export default defineSchema({
     savedAt: v.string(),
     // User who uploaded the document
     uploadedBy: v.optional(v.id("users")),
+    // Document reader tracking
+    lastOpenedAt: v.optional(v.string()),
+    lastOpenedBy: v.optional(v.id("users")),
+    // Notes denormalization for efficient list queries
+    hasNotes: v.optional(v.boolean()),
+    noteCount: v.optional(v.number()),
+    // Intelligence integration - flag to track if document analysis was added to client/project intelligence
+    addedToIntelligence: v.optional(v.boolean()),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_category", ["category"])
     .index("by_status", ["status"])
     .index("by_folder", ["folderId"])
-    .index("by_previous_version", ["previousVersionId"]),
+    .index("by_previous_version", ["previousVersionId"])
+    .index("by_has_notes", ["hasNotes"])
+    .index("by_scope", ["scope"])
+    .index("by_owner", ["ownerId"])
+    .index("by_scope_owner", ["scope", "ownerId"]),
+
+  // Document Notes - User annotations on specific documents (for document reader)
+  documentNotes: defineTable({
+    documentId: v.id("documents"),
+    // Context (inherited from document but denormalized for querying)
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    // Note content
+    content: v.string(),
+    // Intelligence integration
+    addedToIntelligence: v.boolean(),
+    intelligenceTarget: v.optional(v.union(v.literal("client"), v.literal("project"))),
+    knowledgeItemId: v.optional(v.id("knowledgeItems")), // Reference if converted to intelligence
+    // Metadata
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_document", ["documentId"])
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_created", ["createdAt"]),
 
   // Internal Documents table - internal documents that can link to clients/projects
   internalDocuments: defineTable({
@@ -255,7 +340,35 @@ export default defineSchema({
     .index("by_category", ["category"])
     .index("by_folder", ["folderId"]),
 
-  // Internal Document Folders table - for organizing internal documents
+  // Internal Folders - Company-wide folder structure for RockCap internal documents
+  // These folders are shared across all users for organizing internal company documents
+  internalFolders: defineTable({
+    folderType: v.string(),              // Unique identifier (e.g., "templates", "policies")
+    name: v.string(),                    // Display name
+    description: v.optional(v.string()), // Optional description for the folder
+    parentFolderId: v.optional(v.id("internalFolders")), // For nested folders
+    isCustom: v.optional(v.boolean()),   // True if user-created, false if default
+    createdAt: v.string(),
+    createdBy: v.optional(v.id("users")), // User who created the folder
+  })
+    .index("by_type", ["folderType"])
+    .index("by_parent", ["parentFolderId"]),
+
+  // Personal Folders - User-specific folder structure for private documents
+  // Each user has their own set of folders that only they can see
+  personalFolders: defineTable({
+    userId: v.id("users"),               // Owner of this folder
+    folderType: v.string(),              // Unique identifier within user's folders
+    name: v.string(),                    // Display name
+    description: v.optional(v.string()), // Optional description
+    parentFolderId: v.optional(v.id("personalFolders")), // For nested folders
+    createdAt: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_type", ["userId", "folderType"])
+    .index("by_parent", ["parentFolderId"]),
+
+  // Legacy: Internal Document Folders (deprecated - use internalFolders instead)
   internalDocumentFolders: defineTable({
     name: v.string(),
     createdAt: v.string(),
@@ -700,12 +813,24 @@ export default defineSchema({
 
   // Bulk Upload Batches - Groups files uploaded together
   bulkUploadBatches: defineTable({
-    // Client/Project association (client is required, project is optional)
-    clientId: v.id("clients"),
-    clientName: v.string(),
+    // Document scope for this batch
+    scope: v.optional(v.union(
+      v.literal("client"),     // Client/project documents (default)
+      v.literal("internal"),   // RockCap company-wide documents
+      v.literal("personal")    // User-specific private documents
+    )),
+    // Client/Project association (required for client scope, optional for internal/personal)
+    clientId: v.optional(v.id("clients")),
+    clientName: v.optional(v.string()),
     projectId: v.optional(v.id("projects")),
     projectName: v.optional(v.string()),
     projectShortcode: v.optional(v.string()), // For document naming
+    // Internal folder association (for internal scope)
+    internalFolderId: v.optional(v.string()),
+    internalFolderName: v.optional(v.string()),
+    // Personal folder association (for personal scope)
+    personalFolderId: v.optional(v.string()),
+    personalFolderName: v.optional(v.string()),
     // Batch status
     status: v.union(
       v.literal("uploading"), // Files being uploaded
@@ -723,6 +848,15 @@ export default defineSchema({
     isInternal: v.boolean(), // Internal vs External batch default
     // User instructions (optional)
     instructions: v.optional(v.string()),
+    // Background processing (for large batches >5 files)
+    processingMode: v.optional(v.union(
+      v.literal("foreground"),  // Small batches - client-side processing
+      v.literal("background")   // Large batches - server-side processing
+    )),
+    estimatedCompletionTime: v.optional(v.string()), // ISO timestamp
+    startedProcessingAt: v.optional(v.string()),
+    completedProcessingAt: v.optional(v.string()),
+    notificationSent: v.optional(v.boolean()),
     // User tracking
     userId: v.id("users"),
     // Timestamps
@@ -733,7 +867,8 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_status", ["status"])
     .index("by_user", ["userId"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_scope", ["scope"]),
 
   // Bulk Upload Items - Individual files within a batch
   bulkUploadItems: defineTable({
@@ -762,6 +897,45 @@ export default defineSchema({
     // Manual extraction toggle (default false for bulk uploads)
     extractionEnabled: v.optional(v.boolean()),
     extractedData: v.optional(v.any()), // Only populated if extraction enabled
+    // Pre-extracted intelligence from bulk-analyze (Sprint 4+)
+    extractedIntelligence: v.optional(v.any()), // Intelligence fields extracted during analysis
+    // Document analysis from multi-stage pipeline (Stage 1: Summary Agent)
+    documentAnalysis: v.optional(v.object({
+      // Document identification
+      documentDescription: v.string(),
+      documentPurpose: v.string(),
+      // Key entities
+      entities: v.object({
+        people: v.array(v.string()),
+        companies: v.array(v.string()),
+        locations: v.array(v.string()),
+        projects: v.array(v.string()),
+      }),
+      // Key details
+      keyTerms: v.array(v.string()),
+      keyDates: v.array(v.string()),
+      keyAmounts: v.array(v.string()),
+      // Summaries
+      executiveSummary: v.string(),
+      detailedSummary: v.string(),
+      sectionBreakdown: v.optional(v.array(v.string())),
+      // Document characteristics
+      documentCharacteristics: v.object({
+        isFinancial: v.boolean(),
+        isLegal: v.boolean(),
+        isIdentity: v.boolean(),
+        isReport: v.boolean(),
+        isDesign: v.boolean(),
+        isCorrespondence: v.boolean(),
+        hasMultipleProjects: v.boolean(),
+        isInternal: v.boolean(),
+      }),
+      // Raw signals
+      rawContentType: v.string(),
+      confidenceInAnalysis: v.number(),
+    })),
+    // Classification reasoning from Stage 2
+    classificationReasoning: v.optional(v.string()),
     // Document code generation
     generatedDocumentCode: v.optional(v.string()), // Auto-generated name
     // Version control
@@ -774,12 +948,44 @@ export default defineSchema({
     )),
     // Reference to filed document (populated after filing)
     documentId: v.optional(v.id("documents")),
-    // User edits tracking
+    // Knowledge Library checklist linking
+    checklistItemIds: v.optional(v.array(v.id("knowledgeChecklistItems"))),
+    suggestedChecklistItems: v.optional(v.array(v.object({
+      itemId: v.id("knowledgeChecklistItems"),
+      itemName: v.string(),
+      category: v.optional(v.string()),
+      confidence: v.number(),
+      reasoning: v.optional(v.string()),
+    }))),
+    // User edits tracking (flags + original AI values for feedback loop)
     userEdits: v.optional(v.object({
+      // Flags indicating which fields were edited
       fileTypeDetected: v.optional(v.boolean()),
       category: v.optional(v.boolean()),
       isInternal: v.optional(v.boolean()),
       targetFolder: v.optional(v.boolean()),
+      checklistItems: v.optional(v.boolean()),
+      // Original AI values (stored on first edit for feedback loop)
+      originalFileTypeDetected: v.optional(v.string()),
+      originalCategory: v.optional(v.string()),
+      originalIsInternal: v.optional(v.boolean()),
+      originalTargetFolder: v.optional(v.string()),
+      originalChecklistItemIds: v.optional(v.array(v.id("knowledgeChecklistItems"))),
+      originalSuggestedChecklistItems: v.optional(v.array(v.object({
+        itemId: v.id("knowledgeChecklistItems"),
+        itemName: v.string(),
+        category: v.string(),
+        confidence: v.number(),
+        reasoning: v.optional(v.string()),
+      }))),
+    })),
+    // User note/comment for internal context and intelligence
+    userNote: v.optional(v.object({
+      content: v.string(),
+      addToIntelligence: v.boolean(),
+      intelligenceTarget: v.optional(v.union(v.literal("client"), v.literal("project"))),
+      createdAt: v.string(),
+      updatedAt: v.string(),
     })),
     // Error tracking
     error: v.optional(v.string()),
@@ -1565,11 +1771,25 @@ export default defineSchema({
     createdBy: v.string(), // User ID who created this
     createdAt: v.string(),
     updatedAt: v.string(),
+    // Deterministic verification fields (Phase 1 - unified source of truth)
+    targetFolderKey: v.optional(v.string()), // Target folder key (e.g., "kyc", "appraisals")
+    targetLevel: v.optional(v.union(v.literal("client"), v.literal("project"))), // Folder level
+    filenamePatterns: v.optional(v.array(v.string())), // Keywords for filename matching
+    excludePatterns: v.optional(v.array(v.string())), // Patterns to exclude (prevent false positives)
+    // Auto-learned keywords from user corrections
+    learnedKeywords: v.optional(v.array(v.object({
+      keyword: v.string(),
+      source: v.union(v.literal("correction"), v.literal("manual")),
+      addedAt: v.string(),
+      correctionCount: v.optional(v.number()),
+    }))),
+    lastLearnedAt: v.optional(v.string()), // When keywords were last auto-learned
   })
     .index("by_file_type", ["fileType"])
     .index("by_category", ["category"])
     .index("by_parent_type", ["parentType"])
-    .index("by_active", ["isActive"]),
+    .index("by_active", ["isActive"])
+    .index("by_target_folder", ["targetFolderKey"]),
 
   // Category Settings - Manage customizable categories for clients/projects
   categorySettings: defineTable({
@@ -1745,6 +1965,8 @@ export default defineSchema({
         v.literal("unmatched") // LLM couldn't suggest, user skipped
       ),
       confidence: v.number(), // 0-1 confidence in the mapping
+      isSubtotal: v.optional(v.boolean()), // Whether this item is a subtotal
+      subtotalReason: v.optional(v.string()), // Reason for subtotal detection
     })),
     mappingStats: v.object({
       matched: v.number(), // Count of auto-matched items
@@ -1901,6 +2123,10 @@ export default defineSchema({
     // Computed totals support
     isComputed: v.optional(v.boolean()), // True for auto-computed category totals
     computedFromCategory: v.optional(v.string()), // Category this total is computed from
+    
+    // Subtotal detection - subtotals should not be included in category totals
+    isSubtotal: v.optional(v.boolean()), // True if this item is a subtotal/total line
+    subtotalReason: v.optional(v.string()), // Why it was detected as subtotal
   })
     .index("by_project", ["projectId"])
     .index("by_project_category", ["projectId", "category"])
@@ -1987,5 +2213,966 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_model_run", ["modelRunId"])
     .index("by_snapshot", ["snapshotId"]),
+
+  // ============================================================================
+  // KNOWLEDGE LIBRARY - Document requirements checklists per client type
+  // ============================================================================
+
+  // Knowledge Requirement Templates - Base document requirements per client type
+  // These define what documents are needed for each type of client (borrower, lender)
+  knowledgeRequirementTemplates: defineTable({
+    clientType: v.string(), // "borrower" | "lender" | etc.
+    level: v.union(v.literal("client"), v.literal("project")), // Whether requirement is at client or project level
+    requirements: v.array(v.object({
+      id: v.string(), // Unique identifier within template
+      name: v.string(), // Display name (e.g., "Certified Proof of Address")
+      category: v.string(), // Grouping (e.g., "KYC", "Project Plans", "Professional Reports")
+      phaseRequired: v.union(
+        v.literal("indicative_terms"),
+        v.literal("credit_submission"),
+        v.literal("post_credit"),
+        v.literal("always")
+      ),
+      priority: v.union(
+        v.literal("required"),
+        v.literal("nice_to_have"),
+        v.literal("optional")
+      ),
+      description: v.optional(v.string()), // What this document should contain
+      matchingDocumentTypes: v.optional(v.array(v.string())), // Document types that fulfill this
+      order: v.number(), // Display order within category
+    })),
+    isDefault: v.boolean(), // Whether this is the default template for this type
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client_type", ["clientType"])
+    .index("by_client_type_level", ["clientType", "level"]),
+
+  // Knowledge Checklist Items - Per-client/project checklist tracking
+  // Created from templates when a client/project is set up, tracks fulfillment status
+  knowledgeChecklistItems: defineTable({
+    clientId: v.id("clients"),
+    projectId: v.optional(v.id("projects")), // Optional - if project-level requirement
+    requirementTemplateId: v.optional(v.id("knowledgeRequirementTemplates")), // Reference to template
+    requirementId: v.optional(v.string()), // ID within the template
+    // Requirement details (denormalized from template, or custom)
+    name: v.string(),
+    category: v.string(),
+    phaseRequired: v.union(
+      v.literal("indicative_terms"),
+      v.literal("credit_submission"),
+      v.literal("post_credit"),
+      v.literal("always")
+    ),
+    priority: v.union(
+      v.literal("required"),
+      v.literal("nice_to_have"),
+      v.literal("optional")
+    ),
+    description: v.optional(v.string()),
+    matchingDocumentTypes: v.optional(v.array(v.string())),
+    order: v.number(),
+    // Status tracking
+    status: v.union(
+      v.literal("missing"),
+      v.literal("pending_review"),
+      v.literal("fulfilled")
+    ),
+    // Custom item flags
+    isCustom: v.boolean(), // True if user/LLM added (not from template)
+    customSource: v.optional(v.union(
+      v.literal("manual"),
+      v.literal("llm")
+    )), // How custom item was created
+    // AI suggestion info (for pending suggestions before user confirms)
+    suggestedDocumentId: v.optional(v.id("documents")),
+    suggestedDocumentName: v.optional(v.string()),
+    suggestedConfidence: v.optional(v.number()), // 0-1 confidence score
+    // Timestamps
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_client_status", ["clientId", "status"])
+    .index("by_project_status", ["projectId", "status"])
+    .index("by_client_category", ["clientId", "category"])
+    .index("by_template", ["requirementTemplateId"]),
+
+  // Knowledge Email Logs - Track email request generation history
+  knowledgeEmailLogs: defineTable({
+    clientId: v.id("clients"),
+    projectId: v.optional(v.id("projects")), // Optional - for project-specific requests
+    generatedAt: v.string(),
+    generatedBy: v.id("users"),
+    missingItemIds: v.array(v.id("knowledgeChecklistItems")), // Items included in email
+    emailContent: v.string(), // Generated email text
+    recipientInfo: v.optional(v.object({
+      email: v.optional(v.string()),
+      name: v.optional(v.string()),
+    })),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_generated_at", ["generatedAt"]),
+
+  // Knowledge Checklist Document Links - Many-to-many relationship between documents and checklist items
+  // Enables multiple documents per checklist item (e.g., 3 bank statements for "3 months statements")
+  // And multiple checklist items per document (e.g., combined PDF fulfilling multiple requirements)
+  knowledgeChecklistDocumentLinks: defineTable({
+    checklistItemId: v.id("knowledgeChecklistItems"),
+    documentId: v.id("documents"),
+    documentName: v.string(), // Denormalized for display
+    linkedAt: v.string(),
+    linkedBy: v.optional(v.id("users")),
+    isPrimary: v.boolean(), // First doc linked = primary (triggered fulfilled status)
+  })
+    .index("by_checklist_item", ["checklistItemId"])
+    .index("by_document", ["documentId"])
+    .index("by_checklist_item_primary", ["checklistItemId", "isPrimary"]),
+
+  // ============================================================================
+  // CLIENT INTELLIGENCE - Structured, searchable client data
+  // ============================================================================
+
+  // Client Intelligence - One document per client with structured intelligence data
+  clientIntelligence: defineTable({
+    clientId: v.id("clients"),
+    clientType: v.string(), // "borrower" | "lender" | "developer" etc.
+
+    // === COMMON FIELDS (all client types) ===
+    identity: v.optional(v.object({
+      legalName: v.optional(v.string()),
+      tradingName: v.optional(v.string()),
+      companyNumber: v.optional(v.string()),
+      vatNumber: v.optional(v.string()),
+      incorporationDate: v.optional(v.string()),
+    })),
+
+    primaryContact: v.optional(v.object({
+      name: v.optional(v.string()),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      role: v.optional(v.string()),
+    })),
+
+    addresses: v.optional(v.object({
+      registered: v.optional(v.string()),
+      trading: v.optional(v.string()),
+      correspondence: v.optional(v.string()),
+    })),
+
+    banking: v.optional(v.object({
+      bankName: v.optional(v.string()),
+      accountName: v.optional(v.string()),
+      accountNumber: v.optional(v.string()),
+      sortCode: v.optional(v.string()),
+      iban: v.optional(v.string()),
+      swift: v.optional(v.string()),
+    })),
+
+    keyPeople: v.optional(v.array(v.object({
+      name: v.string(),
+      role: v.optional(v.string()),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      isDecisionMaker: v.optional(v.boolean()),
+      notes: v.optional(v.string()),
+    }))),
+
+    // === LENDER-SPECIFIC FIELDS ===
+    lenderProfile: v.optional(v.object({
+      dealSizeMin: v.optional(v.number()),
+      dealSizeMax: v.optional(v.number()),
+      preferredDealSize: v.optional(v.number()),
+      propertyTypes: v.optional(v.array(v.string())), // ["residential", "commercial", "mixed-use"]
+      loanTypes: v.optional(v.array(v.string())), // ["bridge", "development", "term", "mezzanine"]
+      geographicRegions: v.optional(v.array(v.string())), // ["London", "South East", "UK-wide"]
+      typicalLTV: v.optional(v.number()), // As percentage
+      typicalInterestRate: v.optional(v.object({
+        min: v.optional(v.number()),
+        max: v.optional(v.number()),
+      })),
+      typicalTermMonths: v.optional(v.object({
+        min: v.optional(v.number()),
+        max: v.optional(v.number()),
+      })),
+      specializations: v.optional(v.array(v.string())),
+      restrictions: v.optional(v.array(v.string())),
+      decisionSpeed: v.optional(v.string()), // "fast", "medium", "slow"
+      relationshipNotes: v.optional(v.string()),
+    })),
+
+    // === BORROWER-SPECIFIC FIELDS ===
+    borrowerProfile: v.optional(v.object({
+      experienceLevel: v.optional(v.string()), // "first-time", "experienced", "professional"
+      completedProjects: v.optional(v.number()),
+      totalDevelopmentValue: v.optional(v.number()),
+      preferredPropertyTypes: v.optional(v.array(v.string())),
+      preferredRegions: v.optional(v.array(v.string())),
+      netWorth: v.optional(v.number()),
+      liquidAssets: v.optional(v.number()),
+    })),
+
+    // === AI CONTEXT (for chat/templates) ===
+    aiSummary: v.optional(v.object({
+      executiveSummary: v.optional(v.string()),
+      keyFacts: v.optional(v.array(v.string())),
+      recentUpdates: v.optional(v.array(v.object({
+        date: v.string(),
+        update: v.string(),
+      }))),
+    })),
+
+    // === PROJECT SUMMARIES (embedded for quick access) ===
+    projectSummaries: v.optional(v.array(v.object({
+      projectId: v.id("projects"),
+      projectName: v.string(),
+      role: v.string(), // "borrower", "lender", "developer"
+      status: v.optional(v.string()),
+      loanAmount: v.optional(v.number()),
+      lastUpdate: v.optional(v.string()),
+      // Per-project data summary
+      dataSummary: v.optional(v.object({
+        totalDevelopmentCost: v.optional(v.number()),
+        itemCount: v.optional(v.number()),
+        categoryCount: v.optional(v.number()),
+      })),
+    }))),
+
+    // === AGGREGATED DATA LIBRARY (across all client projects) ===
+    dataLibraryAggregate: v.optional(v.object({
+      totalDevelopmentCostAllProjects: v.optional(v.number()),
+      totalItemCount: v.optional(v.number()),
+      totalDocumentCount: v.optional(v.number()),
+      projectCount: v.optional(v.number()),
+      categoryTotals: v.optional(v.array(v.object({
+        category: v.string(),
+        total: v.number(),
+        itemCount: v.number(),
+      }))),
+      lastSyncedAt: v.optional(v.string()),
+    })),
+
+    // === CUSTOM FIELDS ===
+    customFields: v.optional(v.any()),
+
+    // === EVIDENCE TRAIL (tracks source and confidence for all extracted data) ===
+    evidenceTrail: v.optional(v.array(v.object({
+      fieldPath: v.string(),  // e.g. "identity.companyNumber", "banking.sortCode"
+      value: v.any(),         // The extracted value
+      confidence: v.number(), // 0-1 confidence score
+      sourceDocumentId: v.optional(v.id("documents")),
+      sourceDocumentName: v.optional(v.string()),
+      sourceText: v.optional(v.string()), // Quoted text evidence
+      pageNumber: v.optional(v.number()),
+      extractedAt: v.string(),
+      method: v.string(), // "ai_extraction" | "manual" | "api" | "data_library_sync"
+    }))),
+
+    // === FLEXIBLE ATTRIBUTES (for extracted data beyond fixed schema) ===
+    extractedAttributes: v.optional(v.array(v.object({
+      key: v.string(),        // e.g. "previous_company_name", "tax_reference"
+      value: v.any(),
+      confidence: v.number(),
+      sourceDocumentId: v.optional(v.id("documents")),
+      sourceText: v.optional(v.string()),
+      extractedAt: v.string(),
+    }))),
+
+    // === AI INSIGHTS (analysis and reasoning from documents) ===
+    aiInsights: v.optional(v.object({
+      keyFindings: v.optional(v.array(v.string())),
+      risks: v.optional(v.array(v.object({
+        risk: v.string(),
+        severity: v.optional(v.string()), // "low" | "medium" | "high"
+        sourceDocumentId: v.optional(v.id("documents")),
+      }))),
+      opportunities: v.optional(v.array(v.string())),
+      recommendations: v.optional(v.array(v.string())),
+      lastAnalyzedAt: v.optional(v.string()),
+    })),
+
+    // === METADATA ===
+    fieldSources: v.optional(v.any()), // Legacy - use evidenceTrail instead
+    lastUpdated: v.string(),
+    lastUpdatedBy: v.optional(v.string()),
+    version: v.number(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_client_type", ["clientType"]),
+
+  // ============================================================================
+  // PROJECT INTELLIGENCE - Structured, searchable project data
+  // ============================================================================
+
+  // Project Intelligence - One document per project with structured intelligence data
+  projectIntelligence: defineTable({
+    projectId: v.id("projects"),
+
+    // === PROJECT OVERVIEW ===
+    overview: v.optional(v.object({
+      projectType: v.optional(v.string()), // "new-build", "refurbishment", "conversion"
+      assetClass: v.optional(v.string()), // "residential", "commercial", "mixed-use"
+      description: v.optional(v.string()),
+      currentPhase: v.optional(v.string()),
+    })),
+
+    // === LOCATION ===
+    location: v.optional(v.object({
+      siteAddress: v.optional(v.string()),
+      postcode: v.optional(v.string()),
+      localAuthority: v.optional(v.string()),
+      region: v.optional(v.string()),
+      coordinates: v.optional(v.object({
+        lat: v.number(),
+        lng: v.number(),
+      })),
+    })),
+
+    // === FINANCIALS ===
+    financials: v.optional(v.object({
+      purchasePrice: v.optional(v.number()),
+      totalDevelopmentCost: v.optional(v.number()),
+      grossDevelopmentValue: v.optional(v.number()),
+      profit: v.optional(v.number()),
+      profitMargin: v.optional(v.number()),
+      loanAmount: v.optional(v.number()),
+      ltv: v.optional(v.number()),
+      ltgdv: v.optional(v.number()),
+      interestRate: v.optional(v.number()),
+      arrangementFee: v.optional(v.number()),
+      exitFee: v.optional(v.number()),
+    })),
+
+    // === TIMELINE ===
+    timeline: v.optional(v.object({
+      acquisitionDate: v.optional(v.string()),
+      planningSubmissionDate: v.optional(v.string()),
+      planningApprovalDate: v.optional(v.string()),
+      constructionStartDate: v.optional(v.string()),
+      practicalCompletionDate: v.optional(v.string()),
+      salesCompletionDate: v.optional(v.string()),
+      loanMaturityDate: v.optional(v.string()),
+    })),
+
+    // === UNITS/DEVELOPMENT ===
+    development: v.optional(v.object({
+      totalUnits: v.optional(v.number()),
+      unitBreakdown: v.optional(v.array(v.object({
+        type: v.string(), // "1-bed", "2-bed", "commercial"
+        count: v.number(),
+        avgSize: v.optional(v.number()), // sq ft
+        avgValue: v.optional(v.number()),
+      }))),
+      totalSqFt: v.optional(v.number()),
+      siteArea: v.optional(v.number()),
+      planningReference: v.optional(v.string()),
+      planningStatus: v.optional(v.string()),
+    })),
+
+    // === KEY PARTIES (project-specific) ===
+    keyParties: v.optional(v.object({
+      borrower: v.optional(v.object({
+        clientId: v.optional(v.id("clients")),
+        name: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+        contactEmail: v.optional(v.string()),
+      })),
+      lender: v.optional(v.object({
+        clientId: v.optional(v.id("clients")),
+        name: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+        contactEmail: v.optional(v.string()),
+      })),
+      solicitor: v.optional(v.object({
+        firm: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+        contactEmail: v.optional(v.string()),
+      })),
+      valuer: v.optional(v.object({
+        firm: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+      })),
+      architect: v.optional(v.object({
+        firm: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+      })),
+      contractor: v.optional(v.object({
+        firm: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+        contractValue: v.optional(v.number()),
+      })),
+      monitoringSurveyor: v.optional(v.object({
+        firm: v.optional(v.string()),
+        contactName: v.optional(v.string()),
+      })),
+    })),
+
+    // === DATA LIBRARY SUMMARY (synced from projectDataItems) ===
+    dataLibrarySummary: v.optional(v.object({
+      // Aggregated totals by category
+      categoryTotals: v.optional(v.array(v.object({
+        category: v.string(),
+        total: v.number(),
+        itemCount: v.number(),
+      }))),
+
+      // Key financial metrics (auto-synced from Data Library)
+      totalDevelopmentCost: v.optional(v.number()),
+      landCost: v.optional(v.number()),
+      constructionCost: v.optional(v.number()),
+      professionalFees: v.optional(v.number()),
+      contingency: v.optional(v.number()),
+      financeCosts: v.optional(v.number()),
+      salesCosts: v.optional(v.number()),
+
+      // Metadata
+      lastSyncedAt: v.optional(v.string()),
+      sourceDocumentCount: v.optional(v.number()),
+      totalItemCount: v.optional(v.number()),
+    })),
+
+    // === AI CONTEXT ===
+    aiSummary: v.optional(v.object({
+      executiveSummary: v.optional(v.string()),
+      keyFacts: v.optional(v.array(v.string())),
+      risks: v.optional(v.array(v.string())),
+      recentUpdates: v.optional(v.array(v.object({
+        date: v.string(),
+        update: v.string(),
+      }))),
+    })),
+
+    // === CUSTOM FIELDS ===
+    customFields: v.optional(v.any()),
+
+    // === EVIDENCE TRAIL (tracks source and confidence for all extracted data) ===
+    evidenceTrail: v.optional(v.array(v.object({
+      fieldPath: v.string(),  // e.g. "financials.loanAmount", "timeline.planningApprovalDate"
+      value: v.any(),         // The extracted value
+      confidence: v.number(), // 0-1 confidence score
+      sourceDocumentId: v.optional(v.id("documents")),
+      sourceDocumentName: v.optional(v.string()),
+      sourceText: v.optional(v.string()), // Quoted text evidence
+      pageNumber: v.optional(v.number()),
+      extractedAt: v.string(),
+      method: v.string(), // "ai_extraction" | "manual" | "api" | "data_library_sync"
+    }))),
+
+    // === FLEXIBLE ATTRIBUTES (for extracted data beyond fixed schema) ===
+    extractedAttributes: v.optional(v.array(v.object({
+      key: v.string(),        // e.g. "s106_contribution", "cil_liability"
+      value: v.any(),
+      confidence: v.number(),
+      sourceDocumentId: v.optional(v.id("documents")),
+      sourceText: v.optional(v.string()),
+      extractedAt: v.string(),
+    }))),
+
+    // === AI INSIGHTS (analysis and reasoning from documents) ===
+    aiInsights: v.optional(v.object({
+      keyFindings: v.optional(v.array(v.string())),
+      risks: v.optional(v.array(v.object({
+        risk: v.string(),
+        severity: v.optional(v.string()), // "low" | "medium" | "high"
+        sourceDocumentId: v.optional(v.id("documents")),
+      }))),
+      opportunities: v.optional(v.array(v.string())),
+      recommendations: v.optional(v.array(v.string())),
+      lastAnalyzedAt: v.optional(v.string()),
+    })),
+
+    // === METADATA ===
+    fieldSources: v.optional(v.any()), // Legacy - use evidenceTrail instead
+    lastUpdated: v.string(),
+    lastUpdatedBy: v.optional(v.string()),
+    version: v.number(),
+  })
+    .index("by_project", ["projectId"]),
+
+  // ============================================================================
+  // EXTRACTION JOBS - Queue for background data extraction processing
+  // ============================================================================
+  
+  // Extraction Jobs - Queued extraction jobs to be processed in background
+  // Created when documents are filed with extractionEnabled = true
+  extractionJobs: defineTable({
+    documentId: v.id("documents"),
+    projectId: v.id("projects"),
+    clientId: v.optional(v.id("clients")),
+    fileStorageId: v.id("_storage"),
+    fileName: v.string(),
+    // Job status
+    status: v.union(
+      v.literal("pending"),      // Waiting to be processed
+      v.literal("processing"),   // Currently being extracted
+      v.literal("completed"),    // Extraction completed successfully
+      v.literal("failed")        // Extraction failed
+    ),
+    // Results
+    extractedData: v.optional(v.any()),
+    codifiedExtractionId: v.optional(v.id("codifiedExtractions")),
+    error: v.optional(v.string()),
+    // Processing metadata
+    attempts: v.number(),
+    maxAttempts: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_status", ["status"])
+    .index("by_document", ["documentId"])
+    .index("by_project", ["projectId"])
+    .index("by_created", ["createdAt"]),
+
+  // ============================================================================
+  // INTELLIGENCE EXTRACTION JOBS - Queue for intelligence extraction from documents
+  // ============================================================================
+
+  // Intelligence Extraction Jobs - Queued jobs to extract intelligence from filed documents
+  // Created when documents are filed, processes document content to populate intelligence
+  intelligenceExtractionJobs: defineTable({
+    documentId: v.id("documents"),
+    projectId: v.optional(v.id("projects")),
+    clientId: v.optional(v.id("clients")),
+    // Document info (cached for processing)
+    documentName: v.string(),
+    documentType: v.optional(v.string()), // e.g. "Valuation", "Bank Statement", "Title Deed"
+    documentCategory: v.optional(v.string()),
+    // Job status
+    status: v.union(
+      v.literal("pending"),      // Waiting to be processed
+      v.literal("processing"),   // Currently being extracted
+      v.literal("completed"),    // Extraction completed successfully
+      v.literal("failed"),       // Extraction failed
+      v.literal("skipped")       // Skipped (e.g. not relevant for intelligence)
+    ),
+    // Extraction results
+    extractedFields: v.optional(v.array(v.object({
+      fieldPath: v.string(),     // e.g. "financials.loanAmount"
+      value: v.any(),
+      confidence: v.number(),
+      sourceText: v.optional(v.string()),
+      pageNumber: v.optional(v.number()),
+    }))),
+    extractedAttributes: v.optional(v.array(v.object({
+      key: v.string(),
+      value: v.any(),
+      confidence: v.number(),
+      sourceText: v.optional(v.string()),
+    }))),
+    aiInsights: v.optional(v.object({
+      keyFindings: v.optional(v.array(v.string())),
+      risks: v.optional(v.array(v.object({
+        risk: v.string(),
+        severity: v.optional(v.string()),
+      }))),
+    })),
+    // Merge status (tracks what was actually applied)
+    mergeResult: v.optional(v.object({
+      fieldsAdded: v.optional(v.number()),
+      fieldsUpdated: v.optional(v.number()),
+      fieldsSkipped: v.optional(v.number()), // Lower confidence than existing
+      attributesAdded: v.optional(v.number()),
+      insightsAdded: v.optional(v.number()),
+    })),
+    // Error tracking
+    error: v.optional(v.string()),
+    attempts: v.number(),
+    maxAttempts: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
+    // Timestamps
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_status", ["status"])
+    .index("by_document", ["documentId"])
+    .index("by_project", ["projectId"])
+    .index("by_client", ["clientId"])
+    .index("by_created", ["createdAt"]),
+
+  // ============================================================================
+  // KNOWLEDGE ITEMS - Flexible, normalized intelligence storage
+  // ============================================================================
+
+  // Knowledge Items - Individual facts/data points with canonical field paths
+  // This is the new flexible intelligence storage that supports:
+  // - Canonical fields (normalized from extraction)
+  // - Custom fields (anything that doesn't match canonical)
+  // - Source tracking for provenance
+  // - Conflict flagging for human review
+  knowledgeItems: defineTable({
+    // Target (client or project)
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+
+    // Field identification
+    fieldPath: v.string(),           // e.g., "company.registrationNumber" or "custom.favorite_broker"
+    isCanonical: v.boolean(),        // true if matched to canonical field
+    category: v.string(),            // Derived from fieldPath: "company", "contact", "custom"
+    label: v.string(),               // Human-readable label
+
+    // Value
+    value: v.any(),                  // The actual value (string, number, date, array, etc.)
+    valueType: v.union(
+      v.literal("string"),
+      v.literal("number"),
+      v.literal("currency"),
+      v.literal("date"),
+      v.literal("percentage"),
+      v.literal("array"),
+      v.literal("text"),
+      v.literal("boolean")
+    ),
+
+    // Source tracking
+    sourceType: v.union(
+      v.literal("document"),
+      v.literal("manual"),
+      v.literal("ai_extraction"),
+      v.literal("data_library"),
+      v.literal("checklist")
+    ),
+    sourceDocumentId: v.optional(v.id("documents")),
+    sourceDocumentName: v.optional(v.string()),
+    sourceText: v.optional(v.string()),  // Quote from source document
+
+    // Normalization info
+    originalLabel: v.optional(v.string()),  // What the AI originally extracted as
+    matchedAlias: v.optional(v.string()),   // Which alias matched
+    normalizationConfidence: v.optional(v.number()),  // How confident the mapping was
+
+    // Status
+    status: v.union(
+      v.literal("active"),
+      v.literal("flagged"),          // Needs human review
+      v.literal("archived"),         // Superseded or removed
+      v.literal("superseded")        // Replaced by newer value
+    ),
+    flagReason: v.optional(v.string()),
+    supersededBy: v.optional(v.id("knowledgeItems")),
+
+    // Timestamps
+    addedAt: v.string(),
+    updatedAt: v.string(),
+    addedBy: v.optional(v.string()),  // User who added it or "ai-extraction"
+  })
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_client_category", ["clientId", "category"])
+    .index("by_project_category", ["projectId", "category"])
+    .index("by_client_field", ["clientId", "fieldPath"])
+    .index("by_project_field", ["projectId", "fieldPath"])
+    .index("by_status", ["status"])
+    .index("by_source_document", ["sourceDocumentId"]),
+
+  // Intelligence Conflicts - When multiple sources disagree
+  intelligenceConflicts: defineTable({
+    // Target
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+
+    // Conflict info
+    fieldPath: v.string(),
+    category: v.string(),
+    description: v.string(),         // "Loan amount differs between documents"
+    relatedItemIds: v.array(v.id("knowledgeItems")),
+
+    // Status
+    status: v.union(
+      v.literal("pending"),
+      v.literal("resolved")
+    ),
+    resolution: v.optional(v.object({
+      winnerId: v.id("knowledgeItems"),
+      resolvedBy: v.string(),
+      resolvedAt: v.string(),
+      reason: v.optional(v.string()),
+    })),
+
+    // Timestamps
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_status", ["status"])
+    .index("by_field", ["fieldPath"]),
+
+  // ============================================================================
+  // FILING FEEDBACK LOOP - Self-teaching system for improving AI classification
+  // ============================================================================
+
+  // Filing Corrections - Stores every AI mistake corrected by users
+  // Used to feed back into Critic agent for self-improvement
+  filingCorrections: defineTable({
+    // Source reference
+    sourceItemId: v.optional(v.id("bulkUploadItems")),
+    sourceDocumentId: v.optional(v.id("documents")),
+
+    // Document context for retrieval
+    fileName: v.string(),
+    fileNameNormalized: v.string(), // Lowercase, pattern-matched for search
+    contentHash: v.string(), // SHA-256 of first 10KB for dedup
+    contentSummary: v.string(), // First 500 chars of summary
+    clientType: v.optional(v.string()), // borrower, lender, etc.
+
+    // AI's original prediction
+    aiPrediction: v.object({
+      fileType: v.string(),
+      category: v.string(),
+      targetFolder: v.string(),
+      confidence: v.number(),
+      isInternal: v.optional(v.boolean()),
+      // AI-suggested checklist items (with names for meaningful feedback)
+      suggestedChecklistItems: v.optional(v.array(v.object({
+        itemId: v.string(),
+        itemName: v.string(),
+        category: v.optional(v.string()),
+        confidence: v.number(),
+      }))),
+    }),
+
+    // User's correction (only fields that were changed)
+    userCorrection: v.object({
+      fileType: v.optional(v.string()),
+      category: v.optional(v.string()),
+      targetFolder: v.optional(v.string()),
+      isInternal: v.optional(v.boolean()),
+      // User's final checklist selection (with names for meaningful feedback)
+      checklistItems: v.optional(v.array(v.object({
+        itemId: v.string(),
+        itemName: v.string(),
+      }))),
+    }),
+
+    // What fields were corrected (for efficient retrieval)
+    correctedFields: v.array(v.string()), // ["fileType", "category", etc.]
+
+    // Learning metadata
+    correctionWeight: v.number(), // 1.0 = normal, higher = important correction
+    wasReversed: v.optional(v.boolean()), // If user later undid the correction
+
+    // Document content for keyword learning (Phase 1 - deterministic verification)
+    documentKeywords: v.optional(v.array(v.string())), // keyTerms extracted from document summary
+    aiReasoning: v.optional(v.string()), // Why AI made this classification (for debugging)
+
+    // User and timing
+    correctedBy: v.optional(v.id("users")),
+    createdAt: v.string(),
+  })
+    .index("by_content_hash", ["contentHash"])
+    .index("by_file_type", ["aiPrediction.fileType"])
+    .index("by_category", ["aiPrediction.category"])
+    .index("by_folder", ["aiPrediction.targetFolder"])
+    .index("by_created_at", ["createdAt"])
+    .index("by_client_type", ["clientType"])
+    .index("by_user_correction_type", ["userCorrection.fileType"]) // For learning aggregation
+    .searchIndex("search_filename", {
+      searchField: "fileNameNormalized",
+      filterFields: ["clientType"],
+    }),
+
+  // Learning Events - Tracks auto-learned keywords from corrections
+  // Used to notify users and allow undo of learned keywords
+  learningEvents: defineTable({
+    eventType: v.literal("keyword_learned"),
+    fileTypeId: v.id("fileTypeDefinitions"), // Which file type definition was updated
+    fileType: v.string(), // Denormalized for display
+    keyword: v.string(), // The keyword that was learned
+    correctionCount: v.number(), // How many corrections led to this learning
+    sourceCorrections: v.array(v.id("filingCorrections")), // Which corrections triggered this
+    createdAt: v.string(),
+    dismissed: v.optional(v.boolean()), // If user dismissed the notification
+    undone: v.optional(v.boolean()), // If user undid this learned keyword
+  })
+    .index("by_created_at", ["createdAt"])
+    .index("by_file_type", ["fileType"])
+    .index("by_dismissed", ["dismissed"]),
+
+  // Classification Cache - Caches results for identical content
+  // Reduces redundant AI processing for duplicate/similar documents
+  classificationCache: defineTable({
+    // Content identification
+    contentHash: v.string(), // SHA-256 of first 10KB
+    fileNamePattern: v.string(), // Normalized filename pattern
+
+    // Cached classification result
+    classification: v.object({
+      fileType: v.string(),
+      category: v.string(),
+      targetFolder: v.string(),
+      confidence: v.number(),
+      isInternal: v.optional(v.boolean()),
+      suggestedChecklistItems: v.optional(v.array(v.object({
+        itemId: v.string(),
+        itemName: v.string(),
+        category: v.optional(v.string()),
+        confidence: v.number(),
+      }))),
+    }),
+
+    // Cache metadata
+    hitCount: v.number(), // Times this cache entry was used
+    lastHitAt: v.string(), // For LRU eviction
+    createdAt: v.string(),
+
+    // Invalidation tracking
+    correctionCount: v.number(), // How many times corrections were made for this hash
+    invalidatedAt: v.optional(v.string()), // When cache was invalidated due to correction
+    isValid: v.boolean(),
+
+    // Context
+    clientType: v.optional(v.string()),
+  })
+    .index("by_content_hash", ["contentHash"])
+    .index("by_valid", ["isValid"])
+    .index("by_last_hit", ["lastHitAt"])
+    .index("by_pattern_client", ["fileNamePattern", "clientType"]),
+
+  // LoRA Training Exports - Batched training data exports for fine-tuning
+  loraTrainingExports: defineTable({
+    // Export metadata
+    exportName: v.string(),
+    exportedBy: v.id("users"),
+    exportedAt: v.string(),
+
+    // Export criteria/filters
+    criteria: v.object({
+      minCorrectionWeight: v.optional(v.number()),
+      correctedFieldsFilter: v.optional(v.array(v.string())),
+      dateRangeStart: v.optional(v.string()),
+      dateRangeEnd: v.optional(v.string()),
+      clientTypes: v.optional(v.array(v.string())),
+    }),
+
+    // Export statistics
+    stats: v.object({
+      totalExamples: v.number(),
+      byFileType: v.any(), // { "Passport": 15, "Bank Statement": 23, ... }
+      byCategory: v.any(), // { "KYC": 45, "Appraisals": 12, ... }
+      byCorrectionType: v.any(), // { "fileType": 30, "category": 20, ... }
+    }),
+
+    // File storage reference
+    exportFileStorageId: v.optional(v.id("_storage")), // JSONL file
+    exportFormat: v.union(
+      v.literal("openai_chat"), // OpenAI fine-tuning format
+      v.literal("together_chat"), // Together AI format
+      v.literal("alpaca"), // Alpaca instruction format
+    ),
+
+    status: v.union(
+      v.literal("pending"),
+      v.literal("generating"),
+      v.literal("completed"),
+      v.literal("error"),
+    ),
+    error: v.optional(v.string()),
+  })
+    .index("by_status", ["status"])
+    .index("by_exported_at", ["exportedAt"]),
+
+  // Meetings table - extracted meeting summaries from transcripts/notes
+  meetings: defineTable({
+    // Ownership
+    clientId: v.id("clients"),
+    projectId: v.optional(v.id("projects")),
+
+    // Meeting info
+    title: v.string(),
+    meetingDate: v.string(), // ISO date string
+    meetingType: v.optional(v.union(
+      v.literal("progress"),
+      v.literal("kickoff"),
+      v.literal("review"),
+      v.literal("site_visit"),
+      v.literal("call"),
+      v.literal("other")
+    )),
+
+    // Attendees
+    attendees: v.array(v.object({
+      name: v.string(),
+      role: v.optional(v.string()),
+      company: v.optional(v.string()),
+      contactId: v.optional(v.id("contacts")),
+    })),
+
+    // Extracted content
+    summary: v.string(),
+    keyPoints: v.array(v.string()),
+    decisions: v.array(v.string()),
+
+    // Action items (embedded)
+    actionItems: v.array(v.object({
+      id: v.string(),
+      description: v.string(),
+      assignee: v.optional(v.string()),
+      dueDate: v.optional(v.string()),
+      status: v.union(v.literal("pending"), v.literal("completed"), v.literal("cancelled")),
+      taskId: v.optional(v.id("tasks")),
+      createdAt: v.string(),
+      completedAt: v.optional(v.string()),
+    })),
+
+    // Source tracking
+    sourceDocumentId: v.optional(v.id("documents")),
+    sourceDocumentName: v.optional(v.string()),
+    extractionConfidence: v.optional(v.number()),
+
+    // Metadata
+    createdBy: v.optional(v.id("users")),
+    tags: v.optional(v.array(v.string())),
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_client_date", ["clientId", "meetingDate"])
+    .index("by_source_document", ["sourceDocumentId"]),
+
+  // Meeting Extraction Jobs - async queue for extracting meetings from documents
+  meetingExtractionJobs: defineTable({
+    // Source document info
+    documentId: v.id("documents"),
+    clientId: v.id("clients"),
+    projectId: v.optional(v.id("projects")),
+    fileStorageId: v.id("_storage"),
+    documentName: v.string(),
+
+    // Job status
+    status: v.union(
+      v.literal("pending"),     // Waiting to be processed
+      v.literal("processing"),  // Currently being extracted
+      v.literal("completed"),   // Extraction completed successfully
+      v.literal("failed"),      // Extraction failed
+      v.literal("skipped")      // Skipped (e.g. not a meeting document)
+    ),
+
+    // Result
+    meetingId: v.optional(v.id("meetings")),
+    error: v.optional(v.string()),
+
+    // Processing metadata
+    attempts: v.number(),
+    maxAttempts: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
+
+    // Timestamps
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_status", ["status"])
+    .index("by_document", ["documentId"])
+    .index("by_client", ["clientId"])
+    .index("by_created", ["createdAt"]),
 });
 

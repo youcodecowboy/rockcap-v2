@@ -1,6 +1,663 @@
 # Development Changelog
 
-## [Latest] - 2026-01-12 23:15
+## [Latest] - 2026-01-14 04:00
+
+### Intelligence Data Library Fixes - Subtotal Filtering & Client Aggregation
+
+**Two key fixes to ensure accurate data in Intelligence views:**
+
+#### 1. Project Intelligence - Subtotal Filtering
+
+The Project Intelligence `dataLibrarySummary` was including subtotals in calculations, causing inflated totals.
+
+**Changes** (`convex/intelligence.ts`):
+- `syncDataLibraryToIntelligence` now filters out items where `isSubtotal === true`
+- `internalSyncDataLibrary` updated with same subtotal filtering logic
+- Category totals and totalDevelopmentCost now exclude subtotal items
+
+#### 2. Client Intelligence - Data Library Aggregation
+
+Client Intelligence was not receiving any aggregated data from projects, showing empty data sections.
+
+**Schema Updates** (`convex/schema.ts`):
+- Added `dataLibraryAggregate` field to `clientIntelligence`:
+  - `totalDevelopmentCostAllProjects` - Sum across all client projects
+  - `totalItemCount` - Total data items across all projects
+  - `totalDocumentCount` - Unique source documents
+  - `projectCount` - Number of projects with data
+  - `categoryTotals` - Aggregated category breakdown
+- Enhanced `projectSummaries` to include per-project `dataSummary`:
+  - `totalDevelopmentCost`, `itemCount`, `categoryCount`
+
+**Sync Updates** (`convex/intelligence.ts`):
+- `syncProjectSummariesToClient` now:
+  - Fetches all `projectDataItems` for each client project
+  - Aggregates totals excluding subtotals
+  - Builds `dataLibraryAggregate` with cross-project sums
+  - Includes per-project `dataSummary` in `projectSummaries`
+
+**UI Updates** (`src/components/IntelligenceTab.tsx`):
+- Added "Data Library" category to Client Intelligence sidebar
+- Shows:
+  - Total development cost across all projects
+  - Project count, document count, item count
+  - Per-project breakdown with dev cost and item counts
+  - Category totals aggregated across all projects
+- Projects section now shows data summary for each project
+
+**Migration** (`convex/migrations/resyncIntelligence.ts`):
+- `previewResync` - Shows what will be updated
+- `resyncAll` - Flags subtotals + resyncs all project & client intelligence
+- `resyncProject` - Resync all projects
+- `resyncClients` - Resync all clients
+
+**Run migration**: `npx convex run migrations/resyncIntelligence:resyncAll`
+
+---
+
+## 2026-01-14 03:15
+
+### Client Data Tab - Project Sidebar & Subtotal Detection
+
+**Two key improvements to the Data Library functionality:**
+
+#### 1. Client Data Tab - Project Selection Sidebar
+
+The Client Data Tab now has a sidebar navigation for selecting which project's data to view, preventing data from different projects from being mixed together.
+
+**Changes** (`src/app/clients/[clientId]/components/ClientDataTab.tsx`):
+- Added project sidebar with list of all projects for the client
+- Each project shows item count
+- Auto-selects first project when page loads
+- Search and expand/collapse controls for data items
+- "View Project" link to navigate to project detail page
+- Subtotal items are displayed with visual distinction (italic, gray, "subtotal" badge)
+
+#### 2. Subtotal Detection & Exclusion
+
+Subtotals extracted from Excel files are now automatically detected and excluded from category totals to prevent double-counting.
+
+**Schema Updates** (`convex/schema.ts`):
+- Added `isSubtotal` (boolean) and `subtotalReason` (string) fields to `projectDataItems`
+
+**Extraction Updates** (`src/lib/fastPassCodification.ts`):
+- Added `detectSubtotal()` function with comprehensive patterns:
+  - "Total...", "...total"
+  - "Sub-total", "Subtotal"
+  - "Grand total", "Net total", "Gross total"
+  - "Section total", "Category total"
+  - Numbered total rows
+- Updated `CodifiedItem` interface with `isSubtotal` and `subtotalReason`
+- Both `runFastPass` and `runFastPassWithFuzzy` now detect and flag subtotals
+
+**Codification Updates** (`convex/codifiedExtractions.ts`):
+- Added `isSubtotal` and `subtotalReason` to `codifiedItemValidator`
+
+**Data Library Updates** (`convex/projectDataLibrary.ts`):
+- `mergeExtractionToLibrary` now carries over `isSubtotal` and `subtotalReason`
+- `getProjectLibrary` excludes subtotals from category total calculations
+
+**UI Updates**:
+- Both `ClientDataTab` and `ProjectDataTab` now:
+  - Exclude subtotals from category totals
+  - Display subtotal items with visual distinction (gray, italic, "subtotal" badge)
+
+**Result**: Category totals now accurately reflect actual costs without double-counting subtotal rows that were extracted from Excel files.
+
+---
+
+## 2026-01-14 02:30
+
+### Bulk Upload Extraction Queue System
+
+**Major Improvement**: Completely redesigned the data extraction flow to fix the projectId assignment issue and improve UX.
+
+**Problem Solved**:
+- Previously, data extraction ran inline during bulk upload BEFORE project assignment
+- This caused `projectId` to be missing from extractions, breaking the data flow to Intelligence
+- Users had to wait on the page during extraction
+
+**New Queue-Based Architecture**:
+
+1. **Extraction Jobs Table** (`convex/schema.ts`):
+   - New `extractionJobs` table to track background extraction processing
+   - Status tracking: pending, processing, completed, failed
+   - Retry support with max attempts
+
+2. **Background Processing** (`convex/extractionJobs.ts`):
+   - Full job lifecycle management
+   - Automatic retry on failure
+   - Intelligence sync triggers after completion
+
+3. **Queue Processor API** (`src/app/api/process-extraction-queue/route.ts`):
+   - Processes pending extraction jobs
+   - Fetches files from Convex storage
+   - Runs full extraction pipeline (extract → normalize → verify)
+   - Runs FastPass codification with CORRECT projectId
+   - Creates codified extraction with proper project linkage
+
+4. **Updated Filing Process** (`convex/bulkUpload.ts`):
+   - Creates extraction jobs AFTER documents are filed
+   - Ensures projectId is always set correctly
+   - Triggers queue processing automatically after filing
+
+5. **Updated UI** (`src/components/BulkReviewTable.tsx`):
+   - Extraction is now a simple toggle (not inline execution)
+   - Clear messaging that extraction runs after filing
+   - Users can leave the page - extraction runs in background
+
+6. **Data Library Enhancements** (`src/app/clients/[clientId]/projects/[projectId]/components/ProjectDataTab.tsx`):
+   - New `getPendingExtractions` query shows extraction status
+   - Banner displays pending/processing extractions
+   - Links to Modeling section for confirmation
+
+**User Flow After Changes**:
+1. User uploads documents in Bulk Upload
+2. User toggles "Extract" for spreadsheets they want data from
+3. User confirms filing location and clicks "File All Documents"
+4. Documents are filed FIRST (with correct projectId)
+5. Extraction jobs are created and processed in background
+6. User can navigate away - no waiting required
+7. Data appears in Data Library with "Pending Confirmation" banner
+8. User goes to Modeling to confirm codified values
+9. After confirmation, data syncs to Intelligence
+
+---
+
+## 2026-01-14 01:00
+
+### Data Library & Intelligence Connections Overhaul
+
+**Major Fix**: Fixed broken connections between Data Library, Intelligence, and Client/Project relationships.
+
+**Schema Fix** (`convex/schema.ts`):
+- Changed `clientRoles[].clientId` from `v.string()` to `v.id("clients")` to fix type mismatch issues in sync queries
+
+**Automatic Sync Triggers**:
+- **After Item Confirmation** (`convex/codifiedExtractions.ts`):
+  - `confirmItem` and `confirmAllSuggested` now automatically trigger `mergeExtractionToLibrary` when all items are confirmed
+- **After Merge to Library** (`convex/projectDataLibrary.ts`):
+  - `mergeExtractionToLibrary` now automatically triggers:
+    - `syncDataLibraryToIntelligence` to update project intelligence
+    - `syncProjectSummariesToClient` for all associated clients
+
+**New Project Data Tab** (`src/app/clients/[clientId]/projects/[projectId]/components/ProjectDataTab.tsx`):
+- Replaced placeholder with full-featured Data Library view
+- Shows all data items for the project with category grouping
+- Category totals for currency items
+- Search and filter by category
+- Source document and update timestamps
+- Multi-source indicator for items with multiple document sources
+
+**Data Flow After Fix**:
+1. User uploads document -> Document analyzed -> Data extracted (codified)
+2. User confirms all items -> `mergeExtractionToLibrary` triggered
+3. After merge -> `syncDataLibraryToIntelligence` triggered
+4. After sync -> `syncProjectSummariesToClient` triggered for all clients
+5. All views (Project Data Tab, Client Data Tab, Project Intelligence, Client Intelligence) now show correct data
+
+---
+
+## 2026-01-14 00:15
+
+### Client Data Tab - Full Data Library View
+
+**Enhancement**: Replaced the placeholder client Data tab with a full-featured Data Library view that shows extracted data from all projects associated with the client.
+
+**New Features**:
+- **Aggregated Data View**: Shows all project data items from all projects associated with the client
+- **Project Breakdown**: Header displays count of projects and data points with project badges
+- **Category Organization**: Data items grouped by category with expandable sections
+- **Category Totals**: Shows currency totals for each category
+- **Search & Filters**:
+  - Text search across item names, codes, categories, and projects
+  - Filter by project (when client has multiple projects)
+  - Filter by category
+  - Expand/Collapse all categories
+- **Data Display**: Shows item name, code, formatted value, source document, and project
+- **Empty State**: Clear guidance when no data is available
+
+**Backend Changes** (`convex/projectDataLibrary.ts`):
+- Added `getClientDataLibrary` query - aggregates data items from all client projects
+- Added `getClientLibraryStats` query - provides stats for client data library
+
+---
+
+## 2026-01-13 23:45
+
+### Intelligence Tab - Meetings Timeline & Add Intelligence Feature
+
+**New Features**: Added Meetings tab for chronological meeting summaries and "Add Intelligence" functionality to manually input context.
+
+**Meetings Tab** (NEW):
+- **Chronological timeline**: Displays meeting notes in reverse chronological order
+- **Most recent highlight**: Latest meeting is prominently displayed at the top with special styling
+- **Auto-detection**: Automatically identifies notes with "meeting", "call", "transcript" in title or tags
+- **Meeting cards**: Show title, date, time, tags, and content preview
+- **AI summary display**: Shows AI-generated summaries when available
+- **Timeline visualization**: Visual timeline with dots connecting meetings
+
+**Add Intelligence Feature** (NEW):
+- **Add Intelligence button**: Located in the sidebar of both Client and Project Intelligence tabs
+- **Dual input modes**:
+  - Text Input: Paste meeting notes, emails, call summaries, or any relevant information
+  - Document Upload: Upload PDF, Word, or text files for processing
+- **AI-powered extraction**: Uses LLM to extract structured information from unstructured input
+- **Automatic field updates**: Extracted data automatically populates relevant intelligence fields:
+  - Contacts and key people
+  - Addresses (registered, trading, correspondence)
+  - Banking details
+  - Lender/Borrower profile information
+  - Project details and financials
+  - AI insights (executive summary, key facts, risks)
+- **Processing feedback**: Shows which fields were updated after extraction
+- **Error handling**: Clear error messages if processing fails
+
+**New Components**:
+- `AddIntelligenceModal.tsx` - Modal component for manual intelligence input
+
+**New API Endpoint**:
+- `/api/intelligence-extract` - Processes text/documents and extracts structured intelligence using LLM
+
+**Updated Categories**:
+- Client Intelligence now includes: Basic Info, Financial, Key People, **Meetings**, Documents, Profile, AI Insights, Projects
+- Project Intelligence now includes: Overview, Location, Financials, Timeline, Development, Key Parties, **Meetings**, Documents, Data Library, AI Insights
+
+---
+
+## 2026-01-13 22:30
+
+### Intelligence Tab - Sidebar Navigation & Document Summaries
+
+**Enhancement**: Redesigned the Intelligence Tab with a sidebar navigation pattern and added document summaries section.
+
+**UI Redesign** (`src/components/IntelligenceTab.tsx`):
+- **Sidebar Navigation**: Replaced scrollable list with collapsible sidebar for category navigation
+- **Category-based Organization**: Click to navigate between: Basic Info, Financial, Key People, Documents, Profile, AI Insights, Projects
+- **Minimizable Sidebar**: Toggle sidebar to maximize content area
+- **Professional Layout**: Consistent with other parts of the app (like Notes)
+
+**Document Summaries Section** (NEW):
+- **Pulls existing summaries**: Uses AI summaries already generated by the document summarization agent - no re-processing needed
+- **Grouped by document type/category**: Documents organized by their assigned category (e.g., "Appraisals", "Financial Documents", "Legal", etc.)
+- **Summary cards**: Each document shows filename, date, category, document code, and AI-generated summary
+- **Badge counts**: Sidebar shows count of documents for quick reference
+- **Extracted data indicator**: Shows when documents have additional extracted data available
+
+**Client Intelligence Categories**:
+1. Basic Info - Company identity, primary contact, addresses
+2. Financial - Banking details, wire information
+3. Key People - Contacts and decision makers
+4. Documents - AI summaries grouped by category
+5. Profile - Lender or Borrower profile depending on client type
+6. AI Insights - Executive summary and key facts
+7. Projects - Related projects with roles
+
+**Project Intelligence Categories**:
+1. Overview - Project type, asset class, description
+2. Location - Site address, postcode, region
+3. Financials - Costs, values, loan details
+4. Timeline - Key dates and milestones
+5. Development - Units, planning, specifications
+6. Key Parties - Borrower, lender, professional team
+7. Documents - AI summaries grouped by category
+8. Data Library - Aggregated financial data from extractions
+9. AI Insights - Summary, key facts, risks
+
+---
+
+## 2026-01-13 21:45
+
+### Client Intelligence System - Knowledge Bank v2
+
+**Major Feature**: Implemented a comprehensive Client Intelligence System to centralize and structure all client and project data for templates, AI context, and lender matching.
+
+**New Database Tables** (`convex/schema.ts`):
+- `clientIntelligence` - Structured client data including identity, contacts, addresses, banking, key people, lender/borrower profiles, AI summaries, and project summaries
+- `projectIntelligence` - Structured project data including overview, location, financials, timeline, development details, key parties, data library summary, and AI summaries
+
+**New Convex Functions** (`convex/intelligence.ts`):
+- `getClientIntelligence` / `getProjectIntelligence` - Fetch intelligence documents
+- `getOrCreateClientIntelligence` / `getOrCreateProjectIntelligence` - Get or create with defaults
+- `updateClientIntelligence` / `updateProjectIntelligence` - Partial updates with merge support
+- `initializeClientIntelligence` / `initializeProjectIntelligence` - Create on entity creation
+- `searchLenders` - Query lenders by deal size, property types, loan types, regions
+- `syncDataLibraryToIntelligence` - Sync Data Library aggregates to project intelligence
+- `syncProjectSummariesToClient` - Keep client's project summaries up to date
+
+**UI Component** (`src/components/IntelligenceTab.tsx`):
+- `ClientIntelligenceTab` - Sidebar navigation with editable intelligence categories
+- `ProjectIntelligenceTab` - Sidebar navigation with project-specific categories
+- Document Summaries section pulling existing AI summaries grouped by type
+- Real-time save with dirty state tracking
+- Data Library summary section with sync button
+
+**Client Page Updates** (`src/app/clients/[clientId]/page.tsx`):
+- Added new "Intelligence" tab with Brain icon
+- Renamed "Knowledge" tab to "Checklist" (existing checklist functionality preserved)
+- Intelligence tab shows structured client data with editing capabilities
+
+**Project Page Updates** (`src/app/clients/[clientId]/projects/[projectId]/page.tsx`):
+- Added new "Intelligence" tab with Brain icon
+- Renamed "Knowledge" tab to "Checklist"
+- Intelligence tab shows project financials, timeline, key parties, Data Library summary
+
+**Auto-Initialization**:
+- `convex/clients.ts` - Initializes client intelligence when client is created
+- `convex/projects.ts` - Initializes project intelligence when project is created, syncs to client
+
+**Chat Assistant Integration** (`src/app/api/chat-assistant/route.ts`):
+- Updated context gathering to include intelligence documents
+- Client intelligence provides structured context (identity, contacts, banking, lender/borrower profiles)
+- Project intelligence provides financials, timeline, key parties, Data Library summary
+- Falls back to legacy knowledge bank entries for backwards compatibility
+
+**Knowledge Bank Deprecation**:
+- Removed Knowledge Bank from sidebar navigation
+- Deleted `/knowledge-bank` page and routes
+- Knowledge Bank convex file and schema retained for backwards compatibility
+- Chat assistant uses Intelligence first, then falls back to Knowledge Bank
+
+**Key Benefits**:
+- Structured, queryable data for template population
+- Lender matching by deal size, property type, loan type, geography
+- AI chat context with rich structured data
+- Data Library integration for financial summaries
+- Cross-client/project analytics capability
+
+---
+
+## 2026-01-13 19:30
+
+### Client Notes Tab - Notion-Style Editor Integration
+
+**Major Enhancement**: Completely redesigned the Client Profile Notes tab to use the same rich Notion-style editor experience as the dedicated Notes section.
+
+**New Features**:
+
+**Client Notes Tab** (`src/app/clients/[clientId]/components/ClientNotesTab.tsx`):
+- Full Notion-style layout with collapsible sidebar and rich text editor
+- Notes list with search, filtering by tags and type (all/drafts)
+- Integrated NotesEditor component with all TipTap features (slash commands, formatting, etc.)
+- Real-time auto-save with status indicator
+- Tag management and note metadata
+- Minimizable sidebar with quick-access icons
+
+**Note Upload Modal** (`src/app/clients/[clientId]/components/NoteUploadModal.tsx`):
+- New "Upload Notes" button for uploading meeting transcripts, call notes, etc.
+- Drag-and-drop file upload support
+- Supports multiple file types: .txt, .md, .csv, .pdf, .doc, .docx
+- Auto-generates note title from filename
+- Note type selector (Meeting Transcript, Call Notes, General Notes, Research, Other)
+- Tag input with suggestions
+- Parses file content and converts to TipTap-compatible JSON format
+- Word count calculation on upload
+
+**User Experience Improvements**:
+- Consistent experience between Notes page and Client Notes tab
+- Quick note creation with "New Note" button
+- Empty state with helpful guidance and action buttons
+- Collapsible filters for tags and note types
+- Visual indicators for draft notes
+
+---
+
+## 2026-01-13 18:15
+
+### Development Status Banners Added
+
+**New Feature**: Added "In Development" warning banners to pages that are not yet fully functional, alerting users that some features may not work as expected while development continues.
+
+**Pages Updated**:
+- **Tasks** (`/tasks/page.tsx`) - Banner noting not all features functional
+- **Calendar** (`/calendar/page.tsx`) - Banner noting Google Calendar sync coming soon
+- **Inbox** (`/inbox/page.tsx`) - Banner noting Google Workspace integration coming soon
+- **Prospects** (`/prospects/page.tsx`) - Updated existing banner with consistent styling, notes HubSpot sync works
+- **Rolodex** (`/rolodex/page.tsx`) - Banner noting HubSpot sync works, advanced features coming
+- **Notes** (`/notes/page.tsx`) - Banner noting document generation from templates coming soon
+- **Knowledge Bank** (`/knowledge-bank/page.tsx`) - Banner noting AI-powered features coming soon
+- **Modeling** (`/modeling/page.tsx`) - Banner noting template population works, advanced features coming
+
+**Design**:
+- Consistent amber/warning styling across all banners
+- 🚧 construction emoji for visual distinction
+- "In Development" label in bold with feature-specific context
+- Positioned prominently at top of each page
+
+---
+
+## 2026-01-13 17:45
+
+### Document Taxonomy & Classification Agent Update
+
+**Major Enhancement**: Comprehensive update to the document type taxonomy, adding 30+ document types and integrating the file type library into the classification agent for more accurate document matching.
+
+**New Document Types Added** (`convex/migrations/seedFileTypeDefinitions.ts`):
+- **Appraisals**: Appraisal (generic), RedBook Valuation, Cashflow
+- **Plans**: Floor Plans, Elevations, Sections, Site Plans, Location Plans
+- **Inspections**: Initial Monitoring Report, Interim Monitoring Report
+- **Professional Reports**: Planning Documentation, Contract Sum Analysis, Comparables
+- **KYC**: Passport, Driving License, Utility Bill, Bank Statement, Application Form, Assets & Liabilities Statement
+- **Loan Terms**: Indicative Terms, Credit Backed Terms
+- **Legal Documents**: Facility Letter, Personal Guarantee, Corporate Guarantee, Terms & Conditions, Shareholders Agreement, Share Charge, Debenture, Corporate Authorisations
+- **Project Documents**: Accommodation Schedule, Build Programme
+- **Financial Documents**: Loan Statement, Redemption Statement, Completion Statement
+
+**Bulk Analyze API Enhancement** (`src/app/api/bulk-analyze/route.ts`):
+- Now fetches file type definitions from database instead of using hardcoded lists
+- Dynamically builds FILE_TYPES and CATEGORIES from database definitions
+- Provides relevant file type guidance in AI prompt based on content keyword matching
+- AI prompt now includes full definitions with identification rules for better matching
+
+**Migration Utility** (`convex/fileTypeDefinitions.ts`):
+- Added `syncDefinitions` mutation to add new file types to existing databases without duplicating
+- Can optionally update existing system default definitions with new keywords/rules
+- Returns counts of added, updated, and skipped definitions
+
+**Single File Analyzer Enhancement** (`src/lib/togetherAI.ts`):
+- Updated `analyzeFileContent` function to accept optional checklist items
+- When checklist context is provided, AI suggests which items the document fulfills
+- Returns `suggestedChecklistItems` with itemId, itemName, category, confidence, and reasoning
+- Backwards compatible - supports both old string signature and new options object
+
+**Categories Update** (`src/lib/categories.ts`):
+- Added new categories: Plans, Professional Reports, KYC, Project Documents, Financial Documents
+- Added all 30+ new file types to FILE_TYPES array
+- Maintained backwards compatibility with legacy types
+
+**Bug Fixes**:
+- Fixed knowledge-parse API model (was using deprecated free model, now uses modelConfig)
+- Fixed document link 404 in Knowledge Library (changed from `/documents/` to `/docs/`)
+
+---
+
+## 2026-01-13 16:30
+
+### Bulk Upload - Checklist Integration UI
+
+**Enhancement**: Added full checklist linking support to the Bulk Upload Review page. Users can now select which Knowledge Library checklist items each document fulfills during the bulk upload review process.
+
+**Schema Changes** (`convex/schema.ts`):
+- Added `checklistItemIds` field to `bulkUploadItems` for storing selected checklist items
+- Added `suggestedChecklistItems` field to `bulkUploadItems` for AI suggestions
+
+**Backend Changes** (`convex/bulkUpload.ts`):
+- Updated `updateItemAnalysis` mutation to accept and store `suggestedChecklistItems`
+- Auto-populates `checklistItemIds` with high-confidence AI suggestions (>=70%)
+- Updated `updateItemDetails` mutation to accept `checklistItemIds` for manual selection
+- Updated `fileBatch` mutation to create `knowledgeChecklistDocumentLinks` when filing documents
+
+**Bulk Queue Processor** (`src/lib/bulkQueueProcessor.ts`):
+- Updated `BatchInfo` interface to include `clientId` and `projectId`
+- Passes `clientId` and `projectId` to bulk-analyze API for checklist context
+- Stores AI-suggested checklist items in analysis results
+
+**Bulk Review Table** (`src/components/BulkReviewTable.tsx`):
+- Added new "Checklist" column to the review table
+- Popover UI for selecting checklist items with multi-select checkboxes
+- Shows AI suggestions with confidence scores at top of popover
+- Groups available checklist items by category
+- Shows fulfilled status for already-completed items
+- Pre-selects high-confidence AI suggestions automatically
+
+**Bulk Upload Component** (`src/components/BulkUpload.tsx`):
+- Passes `clientId` and `projectId` in batch info for checklist context
+
+**Document Library Deep Linking** (`src/app/docs/page.tsx`):
+- Added URL search param support for `?clientId=xxx`
+- Updated bulk upload "View in Document Library" links to use new Document Library with pre-selected client
+
+---
+
+## 2026-01-13 14:45
+
+### Knowledge Library - Checklist Filing Integration
+
+**Major Feature**: Connected the document upload/filing flow to the Knowledge Library checklist system. Documents analyzed during bulk upload now receive AI suggestions for which checklist items they fulfill, users can review/adjust in the Upload Queue, and upon filing, documents are automatically linked to selected checklist items.
+
+**Schema Changes** (`convex/schema.ts`):
+- Added `knowledgeChecklistDocumentLinks` table for many-to-many document-checklist relationships
+  - Supports multiple documents per checklist item (e.g., 3 bank statements for "3 months statements")
+  - Supports one document fulfilling multiple checklist items (e.g., combined PDF)
+  - Tracks primary document (first linked) and supplemental documents
+- Removed single-document linking fields from `knowledgeChecklistItems` (now handled by linking table)
+
+**Backend Changes** (`convex/knowledgeLibrary.ts`):
+- New mutations: `linkDocumentToChecklistItem`, `unlinkDocumentFromChecklistItem`, `getLinkedDocuments`, `getChecklistItemsForDocument`, `getAllChecklistItemsForClient`
+- Updated `linkDocumentToRequirement`, `unlinkDocument`, `confirmSuggestedLink` to use new linking table
+- Updated `getChecklistByClient`, `getChecklistByProject`, `getClientLevelChecklist` to include linked document count and primary document info
+
+**Bulk Analyze API** (`src/app/api/bulk-analyze/route.ts`):
+- Accepts optional `clientId` and `projectId` parameters
+- Fetches checklist items for context
+- Extended LLM prompt to suggest checklist matches (optional, most documents won't match)
+- Returns `suggestedChecklistItems` with confidence scores and reasoning
+- Returns `availableChecklistItems` for UI display
+
+**File Queue Changes** (`convex/fileQueue.ts`):
+- Extended `fileDocument` mutation to accept `checklistItemIds` and `userId`
+- Creates links in `knowledgeChecklistDocumentLinks` table during filing
+- Marks checklist items as "fulfilled" when first document is linked
+
+**Document Review Card** (`src/app/docs/queue/components/DocumentReviewCard.tsx`):
+- Added `checklistItemIds` to `FilingData` interface
+- Added `suggestedChecklistItems` and `availableChecklistItems` to `Job` interface
+- New collapsible "Knowledge Library (Optional)" section below Filing Destination
+- Shows AI suggestions at top with confidence and reasoning
+- Groups available checklist items by category
+- Shows fulfilled items with document count
+- Clear messaging that linking is optional
+
+**Standard Queue View** (`src/app/docs/queue/components/StandardQueueView.tsx`):
+- Initializes `checklistItemIds: []` in filingData
+- Pre-populates from AI suggestions (confidence > 70%)
+- Passes `checklistItemIds` and `userId` to `fileDocument` mutation
+
+**Knowledge Checklist Panel** (`src/app/clients/[clientId]/components/KnowledgeChecklistPanel.tsx`):
+- Updated to show multiple linked documents per item
+- Click to expand and see all linked documents
+- Primary document shown prominently, others as "Additional"
+- Unlink specific documents or all documents
+- Add more documents to already fulfilled items
+
+**Key Behaviors**:
+- Documents are NOT required to link to any checklist item
+- Multiple documents can fulfill the same checklist item
+- One document can fulfill multiple checklist items
+- First document linked marks item as "fulfilled"
+- Additional documents are supplemental
+
+---
+
+## 2026-01-13 10:30
+
+### Knowledge Library - Document Requirements Checklist System
+
+**Major Feature**: Comprehensive Knowledge Library for tracking required documents per client type, with AI-powered document matching, dynamic requirement addition via LLM, and automated email request generation for missing documents.
+
+**Schema Changes** (`convex/schema.ts`):
+- Added `knowledgeRequirementTemplates` table - Base document requirements per client type
+  - Supports client-level and project-level requirements
+  - Tracks phase requirements (Indicative Terms, Credit Submission, Post-Credit)
+  - Priority levels (Required, Nice to Have, Optional)
+  - Matching document types for AI suggestions
+- Added `knowledgeChecklistItems` table - Per-client/project checklist tracking
+  - Links requirements to actual documents
+  - Supports custom/dynamic requirements
+  - AI suggestion tracking with confidence scores
+- Added `knowledgeEmailLogs` table - Email generation history tracking
+- Added `dealPhase` field to projects table for phase tracking
+
+**Backend Functions** (`convex/knowledgeLibrary.ts`):
+- Queries: `getRequirementTemplate`, `getChecklistByClient`, `getChecklistByProject`, `getMissingItems`, `getChecklistSummary`, `getEmailLogs`, `getLastEmailGeneration`, `hasChecklist`
+- Mutations: `initializeChecklistForClient`, `initializeChecklistForProject`, `linkDocumentToRequirement`, `confirmSuggestedLink`, `rejectSuggestedLink`, `unlinkDocument`, `addCustomRequirement`, `addCustomRequirementsFromLLM`, `deleteCustomRequirement`, `updateItemStatus`, `setSuggestion`, `logEmailGeneration`, `suggestDocumentMatches`
+
+**Seed Data** (`convex/migrations/seedKnowledgeTemplates.ts`):
+- Borrower client-level KYC requirements (7 items):
+  - Certified Proof of Address, Certified Proof of ID
+  - Business & Personal Bank Statements (3 months)
+  - Track Record (Excel & Word versions)
+  - Assets & Liabilities Statement
+- Borrower project-level requirements (15 items):
+  - Project Info: Appraisal, Plans (Floorplans, Elevations, Site Plan, Site Location Plan)
+  - Planning Decision Notice, Scheme Brief
+  - Professional Reports: Valuation, Monitoring Report, Legal DD, Report on Title
+  - Legal Documents: Facility Letter, Personal Guarantee, Share Charge, Debenture
+
+**Client Knowledge Tab** (`src/app/clients/[clientId]/components/ClientKnowledgeTab.tsx`):
+- Three-column layout:
+  - Left: Client/Projects navigation with progress indicators
+  - Middle: Category filter with completion percentages
+  - Right: Checklist items with status and actions
+- Auto-initializes checklist from templates on first view
+- Email request button with last generation timestamp
+
+**Checklist Panel** (`src/app/clients/[clientId]/components/KnowledgeChecklistPanel.tsx`):
+- Grouped by status (Pending Review, Missing, Fulfilled)
+- Search and filter by phase/priority
+- Document linking with confirmation
+- AI suggestion accept/reject workflow
+- Custom requirement deletion
+
+**Missing Documents Card** (`src/app/clients/[clientId]/components/MissingDocumentsCard.tsx`):
+- Overview widget for client dashboard
+- Progress bar with completion percentage
+- Missing required documents alert
+- Category breakdown
+- Link to Knowledge tab
+
+**Email Request Modal** (`src/app/clients/[clientId]/components/EmailRequestModal.tsx`):
+- Generates formatted email for missing documents
+- Groups items by category
+- Copy to clipboard functionality
+- Logs generation for tracking
+
+**Dynamic Checklist Input** (`src/app/clients/[clientId]/components/DynamicChecklistInput.tsx`):
+- Two modes: AI Assisted and Manual Entry
+- LLM parses natural language to extract requirements
+- Preview and confirm before adding
+- Badges custom items as "Dynamic" or "Custom"
+
+**LLM Parsing API** (`src/app/api/knowledge-parse/route.ts`):
+- Uses Together.ai Llama 3.3 70B model
+- Parses natural language descriptions
+- Returns structured requirement objects
+
+**Project Knowledge Tab** (`src/app/clients/[clientId]/projects/[projectId]/components/ProjectKnowledgeTab.tsx`):
+- Mirror of client-level functionality
+- Phase filter based on project's deal phase
+- Category tabs with completion badges
+- Email request and dynamic requirement support
+
+**Integration**:
+- Client profile Knowledge tab now fully functional
+- Project detail page includes Knowledge tab
+- Client Overview tab shows Missing Documents card
+- Updated tab types and routing
+
+---
+
+## 2026-01-12 23:15
 
 ### UI Refinement - Tabs at Top + Slim Metrics Cards
 

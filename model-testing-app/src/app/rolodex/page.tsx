@@ -297,6 +297,16 @@ export default function RolodexPage() {
   return (
     <div className="bg-gray-50 min-h-screen" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Development Banner */}
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-600">🚧</span>
+            <p className="text-sm text-amber-800">
+              <span className="font-medium">In Development</span> — Not all features are fully functional. HubSpot sync works, but advanced contact management features are coming soon.
+            </p>
+          </div>
+        </div>
+
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'companies' | 'contacts')} className="space-y-6">
           {/* Page Header */}
           <div className="mb-8 flex items-center justify-between">

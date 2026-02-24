@@ -315,6 +315,16 @@ export default function TasksPage() {
   return (
     <div className="bg-gray-50 min-h-screen p-8">
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Development Banner */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-600">🚧</span>
+            <p className="text-sm text-amber-800">
+              <span className="font-medium">In Development</span> — Not all features are fully functional. Additional functionality will be deployed in future releases.
+            </p>
+          </div>
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

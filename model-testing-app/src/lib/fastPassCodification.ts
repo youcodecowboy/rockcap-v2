@@ -39,6 +39,9 @@ export interface CodifiedItem {
   category: string;
   mappingStatus: 'matched' | 'suggested' | 'pending_review' | 'confirmed' | 'unmatched';
   confidence: number;
+  // Subtotal detection - these should not be included in category totals
+  isSubtotal?: boolean;
+  subtotalReason?: string;
 }
 
 export interface FastPassResult {
@@ -98,6 +101,51 @@ const PLURAL_TO_SINGULAR: Record<string, string> = {
   'preliminaries': 'preliminary',
   'prelims': 'prelim',
 };
+
+/**
+ * Patterns that indicate an item is a subtotal/total line
+ * These should be excluded from category totals to avoid double-counting
+ */
+const SUBTOTAL_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /^total\b/i, reason: 'Starts with "total"' },
+  { pattern: /\btotal$/i, reason: 'Ends with "total"' },
+  { pattern: /^sub[\s-]?total/i, reason: 'Starts with "subtotal"' },
+  { pattern: /\bsub[\s-]?total$/i, reason: 'Ends with "subtotal"' },
+  { pattern: /\bgrand\s+total\b/i, reason: 'Contains "grand total"' },
+  { pattern: /\bnet\s+total\b/i, reason: 'Contains "net total"' },
+  { pattern: /\bgross\s+total\b/i, reason: 'Contains "gross total"' },
+  { pattern: /^total\s+(cost|costs|expense|expenses|fees|amount)/i, reason: 'Total cost/expense line' },
+  { pattern: /\b(cost|costs|expense|expenses|fees)\s+total$/i, reason: 'Category total line' },
+  { pattern: /^sum\b/i, reason: 'Starts with "sum"' },
+  { pattern: /\bsum$/i, reason: 'Ends with "sum"' },
+  { pattern: /^overall\b/i, reason: 'Starts with "overall"' },
+  { pattern: /\b(section|category)\s+total\b/i, reason: 'Section/category total' },
+  { pattern: /^aggregate\b/i, reason: 'Aggregate line' },
+  // Common spreadsheet total row patterns
+  { pattern: /^total\s+\d+/i, reason: 'Total with row number' },
+  { pattern: /^\d+[\.\)]?\s*total\b/i, reason: 'Numbered total line' },
+];
+
+/**
+ * Detect if an item name indicates it's a subtotal/total
+ * Subtotals should be excluded from category totals to avoid double-counting
+ * 
+ * @param name - The item name to check
+ * @returns Object with isSubtotal flag and reason if detected
+ */
+export function detectSubtotal(name: string): { isSubtotal: boolean; reason?: string } {
+  if (!name) return { isSubtotal: false };
+  
+  const trimmedName = name.trim();
+  
+  for (const { pattern, reason } of SUBTOTAL_PATTERNS) {
+    if (pattern.test(trimmedName)) {
+      return { isSubtotal: true, reason };
+    }
+  }
+  
+  return { isSubtotal: false };
+}
 
 /**
  * Normalize a single word (handle plurals)
@@ -345,6 +393,9 @@ export function runFastPass(
     const normalized = normalizeText(item.type);
     const match = aliasLookup[normalized];
     
+    // Detect if this is a subtotal line
+    const subtotalDetection = detectSubtotal(item.type);
+    
     const codifiedItem: CodifiedItem = {
       id: generateItemId(),
       originalName: item.type,
@@ -353,6 +404,8 @@ export function runFastPass(
       category: item.category || 'Uncategorized',
       mappingStatus: 'pending_review',
       confidence: 0,
+      isSubtotal: subtotalDetection.isSubtotal,
+      subtotalReason: subtotalDetection.reason,
     };
     
     if (match) {
@@ -433,6 +486,9 @@ export function runFastPassWithFuzzy(
       }
     }
     
+    // Detect if this is a subtotal line
+    const subtotalDetection = detectSubtotal(item.type);
+    
     const codifiedItem: CodifiedItem = {
       id: generateItemId(),
       originalName: item.type,
@@ -441,6 +497,8 @@ export function runFastPassWithFuzzy(
       category: item.category || 'Uncategorized',
       mappingStatus: 'pending_review',
       confidence: 0,
+      isSubtotal: subtotalDetection.isSubtotal,
+      subtotalReason: subtotalDetection.reason,
     };
     
     if (match) {

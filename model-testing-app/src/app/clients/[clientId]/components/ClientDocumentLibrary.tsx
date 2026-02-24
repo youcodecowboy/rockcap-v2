@@ -7,7 +7,7 @@ import FileList from '@/app/docs/components/FileList';
 import FileDetailPanel from '@/app/docs/components/FileDetailPanel';
 
 interface FolderSelection {
-  type: 'client' | 'project';
+  type: 'client' | 'project' | 'internal' | 'personal';
   folderId: string;
   folderName: string;
   projectId?: Id<"projects">;
@@ -65,7 +65,7 @@ export default function ClientDocumentLibrary({
   }, []);
 
   return (
-    <div className={`flex ${compact ? 'h-[500px]' : 'h-[calc(100vh-300px)] min-h-[500px]'} border rounded-lg overflow-hidden bg-white`}>
+    <div className={`flex ${compact ? 'h-[500px]' : 'h-full'} overflow-hidden bg-white`}>
       {/* Folder Browser */}
       <FolderBrowser
         clientId={clientId}

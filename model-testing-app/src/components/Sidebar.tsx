@@ -9,7 +9,6 @@ import {
   UserSearch,
   File,
   FileText,
-  Database,
   Settings,
   ContactRound,
   Calculator,
@@ -44,13 +43,12 @@ export default function Sidebar() {
     { href: '/tasks', label: 'Tasks', icon: CheckSquare },
     { href: '/calendar', label: 'Calendar', icon: Calendar },
     { href: '/inbox', label: 'Inbox', icon: Mail },
-    { href: '/filing', label: 'Filing Agent', icon: Archive },
+    { href: '/filing', label: 'Upload & File', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },
     { href: '/prospects', label: 'Prospects', icon: UserSearch },
     { href: '/rolodex', label: 'Rolodex', icon: ContactRound },
     { href: '/docs', label: 'Docs', icon: File },
     { href: '/notes', label: 'Notes', icon: FileText },
-    { href: '/knowledge-bank', label: 'Knowledge Bank', icon: Database },
     { href: '/modeling', label: 'Modeling', icon: Calculator },
   ];
 

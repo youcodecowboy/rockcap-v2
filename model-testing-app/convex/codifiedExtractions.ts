@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 
 // Common validator for codified items
 const codifiedItemValidator = v.object({
@@ -19,6 +20,9 @@ const codifiedItemValidator = v.object({
     v.literal("unmatched")
   ),
   confidence: v.number(),
+  // Subtotal detection - these should not be included in category totals
+  isSubtotal: v.optional(v.boolean()),
+  subtotalReason: v.optional(v.string()),
 });
 
 // Query: Get codified extraction by document ID
@@ -141,6 +145,7 @@ export const create = mutation({
     });
     
     const now = new Date().toISOString();
+    const isFullyConfirmed = stats.pendingReview === 0 && stats.suggested === 0;
     
     const extractionId = await ctx.db.insert("codifiedExtractions", {
       documentId: args.documentId,
@@ -149,9 +154,22 @@ export const create = mutation({
       mappingStats: stats,
       fastPassCompleted: true,
       smartPassCompleted: false,
-      isFullyConfirmed: stats.pendingReview === 0 && stats.suggested === 0,
+      isFullyConfirmed,
       codifiedAt: now,
     });
+    
+    // If fully confirmed on creation, trigger merge to project library
+    if (isFullyConfirmed && args.projectId) {
+      const document = await ctx.db.get(args.documentId);
+      if (document) {
+        await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
+          extractionId,
+          projectId: args.projectId,
+          documentId: args.documentId,
+          documentName: document.fileName,
+        });
+      }
+    }
     
     return extractionId;
   },
@@ -188,14 +206,28 @@ export const updateAfterSmartPass = mutation({
       }
     });
     
+    const isFullyConfirmed = stats.pendingReview === 0 && stats.suggested === 0;
+    
     await ctx.db.patch(args.id, {
       items: args.items,
       mappingStats: stats,
       smartPassCompleted: true,
       smartPassAt: new Date().toISOString(),
-      // Check if all items are now confirmed/matched
-      isFullyConfirmed: stats.pendingReview === 0 && stats.suggested === 0,
+      isFullyConfirmed,
     });
+    
+    // If fully confirmed after Smart Pass, trigger merge to project library
+    if (isFullyConfirmed && !existing.mergedToProjectLibrary && existing.projectId) {
+      const document = await ctx.db.get(existing.documentId);
+      if (document) {
+        await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
+          extractionId: args.id,
+          projectId: existing.projectId,
+          documentId: existing.documentId,
+          documentName: document.fileName,
+        });
+      }
+    }
     
     return args.id;
   },
@@ -258,6 +290,20 @@ export const confirmItem = mutation({
       confirmedAt: isFullyConfirmed ? new Date().toISOString() : undefined,
     });
     
+    // If fully confirmed, trigger merge to project library
+    if (isFullyConfirmed && !extraction.mergedToProjectLibrary) {
+      // Get the document to find the projectId
+      const document = await ctx.db.get(extraction.documentId);
+      if (document?.projectId) {
+        await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
+          extractionId: args.extractionId,
+          projectId: document.projectId,
+          documentId: extraction.documentId,
+          documentName: document.fileName,
+        });
+      }
+    }
+    
     return { isFullyConfirmed, stats };
   },
 });
@@ -313,6 +359,20 @@ export const confirmAllSuggested = mutation({
       isFullyConfirmed,
       confirmedAt: isFullyConfirmed ? new Date().toISOString() : undefined,
     });
+    
+    // If fully confirmed, trigger merge to project library
+    if (isFullyConfirmed && !extraction.mergedToProjectLibrary) {
+      // Get the document to find the projectId
+      const document = await ctx.db.get(extraction.documentId);
+      if (document?.projectId) {
+        await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
+          extractionId: args.extractionId,
+          projectId: document.projectId,
+          documentId: extraction.documentId,
+          documentName: document.fileName,
+        });
+      }
+    }
     
     // Return items that were confirmed (for creating aliases)
     const confirmedItems = updatedItems.filter(item => 
@@ -702,6 +762,189 @@ export const getDeleteImpact = query({
       ).length,
       wouldRemoveItems,
       wouldRevertItems,
+    };
+  },
+});
+
+/**
+ * Merge all confirmed but unmerged extractions for a project
+ * Use this to backfill data that was extracted before auto-merge was implemented
+ */
+export const mergeUnmergedExtractions = mutation({
+  args: {
+    projectId: v.optional(v.id("projects")),
+  },
+  handler: async (ctx, args) => {
+    // Get all extractions that are confirmed but not merged
+    let extractions;
+    if (args.projectId) {
+      extractions = await ctx.db
+        .query("codifiedExtractions")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .collect();
+    } else {
+      extractions = await ctx.db.query("codifiedExtractions").collect();
+    }
+    
+    const unmerged = extractions.filter(e => 
+      e.isFullyConfirmed && 
+      !e.mergedToProjectLibrary && 
+      e.projectId
+    );
+    
+    let mergedCount = 0;
+    const results: { extractionId: string; documentName: string; projectId: string; result: string; itemCount: number }[] = [];
+    
+    for (const extraction of unmerged) {
+      const document = await ctx.db.get(extraction.documentId);
+      const documentName = document?.fileName ?? "Unknown Document";
+      
+      if (!extraction.projectId) {
+        results.push({
+          extractionId: extraction._id,
+          documentName,
+          projectId: "missing",
+          result: "skipped - no projectId",
+          itemCount: extraction.items?.length ?? 0,
+        });
+        continue;
+      }
+      
+      await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
+        extractionId: extraction._id,
+        projectId: extraction.projectId,
+        documentId: extraction.documentId,
+        documentName,
+      });
+      
+      mergedCount++;
+      results.push({
+        extractionId: extraction._id,
+        documentName,
+        projectId: extraction.projectId,
+        result: "scheduled for merge",
+        itemCount: extraction.items?.length ?? 0,
+      });
+    }
+    
+    return {
+      totalExtractions: extractions.length,
+      unmergedFound: unmerged.length,
+      mergedCount,
+      results,
+      message: `Scheduled ${mergedCount} extractions for merge`,
+    };
+  },
+});
+
+/**
+ * Debug query to see all extractions and their status
+ */
+export const debugExtractions = query({
+  args: {},
+  handler: async (ctx) => {
+    const extractions = await ctx.db.query("codifiedExtractions").collect();
+    
+    const results = [];
+    for (const e of extractions) {
+      const doc = await ctx.db.get(e.documentId);
+      results.push({
+        id: e._id,
+        documentId: e.documentId,
+        documentProjectId: doc?.projectId ?? null,
+        extractionProjectId: e.projectId,
+        isFullyConfirmed: e.isFullyConfirmed,
+        mergedToProjectLibrary: e.mergedToProjectLibrary,
+        itemCount: e.items?.length ?? 0,
+        confirmedItems: e.items?.filter(i => i.mappingStatus === "confirmed" || i.mappingStatus === "matched").length ?? 0,
+        stats: e.mappingStats,
+      });
+    }
+    return results;
+  },
+});
+
+/**
+ * Backfill projectIds from documents to extractions and trigger merges
+ * This fixes extractions that were created before the document was assigned to a project
+ */
+export const backfillProjectIds = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const extractions = await ctx.db.query("codifiedExtractions").collect();
+    
+    let updatedCount = 0;
+    let mergeScheduledCount = 0;
+    const results: { 
+      extractionId: string; 
+      documentName: string;
+      action: string;
+      projectId?: string;
+    }[] = [];
+    
+    for (const extraction of extractions) {
+      const document = await ctx.db.get(extraction.documentId);
+      if (!document) {
+        results.push({
+          extractionId: extraction._id,
+          documentName: "DELETED",
+          action: "skipped - document not found",
+        });
+        continue;
+      }
+      
+      // Check if extraction needs projectId from document
+      if (!extraction.projectId && document.projectId) {
+        await ctx.db.patch(extraction._id, {
+          projectId: document.projectId,
+        });
+        updatedCount++;
+        results.push({
+          extractionId: extraction._id,
+          documentName: document.fileName,
+          action: "updated projectId",
+          projectId: document.projectId,
+        });
+        
+        // If fully confirmed and not yet merged, schedule merge
+        if (extraction.isFullyConfirmed && !extraction.mergedToProjectLibrary && extraction.items.length > 0) {
+          await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
+            extractionId: extraction._id,
+            projectId: document.projectId,
+            documentId: extraction.documentId,
+            documentName: document.fileName,
+          });
+          mergeScheduledCount++;
+          results.push({
+            extractionId: extraction._id,
+            documentName: document.fileName,
+            action: "scheduled merge",
+            projectId: document.projectId,
+          });
+        }
+      } else if (extraction.projectId && extraction.isFullyConfirmed && !extraction.mergedToProjectLibrary && extraction.items.length > 0) {
+        // Has projectId, is confirmed, but not merged yet
+        await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
+          extractionId: extraction._id,
+          projectId: extraction.projectId,
+          documentId: extraction.documentId,
+          documentName: document.fileName,
+        });
+        mergeScheduledCount++;
+        results.push({
+          extractionId: extraction._id,
+          documentName: document.fileName,
+          action: "scheduled merge (had projectId)",
+          projectId: extraction.projectId,
+        });
+      }
+    }
+    
+    return {
+      totalExtractions: extractions.length,
+      projectIdsUpdated: updatedCount,
+      mergesScheduled: mergeScheduledCount,
+      results,
     };
   },
 });

@@ -179,6 +179,18 @@ export const create = mutation({
       }
     }
 
+    // Initialize client intelligence
+    await ctx.scheduler.runAfter(0, api.intelligence.initializeClientIntelligence, {
+      clientId,
+      clientType,
+    });
+
+    // Initialize client checklist from template
+    await ctx.scheduler.runAfter(0, api.knowledgeLibrary.initializeChecklistForClient, {
+      clientId,
+      clientType,
+    });
+
     return clientId;
   },
 });
@@ -236,6 +248,29 @@ export const update = mutation({
     });
 
     return id;
+  },
+});
+
+// Mutation: Update client stage note
+export const updateStageNote = mutation({
+  args: {
+    id: v.id("clients"),
+    stageNote: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (!existing) {
+      throw new Error("Client not found");
+    }
+
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.id, {
+      stageNote: args.stageNote,
+      stageNoteUpdatedAt: now,
+    });
+
+    return args.id;
   },
 });
 
@@ -589,9 +624,24 @@ export const deleteCustomFolder = mutation({
     if (clientDocs.length > 0) {
       throw new Error(`Cannot delete folder "${folder.name}". It contains ${clientDocs.length} document(s). Move or delete them first.`);
     }
-    
+
+    // Defensive: Re-query and move any documents that might have been added
+    // between the check above and now (handles race conditions)
+    const finalCheck = await ctx.db
+      .query("documents")
+      .filter((q: any) => q.eq(q.field("folderId"), folder.folderType))
+      .collect();
+
+    const orphanedDocs = finalCheck.filter(d => d.clientId === folder.clientId && !d.projectId);
+    for (const doc of orphanedDocs) {
+      await ctx.db.patch(doc._id, {
+        folderId: "miscellaneous",
+        folderType: "client",
+      });
+    }
+
     await ctx.db.delete(args.folderId);
-    return { success: true };
+    return { success: true, movedDocuments: orphanedDocs.length };
   },
 });
 

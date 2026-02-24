@@ -36,14 +36,21 @@ import {
   Briefcase,
   TrendingUp,
   DollarSign,
+  Settings,
 } from 'lucide-react';
 
 // Import project-specific components
 import ProjectOverviewTab from './components/ProjectOverviewTab';
 import ProjectDocumentsTab from './components/ProjectDocumentsTab';
 import ProjectNotesTab from './components/ProjectNotesTab';
+import ProjectKnowledgeTab from './components/ProjectKnowledgeTab';
+import ProjectDataTab from './components/ProjectDataTab';
+import ProjectTasksTab from './components/ProjectTasksTab';
+import { ProjectIntelligenceTab } from '@/components/IntelligenceTab';
+import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
+import { Brain, CheckSquare, ListTodo } from 'lucide-react';
 
-type TabType = 'overview' | 'documents' | 'communications' | 'data' | 'notes';
+type TabType = 'overview' | 'documents' | 'intelligence' | 'checklist' | 'communications' | 'data' | 'notes' | 'tasks';
 
 function ProjectDetailContent() {
   const params = useParams();
@@ -56,11 +63,14 @@ function ProjectDetailContent() {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
 
   // Queries
   const client = useQuery(api.clients.get, { id: clientId });
   const project = useQuery(api.projects.get, { id: projectId });
   const documents = useQuery(api.documents.getByProject, { projectId }) || [];
+  const activeTasksCount = useQuery(api.tasks.getActiveCountByProject, { projectId }) || 0;
 
   // Get client roles with full client data
   const clientRoles = useMemo(() => {
@@ -167,6 +177,9 @@ function ProjectDetailContent() {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
     { id: 'documents', label: 'Documents', icon: FileText, count: documents.length },
+    { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
+    { id: 'intelligence', label: 'Intelligence', icon: Brain },
+    { id: 'checklist', label: 'Checklist', icon: CheckSquare },
     { id: 'communications', label: 'Communications', icon: MessageSquare },
     { id: 'data', label: 'Data', icon: Database },
     { id: 'notes', label: 'Notes', icon: StickyNote },
@@ -215,6 +228,17 @@ function ProjectDetailContent() {
             <Button
               size="sm"
               variant="outline"
+              onClick={() => {
+                setSettingsDefaultTab('general');
+                setShowSettingsPanel(true);
+              }}
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => setShowArchiveDialog(true)}
             >
               <Archive className="w-4 h-4 mr-2" />
@@ -239,22 +263,22 @@ function ProjectDetailContent() {
         onValueChange={handleTabChange}
         className="flex-1 flex flex-col overflow-hidden"
       >
-        <div className="bg-white border-b px-6 flex-shrink-0">
-          <TabsList className="h-12 bg-transparent p-0 gap-4">
+        <div className="bg-white border-b px-4 flex-shrink-0 overflow-x-auto scrollbar-hide">
+          <TabsList className="h-11 bg-transparent p-0 gap-1 min-w-max">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
-                <TabsTrigger 
+                <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  className="relative h-12 px-4 rounded-none border-b-2 border-transparent data-[state=active]:border-purple-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                  className="relative h-11 px-2.5 text-sm rounded-none border-b-2 border-transparent data-[state=active]:border-purple-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none whitespace-nowrap"
                 >
-                  <Icon className="w-4 h-4 mr-2" />
+                  <Icon className="w-3.5 h-3.5 mr-1.5" />
                   {tab.label}
                   {tab.count !== undefined && tab.count > 0 && (
-                    <Badge 
-                      variant="secondary" 
-                      className="ml-2 bg-gray-100 text-gray-700 hover:bg-gray-100"
+                    <Badge
+                      variant="secondary"
+                      className="ml-1.5 bg-gray-100 text-gray-700 hover:bg-gray-100 text-[10px] px-1.5 py-0"
                     >
                       {tab.count}
                     </Badge>
@@ -312,53 +336,85 @@ function ProjectDetailContent() {
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-auto">
-          <div className="max-w-7xl mx-auto px-6 py-6">
-            <TabsContent value="overview" className="mt-0">
-              <ProjectOverviewTab
-                project={project}
-                projectId={projectId}
-                clientId={clientId}
-                client={client}
-                documents={documents}
-                clientRoles={clientRoles}
-              />
-            </TabsContent>
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {/* Edge-to-Edge Tabs */}
+          <TabsContent value="intelligence" className="mt-0 flex-1 overflow-hidden">
+            <ProjectIntelligenceTab
+              projectId={projectId}
+            />
+          </TabsContent>
 
-            <TabsContent value="documents" className="mt-0">
-              <ProjectDocumentsTab
-                projectId={projectId}
-                clientId={clientId}
-                clientRoles={clientRoles}
-              />
-            </TabsContent>
+          <TabsContent value="documents" className="mt-0 flex-1 overflow-hidden">
+            <ProjectDocumentsTab
+              projectId={projectId}
+              clientId={clientId}
+              clientName={client.name}
+              clientType={client.type}
+            />
+          </TabsContent>
 
-            <TabsContent value="communications" className="mt-0">
-              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Communications</h3>
-                <p className="text-gray-500 max-w-md mx-auto">
-                  Communication timeline for this project will appear here.
-                </p>
-              </div>
-            </TabsContent>
+          <TabsContent value="checklist" className="mt-0 flex-1 overflow-hidden">
+            <ProjectKnowledgeTab
+              projectId={projectId}
+              projectName={project.name}
+              clientId={clientId}
+              clientName={client.name}
+              clientType={client.type}
+              dealPhase={project.dealPhase}
+            />
+          </TabsContent>
 
-            <TabsContent value="data" className="mt-0">
-              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Extracted Data</h3>
-                <p className="text-gray-500 max-w-md mx-auto">
-                  Financial data extracted from project documents will appear here.
-                </p>
-              </div>
-            </TabsContent>
+          <TabsContent value="notes" className="mt-0 flex-1 overflow-hidden">
+            <ProjectNotesTab
+              projectId={projectId}
+              projectName={project.name}
+              clientId={clientId}
+            />
+          </TabsContent>
 
-            <TabsContent value="notes" className="mt-0">
-              <ProjectNotesTab
-                projectId={projectId}
-                projectName={project.name}
-              />
-            </TabsContent>
+          <TabsContent value="tasks" className="mt-0 flex-1 overflow-hidden">
+            <ProjectTasksTab
+              projectId={projectId}
+              projectName={project.name}
+              clientId={clientId}
+            />
+          </TabsContent>
+
+          {/* Contained Tabs - With Max Width Container */}
+          <div className={`flex-1 overflow-auto ${['intelligence', 'documents', 'checklist', 'notes', 'tasks'].includes(activeTab) ? 'hidden' : ''}`}>
+            <div className="max-w-7xl mx-auto px-6 py-6">
+              <TabsContent value="overview" className="mt-0">
+                <ProjectOverviewTab
+                  project={project}
+                  projectId={projectId}
+                  clientId={clientId}
+                  client={client}
+                  documents={documents}
+                  clientRoles={clientRoles}
+                  onOpenSettings={() => {
+                    setSettingsDefaultTab('general');
+                    setShowSettingsPanel(true);
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="communications" className="mt-0">
+                <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                  <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Communications</h3>
+                  <p className="text-gray-500 max-w-md mx-auto">
+                    Communication timeline for this project will appear here.
+                  </p>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="data" className="mt-0">
+                <ProjectDataTab
+                  projectId={projectId}
+                  projectName={project.name}
+                />
+              </TabsContent>
+            </div>
           </div>
         </div>
       </Tabs>
@@ -392,7 +448,7 @@ function ProjectDetailContent() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDeleteProject}
               className="bg-red-600 hover:bg-red-700"
             >
@@ -401,6 +457,15 @@ function ProjectDetailContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Settings Panel */}
+      <ProjectSettingsPanel
+        isOpen={showSettingsPanel}
+        onClose={() => setShowSettingsPanel(false)}
+        projectId={projectId}
+        clientId={clientId}
+        defaultTab={settingsDefaultTab}
+      />
     </div>
   );
 }

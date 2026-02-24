@@ -19,6 +19,9 @@ import {
   Pencil,
   Check,
   X,
+  ExternalLink,
+  ClipboardList,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,6 +39,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import BulkReviewTable from '@/components/BulkReviewTable';
+import UploadMoreModal from './components/UploadMoreModal';
 import { getUserInitials } from '@/lib/documentNaming';
 
 export default function BulkReviewPage() {
@@ -46,6 +50,7 @@ export default function BulkReviewPage() {
 
   const [isFilingAll, setIsFilingAll] = useState(false);
   const [showFileAllDialog, setShowFileAllDialog] = useState(false);
+  const [showUploadMore, setShowUploadMore] = useState(false);
   const [filingResult, setFilingResult] = useState<{ totalFiled: number; totalErrors: number } | null>(null);
   
   // Shortcode editing state
@@ -58,6 +63,22 @@ export default function BulkReviewPage() {
   const items = useQuery(api.bulkUpload.getBatchItems, { batchId });
   const stats = useQuery(api.bulkUpload.getBatchStats, { batchId });
   const currentUser = useQuery(api.users.getCurrent, {});
+  
+  // Query checklist items for missing documents count
+  // @ts-ignore - Known Convex TypeScript type instantiation depth issue
+  const checklistItems = useQuery(
+    api.knowledgeLibrary.getAllChecklistItemsForClient,
+    batch?.clientId ? { clientId: batch.clientId, projectId: batch.projectId } : "skip"
+  );
+  
+  // Calculate checklist stats
+  const checklistStats = useMemo(() => {
+    if (!checklistItems) return null;
+    const total = checklistItems.length;
+    const fulfilled = checklistItems.filter((i: any) => i.status === 'fulfilled').length;
+    const missing = total - fulfilled;
+    return { total, fulfilled, missing };
+  }, [checklistItems]);
   
   // Check shortcode availability
   const shortcodeAvailable = useQuery(
@@ -136,6 +157,42 @@ export default function BulkReviewPage() {
         uploaderInitials,
       });
       setFilingResult(result);
+      
+      // Trigger extraction queue processing (non-blocking)
+      // This processes any documents that had extraction enabled (spreadsheets)
+      fetch('/api/process-extraction-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 20 }),
+      }).then(response => {
+        if (response.ok) {
+          console.log('[BulkUpload] Extraction queue processing started');
+        }
+      }).catch(err => {
+        console.error('[BulkUpload] Failed to trigger extraction queue:', err);
+      });
+
+      // Trigger intelligence extraction queue (non-blocking)
+      // This extracts client/project intelligence from documents
+      fetch('/api/process-intelligence-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 20 }),
+      }).then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data.success) {
+          console.log(`[BulkUpload] Intelligence queue: ${data.message || 'processing started'}`, {
+            processed: data.processed,
+            successful: data.successful,
+            skipped: data.skipped,
+            failed: data.failed,
+          });
+        } else {
+          console.warn('[BulkUpload] Intelligence queue returned:', data);
+        }
+      }).catch(err => {
+        console.error('[BulkUpload] Failed to trigger intelligence queue:', err);
+      });
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to file documents');
     } finally {
@@ -174,21 +231,22 @@ export default function BulkReviewPage() {
   const StatusIcon = statusInfo.icon;
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <div className="px-6 py-4 max-w-[1600px] mx-auto space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => router.push('/filing')}
+            className="h-8"
           >
             <ArrowLeft className="w-4 h-4 mr-1" />
             Back
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Bulk Upload Review</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-xl font-semibold">Bulk Upload Review</h1>
+            <p className="text-sm text-muted-foreground">
               Review and file {batch.totalFiles} documents
             </p>
           </div>
@@ -199,149 +257,166 @@ export default function BulkReviewPage() {
         </Badge>
       </div>
 
-      {/* Batch Info Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Building2 className="w-4 h-4" />
-              Client
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-semibold">{batch.clientName}</div>
+      {/* Batch Info - Compact horizontal layout */}
+      <div className="flex flex-wrap items-stretch gap-3">
+        {/* Client Card - Clickable */}
+        <Card 
+          className="flex-1 min-w-[180px] cursor-pointer hover:border-primary/50 transition-colors"
+          onClick={() => router.push(`/clients/${batch.clientId}`)}
+        >
+          <CardContent className="p-3 flex items-center gap-3">
+            <Building2 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted-foreground">Client</p>
+              <p className="font-medium text-sm truncate">{batch.clientName}</p>
+            </div>
+            <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <FolderOpen className="w-4 h-4" />
-              Project
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-semibold">
-              {batch.projectName || 'No project (Client-level)'}
-            </div>
-            
-            {/* Shortcode - editable if project exists */}
-            {batch.projectId ? (
-              <div className="mt-2">
-                {isEditingShortcode ? (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={shortcodeInput}
-                      onChange={(e) => setShortcodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
-                      placeholder="SHORTCODE"
-                      className="h-7 w-32 text-xs font-mono uppercase"
-                      maxLength={10}
-                    />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={handleSaveShortcode}
-                      disabled={shortcodeSaving || !shortcodeInput || (shortcodeInput !== batch.projectShortcode && shortcodeAvailable === false)}
+        {/* Project Card - Clickable if has project */}
+        <Card 
+          className={`flex-1 min-w-[200px] ${batch.projectId ? 'cursor-pointer hover:border-primary/50' : ''} transition-colors`}
+          onClick={() => batch.projectId && router.push(`/docs/project/${batch.projectId}`)}
+        >
+          <CardContent className="p-3 flex items-center gap-3">
+            <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted-foreground">Project</p>
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-sm truncate">
+                  {batch.projectName || 'Client-level'}
+                </p>
+                {batch.projectId && (
+                  isEditingShortcode ? (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={shortcodeInput}
+                        onChange={(e) => setShortcodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
+                        placeholder="CODE"
+                        className="h-5 w-16 text-[10px] font-mono uppercase px-1"
+                        maxLength={10}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 w-5 p-0"
+                        onClick={(e) => { e.stopPropagation(); handleSaveShortcode(); }}
+                        disabled={shortcodeSaving || !shortcodeInput || (shortcodeInput !== batch.projectShortcode && shortcodeAvailable === false)}
+                      >
+                        {shortcodeSaving ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5 text-green-600" />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 w-5 p-0"
+                        onClick={(e) => { e.stopPropagation(); setIsEditingShortcode(false); setShortcodeInput(batch.projectShortcode || ''); }}
+                      >
+                        <X className="w-2.5 h-2.5 text-red-600" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge 
+                      variant={batch.projectShortcode ? "secondary" : "outline"} 
+                      className={`text-[10px] h-5 font-mono ${!batch.projectShortcode ? 'text-amber-600 border-amber-300' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); setShortcodeInput(batch.projectShortcode || ''); setIsEditingShortcode(true); }}
                     >
-                      {shortcodeSaving ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Check className="w-3 h-3 text-green-600" />
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={() => {
-                        setIsEditingShortcode(false);
-                        setShortcodeInput(batch.projectShortcode || '');
-                      }}
-                      disabled={shortcodeSaving}
-                    >
-                      <X className="w-3 h-3 text-red-600" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    {batch.projectShortcode ? (
-                      <Badge variant="secondary" className="font-mono">
-                        {batch.projectShortcode}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">
-                        No shortcode set
-                      </Badge>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 p-0"
-                      onClick={() => {
-                        setShortcodeInput(batch.projectShortcode || '');
-                        setIsEditingShortcode(true);
-                      }}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                  </div>
-                )}
-                {isEditingShortcode && shortcodeInput && shortcodeInput !== batch.projectShortcode && (
-                  <p className="text-xs mt-1">
-                    {shortcodeAvailable === undefined ? (
-                      <span className="text-muted-foreground">Checking...</span>
-                    ) : shortcodeAvailable ? (
-                      <span className="text-green-600">✓ Available</span>
-                    ) : (
-                      <span className="text-red-600">✗ Already in use</span>
-                    )}
-                  </p>
-                )}
-                {!batch.projectShortcode && !isEditingShortcode && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    Set a shortcode to generate document names
-                  </p>
+                      {batch.projectShortcode || 'Set code'}
+                      <Pencil className="w-2 h-2 ml-1" />
+                    </Badge>
+                  )
                 )}
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground mt-1">
-                Client-level uploads use client name
-              </p>
-            )}
+            </div>
+            {batch.projectId && <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Progress
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Progress value={progress} />
-              <div className="flex justify-between text-sm">
-                <span>{batch.processedFiles} processed</span>
-                <span>{batch.filedFiles} filed</span>
+        {/* Progress Card - Compact */}
+        <Card className="flex-1 min-w-[160px]">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-3">
+              <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-muted-foreground">Progress</p>
+                <Progress value={progress} className="h-1.5 mt-1" />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {batch.processedFiles} processed · {batch.filedFiles} filed
+                </p>
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Checklist Status Card - Only show if checklist items exist */}
+        {checklistStats && checklistStats.total > 0 && (
+          <Card 
+            className="flex-1 min-w-[140px] cursor-pointer hover:border-primary/50 transition-colors"
+            onClick={() => router.push(`/clients/${batch.clientId}?tab=knowledge`)}
+          >
+            <CardContent className="p-3 flex items-center gap-3">
+              <ClipboardList className={`w-4 h-4 flex-shrink-0 ${checklistStats.missing > 0 ? 'text-amber-500' : 'text-green-500'}`} />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-muted-foreground">Checklist</p>
+                <p className={`font-medium text-sm ${checklistStats.missing > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                  {checklistStats.missing > 0 ? (
+                    <>{checklistStats.missing} missing</>
+                  ) : (
+                    <>All complete</>
+                  )}
+                </p>
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {checklistStats.fulfilled}/{checklistStats.total}
+              </span>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      {/* Classification Info */}
-      <div className="flex items-center gap-4">
-        <Badge variant="outline" className="text-sm">
-          {batch.isInternal ? 'Internal Documents' : 'External Documents'}
+      {/* Classification Badge - More compact */}
+      <div className="flex items-center gap-3 text-sm">
+        <Badge variant="outline" className="text-xs h-6">
+          {batch.isInternal ? 'Internal' : 'External'}
         </Badge>
         {batch.instructions && (
-          <span className="text-sm text-muted-foreground">
-            Instructions: "{batch.instructions.slice(0, 50)}{batch.instructions.length > 50 ? '...' : ''}"
+          <span className="text-xs text-muted-foreground truncate max-w-md">
+            Instructions: "{batch.instructions.slice(0, 60)}{batch.instructions.length > 60 ? '...' : ''}"
           </span>
         )}
       </div>
+
+      {/* Background Processing Progress */}
+      {batch.processingMode === 'background' && batch.status === 'processing' && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-blue-100">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-medium text-blue-900">Processing in Background</h3>
+                  <span className="text-sm text-blue-700">
+                    {batch.processedFiles} of {batch.totalFiles} files
+                  </span>
+                </div>
+                <Progress value={(batch.processedFiles / batch.totalFiles) * 100} className="h-2" />
+                {batch.estimatedCompletionTime && (
+                  <p className="text-xs text-blue-600 mt-2">
+                    Estimated completion: {new Date(batch.estimatedCompletionTime).toLocaleTimeString()}
+                  </p>
+                )}
+              </div>
+            </div>
+            <p className="text-sm text-blue-700 mt-3">
+              Files are being analyzed in the background. You&apos;ll receive a notification when processing is complete.
+              This page will automatically update as files are processed.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Warnings */}
       {stats.unresolvedDuplicates > 0 && (
@@ -380,7 +455,7 @@ export default function BulkReviewPage() {
                 variant="link"
                 size="sm"
                 className="p-0 h-auto mt-1"
-                onClick={() => router.push(`/docs/client/${batch.clientId}`)}
+                onClick={() => router.push(`/docs?clientId=${batch.clientId}`)}
               >
                 View in Document Library →
               </Button>
@@ -394,40 +469,51 @@ export default function BulkReviewPage() {
         items={items}
         batchIsInternal={batch.isInternal}
         hasProject={!!batch.projectId}
+        clientId={batch.clientId}
+        projectId={batch.projectId}
       />
 
-      {/* Action Bar */}
-      <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg sticky bottom-4">
+      {/* Action Bar - Compact */}
+      <div className="flex items-center justify-between p-3 bg-background border-t sticky bottom-0 z-40">
         <div className="text-sm text-muted-foreground">
           {stats.statusCounts.ready_for_review} file{stats.statusCounts.ready_for_review !== 1 ? 's' : ''} ready to file
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {batch.status === 'completed' || batch.status === 'partial' ? (
             <Button
               variant="outline"
-              onClick={() => router.push(`/docs/client/${batch.clientId}`)}
+              size="sm"
+              onClick={() => router.push(`/docs?clientId=${batch.clientId}`)}
             >
               <FileCheck className="w-4 h-4 mr-2" />
               View Documents
             </Button>
           ) : (
-            <Button
-              onClick={() => setShowFileAllDialog(true)}
-              disabled={!canFileAll || isFilingAll}
-              size="lg"
-            >
-              {isFilingAll ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Filing...
-                </>
-              ) : (
-                <>
-                  <FileCheck className="w-4 h-4 mr-2" />
-                  File All Documents ({stats.statusCounts.ready_for_review})
-                </>
-              )}
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setShowUploadMore(true)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Upload More
+              </Button>
+              <Button
+                onClick={() => setShowFileAllDialog(true)}
+                disabled={!canFileAll || isFilingAll}
+              >
+                {isFilingAll ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Filing...
+                  </>
+                ) : (
+                  <>
+                    <FileCheck className="w-4 h-4 mr-2" />
+                    File All Documents ({stats.statusCounts.ready_for_review})
+                  </>
+                )}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -437,12 +523,28 @@ export default function BulkReviewPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>File All Documents?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will file {stats.statusCounts.ready_for_review} document{stats.statusCounts.ready_for_review !== 1 ? 's' : ''} to the document library 
-              under <strong>{batch.clientName}</strong>
-              {batch.projectName && <> / <strong>{batch.projectName}</strong></>}.
-              <br /><br />
-              Documents will be named using the new naming convention with your initials ({uploaderInitials}).
+            <AlertDialogDescription asChild>
+              <div>
+                <p>
+                  This will file {stats.statusCounts.ready_for_review} document{stats.statusCounts.ready_for_review !== 1 ? 's' : ''} to the document library
+                  under <strong>{batch.clientName}</strong>
+                  {batch.projectName && <> / <strong>{batch.projectName}</strong></>}.
+                </p>
+                <p className="mt-2">
+                  Documents will be named using the new naming convention with your initials ({uploaderInitials}).
+                </p>
+                {items.some(i => i.extractionEnabled && i.status === 'ready_for_review') && (
+                  <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-sm text-blue-800 font-medium">
+                      📊 Data Extraction Queued
+                    </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      {items.filter(i => i.extractionEnabled && i.status === 'ready_for_review').length} spreadsheet(s) will be processed for data extraction after filing.
+                      You can safely leave this page - extraction runs in the background.
+                    </p>
+                  </div>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -453,6 +555,22 @@ export default function BulkReviewPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Upload More Modal */}
+      <UploadMoreModal
+        isOpen={showUploadMore}
+        onClose={() => setShowUploadMore(false)}
+        batchId={batchId}
+        batch={{
+          clientId: batch.clientId,
+          clientName: batch.clientName,
+          projectId: batch.projectId,
+          projectName: batch.projectName,
+          projectShortcode: batch.projectShortcode,
+          isInternal: batch.isInternal,
+          instructions: batch.instructions,
+        }}
+      />
     </div>
   );
 }

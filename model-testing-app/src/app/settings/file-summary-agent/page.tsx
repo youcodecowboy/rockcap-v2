@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Plus, FileText, Edit2, Trash2, Eye } from 'lucide-react';
 import FileTypeDefinitionDrawer from '@/components/FileTypeDefinitionDrawer';
 import FileTypeDefinitionView from '@/components/FileTypeDefinitionView';
+import KeywordLearningDashboard from '@/components/settings/KeywordLearningDashboard';
 
 export default function FileSummaryAgentSettings() {
   const [selectedDefinition, setSelectedDefinition] = useState<Id<'fileTypeDefinitions'> | null>(null);
@@ -97,6 +98,11 @@ export default function FileSummaryAgentSettings() {
               Add File Type
             </Button>
           </div>
+        </div>
+
+        {/* Keyword Learning Dashboard */}
+        <div className="mb-8">
+          <KeywordLearningDashboard />
         </div>
 
         {/* File Type Definitions Library */}

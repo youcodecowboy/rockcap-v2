@@ -10,12 +10,35 @@ interface ClientWithProjects {
   projects: Array<{ id: string; name: string }>;
 }
 
+interface ChecklistItem {
+  _id: string;
+  name: string;
+  category: string;
+  status: string;
+  linkedDocumentCount?: number;
+}
+
+interface AnalysisOptions {
+  customInstructions?: string | null;
+  checklistItems?: ChecklistItem[];
+}
+
 export async function analyzeFileContent(
   textContent: string,
   fileName: string,
   clientsWithProjects: ClientWithProjects[],
-  customInstructions: string | null = null
-): Promise<ModelResponse & { tokensUsed: number }> {
+  customInstructionsOrOptions: string | null | AnalysisOptions = null
+): Promise<ModelResponse & { tokensUsed: number; suggestedChecklistItems?: Array<{ itemId: string; itemName: string; category: string; confidence: number; reasoning?: string }> }> {
+  // Handle both old signature (string) and new signature (options object)
+  let customInstructions: string | null = null;
+  let checklistItems: ChecklistItem[] = [];
+  
+  if (typeof customInstructionsOrOptions === 'string' || customInstructionsOrOptions === null) {
+    customInstructions = customInstructionsOrOptions;
+  } else if (customInstructionsOrOptions) {
+    customInstructions = customInstructionsOrOptions.customInstructions || null;
+    checklistItems = customInstructionsOrOptions.checklistItems || [];
+  }
   const apiKey = process.env.TOGETHER_API_KEY;
   
   if (!apiKey) {
@@ -49,6 +72,38 @@ export async function analyzeFileContent(
   const fileTypeGuidance = fileTypeHints.length > 0
     ? `\n\nFILE TYPE GUIDANCE (CRITICAL - USE THESE IF CONTENT MATCHES):\nThe following file types are DEFINITELY relevant based on the content and filename:\n\n${fileTypeHints.join('\n\n')}\n\nCRITICAL INSTRUCTIONS:\n- If the content matches ANY of the file types above, you MUST use that exact file type name\n- Use the category specified in the FILE TYPE GUIDANCE above (do NOT use a different category)\n- If "Initial Monitoring Report" is listed above, use fileType: "Initial Monitoring Report" and category: "Inspections"\n- If "Interim Monitoring Report" is listed above, use fileType: "Interim Monitoring Report" and category: "Inspections"\n- If "RedBook Valuation" is listed above, use fileType: "RedBook Valuation" and category: "Appraisals"\n- If "Plans" is listed above, use fileType: "Plans" and category: "Property Documents"\n- If "Legal Documents" is listed above, use fileType: "Legal Documents" or "Legal Documents - [Subcategory]" and category: "Legal Documents"\n- If "Indicative Terms" is listed above, use fileType: "Indicative Terms" and category: "Loan Terms"\n- Do NOT use generic file types like "Appraisal Report" if a specific file type definition matches\n- The FILE TYPE GUIDANCE takes absolute precedence over general assumptions`
     : '';
+
+  // Build checklist context if available
+  let checklistContext = '';
+  if (checklistItems.length > 0) {
+    const checklistLines = checklistItems.map(item => {
+      const statusLabel = item.status === 'fulfilled' 
+        ? `✓ FULFILLED (${item.linkedDocumentCount || 0} docs)` 
+        : item.status === 'pending_review' 
+          ? '⏳ PENDING REVIEW' 
+          : '○ MISSING';
+      return `- [id: ${item._id}] ${item.name} (${item.category}) - ${statusLabel}`;
+    }).join('\n');
+    
+    checklistContext = `
+
+CHECKLIST MATCHING (OPTIONAL):
+The client has the following document requirements. If this document clearly fulfills 
+one or more requirements, suggest matches. Many documents are supplemental and won't 
+match any requirement - that's perfectly fine, return an empty array for suggestedChecklistItems.
+
+Document Requirements:
+${checklistLines}
+
+If matching, include in your response:
+"suggestedChecklistItems": [
+  { "itemId": "the_id_from_above", "confidence": 0.85, "reasoning": "Brief reason why this matches" }
+]
+
+If NO clear match (most documents won't match), return:
+"suggestedChecklistItems": []
+`;
+  }
 
   // Build custom instructions section if provided
   
@@ -89,7 +144,7 @@ ${clientProjectList}
 
 AVAILABLE CATEGORIES (choose ONE that best fits):
 ${categoriesList}
-${fileTypeGuidance}
+${fileTypeGuidance}${checklistContext}
 
 FILE INFORMATION:
 File name: ${fileName}
@@ -158,7 +213,8 @@ Respond with a JSON object in this EXACT format:
   "suggestedProjectName": "suggested project name (property address, loan number, etc.) if not in list but identifiable, or null",
   "category": "ONE of the available categories: ${categoriesList}",
   "reasoning": "detailed explanation of your analysis, including why you chose this client, project, category, and file type",
-  "confidence": 0.95,
+  "confidence": 0.95,${checklistItems.length > 0 ? `
+  "suggestedChecklistItems": [],` : ''}
   "enrichmentSuggestions": [
     {
       "type": "email",
@@ -275,7 +331,24 @@ CRITICAL: Always extract contact information (emails, phone numbers, contact nam
       jsonContent = jsonContent.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '');
     }
 
-    const result: ModelResponse = JSON.parse(jsonContent);
+    const result: ModelResponse & { suggestedChecklistItems?: Array<{ itemId: string; confidence: number; reasoning?: string }> } = JSON.parse(jsonContent);
+    
+    // Parse checklist suggestions if present
+    let suggestedChecklistItems: Array<{ itemId: string; itemName: string; category: string; confidence: number; reasoning?: string }> | undefined;
+    if (result.suggestedChecklistItems && Array.isArray(result.suggestedChecklistItems) && checklistItems.length > 0) {
+      suggestedChecklistItems = result.suggestedChecklistItems
+        .filter((item: any) => item.itemId && typeof item.confidence === 'number')
+        .map((item: any) => {
+          const checklistItem = checklistItems.find(ci => ci._id === item.itemId);
+          return {
+            itemId: item.itemId,
+            itemName: checklistItem?.name || 'Unknown',
+            category: checklistItem?.category || 'Unknown',
+            confidence: item.confidence,
+            reasoning: item.reasoning || undefined,
+          };
+        });
+    }
     
     return {
       summary: result.summary || 'No summary provided',
@@ -289,6 +362,7 @@ CRITICAL: Always extract contact information (emails, phone numbers, contact nam
       confidence: result.confidence || 0.5,
       tokensUsed: usage?.total_tokens || 0,
       enrichmentSuggestions: result.enrichmentSuggestions || [],
+      suggestedChecklistItems: suggestedChecklistItems?.length ? suggestedChecklistItems : undefined,
     };
   } catch (error) {
     if (error instanceof SyntaxError) {

@@ -25,6 +25,7 @@ interface FilingData {
   summary: string;
   category: string;
   fileTypeDetected: string;
+  checklistItemIds: Id<"knowledgeChecklistItems">[];
 }
 
 export default function StandardQueueView() {
@@ -34,6 +35,9 @@ export default function StandardQueueView() {
   
   // Query for all jobs needing review
   const queueData = useQuery(api.fileQueue.getReviewQueueWithNav);
+  
+  // Get current user for linking
+  const currentUser = useQuery(api.users.getCurrent);
   
   // Mutations
   const fileDocument = useMutation(api.fileQueue.fileDocument);
@@ -52,12 +56,18 @@ export default function StandardQueueView() {
     summary: '',
     category: '',
     fileTypeDetected: '',
+    checklistItemIds: [],
   });
 
   // Update filing data when job changes
   useEffect(() => {
     if (currentJob?.analysisResult) {
       const analysis = currentJob.analysisResult;
+      // Pre-select AI-suggested checklist items with confidence > 70%
+      const suggestedIds = (analysis.suggestedChecklistItems || [])
+        .filter((item: { confidence: number }) => item.confidence >= 0.7)
+        .map((item: { itemId: string }) => item.itemId as Id<"knowledgeChecklistItems">);
+      
       setFilingData({
         clientId: null, // User must select
         projectId: null,
@@ -66,6 +76,7 @@ export default function StandardQueueView() {
         summary: analysis.summary || '',
         category: analysis.category || '',
         fileTypeDetected: analysis.fileTypeDetected || '',
+        checklistItemIds: suggestedIds,
       });
     } else {
       setFilingData({
@@ -76,6 +87,7 @@ export default function StandardQueueView() {
         summary: '',
         category: '',
         fileTypeDetected: '',
+        checklistItemIds: [],
       });
     }
   }, [currentJob?._id]);
@@ -105,9 +117,13 @@ export default function StandardQueueView() {
   // Handle filing
   const handleFile = async () => {
     if (!currentJob || !filingData.clientId || !filingData.folderId) return;
-    
+
     setIsFiling(true);
     try {
+      // Get extracted intelligence from analysis result if available
+      const analysisResult = currentJob.analysisResult as any;
+      const extractedIntelligence = analysisResult?.extractedIntelligence;
+
       await fileDocument({
         jobId: currentJob._id,
         clientId: filingData.clientId,
@@ -117,6 +133,16 @@ export default function StandardQueueView() {
         summary: filingData.summary || undefined,
         category: filingData.category || undefined,
         fileTypeDetected: filingData.fileTypeDetected || undefined,
+        // Knowledge Library checklist linking
+        checklistItemIds: filingData.checklistItemIds.length > 0
+          ? filingData.checklistItemIds
+          : undefined,
+        userId: currentUser?._id,
+        // Pass pre-extracted intelligence (Sprint 4+)
+        extractedIntelligence: extractedIntelligence ? {
+          fields: extractedIntelligence.fields || [],
+          insights: extractedIntelligence.insights,
+        } : undefined,
       });
       advanceToNext();
     } catch (error) {

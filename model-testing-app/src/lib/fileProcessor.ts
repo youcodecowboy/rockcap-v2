@@ -310,7 +310,7 @@ export async function convertSpreadsheetToMarkdown(file: File): Promise<string> 
 }
 
 export function validateFile(file: File): { valid: boolean; error?: string } {
-  const maxSize = 10 * 1024 * 1024; // 10MB
+  const maxSize = 100 * 1024 * 1024; // 100MB
   const allowedTypes = [
     'text/plain',
     'text/markdown',
@@ -320,18 +320,26 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-excel',
     'application/msword',
+    // Image types - handled separately by vision analysis
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/gif',
+    'image/webp',
+    'image/heic',
+    'image/heif',
   ];
-  
-  const allowedExtensions = ['.txt', '.md', '.pdf', '.doc', '.docx', '.csv', '.xlsx', '.xls'];
+
+  const allowedExtensions = ['.txt', '.md', '.pdf', '.doc', '.docx', '.csv', '.xlsx', '.xls', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'];
   const fileName = file.name.toLowerCase();
   const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
 
   if (file.size > maxSize) {
-    return { valid: false, error: 'File size exceeds 10MB limit' };
+    return { valid: false, error: 'File size exceeds 100MB limit' };
   }
 
   if (!allowedTypes.includes(file.type) && !hasValidExtension) {
-    return { valid: false, error: 'Unsupported file type. Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls' };
+    return { valid: false, error: 'Unsupported file type. Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls, .png, .jpg, .gif, .webp' };
   }
 
   return { valid: true };

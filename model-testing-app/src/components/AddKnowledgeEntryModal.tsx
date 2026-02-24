@@ -243,7 +243,7 @@ export default function AddKnowledgeEntryModal({
                       </label>
                       <p className="pl-1">or drag and drop</p>
                     </div>
-                    <p className="text-xs text-gray-500">PDF, DOC, DOCX, TXT up to 10MB</p>
+                    <p className="text-xs text-gray-500">PDF, DOC, DOCX, TXT up to 100MB</p>
                     {selectedFile && (
                       <p className="text-sm text-gray-900 mt-2">{selectedFile.name}</p>
                     )}

@@ -228,6 +228,27 @@ export const create = mutation({
       });
     }
 
+    // Initialize project intelligence
+    await ctx.scheduler.runAfter(0, api.intelligence.initializeProjectIntelligence, {
+      projectId,
+    });
+
+    // Sync project summaries to related clients
+    for (const cr of args.clientRoles) {
+      await ctx.scheduler.runAfter(0, api.intelligence.syncProjectSummariesToClient, {
+        clientId: cr.clientId,
+      });
+    }
+
+    // Initialize project checklist from template (for the primary client)
+    if (args.clientRoles.length > 0) {
+      await ctx.scheduler.runAfter(0, api.knowledgeLibrary.initializeChecklistForProject, {
+        clientId: args.clientRoles[0].clientId,
+        projectId,
+        clientType,
+      });
+    }
+
     return projectId;
   },
 });
@@ -615,9 +636,24 @@ export const deleteCustomProjectFolder = mutation({
     if (folderDocs.length > 0) {
       throw new Error(`Cannot delete folder "${folder.name}". It contains ${folderDocs.length} document(s). Move or delete them first.`);
     }
-    
+
+    // Defensive: Re-query and move any documents that might have been added
+    // between the check above and now (handles race conditions)
+    const finalDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_project", (q: any) => q.eq("projectId", folder.projectId))
+      .collect();
+
+    const orphanedDocs = finalDocs.filter(d => d.folderId === folder.folderType);
+    for (const doc of orphanedDocs) {
+      await ctx.db.patch(doc._id, {
+        folderId: "miscellaneous",
+        folderType: "project",
+      });
+    }
+
     await ctx.db.delete(args.folderId);
-    return { success: true };
+    return { success: true, movedDocuments: orphanedDocs.length };
   },
 });
 

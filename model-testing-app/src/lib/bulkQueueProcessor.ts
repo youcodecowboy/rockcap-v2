@@ -13,6 +13,66 @@ interface BulkQueueItem {
   file: File;
 }
 
+interface SuggestedChecklistItem {
+  itemId: Id<"knowledgeChecklistItems">;
+  itemName: string;
+  category: string;
+  confidence: number;
+  reasoning?: string;
+}
+
+// Pre-extracted intelligence field from bulk-analyze (Sprint 4+)
+interface ExtractedIntelligenceField {
+  fieldPath: string;
+  label: string;
+  category: string;
+  value: any;
+  valueType: "string" | "number" | "currency" | "date" | "percentage" | "array" | "text" | "boolean";
+  isCanonical: boolean;
+  confidence: number;
+  sourceText?: string;
+  originalLabel?: string;
+  matchedAlias?: string;
+}
+
+interface ExtractedIntelligence {
+  fields: ExtractedIntelligenceField[];
+  insights?: {
+    keyFindings?: string[];
+    risks?: Array<{ risk: string; severity?: string }>;
+  };
+}
+
+// Document analysis from Stage 1 Summary Agent
+interface DocumentAnalysis {
+  documentDescription: string;
+  documentPurpose: string;
+  entities: {
+    people: string[];
+    companies: string[];
+    locations: string[];
+    projects: string[];
+  };
+  keyTerms: string[];
+  keyDates: string[];
+  keyAmounts: string[];
+  executiveSummary: string;
+  detailedSummary: string;
+  sectionBreakdown?: string[];
+  documentCharacteristics: {
+    isFinancial: boolean;
+    isLegal: boolean;
+    isIdentity: boolean;
+    isReport: boolean;
+    isDesign: boolean;
+    isCorrespondence: boolean;
+    hasMultipleProjects: boolean;
+    isInternal: boolean;
+  };
+  rawContentType: string;
+  confidenceInAnalysis: number;
+}
+
 interface BulkAnalysisResult {
   summary: string;
   fileType: string;
@@ -20,6 +80,15 @@ interface BulkAnalysisResult {
   confidence: number;
   suggestedFolder: string;
   typeAbbreviation: string;
+  suggestedChecklistItems?: SuggestedChecklistItem[];
+}
+
+interface BulkAnalysisResponse {
+  success: boolean;
+  result: BulkAnalysisResult;
+  extractedIntelligence?: ExtractedIntelligence;
+  documentAnalysis?: DocumentAnalysis;
+  classificationReasoning?: string;
 }
 
 export interface BulkQueueProcessorCallbacks {
@@ -42,6 +111,10 @@ export interface BulkQueueProcessorCallbacks {
     version?: string;
     isDuplicate?: boolean;
     duplicateOfDocumentId?: Id<"documents">;
+    suggestedChecklistItems?: SuggestedChecklistItem[];
+    extractedIntelligence?: ExtractedIntelligence;
+    documentAnalysis?: DocumentAnalysis;
+    classificationReasoning?: string;
   }) => Promise<Id<"bulkUploadItems">>;
   
   updateBatchStatus: (args: {
@@ -52,19 +125,21 @@ export interface BulkQueueProcessorCallbacks {
   }) => Promise<Id<"bulkUploadBatches">>;
   
   checkForDuplicates: (args: {
-    projectShortcode: string;
-    category: string;
-    isInternal: boolean;
+    originalFileName: string;
+    clientId: string;
+    projectId?: string;
   }) => Promise<{
     isDuplicate: boolean;
+    hasExactMatch?: boolean;
+    hasSimilarMatch?: boolean;
     existingDocuments: Array<{
-      _id: Id<"documents">;
-      documentCode?: string;
-      version?: string;
+      documentId: string;
       fileName: string;
-      uploadedAt: string;
+      matchType: 'exact' | 'similar';
+      uploadedAt?: string;
+      folder?: string;
     }>;
-    latestVersion?: string;
+    message?: string | null;
   }>;
   
   // File storage
@@ -78,8 +153,10 @@ export interface BulkQueueProcessorCallbacks {
 
 export interface BatchInfo {
   batchId: Id<"bulkUploadBatches">;
+  clientId: Id<"clients">;
   clientName: string;
   clientType?: string;
+  projectId?: Id<"projects">;
   projectShortcode?: string;
   isInternal: boolean;
   instructions?: string;
@@ -249,6 +326,13 @@ export class BulkQueueProcessor {
     if (this.batchInfo.clientType) {
       formData.append("clientType", this.batchInfo.clientType);
     }
+    // Pass clientId and projectId for checklist matching
+    if (this.batchInfo.clientId) {
+      formData.append("clientId", this.batchInfo.clientId);
+    }
+    if (this.batchInfo.projectId) {
+      formData.append("projectId", this.batchInfo.projectId);
+    }
 
     const analyzeResponse = await fetch("/api/bulk-analyze", {
       method: "POST",
@@ -260,8 +344,13 @@ export class BulkQueueProcessor {
       throw new Error(errorData.error || "Analysis failed");
     }
 
-    const analyzeData = await analyzeResponse.json();
+    const analyzeData: BulkAnalysisResponse = await analyzeResponse.json();
     const result: BulkAnalysisResult = analyzeData.result;
+    const extractedIntelligence = analyzeData.extractedIntelligence;
+    const documentAnalysis = analyzeData.documentAnalysis;
+    const classificationReasoning = analyzeData.classificationReasoning;
+
+    console.log(`[BulkQueueProcessor] Received extractedIntelligence: ${!!extractedIntelligence}, fields: ${extractedIntelligence?.fields?.length || 0}`);
 
     // Generate document code
     let generatedDocumentCode: string | undefined;
@@ -274,17 +363,19 @@ export class BulkQueueProcessor {
       this.batchInfo.clientName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) || 
       'CLIENT';
 
-    // Check for duplicates
+    // Check for duplicates by original filename
     const duplicateCheck = await this.callbacks.checkForDuplicates({
-      projectShortcode: shortcode,
-      category: result.category,
-      isInternal: this.batchInfo.isInternal,
+      originalFileName: item.file.name,
+      clientId: this.batchInfo.clientId,
+      projectId: this.batchInfo.projectId,
     });
 
     if (duplicateCheck.isDuplicate && duplicateCheck.existingDocuments.length > 0) {
       isDuplicate = true;
-      duplicateOfDocumentId = duplicateCheck.existingDocuments[0]._id;
-      // Don't set version yet - user needs to choose minor/significant
+      // Store the first duplicate document ID for reference
+      duplicateOfDocumentId = duplicateCheck.existingDocuments[0].documentId as Id<"documents">;
+      // Log duplicate detection for visibility
+      console.log(`[Duplicate Check] ${item.file.name}: ${duplicateCheck.hasExactMatch ? 'EXACT MATCH' : 'SIMILAR MATCH'} found - ${duplicateCheck.message}`);
     }
 
     // Always generate document name
@@ -309,6 +400,13 @@ export class BulkQueueProcessor {
       version: isDuplicate ? undefined : version, // Don't set version for duplicates
       isDuplicate,
       duplicateOfDocumentId,
+      suggestedChecklistItems: result.suggestedChecklistItems,
+      // Pass pre-extracted intelligence (Sprint 4+)
+      extractedIntelligence: extractedIntelligence,
+      // Pass document analysis from Stage 1 Summary Agent
+      documentAnalysis: documentAnalysis,
+      // Pass classification reasoning from Stage 2
+      classificationReasoning: classificationReasoning,
     });
   }
 }

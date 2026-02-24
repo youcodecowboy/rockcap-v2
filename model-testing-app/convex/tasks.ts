@@ -466,6 +466,36 @@ export const getByProject = query({
   },
 });
 
+// Query: Get active task count by client (for display in tabs/overview)
+export const getActiveCountByClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+
+    return tasks.filter(t =>
+      t.status === "todo" || t.status === "in_progress"
+    ).length;
+  },
+});
+
+// Query: Get active task count by project (for display in tabs/overview)
+export const getActiveCountByProject = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+
+    return tasks.filter(t =>
+      t.status === "todo" || t.status === "in_progress"
+    ).length;
+  },
+});
+
 // Query: Get task metrics for current user
 export const getMetrics = query({
   args: {},

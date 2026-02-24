@@ -16,7 +16,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { X, Plus, Trash2, Upload } from 'lucide-react';
+import { X, Plus, Trash2, Upload, Sparkles, FolderOpen, FileType } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface FileTypeDefinitionModalProps {
   isOpen: boolean;
@@ -51,6 +58,12 @@ export default function FileTypeDefinitionModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [wordCount, setWordCount] = useState(0);
 
+  // Deterministic verification fields
+  const [targetFolderKey, setTargetFolderKey] = useState('');
+  const [targetLevel, setTargetLevel] = useState<'client' | 'project'>('project');
+  const [filenamePatterns, setFilenamePatterns] = useState<string[]>(['']);
+  const [excludePatterns, setExcludePatterns] = useState<string[]>(['']);
+
   // Load existing definition if editing
   useEffect(() => {
     if (mode === 'edit' && definition) {
@@ -66,6 +79,19 @@ export default function FileTypeDefinitionModal({
       setExampleFileStorageId(definition.exampleFileStorageId || null);
       const words = definition.description.trim().split(/\s+/).length;
       setWordCount(words);
+      // Load deterministic verification fields
+      setTargetFolderKey(definition.targetFolderKey || '');
+      setTargetLevel(definition.targetLevel || 'project');
+      setFilenamePatterns(
+        definition.filenamePatterns && definition.filenamePatterns.length > 0
+          ? definition.filenamePatterns
+          : ['']
+      );
+      setExcludePatterns(
+        definition.excludePatterns && definition.excludePatterns.length > 0
+          ? definition.excludePatterns
+          : ['']
+      );
     } else if (mode === 'create') {
       // Reset form for create mode
       setFileType('');
@@ -78,6 +104,11 @@ export default function FileTypeDefinitionModal({
       setExampleFile(null);
       setExampleFileStorageId(null);
       setWordCount(0);
+      // Reset deterministic verification fields
+      setTargetFolderKey('');
+      setTargetLevel('project');
+      setFilenamePatterns(['']);
+      setExcludePatterns(['']);
     }
   }, [mode, definition]);
 
@@ -116,6 +147,40 @@ export default function FileTypeDefinitionModal({
   const handleRemoveRule = (index: number) => {
     if (identificationRules.length > 1) {
       setIdentificationRules(identificationRules.filter((_, i) => i !== index));
+    }
+  };
+
+  // Filename pattern handlers
+  const handleFilenamePatternChange = (index: number, value: string) => {
+    const newPatterns = [...filenamePatterns];
+    newPatterns[index] = value;
+    setFilenamePatterns(newPatterns);
+  };
+
+  const handleAddFilenamePattern = () => {
+    setFilenamePatterns([...filenamePatterns, '']);
+  };
+
+  const handleRemoveFilenamePattern = (index: number) => {
+    if (filenamePatterns.length > 1) {
+      setFilenamePatterns(filenamePatterns.filter((_, i) => i !== index));
+    }
+  };
+
+  // Exclude pattern handlers
+  const handleExcludePatternChange = (index: number, value: string) => {
+    const newPatterns = [...excludePatterns];
+    newPatterns[index] = value;
+    setExcludePatterns(newPatterns);
+  };
+
+  const handleAddExcludePattern = () => {
+    setExcludePatterns([...excludePatterns, '']);
+  };
+
+  const handleRemoveExcludePattern = (index: number) => {
+    if (excludePatterns.length > 1) {
+      setExcludePatterns(excludePatterns.filter((_, i) => i !== index));
     }
   };
 
@@ -194,6 +259,8 @@ export default function FileTypeDefinitionModal({
       // Filter out empty keywords and rules
       const filteredKeywords = keywords.filter((k) => k.trim().length > 0);
       const filteredRules = identificationRules.filter((r) => r.trim().length > 0);
+      const filteredFilenamePatterns = filenamePatterns.filter((p) => p.trim().length > 0);
+      const filteredExcludePatterns = excludePatterns.filter((p) => p.trim().length > 0);
 
       if (mode === 'create') {
         await createDefinition({
@@ -206,6 +273,11 @@ export default function FileTypeDefinitionModal({
           categoryRules: categoryRules.trim() || undefined,
           exampleFileStorageId: finalExampleFileStorageId || undefined,
           exampleFileName: exampleFile?.name || undefined,
+          // Deterministic verification fields
+          targetFolderKey: targetFolderKey.trim() || undefined,
+          targetLevel: targetLevel || undefined,
+          filenamePatterns: filteredFilenamePatterns.length > 0 ? filteredFilenamePatterns : undefined,
+          excludePatterns: filteredExcludePatterns.length > 0 ? filteredExcludePatterns : undefined,
         });
       } else if (mode === 'edit' && definitionId) {
         await updateDefinition({
@@ -219,6 +291,11 @@ export default function FileTypeDefinitionModal({
           categoryRules: categoryRules.trim() || undefined,
           exampleFileStorageId: finalExampleFileStorageId || undefined,
           exampleFileName: exampleFile?.name || undefined,
+          // Deterministic verification fields
+          targetFolderKey: targetFolderKey.trim() || undefined,
+          targetLevel: targetLevel || undefined,
+          filenamePatterns: filteredFilenamePatterns.length > 0 ? filteredFilenamePatterns : undefined,
+          excludePatterns: filteredExcludePatterns.length > 0 ? filteredExcludePatterns : undefined,
         });
       }
 
@@ -344,6 +421,150 @@ export default function FileTypeDefinitionModal({
               </Button>
             </div>
           </div>
+
+          {/* Deterministic Verification Settings */}
+          <div className="border-t pt-4 mt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <FolderOpen className="w-4 h-4 text-blue-500" />
+              <Label className="text-sm font-medium">Filing Settings</Label>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Configure where documents of this type should be filed and how to match them by filename.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="targetFolderKey">Target Folder Key</Label>
+                <Input
+                  id="targetFolderKey"
+                  value={targetFolderKey}
+                  onChange={(e) => setTargetFolderKey(e.target.value)}
+                  placeholder="e.g., kyc, appraisals, background"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  The folder where documents of this type should be filed
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="targetLevel">Target Level</Label>
+                <Select value={targetLevel} onValueChange={(v) => setTargetLevel(v as 'client' | 'project')}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="client">Client Level</SelectItem>
+                    <SelectItem value="project">Project Level</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Client-level for identity docs, project-level for project-specific
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Filename Patterns */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <FileType className="w-4 h-4 text-green-500" />
+              <Label>Filename Patterns</Label>
+            </div>
+            <p className="text-xs text-gray-500 mb-2">
+              Patterns to match in filenames for quick identification (case-insensitive)
+            </p>
+            <div className="space-y-2">
+              {filenamePatterns.map((pattern, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    value={pattern}
+                    onChange={(e) => handleFilenamePatternChange(index, e.target.value)}
+                    placeholder="e.g., valuation, rics, market value"
+                  />
+                  {filenamePatterns.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveFilenamePattern(index)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={handleAddFilenamePattern}>
+                <Plus className="w-4 h-4 mr-1" />
+                Add Pattern
+              </Button>
+            </div>
+          </div>
+
+          {/* Exclude Patterns */}
+          <div>
+            <Label>Exclude Patterns</Label>
+            <p className="text-xs text-gray-500 mb-2">
+              Patterns to exclude (prevents false positives, e.g., &quot;template&quot;, &quot;guide&quot;)
+            </p>
+            <div className="space-y-2">
+              {excludePatterns.map((pattern, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    value={pattern}
+                    onChange={(e) => handleExcludePatternChange(index, e.target.value)}
+                    placeholder="e.g., template, guide, instructions"
+                  />
+                  {excludePatterns.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveExcludePattern(index)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={handleAddExcludePattern}>
+                <Plus className="w-4 h-4 mr-1" />
+                Add Exclusion
+              </Button>
+            </div>
+          </div>
+
+          {/* Learned Keywords (read-only display) */}
+          {mode === 'edit' && definition?.learnedKeywords && definition.learnedKeywords.length > 0 && (
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <Label className="text-sm font-medium">Auto-Learned Keywords</Label>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                Keywords automatically learned from user corrections
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {definition.learnedKeywords.map((lk, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-amber-50 text-amber-700 border border-amber-200"
+                  >
+                    {lk.keyword}
+                    {lk.correctionCount && (
+                      <span className="ml-1 text-xs text-amber-500">
+                        ({lk.correctionCount} corrections)
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
+              {definition.lastLearnedAt && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Last learned: {new Date(definition.lastLearnedAt).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Identification Rules */}
           <div>

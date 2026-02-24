@@ -21,8 +21,10 @@ import {
   FolderInput,
   Trash2,
   ExternalLink,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import DocumentNotesIndicator from '@/components/DocumentNotesIndicator';
 
 interface Document {
   _id: Id<"documents">;
@@ -36,6 +38,8 @@ interface Document {
   uploadedAt: string;
   clientName?: string;
   projectName?: string;
+  hasNotes?: boolean;
+  noteCount?: number;
 }
 
 interface FileCardProps {
@@ -46,6 +50,7 @@ interface FileCardProps {
   onDownload: () => void;
   onMove?: () => void;
   onDelete?: () => void;
+  onOpenReader?: () => void;
 }
 
 export default function FileCard({
@@ -56,6 +61,7 @@ export default function FileCard({
   onDownload,
   onMove,
   onDelete,
+  onOpenReader,
 }: FileCardProps) {
   const getFileIcon = () => {
     const type = document.fileType.toLowerCase();
@@ -141,6 +147,13 @@ export default function FileCard({
           </Badge>
         </div>
 
+        {/* Notes Indicator */}
+        {document.noteCount && document.noteCount > 0 && (
+          <div className="flex-shrink-0 hidden sm:block">
+            <DocumentNotesIndicator noteCount={document.noteCount} />
+          </div>
+        )}
+
         {/* Date */}
         <div className="flex-shrink-0 text-sm text-gray-500 hidden lg:block w-24">
           {formatDate(document.uploadedAt)}
@@ -169,6 +182,12 @@ export default function FileCard({
                 <Eye className="w-4 h-4 mr-2" />
                 View Details
               </DropdownMenuItem>
+              {onOpenReader && (
+                <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onOpenReader)}>
+                  <BookOpen className="w-4 h-4 mr-2" />
+                  Open in Reader
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDownload)}>
                 <Download className="w-4 h-4 mr-2" />
                 Download
@@ -181,7 +200,7 @@ export default function FileCard({
                 </DropdownMenuItem>
               )}
               {onDelete && (
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={(e) => handleDropdownAction(e as any, onDelete)}
                   className="text-red-600"
                 >
@@ -223,6 +242,12 @@ export default function FileCard({
               <Eye className="w-4 h-4 mr-2" />
               View Details
             </DropdownMenuItem>
+            {onOpenReader && (
+              <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onOpenReader)}>
+                <BookOpen className="w-4 h-4 mr-2" />
+                Open in Reader
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDownload)}>
               <Download className="w-4 h-4 mr-2" />
               Download
@@ -235,7 +260,7 @@ export default function FileCard({
               </DropdownMenuItem>
             )}
             {onDelete && (
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={(e) => handleDropdownAction(e as any, onDelete)}
                 className="text-red-600"
               >
@@ -269,6 +294,9 @@ export default function FileCard({
         <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getCategoryColor(document.category))}>
           {document.category}
         </Badge>
+        {document.noteCount && document.noteCount > 0 && (
+          <DocumentNotesIndicator noteCount={document.noteCount} size="sm" />
+        )}
       </div>
 
       {/* Footer */}

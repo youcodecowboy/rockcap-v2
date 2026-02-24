@@ -60,7 +60,7 @@ export default function ProjectFolderPage() {
             <ChevronRight className="w-4 h-4" />
             {client && (
               <>
-                <Link href={`/docs/client/${client._id}`} className="hover:text-gray-900">
+                <Link href={`/docs?clientId=${client._id}`} className="hover:text-gray-900">
                   {client.name}
                 </Link>
                 <ChevronRight className="w-4 h-4" />
@@ -76,7 +76,7 @@ export default function ProjectFolderPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push(client ? `/docs/client/${client._id}` : '/docs')}
+              onClick={() => router.push(client ? `/docs?clientId=${client._id}` : '/docs')}
               className="mr-2"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -89,7 +89,7 @@ export default function ProjectFolderPage() {
                 {client && (
                   <>
                     <Building2 className="w-4 h-4" />
-                    <Link href={`/docs/client/${client._id}`} className="hover:text-blue-600">
+                    <Link href={`/docs?clientId=${client._id}`} className="hover:text-blue-600">
                       {client.name}
                     </Link>
                     <span>•</span>

@@ -31,11 +31,13 @@ import {
   Plus,
   Trash2,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 interface FolderSelection {
-  type: 'client' | 'project';
+  type: 'client' | 'project' | 'internal' | 'personal';
   folderId: string;
   folderName: string;
   projectId?: Id<"projects">;
@@ -47,6 +49,7 @@ interface FolderBrowserProps {
   clientType?: string;
   selectedFolder: FolderSelection | null;
   onFolderSelect: (folder: FolderSelection | null) => void;
+  projectFilter?: Id<"projects">;
 }
 
 interface FolderWithCount {
@@ -281,13 +284,30 @@ export default function FolderBrowser({
     <div className="w-[320px] min-w-[320px] border-r border-gray-200 bg-white flex flex-col h-full">
       {/* Client Header */}
       <div className="p-3 border-b border-gray-200 bg-gray-50">
-        <div className="font-semibold text-gray-900 truncate">{clientName}</div>
+        <div className="flex items-center gap-2">
+          <div className="font-semibold text-gray-900 truncate flex-1">{clientName}</div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href={`/clients/${clientId}`}
+                  className="p-1 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-gray-500 hover:text-gray-700" />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>View client profile</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         {clientType && (
-          <Badge 
-            variant="outline" 
+          <Badge
+            variant="outline"
             className={cn(
               "text-xs mt-1",
-              clientType.toLowerCase() === 'lender' 
+              clientType.toLowerCase() === 'lender'
                 ? "bg-blue-50 text-blue-700 border-blue-200"
                 : "bg-green-50 text-green-700 border-green-200"
             )}

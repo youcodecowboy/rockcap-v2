@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
+import { Id } from "../_generated/dataModel";
 import {
     cleanArgs as cleanArgsUtil,
     parseCreatedAt,
@@ -278,14 +279,14 @@ export const syncDealFromHubSpot = mutation({
     }
     
     // Try to find associated clients by HubSpot company ID
-    const clientRoles: Array<{ clientId: string; role: string }> = [];
+    const clientRoles: Array<{ clientId: Id<"clients">; role: string }> = [];
     if (associatedCompanyIds && associatedCompanyIds.length > 0) {
       for (const companyId of associatedCompanyIds) {
         const client = await ctx.db
           .query("clients")
           .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotCompanyId", companyId))
           .first();
-        
+
         if (client) {
           clientRoles.push({
             clientId: client._id,

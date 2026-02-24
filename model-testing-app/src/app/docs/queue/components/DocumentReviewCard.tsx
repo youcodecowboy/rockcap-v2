@@ -19,8 +19,32 @@ import {
   Image as ImageIcon,
   File,
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  Circle,
+  Sparkles,
+  Lightbulb,
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import FilingPreview from './FilingPreview';
+import { FILE_CATEGORIES } from '@/lib/categories';
+
+interface SuggestedChecklistItem {
+  itemId: string;
+  itemName: string;
+  category: string;
+  confidence: number;
+  reasoning?: string;
+}
+
+interface AvailableChecklistItem {
+  _id: string;
+  name: string;
+  category: string;
+  status: string;
+  linkedDocumentCount: number;
+}
 
 interface Job {
   _id: Id<"fileUploadQueue">;
@@ -37,7 +61,9 @@ interface Job {
     suggestedProjectName?: string;
     confidence?: number;
     reasoning?: string;
+    suggestedChecklistItems?: SuggestedChecklistItem[];
   };
+  availableChecklistItems?: AvailableChecklistItem[];
   status: string;
   createdAt: string;
 }
@@ -50,6 +76,7 @@ interface FilingData {
   summary: string;
   category: string;
   fileTypeDetected: string;
+  checklistItemIds: Id<"knowledgeChecklistItems">[];
 }
 
 interface DocumentReviewCardProps {
@@ -89,6 +116,49 @@ export default function DocumentReviewCard({
     api.projects.getProjectFolders,
     filingData.projectId ? { projectId: filingData.projectId } : "skip"
   );
+
+  // State for checklist section
+  const [checklistExpanded, setChecklistExpanded] = useState(false);
+
+  // Get available checklist items (from job or fetch them)
+  const availableChecklistItems = job.availableChecklistItems || [];
+  const suggestedChecklistItems = job.analysisResult?.suggestedChecklistItems || [];
+
+  // Auto-expand if there are AI suggestions
+  useEffect(() => {
+    if (suggestedChecklistItems.length > 0) {
+      setChecklistExpanded(true);
+    }
+  }, [suggestedChecklistItems.length]);
+
+  // Group checklist items by category
+  const groupedChecklistItems = availableChecklistItems.reduce((acc, item) => {
+    if (!acc[item.category]) {
+      acc[item.category] = [];
+    }
+    acc[item.category].push(item);
+    return acc;
+  }, {} as Record<string, typeof availableChecklistItems>);
+
+  // Check if an item is suggested by AI
+  const getSuggestion = (itemId: string) => 
+    suggestedChecklistItems.find(s => s.itemId === itemId);
+
+  // Toggle checklist item selection
+  const toggleChecklistItem = (itemId: string) => {
+    const currentIds = filingData.checklistItemIds || [];
+    const isSelected = currentIds.includes(itemId as Id<"knowledgeChecklistItems">);
+    
+    if (isSelected) {
+      onFilingDataChange({
+        checklistItemIds: currentIds.filter(id => id !== itemId),
+      });
+    } else {
+      onFilingDataChange({
+        checklistItemIds: [...currentIds, itemId as Id<"knowledgeChecklistItems">],
+      });
+    }
+  };
 
   // Get file icon based on type
   const getFileIcon = () => {
@@ -220,15 +290,9 @@ export default function DocumentReviewCard({
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Appraisals">Appraisals</SelectItem>
-                <SelectItem value="Terms">Terms</SelectItem>
-                <SelectItem value="Credit">Credit</SelectItem>
-                <SelectItem value="Financial">Financial</SelectItem>
-                <SelectItem value="Legal">Legal</SelectItem>
-                <SelectItem value="Correspondence">Correspondence</SelectItem>
-                <SelectItem value="KYC">KYC</SelectItem>
-                <SelectItem value="Notes">Notes</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
+                {FILE_CATEGORIES.map((category) => (
+                  <SelectItem key={category} value={category}>{category}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -323,6 +387,157 @@ export default function DocumentReviewCard({
             </div>
           )}
         </div>
+
+        {/* Knowledge Library Checklist (Optional) */}
+        {filingData.clientId && availableChecklistItems.length > 0 && (
+          <div className="bg-white rounded-lg border overflow-hidden">
+            {/* Collapsible Header */}
+            <button
+              onClick={() => setChecklistExpanded(!checklistExpanded)}
+              className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Lightbulb className="w-4 h-4 text-amber-500" />
+                <h3 className="font-semibold text-gray-900">Knowledge Library</h3>
+                <Badge variant="outline" className="text-xs">Optional</Badge>
+                {filingData.checklistItemIds.length > 0 && (
+                  <Badge className="bg-blue-100 text-blue-700 text-xs">
+                    {filingData.checklistItemIds.length} selected
+                  </Badge>
+                )}
+              </div>
+              {checklistExpanded ? (
+                <ChevronUp className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+
+            {/* Expanded Content */}
+            {checklistExpanded && (
+              <div className="p-4 pt-0 space-y-4 border-t">
+                <p className="text-xs text-gray-500">
+                  Link this document to checklist requirements. Most documents don't need linking.
+                </p>
+
+                {/* AI Suggestions */}
+                {suggestedChecklistItems.length > 0 && (
+                  <div className="bg-amber-50 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-amber-800">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      AI Suggestions
+                    </div>
+                    {suggestedChecklistItems.map((suggestion) => {
+                      const isSelected = filingData.checklistItemIds.includes(
+                        suggestion.itemId as Id<"knowledgeChecklistItems">
+                      );
+                      return (
+                        <div
+                          key={suggestion.itemId}
+                          className="flex items-start gap-2 text-sm"
+                        >
+                          <Checkbox
+                            id={`suggestion-${suggestion.itemId}`}
+                            checked={isSelected}
+                            onCheckedChange={() => toggleChecklistItem(suggestion.itemId)}
+                            className="mt-0.5"
+                          />
+                          <label
+                            htmlFor={`suggestion-${suggestion.itemId}`}
+                            className="flex-1 cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-amber-900">
+                                {suggestion.itemName}
+                              </span>
+                              <Badge variant="outline" className="text-[10px] h-4">
+                                {Math.round(suggestion.confidence * 100)}% match
+                              </Badge>
+                            </div>
+                            {suggestion.reasoning && (
+                              <p className="text-xs text-amber-700 mt-0.5">
+                                {suggestion.reasoning}
+                              </p>
+                            )}
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* All Checklist Items by Category */}
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {Object.entries(groupedChecklistItems).map(([category, items]) => (
+                    <div key={category}>
+                      <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                        {category}
+                      </h4>
+                      <div className="space-y-1">
+                        {items.map((item) => {
+                          const isSelected = filingData.checklistItemIds.includes(
+                            item._id as Id<"knowledgeChecklistItems">
+                          );
+                          const suggestion = getSuggestion(item._id);
+                          const isFulfilled = item.status === 'fulfilled';
+                          
+                          return (
+                            <div
+                              key={item._id}
+                              className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
+                                isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <Checkbox
+                                id={`checklist-${item._id}`}
+                                checked={isSelected}
+                                onCheckedChange={() => toggleChecklistItem(item._id)}
+                              />
+                              <label
+                                htmlFor={`checklist-${item._id}`}
+                                className="flex-1 flex items-center gap-2 cursor-pointer text-sm"
+                              >
+                                {isFulfilled ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                                ) : (
+                                  <Circle className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+                                )}
+                                <span className={isFulfilled ? 'text-gray-500' : 'text-gray-700'}>
+                                  {item.name}
+                                </span>
+                                {isFulfilled && (
+                                  <Badge variant="outline" className="text-[10px] h-4 text-green-600">
+                                    {item.linkedDocumentCount} doc{item.linkedDocumentCount !== 1 ? 's' : ''}
+                                  </Badge>
+                                )}
+                                {suggestion && !suggestedChecklistItems.some(s => s.itemId === item._id) && (
+                                  <Badge className="text-[10px] h-4 bg-amber-100 text-amber-700">
+                                    AI match
+                                  </Badge>
+                                )}
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Selection Summary */}
+                <div className="text-xs text-gray-500 pt-2 border-t">
+                  {filingData.checklistItemIds.length === 0 ? (
+                    <span>No checklist items selected — document will be filed without linking</span>
+                  ) : (
+                    <span>
+                      {filingData.checklistItemIds.length} item{filingData.checklistItemIds.length !== 1 ? 's' : ''} will be marked as fulfilled
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Filing Preview */}
         <FilingPreview

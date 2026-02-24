@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 
 // ============================================================================
 // HELPERS
@@ -85,9 +86,12 @@ export const getProjectLibrary = query({
         };
       }
       
-      // Add currency values to total
+      // Add currency values to total - EXCLUDE subtotals to avoid double-counting
       if (item.currentDataType === 'currency' && typeof item.currentValueNormalized === 'number') {
-        categoryTotals[item.category].total += item.currentValueNormalized;
+        // Only add to total if NOT a subtotal
+        if (!item.isSubtotal) {
+          categoryTotals[item.category].total += item.currentValueNormalized;
+        }
       }
       categoryTotals[item.category].itemCount++;
     }
@@ -237,6 +241,53 @@ export const getDeletedItems = query({
       .collect();
     
     return items.filter(item => item.isDeleted);
+  },
+});
+
+/**
+ * Get pending extractions status for a project
+ * Shows if there are extractions awaiting confirmation in the Modeling section
+ */
+export const getPendingExtractions = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    // Get extractions for this project
+    const extractions = await ctx.db
+      .query("codifiedExtractions")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    
+    // Get extraction jobs (queued but not yet processed)
+    const jobs = await ctx.db
+      .query("extractionJobs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    
+    const pendingJobs = jobs.filter(j => j.status === "pending" || j.status === "processing");
+    const failedJobs = jobs.filter(j => j.status === "failed");
+    
+    // Categorize extractions
+    const unconfirmed = extractions.filter(e => !e.isFullyConfirmed);
+    const confirmedNotMerged = extractions.filter(e => e.isFullyConfirmed && !e.mergedToProjectLibrary);
+    const fullyMerged = extractions.filter(e => e.mergedToProjectLibrary);
+    
+    // Calculate totals
+    const unconfirmedItemCount = unconfirmed.reduce((sum, e) => sum + (e.items?.length || 0), 0);
+    const pendingMergeItemCount = confirmedNotMerged.reduce((sum, e) => sum + (e.items?.length || 0), 0);
+    
+    return {
+      hasUnconfirmed: unconfirmed.length > 0,
+      unconfirmedCount: unconfirmed.length,
+      unconfirmedItemCount,
+      hasPendingMerge: confirmedNotMerged.length > 0,
+      pendingMergeCount: confirmedNotMerged.length,
+      pendingMergeItemCount,
+      totalExtractions: extractions.length,
+      fullyMergedCount: fullyMerged.length,
+      pendingJobCount: pendingJobs.length,
+      failedJobCount: failedJobs.length,
+      needsAttention: unconfirmed.length > 0 || pendingJobs.length > 0 || failedJobs.length > 0,
+    };
   },
 });
 
@@ -426,6 +477,9 @@ export const mergeExtractionToLibrary = mutation({
           lastUpdatedBy: "extraction",
           hasMultipleSources: false,
           valueHistory: [historyEntry],
+          // Subtotal detection - carry over from extraction
+          isSubtotal: item.isSubtotal,
+          subtotalReason: item.subtotalReason,
         });
         
         created++;
@@ -437,6 +491,23 @@ export const mergeExtractionToLibrary = mutation({
       mergedToProjectLibrary: true,
       mergedAt: now,
     });
+    
+    // Trigger sync to project intelligence
+    if (created + updated > 0) {
+      await ctx.scheduler.runAfter(0, api.intelligence.syncDataLibraryToIntelligence, {
+        projectId: args.projectId,
+      });
+      
+      // Also sync project summaries to any associated clients
+      const project = await ctx.db.get(args.projectId);
+      if (project?.clientRoles) {
+        for (const role of project.clientRoles) {
+          await ctx.scheduler.runAfter(0, api.intelligence.syncProjectSummariesToClient, {
+            clientId: role.clientId as Id<"clients">,
+          });
+        }
+      }
+    }
     
     return { merged: created + updated, updated, created };
   },
@@ -912,6 +983,112 @@ export const getCategoryTotalCodeQuery = query({
   args: { category: v.string() },
   handler: async (ctx, args) => {
     return getCategoryTotalCode(args.category);
+  },
+});
+
+/**
+ * Get all project data items for projects associated with a client
+ * Aggregates data from all projects where the client has a role
+ */
+export const getClientDataLibrary = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    // Get all projects where this client has a role
+    const allProjects = await ctx.db.query("projects").collect();
+    const clientProjects = allProjects.filter(project => 
+      project.clientRoles?.some(role => role.clientId === args.clientId)
+    );
+    
+    if (clientProjects.length === 0) {
+      return { items: [], projectBreakdown: [] };
+    }
+    
+    // Get project data items for all these projects
+    const allItems: any[] = [];
+    const projectBreakdown: { projectId: Id<"projects">; projectName: string; itemCount: number }[] = [];
+    
+    for (const project of clientProjects) {
+      const items = await ctx.db
+        .query("projectDataItems")
+        .withIndex("by_project", (q) => q.eq("projectId", project._id))
+        .collect();
+      
+      const activeItems = items.filter(item => !item.isDeleted);
+      
+      // Add project info to each item for context
+      const itemsWithProject = activeItems.map(item => ({
+        ...item,
+        projectName: project.name,
+      }));
+      
+      allItems.push(...itemsWithProject);
+      
+      projectBreakdown.push({
+        projectId: project._id,
+        projectName: project.name,
+        itemCount: activeItems.length,
+      });
+    }
+    
+    return { 
+      items: allItems, 
+      projectBreakdown,
+      totalItems: allItems.length,
+      totalProjects: clientProjects.length,
+    };
+  },
+});
+
+/**
+ * Get library stats for a client (aggregated from all their projects)
+ */
+export const getClientLibraryStats = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    // Get all projects where this client has a role
+    const allProjects = await ctx.db.query("projects").collect();
+    const clientProjects = allProjects.filter(project => 
+      project.clientRoles?.some(role => role.clientId === args.clientId)
+    );
+    
+    if (clientProjects.length === 0) {
+      return {
+        totalItems: 0,
+        totalProjects: 0,
+        byCategory: {},
+        byProject: {},
+      };
+    }
+    
+    let totalItems = 0;
+    const byCategory: Record<string, number> = {};
+    const byProject: Record<string, { name: string; count: number }> = {};
+    
+    for (const project of clientProjects) {
+      const items = await ctx.db
+        .query("projectDataItems")
+        .withIndex("by_project", (q) => q.eq("projectId", project._id))
+        .collect();
+      
+      const activeItems = items.filter(item => !item.isDeleted);
+      totalItems += activeItems.length;
+      
+      byProject[project._id] = {
+        name: project.name,
+        count: activeItems.length,
+      };
+      
+      for (const item of activeItems) {
+        byCategory[item.category] = (byCategory[item.category] || 0) + 1;
+      }
+    }
+    
+    return {
+      totalItems,
+      totalProjects: clientProjects.length,
+      byCategory,
+      byProject,
+    };
   },
 });
 

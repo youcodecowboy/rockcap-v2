@@ -8,6 +8,7 @@ import { Id } from '../../../../../../../convex/_generated/dataModel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import {
   Building2,
   FileText,
@@ -15,6 +16,12 @@ import {
   ExternalLink,
   Briefcase,
   MapPin,
+  CheckSquare,
+  CheckCircle2,
+  Clock,
+  Circle,
+  AlertCircle,
+  Pencil,
 } from 'lucide-react';
 
 interface ProjectOverviewTabProps {
@@ -24,6 +31,7 @@ interface ProjectOverviewTabProps {
   client: any;
   documents: any[];
   clientRoles: any[];
+  onOpenSettings?: () => void;
 }
 
 export default function ProjectOverviewTab({
@@ -33,11 +41,38 @@ export default function ProjectOverviewTab({
   client,
   documents,
   clientRoles,
+  onOpenSettings,
 }: ProjectOverviewTabProps) {
   const router = useRouter();
 
   // Get all clients associated with this project
   const allClients = useQuery(api.clients.list, {}) || [];
+  
+  // Get project checklist
+  const projectChecklist = useQuery(api.knowledgeLibrary.getChecklistByProject, { projectId }) || [];
+  
+  // Calculate checklist stats
+  const checklistStats = useMemo(() => {
+    const total = projectChecklist.length;
+    const fulfilled = projectChecklist.filter((i: any) => i.status === 'fulfilled').length;
+    const pendingReview = projectChecklist.filter((i: any) => i.status === 'pending_review').length;
+    const missing = projectChecklist.filter((i: any) => i.status === 'missing').length;
+    const percentage = total > 0 ? Math.round((fulfilled / total) * 100) : 0;
+    
+    // Group by category
+    const byCategory: Record<string, { fulfilled: number; total: number }> = {};
+    projectChecklist.forEach((item: any) => {
+      if (!byCategory[item.category]) {
+        byCategory[item.category] = { fulfilled: 0, total: 0 };
+      }
+      byCategory[item.category].total++;
+      if (item.status === 'fulfilled') {
+        byCategory[item.category].fulfilled++;
+      }
+    });
+    
+    return { total, fulfilled, pendingReview, missing, percentage, byCategory };
+  }, [projectChecklist]);
   
   // Map client roles to full client data
   const clientsWithRoles = useMemo(() => {
@@ -82,14 +117,25 @@ export default function ProjectOverviewTab({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Project Information */}
-      <Card className="lg:col-span-1">
-        <CardHeader className="py-3">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Briefcase className="w-4 h-4" />
             Project Information
           </CardTitle>
+          {onOpenSettings && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={onOpenSettings}
+            >
+              <Pencil className="w-3 h-3 mr-1" />
+              Edit
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
@@ -159,8 +205,97 @@ export default function ProjectOverviewTab({
         </CardContent>
       </Card>
 
+      {/* Checklist Progress */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between py-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CheckSquare className="w-4 h-4" />
+            Document Checklist
+          </CardTitle>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            className="text-xs"
+            onClick={() => router.push(`/clients/${clientId}/projects/${projectId}?tab=checklist`)}
+          >
+            View All
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {checklistStats.total === 0 ? (
+            <p className="text-gray-500 text-sm text-center py-4">No checklist items yet</p>
+          ) : (
+            <div className="space-y-4">
+              {/* Overall Progress */}
+              <div>
+                <div className="flex items-center justify-between text-sm mb-2">
+                  <span className="text-gray-600">Overall Completion</span>
+                  <span className="font-medium">{checklistStats.percentage}%</span>
+                </div>
+                <Progress value={checklistStats.percentage} className="h-2" />
+                <p className="text-xs text-gray-500 mt-1">
+                  {checklistStats.fulfilled} of {checklistStats.total} documents
+                </p>
+              </div>
+
+              {/* Status Breakdown */}
+              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-gray-100">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span className="text-lg font-semibold text-green-700">{checklistStats.fulfilled}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500">Fulfilled</p>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    <span className="text-lg font-semibold text-amber-700">{checklistStats.pendingReview}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500">Pending</p>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Circle className="w-4 h-4 text-gray-400" />
+                    <span className="text-lg font-semibold text-gray-700">{checklistStats.missing}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500">Missing</p>
+                </div>
+              </div>
+
+              {/* Top Categories */}
+              {Object.keys(checklistStats.byCategory).length > 0 && (
+                <div className="pt-2 border-t border-gray-100">
+                  <p className="text-xs font-medium text-gray-500 mb-2">By Category</p>
+                  <div className="space-y-1.5">
+                    {Object.entries(checklistStats.byCategory).slice(0, 4).map(([category, stats]) => (
+                      <div key={category} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600 truncate flex-1">{category}</span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {stats.fulfilled}/{stats.total}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Alert if many missing */}
+              {checklistStats.missing > 3 && (
+                <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-50 border border-amber-100">
+                  <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700">
+                    {checklistStats.missing} documents still missing. Use the checklist tab to request them.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Associated Clients */}
-      <Card className="lg:col-span-1">
+      <Card>
         <CardHeader className="py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Building2 className="w-4 h-4" />
@@ -216,7 +351,7 @@ export default function ProjectOverviewTab({
       </Card>
 
       {/* Recent Documents */}
-      <Card className="lg:col-span-1">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <FileText className="w-4 h-4" />

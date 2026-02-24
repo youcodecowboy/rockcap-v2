@@ -270,7 +270,7 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
             Drag and drop files here, or click to select
           </p>
           <p className="text-xs text-gray-500">
-            Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls (max 10MB per file)
+            Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls (max 100MB per file)
           </p>
           <p className="text-xs text-gray-500">
             {!isReady 

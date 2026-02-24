@@ -6,6 +6,9 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
   '/login(.*)',
   '/signup(.*)',
+  '/api/test-feedback-loop(.*)', // Test endpoint for feedback loop verification
+  '/api/process-meeting-queue(.*)', // Meeting extraction queue processor
+  '/api/process-intelligence-queue(.*)', // Intelligence extraction queue processor
 ])
 
 export default clerkMiddleware(async (auth, request) => {
