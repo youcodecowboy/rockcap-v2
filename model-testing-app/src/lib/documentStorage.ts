@@ -123,75 +123,23 @@ export function useDeleteInternalDocumentFolder() {
   return useMutation(api.internalDocuments.deleteFolder);
 }
 
-// Legacy compatibility functions
-export function getLibrary(): SavedDocument[] {
-  console.warn("getLibrary() is deprecated. Use useDocuments() hook instead.");
-  return [];
-}
+// =============================================================================
+// DEPRECATED: Legacy plain functions (V3 era)
+// =============================================================================
+// Still exported because legacy pages (prospects/, dataAggregation) import them.
+// They are no-ops returning empty data. New code must use the Convex hooks above.
+// TODO: Remove once legacy pages are migrated to Convex hooks.
 
-export function saveDocument(
-  file: FileMetadata,
-  analysisResult: AnalysisResult,
-  fileContent?: string,
-  fileContentType?: string
-): SavedDocument {
-  console.warn("saveDocument() is deprecated. Use useCreateDocument() hook instead.");
-  throw new Error("saveDocument() is deprecated. Use useCreateDocument() hook in a React component.");
-}
-
-export function deleteDocument(id: string): void {
-  console.warn("deleteDocument() is deprecated. Use useDeleteDocument() hook instead.");
-}
-
-export function getDocumentById(id: string): SavedDocument | undefined {
-  console.warn("getDocumentById() is deprecated. Use useDocument() hook instead.");
-  return undefined;
-}
-
-export function searchLibrary(query: string, fileType?: string, category?: string): SavedDocument[] {
-  console.warn("searchLibrary() is deprecated. Use useSearchDocuments() hook instead.");
-  return [];
-}
-
-export function getUniqueFileTypes(): string[] {
-  console.warn("getUniqueFileTypes() is deprecated. Use useUniqueFileTypes() hook instead.");
-  return [];
-}
-
-export function getUniqueCategories(): string[] {
-  console.warn("getUniqueCategories() is deprecated. Use useUniqueCategories() hook instead.");
-  return [];
-}
-
-export function getDocumentsByClient(clientId: string): SavedDocument[] {
-  console.warn("getDocumentsByClient() is deprecated. Use useDocumentsByClient() hook instead.");
-  return [];
-}
-
-export function getDocumentsByProject(projectId: string): SavedDocument[] {
-  console.warn("getDocumentsByProject() is deprecated. Use useDocumentsByProject() hook instead.");
-  return [];
-}
-
-export function getInternalDocuments(): SavedDocument[] {
-  console.warn("getInternalDocuments() is deprecated. Use useInternalDocuments() hook instead.");
-  return [];
-}
-
-export function updateDocumentClientProject(
-  documentId: string,
-  clientId: string | null,
-  projectId: string | null
-): void {
-  console.warn("updateDocumentClientProject() is deprecated. Use useUpdateDocument() hook instead.");
-}
-
-export function getDocumentFileContent(documentId: string): { content: string; contentType: string } | null {
-  console.warn("getDocumentFileContent() is deprecated. Use Convex file storage API directly.");
-  return null;
-}
-
-export function getDocumentFileUrl(documentId: string): string | null {
-  console.warn("getDocumentFileUrl() is deprecated. Use Convex file storage API directly.");
-  return null;
-}
+/** @deprecated Use useDocuments() hook */ export function getLibrary(): SavedDocument[] { return []; }
+/** @deprecated Use useCreateDocument() hook */ export function saveDocument(_file: FileMetadata, _analysisResult: AnalysisResult, _fileContent?: string, _fileContentType?: string): SavedDocument { throw new Error("Deprecated"); }
+/** @deprecated Use useDeleteDocument() hook */ export function deleteDocument(_id: string): void {}
+/** @deprecated Use useDocument() hook */ export function getDocumentById(_id: string): SavedDocument | undefined { return undefined; }
+/** @deprecated Use useSearchDocuments() hook */ export function searchLibrary(_query: string, _fileType?: string, _category?: string): SavedDocument[] { return []; }
+/** @deprecated Use useUniqueFileTypes() hook */ export function getUniqueFileTypes(): string[] { return []; }
+/** @deprecated Use useUniqueCategories() hook */ export function getUniqueCategories(): string[] { return []; }
+/** @deprecated Use useDocumentsByClient() hook */ export function getDocumentsByClient(_clientId: string): SavedDocument[] { return []; }
+/** @deprecated Use useDocumentsByProject() hook */ export function getDocumentsByProject(_projectId: string): SavedDocument[] { return []; }
+/** @deprecated Use useInternalDocuments() hook */ export function getInternalDocuments(): SavedDocument[] { return []; }
+/** @deprecated Use useUpdateDocument() hook */ export function updateDocumentClientProject(_documentId: string, _clientId: string | null, _projectId: string | null): void {}
+/** @deprecated Use Convex file storage API */ export function getDocumentFileContent(_documentId: string): { content: string; contentType: string } | null { return null; }
+/** @deprecated Use Convex file storage API */ export function getDocumentFileUrl(_documentId: string): string | null { return null; }

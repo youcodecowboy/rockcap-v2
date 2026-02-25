@@ -157,12 +157,26 @@ export default function FileDetailPanel({
     setAnalyzeError(null);
 
     try {
-      const response = await fetch('/api/reanalyze-document', {
+      // Fetch the file from storage to re-analyze via V4 pipeline
+      if (!fileUrl) {
+        throw new Error('File not available for analysis');
+      }
+
+      const fileResponse = await fetch(fileUrl);
+      if (!fileResponse.ok) throw new Error('Failed to fetch file');
+      const blob = await fileResponse.blob();
+
+      const formData = new FormData();
+      formData.append('file', new File([blob], document.fileName, { type: document.fileType }));
+      if (document.clientId) {
+        formData.append('metadata', JSON.stringify({
+          clientContext: { clientId: document.clientId },
+        }));
+      }
+
+      const response = await fetch('/api/v4-analyze', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ documentId: document._id }),
+        body: formData,
       });
 
       if (!response.ok) {
@@ -170,7 +184,7 @@ export default function FileDetailPanel({
         throw new Error(data.error || 'Analysis failed');
       }
 
-      // Trigger refresh
+      // Trigger refresh — the Convex live query will pick up updated document data
       onAnalysisComplete?.();
     } catch (error) {
       console.error('Analysis error:', error);
@@ -273,6 +287,7 @@ export default function FileDetailPanel({
                      document.fileType.toLowerCase().includes('image');
 
   const hasAnalysis = !!document.documentAnalysis;
+  const hasSummary = hasAnalysis || !!document.summary;
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -297,7 +312,7 @@ export default function FileDetailPanel({
                     <TabsTrigger value="details" className="text-xs px-2 py-1.5">
                       Details
                     </TabsTrigger>
-                    <TabsTrigger value="summary" className="text-xs px-2 py-1.5" disabled={!hasAnalysis}>
+                    <TabsTrigger value="summary" className="text-xs px-2 py-1.5" disabled={!hasSummary}>
                       Summary
                     </TabsTrigger>
                     <TabsTrigger value="entities" className="text-xs px-2 py-1.5" disabled={!hasAnalysis}>
@@ -500,7 +515,7 @@ export default function FileDetailPanel({
 
                 {/* Summary Tab */}
                 <TabsContent value="summary" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
-                  {hasAnalysis && (
+                  {hasAnalysis ? (
                     <>
                       <div>
                         <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1.5">Executive Summary</div>
@@ -527,7 +542,27 @@ export default function FileDetailPanel({
                         </>
                       )}
                     </>
-                  )}
+                  ) : document.summary ? (
+                    <>
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1.5">Summary</div>
+                        <p className="text-sm text-gray-900 leading-relaxed">
+                          {document.summary}
+                        </p>
+                      </div>
+                      {document.classificationReasoning && (
+                        <>
+                          <Separator />
+                          <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                            <div className="text-xs text-blue-700 uppercase tracking-wide font-medium mb-1.5">Classification Reasoning</div>
+                            <p className="text-xs text-blue-800 leading-relaxed">
+                              {document.classificationReasoning}
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  ) : null}
                 </TabsContent>
 
                 {/* Entities Tab */}

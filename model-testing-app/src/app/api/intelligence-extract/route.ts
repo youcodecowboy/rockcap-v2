@@ -17,13 +17,8 @@ import {
 export const runtime = 'nodejs';
 export const maxDuration = 120; // 2 minutes for extraction
 
-// OpenAI configuration - using GPT-4o for better extraction quality
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_MODEL = 'gpt-4o';
-
-// Fallback to Together AI if OpenAI not available
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const TOGETHER_MODEL = 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
+// V4: Use Anthropic Claude for extraction (replaces Together.ai + OpenAI)
+const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 
 interface ExtractedField {
   fieldPath: string;  // This will be the label from extraction, normalized later
@@ -114,7 +109,7 @@ async function runIntelligenceExtraction(
   documentType: string,
   documentCategory: string,
   targetType: 'project' | 'client',
-  togetherApiKey: string,
+  _apiKey: string, // Kept for signature compat; Anthropic key read from env
   isTextInput: boolean = false,
   fieldHints?: string[]
 ): Promise<ExtractionResult> {
@@ -269,45 +264,41 @@ Respond with a JSON object in this exact format:
 Only include fields and attributes where you have confidence >= 0.5.
 For insights, identify 2-5 key findings and any risks mentioned in the document.`;
 
-  // Prefer OpenAI GPT-4o for better extraction quality
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  const useOpenAI = !!openaiApiKey;
-
   try {
-    const apiUrl = useOpenAI ? OPENAI_API_URL : TOGETHER_API_URL;
-    const apiKey = useOpenAI ? openaiApiKey : togetherApiKey;
-    const model = useOpenAI ? OPENAI_MODEL : TOGETHER_MODEL;
-
-    console.log(`[Intelligence Extraction] Using ${useOpenAI ? 'OpenAI GPT-4o' : 'Together AI Llama'}`);
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.1, // Low temperature for consistent extraction
-        max_tokens: 4000,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API error: ${response.status} - ${errorText}`);
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey) {
+      throw new Error('ANTHROPIC_API_KEY not configured');
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '{}';
+    console.log(`[Intelligence Extraction] Using Anthropic Claude (${ANTHROPIC_MODEL})`);
+
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: anthropicApiKey });
+
+    const response = await client.messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 4096,
+      temperature: 0.1,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: userPrompt + '\n\nIMPORTANT: Respond with ONLY valid JSON, no markdown or explanation.' },
+      ],
+    });
+
+    const content = response.content
+      .filter((block: any) => block.type === 'text')
+      .map((block: any) => block.text)
+      .join('');
+
+    // Strip markdown code blocks if present
+    let cleaned = content.trim();
+    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+    else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+    if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+    cleaned = cleaned.trim();
 
     // Parse the JSON response
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(cleaned);
 
     return {
       fields: (parsed.fields || []).filter((f: ExtractedField) => f.confidence >= 0.5),
@@ -415,10 +406,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const togetherApiKey = process.env.TOGETHER_API_KEY;
-    if (!togetherApiKey) {
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey) {
       return NextResponse.json(
-        { error: 'TOGETHER_API_KEY not configured' },
+        { error: 'ANTHROPIC_API_KEY not configured' },
         { status: 500 }
       );
     }
@@ -436,13 +427,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Intelligence Extraction] Starting extraction for ${documentName} (${targetType}, textMode=${isTextInput}, hints=${fieldHints.length})`);
 
-    // Run extraction with field hints
+    // Run extraction with field hints (V4: uses Anthropic Claude)
     const extraction = await runIntelligenceExtraction(
       documentContent,
       documentType,
       documentCategory,
       targetType,
-      togetherApiKey,
+      anthropicApiKey,
       isTextInput,
       fieldHints
     );

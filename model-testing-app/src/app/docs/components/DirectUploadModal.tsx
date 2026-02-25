@@ -161,7 +161,7 @@ export default function DirectUploadModal({
         formData.append('file', uploadFile.file);
         formData.append('clientType', clientType);
 
-        const analysisResponse = await fetch('/api/bulk-analyze', {
+        const analysisResponse = await fetch('/api/v4-analyze', {
           method: 'POST',
           body: formData,
         });
@@ -174,10 +174,12 @@ export default function DirectUploadModal({
 
         if (analysisResponse.ok) {
           const data = await analysisResponse.json();
+          // V4 returns results in a documents[] array; fall back to top-level fields for V3 compat
+          const doc = data.documents?.[0];
           analysisResult = {
-            documentType: data.documentType || 'Other',
-            category: data.category || 'Miscellaneous',
-            summary: data.summary || 'Document uploaded directly to folder.',
+            documentType: doc?.fileType || data.documentType || 'Other',
+            category: doc?.category || data.category || 'Miscellaneous',
+            summary: doc?.summary || data.summary || 'Document uploaded directly to folder.',
           };
         }
 
