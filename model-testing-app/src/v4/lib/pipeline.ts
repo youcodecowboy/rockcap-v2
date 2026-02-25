@@ -62,6 +62,8 @@ export interface PipelineInput {
   checklistItems: ChecklistItem[];
   /** Past corrections for learning */
   corrections?: CorrectionContext[];
+  /** User-provided instructions for this batch (e.g., "These are all KYC documents") */
+  instructions?: string;
   /** Pipeline configuration */
   config: V4PipelineConfig;
 }
@@ -253,6 +255,7 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
           input.checklistItems,
           input.clientContext,
           input.corrections || [],
+          input.instructions,
         );
 
         const result = await callAnthropicBatch(systemPrompt, userBlocks, config);

@@ -103,6 +103,7 @@ export function buildBatchUserMessage(
   checklistItems: ChecklistItem[],
   clientContext: ClientContext,
   corrections: CorrectionContext[],
+  instructions?: string,
 ): ContentBlock[] {
   const blocks: ContentBlock[] = [];
 
@@ -116,8 +117,13 @@ export function buildBatchUserMessage(
     contextText += '\n';
   }
 
+  // User-provided instructions (uploader guidance)
+  if (instructions) {
+    contextText += `\n## Uploader Instructions\nThe person uploading these documents provided the following guidance:\n> ${instructions}\n\nUse this as additional context when classifying — it may indicate the document types, purpose, or scope.\n`;
+  }
+
   // Checklist items (only missing ones)
-  const missingItems = checklistItems.filter(i => i.status === 'missing');
+  const missingItems = checklistItems.filter(i => i.status === 'missing' || i.status === 'pending_review');
   if (missingItems.length > 0) {
     contextText += `\n## Missing Checklist Items (match documents to these)\n`;
     contextText += missingItems.map(item =>

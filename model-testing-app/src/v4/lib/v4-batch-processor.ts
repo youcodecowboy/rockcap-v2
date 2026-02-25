@@ -54,6 +54,35 @@ export interface V4BatchProcessorCallbacks {
     version?: string;
     isDuplicate?: boolean;
     duplicateOfDocumentId?: Id<'documents'>;
+    suggestedChecklistItems?: Array<{
+      itemId: Id<'knowledgeChecklistItems'>;
+      itemName: string;
+      category: string;
+      confidence: number;
+      reasoning?: string;
+    }>;
+    extractedIntelligence?: {
+      fields: Array<{
+        fieldPath: string;
+        label: string;
+        category: string;
+        value: any;
+        valueType: 'string' | 'number' | 'currency' | 'date' | 'percentage' | 'array' | 'text' | 'boolean';
+        isCanonical: boolean;
+        confidence: number;
+        sourceText?: string;
+        originalLabel?: string;
+        matchedAlias?: string;
+        templateTags?: string[];
+        pageReference?: string;
+      }>;
+      insights?: {
+        keyFindings?: string[];
+        risks?: Array<{ risk: string; severity?: string }>;
+      };
+    };
+    documentAnalysis?: Record<string, any>;
+    classificationReasoning?: string;
   }) => Promise<Id<'bulkUploadItems'>>;
 
   updateBatchStatus: (args: {
@@ -284,6 +313,9 @@ export class V4BatchProcessor {
         generatedDocumentCode: string;
         version: string;
         extractedData?: any;
+        intelligenceFields?: any[];
+        placement?: { checklistMatches?: any[] };
+        reasoning?: string;
       }> = analyzeResult.documents || [];
 
       // Map each result back to its Convex item
@@ -328,7 +360,14 @@ export class V4BatchProcessor {
             version = '';
           }
 
-          // Update item with analysis results
+          // Build intelligence from V4 response
+          const extractedIntelligence = docResult.intelligenceFields && docResult.intelligenceFields.length > 0
+            ? { fields: docResult.intelligenceFields }
+            : docResult.extractedData
+              ? { fields: docResult.extractedData }
+              : undefined;
+
+          // Update item with analysis results + intelligence
           await this.callbacks.updateItemAnalysis({
             itemId: item.itemId,
             fileStorageId: storageIds.get(item.itemId as string),
@@ -341,6 +380,9 @@ export class V4BatchProcessor {
             version: isDuplicate ? undefined : version,
             isDuplicate,
             duplicateOfDocumentId,
+            suggestedChecklistItems: docResult.placement?.checklistMatches || undefined,
+            extractedIntelligence,
+            classificationReasoning: docResult.reasoning || undefined,
           });
 
           this.processedCount++;

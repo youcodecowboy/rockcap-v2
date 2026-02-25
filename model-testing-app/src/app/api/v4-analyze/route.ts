@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
       clientName?: string;
       isInternal?: boolean;
       uploaderInitials?: string;
+      instructions?: string;
     } = {};
 
     if (metadataStr) {
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest) {
       availableFolders: metadata.availableFolders || [],
       checklistItems: metadata.checklistItems || [],
       corrections: metadata.corrections,
+      instructions: metadata.instructions,
       config,
     });
 
