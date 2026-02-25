@@ -54,6 +54,8 @@ export interface V4BatchProcessorCallbacks {
     version?: string;
     isDuplicate?: boolean;
     duplicateOfDocumentId?: Id<'documents'>;
+    documentAnalysis?: Record<string, any>;
+    classificationReasoning?: string;
   }) => Promise<Id<'bulkUploadItems'>>;
 
   updateBatchStatus: (args: {
@@ -284,6 +286,8 @@ export class V4BatchProcessor {
         generatedDocumentCode: string;
         version: string;
         extractedData?: any;
+        documentAnalysis?: Record<string, any>;
+        classificationReasoning?: string;
       }> = analyzeResult.documents || [];
 
       // Map each result back to its Convex item
@@ -341,6 +345,8 @@ export class V4BatchProcessor {
             version: isDuplicate ? undefined : version,
             isDuplicate,
             duplicateOfDocumentId,
+            documentAnalysis: docResult.documentAnalysis,
+            classificationReasoning: docResult.classificationReasoning,
           });
 
           this.processedCount++;

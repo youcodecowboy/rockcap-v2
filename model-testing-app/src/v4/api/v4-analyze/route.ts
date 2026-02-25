@@ -178,6 +178,9 @@ export async function POST(request: NextRequest) {
         generatedDocumentCode: doc.itemAnalysis.generatedDocumentCode,
         version: doc.itemAnalysis.version,
         extractedData: doc.itemAnalysis.extractedData,
+        // Document analysis (feeds keyword learning + Summary tab)
+        documentAnalysis: doc.itemAnalysis.documentAnalysis,
+        classificationReasoning: doc.itemAnalysis.classificationReasoning,
 
         // Additional V4 data
         placement: doc.placement,

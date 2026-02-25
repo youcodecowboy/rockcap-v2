@@ -384,8 +384,8 @@ export class BulkQueueProcessor {
       : doc.extractedData
         ? { fields: flattenV4ExtractedData(doc.extractedData) }
         : undefined;
-    const documentAnalysis = undefined; // V4 doesn't return this separately
-    const classificationReasoning = undefined; // V4 doesn't return this separately
+    const documentAnalysis = doc.documentAnalysis || undefined;
+    const classificationReasoning = doc.classificationReasoning || undefined;
 
     console.log(`[BulkQueueProcessor] V4 result: ${doc.fileType} (${(doc.confidence * 100).toFixed(0)}% confidence, mock=${v4Data.isMock})`);
     if (extractedIntelligence) {

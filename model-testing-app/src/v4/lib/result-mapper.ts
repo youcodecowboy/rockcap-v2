@@ -28,6 +28,36 @@ import { getTypeAbbreviation } from './placement-rules';
 // TYPES
 // =============================================================================
 
+/** documentAnalysis shape expected by Convex bulkUpload.updateItemAnalysis */
+export interface DocumentAnalysis {
+  documentDescription: string;
+  documentPurpose: string;
+  entities: {
+    people: string[];
+    companies: string[];
+    locations: string[];
+    projects: string[];
+  };
+  keyTerms: string[];
+  keyDates: string[];
+  keyAmounts: string[];
+  executiveSummary: string;
+  detailedSummary: string;
+  sectionBreakdown?: string[];
+  documentCharacteristics: {
+    isFinancial: boolean;
+    isLegal: boolean;
+    isIdentity: boolean;
+    isReport: boolean;
+    isDesign: boolean;
+    isCorrespondence: boolean;
+    hasMultipleProjects: boolean;
+    isInternal: boolean;
+  };
+  rawContentType: string;
+  confidenceInAnalysis: number;
+}
+
 /** Format expected by Convex bulkUpload.updateItemAnalysis mutation */
 export interface ConvexItemAnalysis {
   summary: string;
@@ -38,6 +68,8 @@ export interface ConvexItemAnalysis {
   generatedDocumentCode: string;
   version: string;
   extractedData?: Record<string, any>;
+  documentAnalysis?: DocumentAnalysis;
+  classificationReasoning?: string;
 }
 
 /** Knowledge bank entry to be created when document is filed */
@@ -116,6 +148,9 @@ export function mapClassificationToConvex(
   // Build extracted data from intelligence fields
   const extractedData = buildExtractedData(classification);
 
+  // Build documentAnalysis from V4 summary data (feeds keyword learning system)
+  const documentAnalysis = buildDocumentAnalysis(classification);
+
   // Build knowledge bank entry
   const knowledgeBankEntry = buildKnowledgeBankEntry(classification, placement);
 
@@ -131,6 +166,8 @@ export function mapClassificationToConvex(
       generatedDocumentCode: documentCode,
       version: 'V1.0',
       extractedData: Object.keys(extractedData).length > 0 ? extractedData : undefined,
+      documentAnalysis,
+      classificationReasoning: classification.classification.reasoning,
     },
     placement,
     knowledgeBankEntry,
@@ -247,6 +284,56 @@ function buildExtractedData(
   }
 
   return data;
+}
+
+// =============================================================================
+// DOCUMENT ANALYSIS BUILDER
+// =============================================================================
+
+/**
+ * Build the documentAnalysis object from V4 classification data.
+ *
+ * This bridges the V4 summary output to the legacy documentAnalysis shape
+ * that the keyword learning system, intelligence extraction at filing time,
+ * and the Summary tab in FileDetailPanel all rely on.
+ */
+function buildDocumentAnalysis(
+  classification: DocumentClassification,
+): DocumentAnalysis {
+  const { fileType, category, confidence, reasoning } = classification.classification;
+  const summary = classification.summary;
+
+  // Infer document characteristics from the category
+  const cat = category.toLowerCase();
+  const ft = fileType.toLowerCase();
+
+  return {
+    documentDescription: `${fileType} — ${summary?.documentPurpose || 'No description available'}`,
+    documentPurpose: summary?.documentPurpose || 'Not determined',
+    entities: {
+      people: summary?.keyEntities?.people || [],
+      companies: summary?.keyEntities?.companies || [],
+      locations: summary?.keyEntities?.locations || [],
+      projects: summary?.keyEntities?.projects || [],
+    },
+    keyTerms: summary?.keyTerms || [],
+    keyDates: summary?.keyDates || [],
+    keyAmounts: summary?.keyAmounts || [],
+    executiveSummary: summary?.executiveSummary || `${fileType} document`,
+    detailedSummary: reasoning || summary?.executiveSummary || 'No detailed summary available',
+    documentCharacteristics: {
+      isFinancial: cat.includes('financial') || ft.includes('valuation') || ft.includes('appraisal') || ft.includes('loan'),
+      isLegal: cat.includes('legal') || ft.includes('lease') || ft.includes('contract') || ft.includes('title'),
+      isIdentity: cat.includes('identity') || ft.includes('passport') || ft.includes('kyc') || ft.includes('aml'),
+      isReport: cat.includes('report') || ft.includes('report') || ft.includes('survey') || ft.includes('assessment'),
+      isDesign: cat.includes('design') || ft.includes('drawing') || ft.includes('plan') || ft.includes('cgi'),
+      isCorrespondence: cat.includes('correspondence') || ft.includes('letter') || ft.includes('email'),
+      hasMultipleProjects: (summary?.keyEntities?.projects?.length || 0) > 1,
+      isInternal: cat.includes('internal'),
+    },
+    rawContentType: fileType,
+    confidenceInAnalysis: confidence,
+  };
 }
 
 // =============================================================================

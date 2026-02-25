@@ -403,8 +403,8 @@ export const processNextItem = internalAction({
         extractedIntelligence: v4Doc.extractedData
           ? { fields: flattenV4ExtractedData(v4Doc.extractedData) }
           : undefined,
-        documentAnalysis: undefined,
-        classificationReasoning: undefined,
+        documentAnalysis: v4Doc.documentAnalysis || undefined,
+        classificationReasoning: v4Doc.classificationReasoning || undefined,
       };
 
       console.log(`[Background Processor] V4 result: ${analysisData.result.fileType} (${analysisData.result.confidence}% confidence, mock=${v4Data.isMock})`);
