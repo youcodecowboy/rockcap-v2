@@ -1,6 +1,9 @@
 'use client';
 
 import { CheckCircle, Loader2, X } from 'lucide-react';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { Id } from '../../convex/_generated/dataModel';
 
 interface BulkActionConfirmationModalProps {
   actions: Array<{
@@ -13,12 +16,28 @@ interface BulkActionConfirmationModalProps {
   isExecuting: boolean;
 }
 
+// Convex IDs are alphanumeric strings of a specific length — reject obvious non-IDs
+function looksLikeConvexId(value: unknown): boolean {
+  return typeof value === 'string' && /^[a-z0-9]{20,}$/i.test(value);
+}
+
 export default function BulkActionConfirmationModal({
   actions,
   onConfirm,
   onCancel,
   isExecuting,
 }: BulkActionConfirmationModalProps) {
+  // Resolve entity IDs from the first action (only query if value looks like a real ID)
+  const firstData = actions[0]?.data;
+  const clientId = firstData?.clientId;
+  const projectId = firstData?.projectId;
+  const client = useQuery(api.clients.get, looksLikeConvexId(clientId) ? { id: clientId as Id<"clients"> } : 'skip');
+  const project = useQuery(api.projects.get, looksLikeConvexId(projectId) ? { id: projectId as Id<"projects"> } : 'skip');
+
+  const resolvedNames: Record<string, string> = {};
+  if (client?.name) resolvedNames['clientId'] = client.name;
+  if (project?.name) resolvedNames['projectId'] = project.name;
+
   const getActionTitle = (type: string) => {
     const titles: Record<string, string> = {
       createReminder: 'Reminder',
@@ -27,6 +46,7 @@ export default function BulkActionConfirmationModal({
       createProject: 'Project',
       createKnowledgeBankEntry: 'Knowledge Bank Entry',
       createNote: 'Note',
+      saveChatDocument: 'Document',
     };
     return titles[type] || type.replace('create', '').replace(/([A-Z])/g, ' $1').trim();
   };
@@ -38,22 +58,29 @@ export default function BulkActionConfirmationModal({
   };
 
   const formatActionData = (data: any) => {
-    const importantFields = ['title', 'scheduledFor', 'dueDate', 'description'];
+    const importantFields = ['title', 'name', 'scheduledFor', 'dueDate', 'description', 'clientId', 'projectId'];
     return importantFields
       .filter(field => data[field] !== undefined && data[field] !== null)
       .map(field => {
         let value = data[field];
-        if (field === 'scheduledFor' || field === 'dueDate') {
+        // Resolve IDs to names
+        if (resolvedNames[field]) {
+          value = resolvedNames[field];
+        } else if (field === 'scheduledFor' || field === 'dueDate') {
           try {
             value = new Date(value).toLocaleString();
           } catch (e) {
             // Keep original value if parsing fails
           }
         }
+        const label = field
+          .replace(/Id$/, '')
+          .replace(/([A-Z])/g, ' $1')
+          .trim();
         return (
           <div key={field} className="flex gap-2 text-sm">
             <span className="font-medium text-gray-700 capitalize">
-              {field.replace(/([A-Z])/g, ' $1').trim()}:
+              {label}:
             </span>
             <span className="text-gray-900">{String(value)}</span>
           </div>
@@ -136,5 +163,3 @@ export default function BulkActionConfirmationModal({
     </div>
   );
 }
-
-

@@ -224,6 +224,8 @@ export default defineSchema({
     previousVersionId: v.optional(v.id("documents")), // Link to previous version
     // Extracted data (stored as JSON)
     extractedData: v.optional(v.any()),
+    // Full parsed text content for re-analysis without re-uploading
+    textContent: v.optional(v.string()),
     // Document analysis from multi-stage pipeline (Stage 1: Summary Agent)
     documentAnalysis: v.optional(v.object({
       documentDescription: v.string(),
@@ -880,6 +882,8 @@ export default defineSchema({
     // Manual extraction toggle (default false for bulk uploads)
     extractionEnabled: v.optional(v.boolean()),
     extractedData: v.optional(v.any()), // Only populated if extraction enabled
+    // Full parsed text content for re-analysis without re-uploading
+    textContent: v.optional(v.string()),
     // Pre-extracted intelligence from bulk-analyze (Sprint 4+)
     extractedIntelligence: v.optional(v.any()), // Intelligence fields extracted during analysis
     // Document analysis from multi-stage pipeline (Stage 1: Summary Agent)

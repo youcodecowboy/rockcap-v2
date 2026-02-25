@@ -745,6 +745,12 @@ function restrictToolAccess(toolName: string, params: any, clientId?: string, pr
           restricted.clientId = clientId;
         }
         break;
+      case 'analyzeUploadedDocument':
+      case 'saveChatDocument':
+        if (!restricted.clientId) {
+          restricted.clientId = clientId;
+        }
+        break;
     }
   } else if (projectId) {
     switch (toolName) {
@@ -796,6 +802,12 @@ function restrictToolAccess(toolName: string, params: any, clientId?: string, pr
         break;
       case 'addKnowledgeItem':
         if (!restricted.projectId && !restricted.clientId) {
+          restricted.projectId = projectId;
+        }
+        break;
+      case 'analyzeUploadedDocument':
+      case 'saveChatDocument':
+        if (!restricted.projectId) {
           restricted.projectId = projectId;
         }
         break;
@@ -942,6 +954,8 @@ function getActivityMessage(toolName: string, params: any): string {
     getInternalFolders: () => 'Loading internal folders...',
     getInternalDocumentsByFolder: () => 'Loading internal folder documents...',
     searchContactsByClient: () => 'Searching client contacts...',
+    analyzeUploadedDocument: (p) => `Analyzing ${p?.fileName || 'document'} with V4 pipeline...`,
+    saveChatDocument: (p) => `Filing ${p?.fileName || 'document'}...`,
   };
 
   return messages[toolName]?.(params) || `Executing ${toolName}...`;
@@ -1126,10 +1140,29 @@ export async function POST(request: NextRequest) {
       contextName = projectData?.name || 'this project';
     }
 
-    // File context
+    // File context — instruct Claude to use the V4 analysis tool
     let fileContext = '';
     if (fileMetadata) {
-      fileContext = `FILE UPLOADED:\nFilename: ${fileMetadata.fileName}\nSize: ${(fileMetadata.fileSize / 1024).toFixed(2)} KB\nType: ${fileMetadata.fileType}\nStorage ID: ${fileMetadata.fileStorageId}\n\nThe user has uploaded a file and wants help processing and filing it.`;
+      fileContext = `FILE UPLOADED:
+Filename: ${fileMetadata.fileName}
+Size: ${(fileMetadata.fileSize / 1024).toFixed(2)} KB
+Type: ${fileMetadata.fileType}
+Storage ID: ${fileMetadata.fileStorageId}
+
+IMPORTANT: The user has uploaded a file. You MUST call the analyzeUploadedDocument tool with:
+- storageId: "${fileMetadata.fileStorageId}"
+- fileName: "${fileMetadata.fileName}"
+- fileType: "${fileMetadata.fileType}"
+${clientId ? `- clientId: "${clientId}"` : ''}${projectId ? `\n- projectId: "${projectId}"` : ''}
+
+After receiving the analysis results, present them clearly to the user including:
+1. Document type and classification
+2. Summary
+3. Key extracted data
+4. Suggested folder placement
+5. Any checklist items matched
+
+Then offer to file the document using the saveChatDocument tool.`;
     }
 
     // Build system prompt blocks (split for optimal caching)
@@ -1147,13 +1180,15 @@ export async function POST(request: NextRequest) {
     const tools = registry.getToolsForContext({ contextType: contextType as any, clientId, projectId });
     const anthropicTools = registry.formatForAnthropicTools(tools);
 
-    // Build messages for Anthropic
+    // Build messages for Anthropic (filter out any system messages — Anthropic only accepts user/assistant)
     type AnthropicMessage = { role: 'user' | 'assistant'; content: any };
     const messages: AnthropicMessage[] = [
-      ...conversationHistory.map((msg: any) => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-      })),
+      ...conversationHistory
+        .filter((msg: any) => msg.role === 'user' || msg.role === 'assistant')
+        .map((msg: any) => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+        })),
       { role: 'user' as const, content: message },
     ];
 
@@ -1362,6 +1397,7 @@ async function handleActionExecution(
         createTask: 'task',
         createEvent: 'event',
         createKnowledgeBankEntry: 'knowledgeBankEntry',
+        saveChatDocument: 'document',
       };
 
       itemType = typeMap[action.actionType];

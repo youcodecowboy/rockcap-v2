@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runV4Pipeline } from '../../lib/pipeline';
 import { mapBatchToConvex } from '../../lib/result-mapper';
+import { extractTextFromFile } from '../../../lib/fileProcessor';
 import type {
   ChecklistItem,
   FolderInfo,
@@ -131,11 +132,32 @@ export async function POST(request: NextRequest) {
       useMock,
     };
 
+    // ── Extract text from files for intelligence extraction + persistence ──
+    const fullTexts = new Map<number, string>();
+    const extractedTexts: Record<number, string> = {};
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      // Use pre-provided text or extract from file
+      let text = f.extractedText;
+      if (!text) {
+        try {
+          text = await extractTextFromFile(f.file as File);
+        } catch (e) {
+          console.warn(`[V4 API] Text extraction failed for file ${i}: ${(e as Error).message}`);
+        }
+      }
+      if (text) {
+        fullTexts.set(i, text);
+        extractedTexts[i] = text;
+      }
+    }
+
     // ── Run pipeline ──
     console.log(`[V4 API] Processing ${files.length} files (${useMock ? 'MOCK' : 'LIVE'})...`);
 
     const result = await runV4Pipeline({
       files,
+      fullTexts,
       clientContext,
       availableFolders: metadata.availableFolders || [],
       checklistItems: metadata.checklistItems || [],
@@ -158,6 +180,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[V4 API] Completed in ${Date.now() - startTime}ms — ${mapped.documents.length} classified, ${result.errors.length} errors`);
 
+    // Log documentAnalysis presence for diagnostics
+    for (const doc of mapped.documents) {
+      const da = doc.documentAnalysis;
+      console.log(`[V4 API] Doc ${doc.documentIndex} "${doc.fileName}": documentAnalysis=${da ? 'YES' : 'MISSING'}, summary="${da?.executiveSummary?.slice(0, 80) || 'none'}"`);
+    }
+
     // ── Return response ──
     // Include both raw V4 results AND Convex-mapped results
     return NextResponse.json({
@@ -165,31 +193,52 @@ export async function POST(request: NextRequest) {
       isMock: result.isMock,
 
       // Per-document results (Convex-ready format)
-      documents: mapped.documents.map(doc => ({
-        documentIndex: doc.documentIndex,
-        fileName: doc.fileName,
-        // Fields compatible with bulkUpload.updateItemAnalysis
-        summary: doc.itemAnalysis.summary,
-        fileType: doc.itemAnalysis.fileTypeDetected,
-        category: doc.itemAnalysis.category,
-        confidence: doc.itemAnalysis.confidence,
-        suggestedFolder: doc.itemAnalysis.targetFolder,
-        typeAbbreviation: doc.itemAnalysis.generatedDocumentCode.split('-')[1] || '',
-        generatedDocumentCode: doc.itemAnalysis.generatedDocumentCode,
-        version: doc.itemAnalysis.version,
-        extractedData: doc.itemAnalysis.extractedData,
+      documents: mapped.documents.map(doc => {
+        // Prefer enriched intelligence fields from Stage 5.5 (has scope, isCanonical),
+        // fall back to lightweight fields from classification call
+        const enrichedFields = result.intelligence?.[doc.documentIndex];
+        const rawClassification = result.documents.find(d => d.documentIndex === doc.documentIndex);
+        const intelligenceFields = enrichedFields && enrichedFields.length > 0
+          ? enrichedFields
+          : rawClassification?.intelligenceFields || [];
 
-        // Additional V4 data
-        placement: doc.placement,
-        knowledgeBankEntry: doc.knowledgeBankEntry,
-        isLowConfidence: doc.isLowConfidence,
-        alternativeTypes: doc.alternativeTypes,
+        return {
+          documentIndex: doc.documentIndex,
+          fileName: doc.fileName,
+          // Fields compatible with bulkUpload.updateItemAnalysis
+          summary: doc.itemAnalysis.summary,
+          fileType: doc.itemAnalysis.fileTypeDetected,
+          category: doc.itemAnalysis.category,
+          confidence: doc.itemAnalysis.confidence,
+          suggestedFolder: doc.itemAnalysis.targetFolder,
+          typeAbbreviation: doc.itemAnalysis.generatedDocumentCode.split('-')[1] || '',
+          generatedDocumentCode: doc.itemAnalysis.generatedDocumentCode,
+          version: doc.itemAnalysis.version,
+          extractedData: doc.itemAnalysis.extractedData,
 
-        // Backward compat with existing bulk-analyze response
-        originalFileName: doc.fileName,
-        fileSize: 0, // Not available here — set by caller
-        mimeType: '', // Not available here — set by caller
-      })),
+          // Intelligence fields for knowledge library extraction
+          intelligenceFields,
+
+          // Rich document analysis (for Summary/Entities/Key Data tabs)
+          documentAnalysis: doc.documentAnalysis,
+          checklistMatches: doc.checklistMatches,
+          classificationReasoning: doc.classificationReasoning,
+
+          // Additional V4 data
+          placement: doc.placement,
+          knowledgeBankEntry: doc.knowledgeBankEntry,
+          isLowConfidence: doc.isLowConfidence,
+          alternativeTypes: doc.alternativeTypes,
+
+          // Extracted text for saving to document textContent
+          extractedText: extractedTexts[doc.documentIndex] || undefined,
+
+          // Backward compat with existing bulk-analyze response
+          originalFileName: doc.fileName,
+          fileSize: 0, // Not available here — set by caller
+          mimeType: '', // Not available here — set by caller
+        };
+      }),
 
       // Batch statistics
       stats: mapped.stats,

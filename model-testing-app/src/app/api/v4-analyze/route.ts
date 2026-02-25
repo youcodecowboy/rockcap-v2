@@ -182,6 +182,11 @@ export async function POST(request: NextRequest) {
         version: doc.itemAnalysis.version,
         extractedData: doc.itemAnalysis.extractedData || null,
 
+        // Rich document analysis (for Summary/Intelligence tabs)
+        documentAnalysis: doc.documentAnalysis,
+        checklistMatches: doc.checklistMatches,
+        classificationReasoning: doc.classificationReasoning,
+
         // Additional V4 data
         placement: doc.placement,
         knowledgeBankEntry: doc.knowledgeBankEntry,
@@ -190,6 +195,9 @@ export async function POST(request: NextRequest) {
 
         // Intelligence fields from dedicated extraction call
         intelligenceFields: result.intelligence[doc.documentIndex] || [],
+
+        // Extracted text content for re-analysis without re-uploading
+        extractedText: fullTexts.get(doc.documentIndex) || null,
 
         // Backward compat
         originalFileName: doc.fileName,

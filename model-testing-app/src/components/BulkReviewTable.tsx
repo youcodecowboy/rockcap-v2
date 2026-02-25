@@ -220,6 +220,7 @@ interface ChecklistItem {
   category: string;
   status: string;
   linkedDocumentCount?: number;
+  projectId?: Id<"projects">;
 }
 
 // =============================================================================
@@ -510,8 +511,6 @@ export default function BulkReviewTable({
   // Note editing state
   const [editingNoteItemId, setEditingNoteItemId] = useState<Id<"bulkUploadItems"> | null>(null);
   const [noteContent, setNoteContent] = useState('');
-  const [addToIntelligence, setAddToIntelligence] = useState(false);
-  const [intelligenceTarget, setIntelligenceTarget] = useState<"client" | "project">("project");
   const [noteSaving, setNoteSaving] = useState(false);
 
   // Query for checklist items
@@ -662,16 +661,22 @@ export default function BulkReviewTable({
     }
   };
 
-  // Group checklist items by category
-  const groupedChecklistItems = useMemo(() => {
-    if (!checklistItems) return {};
-    return checklistItems.reduce((acc, item) => {
-      if (!acc[item.category]) {
-        acc[item.category] = [];
+  // Group checklist items by level (client/project), then by category
+  const { clientChecklistGroups, projectChecklistGroups } = useMemo(() => {
+    if (!checklistItems) return { clientChecklistGroups: {}, projectChecklistGroups: {} };
+
+    const clientGroups: Record<string, ChecklistItem[]> = {};
+    const projectGroups: Record<string, ChecklistItem[]> = {};
+
+    for (const item of checklistItems) {
+      const target = item.projectId ? projectGroups : clientGroups;
+      if (!target[item.category]) {
+        target[item.category] = [];
       }
-      acc[item.category].push(item);
-      return acc;
-    }, {} as Record<string, ChecklistItem[]>);
+      target[item.category].push(item);
+    }
+
+    return { clientChecklistGroups: clientGroups, projectChecklistGroups: projectGroups };
   }, [checklistItems]);
 
   // Handle extraction toggle (just marks intent, extraction runs after filing)
@@ -796,7 +801,6 @@ export default function BulkReviewTable({
                 {clientId && checklistItems && checklistItems.length > 0 && (
                   <TableHead className="w-[80px] hidden lg:table-cell">Checklist</TableHead>
                 )}
-                <TableHead className="w-10 text-center px-1">Int</TableHead>
                 <TableHead className="w-10 text-center px-1">Ver</TableHead>
                 <TableHead className="w-10 text-center px-1 hidden lg:table-cell">Ext</TableHead>
                 <TableHead className="w-14 px-2">Status</TableHead>
@@ -1039,49 +1043,96 @@ export default function BulkReviewTable({
                                   </div>
                                 )}
 
-                                {/* All Checklist Items */}
-                                <div className="p-2">
-                                {Object.entries(groupedChecklistItems).map(([category, catItems]) => (
-                                  <div key={category} className="mb-3 last:mb-0">
-                                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                                      {category}
+                                {/* Project-Level Checklist Items (shown first when project selected) */}
+                                {hasProject && Object.keys(projectChecklistGroups).length > 0 && (
+                                  <div className="p-2 border-b">
+                                    <div className="text-[10px] font-semibold text-orange-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                      Project Requirements
                                     </div>
-                                    {catItems.map((checkItem) => {
-                                      const isSelected = item.checklistItemIds?.includes(checkItem._id);
-                                      const isFulfilled = checkItem.status === 'fulfilled';
-                                      return (
-                                        <div
-                                          key={checkItem._id}
-                                          className="flex items-center gap-2 py-1"
-                                        >
-                                          <Checkbox
-                                            id={`check-${item._id}-${checkItem._id}`}
-                                            checked={isSelected}
-                                            onCheckedChange={() => 
-                                              handleToggleChecklistItem(
-                                                item._id, 
-                                                checkItem._id, 
-                                                item.checklistItemIds || []
-                                              )
-                                            }
-                                          />
-                                          <label
-                                            htmlFor={`check-${item._id}-${checkItem._id}`}
-                                            className={`text-xs cursor-pointer flex-1 ${isFulfilled ? 'text-muted-foreground' : ''}`}
-                                          >
-                                            {checkItem.name}
-                                            {isFulfilled && (
-                                              <Badge variant="outline" className="ml-1.5 text-[9px] h-4 text-green-600">
-                                                ✓
-                                              </Badge>
-                                            )}
-                                          </label>
+                                    {Object.entries(projectChecklistGroups).map(([category, catItems]) => (
+                                      <div key={category} className="mb-3 last:mb-0">
+                                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 pl-3">
+                                          {category}
                                         </div>
-                                      );
-                                    })}
+                                        {catItems.map((checkItem) => {
+                                          const isSelected = item.checklistItemIds?.includes(checkItem._id);
+                                          const isFulfilled = checkItem.status === 'fulfilled';
+                                          return (
+                                            <div key={checkItem._id} className="flex items-center gap-2 py-1">
+                                              <Checkbox
+                                                id={`check-${item._id}-${checkItem._id}`}
+                                                checked={isSelected}
+                                                onCheckedChange={() =>
+                                                  handleToggleChecklistItem(item._id, checkItem._id, item.checklistItemIds || [])
+                                                }
+                                              />
+                                              <label
+                                                htmlFor={`check-${item._id}-${checkItem._id}`}
+                                                className={`text-xs cursor-pointer flex-1 ${isFulfilled ? 'text-muted-foreground' : ''}`}
+                                              >
+                                                {checkItem.name}
+                                                {isFulfilled && (
+                                                  <Badge variant="outline" className="ml-1.5 text-[9px] h-4 text-green-600">✓</Badge>
+                                                )}
+                                              </label>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                                </div>
+                                )}
+
+                                {/* No project items warning */}
+                                {hasProject && Object.keys(projectChecklistGroups).length === 0 && (
+                                  <div className="p-2 bg-amber-50 border-b">
+                                    <p className="text-[10px] text-amber-700">
+                                      No project-level checklist items found. Project checklist may need to be initialized.
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Client-Level Checklist Items */}
+                                {Object.keys(clientChecklistGroups).length > 0 && (
+                                  <div className="p-2">
+                                    <div className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                      Client Requirements
+                                    </div>
+                                    {Object.entries(clientChecklistGroups).map(([category, catItems]) => (
+                                      <div key={category} className="mb-3 last:mb-0">
+                                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 pl-3">
+                                          {category}
+                                        </div>
+                                        {catItems.map((checkItem) => {
+                                          const isSelected = item.checklistItemIds?.includes(checkItem._id);
+                                          const isFulfilled = checkItem.status === 'fulfilled';
+                                          return (
+                                            <div key={checkItem._id} className="flex items-center gap-2 py-1">
+                                              <Checkbox
+                                                id={`check-${item._id}-${checkItem._id}`}
+                                                checked={isSelected}
+                                                onCheckedChange={() =>
+                                                  handleToggleChecklistItem(item._id, checkItem._id, item.checklistItemIds || [])
+                                                }
+                                              />
+                                              <label
+                                                htmlFor={`check-${item._id}-${checkItem._id}`}
+                                                className={`text-xs cursor-pointer flex-1 ${isFulfilled ? 'text-muted-foreground' : ''}`}
+                                              >
+                                                {checkItem.name}
+                                                {isFulfilled && (
+                                                  <Badge variant="outline" className="ml-1.5 text-[9px] h-4 text-green-600">✓</Badge>
+                                                )}
+                                              </label>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
 
                               <div className="p-2 border-t bg-muted/30 flex-shrink-0">
@@ -1102,19 +1153,6 @@ export default function BulkReviewTable({
                         )}
                       </TableCell>
                     )}
-                    <TableCell className="text-center px-1 py-2">
-                      {item.status === 'ready_for_review' ? (
-                        <Switch
-                          checked={item.isInternal ?? batchIsInternal}
-                          onCheckedChange={(checked) => handleUpdateField(item._id, 'isInternal', checked)}
-                          className="scale-75"
-                        />
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground">
-                          {(item.isInternal ?? batchIsInternal) ? 'I' : 'E'}
-                        </span>
-                      )}
-                    </TableCell>
                     <TableCell className="text-center px-1 py-2">
                       {item.isDuplicate ? (
                         <Tooltip>
@@ -1584,7 +1622,7 @@ export default function BulkReviewTable({
                                 </span>
                                 {item.userNote?.content && !editingNoteItemId && (
                                   <Badge variant="outline" className="text-xs">
-                                    {item.userNote.addToIntelligence ? 'Will file to intelligence' : 'Local note only'}
+                                    Note saved
                                   </Badge>
                                 )}
                               </div>
@@ -1595,8 +1633,6 @@ export default function BulkReviewTable({
                                   if (editingNoteItemId !== item._id) {
                                     setEditingNoteItemId(item._id);
                                     setNoteContent(e.target.value);
-                                    setAddToIntelligence(item.userNote?.addToIntelligence ?? false);
-                                    setIntelligenceTarget(item.userNote?.intelligenceTarget ?? (hasProject ? "project" : "client"));
                                   } else {
                                     setNoteContent(e.target.value);
                                   }
@@ -1605,127 +1641,50 @@ export default function BulkReviewTable({
                                   if (editingNoteItemId !== item._id) {
                                     setEditingNoteItemId(item._id);
                                     setNoteContent(item.userNote?.content || '');
-                                    setAddToIntelligence(item.userNote?.addToIntelligence ?? false);
-                                    setIntelligenceTarget(item.userNote?.intelligenceTarget ?? (hasProject ? "project" : "client"));
                                   }
                                 }}
                                 placeholder="Add notes about this document for future reference..."
                                 className="w-full text-sm min-h-[60px] p-2 border border-gray-200 rounded bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                               />
 
-                              {/* Intelligence Toggle */}
-                              <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
-                                <div className="flex items-center gap-2">
-                                  <Switch
-                                    checked={editingNoteItemId === item._id ? addToIntelligence : (item.userNote?.addToIntelligence ?? false)}
-                                    onCheckedChange={(checked) => {
-                                      if (editingNoteItemId !== item._id) {
-                                        setEditingNoteItemId(item._id);
-                                        setNoteContent(item.userNote?.content || '');
-                                        setIntelligenceTarget(item.userNote?.intelligenceTarget ?? (hasProject ? "project" : "client"));
-                                      }
-                                      setAddToIntelligence(checked);
+                              {editingNoteItemId === item._id && (
+                                <div className="flex items-center justify-end gap-2 mt-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingNoteItemId(null);
+                                      setNoteContent('');
                                     }}
-                                    className="scale-90"
-                                  />
-                                  <label className="text-xs text-gray-600 flex items-center gap-1">
-                                    <Brain className="w-3 h-3" />
-                                    Add to {hasProject ? 'project' : 'client'} intelligence
-                                  </label>
-                                </div>
-
-                                {editingNoteItemId === item._id && (
-                                  <div className="flex items-center gap-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => {
+                                    className="text-xs h-7"
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    disabled={noteSaving}
+                                    onClick={async () => {
+                                      setNoteSaving(true);
+                                      try {
+                                        await updateItemNote({
+                                          itemId: item._id,
+                                          content: noteContent,
+                                          addToIntelligence: false,
+                                        });
                                         setEditingNoteItemId(null);
-                                        setNoteContent('');
-                                        setAddToIntelligence(false);
-                                      }}
-                                      className="text-xs h-7"
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      disabled={noteSaving}
-                                      onClick={async () => {
-                                        setNoteSaving(true);
-                                        try {
-                                          await updateItemNote({
-                                            itemId: item._id,
-                                            content: noteContent,
-                                            addToIntelligence,
-                                            intelligenceTarget: addToIntelligence ? intelligenceTarget : undefined,
-                                          });
-                                          setEditingNoteItemId(null);
-                                          onRefresh?.();
-                                        } finally {
-                                          setNoteSaving(false);
-                                        }
-                                      }}
-                                      className="text-xs h-7"
-                                    >
-                                      {noteSaving ? (
-                                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                                      ) : null}
-                                      Save Note
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Intelligence Target Options (when toggle is on and project exists) */}
-                              {(editingNoteItemId === item._id ? addToIntelligence : item.userNote?.addToIntelligence) && hasProject && (
-                                <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-100">
-                                  <div className="flex items-center gap-3 text-xs">
-                                    <span className="text-blue-700">File to:</span>
-                                    <label className="flex items-center gap-1 cursor-pointer">
-                                      <input
-                                        type="radio"
-                                        name={`intel-target-${item._id}`}
-                                        checked={(editingNoteItemId === item._id ? intelligenceTarget : item.userNote?.intelligenceTarget) === "project"}
-                                        onChange={() => {
-                                          if (editingNoteItemId !== item._id) {
-                                            setEditingNoteItemId(item._id);
-                                            setNoteContent(item.userNote?.content || '');
-                                            setAddToIntelligence(item.userNote?.addToIntelligence ?? false);
-                                          }
-                                          setIntelligenceTarget("project");
-                                        }}
-                                        className="w-3 h-3"
-                                      />
-                                      <span className="text-blue-700">Project</span>
-                                    </label>
-                                    <label className="flex items-center gap-1 cursor-pointer">
-                                      <input
-                                        type="radio"
-                                        name={`intel-target-${item._id}`}
-                                        checked={(editingNoteItemId === item._id ? intelligenceTarget : item.userNote?.intelligenceTarget) === "client"}
-                                        onChange={() => {
-                                          if (editingNoteItemId !== item._id) {
-                                            setEditingNoteItemId(item._id);
-                                            setNoteContent(item.userNote?.content || '');
-                                            setAddToIntelligence(item.userNote?.addToIntelligence ?? false);
-                                          }
-                                          setIntelligenceTarget("client");
-                                        }}
-                                        className="w-3 h-3"
-                                      />
-                                      <span className="text-blue-700">Client</span>
-                                    </label>
-                                  </div>
+                                        onRefresh?.();
+                                      } finally {
+                                        setNoteSaving(false);
+                                      }
+                                    }}
+                                    className="text-xs h-7"
+                                  >
+                                    {noteSaving ? (
+                                      <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                                    ) : null}
+                                    Save Note
+                                  </Button>
                                 </div>
-                              )}
-
-                              {/* Info text */}
-                              {(editingNoteItemId === item._id ? addToIntelligence : item.userNote?.addToIntelligence) && (
-                                <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1">
-                                  <Sparkles className="w-3 h-3" />
-                                  Note will be available for document generation via client intelligence
-                                </p>
                               )}
                             </div>
                           )}

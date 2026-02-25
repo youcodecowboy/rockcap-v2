@@ -337,6 +337,7 @@ export async function callAnthropicBatch(
 /**
  * Parse Claude's JSON response into DocumentClassification[].
  * Handles common issues: markdown code blocks, trailing commas, etc.
+ * Validates and defaults all required fields to prevent undefined propagation.
  */
 function parseClassificationResponse(text: string): DocumentClassification[] {
   // Strip markdown code blocks if present
@@ -351,25 +352,68 @@ function parseClassificationResponse(text: string): DocumentClassification[] {
   }
   cleaned = cleaned.trim();
 
+  let raw: any[];
   try {
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed)) {
       // If Claude returned a single object, wrap it
-      return [parsed];
+      raw = [parsed];
+    } else {
+      raw = parsed;
     }
-    return parsed;
   } catch (e) {
     // Try to extract JSON array from response
     const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       try {
-        return JSON.parse(jsonMatch[0]);
+        raw = JSON.parse(jsonMatch[0]);
       } catch {
         // Fall through to error
       }
     }
-    throw new Error(`Failed to parse classification response: ${(e as Error).message}\nResponse: ${text.slice(0, 500)}`);
+    if (!raw!) {
+      throw new Error(`Failed to parse classification response: ${(e as Error).message}\nResponse: ${text.slice(0, 500)}`);
+    }
   }
+
+  // Validate and default all required fields on each classification
+  return raw.map(normalizeClassification);
+}
+
+/** Ensure a raw classification object has all required fields with safe defaults. */
+function normalizeClassification(raw: any): DocumentClassification {
+  const classification = raw.classification || {};
+  const summary = raw.summary || {};
+  const keyEntities = summary.keyEntities || {};
+
+  return {
+    documentIndex: raw.documentIndex ?? 0,
+    fileName: raw.fileName || '',
+    classification: {
+      fileType: classification.fileType || 'Other',
+      category: classification.category || 'Miscellaneous',
+      suggestedFolder: classification.suggestedFolder || 'miscellaneous',
+      targetLevel: classification.targetLevel || 'project',
+      confidence: classification.confidence ?? 0.5,
+      reasoning: classification.reasoning || '',
+      alternativeTypes: Array.isArray(classification.alternativeTypes) ? classification.alternativeTypes : [],
+    },
+    summary: {
+      executiveSummary: summary.executiveSummary || '',
+      documentPurpose: summary.documentPurpose || '',
+      keyEntities: {
+        people: Array.isArray(keyEntities.people) ? keyEntities.people : [],
+        companies: Array.isArray(keyEntities.companies) ? keyEntities.companies : [],
+        locations: Array.isArray(keyEntities.locations) ? keyEntities.locations : [],
+        projects: Array.isArray(keyEntities.projects) ? keyEntities.projects : [],
+      },
+      keyTerms: Array.isArray(summary.keyTerms) ? summary.keyTerms : [],
+      keyDates: Array.isArray(summary.keyDates) ? summary.keyDates : [],
+      keyAmounts: Array.isArray(summary.keyAmounts) ? summary.keyAmounts : [],
+    },
+    checklistMatches: Array.isArray(raw.checklistMatches) ? raw.checklistMatches : [],
+    intelligenceFields: Array.isArray(raw.intelligenceFields) ? raw.intelligenceFields : [],
+  };
 }
 
 // =============================================================================
@@ -420,7 +464,7 @@ export async function callAnthropicIntelligence(
 
   const response = await client.messages.create({
     model: config.primaryModel,
-    max_tokens: 4096,
+    max_tokens: 8_192,
     temperature: 0.1,
     system: [
       {
@@ -438,6 +482,11 @@ export async function callAnthropicIntelligence(
   });
 
   const latencyMs = Date.now() - startTime;
+
+  // Detect truncation: if stop_reason is 'max_tokens', the response was cut off
+  if ((response as any).stop_reason === 'max_tokens') {
+    console.warn(`[INTELLIGENCE] Response truncated at max_tokens (8192). Document may need higher limit.`);
+  }
 
   const textContent = response.content
     .filter((block: any) => block.type === 'text')

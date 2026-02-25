@@ -284,6 +284,9 @@ export const fileDocument = mutation({
         sourceText: v.optional(v.string()),
         originalLabel: v.optional(v.string()),
         matchedAlias: v.optional(v.string()),
+        templateTags: v.optional(v.array(v.string())),
+        pageReference: v.optional(v.string()),
+        scope: v.optional(v.string()),
       })),
       insights: v.optional(v.object({
         keyFindings: v.optional(v.array(v.string())),
@@ -296,7 +299,7 @@ export const fileDocument = mutation({
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
-    
+
     const job = await ctx.db.get(args.jobId);
     if (!job) {
       throw new Error("Job not found");

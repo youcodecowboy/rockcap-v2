@@ -22,12 +22,15 @@ interface SuggestedChecklistItem {
 }
 
 // Pre-extracted intelligence field from bulk-analyze (Sprint 4+)
+type ValidValueType = "string" | "number" | "currency" | "date" | "percentage" | "array" | "text" | "boolean";
+const VALID_VALUE_TYPES = new Set<string>(["string", "number", "currency", "date", "percentage", "array", "text", "boolean"]);
+
 interface ExtractedIntelligenceField {
   fieldPath: string;
   label: string;
   category: string;
   value: any;
-  valueType: "string" | "number" | "currency" | "date" | "percentage" | "array" | "text" | "boolean";
+  valueType: ValidValueType;
   isCanonical: boolean;
   confidence: number;
   sourceText?: string;
@@ -35,6 +38,31 @@ interface ExtractedIntelligenceField {
   matchedAlias?: string;
   templateTags?: string[];
   pageReference?: string;
+  scope?: string;
+}
+
+/**
+ * Sanitize intelligence fields before sending to Convex.
+ * The AI pipeline can generate unexpected valueType values (e.g. "months", "duration")
+ * or include fields not in the Convex validator. This normalizes everything to match
+ * the schema, preventing ArgumentValidationError on every new document type.
+ */
+function sanitizeIntelligenceFields(fields: any[]): ExtractedIntelligenceField[] {
+  return fields.map(f => ({
+    fieldPath: f.fieldPath,
+    label: f.label,
+    category: f.category,
+    value: f.value,
+    valueType: VALID_VALUE_TYPES.has(f.valueType) ? f.valueType as ValidValueType : "text",
+    isCanonical: f.isCanonical ?? false,
+    confidence: typeof f.confidence === 'number' ? f.confidence : 0,
+    sourceText: f.sourceText,
+    originalLabel: f.originalLabel,
+    matchedAlias: f.matchedAlias,
+    templateTags: Array.isArray(f.templateTags) ? f.templateTags : undefined,
+    pageReference: f.pageReference,
+    scope: f.scope,
+  }));
 }
 
 interface ExtractedIntelligence {
@@ -117,6 +145,7 @@ export interface BulkQueueProcessorCallbacks {
     extractedIntelligence?: ExtractedIntelligence;
     documentAnalysis?: DocumentAnalysis;
     classificationReasoning?: string;
+    textContent?: string;
   }) => Promise<Id<"bulkUploadItems">>;
   
   updateBatchStatus: (args: {
@@ -395,18 +424,21 @@ export class BulkQueueProcessor {
       confidence: doc.confidence || 0,
       suggestedFolder: doc.suggestedFolder || "",
       typeAbbreviation: doc.typeAbbreviation || "",
-      suggestedChecklistItems: doc.placement?.checklistMatches || undefined,
+      suggestedChecklistItems: doc.checklistMatches || undefined,
     };
     // Prefer dedicated intelligence extraction fields (from Stage 5.5),
-    // fall back to classification's extractedData for backward compat
-    const extractedIntelligence = doc.intelligenceFields && doc.intelligenceFields.length > 0
-      ? { fields: doc.intelligenceFields }
+    // fall back to classification's extractedData for backward compat.
+    // Always sanitize to normalize AI-generated values (e.g. valueType) to match Convex schema.
+    const rawFields = doc.intelligenceFields && doc.intelligenceFields.length > 0
+      ? doc.intelligenceFields
       : doc.extractedData
-        ? { fields: flattenV4ExtractedData(doc.extractedData) }
-        : undefined;
-    const documentAnalysis = undefined; // V4 doesn't return this separately
-    const classificationReasoning = undefined; // V4 doesn't return this separately
-
+        ? flattenV4ExtractedData(doc.extractedData)
+        : null;
+    const extractedIntelligence = rawFields
+      ? { fields: sanitizeIntelligenceFields(rawFields) }
+      : undefined;
+    const documentAnalysis = doc.documentAnalysis || undefined;
+    const classificationReasoning = doc.classificationReasoning || undefined;
     console.log(`[BulkQueueProcessor] V4 result: ${doc.fileType} (${(doc.confidence * 100).toFixed(0)}% confidence, mock=${v4Data.isMock})`);
     if (extractedIntelligence) {
       console.log(`[BulkQueueProcessor] Intelligence fields: ${extractedIntelligence.fields.length}`);

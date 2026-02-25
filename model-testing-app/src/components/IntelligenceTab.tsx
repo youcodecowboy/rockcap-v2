@@ -64,8 +64,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import AddIntelligenceModal from './AddIntelligenceModal';
-import ConsolidationModal from './ConsolidationModal';
 import FileDetailPanel from '@/app/docs/components/FileDetailPanel';
 import {
   CLIENT_CANONICAL_FIELDS,
@@ -700,7 +698,7 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
     <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <CollapsibleTrigger asChild>
-          <button className="w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left">
+          <div className="w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left cursor-pointer" role="button" tabIndex={0}>
             <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -710,11 +708,6 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                 <Badge variant="outline" className="text-xs flex-shrink-0">
                   {document.category}
                 </Badge>
-                {!hasAnalysis && (
-                  <Badge variant="secondary" className="text-xs flex-shrink-0 bg-amber-50 text-amber-700">
-                    Not Analyzed
-                  </Badge>
-                )}
               </div>
               {hasAnalysis && (
                 <p className="text-sm text-gray-500 line-clamp-1 mt-0.5">
@@ -746,7 +739,7 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                 <ChevronDown className="w-4 h-4 text-gray-400" />
               )}
             </div>
-          </button>
+          </div>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
@@ -971,9 +964,12 @@ interface DocumentsSummaryViewProps {
 
 function DocumentsSummaryView({ documents, searchQuery, onSearchChange, onOpenDocument, title }: DocumentsSummaryViewProps) {
   const filteredDocs = useMemo(() => {
-    if (!searchQuery.trim()) return documents;
+    let docs = [...documents];
+    // Sort most recent first
+    docs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+    if (!searchQuery.trim()) return docs;
     const query = searchQuery.toLowerCase();
-    return documents.filter(doc =>
+    return docs.filter(doc =>
       doc.fileName.toLowerCase().includes(query) ||
       doc.documentCode?.toLowerCase().includes(query) ||
       doc.category.toLowerCase().includes(query) ||
@@ -1114,8 +1110,6 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<KnowledgeItemUI | undefined>();
-  const [showAddIntelligenceModal, setShowAddIntelligenceModal] = useState(false);
-  const [showConsolidationModal, setShowConsolidationModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // View mode: intelligence data or document summaries
@@ -1555,17 +1549,9 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
                   className="pl-9 w-48"
                 />
               </div>
-              <Button variant="outline" size="sm" onClick={() => setShowConsolidationModal(true)} className="gap-1">
-                <RefreshCw className="w-4 h-4" />
-                Consolidate
-              </Button>
               <Button variant="outline" size="sm" onClick={handleAddItem} className="gap-1">
                 <Plus className="w-4 h-4" />
                 Add Custom
-              </Button>
-              <Button onClick={() => setShowAddIntelligenceModal(true)} className="gap-2">
-                <Sparkles className="w-4 h-4" />
-                AI Extract
               </Button>
             </div>
           </div>
@@ -1577,18 +1563,12 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
                 <div className="text-gray-300 mb-4">{activeCategoryConfig?.icon}</div>
                 <p className="text-gray-500 mb-2">No {activeCategoryConfig?.label?.toLowerCase()} fields available</p>
                 <p className="text-sm text-gray-400 mb-4">
-                  Add custom information or use AI Extract to pull from documents
+                  Upload and analyze documents to automatically extract intelligence
                 </p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={handleAddItem}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Custom
-                  </Button>
-                  <Button size="sm" onClick={() => setShowAddIntelligenceModal(true)}>
-                    <Sparkles className="w-4 h-4 mr-1" />
-                    AI Extract
-                  </Button>
-                </div>
+                <Button variant="outline" size="sm" onClick={handleAddItem}>
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Custom
+                </Button>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1629,22 +1609,6 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
         fillingCanonicalField={fillingCanonicalField}
       />
 
-      <AddIntelligenceModal
-        isOpen={showAddIntelligenceModal}
-        onClose={() => setShowAddIntelligenceModal(false)}
-        clientId={isClientScope ? clientId : undefined}
-        projectId={currentProjectId}
-        onIntelligenceAdded={() => {}}
-      />
-
-      <ConsolidationModal
-        isOpen={showConsolidationModal}
-        onClose={() => setShowConsolidationModal(false)}
-        clientId={isClientScope ? clientId : undefined}
-        projectId={currentProjectId}
-        onConsolidationApplied={() => {}}
-      />
-
       {/* Document Detail Panel */}
       <FileDetailPanel
         document={selectedDocForPanel as any}
@@ -1679,8 +1643,6 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<KnowledgeItemUI | undefined>();
-  const [showAddIntelligenceModal, setShowAddIntelligenceModal] = useState(false);
-  const [showConsolidationModal, setShowConsolidationModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
 
@@ -2054,17 +2016,9 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
                   <SelectItem value="monitoring">Monitoring</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm" onClick={() => setShowConsolidationModal(true)} className="gap-1">
-                <RefreshCw className="w-4 h-4" />
-                Consolidate
-              </Button>
               <Button variant="outline" size="sm" onClick={handleAddItem} className="gap-1">
                 <Plus className="w-4 h-4" />
                 Add Custom
-              </Button>
-              <Button onClick={() => setShowAddIntelligenceModal(true)} className="gap-2">
-                <Sparkles className="w-4 h-4" />
-                AI Extract
               </Button>
             </div>
           </div>
@@ -2075,18 +2029,12 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
                 <div className="text-gray-300 mb-4">{activeCategoryConfig?.icon}</div>
                 <p className="text-gray-500 mb-2">No {activeCategoryConfig?.label?.toLowerCase()} fields available</p>
                 <p className="text-sm text-gray-400 mb-4">
-                  Add custom information or use AI Extract to pull from documents
+                  Upload and analyze documents to automatically extract intelligence
                 </p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={handleAddItem}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Custom
-                  </Button>
-                  <Button size="sm" onClick={() => setShowAddIntelligenceModal(true)}>
-                    <Sparkles className="w-4 h-4 mr-1" />
-                    AI Extract
-                  </Button>
-                </div>
+                <Button variant="outline" size="sm" onClick={handleAddItem}>
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Custom
+                </Button>
               </div>
             ) : (
               <div className="space-y-3">
@@ -2125,20 +2073,6 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
         initialCategory={activeCategory}
         editItem={editingItem}
         fillingCanonicalField={fillingCanonicalField}
-      />
-
-      <AddIntelligenceModal
-        isOpen={showAddIntelligenceModal}
-        onClose={() => setShowAddIntelligenceModal(false)}
-        projectId={projectId}
-        onIntelligenceAdded={() => {}}
-      />
-
-      <ConsolidationModal
-        isOpen={showConsolidationModal}
-        onClose={() => setShowConsolidationModal(false)}
-        projectId={projectId}
-        onConsolidationApplied={() => {}}
       />
 
       {/* Document Detail Panel */}

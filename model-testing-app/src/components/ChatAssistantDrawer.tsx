@@ -253,11 +253,13 @@ export default function ChatAssistantDrawer() {
         content,
       });
 
-      // Build conversation history
-      const conversationHistory = messages?.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-      })) || [];
+      // Build conversation history (exclude system messages — they're UI-only status/error messages)
+      const conversationHistory = messages
+        ?.filter(msg => msg.role === 'user' || msg.role === 'assistant')
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        })) || [];
 
       // Update progress
       if (isFirstMessage && hasContext) {
@@ -443,6 +445,9 @@ export default function ChatAssistantDrawer() {
             break;
           case 'contact':
             itemLink = { url: `/rolodex?contact=${data.itemId}`, text: 'View Contact' };
+            break;
+          case 'document':
+            itemLink = { url: `/docs/${data.itemId}`, text: 'View Document' };
             break;
           case 'knowledgeBankEntry':
             if (data.clientId) {
@@ -732,18 +737,31 @@ export default function ChatAssistantDrawer() {
                       content={activity.activity}
                     />
                   ))}
+                  {/* Thinking Indicator */}
+                  {isLoading && (
+                    <ChatMessage role="assistant" content="" isThinking={true} />
+                  )}
                   <div ref={messagesEndRef} />
                 </>
               ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      Welcome to AI Assistant
-                    </h3>
-                    <p className="text-sm text-gray-500 max-w-md">
-                      I can help you manage clients, projects, documents, and more. Just ask me anything!
-                    </p>
-                  </div>
+                <div className="flex flex-col h-full">
+                  {!isLoading && (
+                    <div className="flex items-center justify-center flex-1">
+                      <div className="text-center">
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                          Welcome to AI Assistant
+                        </h3>
+                        <p className="text-sm text-gray-500 max-w-md">
+                          I can help you manage clients, projects, documents, and more. Just ask me anything!
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {isLoading && (
+                    <div className="pt-4">
+                      <ChatMessage role="assistant" content="" isThinking={true} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

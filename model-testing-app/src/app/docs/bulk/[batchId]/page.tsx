@@ -172,27 +172,8 @@ export default function BulkReviewPage() {
         console.error('[BulkUpload] Failed to trigger extraction queue:', err);
       });
 
-      // Trigger intelligence extraction queue (non-blocking)
-      // This extracts client/project intelligence from documents
-      fetch('/api/process-intelligence-queue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 20 }),
-      }).then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-        if (response.ok && data.success) {
-          console.log(`[BulkUpload] Intelligence queue: ${data.message || 'processing started'}`, {
-            processed: data.processed,
-            successful: data.successful,
-            skipped: data.skipped,
-            failed: data.failed,
-          });
-        } else {
-          console.warn('[BulkUpload] Intelligence queue returned:', data);
-        }
-      }).catch(err => {
-        console.error('[BulkUpload] Failed to trigger intelligence queue:', err);
-      });
+      // DEPRECATED: Intelligence extraction is now handled within the bulk upload pipeline skills.
+      // The legacy /api/process-intelligence-queue trigger has been disabled.
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to file documents');
     } finally {
@@ -353,7 +334,7 @@ export default function BulkReviewPage() {
         {checklistStats && checklistStats.total > 0 && (
           <Card 
             className="flex-1 min-w-[140px] cursor-pointer hover:border-primary/50 transition-colors"
-            onClick={() => router.push(`/clients/${batch.clientId}?tab=knowledge`)}
+            onClick={() => router.push(`/clients/${batch.clientId}?tab=checklist`)}
           >
             <CardContent className="p-3 flex items-center gap-3">
               <ClipboardList className={`w-4 h-4 flex-shrink-0 ${checklistStats.missing > 0 ? 'text-amber-500' : 'text-green-500'}`} />

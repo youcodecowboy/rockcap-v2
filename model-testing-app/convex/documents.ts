@@ -362,6 +362,8 @@ export const create = mutation({
       v.literal("personal")
     )),
     ownerId: v.optional(v.id("users")), // Required for personal scope
+    // Full parsed text content for re-analysis without re-uploading
+    textContent: v.optional(v.string()),
     // Document analysis from AI pipeline
     documentAnalysis: v.optional(v.object({
       documentDescription: v.string(),
@@ -456,6 +458,7 @@ export const create = mutation({
       suggestedProjectName: args.suggestedProjectName,
       documentCode: documentCode,
       extractedData: args.extractedData,
+      textContent: args.textContent,
       // Folder filing fields
       folderId: args.folderId,
       folderType: args.folderType,
@@ -703,6 +706,10 @@ export const update = mutation({
     // Folder assignment
     folderId: v.optional(v.union(v.string(), v.null())),
     folderType: v.optional(v.union(v.literal("client"), v.literal("project"), v.null())),
+    // Full parsed text content for re-analysis
+    textContent: v.optional(v.string()),
+    // Intelligence flag
+    addedToIntelligence: v.optional(v.boolean()),
     // Document analysis from AI pipeline
     documentAnalysis: v.optional(v.object({
       documentDescription: v.string(),
@@ -1669,7 +1676,165 @@ export const getProjectFolderCounts = query({
         result[doc.projectId].total++;
       }
     }
-    
+
     return result;
+  },
+});
+
+// =============================================================================
+// SAVE DOCUMENT INTELLIGENCE
+// =============================================================================
+// Saves extracted intelligence fields to the knowledgeItems table.
+// Called after the lightweight /api/extract-intelligence route runs.
+// Handles deduplication: if a knowledgeItem with the same fieldPath + sourceDocumentId
+// already exists, it supersedes the old one rather than creating duplicates.
+
+export const saveDocumentIntelligence = mutation({
+  args: {
+    documentId: v.id("documents"),
+    fields: v.array(v.object({
+      fieldPath: v.string(),
+      label: v.string(),
+      value: v.any(),
+      valueType: v.string(),
+      confidence: v.number(),
+      sourceText: v.optional(v.string()),
+      scope: v.string(),
+      isCanonical: v.boolean(),
+      category: v.string(),
+      originalLabel: v.optional(v.string()),
+      templateTags: v.optional(v.array(v.string())),
+      pageReference: v.optional(v.string()),
+    })),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+  },
+  handler: async (ctx, args) => {
+    const document = await ctx.db.get(args.documentId);
+    if (!document) throw new Error("Document not found");
+
+    const now = new Date().toISOString();
+    let fieldsAdded = 0;
+    let fieldsUpdated = 0;
+
+    for (const field of args.fields) {
+      try {
+        const targetClientId = field.scope === 'client' ? (args.clientId || document.clientId) : undefined;
+        const targetProjectId = field.scope === 'project' ? (args.projectId || document.projectId) : undefined;
+
+        // Check for existing item with same fieldPath from same document
+        const existingFromDoc = await ctx.db
+          .query("knowledgeItems")
+          .withIndex("by_source_document", (q: any) => q.eq("sourceDocumentId", args.documentId))
+          .filter((q: any) => q.eq(q.field("fieldPath"), field.fieldPath))
+          .first();
+
+        if (existingFromDoc) {
+          // Update existing item from same document
+          await ctx.db.patch(existingFromDoc._id, {
+            value: field.value,
+            valueType: field.valueType as any,
+            label: field.label,
+            sourceText: field.sourceText,
+            normalizationConfidence: field.confidence,
+            tags: field.templateTags || ['general'],
+            updatedAt: now,
+          });
+          fieldsUpdated++;
+        } else {
+          // Check for existing item with same fieldPath from a different source
+          let existingItem = null;
+          if (targetProjectId) {
+            existingItem = await ctx.db
+              .query("knowledgeItems")
+              .withIndex("by_project_field", (q: any) => q.eq("projectId", targetProjectId).eq("fieldPath", field.fieldPath))
+              .filter((q: any) => q.eq(q.field("status"), "active"))
+              .first();
+          } else if (targetClientId) {
+            existingItem = await ctx.db
+              .query("knowledgeItems")
+              .withIndex("by_client_field", (q: any) => q.eq("clientId", targetClientId).eq("fieldPath", field.fieldPath))
+              .filter((q: any) => q.eq(q.field("status"), "active"))
+              .first();
+          }
+
+          if (existingItem && field.confidence > (existingItem.normalizationConfidence || 0.5)) {
+            // Higher confidence — supersede old item
+            const newItemId = await ctx.db.insert("knowledgeItems", {
+              clientId: targetClientId,
+              projectId: targetProjectId,
+              fieldPath: field.fieldPath,
+              isCanonical: field.isCanonical,
+              category: field.category,
+              label: field.label,
+              value: field.value,
+              valueType: field.valueType as any,
+              status: "active",
+              sourceType: "ai_extraction",
+              sourceDocumentId: args.documentId,
+              sourceDocumentName: document.fileName,
+              sourceText: field.sourceText,
+              originalLabel: field.originalLabel,
+              normalizationConfidence: field.confidence,
+              tags: field.templateTags || ['general'],
+              addedAt: now,
+              updatedAt: now,
+            });
+            await ctx.db.patch(existingItem._id, {
+              status: "superseded",
+              supersededBy: newItemId,
+              updatedAt: now,
+            });
+            fieldsUpdated++;
+          } else if (!existingItem) {
+            // New field — create
+            await ctx.db.insert("knowledgeItems", {
+              clientId: targetClientId,
+              projectId: targetProjectId,
+              fieldPath: field.fieldPath,
+              isCanonical: field.isCanonical,
+              category: field.category,
+              label: field.label,
+              value: field.value,
+              valueType: field.valueType as any,
+              status: "active",
+              sourceType: "ai_extraction",
+              sourceDocumentId: args.documentId,
+              sourceDocumentName: document.fileName,
+              sourceText: field.sourceText,
+              originalLabel: field.originalLabel,
+              normalizationConfidence: field.confidence,
+              tags: field.templateTags || ['general'],
+              addedAt: now,
+              updatedAt: now,
+            });
+            fieldsAdded++;
+          }
+          // else: existing item has higher confidence, skip
+        }
+      } catch (fieldError) {
+        console.error(`[saveDocumentIntelligence] Error saving field ${field.fieldPath}:`, fieldError);
+      }
+    }
+
+    // Mark document as having intelligence
+    await ctx.db.patch(args.documentId, { addedToIntelligence: true });
+
+    console.log(`[saveDocumentIntelligence] "${document.fileName}": ${fieldsAdded} added, ${fieldsUpdated} updated`);
+    return { fieldsAdded, fieldsUpdated };
+  },
+});
+
+// Query: Get knowledge items extracted from a specific document
+export const getDocumentIntelligence = query({
+  args: {
+    documentId: v.id("documents"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("knowledgeItems")
+      .withIndex("by_source_document", (q: any) => q.eq("sourceDocumentId", args.documentId))
+      .filter((q: any) => q.neq(q.field("status"), "superseded"))
+      .collect();
   },
 });

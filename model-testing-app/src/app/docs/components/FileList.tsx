@@ -79,6 +79,7 @@ export default function FileList({
   const [sortBy, setSortBy] = useState<SortOption>('date-desc');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
 
   // Convex client for on-demand queries
   const convex = useConvex();
@@ -106,6 +107,8 @@ export default function FileList({
     e.preventDefault();
     setIsDragOver(false);
     if (selectedFolder && clientId) {
+      const files = Array.from(e.dataTransfer.files);
+      setDroppedFiles(files);
       setShowUploadModal(true);
     }
   }, [selectedFolder, clientId]);
@@ -419,7 +422,7 @@ export default function FileList({
       {canUpload && scope === 'client' && clientId && clientName && clientType && selectedFolder && (
         <DirectUploadModal
           isOpen={showUploadModal}
-          onClose={() => setShowUploadModal(false)}
+          onClose={() => { setShowUploadModal(false); setDroppedFiles([]); }}
           clientId={clientId}
           clientName={clientName}
           clientType={clientType}
@@ -428,6 +431,7 @@ export default function FileList({
           level={selectedFolder.type as 'client' | 'project'}
           projectId={selectedFolder.projectId}
           projectName={project?.name}
+          initialFiles={droppedFiles}
         />
       )}
 

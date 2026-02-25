@@ -332,6 +332,9 @@ export const updateItemAnalysis = mutation({
         sourceText: v.optional(v.string()),
         originalLabel: v.optional(v.string()),
         matchedAlias: v.optional(v.string()),
+        templateTags: v.optional(v.array(v.string())),
+        pageReference: v.optional(v.string()),
+        scope: v.optional(v.string()),
       })),
       insights: v.optional(v.object({
         keyFindings: v.optional(v.array(v.string())),
@@ -374,9 +377,11 @@ export const updateItemAnalysis = mutation({
     classificationReasoning: v.optional(v.string()),
     // V4 extracted data
     extractedData: v.optional(v.any()),
+    // Full parsed text content for re-analysis
+    textContent: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, ...updates } = args;
+    const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, textContent, ...updates } = args;
 
     // If there are AI-suggested checklist items, pre-select ONLY the highest confidence one
     // Other suggestions are still shown but not auto-checked - user can manually select more
@@ -400,6 +405,8 @@ export const updateItemAnalysis = mutation({
       documentAnalysis: documentAnalysis,
       // Store classification reasoning from Stage 2
       classificationReasoning: classificationReasoning,
+      // Store parsed text for re-analysis
+      textContent: textContent,
       status: "ready_for_review",
       updatedAt: new Date().toISOString(),
     });
@@ -743,20 +750,22 @@ export const fileItem = mutation({
       documentAnalysis: item.documentAnalysis,
       // Classification reasoning from Stage 2
       classificationReasoning: item.classificationReasoning,
+      // Full parsed text content for re-analysis
+      textContent: item.textContent,
       // Document scope and ownership
       scope,
       ownerId: scope === "personal" ? batch.userId : undefined,
       status: "completed",
       savedAt: now,
     });
-    
+
     // Update item status
     await ctx.db.patch(args.itemId, {
       status: "filed",
       documentId,
       updatedAt: now,
     });
-    
+
     // Update batch filed count
     const allItems = await ctx.db
       .query("bulkUploadItems")
@@ -961,30 +970,10 @@ export const fileItem = mutation({
       if (addedFields.length > 0) {
         console.log(`[fileItem]    Fields: ${addedFields.join(' | ')}`);
       }
-    } else if (item.fileStorageId) {
-      // No documentAnalysis available - create background job for extraction
-      // This is the fallback for legacy uploads or documents that couldn't be analyzed
-      try {
-        const jobId = await ctx.db.insert("intelligenceExtractionJobs", {
-          documentId,
-          projectId: batch.projectId,
-          clientId: batch.clientId,
-          documentName: item.fileName,
-          documentType: item.fileTypeDetected,
-          documentCategory: item.category,
-          status: "pending",
-          attempts: 0,
-          maxAttempts: 3,
-          createdAt: now,
-          updatedAt: now,
-        });
-        console.log(`[fileItem] Created intelligence extraction job ${jobId} for "${item.fileName}" (no documentAnalysis available)`);
-      } catch (error) {
-        console.error("[fileItem] Failed to create intelligence extraction job:", error);
-        // Don't fail the filing if intelligence job creation fails
-      }
     } else {
-      console.log(`[fileItem] No documentAnalysis or fileStorageId for "${item.fileName}" - skipping intelligence extraction`);
+      // DEPRECATED: Intelligence extraction jobs are now handled within the bulk upload pipeline skills.
+      // Legacy background job creation has been disabled.
+      console.log(`[fileItem] Skipping legacy intelligence extraction for "${item.fileName}" — handled by upload pipeline`);
     }
 
     // === FILE USER NOTE AS INTELLIGENCE ===
@@ -1298,6 +1287,8 @@ export const fileBatch = mutation({
           documentAnalysis: item.documentAnalysis,
           // Classification reasoning from Stage 2
           classificationReasoning: item.classificationReasoning,
+          // Full parsed text content for re-analysis
+          textContent: item.textContent,
           // Document scope and ownership
           scope,
           ownerId: scope === "personal" ? batch.userId : undefined,
@@ -1507,6 +1498,13 @@ export const fileBatch = mutation({
               const targetClientId = isProjectField ? undefined : batch.clientId;
               const targetProjectId = isProjectField ? batch.projectId : undefined;
 
+              // Safety: skip if both target IDs are undefined (item would be orphaned)
+              if (!targetClientId && !targetProjectId) {
+                console.warn(`[fileBatch] Skipping field "${field.fieldPath}" — no targetClientId or targetProjectId (scope=${field.scope})`);
+                fieldsSkipped++;
+                continue;
+              }
+
               // Check if this field path already exists for this target
               let existingItem = null;
               if (targetProjectId) {
@@ -1620,31 +1618,9 @@ export const fileBatch = mutation({
             console.log(`[fileBatch]    Fields: ${addedFields.join(' | ')}`);
           }
         } else {
-          // No intelligence fields extracted (neither pre-extracted nor from documentAnalysis)
-          // Create background job as fallback for legacy uploads or scanned documents
-          if (item.fileStorageId) {
-            try {
-              const jobId = await ctx.db.insert("intelligenceExtractionJobs", {
-                documentId,
-                projectId: batch.projectId,
-                clientId: batch.clientId,
-                documentName: item.fileName,
-                documentType: item.fileTypeDetected,
-                documentCategory: item.category,
-                status: "pending",
-                attempts: 0,
-                maxAttempts: 3,
-                createdAt: now,
-                updatedAt: now,
-              });
-              console.log(`[fileBatch] Created intelligence extraction job ${jobId} for document "${item.fileName}" (no documentAnalysis available)`);
-            } catch (error) {
-              console.error("Failed to create intelligence extraction job:", error);
-              // Don't fail the filing if intelligence job creation fails
-            }
-          } else {
-            console.log(`[fileBatch] Skipping intelligence job for "${item.fileName}" - no fileStorageId`);
-          }
+          // DEPRECATED: Intelligence extraction jobs are now handled within the bulk upload pipeline skills.
+          // Legacy background job creation has been disabled.
+          console.log(`[fileBatch] Skipping legacy intelligence extraction for "${item.fileName}" — handled by upload pipeline`);
         }
 
         // === MEETING EXTRACTION: Auto-extract meetings from meeting notes ===

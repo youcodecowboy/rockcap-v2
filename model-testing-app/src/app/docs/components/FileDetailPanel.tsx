@@ -7,7 +7,6 @@ import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import {
   Sheet,
@@ -38,15 +37,12 @@ import {
   Trash2,
   FolderInput,
   BookOpen,
-  Building2,
-  MapPin,
-  DollarSign,
   Info,
   Sparkles,
   Loader2,
-  AlertCircle,
   Brain,
   CheckCircle,
+  ClipboardCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -102,6 +98,7 @@ interface Document {
   classificationReasoning?: string;
   addedToIntelligence?: boolean;
   scope?: 'client' | 'internal' | 'personal';
+  textContent?: string;
 }
 
 interface FileDetailPanelProps {
@@ -112,6 +109,30 @@ interface FileDetailPanelProps {
   onMove?: () => void;
   onAnalysisComplete?: () => void;
 }
+
+const CONFIDENCE_COLORS: Record<string, string> = {
+  high: 'bg-green-100 text-green-700 border-green-200',
+  medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  low: 'bg-red-100 text-red-700 border-red-200',
+};
+
+function getConfidenceLevel(confidence: number): string {
+  if (confidence >= 0.8) return 'high';
+  if (confidence >= 0.6) return 'medium';
+  return 'low';
+}
+
+const CATEGORY_ICONS: Record<string, string> = {
+  financials: 'text-green-600',
+  overview: 'text-blue-600',
+  timeline: 'text-amber-600',
+  location: 'text-emerald-600',
+  legal: 'text-purple-600',
+  contact: 'text-cyan-600',
+  company: 'text-indigo-600',
+  financial: 'text-green-600',
+  custom: 'text-gray-600',
+};
 
 export default function FileDetailPanel({
   document: initialDocument,
@@ -124,11 +145,8 @@ export default function FileDetailPanel({
   const router = useRouter();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
-  const [isAddingToIntelligence, setIsAddingToIntelligence] = useState(false);
-  const [intelligenceError, setIntelligenceError] = useState<string | null>(null);
-
-  // @ts-ignore - Convex type instantiation is excessively deep
-  const addToIntelligence = useMutation(api.intelligence.addDocumentToIntelligence);
+  const updateDocument = useMutation(api.documents.update);
+  const saveDocumentIntelligence = useMutation(api.documents.saveDocumentIntelligence);
 
   // Query document by ID to get reactive updates (e.g., after analysis)
   const liveDocument = useQuery(
@@ -145,6 +163,18 @@ export default function FileDetailPanel({
     document?.fileStorageId ? { storageId: document.fileStorageId } : "skip"
   );
 
+  // Query checklist items linked to this document
+  const checklistLinks = useQuery(
+    api.knowledgeLibrary.getChecklistItemsForDocument,
+    document?._id ? { documentId: document._id } : "skip"
+  );
+
+  // Query intelligence items extracted from this document
+  const intelligenceItems = useQuery(
+    api.documents.getDocumentIntelligence,
+    document?._id ? { documentId: document._id } : "skip"
+  );
+
   if (!document) return null;
 
   const handleOpenReader = () => {
@@ -157,56 +187,89 @@ export default function FileDetailPanel({
     setAnalyzeError(null);
 
     try {
-      // Fetch the file from storage to re-analyze via V4 pipeline
-      if (!fileUrl) {
-        throw new Error('File not available for analysis');
+      // 1. Get text content — prefer saved, fall back to re-extraction via file
+      let text = document.textContent;
+
+      if (!text && fileUrl) {
+        // Fall back: fetch file and send to v4-analyze to extract text
+        const fileResponse = await fetch(fileUrl);
+        if (!fileResponse.ok) throw new Error('Failed to fetch file');
+        const blob = await fileResponse.blob();
+
+        const formData = new FormData();
+        formData.append('file', new globalThis.File([blob], document.fileName, { type: document.fileType }));
+        if (document.clientId) {
+          formData.append('metadata', JSON.stringify({
+            clientContext: { clientId: document.clientId },
+          }));
+        }
+
+        const v4Response = await fetch('/api/v4-analyze', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!v4Response.ok) {
+          const errorData = await v4Response.json();
+          throw new Error(errorData.error || 'Classification failed');
+        }
+
+        const v4Data = await v4Response.json();
+        const v4Doc = v4Data.documents?.[0];
+
+        // Save classification results + textContent
+        if (v4Doc) {
+          const updatePayload: Record<string, any> = { id: document._id };
+          if (v4Doc.documentAnalysis) updatePayload.documentAnalysis = v4Doc.documentAnalysis;
+          if (v4Doc.summary) updatePayload.summary = v4Doc.summary;
+          if (v4Doc.fileType) updatePayload.fileTypeDetected = v4Doc.fileType;
+          if (v4Doc.category) updatePayload.category = v4Doc.category;
+          if (v4Doc.classificationReasoning) updatePayload.classificationReasoning = v4Doc.classificationReasoning;
+          if (v4Doc.extractedText) updatePayload.textContent = v4Doc.extractedText;
+          await updateDocument(updatePayload as any);
+          text = v4Doc.extractedText;
+        }
       }
 
-      const fileResponse = await fetch(fileUrl);
-      if (!fileResponse.ok) throw new Error('Failed to fetch file');
-      const blob = await fileResponse.blob();
-
-      const formData = new FormData();
-      formData.append('file', new File([blob], document.fileName, { type: document.fileType }));
-      if (document.clientId) {
-        formData.append('metadata', JSON.stringify({
-          clientContext: { clientId: document.clientId },
-        }));
+      if (!text) {
+        throw new Error('No text content available for intelligence extraction');
       }
 
-      const response = await fetch('/api/v4-analyze', {
+      // 2. Call lightweight intelligence extraction route
+      const res = await fetch('/api/intelligence-extract', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: document._id,
+          documentContent: text,
+          documentName: document.fileName,
+          documentType: document.fileTypeDetected || 'Unknown',
+          documentCategory: document.category || 'Miscellaneous',
+          clientId: document.clientId,
+          projectId: document.projectId,
+        }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Analysis failed');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Intelligence extraction failed');
       }
 
-      // Trigger refresh — the Convex live query will pick up updated document data
+      const extractionResult = await res.json();
+      console.log('[FileDetailPanel] Intelligence extraction result:', extractionResult);
+
+      // Mark document as having intelligence
+      if (!document.addedToIntelligence) {
+        await updateDocument({ id: document._id, addedToIntelligence: true } as any);
+      }
+
+      // Trigger refresh callback
       onAnalysisComplete?.();
     } catch (error) {
       console.error('Analysis error:', error);
       setAnalyzeError(error instanceof Error ? error.message : 'Analysis failed');
     } finally {
       setIsAnalyzing(false);
-    }
-  };
-
-  const handleAddToIntelligence = async () => {
-    if (!document) return;
-
-    setIsAddingToIntelligence(true);
-    setIntelligenceError(null);
-
-    try {
-      await addToIntelligence({ documentId: document._id });
-    } catch (error) {
-      console.error('Add to intelligence error:', error);
-      setIntelligenceError(error instanceof Error ? error.message : 'Failed to add to intelligence');
-    } finally {
-      setIsAddingToIntelligence(false);
     }
   };
 
@@ -288,6 +351,18 @@ export default function FileDetailPanel({
 
   const hasAnalysis = !!document.documentAnalysis;
   const hasSummary = hasAnalysis || !!document.summary;
+  const hasChecklist = checklistLinks && checklistLinks.length > 0;
+  const hasIntelligence = intelligenceItems && intelligenceItems.length > 0;
+
+  // Group intelligence items by category
+  const intelligenceByCategory = intelligenceItems
+    ? intelligenceItems.reduce((acc: Record<string, any[]>, item: any) => {
+        const cat = item.category || 'general';
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(item);
+        return acc;
+      }, {} as Record<string, any[]>)
+    : {};
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -315,75 +390,38 @@ export default function FileDetailPanel({
                     <TabsTrigger value="summary" className="text-xs px-2 py-1.5" disabled={!hasSummary}>
                       Summary
                     </TabsTrigger>
-                    <TabsTrigger value="entities" className="text-xs px-2 py-1.5" disabled={!hasAnalysis}>
-                      Entities
+                    <TabsTrigger value="intelligence" className="text-xs px-2 py-1.5">
+                      Intelligence
                     </TabsTrigger>
-                    <TabsTrigger value="data" className="text-xs px-2 py-1.5" disabled={!hasAnalysis}>
-                      Key Data
+                    <TabsTrigger value="checklist" className="text-xs px-2 py-1.5" disabled={!hasChecklist}>
+                      Checklist
                     </TabsTrigger>
                   </TabsList>
                 </div>
                 {/* Action Button Area */}
                 <div className="flex items-center gap-2">
-                  {!hasAnalysis ? (
-                    // No analysis yet - show Analyze button
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleAnalyze}
-                        disabled={isAnalyzing}
-                        className="h-7 text-xs gap-1.5"
-                      >
-                        {isAnalyzing ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Analyzing...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-3 h-3" />
-                            Analyze Document
-                          </>
-                        )}
-                      </Button>
-                      {analyzeError && (
-                        <span className="text-xs text-red-600">{analyzeError}</span>
-                      )}
-                    </>
-                  ) : document.addedToIntelligence ? (
-                    // Already added to intelligence - show success indicator
-                    <div className="flex items-center gap-1.5 text-xs text-green-600">
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>Added to Intelligence</span>
-                    </div>
-                  ) : document.clientId ? (
-                    // Has analysis and clientId but not added - show Add to Intelligence button
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleAddToIntelligence}
-                        disabled={isAddingToIntelligence}
-                        className="h-7 text-xs gap-1.5"
-                      >
-                        {isAddingToIntelligence ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Adding...
-                          </>
-                        ) : (
-                          <>
-                            <Brain className="w-3 h-3" />
-                            Add to Intelligence
-                          </>
-                        )}
-                      </Button>
-                      {intelligenceError && (
-                        <span className="text-xs text-red-600">{intelligenceError}</span>
-                      )}
-                    </>
-                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAnalyze}
+                    disabled={isAnalyzing}
+                    className="h-7 text-xs gap-1.5"
+                  >
+                    {isAnalyzing ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Extracting Intelligence...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3" />
+                        {hasIntelligence ? 'Re-analyze' : 'Analyze Document'}
+                      </>
+                    )}
+                  </Button>
+                  {analyzeError && (
+                    <span className="text-xs text-red-600">{analyzeError}</span>
+                  )}
                 </div>
               </div>
 
@@ -565,160 +603,113 @@ export default function FileDetailPanel({
                   ) : null}
                 </TabsContent>
 
-                {/* Entities Tab */}
-                <TabsContent value="entities" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
-                  {hasAnalysis && (
-                    <>
-                      {/* People */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <User className="w-4 h-4 text-blue-600" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">People</span>
-                        </div>
-                        {document.documentAnalysis!.entities.people.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {document.documentAnalysis!.entities.people.map((person, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs px-2 py-1">
-                                {person}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">None identified</span>
-                        )}
+                {/* Intelligence Tab */}
+                <TabsContent value="intelligence" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
+                  {hasIntelligence ? (
+                    <div className="space-y-4">
+                      <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                        Extracted Fields ({intelligenceItems.length})
                       </div>
-
-                      <Separator />
-
-                      {/* Companies */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Building2 className="w-4 h-4 text-purple-600" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">Companies</span>
-                        </div>
-                        {document.documentAnalysis!.entities.companies.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {document.documentAnalysis!.entities.companies.map((company, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs px-2 py-1 bg-purple-50">
-                                {company}
-                              </Badge>
-                            ))}
+                      {Object.entries(intelligenceByCategory).map(([category, items]) => (
+                        <div key={category} className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Brain className={cn("w-4 h-4", CATEGORY_ICONS[category] || 'text-gray-500')} />
+                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              {category.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
+                            </span>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {(items as any[]).length}
+                            </Badge>
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">None identified</span>
-                        )}
-                      </div>
-
-                      <Separator />
-
-                      {/* Locations */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <MapPin className="w-4 h-4 text-green-600" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">Locations</span>
-                        </div>
-                        {document.documentAnalysis!.entities.locations.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {document.documentAnalysis!.entities.locations.map((location, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs px-2 py-1 bg-green-50">
-                                {location}
-                              </Badge>
-                            ))}
+                          <div className="space-y-1.5 pl-6">
+                            {(items as any[]).map((item: any) => {
+                              const level = getConfidenceLevel(item.normalizationConfidence ?? item.confidence ?? 0);
+                              return (
+                                <div
+                                  key={item._id}
+                                  className="flex items-start justify-between gap-2 p-2 rounded-md bg-gray-50 border border-gray-100"
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-medium text-gray-800">
+                                      {item.label || item.fieldPath}
+                                    </div>
+                                    <div className="text-sm text-gray-900 mt-0.5 break-words">
+                                      {typeof item.value === 'object' ? JSON.stringify(item.value) : String(item.value)}
+                                    </div>
+                                    {item.sourceText && (
+                                      <div className="text-[10px] text-gray-400 mt-0.5 truncate" title={item.sourceText}>
+                                        {item.sourceText}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    {item.isCanonical && (
+                                      <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-600 border-blue-200">
+                                        Canonical
+                                      </Badge>
+                                    )}
+                                    <Badge
+                                      variant="outline"
+                                      className={cn("text-[10px] px-1 py-0", CONFIDENCE_COLORS[level])}
+                                    >
+                                      {Math.round((item.normalizationConfidence ?? item.confidence ?? 0) * 100)}%
+                                    </Badge>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">None identified</span>
-                        )}
-                      </div>
-
-                      <Separator />
-
-                      {/* Projects */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <FileText className="w-4 h-4 text-amber-600" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">Projects</span>
                         </div>
-                        {document.documentAnalysis!.entities.projects.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {document.documentAnalysis!.entities.projects.map((project, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs px-2 py-1 bg-amber-50">
-                                {project}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">None identified</span>
-                        )}
-                      </div>
-                    </>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <Brain className="w-8 h-8 text-gray-300 mb-2" />
+                      <p className="text-sm text-gray-500">No intelligence extracted yet</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Click &quot;Analyze Document&quot; to extract structured intelligence
+                      </p>
+                    </div>
                   )}
                 </TabsContent>
 
-                {/* Key Data Tab */}
-                <TabsContent value="data" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
-                  {hasAnalysis && (
-                    <>
-                      {/* Key Dates */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Calendar className="w-4 h-4 text-green-600" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">Key Dates</span>
-                        </div>
-                        {document.documentAnalysis!.keyDates.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {document.documentAnalysis!.keyDates.map((date, i) => (
-                              <Badge key={i} variant="outline" className="text-xs px-2 py-1 bg-green-50">
-                                {date}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">None identified</span>
-                        )}
+                {/* Checklist Tab */}
+                <TabsContent value="checklist" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
+                  {hasChecklist ? (
+                    <div className="space-y-3">
+                      <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">
+                        Fulfilled Requirements ({checklistLinks.length})
                       </div>
-
-                      <Separator />
-
-                      {/* Key Amounts */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <DollarSign className="w-4 h-4 text-amber-600" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">Key Amounts</span>
-                        </div>
-                        {document.documentAnalysis!.keyAmounts.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {document.documentAnalysis!.keyAmounts.map((amount, i) => (
-                              <Badge key={i} variant="outline" className="text-xs px-2 py-1 bg-amber-50 font-mono">
-                                {amount}
-                              </Badge>
-                            ))}
+                      {checklistLinks.map((link: any) => (
+                        <div
+                          key={link._id}
+                          className="flex items-center gap-2.5 p-2.5 bg-green-50 rounded-lg border border-green-100"
+                        >
+                          <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900">
+                              {link.checklistItem?.name || 'Unknown requirement'}
+                            </div>
+                            {link.checklistItem?.category && (
+                              <div className="text-xs text-gray-500 mt-0.5">{link.checklistItem.category}</div>
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">None identified</span>
-                        )}
-                      </div>
-
-                      <Separator />
-
-                      {/* Key Terms */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Tag className="w-4 h-4 text-blue-600" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wide font-medium">Key Terms</span>
+                          {link.isPrimary && (
+                            <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-200">
+                              Primary
+                            </Badge>
+                          )}
                         </div>
-                        {document.documentAnalysis!.keyTerms.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {document.documentAnalysis!.keyTerms.map((term, i) => (
-                              <Badge key={i} variant="outline" className="text-xs px-2 py-1">
-                                {term}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">None identified</span>
-                        )}
-                      </div>
-                    </>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <ClipboardCheck className="w-8 h-8 text-gray-300 mb-2" />
+                      <p className="text-sm text-gray-500">No checklist items linked</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Upload with analysis enabled to match checklist requirements
+                      </p>
+                    </div>
                   )}
                 </TabsContent>
               </div>

@@ -24,6 +24,7 @@ import { KNOWLEDGE_BANK_TOOLS } from "./domains/knowledgeBank.tools";
 import { INTELLIGENCE_TOOLS } from "./domains/intelligence.tools";
 import { INTERNAL_DOCUMENT_TOOLS } from "./domains/internalDocument.tools";
 import { FILE_QUEUE_TOOLS } from "./domains/fileQueue.tools";
+import { ANALYSIS_TOOLS } from "./domains/analysis.tools";
 
 /**
  * Core write tools always available in global context
@@ -36,6 +37,7 @@ const GLOBAL_WRITE_TOOLS = new Set([
   "createEvent",
   "createNote",
   "createContact",
+  "saveChatDocument",
 ]);
 
 /**
@@ -92,6 +94,7 @@ export class ToolRegistry {
       ...INTELLIGENCE_TOOLS,
       ...INTERNAL_DOCUMENT_TOOLS,
       ...FILE_QUEUE_TOOLS,
+      ...ANALYSIS_TOOLS,
     ]);
   }
 

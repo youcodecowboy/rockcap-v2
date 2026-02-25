@@ -788,6 +788,187 @@ const handlers: Record<string, ToolHandler> = {
     client.mutation(api.internalDocuments.createFolder, {
       name: params.name,
     }),
+
+  // ==========================================================================
+  // ANALYSIS (V4 Pipeline integration for chat)
+  // ==========================================================================
+
+  analyzeUploadedDocument: async (params, client) => {
+    // 1. Get the file URL from Convex storage
+    const fileUrl = await client.query(api.fileQueue.getFileUrl, {
+      storageId: params.storageId as Id<"_storage">,
+    });
+    if (!fileUrl) {
+      throw new Error("Could not get file URL from storage");
+    }
+
+    // 2. Fetch the file content
+    const fileResponse = await fetch(fileUrl);
+    if (!fileResponse.ok) {
+      throw new Error("Failed to download file from storage");
+    }
+    const fileBuffer = await fileResponse.arrayBuffer();
+
+    // 3. Build client context for V4 pipeline
+    const clientContext: any = {
+      clientId: params.clientId,
+      projectId: params.projectId,
+    };
+    if (params.clientId) {
+      try {
+        const clientData = await client.query(api.clients.get, {
+          id: params.clientId as Id<"clients">,
+        });
+        if (clientData) {
+          clientContext.clientName = clientData.name;
+          clientContext.clientType = clientData.type;
+        }
+      } catch {}
+    }
+
+    // 4. Gather available folders for context-aware classification
+    let availableFolders: any[] = [];
+    if (params.clientId) {
+      try {
+        const folders = await client.query(api.clients.getClientFolders, {
+          clientId: params.clientId as Id<"clients">,
+        });
+        if (folders) {
+          availableFolders = folders.map((f: any) => ({
+            folderKey: f.folderType || f.name,
+            name: f.name,
+            level: "client" as const,
+          }));
+        }
+      } catch {}
+    }
+    if (params.projectId) {
+      try {
+        const folders = await client.query(api.projects.getProjectFolders, {
+          projectId: params.projectId as Id<"projects">,
+        });
+        if (folders) {
+          availableFolders.push(
+            ...folders.map((f: any) => ({
+              folderKey: f.folderType || f.name,
+              name: f.name,
+              level: "project" as const,
+            }))
+          );
+        }
+      } catch {}
+    }
+
+    // 5. Gather checklist items for matching
+    let checklistItems: any[] = [];
+    if (params.clientId) {
+      try {
+        const items = await client.query(api.knowledgeLibrary.getChecklistByClient, {
+          clientId: params.clientId as Id<"clients">,
+        });
+        if (items) {
+          checklistItems = items
+            .filter((item: any) => item.status === "missing" || item.status === "pending_review")
+            .map((item: any) => ({
+              id: item._id,
+              name: item.label || item.name,
+              category: item.category,
+              status: item.status,
+            }));
+        }
+      } catch {}
+    }
+
+    // 6. Run V4 pipeline
+    const { classifySingleDocument } = await import("@/v4/lib/pipeline");
+    const { DEFAULT_V4_CONFIG } = await import("@/v4/types");
+
+    const apiKey = process.env.ANTHROPIC_API_KEY || "";
+    const config = {
+      ...DEFAULT_V4_CONFIG,
+      anthropicApiKey: apiKey,
+      useMock: !apiKey,
+    };
+
+    const fileObj = {
+      name: params.fileName,
+      size: fileBuffer.byteLength,
+      type: params.fileType,
+      arrayBuffer: async () => fileBuffer,
+    };
+
+    const classification = await classifySingleDocument(
+      fileObj,
+      undefined,
+      clientContext,
+      availableFolders,
+      checklistItems,
+      config,
+    );
+
+    if (!classification) {
+      throw new Error("V4 pipeline returned no classification");
+    }
+
+    // 7. Return structured results for Claude to present
+    return {
+      fileName: params.fileName,
+      storageId: params.storageId,
+      fileType: classification.classification.fileType,
+      category: classification.classification.category,
+      confidence: classification.classification.confidence,
+      suggestedFolder: classification.classification.suggestedFolder,
+      reasoning: classification.classification.reasoning,
+      executiveSummary: classification.summary?.executiveSummary || "",
+      documentPurpose: classification.summary?.documentPurpose || "",
+      keyEntities: classification.summary?.keyEntities || {},
+      keyDates: classification.summary?.keyDates || [],
+      keyAmounts: classification.summary?.keyAmounts || [],
+      checklistMatches: classification.checklistMatches || [],
+      intelligenceFields: classification.intelligenceFields || [],
+    };
+  },
+
+  saveChatDocument: async (params, client) => {
+    // Convex IDs are lowercase alphanumeric, 20+ chars — validate before passing
+    const isConvexId = (v: unknown) =>
+      typeof v === "string" && /^[a-z0-9]{20,}$/i.test(v);
+
+    // Create the document record using the existing documents.create mutation
+    const createArgs: any = {
+      fileName: params.fileName,
+      fileSize: params.fileSize || 0,
+      fileType: params.fileType || "application/octet-stream",
+      summary: params.summary,
+      fileTypeDetected: params.fileTypeDetected,
+      category: params.category,
+      confidence: params.confidence,
+      status: "completed" as const,
+    };
+
+    // Only pass ID fields if they're actual Convex IDs (not entity names)
+    if (isConvexId(params.storageId)) {
+      createArgs.fileStorageId = params.storageId as Id<"_storage">;
+    }
+    if (isConvexId(params.clientId)) {
+      createArgs.clientId = params.clientId as Id<"clients">;
+    }
+    if (isConvexId(params.projectId)) {
+      createArgs.projectId = params.projectId as Id<"projects">;
+    }
+    if (params.folderId) {
+      createArgs.folderId = params.folderId;
+    }
+    if (params.folderType) {
+      createArgs.folderType = params.folderType;
+    }
+    if (params.classificationReasoning) {
+      createArgs.classificationReasoning = params.classificationReasoning;
+    }
+
+    const documentId = await client.mutation(api.documents.create, createArgs);
+    return documentId;
+  },
 };
 
 // ---------------------------------------------------------------------------

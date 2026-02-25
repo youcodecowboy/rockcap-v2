@@ -1,6 +1,9 @@
 'use client';
 
 import { AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { Id } from '../../convex/_generated/dataModel';
 
 interface ActionConfirmationModalProps {
   action: {
@@ -13,26 +16,50 @@ interface ActionConfirmationModalProps {
   isExecuting: boolean;
 }
 
+// Convex IDs are alphanumeric strings of a specific length — reject obvious non-IDs
+function looksLikeConvexId(value: unknown): boolean {
+  return typeof value === 'string' && /^[a-z0-9]{20,}$/i.test(value);
+}
+
 export default function ActionConfirmationModal({
   action,
   onConfirm,
   onCancel,
   isExecuting,
 }: ActionConfirmationModalProps) {
+  // Resolve entity IDs to human-readable names (only query if value looks like a real ID)
+  const clientId = action.data?.clientId;
+  const projectId = action.data?.projectId;
+  const client = useQuery(api.clients.get, looksLikeConvexId(clientId) ? { id: clientId as Id<"clients"> } : 'skip');
+  const project = useQuery(api.projects.get, looksLikeConvexId(projectId) ? { id: projectId as Id<"projects"> } : 'skip');
+
+  const resolvedNames: Record<string, string> = {};
+  if (client?.name) resolvedNames['clientId'] = client.name;
+  if (project?.name) resolvedNames['projectId'] = project.name;
+
   // Format action data for display
   const formatActionData = (data: any) => {
     return Object.entries(data)
       .filter(([_, value]) => value !== undefined && value !== null)
-      .map(([key, value]) => (
-        <div key={key} className="flex gap-2">
-          <span className="font-medium text-gray-700 capitalize">
-            {key.replace(/([A-Z])/g, ' $1').trim()}:
-          </span>
-          <span className="text-gray-900">
-            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-          </span>
-        </div>
-      ));
+      .map(([key, value]) => {
+        const displayValue = resolvedNames[key]
+          ? resolvedNames[key]
+          : typeof value === 'object' ? JSON.stringify(value) : String(value);
+        const label = key
+          .replace(/Id$/, '')
+          .replace(/([A-Z])/g, ' $1')
+          .trim();
+        return (
+          <div key={key} className="flex gap-2">
+            <span className="font-medium text-gray-700 capitalize">
+              {label}:
+            </span>
+            <span className="text-gray-900">
+              {displayValue}
+            </span>
+          </div>
+        );
+      });
   };
 
   const getActionTitle = (type: string) => {
@@ -44,12 +71,13 @@ export default function ActionConfirmationModal({
       updateClient: 'Update Client',
       updateProject: 'Update Project',
       uploadAndAnalyzeFile: 'Upload and Analyze File',
+      saveChatDocument: 'File Document',
     };
     return titles[type] || type;
   };
 
   const getActionIcon = (type: string) => {
-    if (type.startsWith('create') || type.startsWith('upload')) {
+    if (type.startsWith('create') || type.startsWith('upload') || type === 'saveChatDocument') {
       return <CheckCircle className="w-6 h-6 text-blue-600" />;
     }
     if (type.startsWith('update')) {
@@ -121,4 +149,3 @@ export default function ActionConfirmationModal({
     </div>
   );
 }
-

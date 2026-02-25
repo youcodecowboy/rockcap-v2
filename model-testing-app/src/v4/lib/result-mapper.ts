@@ -50,6 +50,36 @@ export interface KnowledgeBankEntryData {
   sourceType: 'document';
 }
 
+/** Document analysis object matching Convex documents.documentAnalysis schema */
+export interface ConvexDocumentAnalysis {
+  documentDescription: string;
+  documentPurpose: string;
+  entities: {
+    people: string[];
+    companies: string[];
+    locations: string[];
+    projects: string[];
+  };
+  keyTerms: string[];
+  keyDates: string[];
+  keyAmounts: string[];
+  executiveSummary: string;
+  detailedSummary: string;
+  sectionBreakdown?: string[];
+  documentCharacteristics: {
+    isFinancial: boolean;
+    isLegal: boolean;
+    isIdentity: boolean;
+    isReport: boolean;
+    isDesign: boolean;
+    isCorrespondence: boolean;
+    hasMultipleProjects: boolean;
+    isInternal: boolean;
+  };
+  rawContentType: string;
+  confidenceInAnalysis: number;
+}
+
 /** Complete mapped result for a single document */
 export interface MappedDocumentResult {
   /** Original document index (matches V4 classification.documentIndex) */
@@ -62,6 +92,18 @@ export interface MappedDocumentResult {
   placement: PlacementResult;
   /** Knowledge bank entry data (created when document is filed) */
   knowledgeBankEntry: KnowledgeBankEntryData;
+  /** Document analysis for rich metadata (Summary, Entities, Key Data tabs) */
+  documentAnalysis: ConvexDocumentAnalysis;
+  /** Checklist matches from classification */
+  checklistMatches: Array<{
+    itemId: string;
+    itemName: string;
+    category: string;
+    confidence: number;
+    reasoning: string;
+  }>;
+  /** Classification reasoning */
+  classificationReasoning: string;
   /** Classification confidence */
   confidence: number;
   /** Whether the model was uncertain (confidence < 0.60) */
@@ -119,6 +161,9 @@ export function mapClassificationToConvex(
   // Build knowledge bank entry
   const knowledgeBankEntry = buildKnowledgeBankEntry(classification, placement);
 
+  // Build document analysis for rich metadata display
+  const documentAnalysis = buildDocumentAnalysis(classification, context);
+
   return {
     documentIndex: classification.documentIndex,
     fileName: classification.fileName,
@@ -134,6 +179,9 @@ export function mapClassificationToConvex(
     },
     placement,
     knowledgeBankEntry,
+    documentAnalysis,
+    checklistMatches: classification.checklistMatches || [],
+    classificationReasoning: classification.classification.reasoning || '',
     confidence,
     isLowConfidence: confidence < 0.60,
     alternativeTypes: alternativeTypes || [],
@@ -218,6 +266,73 @@ function deriveShortcode(name: string): string {
 }
 
 // =============================================================================
+// DOCUMENT ANALYSIS BUILDER
+// =============================================================================
+
+/**
+ * Normalize an entity array from Claude — the model sometimes returns objects
+ * (e.g. {name, role, registrationNumber}) instead of plain strings.
+ * Extracts the `name` field from objects and filters out non-string values.
+ */
+function normalizeEntityArray(arr: unknown): string[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && 'name' in item && typeof item.name === 'string') {
+        return item.name;
+      }
+      return null;
+    })
+    .filter((v): v is string => v !== null);
+}
+
+/**
+ * Build the documentAnalysis object from V4 classification data.
+ * This maps DocumentClassification.summary → Convex documentAnalysis schema.
+ * Always returns a valid object — uses safe defaults for any missing fields.
+ */
+function buildDocumentAnalysis(
+  classification: DocumentClassification,
+  context: { isInternal?: boolean },
+): ConvexDocumentAnalysis {
+  const summary = classification.summary || {} as any;
+  const { category, fileType, confidence } = classification.classification;
+
+  const executiveSummary = summary.executiveSummary || `${fileType} document`;
+  const documentPurpose = summary.documentPurpose || '';
+
+  return {
+    documentDescription: executiveSummary,
+    documentPurpose,
+    entities: {
+      people: normalizeEntityArray(summary.keyEntities?.people),
+      companies: normalizeEntityArray(summary.keyEntities?.companies),
+      locations: normalizeEntityArray(summary.keyEntities?.locations),
+      projects: normalizeEntityArray(summary.keyEntities?.projects),
+    },
+    keyTerms: summary.keyTerms || [],
+    keyDates: summary.keyDates || [],
+    keyAmounts: summary.keyAmounts || [],
+    executiveSummary,
+    detailedSummary: documentPurpose,
+    documentCharacteristics: {
+      isFinancial: category === 'Financial Documents' ||
+        (classification.intelligenceFields?.some(f => f.category === 'financials') ?? false),
+      isLegal: category === 'Legal Documents',
+      isIdentity: category === 'KYC',
+      isReport: category === 'Professional Reports' || category === 'Inspections',
+      isDesign: category === 'Plans',
+      isCorrespondence: category === 'Communications',
+      hasMultipleProjects: (summary.keyEntities?.projects?.length || 0) > 1,
+      isInternal: context.isInternal ?? false,
+    },
+    rawContentType: fileType,
+    confidenceInAnalysis: confidence,
+  };
+}
+
+// =============================================================================
 // EXTRACTED DATA BUILDER
 // =============================================================================
 
@@ -273,9 +388,9 @@ function buildKnowledgeBankEntry(
   }
   if (summary?.keyEntities) {
     const entities = [
-      ...(summary.keyEntities.people || []),
-      ...(summary.keyEntities.companies || []),
-    ].filter(Boolean);
+      ...normalizeEntityArray(summary.keyEntities.people),
+      ...normalizeEntityArray(summary.keyEntities.companies),
+    ];
     if (entities.length > 0) {
       keyPoints.push(`Key parties: ${entities.join(', ')}`);
     }

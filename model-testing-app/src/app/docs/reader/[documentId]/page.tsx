@@ -28,16 +28,25 @@ export default function DocumentReaderPage() {
     }
   }, [docId, markAsOpened]);
 
+  // Deterministic back navigation — go to client doc library if available, otherwise /docs
+  const handleBack = () => {
+    if (document?.clientId) {
+      router.push(`/docs/client/${document.clientId}`);
+    } else {
+      router.push('/docs');
+    }
+  };
+
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        router.back();
+        handleBack();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [router]);
+  }, [document]);
 
   if (!document) {
     return (
@@ -82,7 +91,7 @@ export default function DocumentReaderPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.back()}
+            onClick={handleBack}
             className="gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
