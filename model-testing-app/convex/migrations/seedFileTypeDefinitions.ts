@@ -1154,7 +1154,7 @@ export const seedFileTypeDefinitions = internalMutation({
     ];
 
     const now = new Date().toISOString();
-    const systemUserId = 'system';
+    // System defaults don't have a user - createdBy is optional
 
     // Check if definitions already exist
     const existing = await ctx.db.query("fileTypeDefinitions").collect();
@@ -1170,7 +1170,7 @@ export const seedFileTypeDefinitions = internalMutation({
         ...def,
         isSystemDefault: true,
         isActive: true,
-        createdBy: systemUserId,
+        // createdBy omitted for system defaults
         createdAt: now,
         updatedAt: now,
       });

@@ -117,7 +117,7 @@ export const uploadDocumentDirect = mutation({
       );
       
       // Ensure uniqueness
-      const existingDocs = await ctx.db.query("documents").collect();
+      const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
       let finalCode = documentCode;
       let counter = 1;
       while (existingDocs.some(doc => doc.documentCode === finalCode)) {

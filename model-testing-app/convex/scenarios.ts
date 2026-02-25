@@ -10,6 +10,7 @@ export const list = query({
     return await ctx.db
       .query("scenarios")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
   },
 });
@@ -18,7 +19,9 @@ export const list = query({
 export const get = query({
   args: { id: v.id("scenarios") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const scenario = await ctx.db.get(args.id);
+    if (!scenario || scenario.isDeleted) return null;
+    return scenario;
   },
 });
 
@@ -29,7 +32,7 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     data: v.optional(v.any()),
-    createdBy: v.optional(v.string()),
+    createdBy: v.optional(v.id("users")),
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
@@ -96,7 +99,11 @@ export const updateData = mutation({
 export const remove = mutation({
   args: { id: v.id("scenarios") },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.id);
+    await ctx.db.patch(args.id, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: "user_deleted",
+    });
   },
 });
 

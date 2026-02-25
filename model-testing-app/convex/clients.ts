@@ -18,15 +18,17 @@ export const list = query({
       return await ctx.db
         .query("clients")
         .withIndex("by_status", (q: any) => q.eq("status", args.status!))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     } else if (args.type) {
       return await ctx.db
         .query("clients")
         .withIndex("by_type", (q: any) => q.eq("type", args.type))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     }
-    
-    return await ctx.db.query("clients").collect();
+
+    return await ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
   },
 });
 
@@ -34,7 +36,11 @@ export const list = query({
 export const get = query({
   args: { id: v.id("clients") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const client = await ctx.db.get(args.id);
+    if (!client || client.isDeleted) {
+      return null;
+    }
+    return client;
   },
 });
 
@@ -50,6 +56,7 @@ export const getByStatus = query({
     return await ctx.db
       .query("clients")
       .withIndex("by_status", (q: any) => q.eq("status", args.status))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
   },
 });
@@ -61,6 +68,7 @@ export const getByType = query({
     return await ctx.db
       .query("clients")
       .withIndex("by_type", (q: any) => q.eq("type", args.type))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
   },
 });
@@ -480,7 +488,11 @@ export const migrateInvalidFields = internalMutation({
 export const remove = mutation({
   args: { id: v.id("clients") },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.id);
+    await ctx.db.patch(args.id, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: "user_deleted",
+    });
 
     // Invalidate context cache for this client
     await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
@@ -497,6 +509,7 @@ export const exists = query({
     const clients = await ctx.db
       .query("clients")
       .withIndex("by_name", (q: any) => q.eq("name", args.name))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     return clients.length > 0;
   },
@@ -507,15 +520,16 @@ export const getStats = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
     // Get projects for this client
-    const allProjects = await ctx.db.query("projects").collect();
-    const clientProjects = allProjects.filter(p => 
+    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    const clientProjects = allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
-    
+
     // Get documents for this client
     const documents = await ctx.db
       .query("documents")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     const activeProjects = clientProjects.filter(p => p.status === "active");
@@ -542,7 +556,7 @@ export const getRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit || 4;
-    const allClients = await ctx.db.query("clients").collect();
+    const allClients = await ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const sorted = allClients.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
@@ -617,10 +631,11 @@ export const deleteCustomFolder = mutation({
     const documents = await ctx.db
       .query("documents")
       .filter((q: any) => q.eq(q.field("folderId"), folder.folderType))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
+
     const clientDocs = documents.filter(d => d.clientId === folder.clientId && !d.projectId);
-    
+
     if (clientDocs.length > 0) {
       throw new Error(`Cannot delete folder "${folder.name}". It contains ${clientDocs.length} document(s). Move or delete them first.`);
     }
@@ -630,6 +645,7 @@ export const deleteCustomFolder = mutation({
     const finalCheck = await ctx.db
       .query("documents")
       .filter((q: any) => q.eq(q.field("folderId"), folder.folderType))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     const orphanedDocs = finalCheck.filter(d => d.clientId === folder.clientId && !d.projectId);

@@ -30,7 +30,7 @@ export const getModelFileUrl = query({
   },
   handler: async (ctx, args) => {
     const run = await ctx.db.get(args.runId);
-    if (!run || !run.fileStorageId) return null;
+    if (!run || run.isDeleted || !run.fileStorageId) return null;
     return await ctx.storage.getUrl(run.fileStorageId);
   },
 });
@@ -44,6 +44,7 @@ export const list = query({
     const runs = await ctx.db
       .query("modelRuns")
       .withIndex("by_scenario", (q: any) => q.eq("scenarioId", args.scenarioId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     // Sort by version descending (newest first)
@@ -55,7 +56,9 @@ export const list = query({
 export const get = query({
   args: { id: v.id("modelRuns") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const run = await ctx.db.get(args.id);
+    if (!run || run.isDeleted) return null;
+    return run;
   },
 });
 
@@ -74,6 +77,7 @@ export const getLatest = query({
     const runs = await ctx.db
       .query("modelRuns")
       .withIndex("by_scenario", (q: any) => q.eq("scenarioId", args.scenarioId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     let filtered = runs;
@@ -97,6 +101,7 @@ export const getVersions = query({
     const runs = await ctx.db
       .query("modelRuns")
       .withIndex("by_scenario", (q: any) => q.eq("scenarioId", args.scenarioId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     // Sort by version descending
@@ -118,9 +123,10 @@ export const getNextVersion = query({
   handler: async (ctx, args) => {
     const runs = await ctx.db
       .query("modelRuns")
-      .withIndex("by_project_modelType", (q: any) => 
+      .withIndex("by_project_modelType", (q: any) =>
         q.eq("projectId", args.projectId).eq("modelType", args.modelType)
       )
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     if (runs.length === 0) return 1;
@@ -146,14 +152,16 @@ export const getProjectVersions = query({
     if (args.modelType) {
       runs = await ctx.db
         .query("modelRuns")
-        .withIndex("by_project_modelType", (q: any) => 
+        .withIndex("by_project_modelType", (q: any) =>
           q.eq("projectId", args.projectId).eq("modelType", args.modelType)
         )
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     } else {
       runs = await ctx.db
         .query("modelRuns")
         .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     }
     
@@ -183,7 +191,7 @@ export const create = mutation({
       v.literal("error")
     ),
     error: v.optional(v.string()),
-    runBy: v.optional(v.string()),
+    runBy: v.optional(v.id("users")),
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
@@ -220,7 +228,7 @@ export const saveVersion = mutation({
     inputs: v.any(),
     outputs: v.optional(v.any()),
     fileStorageId: v.optional(v.id("_storage")),
-    runBy: v.optional(v.string()),
+    runBy: v.optional(v.id("users")),
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
@@ -260,15 +268,16 @@ export const saveModelVersion = mutation({
     description: v.optional(v.string()),
     inputs: v.any(), // Full sheet structure
     fileStorageId: v.optional(v.id("_storage")),
-    runBy: v.optional(v.string()),
+    runBy: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     // Calculate next version number for this project + model type
     const existingRuns = await ctx.db
       .query("modelRuns")
-      .withIndex("by_project_modelType", (q: any) => 
+      .withIndex("by_project_modelType", (q: any) =>
         q.eq("projectId", args.projectId).eq("modelType", args.modelType)
       )
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     const nextVersion = existingRuns.length === 0 
@@ -328,7 +337,7 @@ export const saveModelWithSnapshot = mutation({
     description: v.optional(v.string()),
     inputs: v.any(),
     fileStorageId: v.optional(v.id("_storage")),
-    runBy: v.optional(v.string()),
+    runBy: v.optional(v.id("users")),
     userId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -351,15 +360,16 @@ export const saveModelWithSnapshot = mutation({
     // Calculate next version number
     const existingRuns = await ctx.db
       .query("modelRuns")
-      .withIndex("by_project_modelType", (q: any) => 
+      .withIndex("by_project_modelType", (q: any) =>
         q.eq("projectId", args.projectId).eq("modelType", args.modelType)
       )
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
-    const nextVersion = existingRuns.length === 0 
-      ? 1 
+
+    const nextVersion = existingRuns.length === 0
+      ? 1
       : Math.max(...existingRuns.map(r => r.version)) + 1;
-    
+
     const date = now.split('T')[0];
     const versionName = `v${nextVersion}-${args.modelType}-${date}`;
     

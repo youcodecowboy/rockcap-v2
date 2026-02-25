@@ -128,6 +128,7 @@ export const getDocumentCounts = query({
       .withIndex("by_scope_owner", (q) =>
         q.eq("scope", "personal").eq("ownerId", user._id)
       )
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     // Count documents per folder
@@ -279,7 +280,10 @@ export const remove = mutation({
       .withIndex("by_scope_owner", (q) =>
         q.eq("scope", "personal").eq("ownerId", user._id)
       )
-      .filter((q) => q.eq(q.field("folderId"), folder.folderType))
+      .filter((q) => q.and(
+        q.eq(q.field("folderId"), folder.folderType),
+        q.neq(q.field("isDeleted"), true)
+      ))
       .collect();
 
     if (documents.length > 0) {

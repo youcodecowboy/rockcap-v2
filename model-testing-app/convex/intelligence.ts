@@ -65,7 +65,6 @@ export const getOrCreateClientIntelligence = query({
       aiSummary: null,
       projectSummaries: null,
       customFields: null,
-      fieldSources: null,
       lastUpdated: new Date().toISOString(),
       lastUpdatedBy: null,
       version: 0,
@@ -101,7 +100,6 @@ export const getOrCreateProjectIntelligence = query({
       dataLibrarySummary: null,
       aiSummary: null,
       customFields: null,
-      fieldSources: null,
       lastUpdated: new Date().toISOString(),
       lastUpdatedBy: null,
       version: 0,
@@ -1104,7 +1102,7 @@ export const syncProjectSummariesToClient = mutation({
     const now = new Date().toISOString();
 
     // Get all projects where this client has a role
-    const allProjects = await ctx.db.query("projects").collect();
+    const allProjects = await ctx.db.query("projects").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
     const clientProjects = allProjects.filter((p) =>
       p.clientRoles?.some((cr) => cr.clientId === args.clientId)
     );

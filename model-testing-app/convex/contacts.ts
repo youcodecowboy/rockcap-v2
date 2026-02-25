@@ -8,6 +8,7 @@ export const getByClient = query({
     return await ctx.db
       .query("contacts")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
   },
 });
@@ -19,6 +20,7 @@ export const getByProject = query({
     return await ctx.db
       .query("contacts")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
   },
 });
@@ -26,7 +28,7 @@ export const getByProject = query({
 // Query: Get all contacts
 export const getAll = query({
   handler: async (ctx) => {
-    return await ctx.db.query("contacts").collect();
+    return await ctx.db.query("contacts").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
   },
 });
 
@@ -35,7 +37,7 @@ export const get = query({
   args: { id: v.id("contacts") },
   handler: async (ctx, args) => {
     const contact = await ctx.db.get(args.id);
-    if (!contact) return null;
+    if (!contact || contact.isDeleted) return null;
     
     // Fetch associated companies
     const companies = contact.linkedCompanyIds 
@@ -131,7 +133,11 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("contacts") },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.id);
+    await ctx.db.patch(args.id, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: "user_deleted",
+    });
   },
 });
 

@@ -24,6 +24,7 @@ export const linkContactsToDeal = mutation({
       const contact = await ctx.db
         .query("contacts")
         .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
         .first();
       
       if (contact) {
@@ -101,6 +102,7 @@ export const linkAssociationsToDeal = mutation({
         const contact = await ctx.db
           .query("contacts")
           .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hubspotContactId))
+          .filter((q: any) => q.neq(q.field("isDeleted"), true))
           .first();
         
         if (contact) {

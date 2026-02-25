@@ -767,7 +767,7 @@ const handlers: Record<string, ToolHandler> = {
 
   getInternalDocumentsByFolder: async (params, client) =>
     client.query(api.internalDocuments.getByFolder, {
-      folderId: params.folderId as Id<"internalDocumentFolders">,
+      folderId: params.folderId as Id<"internalFolders">,
     }),
 
   createInternalDocument: async (params, client) =>
