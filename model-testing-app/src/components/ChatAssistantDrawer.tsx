@@ -774,6 +774,16 @@ export default function ChatAssistantDrawer() {
           isExecuting={isLoading}
         />
       )}
+
+      {/* Bulk Action Confirmation Modal */}
+      {pendingBulkActions.length > 0 && (
+        <BulkActionConfirmationModal
+          actions={pendingBulkActions}
+          onConfirm={handleBulkActionConfirm}
+          onCancel={handleBulkActionCancel}
+          isExecuting={isLoading}
+        />
+      )}
     </>
   );
 }

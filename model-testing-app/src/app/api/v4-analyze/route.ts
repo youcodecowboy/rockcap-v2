@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runV4Pipeline } from '@/v4/lib/pipeline';
 import { mapBatchToConvex } from '@/v4/lib/result-mapper';
+import { extractTextFromFile } from '@/lib/fileProcessor';
 import type {
   ChecklistItem,
   FolderInfo,
@@ -97,6 +98,31 @@ export async function POST(request: NextRequest) {
       clientContext.clientType = clientType;
     }
 
+    // ── Server-side text extraction ──
+    // Extract text from PDFs/docs BEFORE pipeline to avoid sending raw base64.
+    // Saves ~75% tokens (37K → ~9K for a typical PDF).
+    // Full text is stored separately for intelligence extraction (Phase B).
+    const fullTexts: Map<number, string> = new Map();
+
+    for (let i = 0; i < files.length; i++) {
+      const { file, extractedText } = files[i];
+      if (extractedText) {
+        fullTexts.set(i, extractedText);
+      } else {
+        try {
+          const text = await extractTextFromFile(file as File);
+          if (text && text.trim().length > 0) {
+            files[i].extractedText = text;
+            fullTexts.set(i, text);
+            console.log(`[V4 API] Extracted ${text.length} chars from "${file.name}"`);
+          }
+        } catch (err) {
+          // Extraction failed (scanned PDF, etc.) — pipeline will use raw file as fallback
+          console.warn(`[V4 API] Text extraction failed for "${file.name}":`, (err as Error).message);
+        }
+      }
+    }
+
     // ── Build pipeline config ──
     const anthropicApiKey = process.env.ANTHROPIC_API_KEY || '';
     const useMock = !anthropicApiKey;
@@ -112,6 +138,7 @@ export async function POST(request: NextRequest) {
 
     const result = await runV4Pipeline({
       files,
+      fullTexts,
       clientContext,
       availableFolders: metadata.availableFolders || [],
       checklistItems: metadata.checklistItems || [],
@@ -158,6 +185,9 @@ export async function POST(request: NextRequest) {
         knowledgeBankEntry: doc.knowledgeBankEntry,
         isLowConfidence: doc.isLowConfidence,
         alternativeTypes: doc.alternativeTypes,
+
+        // Intelligence fields from dedicated extraction call
+        intelligenceFields: result.intelligence[doc.documentIndex] || [],
 
         // Backward compat
         originalFileName: doc.fileName,

@@ -46,6 +46,7 @@ export const FILE_TYPES = [
   'Interim Monitoring Report',
   // Professional Reports
   'Planning Documentation',
+  'Planning Permission',
   'Contract Sum Analysis',
   'Comparables',
   'Building Survey',

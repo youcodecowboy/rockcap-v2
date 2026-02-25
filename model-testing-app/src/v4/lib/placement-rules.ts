@@ -263,6 +263,8 @@ export function getTypeAbbreviation(fileType: string): string {
     'Credit Backed Terms': 'CBTTERMS',
     'Initial Monitoring Report': 'IMR',
     'Interim Monitoring Report': 'INTMR',
+    'Planning Permission': 'PLANPERM',
+    'Planning Documentation': 'PLANDOC',
     'Building Survey': 'BLDGSURVEY',
     'Report on Title': 'ROT',
     'Floor Plans': 'FLRPLAN',

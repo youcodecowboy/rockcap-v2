@@ -108,6 +108,89 @@ const LABEL_TO_CANONICAL: Record<string, { path: string; scope: 'client' | 'proj
   'liquid assets': { path: 'financial.liquidAssets', scope: 'client' },
   'annual income': { path: 'financial.annualIncome', scope: 'client' },
   'portfolio value': { path: 'financial.propertyPortfolioValue', scope: 'client' },
+
+  // Legal fields (project-level)
+  'title details': { path: 'legal.titleDetails', scope: 'project' },
+  'title report': { path: 'legal.titleDetails', scope: 'project' },
+  'charges': { path: 'legal.charges', scope: 'project' },
+  'encumbrances': { path: 'legal.charges', scope: 'project' },
+  'covenants': { path: 'legal.covenants', scope: 'project' },
+  'restrictive covenants': { path: 'legal.covenants', scope: 'project' },
+  'lease terms': { path: 'legal.leaseTerms', scope: 'project' },
+  'leasehold': { path: 'legal.leaseTerms', scope: 'project' },
+  'ground rent': { path: 'legal.leaseTerms', scope: 'project' },
+  'guarantees': { path: 'legal.guarantees', scope: 'project' },
+  'personal guarantee': { path: 'legal.guarantees', scope: 'project' },
+  'conditions precedent': { path: 'legal.conditionsPrecedent', scope: 'project' },
+  'cps': { path: 'legal.conditionsPrecedent', scope: 'project' },
+  'conditions subsequent': { path: 'legal.conditionsSubsequent', scope: 'project' },
+
+  // Insurance fields (project-level)
+  'policy number': { path: 'insurance.policyNumber', scope: 'project' },
+  'insurance policy': { path: 'insurance.policyNumber', scope: 'project' },
+  'insurer': { path: 'insurance.insurer', scope: 'project' },
+  'insurance company': { path: 'insurance.insurer', scope: 'project' },
+  'cover amount': { path: 'insurance.coverAmount', scope: 'project' },
+  'sum insured': { path: 'insurance.coverAmount', scope: 'project' },
+  'policy expiry': { path: 'insurance.expiryDate', scope: 'project' },
+  'insurance expiry': { path: 'insurance.expiryDate', scope: 'project' },
+  'cover type': { path: 'insurance.coverType', scope: 'project' },
+  'type of cover': { path: 'insurance.coverType', scope: 'project' },
+
+  // Planning fields (project-level)
+  'planning ref': { path: 'planning.applicationRef', scope: 'project' },
+  'planning reference': { path: 'planning.applicationRef', scope: 'project' },
+  'application reference': { path: 'planning.applicationRef', scope: 'project' },
+  'planning status': { path: 'planning.status', scope: 'project' },
+  'planning conditions': { path: 'planning.conditions', scope: 'project' },
+  's106': { path: 'planning.s106Details', scope: 'project' },
+  'section 106': { path: 'planning.s106Details', scope: 'project' },
+  's106 agreement': { path: 'planning.s106Details', scope: 'project' },
+  'cil': { path: 'planning.cil', scope: 'project' },
+  'community infrastructure levy': { path: 'planning.cil', scope: 'project' },
+  'permitted development': { path: 'planning.permittedDevelopment', scope: 'project' },
+
+  // Valuation fields (project-level)
+  'valuation': { path: 'valuation.marketValue', scope: 'project' },
+  'valuation figure': { path: 'valuation.marketValue', scope: 'project' },
+  'special assumptions': { path: 'valuation.specialAssumptions', scope: 'project' },
+  'comparables': { path: 'valuation.comparables', scope: 'project' },
+  'comparable evidence': { path: 'valuation.comparables', scope: 'project' },
+  'valuer': { path: 'valuation.valuer', scope: 'project' },
+  'surveyor': { path: 'valuation.valuer', scope: 'project' },
+  'valuation date': { path: 'valuation.valuationDate', scope: 'project' },
+  'basis of value': { path: 'valuation.basisOfValue', scope: 'project' },
+
+  // Risk fields (project-level)
+  'risk': { path: 'risk.description', scope: 'project' },
+  'risk description': { path: 'risk.description', scope: 'project' },
+  'risk severity': { path: 'risk.severity', scope: 'project' },
+  'risk mitigant': { path: 'risk.mitigant', scope: 'project' },
+  'mitigation': { path: 'risk.mitigant', scope: 'project' },
+  'risk category': { path: 'risk.riskCategory', scope: 'project' },
+
+  // Conditions fields (project-level)
+  'cp': { path: 'conditions.precedent', scope: 'project' },
+  'drawdown conditions': { path: 'conditions.precedent', scope: 'project' },
+  'post-completion conditions': { path: 'conditions.subsequent', scope: 'project' },
+  'ongoing conditions': { path: 'conditions.ongoing', scope: 'project' },
+  'financial covenants': { path: 'conditions.ongoing', scope: 'project' },
+  'waiver': { path: 'conditions.waivers', scope: 'project' },
+  'condition waiver': { path: 'conditions.waivers', scope: 'project' },
+
+  // Parties fields (project-level)
+  'solicitor': { path: 'parties.solicitor', scope: 'project' },
+  'law firm': { path: 'parties.solicitor', scope: 'project' },
+  'legal advisor': { path: 'parties.solicitor', scope: 'project' },
+  'architect': { path: 'parties.architect', scope: 'project' },
+  'contractor': { path: 'parties.contractor', scope: 'project' },
+  'main contractor': { path: 'parties.contractor', scope: 'project' },
+  'builder': { path: 'parties.contractor', scope: 'project' },
+  'monitoring surveyor': { path: 'parties.monitoringSurveyor', scope: 'project' },
+  'pms': { path: 'parties.monitoringSurveyor', scope: 'project' },
+  'broker': { path: 'parties.broker', scope: 'project' },
+  'introducer': { path: 'parties.broker', scope: 'project' },
+  'guarantor': { path: 'parties.guarantor', scope: 'project' },
 };
 
 // Categories that indicate client-level intelligence

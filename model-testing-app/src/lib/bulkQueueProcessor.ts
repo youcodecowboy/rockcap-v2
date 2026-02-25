@@ -33,6 +33,8 @@ interface ExtractedIntelligenceField {
   sourceText?: string;
   originalLabel?: string;
   matchedAlias?: string;
+  templateTags?: string[];
+  pageReference?: string;
 }
 
 interface ExtractedIntelligence {
@@ -375,11 +377,20 @@ export class BulkQueueProcessor {
       typeAbbreviation: doc.typeAbbreviation || "",
       suggestedChecklistItems: undefined, // V4 handles this differently via knowledgeBankEntry
     };
-    const extractedIntelligence = doc.extractedData ? { fields: [], insights: doc.extractedData } as any : undefined;
+    // Prefer dedicated intelligence extraction fields (from Stage 5.5),
+    // fall back to classification's extractedData for backward compat
+    const extractedIntelligence = doc.intelligenceFields && doc.intelligenceFields.length > 0
+      ? { fields: doc.intelligenceFields }
+      : doc.extractedData
+        ? { fields: flattenV4ExtractedData(doc.extractedData) }
+        : undefined;
     const documentAnalysis = undefined; // V4 doesn't return this separately
     const classificationReasoning = undefined; // V4 doesn't return this separately
 
-    console.log(`[BulkQueueProcessor] V4 result: ${doc.fileType} (${doc.confidence}% confidence, mock=${v4Data.isMock})`);
+    console.log(`[BulkQueueProcessor] V4 result: ${doc.fileType} (${(doc.confidence * 100).toFixed(0)}% confidence, mock=${v4Data.isMock})`);
+    if (extractedIntelligence) {
+      console.log(`[BulkQueueProcessor] Intelligence fields: ${extractedIntelligence.fields.length}`);
+    }
 
     // Generate document code
     let generatedDocumentCode: string | undefined;
@@ -388,11 +399,12 @@ export class BulkQueueProcessor {
     let duplicateOfDocumentId: Id<"documents"> | undefined;
 
     // Use project shortcode if available, otherwise generate from client name
-    const shortcode = this.batchInfo.projectShortcode || 
-      this.batchInfo.clientName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) || 
+    const shortcode = this.batchInfo.projectShortcode ||
+      this.batchInfo.clientName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) ||
       'CLIENT';
 
     // Check for duplicates by original filename
+    console.log(`[BulkQueueProcessor] Checking duplicates for "${item.file.name}"...`);
     const duplicateCheck = await this.callbacks.checkForDuplicates({
       originalFileName: item.file.name,
       clientId: this.batchInfo.clientId,
@@ -417,7 +429,7 @@ export class BulkQueueProcessor {
     });
 
     // Update item with analysis results
-    await this.callbacks.updateItemAnalysis({
+    const updateArgs = {
       itemId: item.itemId,
       fileStorageId: storageId,
       summary: result.summary,
@@ -430,14 +442,66 @@ export class BulkQueueProcessor {
       isDuplicate,
       duplicateOfDocumentId,
       suggestedChecklistItems: result.suggestedChecklistItems,
-      // Pass pre-extracted intelligence (Sprint 4+)
       extractedIntelligence: extractedIntelligence,
-      // Pass document analysis from Stage 1 Summary Agent
       documentAnalysis: documentAnalysis,
-      // Pass classification reasoning from Stage 2
       classificationReasoning: classificationReasoning,
-    });
+    };
+
+    console.log(`[BulkQueueProcessor] Saving to Convex:`, JSON.stringify({
+      fileType: updateArgs.fileTypeDetected,
+      category: updateArgs.category,
+      confidence: updateArgs.confidence,
+      targetFolder: updateArgs.targetFolder,
+      hasStorageId: !!updateArgs.fileStorageId,
+      hasIntelligence: !!updateArgs.extractedIntelligence,
+      intelligenceFieldCount: updateArgs.extractedIntelligence?.fields?.length ?? 0,
+      generatedDocumentCode: updateArgs.generatedDocumentCode,
+    }));
+
+    try {
+      await this.callbacks.updateItemAnalysis(updateArgs);
+      console.log(`[BulkQueueProcessor] Successfully saved to Convex`);
+    } catch (convexError) {
+      console.error(`[BulkQueueProcessor] Convex updateItemAnalysis FAILED:`, convexError);
+      console.error(`[BulkQueueProcessor] Full args:`, JSON.stringify(updateArgs, null, 2));
+      throw convexError;
+    }
   }
+}
+
+/**
+ * Flatten V4's nested extractedData back into the ExtractedIntelligenceField[] format
+ * that the Convex schema expects. V4 nests by fieldPath (e.g., kyc.identity.fullName),
+ * but Convex stores them as a flat fields array.
+ */
+function flattenV4ExtractedData(data: Record<string, any>): ExtractedIntelligenceField[] {
+  const fields: ExtractedIntelligenceField[] = [];
+
+  function walk(obj: Record<string, any>, pathParts: string[]) {
+    for (const [key, val] of Object.entries(obj)) {
+      if (val && typeof val === 'object' && 'value' in val && ('type' in val || 'confidence' in val)) {
+        // This is a leaf field node: { value, type, confidence, label }
+        fields.push({
+          fieldPath: [...pathParts, key].join('.'),
+          value: val.value,
+          label: val.label || key,
+          category: pathParts[0] || 'general',
+          valueType: val.type || 'text',
+          isCanonical: false,
+          confidence: val.confidence || 0,
+          sourceText: val.sourceText,
+          originalLabel: val.originalLabel || val.label || key,
+          templateTags: val.templateTags || ['general'],
+          pageReference: val.pageReference,
+        });
+      } else if (val && typeof val === 'object') {
+        walk(val, [...pathParts, key]);
+      }
+    }
+  }
+
+  walk(data, []);
+  return fields;
 }
 
 /**

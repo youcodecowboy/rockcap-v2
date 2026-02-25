@@ -388,18 +388,21 @@ export const processNextItem = internalAction({
       }
 
       // Map V4 response to expected format
+      const v4Doc = v4Data.documents[0];
       const analysisData = {
         result: {
-          summary: v4Data.documents[0].summary || "Analysis complete",
-          fileType: v4Data.documents[0].fileType || "Unknown",
-          category: v4Data.documents[0].category || "Other",
-          suggestedFolder: v4Data.documents[0].suggestedFolder,
-          confidence: v4Data.documents[0].confidence || 0.5,
-          typeAbbreviation: v4Data.documents[0].typeAbbreviation,
-          generatedDocumentCode: v4Data.documents[0].generatedDocumentCode,
+          summary: v4Doc.summary || "Analysis complete",
+          fileType: v4Doc.fileType || "Unknown",
+          category: v4Doc.category || "Other",
+          suggestedFolder: v4Doc.suggestedFolder,
+          confidence: v4Doc.confidence || 0.5,
+          typeAbbreviation: v4Doc.typeAbbreviation,
+          generatedDocumentCode: v4Doc.generatedDocumentCode,
           suggestedChecklistItems: undefined,
         },
-        extractedIntelligence: v4Data.documents[0].extractedData ? { fields: [], insights: v4Data.documents[0].extractedData } : undefined,
+        extractedIntelligence: v4Doc.extractedData
+          ? { fields: flattenV4ExtractedData(v4Doc.extractedData) }
+          : undefined,
         documentAnalysis: undefined,
         classificationReasoning: undefined,
       };
@@ -471,3 +474,56 @@ export const processNextItem = internalAction({
     });
   },
 });
+
+// ==========================================================================
+// HELPERS
+// ==========================================================================
+
+/**
+ * Flatten V4's nested extractedData back into a flat fields array.
+ * V4 nests by fieldPath (e.g., kyc.identity.fullName → {kyc: {identity: {fullName: {value, type, confidence, label}}}}),
+ * but the Convex schema stores them as a flat fields array.
+ */
+function flattenV4ExtractedData(data: Record<string, any>): Array<{
+  fieldPath: string;
+  value: any;
+  label: string;
+  category: string;
+  valueType: string;
+  isCanonical: boolean;
+  confidence: number;
+  sourceText?: string;
+}> {
+  const fields: Array<{
+    fieldPath: string;
+    value: any;
+    label: string;
+    category: string;
+    valueType: string;
+    isCanonical: boolean;
+    confidence: number;
+    sourceText?: string;
+  }> = [];
+
+  function walk(obj: Record<string, any>, pathParts: string[]) {
+    for (const [key, val] of Object.entries(obj)) {
+      if (val && typeof val === 'object' && 'value' in val && ('type' in val || 'confidence' in val)) {
+        fields.push({
+          fieldPath: [...pathParts, key].join('.'),
+          value: val.value,
+          label: val.label || key,
+          category: pathParts[0] || 'general',
+          valueType: val.type || 'text',
+          isCanonical: false,
+          confidence: val.confidence || 0,
+          sourceText: val.sourceText,
+        });
+      } else if (val && typeof val === 'object') {
+        walk(val, [...pathParts, key]);
+      }
+    }
+  }
+
+  walk(data, []);
+  return fields;
+}

@@ -14,7 +14,8 @@ import * as path from 'path';
 // SKILL REGISTRY
 // =============================================================================
 
-const SKILLS_DIR = path.join(__dirname, '..', 'skills');
+// Use process.cwd() since __dirname in Next.js points to the build output, not source
+const SKILLS_DIR = path.join(process.cwd(), 'src', 'v4', 'skills');
 
 /** Cache of loaded skill definitions */
 const _skillCache = new Map<string, SkillDefinition>();

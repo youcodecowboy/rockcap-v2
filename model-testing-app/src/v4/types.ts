@@ -133,6 +133,12 @@ export const BATCH_LIMITS = {
   SMALL_BATCH_THRESHOLD: 5,
   /** Documents above this trigger background processing */
   BACKGROUND_THRESHOLD: 5,
+  /** Intelligence extraction: max documents per call */
+  INTEL_MAX_DOCS_PER_CALL: 5,
+  /** Intelligence extraction: max text chars per document (truncated for batching) */
+  INTEL_MAX_TEXT_PER_DOC: 8_000,
+  /** Intelligence extraction: max output tokens per call */
+  INTEL_MAX_OUTPUT_TOKENS: 8_192,
 } as const;
 
 // =============================================================================
@@ -191,17 +197,51 @@ export interface DocumentClassification {
     confidence: number;
     reasoning: string;
   }>;
-  /** Intelligence fields extracted */
+  /** Intelligence fields extracted (from classification call — lightweight) */
   intelligenceFields: Array<{
     fieldPath: string;
     label: string;
     value: string;
     valueType: 'text' | 'currency' | 'percentage' | 'date' | 'number' | 'boolean';
     confidence: number;
-    sourceText?: string;
-    /** Tags for future template population (e.g., "lenders_note", "perspective") */
-    templateTags?: string[];
+    sourceText: string;
+    templateTags: string[];
+    category: string;
+    originalLabel: string;
+    pageReference?: string;
   }>;
+}
+
+// =============================================================================
+// INTELLIGENCE FIELD (from dedicated extraction call)
+// =============================================================================
+
+/** A single intelligence field extracted from a document */
+export interface IntelligenceField {
+  /** Canonical field path (e.g., "financials.gdv") or custom ("custom.planning_ref") */
+  fieldPath: string;
+  /** Human-readable label (may be normalized from originalLabel) */
+  label: string;
+  /** Extracted value (always string for serialization) */
+  value: string;
+  /** Value type for parsing/display */
+  valueType: 'text' | 'currency' | 'percentage' | 'date' | 'number' | 'boolean';
+  /** Extraction confidence (0-1), using document authority + value clarity framework */
+  confidence: number;
+  /** Evidence quote from the document */
+  sourceText: string;
+  /** Whether this maps to a known canonical field path */
+  isCanonical: boolean;
+  /** Whether this belongs at client or project level */
+  scope: 'client' | 'project';
+  /** Template tags for retrieval and output generation (min ["general"]) */
+  templateTags: string[];
+  /** Field category derived from fieldPath prefix (e.g., "financials", "legal") */
+  category: string;
+  /** AI's original label before normalization to canonical path */
+  originalLabel: string;
+  /** Page or section reference (e.g., "p.3", "Schedule 2", "pp.12-14") */
+  pageReference?: string;
 }
 
 // =============================================================================

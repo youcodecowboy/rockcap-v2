@@ -27,7 +27,7 @@ const FILENAME_PATTERNS: Array<{
   tags: string[];
 }> = [
   // KYC
-  { pattern: /passport/i, fileType: 'Passport', category: 'KYC', tags: ['kyc', 'identity'] },
+  { pattern: /passport|biodata|bio.?data/i, fileType: 'Passport', category: 'KYC', tags: ['kyc', 'identity'] },
   { pattern: /driv(?:ing|er).?lic/i, fileType: 'Driving License', category: 'KYC', tags: ['kyc', 'identity'] },
   { pattern: /bank.?statement/i, fileType: 'Bank Statement', category: 'KYC', tags: ['kyc', 'financial'] },
   { pattern: /utility.?bill/i, fileType: 'Utility Bill', category: 'KYC', tags: ['kyc', 'proof-of-address'] },
@@ -332,6 +332,36 @@ export function chunkBatch(
 }
 
 /**
+ * Chunk documents for batch intelligence extraction.
+ * Groups by count (text is truncated per-doc in the API call itself).
+ *
+ * @param documents — Array of { index, textLength } for each document
+ * @param maxDocsPerCall — Maximum documents per intelligence API call (default: 5)
+ * @returns Array of arrays of document indices, each array is one batch
+ */
+export function chunkIntelligenceBatch(
+  documents: Array<{ index: number; textLength: number }>,
+  maxDocsPerCall: number = 5,
+): number[][] {
+  const chunks: number[][] = [];
+  let currentChunk: number[] = [];
+
+  for (const doc of documents) {
+    if (currentChunk.length >= maxDocsPerCall) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+    }
+    currentChunk.push(doc.index);
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+/**
  * Rough token estimate for a document.
  * ~4 chars per token for English text, images are ~85 tokens per tile.
  */
@@ -340,8 +370,10 @@ function estimateDocumentTokens(doc: BatchDocument): number {
     case 'text':
       return Math.ceil(doc.processedContent.text.length / 4);
     case 'pdf_pages':
-      // PDF pages sent as document blocks — roughly 1000 tokens per page
-      return doc.processedContent.pages.length * 1000;
+      // Estimate from actual base64 data size, not page count.
+      // base64 chars * 0.75 (decode to bytes) / 6 (avg chars per token for binary/PDF content)
+      const totalBase64Chars = doc.processedContent.pages.reduce((acc, p) => acc + p.base64.length, 0);
+      return Math.max(1000, Math.ceil(totalBase64Chars * 0.75 / 6));
     case 'image':
       // Images are ~600-1600 tokens depending on size
       return 1200;

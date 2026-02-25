@@ -46,6 +46,12 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Scale,
+  TrendingUp,
+  Shield,
+  AlertTriangle,
+  ListChecks,
+  Filter,
 } from 'lucide-react';
 import {
   Tabs,
@@ -88,6 +94,7 @@ interface KnowledgeItemUI {
   status: string;
   addedAt: string;
   addedBy?: string;
+  tags?: string[];
 }
 
 // Unfilled canonical field placeholder
@@ -133,6 +140,11 @@ const PROJECT_CATEGORIES: CategoryConfig[] = [
   { key: 'financials', label: 'Financials', icon: <Banknote className="w-4 h-4" />, description: 'Costs, values, loan terms' },
   { key: 'timeline', label: 'Timeline', icon: <Clock className="w-4 h-4" />, description: 'Key dates and milestones' },
   { key: 'development', label: 'Development', icon: <Building2 className="w-4 h-4" />, description: 'Units, size, specifications' },
+  { key: 'legal', label: 'Legal', icon: <Scale className="w-4 h-4" />, description: 'Title, charges, covenants, conditions' },
+  { key: 'valuation', label: 'Valuation', icon: <TrendingUp className="w-4 h-4" />, description: 'Values, assumptions, comparables' },
+  { key: 'insurance', label: 'Insurance', icon: <Shield className="w-4 h-4" />, description: 'Policies, cover, expiry' },
+  { key: 'risk', label: 'Risk', icon: <AlertTriangle className="w-4 h-4" />, description: 'Risks, severity, mitigants' },
+  { key: 'conditions', label: 'Conditions', icon: <ListChecks className="w-4 h-4" />, description: 'Precedent, subsequent, waivers' },
   { key: 'parties', label: 'Key Parties', icon: <Users className="w-4 h-4" />, description: 'Professionals involved' },
   { key: 'planning', label: 'Planning', icon: <FileText className="w-4 h-4" />, description: 'Permissions, references' },
   { key: 'extracted', label: 'Extracted Data', icon: <Tag className="w-4 h-4" />, description: 'AI-extracted values from documents' },
@@ -238,6 +250,20 @@ function KnowledgeItemCard({
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600">
                 {Math.round(item.normalizationConfidence * 100)}%
               </Badge>
+            )}
+            {item.tags && item.tags.filter(t => t !== 'general').length > 0 && (
+              <>
+                {item.tags.filter(t => t !== 'general').slice(0, 3).map(tag => (
+                  <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-200 bg-emerald-50">
+                    {tag.replace(/_/g, ' ')}
+                  </Badge>
+                ))}
+                {item.tags.filter(t => t !== 'general').length > 3 && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-gray-400">
+                    +{item.tags.filter(t => t !== 'general').length - 3}
+                  </Badge>
+                )}
+              </>
             )}
             {supersededCount > 0 && (
               <Badge
@@ -1146,6 +1172,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
       status: item.status,
       addedAt: item.addedAt,
       addedBy: item.addedBy,
+      tags: (item as any).tags,
     }));
   }, [knowledgeItemsRaw]);
 
@@ -1655,6 +1682,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
   const [showAddIntelligenceModal, setShowAddIntelligenceModal] = useState(false);
   const [showConsolidationModal, setShowConsolidationModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
 
   // View mode: intelligence data or document summaries
   const [viewMode, setViewMode] = useState<'intelligence' | 'documents'>('intelligence');
@@ -1693,6 +1721,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
       status: item.status,
       addedAt: item.addedAt,
       addedBy: item.addedBy,
+      tags: (item as any).tags,
     }));
   }, [knowledgeItemsRaw]);
 
@@ -1716,6 +1745,13 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
   const displayItems = useMemo((): DisplayItem[] => {
     let filledItems = knowledgeItems.filter((item) => item.category === activeCategory);
 
+    // Apply tag filter
+    if (selectedTagFilter !== 'all') {
+      filledItems = filledItems.filter(
+        (item) => item.tags?.includes(selectedTagFilter)
+      );
+    }
+
     // Apply search filter to filled items only
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -1728,16 +1764,18 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
 
     // Convert to display items
     const filled: DisplayItem[] = filledItems.map((item) => ({ type: 'filled', item }));
-    const unfilled: DisplayItem[] = unfilledCanonicalFields
-      .filter((field) =>
-        !searchQuery.trim() ||
-        field.label.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-      .map((field) => ({ type: 'unfilled', field }));
+    const unfilled: DisplayItem[] = selectedTagFilter === 'all'
+      ? unfilledCanonicalFields
+          .filter((field) =>
+            !searchQuery.trim() ||
+            field.label.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+          .map((field) => ({ type: 'unfilled', field }))
+      : []; // Hide unfilled placeholders when filtering by tag
 
     // Show filled items first, then unfilled
     return [...filled, ...unfilled];
-  }, [knowledgeItems, activeCategory, searchQuery, unfilledCanonicalFields]);
+  }, [knowledgeItems, activeCategory, searchQuery, unfilledCanonicalFields, selectedTagFilter]);
 
   // Count items by category (only filled items)
   const countsByCategory = useMemo(() => {
@@ -1998,6 +2036,24 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
                   className="pl-9 w-48"
                 />
               </div>
+              <Select value={selectedTagFilter} onValueChange={setSelectedTagFilter}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <Filter className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
+                  <SelectValue placeholder="Filter by tag" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All tags</SelectItem>
+                  <SelectItem value="lenders_note">Lender&apos;s Note</SelectItem>
+                  <SelectItem value="credit_submission">Credit Submission</SelectItem>
+                  <SelectItem value="proposal">Proposal</SelectItem>
+                  <SelectItem value="deal_summary">Deal Summary</SelectItem>
+                  <SelectItem value="due_diligence">Due Diligence</SelectItem>
+                  <SelectItem value="risk_assessment">Risk Assessment</SelectItem>
+                  <SelectItem value="valuation_summary">Valuation Summary</SelectItem>
+                  <SelectItem value="legal_summary">Legal Summary</SelectItem>
+                  <SelectItem value="monitoring">Monitoring</SelectItem>
+                </SelectContent>
+              </Select>
               <Button variant="outline" size="sm" onClick={() => setShowConsolidationModal(true)} className="gap-1">
                 <RefreshCw className="w-4 h-4" />
                 Consolidate

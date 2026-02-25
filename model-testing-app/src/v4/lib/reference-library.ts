@@ -19,6 +19,7 @@ import type {
   BatchDocument,
   REFERENCE_CACHE_TTL_MS,
 } from '../types';
+import { getAllReferences } from '../../lib/references';
 
 // =============================================================================
 // IN-MEMORY CACHE
@@ -196,14 +197,22 @@ export function selectReferencesForBatch(
 // =============================================================================
 
 /**
- * Load built-in reference documents from the filesystem.
- * These are the system defaults that ship with the application.
+ * Load built-in reference documents from the shared reference library.
+ * Maps rich DocumentReference format to V4's ReferenceDocument format.
  */
 async function loadSystemReferences(): Promise<ReferenceDocument[]> {
-  // In production, these would be loaded from the references/ directory.
-  // For now, we define them inline as the canonical set.
-  // Users can override/extend via Convex.
-  return SYSTEM_REFERENCES;
+  const sharedRefs = getAllReferences();
+  return sharedRefs.map((ref) => ({
+    id: ref.id,
+    fileType: ref.fileType,
+    category: ref.category,
+    tags: ref.tags.map((t) => t.value),
+    content: ref.description,
+    keywords: ref.keywords,
+    source: ref.source,
+    isActive: ref.isActive,
+    updatedAt: ref.updatedAt,
+  }));
 }
 
 /**
@@ -247,294 +256,7 @@ async function loadConvexReferences(convexClient: any): Promise<ReferenceDocumen
 // =============================================================================
 // SYSTEM REFERENCE DEFINITIONS
 // =============================================================================
-// These are compact reference documents — NOT the 100-word descriptions from
-// the old system. Each is a concise guide that tells Claude what to look for.
-// Users can create their own references in the UI (stored in Convex).
-
-const SYSTEM_REFERENCES: ReferenceDocument[] = [
-  // ── APPRAISALS ──
-  {
-    id: 'redbook-valuation',
-    fileType: 'RedBook Valuation',
-    category: 'Appraisals',
-    tags: ['appraisals', 'valuation', 'rics', 'financial', 'property'],
-    keywords: ['RICS', 'red book', 'valuation', 'market value', 'surveyor', 'comparable'],
-    content: 'A RICS-compliant property valuation report. Key indicators: RICS logo/reference, "Red Book" or "Valuation Standards", market value figure, comparable evidence, surveyor credentials (MRICS/FRICS). Usually from firms like Savills, Knight Frank, CBRE, JLL.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'appraisal',
-    fileType: 'Appraisal',
-    category: 'Appraisals',
-    tags: ['appraisals', 'valuation', 'financial', 'property', 'development'],
-    keywords: ['development appraisal', 'residual valuation', 'GDV', 'build cost', 'profit margin'],
-    content: 'A development appraisal assessing project viability. Key indicators: GDV (Gross Development Value), total costs breakdown, profit on cost %, residual land value, construction timeline, funding assumptions.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'cashflow',
-    fileType: 'Cashflow',
-    category: 'Appraisals',
-    tags: ['appraisals', 'financial', 'cashflow', 'projection'],
-    keywords: ['cashflow', 'cash flow', 'monthly projection', 'drawdown', 'interest'],
-    content: 'Cash flow projection for a property development. Key indicators: monthly/quarterly columns, drawdown schedule, interest calculations, S-curve, cumulative totals, peak debt figure.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── KYC ──
-  {
-    id: 'passport',
-    fileType: 'Passport',
-    category: 'KYC',
-    tags: ['kyc', 'identity', 'id'],
-    keywords: ['passport', 'nationality', 'date of birth', 'expiry', 'MRZ'],
-    content: 'Government-issued passport. Key indicators: photo ID page, MRZ code (machine-readable zone), nationality, date of birth, expiry date, passport number.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'driving-license',
-    fileType: 'Driving License',
-    category: 'KYC',
-    tags: ['kyc', 'identity', 'id'],
-    keywords: ['driving licence', 'driving license', 'DVLA', 'licence number'],
-    content: 'Government-issued driving licence. Key indicators: photo, DVLA reference, licence number, categories, address, date of birth.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'bank-statement',
-    fileType: 'Bank Statement',
-    category: 'KYC',
-    tags: ['kyc', 'financial', 'bank', 'proof-of-address'],
-    keywords: ['bank statement', 'account number', 'sort code', 'balance', 'transactions'],
-    content: 'Bank account statement showing transactions. Key indicators: bank logo, account number, sort code, statement period, opening/closing balance, transaction list. Can also serve as proof of address.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'utility-bill',
-    fileType: 'Utility Bill',
-    category: 'KYC',
-    tags: ['kyc', 'proof-of-address', 'utility'],
-    keywords: ['utility', 'electricity', 'gas', 'water', 'council tax', 'bill'],
-    content: 'Utility bill used as proof of address. Key indicators: utility company logo, account holder name, service address, billing period, amount due.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'certificate-of-incorporation',
-    fileType: 'Certificate of Incorporation',
-    category: 'KYC',
-    tags: ['kyc', 'corporate', 'company', 'registration'],
-    keywords: ['certificate of incorporation', 'companies house', 'company number', 'registered'],
-    content: 'Companies House certificate proving company registration. Key indicators: Companies House header, company number, date of incorporation, registered office address.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'tax-return',
-    fileType: 'Tax Return',
-    category: 'KYC',
-    tags: ['kyc', 'financial', 'tax', 'hmrc'],
-    keywords: ['tax return', 'SA100', 'HMRC', 'self assessment', 'tax year', 'income'],
-    content: 'HMRC self-assessment tax return. Key indicators: SA100/SA302 form, HMRC header, UTR number, tax year, total income, tax due.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── LEGAL DOCUMENTS ──
-  {
-    id: 'facility-letter',
-    fileType: 'Facility Letter',
-    category: 'Legal Documents',
-    tags: ['legal', 'loan', 'facility', 'terms'],
-    keywords: ['facility letter', 'facility agreement', 'loan agreement', 'borrower', 'lender', 'drawdown'],
-    content: 'Loan facility agreement between lender and borrower. Key indicators: parties (borrower/lender), facility amount, interest rate, term, conditions precedent, covenants, events of default.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'title-deed',
-    fileType: 'Title Deed',
-    category: 'Legal Documents',
-    tags: ['legal', 'property', 'land-registry', 'title'],
-    keywords: ['title deed', 'land registry', 'title number', 'freehold', 'leasehold', 'registered proprietor'],
-    content: 'Land Registry official title document. Key indicators: HM Land Registry header, title number, property description, registered proprietor, charges/restrictions.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'personal-guarantee',
-    fileType: 'Personal Guarantee',
-    category: 'Legal Documents',
-    tags: ['legal', 'guarantee', 'security'],
-    keywords: ['personal guarantee', 'guarantor', 'jointly and severally', 'indemnity'],
-    content: 'Personal guarantee supporting a loan facility. Key indicators: guarantor details, guarantee amount, "jointly and severally liable", obligations, indemnity clauses.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── LOAN TERMS ──
-  {
-    id: 'indicative-terms',
-    fileType: 'Indicative Terms',
-    category: 'Loan Terms',
-    tags: ['loan', 'terms', 'proposal', 'financial'],
-    keywords: ['indicative terms', 'term sheet', 'heads of terms', 'loan amount', 'interest rate', 'LTV'],
-    content: 'Initial loan proposal / term sheet. Key indicators: facility amount, interest rate, LTV ratio, term/duration, arrangement fee, exit fee, security requirements. Usually non-binding.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'credit-backed-terms',
-    fileType: 'Credit Backed Terms',
-    category: 'Loan Terms',
-    tags: ['loan', 'terms', 'credit', 'approved', 'financial'],
-    keywords: ['credit backed', 'credit approved', 'credit committee', 'approved terms', 'binding'],
-    content: 'Credit-committee-approved loan terms. Key indicators: "credit approved" or "credit backed", committee reference, more detailed conditions than indicative terms, binding commitments.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── INSPECTIONS ──
-  {
-    id: 'initial-monitoring-report',
-    fileType: 'Initial Monitoring Report',
-    category: 'Inspections',
-    tags: ['inspections', 'monitoring', 'construction', 'site'],
-    keywords: ['monitoring report', 'initial inspection', 'site visit', 'construction progress', 'building inspector'],
-    content: 'Initial site monitoring/inspection report. Key indicators: site visit date, inspector name, construction status assessment, photos, progress percentage, issues identified, next visit date.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'interim-monitoring-report',
-    fileType: 'Interim Monitoring Report',
-    category: 'Inspections',
-    tags: ['inspections', 'monitoring', 'construction', 'progress'],
-    keywords: ['interim monitoring', 'progress report', 'interim inspection', 'drawdown recommendation'],
-    content: 'Follow-up monitoring report during construction. Key indicators: comparison to previous visit, progress since last report, drawdown recommendation, cost tracking, programme assessment.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── PROFESSIONAL REPORTS ──
-  {
-    id: 'building-survey',
-    fileType: 'Building Survey',
-    category: 'Professional Reports',
-    tags: ['reports', 'survey', 'property', 'condition'],
-    keywords: ['building survey', 'condition report', 'structural', 'defects', 'surveyor'],
-    content: 'Professional building survey/condition report. Key indicators: property condition assessment, structural observations, defects noted, recommendations, surveyor credentials.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'report-on-title',
-    fileType: 'Report on Title',
-    category: 'Professional Reports',
-    tags: ['reports', 'legal', 'title', 'property'],
-    keywords: ['report on title', 'title review', 'solicitor', 'encumbrances', 'good and marketable'],
-    content: 'Solicitor\'s report on property title. Key indicators: title number, encumbrances, easements, restrictive covenants, planning permissions, "good and marketable title" opinion.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── PLANS ──
-  {
-    id: 'floor-plans',
-    fileType: 'Floor Plans',
-    category: 'Plans',
-    tags: ['plans', 'design', 'architecture', 'drawings'],
-    keywords: ['floor plan', 'ground floor', 'first floor', 'layout', 'rooms', 'scale'],
-    content: 'Architectural floor plan drawings. Key indicators: room layouts, dimensions/scale bar, room labels, door/window positions, north arrow, architect stamp.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-  {
-    id: 'site-plans',
-    fileType: 'Site Plans',
-    category: 'Plans',
-    tags: ['plans', 'design', 'site', 'layout'],
-    keywords: ['site plan', 'site layout', 'boundary', 'red line', 'access', 'parking'],
-    content: 'Site layout plan showing property boundaries. Key indicators: red line boundary, site access points, parking areas, landscaping, building footprints, OS map base.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── INSURANCE ──
-  {
-    id: 'insurance-policy',
-    fileType: 'Insurance Policy',
-    category: 'Insurance',
-    tags: ['insurance', 'policy', 'cover'],
-    keywords: ['insurance policy', 'policy number', 'premium', 'cover', 'indemnity', 'insured'],
-    content: 'Insurance policy document. Key indicators: policy number, insured party, policy period, sum insured, premium amount, excess, covered risks, exclusions.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── FINANCIAL DOCUMENTS ──
-  {
-    id: 'invoice',
-    fileType: 'Invoice',
-    category: 'Financial Documents',
-    tags: ['financial', 'invoice', 'payment'],
-    keywords: ['invoice', 'invoice number', 'amount due', 'VAT', 'payment terms', 'net total'],
-    content: 'Commercial invoice for goods or services. Key indicators: invoice number, supplier/client details, line items, VAT calculation, total amount, payment terms, bank details.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── COMMUNICATIONS ──
-  {
-    id: 'email-correspondence',
-    fileType: 'Email/Correspondence',
-    category: 'Communications',
-    tags: ['communications', 'email', 'correspondence'],
-    keywords: ['email', 'from:', 'to:', 'subject:', 'dear', 'regards', 'correspondence'],
-    content: 'Email or letter correspondence. Key indicators: from/to/subject headers, greeting, signature block, date, RE: or FW: prefixes.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-
-  // ── PHOTOGRAPHS ──
-  {
-    id: 'site-photographs',
-    fileType: 'Site Photographs',
-    category: 'Photographs',
-    tags: ['photographs', 'site', 'images', 'construction'],
-    keywords: ['photograph', 'photo', 'site photo', 'construction photo', 'progress photo'],
-    content: 'Site photographs showing property or construction. Key indicators: image file (JPG/PNG), construction/property subject matter, may have date stamps or location metadata.',
-    source: 'system',
-    isActive: true,
-    updatedAt: '2025-01-01',
-  },
-];
+// System references are now loaded from the shared reference library at
+// src/lib/references/. The rich DocumentReference format is mapped to V4's
+// ReferenceDocument format in loadSystemReferences() above.
+// Users can still override/extend via Convex.

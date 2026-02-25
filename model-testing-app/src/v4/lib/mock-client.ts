@@ -320,33 +320,43 @@ function generateMockIntelligence(
 
   if (category === 'Appraisals' || category === 'Financial Documents') {
     fields.push({
-      fieldPath: 'document.type',
+      fieldPath: 'overview.documentType',
       label: 'Document Type',
       value: fileType,
       valueType: 'text',
       confidence: 0.95,
-      templateTags: ['lenders_note', 'credit_submission'],
+      sourceText: `Document classified as ${fileType}`,
+      templateTags: ['general', 'lenders_note', 'credit_submission'],
+      category: 'overview',
+      originalLabel: 'Document Type',
     });
   }
 
   if (category === 'Loan Terms') {
     fields.push({
-      fieldPath: 'loan.facility_type',
+      fieldPath: 'financials.facilityType',
       label: 'Facility Type',
       value: 'Development Finance',
       valueType: 'text',
       confidence: 0.70,
-      templateTags: ['lenders_note', 'perspective', 'credit_submission'],
+      sourceText: 'Development finance facility',
+      templateTags: ['general', 'lenders_note', 'credit_submission'],
+      category: 'financials',
+      originalLabel: 'Facility Type',
     });
   }
 
   if (category === 'KYC') {
     fields.push({
-      fieldPath: 'kyc.document_type',
+      fieldPath: 'company.documentType',
       label: 'KYC Document Type',
       value: fileType,
       valueType: 'text',
       confidence: 0.90,
+      sourceText: `KYC document: ${fileType}`,
+      templateTags: ['general', 'credit_submission'],
+      category: 'company',
+      originalLabel: 'KYC Document Type',
     });
   }
 

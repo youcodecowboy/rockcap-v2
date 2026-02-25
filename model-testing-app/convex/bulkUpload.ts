@@ -891,6 +891,7 @@ export const fileItem = mutation({
                 sourceDocumentName: item.fileName,
                 sourceText: field.sourceText,
                 normalizationConfidence: field.confidence,
+                tags: ['general'],
                 addedAt: now,
                 updatedAt: now,
               });
@@ -901,6 +902,24 @@ export const fileItem = mutation({
                 supersededBy: newItemId,
                 updatedAt: now,
               });
+
+              // Log conflict for visibility
+              try {
+                await ctx.db.insert("intelligenceConflicts", {
+                  clientId: targetClientId,
+                  projectId: targetProjectId,
+                  fieldPath: field.fieldPath,
+                  category: field.category,
+                  description: `${field.label}: "${JSON.stringify(existingItem.value).slice(0, 80)}" → "${JSON.stringify(field.value).slice(0, 80)}" from ${item.fileName}`,
+                  relatedItemIds: [existingItem._id, newItemId],
+                  status: "pending",
+                  createdAt: now,
+                  updatedAt: now,
+                });
+              } catch (conflictError) {
+                console.error(`[fileItem] Failed to log conflict for ${field.fieldPath}:`, conflictError);
+              }
+
               fieldsUpdated++;
               addedFields.push(`${field.label}: ${JSON.stringify(field.value).slice(0, 50)} (updated, ${field.scope})`);
             } else {
@@ -924,6 +943,7 @@ export const fileItem = mutation({
               sourceDocumentName: item.fileName,
               sourceText: field.sourceText,
               normalizationConfidence: field.confidence,
+              tags: ['general'],
               addedAt: now,
               updatedAt: now,
             });
@@ -989,6 +1009,7 @@ export const fileItem = mutation({
           sourceDocumentId: documentId,
           sourceDocumentName: item.fileName,
           status: "active",
+          tags: ['general'],
           addedAt: now,
           updatedAt: now,
           addedBy: "user-review",
@@ -1382,41 +1403,94 @@ export const fileBatch = mutation({
         }
 
         // ============================================================================
-        // EXTRACT INTELLIGENCE FROM DOCUMENT ANALYSIS
+        // EXTRACT INTELLIGENCE FROM PRE-EXTRACTED OR DOCUMENT ANALYSIS
         // ============================================================================
-        // Intelligence is extracted from documentAnalysis (from Stage 1 Summary Agent)
-        // on confirmed filing - not pre-extracted during analysis.
-        // This ensures we only save intelligence from documents the user has verified.
-        const documentAnalysis = item.documentAnalysis as {
-          keyAmounts?: string[];
-          keyDates?: string[];
-          keyTerms?: string[];
-          entities?: {
-            companies?: string[];
-            people?: string[];
-            locations?: string[];
-            projects?: string[];
-          };
-          executiveSummary?: string;
-          detailedSummary?: string;
-        } | undefined;
-
+        // V4 pipeline pre-extracts structured intelligence fields in Stage 5.5.
+        // Falls back to documentAnalysis extraction for older pipeline results.
         const hasProjectContext = !!batch.projectId;
 
-        console.log(`[fileBatch] Item "${item.fileName}" - documentAnalysis check: hasAnalysis=${!!documentAnalysis}, keyAmounts=${documentAnalysis?.keyAmounts?.length || 0}, keyDates=${documentAnalysis?.keyDates?.length || 0}, entities=${documentAnalysis?.entities ? 'yes' : 'no'}`);
+        // Check for pre-extracted intelligence from V4 pipeline
+        const preExtracted = item.extractedIntelligence as {
+          fields?: Array<{
+            fieldPath: string;
+            label: string;
+            value: any;
+            valueType: string;
+            confidence: number;
+            sourceText?: string;
+            isCanonical?: boolean;
+            scope: 'client' | 'project';
+            templateTags?: string[];
+            category?: string;
+            originalLabel?: string;
+            pageReference?: string;
+          }>;
+        } | undefined;
 
-        if (documentAnalysis && (
-          (documentAnalysis.keyAmounts && documentAnalysis.keyAmounts.length > 0) ||
-          (documentAnalysis.keyDates && documentAnalysis.keyDates.length > 0) ||
-          documentAnalysis.entities ||
-          documentAnalysis.executiveSummary
-        )) {
-          // Extract intelligence from the confirmed document analysis
-          const extractedFields = extractIntelligenceFromDocumentAnalysis(
-            documentAnalysis,
-            hasProjectContext,
-            item.category
-          );
+        // Use pre-extracted fields from V4 pipeline, or fall back to documentAnalysis parsing
+        let extractedFields: Array<{
+          fieldPath: string;
+          label: string;
+          value: any;
+          valueType: string;
+          isCanonical: boolean;
+          confidence: number;
+          sourceText?: string;
+          scope: 'client' | 'project';
+          category: string;
+          templateTags?: string[];
+        }>;
+
+        if (preExtracted?.fields && preExtracted.fields.length > 0) {
+          // V4 pipeline already extracted structured intelligence
+          extractedFields = preExtracted.fields.map(f => ({
+            fieldPath: f.fieldPath,
+            label: f.label,
+            value: f.value,
+            valueType: f.valueType,
+            isCanonical: f.isCanonical ?? f.fieldPath.startsWith('custom.') === false,
+            confidence: f.confidence,
+            sourceText: f.sourceText,
+            scope: f.scope,
+            category: f.fieldPath.split('.')[0],
+            templateTags: f.templateTags || ['general'],
+          }));
+          console.log(`[fileBatch] 📊 Using ${extractedFields.length} pre-extracted intelligence fields for "${item.fileName}"`);
+        } else {
+          // Fall back to documentAnalysis extraction (old pipeline)
+          const documentAnalysis = item.documentAnalysis as {
+            keyAmounts?: string[];
+            keyDates?: string[];
+            keyTerms?: string[];
+            entities?: {
+              companies?: string[];
+              people?: string[];
+              locations?: string[];
+              projects?: string[];
+            };
+            executiveSummary?: string;
+            detailedSummary?: string;
+          } | undefined;
+
+          console.log(`[fileBatch] Item "${item.fileName}" - documentAnalysis check: hasAnalysis=${!!documentAnalysis}, keyAmounts=${documentAnalysis?.keyAmounts?.length || 0}, keyDates=${documentAnalysis?.keyDates?.length || 0}, entities=${documentAnalysis?.entities ? 'yes' : 'no'}`);
+
+          if (documentAnalysis && (
+            (documentAnalysis.keyAmounts && documentAnalysis.keyAmounts.length > 0) ||
+            (documentAnalysis.keyDates && documentAnalysis.keyDates.length > 0) ||
+            documentAnalysis.entities ||
+            documentAnalysis.executiveSummary
+          )) {
+            extractedFields = extractIntelligenceFromDocumentAnalysis(
+              documentAnalysis,
+              hasProjectContext,
+              item.category
+            );
+          } else {
+            extractedFields = [];
+          }
+        }
+
+        if (extractedFields.length > 0) {
 
           console.log(`[fileBatch] 📊 Extracted ${extractedFields.length} intelligence fields from documentAnalysis for "${item.fileName}"`);
 
@@ -1475,6 +1549,7 @@ export const fileBatch = mutation({
                     sourceDocumentName: item.fileName,
                     sourceText: field.sourceText,
                     normalizationConfidence: field.confidence,
+                    tags: field.templateTags || ['general'],
                     addedAt: now,
                     updatedAt: now,
                   });
@@ -1485,6 +1560,24 @@ export const fileBatch = mutation({
                     supersededBy: newItemId,
                     updatedAt: now,
                   });
+
+                  // Log conflict for visibility
+                  try {
+                    await ctx.db.insert("intelligenceConflicts", {
+                      clientId: targetClientId,
+                      projectId: targetProjectId,
+                      fieldPath: field.fieldPath,
+                      category: field.category,
+                      description: `${field.label}: "${JSON.stringify(existingItem.value).slice(0, 80)}" → "${JSON.stringify(field.value).slice(0, 80)}" from ${item.fileName}`,
+                      relatedItemIds: [existingItem._id, newItemId],
+                      status: "pending",
+                      createdAt: now,
+                      updatedAt: now,
+                    });
+                  } catch (conflictError) {
+                    console.error(`[fileBatch] Failed to log conflict for ${field.fieldPath}:`, conflictError);
+                  }
+
                   fieldsUpdated++;
                   addedFields.push(`${field.label}: ${JSON.stringify(field.value).slice(0, 50)} (updated, ${field.scope})`);
                 } else {
@@ -1508,6 +1601,7 @@ export const fileBatch = mutation({
                   sourceDocumentName: item.fileName,
                   sourceText: field.sourceText,
                   normalizationConfidence: field.confidence,
+                  tags: field.templateTags || ['general'],
                   addedAt: now,
                   updatedAt: now,
                 });
@@ -1526,8 +1620,8 @@ export const fileBatch = mutation({
             console.log(`[fileBatch]    Fields: ${addedFields.join(' | ')}`);
           }
         } else {
-          // No documentAnalysis available - create background job for extraction
-          // This is the fallback for legacy uploads or documents that couldn't be analyzed
+          // No intelligence fields extracted (neither pre-extracted nor from documentAnalysis)
+          // Create background job as fallback for legacy uploads or scanned documents
           if (item.fileStorageId) {
             try {
               const jobId = await ctx.db.insert("intelligenceExtractionJobs", {
@@ -1613,6 +1707,7 @@ export const fileBatch = mutation({
               sourceDocumentId: documentId,
               sourceDocumentName: item.fileName,
               status: "active",
+              tags: ['general'],
               addedAt: now,
               updatedAt: now,
               addedBy: "user-review",

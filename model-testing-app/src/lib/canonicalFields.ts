@@ -371,6 +371,260 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     type: 'number',
     aliases: ['duration', 'build period', 'construction period', 'term', 'project duration', 'build time', 'loan term', 'facility term']
   },
+
+  // === LEGAL (7 fields) ===
+  'legal.titleDetails': {
+    label: 'Title Details',
+    type: 'text',
+    description: 'Title ownership and registration details',
+    aliases: ['title details', 'title report', 'land registry', 'title ownership', 'registered title', 'title information']
+  },
+  'legal.charges': {
+    label: 'Charges / Encumbrances',
+    type: 'text',
+    description: 'Charges, liens, and encumbrances on title',
+    aliases: ['charges', 'encumbrances', 'liens', 'registered charges', 'mortgages on title', 'existing charges', 'prior charges']
+  },
+  'legal.covenants': {
+    label: 'Restrictive Covenants',
+    type: 'text',
+    description: 'Restrictive covenants affecting the property',
+    aliases: ['covenants', 'restrictive covenants', 'restrictions', 'land covenants', 'deed restrictions']
+  },
+  'legal.leaseTerms': {
+    label: 'Lease Terms',
+    type: 'text',
+    description: 'Lease terms if leasehold (term, ground rent, reviews)',
+    aliases: ['lease terms', 'lease', 'leasehold', 'ground rent', 'lease length', 'unexpired term', 'head lease']
+  },
+  'legal.guarantees': {
+    label: 'Guarantees',
+    type: 'text',
+    description: 'Personal or corporate guarantees provided',
+    aliases: ['guarantees', 'guarantee details', 'personal guarantee', 'pg', 'corporate guarantee', 'guarantor details']
+  },
+  'legal.conditionsPrecedent': {
+    label: 'Conditions Precedent',
+    type: 'text',
+    description: 'Legal conditions precedent for drawdown',
+    aliases: ['conditions precedent', 'cps', 'cp', 'pre-conditions', 'drawdown conditions', 'conditions before drawdown']
+  },
+  'legal.conditionsSubsequent': {
+    label: 'Conditions Subsequent',
+    type: 'text',
+    description: 'Conditions subsequent (post-completion obligations)',
+    aliases: ['conditions subsequent', 'cs', 'post-completion conditions', 'subsequent conditions', 'ongoing obligations']
+  },
+
+  // === INSURANCE (5 fields) ===
+  'insurance.policyNumber': {
+    label: 'Insurance Policy Number',
+    type: 'string',
+    description: 'Insurance policy reference number',
+    aliases: ['policy number', 'policy ref', 'insurance reference', 'policy no', 'certificate number']
+  },
+  'insurance.insurer': {
+    label: 'Insurer',
+    type: 'string',
+    description: 'Name of insurance company/underwriter',
+    aliases: ['insurer', 'insurance company', 'underwriter', 'insurance provider', 'insured by']
+  },
+  'insurance.coverAmount': {
+    label: 'Cover Amount',
+    type: 'currency',
+    description: 'Total insurance cover amount',
+    aliases: ['cover amount', 'sum insured', 'insurance cover', 'indemnity limit', 'cover level', 'insured amount']
+  },
+  'insurance.expiryDate': {
+    label: 'Policy Expiry Date',
+    type: 'date',
+    description: 'Insurance policy expiry/renewal date',
+    aliases: ['expiry date', 'renewal date', 'policy expiry', 'insurance expiry', 'expires', 'valid until']
+  },
+  'insurance.coverType': {
+    label: 'Cover Type',
+    type: 'string',
+    description: 'Type of insurance cover (CAR, PI, public liability, etc.)',
+    aliases: ['cover type', 'type of cover', 'insurance type', 'car insurance', 'contractors all risks', 'public liability', 'professional indemnity']
+  },
+
+  // === PLANNING (6 fields) ===
+  'planning.applicationRef': {
+    label: 'Planning Application Reference',
+    type: 'string',
+    description: 'Planning application reference number',
+    aliases: ['planning ref', 'application reference', 'planning number', 'application number', 'planning application', 'ref number']
+  },
+  'planning.status': {
+    label: 'Planning Status',
+    type: 'string',
+    description: 'Current status of planning application',
+    aliases: ['planning status', 'application status', 'consent status', 'permission status', 'planning decision']
+  },
+  'planning.conditions': {
+    label: 'Planning Conditions',
+    type: 'text',
+    description: 'Summary of planning conditions attached',
+    aliases: ['planning conditions', 'conditions attached', 'planning requirements', 'conditions of consent', 'condition details']
+  },
+  'planning.s106Details': {
+    label: 'S106 Agreement Details',
+    type: 'text',
+    description: 'Section 106 agreement obligations and amounts',
+    aliases: ['s106', 'section 106', 's106 agreement', 's106 contribution', 's106 obligation', 'planning obligation']
+  },
+  'planning.cil': {
+    label: 'CIL Liability',
+    type: 'currency',
+    description: 'Community Infrastructure Levy amount',
+    aliases: ['cil', 'community infrastructure levy', 'cil charge', 'cil liability', 'cil payment']
+  },
+  'planning.permittedDevelopment': {
+    label: 'Permitted Development Rights',
+    type: 'text',
+    description: 'Permitted development rights status',
+    aliases: ['permitted development', 'pd rights', 'permitted development rights', 'prior approval', 'class ma', 'class q']
+  },
+
+  // === VALUATION (7 fields) ===
+  'valuation.marketValue': {
+    label: 'Market Value',
+    type: 'currency',
+    description: 'Current market value from valuation report',
+    aliases: ['market value', 'mv', 'current value', 'open market value', 'omv', 'as-is value', 'day one value']
+  },
+  'valuation.gdv': {
+    label: 'GDV (Valuation)',
+    type: 'currency',
+    description: 'Gross Development Value from valuation report',
+    aliases: ['gdv', 'gross development value', 'completed value', 'end value', 'residual value']
+  },
+  'valuation.specialAssumptions': {
+    label: 'Special Assumptions',
+    type: 'text',
+    description: 'Special assumptions applied in valuation',
+    aliases: ['special assumptions', 'assumptions', 'valuation assumptions', 'key assumptions', 'basis assumptions']
+  },
+  'valuation.comparables': {
+    label: 'Comparable Evidence',
+    type: 'text',
+    description: 'Comparable evidence used in valuation',
+    aliases: ['comparables', 'comparable evidence', 'comps', 'comparable sales', 'market evidence', 'comparable transactions']
+  },
+  'valuation.valuer': {
+    label: 'Valuer',
+    type: 'string',
+    description: 'Valuer name or firm',
+    aliases: ['valuer', 'surveyor', 'valuation firm', 'instructed valuer', 'rics surveyor', 'valuation surveyor']
+  },
+  'valuation.valuationDate': {
+    label: 'Valuation Date',
+    type: 'date',
+    description: 'Date of valuation report',
+    aliases: ['valuation date', 'date of valuation', 'report date', 'inspection date', 'valued as at']
+  },
+  'valuation.basisOfValue': {
+    label: 'Basis of Value',
+    type: 'string',
+    description: 'Basis on which valuation was carried out',
+    aliases: ['basis of value', 'valuation basis', 'market value basis', 'reinstatement', 'existing use value', 'euv', 'hope value']
+  },
+
+  // === RISK (4 fields) ===
+  'risk.description': {
+    label: 'Risk Description',
+    type: 'text',
+    description: 'Description of an identified risk',
+    aliases: ['risk', 'risk description', 'identified risk', 'key risk', 'risk factor', 'concern']
+  },
+  'risk.severity': {
+    label: 'Risk Severity',
+    type: 'string',
+    description: 'Severity rating of identified risk',
+    aliases: ['severity', 'risk level', 'risk rating', 'risk severity', 'impact level', 'risk score']
+  },
+  'risk.mitigant': {
+    label: 'Risk Mitigant',
+    type: 'text',
+    description: 'Mitigation strategy for an identified risk',
+    aliases: ['mitigant', 'mitigation', 'risk mitigation', 'mitigating factor', 'risk control', 'risk response']
+  },
+  'risk.riskCategory': {
+    label: 'Risk Category',
+    type: 'string',
+    description: 'Category of risk (market, construction, planning, exit, borrower)',
+    aliases: ['risk category', 'risk type', 'type of risk', 'risk classification']
+  },
+
+  // === CONDITIONS (4 fields) ===
+  'conditions.precedent': {
+    label: 'Conditions Precedent',
+    type: 'text',
+    description: 'Loan conditions precedent for first drawdown',
+    aliases: ['conditions precedent', 'cps', 'cp list', 'drawdown requirements', 'pre-drawdown conditions', 'initial conditions']
+  },
+  'conditions.subsequent': {
+    label: 'Conditions Subsequent',
+    type: 'text',
+    description: 'Post-drawdown conditions and obligations',
+    aliases: ['conditions subsequent', 'cs', 'post-drawdown conditions', 'subsequent requirements', 'post-completion conditions']
+  },
+  'conditions.ongoing': {
+    label: 'Ongoing Conditions',
+    type: 'text',
+    description: 'Ongoing covenants and conditions throughout loan term',
+    aliases: ['ongoing conditions', 'ongoing covenants', 'continuing obligations', 'financial covenants', 'information covenants']
+  },
+  'conditions.waivers': {
+    label: 'Waiver Requests',
+    type: 'text',
+    description: 'Waiver requests or granted waivers',
+    aliases: ['waivers', 'waiver request', 'condition waiver', 'waived conditions', 'waiver granted']
+  },
+
+  // === PARTIES (7 fields) ===
+  'parties.solicitor': {
+    label: 'Solicitor',
+    type: 'string',
+    description: 'Solicitor or law firm acting',
+    aliases: ['solicitor', 'lawyer', 'law firm', 'legal advisor', 'legal counsel', 'borrowers solicitor', 'lenders solicitor']
+  },
+  'parties.valuer': {
+    label: 'Valuer',
+    type: 'string',
+    description: 'Valuer or surveyor firm',
+    aliases: ['valuer', 'surveyor', 'valuation surveyor', 'rics surveyor', 'appointed valuer']
+  },
+  'parties.architect': {
+    label: 'Architect',
+    type: 'string',
+    description: 'Architect firm',
+    aliases: ['architect', 'architect firm', 'design architect', 'project architect', 'planning architect']
+  },
+  'parties.contractor': {
+    label: 'Main Contractor',
+    type: 'string',
+    description: 'Main contractor or builder',
+    aliases: ['contractor', 'main contractor', 'builder', 'building contractor', 'construction company', 'works contractor']
+  },
+  'parties.monitoringSurveyor': {
+    label: 'Monitoring Surveyor',
+    type: 'string',
+    description: 'Project monitoring surveyor (PMS)',
+    aliases: ['monitoring surveyor', 'pms', 'project monitor', 'independent monitor', 'construction monitor', 'quantity surveyor']
+  },
+  'parties.broker': {
+    label: 'Broker',
+    type: 'string',
+    description: 'Broker or introducer',
+    aliases: ['broker', 'introducer', 'intermediary', 'finance broker', 'mortgage broker', 'introducing broker']
+  },
+  'parties.guarantor': {
+    label: 'Guarantor',
+    type: 'string',
+    description: 'Personal or corporate guarantor',
+    aliases: ['guarantor', 'personal guarantor', 'corporate guarantor', 'guarantee provider', 'surety']
+  },
 };
 
 // =============================================================================
@@ -400,21 +654,30 @@ export const CHECKLIST_FIELD_HINTS: Record<string, string[]> = {
   // Project documents
   'Development Appraisal': ['financials.gdv', 'financials.totalDevelopmentCost', 'financials.constructionCost', 'financials.profitMargin', 'financials.purchasePrice', 'overview.unitCount'],
   'Appraisal': ['financials.gdv', 'financials.totalDevelopmentCost', 'financials.constructionCost', 'financials.profitMargin'],
-  'Valuation Report': ['financials.currentValue', 'financials.gdv', 'location.siteAddress'],
-  'Valuation': ['financials.currentValue', 'financials.gdv'],
-  'Title Documents': ['location.titleNumber', 'location.siteAddress'],
-  'Title': ['location.titleNumber', 'location.siteAddress'],
-  'Land Registry': ['location.titleNumber', 'location.siteAddress'],
-  'Planning Permission': ['timeline.planningStatus', 'overview.unitCount', 'overview.totalSqft'],
-  'Planning': ['timeline.planningStatus', 'overview.unitCount'],
+  'Valuation Report': ['financials.currentValue', 'financials.gdv', 'location.siteAddress', 'valuation.marketValue', 'valuation.gdv', 'valuation.specialAssumptions', 'valuation.comparables', 'valuation.valuer', 'valuation.valuationDate', 'valuation.basisOfValue'],
+  'RedBook Valuation': ['valuation.marketValue', 'valuation.gdv', 'valuation.specialAssumptions', 'valuation.comparables', 'valuation.valuer', 'valuation.valuationDate', 'valuation.basisOfValue', 'financials.currentValue', 'financials.gdv', 'location.siteAddress'],
+  'Valuation': ['financials.currentValue', 'financials.gdv', 'valuation.marketValue', 'valuation.valuer', 'valuation.valuationDate'],
+  'Title Documents': ['location.titleNumber', 'location.siteAddress', 'legal.titleDetails', 'legal.charges', 'legal.covenants'],
+  'Title': ['location.titleNumber', 'location.siteAddress', 'legal.titleDetails', 'legal.charges'],
+  'Certificate of Title': ['legal.titleDetails', 'legal.charges', 'legal.covenants', 'legal.leaseTerms', 'location.titleNumber', 'location.siteAddress'],
+  'Land Registry': ['location.titleNumber', 'location.siteAddress', 'legal.titleDetails', 'legal.charges'],
+  'Planning Permission': ['timeline.planningStatus', 'overview.unitCount', 'overview.totalSqft', 'planning.applicationRef', 'planning.status', 'planning.conditions', 'planning.s106Details', 'planning.cil'],
+  'Planning Decision Notice': ['planning.applicationRef', 'planning.status', 'planning.conditions', 'planning.s106Details', 'planning.cil', 'planning.permittedDevelopment'],
+  'Planning': ['timeline.planningStatus', 'overview.unitCount', 'planning.applicationRef', 'planning.status', 'planning.conditions'],
   'Schedule of Works': ['financials.constructionCost', 'timeline.constructionStart', 'timeline.practicalCompletion', 'timeline.projectDuration'],
-  'Build Contract': ['financials.constructionCost', 'timeline.constructionStart', 'timeline.practicalCompletion'],
-  'JCT Contract': ['financials.constructionCost', 'timeline.constructionStart', 'timeline.practicalCompletion'],
-  'Heads of Terms': ['financials.loanAmount', 'financials.ltv', 'financials.ltc', 'timeline.projectDuration'],
-  'Term Sheet': ['financials.loanAmount', 'financials.ltv', 'financials.ltc', 'timeline.projectDuration'],
-  'Facility Agreement': ['financials.loanAmount', 'financials.ltv', 'financials.ltc', 'timeline.projectDuration'],
-  'Sales Evidence': ['financials.gdv', 'overview.unitCount'],
-  'Comparables': ['financials.gdv', 'financials.currentValue'],
+  'Build Contract': ['financials.constructionCost', 'timeline.constructionStart', 'timeline.practicalCompletion', 'parties.contractor'],
+  'JCT Contract': ['financials.constructionCost', 'timeline.constructionStart', 'timeline.practicalCompletion', 'parties.contractor'],
+  'Heads of Terms': ['financials.loanAmount', 'financials.ltv', 'financials.ltc', 'timeline.projectDuration', 'conditions.precedent', 'conditions.subsequent'],
+  'Term Sheet': ['financials.loanAmount', 'financials.ltv', 'financials.ltc', 'timeline.projectDuration', 'conditions.precedent'],
+  'Facility Agreement': ['financials.loanAmount', 'financials.ltv', 'financials.ltc', 'timeline.projectDuration', 'conditions.precedent', 'conditions.subsequent', 'conditions.ongoing', 'legal.guarantees'],
+  'Facility Letter': ['financials.loanAmount', 'financials.ltv', 'conditions.precedent', 'conditions.subsequent', 'legal.guarantees'],
+  'Insurance Certificate': ['insurance.policyNumber', 'insurance.insurer', 'insurance.coverAmount', 'insurance.expiryDate', 'insurance.coverType'],
+  'Insurance': ['insurance.policyNumber', 'insurance.insurer', 'insurance.coverAmount', 'insurance.expiryDate', 'insurance.coverType'],
+  'Monitoring Report': ['risk.description', 'risk.severity', 'risk.mitigant', 'conditions.ongoing'],
+  'Sales Evidence': ['financials.gdv', 'overview.unitCount', 'valuation.comparables'],
+  'Comparables': ['financials.gdv', 'financials.currentValue', 'valuation.comparables'],
+  'Legal Report': ['legal.titleDetails', 'legal.charges', 'legal.covenants', 'legal.leaseTerms', 'legal.guarantees'],
+  'Legal Opinion': ['legal.titleDetails', 'legal.charges', 'legal.covenants', 'legal.conditionsPrecedent'],
 };
 
 // =============================================================================
@@ -771,6 +1034,60 @@ export const FIELD_NATURAL_SCOPE: Record<string, 'client' | 'project' | 'context
   'timeline.constructionStart': 'project',
   'timeline.practicalCompletion': 'project',
   'timeline.projectDuration': 'project',
+
+  // === LEGAL ===
+  'legal.titleDetails': 'project',
+  'legal.charges': 'project',
+  'legal.covenants': 'project',
+  'legal.leaseTerms': 'project',
+  'legal.guarantees': 'project',
+  'legal.conditionsPrecedent': 'project',
+  'legal.conditionsSubsequent': 'project',
+
+  // === INSURANCE ===
+  'insurance.policyNumber': 'project',
+  'insurance.insurer': 'project',
+  'insurance.coverAmount': 'project',
+  'insurance.expiryDate': 'project',
+  'insurance.coverType': 'project',
+
+  // === PLANNING ===
+  'planning.applicationRef': 'project',
+  'planning.status': 'project',
+  'planning.conditions': 'project',
+  'planning.s106Details': 'project',
+  'planning.cil': 'project',
+  'planning.permittedDevelopment': 'project',
+
+  // === VALUATION ===
+  'valuation.marketValue': 'project',
+  'valuation.gdv': 'project',
+  'valuation.specialAssumptions': 'project',
+  'valuation.comparables': 'project',
+  'valuation.valuer': 'project',
+  'valuation.valuationDate': 'project',
+  'valuation.basisOfValue': 'project',
+
+  // === RISK ===
+  'risk.description': 'project',
+  'risk.severity': 'project',
+  'risk.mitigant': 'project',
+  'risk.riskCategory': 'project',
+
+  // === CONDITIONS ===
+  'conditions.precedent': 'project',
+  'conditions.subsequent': 'project',
+  'conditions.ongoing': 'project',
+  'conditions.waivers': 'project',
+
+  // === PARTIES ===
+  'parties.solicitor': 'project',
+  'parties.valuer': 'project',
+  'parties.architect': 'project',
+  'parties.contractor': 'project',
+  'parties.monitoringSurveyor': 'project',
+  'parties.broker': 'project',
+  'parties.guarantor': 'project',
 };
 
 /**

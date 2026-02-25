@@ -2861,6 +2861,9 @@ export default defineSchema({
     addedAt: v.string(),
     updatedAt: v.string(),
     addedBy: v.optional(v.string()),  // User who added it or "ai-extraction"
+
+    // Template tags for retrieval and document generation
+    tags: v.optional(v.array(v.string())),  // e.g., ["lenders_note", "credit_submission", "general"]
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -2869,7 +2872,9 @@ export default defineSchema({
     .index("by_client_field", ["clientId", "fieldPath"])
     .index("by_project_field", ["projectId", "fieldPath"])
     .index("by_status", ["status"])
-    .index("by_source_document", ["sourceDocumentId"]),
+    .index("by_source_document", ["sourceDocumentId"])
+    .index("by_client_status", ["clientId", "status"])
+    .index("by_project_status", ["projectId", "status"]),
 
   // Intelligence Conflicts - When multiple sources disagree
   intelligenceConflicts: defineTable({
