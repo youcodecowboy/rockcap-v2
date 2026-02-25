@@ -103,6 +103,7 @@ export const list = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId!))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
       return docs.filter(doc => {
         if (args.category && doc.category !== args.category) return false;
@@ -113,6 +114,7 @@ export const list = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId!))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
       return docs.filter(doc => {
         if (args.category && doc.category !== args.category) return false;
@@ -123,6 +125,7 @@ export const list = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_category", (q: any) => q.eq("category", args.category!))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
       return docs.filter(doc => {
         if (args.status && doc.status !== args.status) return false;
@@ -132,9 +135,10 @@ export const list = query({
       return await ctx.db
         .query("documents")
         .withIndex("by_status", (q: any) => q.eq("status", args.status!))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     } else {
-      return await ctx.db.query("documents").collect();
+      return await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     }
   },
 });
@@ -143,7 +147,11 @@ export const list = query({
 export const get = query({
   args: { id: v.id("documents") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const record = await ctx.db.get(args.id);
+    if (!record || record.isDeleted) {
+      return null;
+    }
+    return record;
   },
 });
 
@@ -154,6 +162,7 @@ export const getByClient = query({
     return await ctx.db
       .query("documents")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
   },
 });
@@ -165,6 +174,7 @@ export const getByProject = query({
     return await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
   },
 });
@@ -172,7 +182,7 @@ export const getByProject = query({
 // Query: Get internal documents (no client/project)
 export const getInternal = query({
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     return allDocs.filter(doc => !doc.clientId && !doc.projectId);
   },
 });
@@ -180,7 +190,7 @@ export const getInternal = query({
 // Query: Get unclassified documents (no client AND no project)
 export const getUnclassified = query({
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     return allDocs.filter(doc => !doc.clientId && !doc.projectId);
   },
 });
@@ -188,9 +198,9 @@ export const getUnclassified = query({
 // Query: Get folder statistics for clients
 export const getFolderStats = query({
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").collect();
-    const clients = await ctx.db.query("clients").collect();
-    const projects = await ctx.db.query("projects").collect();
+    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    const clients = await ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    const projects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     
     // Group documents by client
     const clientStats = clients.map(client => {
@@ -251,7 +261,7 @@ export const search = query({
     category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    let docs = await ctx.db.query("documents").collect();
+    let docs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const lowerQuery = args.query.toLowerCase().trim();
     
     docs = docs.filter(doc => {
@@ -280,7 +290,7 @@ export const search = query({
 // Query: Get unique file types
 export const getUniqueFileTypes = query({
   handler: async (ctx) => {
-    const docs = await ctx.db.query("documents").collect();
+    const docs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const types = new Set(docs.map(doc => doc.fileTypeDetected));
     return Array.from(types).sort();
   },
@@ -289,7 +299,7 @@ export const getUniqueFileTypes = query({
 // Query: Get unique categories
 export const getUniqueCategories = query({
   handler: async (ctx) => {
-    const docs = await ctx.db.query("documents").collect();
+    const docs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const categories = new Set(docs.map(doc => doc.category));
     return Array.from(categories).sort();
   },
@@ -300,7 +310,7 @@ export const getRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit || 10;
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const sorted = allDocs.sort((a, b) => 
       new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
     );
@@ -415,7 +425,7 @@ export const create = mutation({
 
       // Ensure uniqueness if code was generated
       if (documentCode) {
-        const existingDocs = await ctx.db.query("documents").collect();
+        const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
         let finalCode = documentCode;
         let counter = 1;
         while (existingDocs.some(doc => doc.documentCode === finalCode)) {
@@ -630,7 +640,7 @@ export const uploadFileAndCreateDocument = mutation({
       );
       
       // Ensure uniqueness
-      const existingDocs = await ctx.db.query("documents").collect();
+      const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
       let finalCode = documentCode;
       let counter = 1;
       while (existingDocs.some(doc => doc.documentCode === finalCode)) {
@@ -842,7 +852,7 @@ export const updateDocumentCode = mutation({
     }
     
     // Check for uniqueness
-    const existingDocs = await ctx.db.query("documents").collect();
+    const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
     const isDuplicate = existingDocs.some(
       doc => doc._id !== args.id && doc.documentCode === args.documentCode
     );
@@ -868,15 +878,16 @@ export const updateDocumentCodesForClient = mutation({
     const clientDocs = await ctx.db
       .query("documents")
       .filter((q: any) => q.eq(q.field("clientId"), args.clientId))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
+
     // Filter out excluded document if provided
     const docsToUpdate = args.excludeDocumentId
       ? clientDocs.filter(doc => doc._id !== args.excludeDocumentId)
       : clientDocs;
-    
+
     // Get all existing document codes to check uniqueness
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
     const existingCodes = new Set(allDocs.map(doc => doc.documentCode).filter(Boolean));
     
     // Update each document with unique code
@@ -916,15 +927,16 @@ export const updateDocumentCodesForProject = mutation({
     const projectDocs = await ctx.db
       .query("documents")
       .filter((q: any) => q.eq(q.field("projectId"), args.projectId))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
+
     // Filter out excluded document if provided
     const docsToUpdate = args.excludeDocumentId
       ? projectDocs.filter(doc => doc._id !== args.excludeDocumentId)
       : projectDocs;
-    
+
     // Get all existing document codes to check uniqueness
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
     const existingCodes = new Set(allDocs.map(doc => doc.documentCode).filter(Boolean));
     
     // Update each document with unique code
@@ -961,7 +973,11 @@ export const remove = mutation({
       return;
     }
 
-    await ctx.db.delete(args.id);
+    await ctx.db.patch(args.id, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: "user_deleted",
+    });
 
     // Invalidate context cache for client
     if (existing.clientId) {
@@ -996,6 +1012,7 @@ export const getBaseDocumentsByClient = query({
     const docs = await ctx.db
       .query("documents")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     // Filter for base documents (isBaseDocument: true and projectId is null/undefined)
@@ -1017,10 +1034,10 @@ export const moveDocument = mutation({
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.documentId);
-    if (!doc) {
+    if (!doc || doc.isDeleted) {
       throw new Error("Document not found");
     }
-    
+
     // Validate same client constraint
     if (doc.clientId !== args.targetClientId) {
       throw new Error("Cannot move document to different client");
@@ -1047,7 +1064,7 @@ export const moveDocument = mutation({
       );
       
       // Ensure uniqueness
-      const existingDocs = await ctx.db.query("documents").collect();
+      const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
       let finalCode = newDocumentCode;
       let counter = 1;
       while (existingDocs.some(d => d._id !== args.documentId && d.documentCode === finalCode)) {
@@ -1056,7 +1073,7 @@ export const moveDocument = mutation({
       }
       newDocumentCode = finalCode;
     }
-    
+
     // Update document
     await ctx.db.patch(args.documentId, {
       projectId: args.isBaseDocument ? undefined : args.targetProjectId,
@@ -1100,7 +1117,7 @@ export const moveDocumentCrossScope = mutation({
 
     // 2. Get document
     const doc = await ctx.db.get(args.documentId);
-    if (!doc) {
+    if (!doc || doc.isDeleted) {
       throw new Error("Document not found");
     }
 
@@ -1166,7 +1183,7 @@ export const moveDocumentCrossScope = mutation({
     );
 
     // Ensure uniqueness
-    const existingDocs = await ctx.db.query("documents").collect();
+    const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
     let finalCode = newDocumentCode;
     let counter = 1;
     while (existingDocs.some(d => d._id !== args.documentId && d.documentCode === finalCode)) {
@@ -1271,8 +1288,9 @@ export const getExtractionHistory = query({
     const documents = await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
+
     // Get all extractions for these documents
     const allExtractions = await ctx.db.query("documentExtractions").collect();
     
@@ -1332,7 +1350,7 @@ export const getUnfiled = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
 
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
 
     // Get current user for personal document access
     let currentUserId: string | null = null;
@@ -1376,7 +1394,7 @@ export const getUnfiledCount = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
 
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
 
     // Get current user for personal document access
     let currentUserId: string | null = null;
@@ -1428,8 +1446,9 @@ export const getByFolder = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
-      
+
       // Filter for documents in this specific folder within the project
       return docs.filter(doc => doc.folderId === args.folderType);
     } else {
@@ -1437,6 +1456,7 @@ export const getByFolder = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
       
       // Filter for documents in this folder that are NOT in a project
@@ -1476,6 +1496,7 @@ export const getByScope = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_scope", (q: any) => q.eq("scope", "internal"))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
 
       // Filter by folder if provided
@@ -1493,6 +1514,7 @@ export const getByScope = query({
         .withIndex("by_scope_owner", (q: any) =>
           q.eq("scope", "personal").eq("ownerId", user._id)
         )
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
 
       // Filter by folder if provided
@@ -1519,6 +1541,7 @@ export const getInternalDocumentCounts = query({
     const docs = await ctx.db
       .query("documents")
       .withIndex("by_scope", (q: any) => q.eq("scope", "internal"))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     const counts: Record<string, number> = {};
@@ -1554,6 +1577,7 @@ export const getPersonalDocumentCounts = query({
       .withIndex("by_scope_owner", (q: any) =>
         q.eq("scope", "personal").eq("ownerId", user._id)
       )
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     const counts: Record<string, number> = {};
@@ -1570,15 +1594,15 @@ export const getPersonalDocumentCounts = query({
 export const getClientDocumentCounts = query({
   args: {},
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const counts: Record<string, number> = {};
-    
+
     for (const doc of allDocs) {
       if (doc.clientId) {
         counts[doc.clientId] = (counts[doc.clientId] || 0) + 1;
       }
     }
-    
+
     return counts;
   },
 });
@@ -1590,8 +1614,9 @@ export const getFolderCounts = query({
     const docs = await ctx.db
       .query("documents")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
+
     const clientFolders: Record<string, number> = {};
     const projectFolders: Record<string, Record<string, number>> = {};
     
@@ -1618,15 +1643,16 @@ export const getProjectFolderCounts = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
     // Get all projects for this client
-    const allProjects = await ctx.db.query("projects").collect();
-    const clientProjects = allProjects.filter(p => 
+    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    const clientProjects = allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
-    
+
     // Get all documents for this client
     const docs = await ctx.db
       .query("documents")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     // Build counts per project

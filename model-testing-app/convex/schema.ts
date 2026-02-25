@@ -56,6 +56,11 @@ export default defineSchema({
     lastHubSpotSync: v.optional(v.string()),
     hubspotLifecycleStage: v.optional(v.string()),
     createdAt: v.string(),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])
@@ -158,6 +163,11 @@ export default defineSchema({
       v.literal("completed")
     )),
     createdAt: v.string(),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_status", ["status"])
     .index("by_client", ["clientRoles"])
@@ -264,6 +274,11 @@ export default defineSchema({
     noteCount: v.optional(v.number()),
     // Intelligence integration - flag to track if document analysis was added to client/project intelligence
     addedToIntelligence: v.optional(v.boolean()),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -368,20 +383,13 @@ export default defineSchema({
     .index("by_user_type", ["userId", "folderType"])
     .index("by_parent", ["parentFolderId"]),
 
-  // Legacy: Internal Document Folders (deprecated - use internalFolders instead)
-  internalDocumentFolders: defineTable({
-    name: v.string(),
-    createdAt: v.string(),
-  })
-    .index("by_name", ["name"]),
-
   // Contacts table - can be linked to clients or projects
   contacts: defineTable({
     name: v.string(),
     role: v.optional(v.string()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
-    company: v.optional(v.string()), // Legacy field - kept for backward compatibility, use linkedCompanyIds instead
+    company: v.optional(v.string()), // @deprecated - use linkedCompanyIds instead. Kept for backward compatibility.
     notes: v.optional(v.string()),
     // Links (flexible)
     clientId: v.optional(v.id("clients")),
@@ -405,6 +413,11 @@ export default defineSchema({
     metadata: v.optional(v.any()), // Custom properties from HubSpot
     createdAt: v.string(),
     updatedAt: v.optional(v.string()), // Add updatedAt for contacts too
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -520,36 +533,6 @@ export default defineSchema({
     .index("by_hubspot_id", ["hubspotActivityId"])
     .index("by_owner", ["hubspotOwnerId"]),
   
-  // Legacy deal activities table - kept for backward compatibility
-  // New activities should use the unified "activities" table
-  dealActivities: defineTable({
-    dealId: v.id("deals"),
-    activityType: v.string(), // e.g., "note", "call", "email", "meeting", "task"
-    subject: v.optional(v.string()),
-    body: v.optional(v.string()),
-    direction: v.optional(v.union(
-      v.literal("inbound"),
-      v.literal("outbound")
-    )),
-    // Activity date/time
-    activityDate: v.string(),
-    // Associated contact/company (if applicable)
-    contactId: v.optional(v.id("contacts")),
-    companyId: v.optional(v.id("companies")),
-    // HubSpot integration fields
-    hubspotActivityId: v.string(),
-    hubspotUrl: v.optional(v.string()),
-    lastHubSpotSync: v.optional(v.string()),
-    // Custom properties from HubSpot
-    metadata: v.optional(v.any()),
-    createdAt: v.string(),
-    updatedAt: v.string(),
-  })
-    .index("by_deal", ["dealId"])
-    .index("by_activity_type", ["activityType"])
-    .index("by_activity_date", ["activityDate"])
-    .index("by_hubspot_id", ["hubspotActivityId"]),
-
   // Leads table - contacts with opportunity/lead lifecycle stages (prospecting)
   // A contact can be both a contact AND a lead (like companies can be clients)
   leads: defineTable({
@@ -797,7 +780,7 @@ export default defineSchema({
     documentId: v.optional(v.id("documents")),
     error: v.optional(v.string()),
     isRead: v.optional(v.boolean()), // For notification read status
-    userId: v.optional(v.string()), // For future multi-user support
+    userId: v.optional(v.id("users")), // For future multi-user support
     hasCustomInstructions: v.optional(v.boolean()), // Flag to indicate if custom instructions were requested
     customInstructions: v.optional(v.string()), // Custom instructions for LLM analysis
     forceExtraction: v.optional(v.boolean()), // Force data extraction regardless of file type
@@ -1096,6 +1079,11 @@ export default defineSchema({
     tags: v.array(v.string()),
     createdAt: v.string(),
     updatedAt: v.string(),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -1251,8 +1239,13 @@ export default defineSchema({
     data: v.optional(v.any()), // Handsontable-compatible data format
     createdAt: v.string(),
     updatedAt: v.string(),
-    createdBy: v.optional(v.string()),
+    createdBy: v.optional(v.id("users")),
     metadata: v.optional(v.any()),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_project", ["projectId"]),
 
@@ -1291,12 +1284,17 @@ export default defineSchema({
     ),
     error: v.optional(v.string()),
     runAt: v.string(),
-    runBy: v.optional(v.string()),
+    runBy: v.optional(v.id("users")),
     metadata: v.optional(v.any()),
     // Source tracking for data provenance
     sourceDocumentIds: v.optional(v.array(v.id("documents"))),
     dataLibrarySnapshotId: v.optional(v.id("dataLibrarySnapshots")),
     billOfMaterials: v.optional(v.any()), // Embedded copy for quick access
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_scenario", ["scenarioId"])
     .index("by_project", ["projectId"])
@@ -1426,16 +1424,6 @@ export default defineSchema({
     .index("by_company2", ["companyId2"])
     .index("by_relationship_type", ["relationshipType"])
     .index("by_address_hash", ["sharedEntityId"]),
-
-  // API Rate Limit Tracking - Track requests per 5-minute window
-  apiRateLimit: defineTable({
-    windowStart: v.string(), // ISO timestamp of window start
-    requestCount: v.number(),
-    lastRequestAt: v.string(), // ISO timestamp
-    createdAt: v.string(),
-    updatedAt: v.string(),
-  })
-    .index("by_window_start", ["windowStart"]),
 
   // Prospects - Sales/intelligence layer on top of Companies House companies
   prospects: defineTable({
@@ -1768,7 +1756,7 @@ export default defineSchema({
     exampleFileName: v.optional(v.string()), // Name of the example file
     isSystemDefault: v.optional(v.boolean()), // Whether this is a system default (read-only)
     isActive: v.boolean(), // Whether this definition is active
-    createdBy: v.string(), // User ID who created this
+    createdBy: v.optional(v.id("users")), // User who created this (optional for system defaults)
     createdAt: v.string(),
     updatedAt: v.string(),
     // Deterministic verification fields (Phase 1 - unified source of truth)
@@ -1806,7 +1794,7 @@ export default defineSchema({
     isSystemDefault: v.optional(v.boolean()), // Whether this is a system default (read-only)
     isActive: v.boolean(), // Whether this category is active
     hubspotMapping: v.optional(v.string()), // For prospecting stages: HubSpot stage ID this maps to
-    createdBy: v.string(), // User ID who created this
+    createdBy: v.optional(v.id("users")), // User who created this (optional for system defaults)
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -2495,9 +2483,9 @@ export default defineSchema({
     })),
 
     // === METADATA ===
-    fieldSources: v.optional(v.any()), // Legacy - use evidenceTrail instead
+    // fieldSources removed - use evidenceTrail instead
     lastUpdated: v.string(),
-    lastUpdatedBy: v.optional(v.string()),
+    lastUpdatedBy: v.optional(v.string()), // Stores user IDs or system identifiers (e.g., "system", "intelligence-extraction")
     version: v.number(),
   })
     .index("by_client", ["clientId"])
@@ -2685,9 +2673,9 @@ export default defineSchema({
     })),
 
     // === METADATA ===
-    fieldSources: v.optional(v.any()), // Legacy - use evidenceTrail instead
+    // fieldSources removed - use evidenceTrail instead
     lastUpdated: v.string(),
-    lastUpdatedBy: v.optional(v.string()),
+    lastUpdatedBy: v.optional(v.string()), // Stores user IDs or system identifiers (e.g., "system", "intelligence-extraction")
     version: v.number(),
   })
     .index("by_project", ["projectId"]),
@@ -3179,5 +3167,29 @@ export default defineSchema({
     .index("by_document", ["documentId"])
     .index("by_client", ["clientId"])
     .index("by_created", ["createdAt"]),
+
+  // ============================================================================
+  // AUDIT LOG - Tracks all critical data mutations for accountability
+  // ============================================================================
+
+  auditLog: defineTable({
+    tableName: v.string(), // "clients", "documents", "projects", etc.
+    recordId: v.string(), // ID of affected record
+    action: v.union(
+      v.literal("create"),
+      v.literal("update"),
+      v.literal("delete"),
+      v.literal("restore")
+    ),
+    userId: v.optional(v.id("users")), // Who performed the action
+    changes: v.optional(v.any()), // Before/after values for updates
+    metadata: v.optional(v.any()), // Additional context
+    timestamp: v.string(),
+  })
+    .index("by_table_record", ["tableName", "recordId"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_user", ["userId"])
+    .index("by_table", ["tableName"])
+    .index("by_action", ["action"]),
 });
 

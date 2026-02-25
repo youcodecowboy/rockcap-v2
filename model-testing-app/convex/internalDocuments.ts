@@ -306,14 +306,17 @@ export const getByFolder = query({
 // Query: Get all folders (including empty ones)
 export const getFolders = query({
   handler: async (ctx) => {
-    const folders = await ctx.db.query("internalDocumentFolders").collect();
+    const folders = await ctx.db
+      .query("internalFolders")
+      .withIndex("by_type", (q: any) => q.eq("folderType", "internalDocument"))
+      .collect();
     return folders.sort((a, b) => a.name.localeCompare(b.name));
   },
 });
 
 // Query: Get folder by ID
 export const getFolder = query({
-  args: { folderId: v.id("internalDocumentFolders") },
+  args: { folderId: v.id("internalFolders") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.folderId);
   },
@@ -325,21 +328,24 @@ export const createFolder = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    // Check if folder with same name already exists
+    // Check if folder with same name already exists within internalDocument type
     const existingFolders = await ctx.db
-      .query("internalDocumentFolders")
-      .withIndex("by_name", (q: any) => q.eq("name", args.name))
+      .query("internalFolders")
+      .withIndex("by_type", (q: any) => q.eq("folderType", "internalDocument"))
       .collect();
-    
-    if (existingFolders.length > 0) {
+
+    const duplicateFolder = existingFolders.find(f => f.name === args.name);
+    if (duplicateFolder) {
       throw new Error("Folder with this name already exists");
     }
-    
-    const folderId = await ctx.db.insert("internalDocumentFolders", {
+
+    const folderId = await ctx.db.insert("internalFolders", {
       name: args.name,
+      folderType: "internalDocument",
+      isCustom: true,
       createdAt: new Date().toISOString(),
     });
-    
+
     return folderId;
   },
 });
@@ -347,7 +353,7 @@ export const createFolder = mutation({
 // Mutation: Delete folder
 export const deleteFolder = mutation({
   args: {
-    folderId: v.id("internalDocumentFolders"),
+    folderId: v.id("internalFolders"),
   },
   handler: async (ctx, args) => {
     // Move all documents in this folder to unorganized (null folderId)
@@ -377,7 +383,7 @@ export const deleteFolder = mutation({
 export const updateFolder = mutation({
   args: {
     id: v.id("internalDocuments"),
-    folderId: v.optional(v.union(v.id("internalDocumentFolders"), v.null())),
+    folderId: v.optional(v.union(v.id("internalFolders"), v.null())),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.id);

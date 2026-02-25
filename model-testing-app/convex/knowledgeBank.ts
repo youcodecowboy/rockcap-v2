@@ -70,16 +70,16 @@ export const syncKnowledgeEntries = mutation({
 
     try {
       // Get all clients
-      const clients = await ctx.db.query("clients").collect();
-      
+      const clients = await ctx.db.query("clients").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
+
       // Get all projects
-      const projects = await ctx.db.query("projects").collect();
-      
+      const projects = await ctx.db.query("projects").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
+
       // Get all documents
-      const documents = await ctx.db.query("documents").collect();
+      const documents = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
 
       // Get existing knowledge bank entries
-      const existingEntries = await ctx.db.query("knowledgeBankEntries").collect();
+      const existingEntries = await ctx.db.query("knowledgeBankEntries").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
       const entriesByClient = new Map<string, Set<string>>();
       const entriesByProject = new Map<string, Set<string>>();
       const entriesByDocument = new Map<string, boolean>();
@@ -372,6 +372,7 @@ export const getByClient = query({
     let entries = await ctx.db
       .query("knowledgeBankEntries")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     // Filter by entryType if provided
@@ -381,13 +382,13 @@ export const getByClient = query({
 
     // Filter by tags if provided
     if (args.tags && args.tags.length > 0) {
-      entries = entries.filter(e => 
+      entries = entries.filter(e =>
         args.tags!.some(tag => e.tags.includes(tag))
       );
     }
 
     // Sort by createdAt descending (newest first)
-    return entries.sort((a, b) => 
+    return entries.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   },
@@ -410,6 +411,7 @@ export const getByProject = query({
     let entries = await ctx.db
       .query("knowledgeBankEntries")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     // Filter by entryType if provided
@@ -418,7 +420,7 @@ export const getByProject = query({
     }
 
     // Sort by createdAt descending (newest first)
-    return entries.sort((a, b) => 
+    return entries.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   },
@@ -428,7 +430,9 @@ export const getByProject = query({
 export const get = query({
   args: { id: v.id("knowledgeBankEntries") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const entry = await ctx.db.get(args.id);
+    if (!entry || entry.isDeleted) return null;
+    return entry;
   },
 });
 
@@ -489,7 +493,11 @@ export const remove = mutation({
       return;
     }
 
-    await ctx.db.delete(args.id);
+    await ctx.db.patch(args.id, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: "user_deleted",
+    });
 
     // Invalidate context cache for client
     await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
@@ -515,6 +523,7 @@ export const aggregateClientSummary = query({
     const entries = await ctx.db
       .query("knowledgeBankEntries")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     // Get client info
@@ -526,6 +535,7 @@ export const aggregateClientSummary = query({
     // Get related projects
     const projects = await ctx.db
       .query("projects")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
     const relatedProjects = projects.filter(p => 
       p.clientRoles.some(cr => cr.clientId === args.clientId)
@@ -603,15 +613,18 @@ export const search = query({
       entries = await ctx.db
         .query("knowledgeBankEntries")
         .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId!))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     } else if (args.projectId) {
       entries = await ctx.db
         .query("knowledgeBankEntries")
         .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId!))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     } else {
       entries = await ctx.db
         .query("knowledgeBankEntries")
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
     }
 

@@ -77,6 +77,7 @@ export const getDocumentCounts = query({
     const documents = await ctx.db
       .query("documents")
       .withIndex("by_scope", (q) => q.eq("scope", "internal"))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     // Count documents per folder
@@ -204,7 +205,10 @@ export const remove = mutation({
     const documents = await ctx.db
       .query("documents")
       .withIndex("by_scope", (q) => q.eq("scope", "internal"))
-      .filter((q) => q.eq(q.field("folderId"), folder.folderType))
+      .filter((q) => q.and(
+        q.eq(q.field("folderId"), folder.folderType),
+        q.neq(q.field("isDeleted"), true)
+      ))
       .collect();
 
     if (documents.length > 0) {

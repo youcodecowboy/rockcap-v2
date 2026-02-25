@@ -633,7 +633,7 @@ export const checkForDuplicates = query({
     const basePattern = `${args.projectShortcode.toUpperCase()}-${typeAbbrev}-${internalExternal}`;
     
     // Find documents with matching pattern
-    const allDocs = await ctx.db.query("documents").collect();
+    const allDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
     const matches = allDocs.filter(doc => {
       if (!doc.documentCode) return false;
       return doc.documentCode.startsWith(basePattern);

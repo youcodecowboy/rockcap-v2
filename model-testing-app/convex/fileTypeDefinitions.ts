@@ -90,7 +90,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    const userId = user._id.toString();
+    const userId = user._id;
 
     // Validate description is at least 100 words
     const wordCount = args.description.trim().split(/\s+/).length;
@@ -383,7 +383,7 @@ export const syncDefinitions = mutation({
     const latestDefinitions = getLatestDefinitions();
     
     const now = new Date().toISOString();
-    const systemUserId = 'system';
+    // System defaults don't have a user - createdBy is optional
     let added = 0;
     let updated = 0;
     let skipped = 0;
@@ -397,7 +397,7 @@ export const syncDefinitions = mutation({
           ...def,
           isSystemDefault: true,
           isActive: true,
-          createdBy: systemUserId,
+          // createdBy omitted for system defaults
           createdAt: now,
           updatedAt: now,
         });
@@ -443,7 +443,7 @@ export const adminSyncDefinitions = mutation({
     const latestDefinitions = getLatestDefinitions();
 
     const now = new Date().toISOString();
-    const systemUserId = 'system';
+    // System defaults don't have a user - createdBy is optional
     let added = 0;
     let updated = 0;
     let skipped = 0;
@@ -457,7 +457,7 @@ export const adminSyncDefinitions = mutation({
           ...def,
           isSystemDefault: true,
           isActive: true,
-          createdBy: systemUserId,
+          // createdBy omitted for system defaults
           createdAt: now,
           updatedAt: now,
         });

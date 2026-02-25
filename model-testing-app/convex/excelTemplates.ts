@@ -8,7 +8,10 @@ export const getTemplateByName = query({
     // First try to find in documents table
     const doc = await ctx.db
       .query("documents")
-      .filter((q) => q.eq(q.field("fileName"), args.fileName))
+      .filter((q) => q.and(
+        q.eq(q.field("fileName"), args.fileName),
+        q.neq(q.field("isDeleted"), true)
+      ))
       .first();
     
     if (doc && doc.fileStorageId) {
@@ -30,10 +33,13 @@ export const listTemplates = query({
   handler: async (ctx) => {
     const docs = await ctx.db
       .query("documents")
-      .filter((q) => 
-        q.or(
-          q.eq(q.field("fileType"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-          q.eq(q.field("fileType"), "application/vnd.ms-excel")
+      .filter((q) =>
+        q.and(
+          q.or(
+            q.eq(q.field("fileType"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            q.eq(q.field("fileType"), "application/vnd.ms-excel")
+          ),
+          q.neq(q.field("isDeleted"), true)
         )
       )
       .collect();

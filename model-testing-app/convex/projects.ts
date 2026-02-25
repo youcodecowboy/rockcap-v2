@@ -18,7 +18,7 @@ export const list = query({
   handler: async (ctx, args) => {
     // Note: clientId filtering happens in memory since we can't index on array elements
     // For better performance with many projects, consider denormalizing client relationships
-    let projects = await ctx.db.query("projects").collect();
+    let projects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     
     if (args.clientId) {
       projects = projects.filter(p => 
@@ -38,7 +38,11 @@ export const list = query({
 export const get = query({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const project = await ctx.db.get(args.id);
+    if (!project || project.isDeleted) {
+      return null;
+    }
+    return project;
   },
 });
 
@@ -46,8 +50,8 @@ export const get = query({
 export const getByClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    const allProjects = await ctx.db.query("projects").collect();
-    return allProjects.filter(p => 
+    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    return allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
   },
@@ -148,6 +152,7 @@ export const create = mutation({
       const existing = await ctx.db
         .query("projects")
         .withIndex("by_shortcode", (q: any) => q.eq("projectShortcode", shortcode))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
         .first();
       if (existing) {
         throw new Error(`Project shortcode "${shortcode}" is already in use`);
@@ -162,6 +167,7 @@ export const create = mutation({
         const existing = await ctx.db
           .query("projects")
           .withIndex("by_shortcode", (q: any) => q.eq("projectShortcode", shortcode))
+          .filter((q: any) => q.neq(q.field("isDeleted"), true))
           .first();
         if (!existing) break;
         shortcode = `${baseShortcode.slice(0, 8)}${counter}`;
@@ -307,6 +313,7 @@ export const update = mutation({
       const existingWithCode = await ctx.db
         .query("projects")
         .withIndex("by_shortcode", (q: any) => q.eq("projectShortcode", shortcode))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
         .first();
       if (existingWithCode && existingWithCode._id !== id) {
         throw new Error(`Project shortcode "${shortcode}" is already in use`);
@@ -342,7 +349,11 @@ export const remove = mutation({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.id);
-    await ctx.db.delete(args.id);
+    await ctx.db.patch(args.id, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: "user_deleted",
+    });
 
     // Invalidate context cache for this project
     await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
@@ -369,8 +380,8 @@ export const exists = query({
     clientId: v.id("clients"),
   },
   handler: async (ctx, args) => {
-    const allProjects = await ctx.db.query("projects").collect();
-    return allProjects.some(p => 
+    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    return allProjects.some(p =>
       p.name.toLowerCase() === args.name.toLowerCase() &&
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
@@ -384,8 +395,9 @@ export const getStats = query({
     const documents = await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
+
     let totalCosts: number | undefined;
     let loanAmount: number | undefined;
     
@@ -429,8 +441,8 @@ export const getStats = query({
 export const getWithExtractedData = query({
   args: {},
   handler: async (ctx) => {
-    const allProjects = await ctx.db.query("projects").collect();
-    const allDocuments = await ctx.db.query("documents").collect();
+    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    const allDocuments = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     
     // Filter documents to Excel files with extracted data
     const excelDocsWithData = allDocuments.filter(doc => {
@@ -483,12 +495,13 @@ export const suggestShortcode = query({
     const existing = await ctx.db
       .query("projects")
       .withIndex("by_shortcode", (q: any) => q.eq("projectShortcode", suggestion))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .first();
-    
+
     if (!existing) {
       return { shortcode: suggestion, isAvailable: true };
     }
-    
+
     // Try adding numbers to make it unique
     let counter = 1;
     let newSuggestion = suggestion;
@@ -497,6 +510,7 @@ export const suggestShortcode = query({
       const check = await ctx.db
         .query("projects")
         .withIndex("by_shortcode", (q: any) => q.eq("projectShortcode", newSuggestion))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
         .first();
       if (!check) {
         return { shortcode: newSuggestion, isAvailable: true };
@@ -519,8 +533,9 @@ export const isShortcodeAvailable = query({
     const existing = await ctx.db
       .query("projects")
       .withIndex("by_shortcode", (q: any) => q.eq("projectShortcode", normalized))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
       .first();
-    
+
     if (!existing) return true;
     if (args.excludeProjectId && existing._id === args.excludeProjectId) return true;
     return false;
@@ -543,8 +558,8 @@ export const getAllProjectFoldersForClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
     // Get all projects for this client
-    const allProjects = await ctx.db.query("projects").collect();
-    const clientProjects = allProjects.filter(p => 
+    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    const clientProjects = allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
     
@@ -629,6 +644,7 @@ export const deleteCustomProjectFolder = mutation({
     const documents = await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", folder.projectId))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     const folderDocs = documents.filter(d => d.folderId === folder.folderType);
@@ -642,6 +658,7 @@ export const deleteCustomProjectFolder = mutation({
     const finalDocs = await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", folder.projectId))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
 
     const orphanedDocs = finalDocs.filter(d => d.folderId === folder.folderType);

@@ -180,6 +180,7 @@ export const getRecentCount = query({
     const prospectClients = await ctx.db
       .query("clients")
       .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
     
     return prospects.length + prospectClients.length;

@@ -994,11 +994,11 @@ export const getClientDataLibrary = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
     // Get all projects where this client has a role
-    const allProjects = await ctx.db.query("projects").collect();
-    const clientProjects = allProjects.filter(project => 
+    const allProjects = await ctx.db.query("projects").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
+    const clientProjects = allProjects.filter(project =>
       project.clientRoles?.some(role => role.clientId === args.clientId)
     );
-    
+
     if (clientProjects.length === 0) {
       return { items: [], projectBreakdown: [] };
     }
@@ -1046,11 +1046,11 @@ export const getClientLibraryStats = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
     // Get all projects where this client has a role
-    const allProjects = await ctx.db.query("projects").collect();
-    const clientProjects = allProjects.filter(project => 
+    const allProjects = await ctx.db.query("projects").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
+    const clientProjects = allProjects.filter(project =>
       project.clientRoles?.some(role => role.clientId === args.clientId)
     );
-    
+
     if (clientProjects.length === 0) {
       return {
         totalItems: 0,

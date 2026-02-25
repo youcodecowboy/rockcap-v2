@@ -187,8 +187,8 @@ export const getAllFoldersForClient = query({
       .collect();
     
     // Get all projects for this client
-    const allProjects = await ctx.db.query("projects").collect();
-    const clientProjects = allProjects.filter(p => 
+    const allProjects = await ctx.db.query("projects").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
+    const clientProjects = allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
     

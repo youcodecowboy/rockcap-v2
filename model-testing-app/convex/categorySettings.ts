@@ -102,7 +102,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    const userId = user._id.toString();
+    const userId = user._id;
 
     // Check if a category with this name and type already exists
     const existing = await ctx.db
@@ -253,7 +253,7 @@ export const seedDefaults = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);
-    const userId = user._id.toString();
+    const userId = user._id;
 
     // Check if defaults already exist
     const existing = await ctx.db.query("categorySettings").collect();

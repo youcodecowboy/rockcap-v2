@@ -26,12 +26,12 @@ export const globalSearch = query({
 
     // Search all entities in parallel
     const [allClients, allCompanies, allDeals, allDocuments, allContacts, allKnowledgeBankEntries] = await Promise.all([
-      ctx.db.query("clients").collect(),
+      ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
       ctx.db.query("companies").collect(),
       ctx.db.query("deals").collect(),
-      ctx.db.query("documents").collect(),
-      ctx.db.query("contacts").collect(),
-      ctx.db.query("knowledgeBankEntries").collect(),
+      ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
+      ctx.db.query("contacts").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
+      ctx.db.query("knowledgeBankEntries").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
     ]);
 
     // Filter clients

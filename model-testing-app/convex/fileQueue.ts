@@ -8,7 +8,7 @@ export const createJob = mutation({
     fileName: v.string(),
     fileSize: v.number(),
     fileType: v.string(),
-    userId: v.optional(v.string()),
+    userId: v.optional(v.id("users")),
     hasCustomInstructions: v.optional(v.boolean()),
     forceExtraction: v.optional(v.boolean()),
   },

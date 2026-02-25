@@ -143,6 +143,7 @@ export const isValid = query({
       const kbEntries = await ctx.db
         .query("knowledgeBankEntries")
         .withIndex("by_client", (q: any) => q.eq("clientId", clientId))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
         .collect();
       for (const entry of kbEntries) {
         const entryDate = new Date(entry.updatedAt || entry.createdAt);
@@ -155,6 +156,7 @@ export const isValid = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_client", (q: any) => q.eq("clientId", clientId))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
         .collect();
       for (const doc of docs) {
         const docDate = new Date(doc.savedAt);
@@ -187,6 +189,7 @@ export const isValid = query({
       const kbEntries = await ctx.db
         .query("knowledgeBankEntries")
         .withIndex("by_project", (q: any) => q.eq("projectId", projectId))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
         .collect();
       for (const entry of kbEntries) {
         const entryDate = new Date(entry.updatedAt || entry.createdAt);
@@ -199,6 +202,7 @@ export const isValid = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_project", (q: any) => q.eq("projectId", projectId))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
         .collect();
       for (const doc of docs) {
         const docDate = new Date(doc.savedAt);

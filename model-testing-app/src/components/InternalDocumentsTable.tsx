@@ -75,7 +75,7 @@ interface InternalDocument {
 }
 
 interface Folder {
-  _id: Id<"internalDocumentFolders">;
+  _id: Id<"internalFolders">;
   name: string;
   createdAt: string;
 }
@@ -83,7 +83,7 @@ interface Folder {
 interface FolderGroup {
   folderId: string | null;
   folderName: string;
-  folderRecordId?: Id<"internalDocumentFolders">;
+  folderRecordId?: Id<"internalFolders">;
   documents: InternalDocument[];
 }
 
@@ -363,10 +363,10 @@ export default function InternalDocumentsTable({
     });
   };
   
-  const handleMoveDocument = async (documentId: Id<"internalDocuments">, folderId: string | Id<"internalDocumentFolders"> | null) => {
+  const handleMoveDocument = async (documentId: Id<"internalDocuments">, folderId: string | Id<"internalFolders"> | null) => {
     try {
       // Convert folderId to ID or null for unorganized
-      const folderIdValue = folderId === null || folderId === 'none' ? null : (folderId as Id<"internalDocumentFolders">);
+      const folderIdValue = folderId === null || folderId === 'none' ? null : (folderId as Id<"internalFolders">);
       await updateFolder({ id: documentId, folderId: folderIdValue });
       setShowMoveDialog(false);
       setSelectedDocumentForMove(null);
