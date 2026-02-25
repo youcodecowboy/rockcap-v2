@@ -172,8 +172,63 @@ The client and project profile pages themselves are **clean** — they contain n
 
 ---
 
+## Convex Backend Audit: Schema & Function Compatibility
+
+The Convex functions called by profile pages were audited for V3-specific patterns that could produce display bugs or null reference issues when V4-analyzed documents are present.
+
+### CRITICAL — Fields V4 Documents May Not Populate
+
+#### `documents.documentAnalysis` (schema.ts:218-245)
+V3's Summary Agent populates a deeply nested `documentAnalysis` object with `executiveSummary`, `detailedSummary`, `entities`, `keyTerms`, `keyDates`, `keyAmounts`, `documentCharacteristics`, and `confidenceInAnalysis`. V4 does **not** populate this field — it writes `summary`, `fileTypeDetected`, `category`, and `confidence` at the top level.
+
+**UI Impact:**
+- `FileDetailPanel.tsx` — Entities tab, Key Data tab, and Characteristics badges are gated by `hasAnalysis = !!document.documentAnalysis` and will show as disabled for V4 docs. This is **correct behavior** (graceful degradation).
+- Summary tab — FIXED above to fall back to `document.summary` for V4 docs.
+
+#### `documents.documentAnalysis.keyTerms` (used by keyword learning)
+- `convex/keywordLearning.ts:37-48` and `convex/bulkUpload.ts:1148` read `documentAnalysis?.keyTerms` for the self-teaching feedback loop.
+- V4 documents will have `keyTerms = undefined`, so keyword learning won't benefit from V4-analyzed documents.
+- **Recommendation:** V4 pipeline should extract keywords and write them to this field, or keyword learning should also read from V4's output format.
+
+#### `documents.addedToIntelligence` flag
+- `convex/intelligence.ts:1799` checks this flag before showing "Add to Intelligence" in the UI.
+- V4 does not set this flag explicitly, but it's `v.optional(v.boolean())` so defaults to `undefined` (falsy) — the button will show correctly for V4 docs. **No conflict.**
+
+### HIGH — V3 Tables Still Actively Written
+
+| Table | Schema Line | Written By | Read By Profile Pages | V4 Status |
+|-------|-------------|------------|----------------------|-----------|
+| `filingCorrections` | 2918 | `bulkUpload.ts` on user correction | Not directly (used by feedback loop) | V4 uses `CorrectionContext[]` instead |
+| `classificationCache` | 3005 | V3 agent pipeline | Not directly (checked before re-analysis) | V4 has its own reference library cache |
+| `intelligenceExtractionJobs` | 2738 | `bulkUpload.ts` on file save | `ProjectDataTab` via `getPendingExtractions` | V4 still creates these jobs |
+| `meetingExtractionJobs` | 3147 | `bulkUpload.ts` on file save | Not directly | V4 still creates these jobs |
+
+**Key Finding:** The `intelligenceExtractionJobs` table IS read by profile pages (via `projectDataLibrary.getPendingExtractions`). V4's bulk upload flow still creates jobs in this table, so the "Extractions Pending Confirmation" banner in ProjectDataTab will work correctly for both V3 and V4 documents.
+
+### MEDIUM — Hardcoded Category-to-Code Mappings
+
+`convex/documents.ts:12-42`, `convex/directUpload.ts:14-44`, and `convex/internalDocuments.ts:11-42` all contain a `categoryMap` that converts category names to 3-letter abbreviations for document codes:
+
+```
+'valuation' → 'VAL', 'operating' → 'OPR', 'appraisal' → 'APP', ...
+```
+
+V4's `document-classify` skill outputs the same canonical category names (e.g., "Appraisals", "Financial"), and the Convex code does case-insensitive matching, so this **should not clash**. But worth monitoring if V4 introduces new categories not in this map.
+
+### LOW — Bulk Upload Integration
+
+`convex/bulkUpload.ts:960-989` has a fallback path for documents without `documentAnalysis`:
+```typescript
+if (!item.documentAnalysis) {
+  // Create background extraction job with reduced metadata
+}
+```
+This fallback correctly handles V4 documents. The job gets `documentType` from `fileTypeDetected` and `category` from the top-level field, both of which V4 populates.
+
+---
+
 ## Conclusion
 
 The profile pages are architecturally sound for V4. The V3 coupling is entirely through **shared utility components** (`DirectUploadModal`, `FileDetailPanel`, `AddIntelligenceModal`, `ConsolidationModal`) and their corresponding **API routes**, not through the profile page code itself. The folder structure, checklist system, data library, tasks, meetings, notes, and communications are all V3/V4 agnostic — they work with documents regardless of which pipeline analyzed them.
 
-The critical fixes are limited to 2 files in `src/app/docs/components/` and 3 API routes in `src/app/api/`. Everything else is compatible as-is.
+The critical fixes are limited to 2 files in `src/app/docs/components/` and 3 API routes in `src/app/api/`. The Convex schema and backend functions handle V4 documents gracefully due to extensive use of `v.optional()` fields and null-check fallback paths. The one area to watch is the keyword learning system, which won't benefit from V4-analyzed documents until `documentAnalysis.keyTerms` (or an equivalent) is populated by the V4 pipeline.
