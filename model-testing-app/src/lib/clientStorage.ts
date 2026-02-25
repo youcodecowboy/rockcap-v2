@@ -121,180 +121,47 @@ export function useSkipEnrichment() {
   return useMutation(api.enrichment.skip);
 }
 
-// Legacy compatibility functions (for gradual migration)
-// These will be removed once all components are migrated
-export function getClients(): Client[] {
-  console.warn("getClients() is deprecated. Use useClients() hook instead.");
-  return [];
-}
+// =============================================================================
+// DEPRECATED: Legacy plain functions (V3 era)
+// =============================================================================
+// Still exported because legacy pages (prospects/, ClientManager, demoData,
+// dataAggregation) import them. They are no-ops returning empty data.
+// New code must use the Convex hooks above.
+// TODO: Remove once legacy pages are migrated to Convex hooks.
 
-export function addClient(name: string, additionalData?: Partial<Client>): Client {
-  console.warn("addClient() is deprecated. Use useCreateClient() hook instead.");
-  throw new Error("addClient() is deprecated. Use useCreateClient() hook in a React component.");
-}
-
-export function getClientById(id: string): Client | undefined {
-  console.warn("getClientById() is deprecated. Use useClient() hook instead.");
-  return undefined;
-}
-
-export function deleteClient(id: string): void {
-  console.warn("deleteClient() is deprecated. Use useDeleteClient() hook instead.");
-}
-
-export function getProjects(): Project[] {
-  console.warn("getProjects() is deprecated. Use useProjects() hook instead.");
-  return [];
-}
-
-export function getProjectsByClient(clientId: string): Project[] {
-  console.warn("getProjectsByClient() is deprecated. Use useProjectsByClient() hook instead.");
-  return [];
-}
-
-export function addProject(clientId: string, name: string): Project {
-  console.warn("addProject() is deprecated. Use useCreateProject() hook instead.");
-  throw new Error("addProject() is deprecated. Use useCreateProject() hook in a React component.");
-}
-
-export function getProjectById(id: string): Project | undefined {
-  console.warn("getProjectById() is deprecated. Use useProject() hook instead.");
-  return undefined;
-}
-
-export function deleteProject(id: string): void {
-  console.warn("deleteProject() is deprecated. Use useDeleteProject() hook instead.");
-}
-
-export function updateClient(clientId: string, updates: Partial<Client>): Client | null {
-  console.warn("updateClient() is deprecated. Use useUpdateClient() hook instead.");
-  return null;
-}
-
-export function updateProject(projectId: string, updates: Partial<Project>): Project | null {
-  console.warn("updateProject() is deprecated. Use useUpdateProject() hook instead.");
-  return null;
-}
-
-export function getContactsByClient(clientId: string): Contact[] {
-  console.warn("getContactsByClient() is deprecated. Use useContactsByClient() hook instead.");
-  return [];
-}
-
-export function addContactToClient(clientId: string, contact: Omit<Contact, 'id' | 'createdAt'>): Contact {
-  console.warn("addContactToClient() is deprecated. Use useCreateContact() hook instead.");
-  throw new Error("addContactToClient() is deprecated. Use useCreateContact() hook in a React component.");
-}
-
-export function getEnrichmentSuggestions(clientId: string): EnrichmentSuggestion[] {
-  console.warn("getEnrichmentSuggestions() is deprecated. Use useEnrichmentByClient() hook instead.");
-  return [];
-}
-
-export function addEnrichmentSuggestion(clientId: string, suggestion: Omit<EnrichmentSuggestion, 'id' | 'createdAt' | 'status'>): EnrichmentSuggestion {
-  console.warn("addEnrichmentSuggestion() is deprecated. Use useCreateEnrichment() hook instead.");
-  throw new Error("addEnrichmentSuggestion() is deprecated. Use useCreateEnrichment() hook in a React component.");
-}
-
-// Re-export all the project contact and enrichment functions for compatibility
-export function getContactsByProject(projectId: string): Contact[] {
-  console.warn("getContactsByProject() is deprecated. Use useContactsByProject() hook instead.");
-  return [];
-}
-
-export function addContactToProject(projectId: string, contact: Omit<Contact, 'id' | 'createdAt'>): Contact {
-  console.warn("addContactToProject() is deprecated. Use useCreateContact() hook instead.");
-  throw new Error("addContactToProject() is deprecated. Use useCreateContact() hook in a React component.");
-}
-
-export function getProjectEnrichmentSuggestions(projectId: string): EnrichmentSuggestion[] {
-  console.warn("getProjectEnrichmentSuggestions() is deprecated. Use useEnrichmentByProject() hook instead.");
-  return [];
-}
-
-export function addProjectEnrichmentSuggestion(projectId: string, suggestion: Omit<EnrichmentSuggestion, 'id' | 'createdAt' | 'status'>): EnrichmentSuggestion {
-  console.warn("addProjectEnrichmentSuggestion() is deprecated. Use useCreateEnrichment() hook instead.");
-  throw new Error("addProjectEnrichmentSuggestion() is deprecated. Use useCreateEnrichment() hook in a React component.");
-}
-
-export function acceptEnrichmentSuggestion(clientId: string, suggestionId: string): boolean {
-  console.warn("acceptEnrichmentSuggestion() is deprecated. Use useAcceptEnrichment() hook instead.");
-  return false;
-}
-
-export function rejectEnrichmentSuggestion(clientId: string, suggestionId: string): boolean {
-  console.warn("rejectEnrichmentSuggestion() is deprecated. Use useRejectEnrichment() hook instead.");
-  return false;
-}
-
-export function getClientStats(clientId: string) {
-  console.warn("getClientStats() is deprecated. Use useClientStats() hook instead.");
-  return { totalProjects: 0, activeProjects: 0, totalDocuments: 0 };
-}
-
-export function getProjectStats(projectId: string) {
-  console.warn("getProjectStats() is deprecated. Use useProjectStats() hook instead.");
-  return { totalDocuments: 0 };
-}
-
-// Keep other utility functions that don't need Convex
-export function clientExists(name: string): boolean {
-  console.warn("clientExists() is deprecated. Check clients in component using useClients() hook.");
-  return false;
-}
-
-export function projectExists(clientId: string, name: string): boolean {
-  console.warn("projectExists() is deprecated. Check projects in component using useProjects() hook.");
-  return false;
-}
-
-export function getClientsByLifecycleStage(lifecycleStage: string): Client[] {
-  console.warn("getClientsByLifecycleStage() is deprecated. Filter clients in component using useClients() hook.");
-  return [];
-}
-
-export function setProjectStatus(projectId: string, status: Project['status']): Project | null {
-  console.warn("setProjectStatus() is deprecated. Use useUpdateProject() hook instead.");
-  return null;
-}
-
-export function updateContact(clientId: string, contactId: string, updates: Partial<Contact>): Contact | null {
-  console.warn("updateContact() is deprecated. Use useUpdateContact() hook instead.");
-  return null;
-}
-
-export function deleteContact(clientId: string, contactId: string): void {
-  console.warn("deleteContact() is deprecated. Use useDeleteContact() hook instead.");
-}
-
-export function updateProjectContact(projectId: string, contactId: string, updates: Partial<Contact>): Contact | null {
-  console.warn("updateProjectContact() is deprecated. Use useUpdateContact() hook instead.");
-  return null;
-}
-
-export function deleteProjectContact(projectId: string, contactId: string): void {
-  console.warn("deleteProjectContact() is deprecated. Use useDeleteContact() hook instead.");
-}
-
-export function acceptProjectEnrichmentSuggestion(projectId: string, suggestionId: string): boolean {
-  console.warn("acceptProjectEnrichmentSuggestion() is deprecated. Use useAcceptEnrichment() hook instead.");
-  return false;
-}
-
-export function rejectProjectEnrichmentSuggestion(projectId: string, suggestionId: string): boolean {
-  console.warn("rejectProjectEnrichmentSuggestion() is deprecated. Use useRejectEnrichment() hook instead.");
-  return false;
-}
-
-export function updateEnrichmentDocumentId(clientId: string, oldDocumentId: string, newDocumentId: string): void {
-  console.warn("updateEnrichmentDocumentId() is deprecated. Use useUpdateEnrichmentDocumentId() hook instead.");
-}
-
-export function updateProjectEnrichmentDocumentId(projectId: string, oldDocumentId: string, newDocumentId: string): void {
-  console.warn("updateProjectEnrichmentDocumentId() is deprecated. Use useUpdateEnrichmentDocumentId() hook instead.");
-}
-
-export function getProjectByName(clientId: string, name: string): Project | undefined {
-  console.warn("getProjectByName() is deprecated. Filter projects in component using useProjects() hook.");
-  return undefined;
-}
+/** @deprecated Use useClients() hook */ export function getClients(): Client[] { return []; }
+/** @deprecated Use useCreateClient() hook */ export function addClient(_name: string, _data?: Partial<Client>): Client { throw new Error("Deprecated"); }
+/** @deprecated Use useClient() hook */ export function getClientById(_id: string): Client | undefined { return undefined; }
+/** @deprecated Use useDeleteClient() hook */ export function deleteClient(_id: string): void {}
+/** @deprecated Use useProjects() hook */ export function getProjects(): Project[] { return []; }
+/** @deprecated Use useProjectsByClient() hook */ export function getProjectsByClient(_clientId: string): Project[] { return []; }
+/** @deprecated Use useCreateProject() hook */ export function addProject(_clientId: string, _name: string): Project { throw new Error("Deprecated"); }
+/** @deprecated Use useProject() hook */ export function getProjectById(_id: string): Project | undefined { return undefined; }
+/** @deprecated Use useDeleteProject() hook */ export function deleteProject(_id: string): void {}
+/** @deprecated Use useUpdateClient() hook */ export function updateClient(_clientId: string, _updates: Partial<Client>): Client | null { return null; }
+/** @deprecated Use useUpdateProject() hook */ export function updateProject(_projectId: string, _updates: Partial<Project>): Project | null { return null; }
+/** @deprecated Use useContactsByClient() hook */ export function getContactsByClient(_clientId: string): Contact[] { return []; }
+/** @deprecated Use useCreateContact() hook */ export function addContactToClient(_clientId: string, _contact: Omit<Contact, 'id' | 'createdAt'>): Contact { throw new Error("Deprecated"); }
+/** @deprecated Use useEnrichmentByClient() hook */ export function getEnrichmentSuggestions(_clientId: string): EnrichmentSuggestion[] { return []; }
+/** @deprecated Use useCreateEnrichment() hook */ export function addEnrichmentSuggestion(_clientId: string, _suggestion: Omit<EnrichmentSuggestion, 'id' | 'createdAt' | 'status'>): EnrichmentSuggestion { throw new Error("Deprecated"); }
+/** @deprecated Use useContactsByProject() hook */ export function getContactsByProject(_projectId: string): Contact[] { return []; }
+/** @deprecated Use useCreateContact() hook */ export function addContactToProject(_projectId: string, _contact: Omit<Contact, 'id' | 'createdAt'>): Contact { throw new Error("Deprecated"); }
+/** @deprecated Use useEnrichmentByProject() hook */ export function getProjectEnrichmentSuggestions(_projectId: string): EnrichmentSuggestion[] { return []; }
+/** @deprecated Use useCreateEnrichment() hook */ export function addProjectEnrichmentSuggestion(_projectId: string, _suggestion: Omit<EnrichmentSuggestion, 'id' | 'createdAt' | 'status'>): EnrichmentSuggestion { throw new Error("Deprecated"); }
+/** @deprecated Use useAcceptEnrichment() hook */ export function acceptEnrichmentSuggestion(_clientId: string, _suggestionId: string): boolean { return false; }
+/** @deprecated Use useRejectEnrichment() hook */ export function rejectEnrichmentSuggestion(_clientId: string, _suggestionId: string): boolean { return false; }
+/** @deprecated Use useClientStats() hook */ export function getClientStats(_clientId: string) { return { totalProjects: 0, activeProjects: 0, totalDocuments: 0 }; }
+/** @deprecated Use useProjectStats() hook */ export function getProjectStats(_projectId: string) { return { totalDocuments: 0 }; }
+/** @deprecated Use useClients() hook */ export function clientExists(_name: string): boolean { return false; }
+/** @deprecated Use useProjects() hook */ export function projectExists(_clientId: string, _name: string): boolean { return false; }
+/** @deprecated Use useClients() hook */ export function getClientsByLifecycleStage(_lifecycleStage: string): Client[] { return []; }
+/** @deprecated Use useUpdateProject() hook */ export function setProjectStatus(_projectId: string, _status: Project['status']): Project | null { return null; }
+/** @deprecated Use useUpdateContact() hook */ export function updateContact(_clientId: string, _contactId: string, _updates: Partial<Contact>): Contact | null { return null; }
+/** @deprecated Use useDeleteContact() hook */ export function deleteContact(_clientId: string, _contactId: string): void {}
+/** @deprecated Use useUpdateContact() hook */ export function updateProjectContact(_projectId: string, _contactId: string, _updates: Partial<Contact>): Contact | null { return null; }
+/** @deprecated Use useDeleteContact() hook */ export function deleteProjectContact(_projectId: string, _contactId: string): void {}
+/** @deprecated Use useAcceptEnrichment() hook */ export function acceptProjectEnrichmentSuggestion(_projectId: string, _suggestionId: string): boolean { return false; }
+/** @deprecated Use useRejectEnrichment() hook */ export function rejectProjectEnrichmentSuggestion(_projectId: string, _suggestionId: string): boolean { return false; }
+/** @deprecated */ export function updateEnrichmentDocumentId(_clientId: string, _oldDocumentId: string, _newDocumentId: string): void {}
+/** @deprecated */ export function updateProjectEnrichmentDocumentId(_projectId: string, _oldDocumentId: string, _newDocumentId: string): void {}
+/** @deprecated Use useProjects() hook */ export function getProjectByName(_clientId: string, _name: string): Project | undefined { return undefined; }

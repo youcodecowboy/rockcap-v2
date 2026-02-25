@@ -11,9 +11,8 @@ import {
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// Together AI configuration for Llama consolidation
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const LLAMA_MODEL = 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
+// V4: Use Anthropic Claude for consolidation (replaces Together.ai Llama)
+const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 
 interface KnowledgeItemForConsolidation {
   _id: string;
@@ -168,37 +167,42 @@ Respond with JSON:
 If no reclassifications are needed, return: { "reclassifications": [] }`;
 
     try {
-      const response = await fetch(TOGETHER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: LLAMA_MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.1,
-          max_tokens: 2000,
-          response_format: { type: 'json_object' },
-        }),
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: apiKey });
+
+      console.log(`[Consolidation] Using Anthropic Claude (${ANTHROPIC_MODEL})`);
+
+      const response = await client.messages.create({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 2048,
+        temperature: 0.1,
+        system: systemPrompt,
+        messages: [
+          { role: 'user', content: userPrompt + '\n\nIMPORTANT: Respond with ONLY valid JSON, no markdown or explanation.' },
+        ],
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '{}';
-        const parsed = JSON.parse(content);
+      const content = response.content
+        .filter((block: any) => block.type === 'text')
+        .map((block: any) => block.text)
+        .join('');
 
-        if (parsed.reclassifications && Array.isArray(parsed.reclassifications)) {
-          reclassifySuggestions = parsed.reclassifications.filter(
-            (r: ReclassificationSuggestion) => r.confidence >= 0.7
-          );
-        }
+      // Strip markdown code blocks if present
+      let cleaned = content.trim();
+      if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+      else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+      if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+      cleaned = cleaned.trim();
+
+      const parsed = JSON.parse(cleaned);
+
+      if (parsed.reclassifications && Array.isArray(parsed.reclassifications)) {
+        reclassifySuggestions = parsed.reclassifications.filter(
+          (r: ReclassificationSuggestion) => r.confidence >= 0.7
+        );
       }
     } catch (error) {
-      console.error('[Consolidation] Llama API error:', error);
+      console.error('[Consolidation] Anthropic API error:', error);
       // Fall back to algorithmic reclassification
       for (const item of customItems) {
         const result = normalizeFieldLabel(item.label, targetType);
@@ -246,10 +250,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const togetherApiKey = process.env.TOGETHER_API_KEY;
-    if (!togetherApiKey) {
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicApiKey) {
       return NextResponse.json(
-        { error: 'TOGETHER_API_KEY not configured' },
+        { error: 'ANTHROPIC_API_KEY not configured' },
         { status: 500 }
       );
     }
@@ -322,7 +326,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Consolidation] Analyzing ${activeItems.length} items for ${targetType}`);
 
-    const result = await runConsolidationAgent(activeItems, targetType, togetherApiKey);
+    const result = await runConsolidationAgent(activeItems, targetType, anthropicApiKey);
 
     console.log(`[Consolidation] Found: ${result.summary.duplicatesFound} duplicates, ${result.summary.conflictsFound} conflicts, ${result.summary.reclassifySuggestions} reclassify suggestions`);
 
