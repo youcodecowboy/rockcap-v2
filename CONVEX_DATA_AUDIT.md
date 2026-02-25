@@ -18,8 +18,10 @@
 8. [HIGH: Missing Required Fields](#high-missing-required-fields)
 9. [MEDIUM: Performance - Full Table Scans](#medium-performance---full-table-scans)
 10. [MEDIUM: Legacy / Deprecated Tables Still in Schema](#medium-legacy--deprecated-tables-still-in-schema)
-11. [LOW: Index Coverage Gaps](#low-index-coverage-gaps)
-12. [Recommendations - Prioritized Action Plan](#recommendations---prioritized-action-plan)
+11. [MEDIUM: Orphaned Tables (Defined but Unused)](#medium-orphaned-tables-defined-but-unused)
+12. [MEDIUM: Type Inconsistencies (string vs v.id)](#medium-type-inconsistencies-string-vs-vid)
+13. [LOW: Index Coverage Gaps](#low-index-coverage-gaps)
+14. [Recommendations - Prioritized Action Plan](#recommendations---prioritized-action-plan)
 
 ---
 
@@ -31,7 +33,7 @@ The Convex database contains **65 tables** across multiple feature domains. Afte
 |----------|-------|---------|
 | CRITICAL | 3 | Hard deletes on core data; duplicate tables; no authorization on sensitive queries |
 | HIGH | 3 | Denormalized fields can desync; `v.any()` schema holes; missing required fields |
-| MEDIUM | 3 | Full table scans on large tables; legacy tables still present; unindexed patterns |
+| MEDIUM | 5 | Full table scans; legacy tables; orphaned tables; type inconsistencies; unindexed patterns |
 | LOW | 1 | Some index coverage gaps |
 
 **The single most important finding:** Every delete operation in the codebase is a **hard delete** (`ctx.db.delete()`). There is no soft-delete pattern, no audit trail, and no recoverability for core business data (clients, projects, documents). Given that this data is described as very sensitive and must not be lost, this is the top priority to fix.
@@ -478,6 +480,39 @@ These queries collect ALL records from a table and filter in memory. As data gro
 
 ---
 
+## MEDIUM: Orphaned Tables (Defined but Unused)
+
+The consistency check found tables defined in the schema with no corresponding queries or mutations:
+
+| Table | Lines in Schema | Status |
+|-------|----------------|--------|
+| `dealActivities` | 525-553 | Defined but completely unused - legacy table with no code referencing it |
+| `apiRateLimit` | 1431-1440 | Defined but completely unused - planned rate limiting never implemented |
+| `activities` | 485-520 | Only referenced in a placeholder file (`hubspotSync/activities.ts` exports `null`) |
+
+These tables consume schema space and could cause confusion. They should either be implemented or removed.
+
+---
+
+## MEDIUM: Type Inconsistencies (string vs v.id)
+
+Several fields store user IDs as plain strings instead of typed `v.id("users")` references. This bypasses Convex's referential integrity checking:
+
+| Table | Field | Current Type | Should Be |
+|-------|-------|-------------|-----------|
+| `fileUploadQueue` | `userId` | `v.optional(v.string())` | `v.optional(v.id("users"))` |
+| `scenarios` | `createdBy` | `v.optional(v.string())` | `v.optional(v.id("users"))` |
+| `fileTypeDefinitions` | `createdBy` | `v.string()` | `v.id("users")` |
+| `categorySettings` | `createdBy` | `v.string()` | `v.id("users")` |
+| `modelRuns` | `runBy` | `v.optional(v.string())` | `v.optional(v.id("users"))` |
+| `clientIntelligence` | `lastUpdatedBy` | `v.optional(v.string())` | `v.optional(v.id("users"))` |
+| `projectIntelligence` | `lastUpdatedBy` | `v.optional(v.string())` | `v.optional(v.id("users"))` |
+| `knowledgeItems` | `addedBy` | `v.optional(v.string())` | `v.optional(v.id("users"))` |
+
+Using `v.string()` for user IDs means Convex can't validate the reference exists, and tooling won't show the relationship.
+
+---
+
 ## LOW: Index Coverage Gaps
 
 | Table | Missing Index | Currently | Impact |
@@ -574,7 +609,13 @@ Replace critical `v.any()` fields with proper validators:
 - Consider denormalizing `projects.clientRoles` into a junction table for efficient client->project queries
 - Replace `companies.getByLifecycleStage()` `.filter()` with proper index query
 
-### Priority 7: Clean Up Legacy Fields (LOW)
+### Priority 7: Fix Type Inconsistencies (MEDIUM)
+
+- Change `fileUploadQueue.userId`, `scenarios.createdBy`, `fileTypeDefinitions.createdBy`, `categorySettings.createdBy`, `modelRuns.runBy` from `v.string()` to `v.id("users")`
+- Change `clientIntelligence.lastUpdatedBy`, `projectIntelligence.lastUpdatedBy`, `knowledgeItems.addedBy` from `v.string()` to `v.id("users")`
+- Remove orphaned tables (`dealActivities`, `apiRateLimit`) or implement their features
+
+### Priority 8: Clean Up Legacy Fields (LOW)
 
 - Make `users.clerkId` required (migrate existing records)
 - Make `chatSessions.userId` required (run the orphan cleanup)
