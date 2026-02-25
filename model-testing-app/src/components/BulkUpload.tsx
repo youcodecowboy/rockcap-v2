@@ -106,6 +106,21 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     api.personalFolders.list,
     uploadScope === 'personal' ? {} : "skip"
   );
+
+  // Checklist items and folders for V4 AI pipeline matching
+  // Use pre-computed args to avoid excessive TypeScript recursion depth with Convex generics
+  const _projectId = selectedProjectId && selectedProjectId !== '' ? selectedProjectId as Id<"projects"> : undefined;
+  const _clientId = selectedClientId && selectedClientId !== '' ? selectedClientId as Id<"clients"> : undefined;
+  const _projChecklistArgs = uploadScope === 'client' && _projectId ? { projectId: _projectId } : "skip" as const;
+  const _clientChecklistArgs = uploadScope === 'client' && _clientId && !_projectId ? { clientId: _clientId } : "skip" as const;
+  const _projFolderArgs = uploadScope === 'client' && _projectId ? { projectId: _projectId } : "skip" as const;
+  const _clientFolderArgs = uploadScope === 'client' && _clientId ? { clientId: _clientId } : "skip" as const;
+
+  const projectChecklistItems = useQuery(api.knowledgeLibrary.getChecklistByProject, _projChecklistArgs);
+  const clientChecklistItems = useQuery(api.knowledgeLibrary.getClientLevelChecklist, _clientChecklistArgs);
+  const projectFolders = useQuery(api.projects.getProjectFolders, _projFolderArgs);
+  const clientFolders = useQuery(api.clients.getClientFolders, _clientFolderArgs);
+
   const shortcodeSuggestion = useQuery(
     api.projects.suggestShortcode,
     newProjectName ? { name: newProjectName } : "skip"
@@ -417,6 +432,31 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           }
         );
 
+        // Build checklist items for V4 pipeline matching
+        const rawChecklist = selectedProjectId ? projectChecklistItems : clientChecklistItems;
+        const checklistForPipeline = rawChecklist
+          ?.filter(item => item.status === 'missing' || item.status === 'pending_review')
+          ?.map(item => ({
+            id: item._id,
+            name: item.name || '',
+            category: item.category,
+            status: item.status,
+            matchingDocumentTypes: item.matchingDocumentTypes,
+          }));
+
+        // Build available folders for V4 pipeline
+        const foldersForPipeline: Array<{ folderKey: string; name: string; level: 'client' | 'project' }> = [];
+        if (clientFolders) {
+          for (const f of clientFolders) {
+            foldersForPipeline.push({ folderKey: f.folderType, name: f.name, level: 'client' });
+          }
+        }
+        if (projectFolders) {
+          for (const f of projectFolders) {
+            foldersForPipeline.push({ folderKey: f.folderType, name: f.name, level: 'project' });
+          }
+        }
+
         // Set batch info based on scope
         const batchInfo: BatchInfo = {
           batchId,
@@ -428,6 +468,8 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           isInternal: uploadScope === 'internal' || isInternal,
           instructions: instructions || undefined,
           uploaderInitials,
+          checklistItems: checklistForPipeline,
+          availableFolders: foldersForPipeline.length > 0 ? foldersForPipeline : undefined,
         };
         processor.setBatchInfo(batchInfo);
 

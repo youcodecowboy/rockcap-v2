@@ -163,6 +163,20 @@ export interface BatchInfo {
   isInternal: boolean;
   instructions?: string;
   uploaderInitials: string;
+  /** Missing checklist items for the target project/client — enables AI matching */
+  checklistItems?: Array<{
+    id: string;
+    name: string;
+    category: string;
+    status: string;
+    matchingDocumentTypes?: string[];
+  }>;
+  /** Available folders for filing — enables AI folder suggestions */
+  availableFolders?: Array<{
+    folderKey: string;
+    name: string;
+    level: 'client' | 'project';
+  }>;
 }
 
 export class BulkQueueProcessor {
@@ -347,6 +361,12 @@ export class BulkQueueProcessor {
     if (this.batchInfo.instructions) {
       metadata.instructions = this.batchInfo.instructions;
     }
+    if (this.batchInfo.checklistItems && this.batchInfo.checklistItems.length > 0) {
+      metadata.checklistItems = this.batchInfo.checklistItems;
+    }
+    if (this.batchInfo.availableFolders && this.batchInfo.availableFolders.length > 0) {
+      metadata.availableFolders = this.batchInfo.availableFolders;
+    }
     formData.append("metadata", JSON.stringify(metadata));
 
     const analyzeResponse = await fetch("/api/v4-analyze", {
@@ -375,7 +395,7 @@ export class BulkQueueProcessor {
       confidence: doc.confidence || 0,
       suggestedFolder: doc.suggestedFolder || "",
       typeAbbreviation: doc.typeAbbreviation || "",
-      suggestedChecklistItems: undefined, // V4 handles this differently via knowledgeBankEntry
+      suggestedChecklistItems: doc.placement?.checklistMatches || undefined,
     };
     // Prefer dedicated intelligence extraction fields (from Stage 5.5),
     // fall back to classification's extractedData for backward compat

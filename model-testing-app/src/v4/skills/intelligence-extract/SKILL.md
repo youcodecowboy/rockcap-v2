@@ -290,6 +290,28 @@ When processing multiple documents, return a JSON object keyed by document index
 - `text` — Free text string
 - `boolean` — "true" or "false"
 
+## Self-Review (REQUIRED before returning)
+
+Before finalizing your extraction, review EVERY field against these checks:
+
+1. **Value accuracy**: Re-read the source text for each extracted value. Did you transcribe the number correctly? Common mistakes:
+   - Mixing up GDV and loan amount
+   - Confusing LTV% with LTGDV%
+   - Reading dates in wrong format (DD/MM vs MM/DD — UK documents use DD/MM/YYYY)
+   - Getting net vs gross figures wrong
+
+2. **Scope assignment**: Is this a client-level or project-level field? Banking details and company info = client. Loan amount, GDV, site address = project.
+
+3. **Confidence calibration**: Only assign > 0.90 if the value is explicitly stated with a clear label. Derived or calculated values should be ≤ 0.80. If a figure requires inference from context, cap at 0.70.
+
+4. **Duplicate fields**: Check you haven't extracted the same data point under two different field paths (e.g., both `financials.gdv` and `valuation.gdv` for the same number).
+
+5. **sourceText verification**: Every field MUST have a sourceText quote. If you can't point to specific text, you shouldn't be extracting the field.
+
+6. **Currency values**: Verify numeric strings are in base units (£2.5m = "2500000", not "2.5" or "£2,500,000").
+
+If any check fails, fix the field or remove it entirely. Precision matters more than volume.
+
 ## Important
 
 1. Extract as MANY fields as possible — err on the side of including more rather than less

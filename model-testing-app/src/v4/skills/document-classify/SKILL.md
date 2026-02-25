@@ -77,6 +77,28 @@ Tag intelligence fields for future template use:
 - `perspective` — fields for investment perspectives
 - `credit_submission` — fields for credit papers
 
+## Self-Review (REQUIRED before returning)
+
+Before finalizing your response, review EACH classification against these checks:
+
+1. **Confidence sanity check**: If confidence > 0.85, verify the document content actually matches the type. Common mistakes:
+   - Generic letters classified as specific legal documents
+   - Bank statements confused with financial reports
+   - Meeting notes classified as formal reports
+   - Email attachments classified as the email itself
+
+2. **Category-type consistency**: Does the fileType belong in the category? A "Valuation Report" should NOT be in "KYC". Cross-check against the Reference Library.
+
+3. **Alternative type check**: If your top two candidate types are within 0.15 confidence of each other, LOWER the top confidence to reflect genuine ambiguity and include detailed reasoning explaining why you chose one over the other.
+
+4. **Checklist match validation**: If you matched a document to a checklist item, verify the document actually satisfies that requirement — not just a related topic. A "Bank Statement" does NOT satisfy a "Valuation Report" checklist item even though both are financial.
+
+5. **Folder assignment**: Does the suggested folder match the category? Cross-check against the Available Folders list provided.
+
+6. **fileType exact match**: Verify your returned `fileType` exactly matches a type from the Reference Library. No invented variations.
+
+If any check fails, revise before returning. It is better to return lower confidence with correct classification than high confidence with wrong classification.
+
 ## Output Format
 
 Return a JSON array with one object per document. See the output schema in the request.
