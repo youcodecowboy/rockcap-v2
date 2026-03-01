@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
-import { extractIntelligenceFromDocumentAnalysis } from "./intelligenceHelpers";
+import { extractIntelligenceFromDocumentAnalysis, ExtractedField, FieldType } from "./intelligenceHelpers";
 
 // ============================================================================
 // BULK UPLOAD SYSTEM
@@ -705,7 +705,32 @@ export const fileItem = mutation({
     if (item.isDuplicate && !item.versionType) {
       throw new Error("Duplicate detected - please select version type (minor/significant)");
     }
-    
+
+    // Atomic duplicate safety check: verify no other item with same fileName in this batch
+    // was filed between the analysis-time check and now (prevents race condition)
+    if (!item.isDuplicate && batch.clientId) {
+      const recentDocs = await ctx.db
+        .query("documents")
+        .withIndex("by_client", (q: any) => q.eq("clientId", batch.clientId))
+        .filter((q: any) => q.and(
+          q.eq(q.field("fileName"), item.fileName),
+          q.neq(q.field("isDeleted"), true)
+        ))
+        .first();
+      if (recentDocs) {
+        // A document with the same filename was filed between analysis and now
+        // Mark this item as duplicate and set the reference
+        await ctx.db.patch(args.itemId, {
+          isDuplicate: true,
+          duplicateOfDocumentId: recentDocs._id,
+          updatedAt: new Date().toISOString(),
+        });
+        throw new Error(
+          `Duplicate detected at filing time: "${item.fileName}" already exists. Please review and select version type.`
+        );
+      }
+    }
+
     const now = new Date().toISOString();
     const scope = batch.scope || "client";
 
@@ -746,6 +771,8 @@ export const fileItem = mutation({
       uploaderInitials: args.uploaderInitials,
       previousVersionId: item.duplicateOfDocumentId,
       extractedData: item.extractedData,
+      // Pre-extracted intelligence fields from Stage 5.5 (for re-analysis and knowledge items)
+      extractedIntelligence: item.extractedIntelligence,
       // Document analysis from Stage 1 Summary Agent (for rich metadata)
       documentAnalysis: item.documentAnalysis,
       // Classification reasoning from Stage 2
@@ -828,20 +855,43 @@ export const fileItem = mutation({
 
     const hasProjectContext = !!batch.projectId;
 
-    console.log(`[fileItem] Item "${item.fileName}" - documentAnalysis check: hasAnalysis=${!!documentAnalysis}, keyAmounts=${documentAnalysis?.keyAmounts?.length || 0}, keyDates=${documentAnalysis?.keyDates?.length || 0}, entities=${documentAnalysis?.entities ? 'yes' : 'no'}`);
+    // Check for pre-extracted intelligence from Stage 5.5 (richer, more structured)
+    const preExtractedFields: Array<{
+      fieldPath: string; label: string; category: string; value: any;
+      valueType: string; isCanonical: boolean; confidence: number;
+      sourceText?: string; scope?: string;
+    }> = (item.extractedIntelligence as any)?.fields || [];
 
-    if (documentAnalysis && batch.clientId && (
-      (documentAnalysis.keyAmounts && documentAnalysis.keyAmounts.length > 0) ||
-      (documentAnalysis.keyDates && documentAnalysis.keyDates.length > 0) ||
-      documentAnalysis.entities ||
-      documentAnalysis.executiveSummary
+    console.log(`[fileItem] Item "${item.fileName}" - documentAnalysis check: hasAnalysis=${!!documentAnalysis}, keyAmounts=${documentAnalysis?.keyAmounts?.length || 0}, keyDates=${documentAnalysis?.keyDates?.length || 0}, entities=${documentAnalysis?.entities ? 'yes' : 'no'}, preExtractedFields=${preExtractedFields.length}`);
+
+    if (batch.clientId && (
+      preExtractedFields.length > 0 ||
+      (documentAnalysis && (
+        (documentAnalysis.keyAmounts && documentAnalysis.keyAmounts.length > 0) ||
+        (documentAnalysis.keyDates && documentAnalysis.keyDates.length > 0) ||
+        documentAnalysis.entities ||
+        documentAnalysis.executiveSummary
+      ))
     )) {
-      // Extract intelligence from the confirmed document analysis
-      const extractedFields = extractIntelligenceFromDocumentAnalysis(
-        documentAnalysis,
-        hasProjectContext,
-        item.category
-      );
+      // Use pre-extracted intelligence from Stage 5.5 if available, fall back to documentAnalysis
+      const analysisFields = documentAnalysis
+        ? extractIntelligenceFromDocumentAnalysis(documentAnalysis, hasProjectContext, item.category)
+        : [];
+
+      // Merge: pre-extracted fields take priority (keyed by fieldPath)
+      const fieldMap = new Map<string, ExtractedField>();
+      for (const f of analysisFields) {
+        fieldMap.set(f.fieldPath, f);
+      }
+      for (const f of preExtractedFields) {
+        // Cast pre-extracted fields to match ExtractedField shape
+        fieldMap.set(f.fieldPath, {
+          ...f,
+          valueType: f.valueType as FieldType,
+          scope: (f.scope === 'project' || f.scope === 'client') ? f.scope : 'client',
+        });
+      }
+      const extractedFields = Array.from(fieldMap.values());
 
       console.log(`[fileItem] 📊 Extracted ${extractedFields.length} intelligence fields from documentAnalysis for "${item.fileName}"`);
 
@@ -969,6 +1019,11 @@ export const fileItem = mutation({
       console.log(`[fileItem] ✅ Intelligence for "${item.fileName}": ${fieldsAdded} added, ${fieldsUpdated} updated, ${fieldsSkipped} skipped`);
       if (addedFields.length > 0) {
         console.log(`[fileItem]    Fields: ${addedFields.join(' | ')}`);
+      }
+
+      // Mark document as having intelligence extracted
+      if (fieldsAdded > 0 || fieldsUpdated > 0) {
+        await ctx.db.patch(documentId, { addedToIntelligence: true });
       }
     } else {
       // DEPRECATED: Intelligence extraction jobs are now handled within the bulk upload pipeline skills.

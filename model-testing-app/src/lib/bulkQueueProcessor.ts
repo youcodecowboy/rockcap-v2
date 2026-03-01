@@ -452,7 +452,7 @@ export class BulkQueueProcessor {
 
     // Use project shortcode if available, otherwise generate from client name
     const shortcode = this.batchInfo.projectShortcode ||
-      this.batchInfo.clientName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) ||
+      (this.batchInfo.clientName || 'CLIENT').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) ||
       'CLIENT';
 
     // Check for duplicates by original filename

@@ -224,6 +224,8 @@ export default defineSchema({
     previousVersionId: v.optional(v.id("documents")), // Link to previous version
     // Extracted data (stored as JSON)
     extractedData: v.optional(v.any()),
+    // Pre-extracted intelligence fields from V4 pipeline Stage 5.5
+    extractedIntelligence: v.optional(v.any()),
     // Full parsed text content for re-analysis without re-uploading
     textContent: v.optional(v.string()),
     // Document analysis from multi-stage pipeline (Stage 1: Summary Agent)

@@ -308,6 +308,7 @@ export default function UploadMoreModal({
               ref={fileInputRef}
               type="file"
               multiple
+              accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
               onChange={handleFileSelect}
               className="hidden"
               disabled={isProcessing}

@@ -673,8 +673,19 @@ async function gatherChatContext(
 /**
  * Restrict tool access based on context — auto-inject clientId/projectId.
  */
-function restrictToolAccess(toolName: string, params: any, clientId?: string, projectId?: string): any {
+function restrictToolAccess(toolName: string, params: any, clientId?: string, projectId?: string, userId?: string): any {
   const restricted = { ...params };
+
+  // Auto-inject userId for tools that require it
+  if (userId) {
+    switch (toolName) {
+      case 'linkDocumentToChecklist':
+        if (!restricted.userId) {
+          restricted.userId = userId;
+        }
+        break;
+    }
+  }
 
   if (clientId) {
     switch (toolName) {
@@ -1072,11 +1083,13 @@ export async function POST(request: NextRequest) {
   try {
     // Authenticate
     const convexClient = await getAuthenticatedConvexClient();
+    let currentUser: any;
     try {
-      await requireAuth(convexClient);
+      currentUser = await requireAuth(convexClient);
     } catch {
       return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
     }
+    const currentUserId = currentUser?._id as string | undefined;
 
     const body = await request.json();
     const {
@@ -1239,9 +1252,11 @@ Then offer to file the document using the saveChatDocument tool.`;
         }
 
         if (toolDef.requiresConfirmation) {
+          // Apply restrictToolAccess to write tools too — injects userId, clientId, projectId
+          const restrictedWriteParams = restrictToolAccess(block.name, block.input, clientId, projectId, currentUserId);
           pendingActions.push({
             toolName: block.name,
-            parameters: block.input,
+            parameters: restrictedWriteParams,
             requiresConfirmation: true,
           });
           toolResults.push({
@@ -1257,7 +1272,7 @@ Then offer to file the document using the saveChatDocument tool.`;
           });
 
           try {
-            const restrictedParams = restrictToolAccess(block.name, block.input, clientId, projectId);
+            const restrictedParams = restrictToolAccess(block.name, block.input, clientId, projectId, currentUserId);
             const result = await executeTool(block.name, restrictedParams, convexClient);
             const filtered = filterToolResults(block.name, result, clientId, projectId);
             toolResults.push({

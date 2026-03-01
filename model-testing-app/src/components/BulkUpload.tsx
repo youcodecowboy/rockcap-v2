@@ -964,7 +964,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 multiple
                 className="hidden"
                 onChange={handleFileInput}
-                accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt"
+                accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
                 disabled={isUploading}
               />
               <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
