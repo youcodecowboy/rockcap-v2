@@ -1,8 +1,7 @@
 /**
  * @deprecated This route uses the V3 Together.ai pipeline.
  * FileDetailPanel now uses /api/v4-analyze instead.
- * This route is kept for backward compatibility but logs a deprecation warning.
- * It will be removed in a future release.
+ * No active callers remain — safe to remove in next cleanup pass.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { extractTextFromFile } from '@/lib/fileProcessor';

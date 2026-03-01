@@ -202,6 +202,47 @@ Phase 5 (Robustness)    — ~2 hours — Next sprint
   5.1-5.5 Quality of life
 ```
 
+## Together AI Migration Status
+
+The migration from Together AI to Anthropic Claude is **partial**. Only the primary chat and V4 filing pipeline have been migrated. Below is the status of all Together AI dependencies.
+
+### Migrated to Claude
+- `/api/chat-assistant` — Primary chat (was `/api/ai-assistant` on Together AI)
+- `/api/v4-analyze` — Document classification pipeline (was `/api/bulk-analyze` agents)
+- `/api/intelligence-extract` — Intelligence extraction (was `/api/process-intelligence-queue`)
+
+### Still on Together AI (Active — migrate in future sprints)
+| Route/File | Purpose | Priority |
+|-----------|---------|----------|
+| `/api/bulk-analyze` | Modular agent pipeline (summary, classification, checklist, verification) | High — replace agents with V4 |
+| `/api/analyze-file` | Single file analysis + spreadsheet extraction | High |
+| `/api/process-intelligence-queue` | Background intelligence extraction jobs | Medium — partially replaced by intelligence-extract |
+| `/api/generate-insights` | AI insight generation for intelligence dashboards | Medium |
+| `/api/knowledge-parse` | Checklist requirement parsing | Medium |
+| `/api/codify-extraction` | Smart Pass codification for data library | Medium |
+| `/api/meeting-extract` | Meeting transcript extraction | Low |
+| `/api/process-meeting-queue` | Background meeting processing | Low |
+| `/api/reminders/parse` | Natural language reminder creation | Low |
+| `/api/tasks/parse` | Natural language task creation | Low |
+| `/api/extract-prospecting-context` | Prospecting context from documents | Low |
+| `src/lib/agents/*` | V3 agent pipeline (4 agents + config) | High — remove when bulk-analyze migrated |
+| `src/lib/smartPassCodification.ts` | LLM-based data codification | Medium |
+| `src/lib/dataExtraction.ts` | Spreadsheet data extraction | Medium |
+| `src/lib/dataVerification.ts` | Extracted data verification | Medium |
+| `src/lib/dataNormalization.ts` | Data normalization | Medium |
+| `src/lib/modelConfig.ts` | Central Together AI config (used by all above) | Last — remove after all migrated |
+| `src/lib/reminderEnhancement.ts` | Reminder text enhancement | Low |
+
+### Removed / Deprecated
+- `/api/bulk-analyze-debug` — Removed (dead debug endpoint)
+- `/api/reanalyze-document` — Deprecated (no active callers, uses V3 pipeline)
+- `/api/ai-assistant` — Deprecated (replaced by chat-assistant, still called by NotesEditor/AIAssistantBlock)
+
+### Not Together AI dependent but legacy
+- `src/lib/documentCodeUtils.ts` — Still actively imported by 4+ components. Superseded by `documentNaming.ts` but both are in use.
+
+---
+
 ## Target Scores (After All Fixes)
 
 | # | Category | Before | After | Delta |

@@ -1,3 +1,9 @@
+/**
+ * @deprecated This route uses the V3 Together.ai pipeline for notes AI assistant.
+ * The primary chat system now uses /api/chat-assistant with Anthropic Claude Haiku 4.5.
+ * This route is still referenced by AIAssistantBlock in the notes editor.
+ * TODO: Migrate AIAssistantBlock + NotesEditor to use /api/chat-assistant, then remove this route.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { gatherContextForNote, formatContextForLLM, estimateTokens } from '@/lib/aiNotesContext';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
@@ -7,6 +13,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  console.warn('[DEPRECATED] /api/ai-assistant called — should migrate to /api/chat-assistant');
   try {
     // Check authentication
     const client = await getAuthenticatedConvexClient();
