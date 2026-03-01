@@ -147,7 +147,7 @@ export default function DirectUploadModal({
 
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const createDocument = useMutation(api.documents.create);
-  const linkDocumentToRequirement = useMutation(api.knowledgeLibrary.linkDocumentToRequirement);
+  const linkDocumentToChecklistItem = useMutation(api.knowledgeLibrary.linkDocumentToChecklistItem);
   const currentUser = useQuery(api.users.getCurrent);
 
   // Fetch checklist items for V4 metadata (only when analysis is enabled)
@@ -405,7 +405,7 @@ export default function DirectUploadModal({
 
       for (const checklistItemId of review.confirmedChecklistItemIds) {
         try {
-          await linkDocumentToRequirement({
+          await linkDocumentToChecklistItem({
             checklistItemId: checklistItemId as Id<"knowledgeChecklistItems">,
             documentId: file.documentId,
             userId: currentUser._id,

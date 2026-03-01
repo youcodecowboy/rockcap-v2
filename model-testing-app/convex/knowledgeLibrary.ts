@@ -626,9 +626,12 @@ export const unlinkDocument = mutation({
       await ctx.db.delete(link._id);
     }
     
-    // Mark item as missing
+    // Mark item as missing and clear any stale suggestion fields
     await ctx.db.patch(args.checklistItemId, {
       status: "missing",
+      suggestedDocumentId: undefined,
+      suggestedDocumentName: undefined,
+      suggestedConfidence: undefined,
       updatedAt: now,
     });
 
@@ -766,6 +769,16 @@ export const deleteCustomRequirement = mutation({
 
     if (!item.isCustom) {
       throw new Error("Cannot delete template-based requirements");
+    }
+
+    // Clean up any associated document links to prevent orphaned rows
+    const links = await ctx.db
+      .query("knowledgeChecklistDocumentLinks")
+      .withIndex("by_checklist_item", (q) => q.eq("checklistItemId", args.checklistItemId))
+      .collect();
+
+    for (const link of links) {
+      await ctx.db.delete(link._id);
     }
 
     await ctx.db.delete(args.checklistItemId);

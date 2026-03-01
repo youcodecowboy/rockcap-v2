@@ -109,7 +109,7 @@ export default function KnowledgeChecklistPanel({
   const user = useQuery(api.users.getCurrent) as { _id: Id<"users"> } | null | undefined;
 
   // Mutations
-  const linkDocument = useMutation(api.knowledgeLibrary.linkDocumentToRequirement);
+  const linkDocument = useMutation(api.knowledgeLibrary.linkDocumentToChecklistItem);
   const unlinkAllDocuments = useMutation(api.knowledgeLibrary.unlinkDocument);
   const unlinkSpecificDocument = useMutation(api.knowledgeLibrary.unlinkDocumentFromChecklistItem);
   const confirmSuggestion = useMutation(api.knowledgeLibrary.confirmSuggestedLink);

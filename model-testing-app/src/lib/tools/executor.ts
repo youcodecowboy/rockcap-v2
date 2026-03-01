@@ -309,6 +309,12 @@ const handlers: Record<string, ToolHandler> = {
     client.query(api.knowledgeLibrary.getMissingItems, {
       clientId: params.clientId as Id<"clients">,
       projectId: params.projectId as Id<"projects"> | undefined,
+      phaseFilter: params.phaseFilter,
+    }),
+
+  getLinkedDocuments: async (params, client) =>
+    client.query(api.knowledgeLibrary.getLinkedDocuments, {
+      checklistItemId: params.checklistItemId as Id<"knowledgeChecklistItems">,
     }),
 
   addChecklistItem: async (params, client) =>
@@ -321,22 +327,47 @@ const handlers: Record<string, ToolHandler> = {
       description: params.description,
     }),
 
-  linkDocumentToChecklist: async (params, client) => {
-    if (!params.userId) {
-      throw new Error(
-        "linkDocumentToChecklist requires a userId parameter. Please provide the current user's ID."
-      );
-    }
-    return client.mutation(api.knowledgeLibrary.linkDocumentToRequirement, {
+  linkDocumentToChecklist: async (params, client) =>
+    client.mutation(api.knowledgeLibrary.linkDocumentToChecklistItem, {
       checklistItemId: params.checklistItemId as Id<"knowledgeChecklistItems">,
       documentId: params.documentId as Id<"documents">,
-      userId: params.userId as Id<"users">,
-    });
-  },
+      userId: params.userId as Id<"users"> | undefined,
+    }),
 
   unlinkDocumentFromChecklist: async (params, client) =>
-    client.mutation(api.knowledgeLibrary.unlinkDocument, {
+    client.mutation(api.knowledgeLibrary.unlinkDocumentFromChecklistItem, {
       checklistItemId: params.checklistItemId as Id<"knowledgeChecklistItems">,
+      documentId: params.documentId as Id<"documents">,
+    }),
+
+  updateChecklistItemStatus: async (params, client) =>
+    client.mutation(api.knowledgeLibrary.updateItemStatus, {
+      checklistItemId: params.checklistItemId as Id<"knowledgeChecklistItems">,
+      status: params.status,
+    }),
+
+  confirmSuggestedLink: async (params, client) =>
+    client.mutation(api.knowledgeLibrary.confirmSuggestedLink, {
+      checklistItemId: params.checklistItemId as Id<"knowledgeChecklistItems">,
+      userId: params.userId as Id<"users">,
+    }),
+
+  rejectSuggestedLink: async (params, client) =>
+    client.mutation(api.knowledgeLibrary.rejectSuggestedLink, {
+      checklistItemId: params.checklistItemId as Id<"knowledgeChecklistItems">,
+    }),
+
+  initializeChecklistForClient: async (params, client) =>
+    client.mutation(api.knowledgeLibrary.initializeChecklistForClient, {
+      clientId: params.clientId as Id<"clients">,
+      clientType: params.clientType,
+    }),
+
+  initializeChecklistForProject: async (params, client) =>
+    client.mutation(api.knowledgeLibrary.initializeChecklistForProject, {
+      clientId: params.clientId as Id<"clients">,
+      projectId: params.projectId as Id<"projects">,
+      clientType: params.clientType,
     }),
 
   deleteChecklistItem: async (params, client) =>
