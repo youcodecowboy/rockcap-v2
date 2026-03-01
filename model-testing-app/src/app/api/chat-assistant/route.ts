@@ -680,6 +680,7 @@ function restrictToolAccess(toolName: string, params: any, clientId?: string, pr
   if (userId) {
     switch (toolName) {
       case 'linkDocumentToChecklist':
+      case 'confirmSuggestedLink':
         if (!restricted.userId) {
           restricted.userId = userId;
         }
@@ -723,6 +724,7 @@ function restrictToolAccess(toolName: string, params: any, clientId?: string, pr
       case 'getChecklistByClient':
       case 'getChecklistSummary':
       case 'getMissingChecklistItems':
+      case 'initializeChecklistForClient':
         restricted.clientId = clientId;
         break;
       case 'getClientFolders':
@@ -791,6 +793,7 @@ function restrictToolAccess(toolName: string, params: any, clientId?: string, pr
         break;
       case 'getChecklistByProject':
       case 'getMissingChecklistItems':
+      case 'initializeChecklistForProject':
         restricted.projectId = projectId;
         break;
       case 'getProjectFolders':
@@ -955,6 +958,16 @@ function getActivityMessage(toolName: string, params: any): string {
     getChecklistByProject: () => 'Loading project checklist...',
     getChecklistSummary: () => 'Loading checklist summary...',
     getMissingChecklistItems: () => 'Checking missing checklist items...',
+    getLinkedDocuments: () => 'Loading linked documents for checklist item...',
+    addChecklistItem: () => 'Adding checklist requirement...',
+    linkDocumentToChecklist: () => 'Linking document to checklist item...',
+    unlinkDocumentFromChecklist: () => 'Unlinking document from checklist item...',
+    updateChecklistItemStatus: () => 'Updating checklist item status...',
+    confirmSuggestedLink: () => 'Confirming suggested document match...',
+    rejectSuggestedLink: () => 'Rejecting suggested document match...',
+    initializeChecklistForClient: () => 'Initializing client checklist from template...',
+    initializeChecklistForProject: () => 'Initializing project checklist from template...',
+    deleteChecklistItem: () => 'Deleting checklist item...',
     getFileQueueJobs: () => 'Loading file queue...',
     getFileQueueJob: () => 'Loading queue job...',
     getReviewQueue: () => 'Loading review queue...',
