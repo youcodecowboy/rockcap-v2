@@ -226,6 +226,11 @@ const handlers: Record<string, ToolHandler> = {
       addToIntelligence: params.addToIntelligence || false,
     }),
 
+  deleteDocument: async (params, client) =>
+    client.mutation(api.documents.remove, {
+      id: params.documentId as Id<"documents">,
+    }),
+
   // ==========================================================================
   // FOLDER
   // ==========================================================================
@@ -926,6 +931,45 @@ const handlers: Record<string, ToolHandler> = {
       keyAmounts: classification.summary?.keyAmounts || [],
       checklistMatches: classification.checklistMatches || [],
       intelligenceFields: classification.intelligenceFields || [],
+    };
+  },
+
+  reanalyzeDocument: async (params, client) => {
+    // 1. Get the existing document
+    const doc = await client.query(api.documents.get, {
+      id: params.documentId as Id<"documents">,
+    });
+    if (!doc) throw new Error("Document not found");
+    if (!doc.fileStorageId) throw new Error("Document has no file attached — cannot re-analyze");
+
+    // 2. Re-use analyzeUploadedDocument handler with the document's storageId
+    const analysisResult = await handlers.analyzeUploadedDocument(
+      {
+        storageId: doc.fileStorageId,
+        fileName: doc.fileName,
+        fileType: doc.fileType,
+        clientId: doc.clientId,
+        projectId: doc.projectId,
+      },
+      client
+    );
+
+    // 3. Update the document with new analysis results
+    const updateArgs: any = {
+      id: params.documentId as Id<"documents">,
+    };
+    if (analysisResult.category) updateArgs.category = analysisResult.category;
+    if (analysisResult.fileType) updateArgs.fileTypeDetected = analysisResult.fileType;
+    if (analysisResult.executiveSummary) updateArgs.summary = analysisResult.executiveSummary;
+    if (analysisResult.confidence) updateArgs.confidence = analysisResult.confidence;
+
+    await client.mutation(api.documents.update, updateArgs);
+
+    return {
+      documentId: params.documentId,
+      previousType: doc.fileTypeDetected,
+      ...analysisResult,
+      updated: true,
     };
   },
 

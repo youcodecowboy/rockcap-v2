@@ -1162,20 +1162,31 @@ Size: ${(fileMetadata.fileSize / 1024).toFixed(2)} KB
 Type: ${fileMetadata.fileType}
 Storage ID: ${fileMetadata.fileStorageId}
 
-IMPORTANT: The user has uploaded a file. You MUST call the analyzeUploadedDocument tool with:
+IMPORTANT: The user has uploaded a file. You MUST immediately:
+
+STEP 1: Call analyzeUploadedDocument with:
 - storageId: "${fileMetadata.fileStorageId}"
 - fileName: "${fileMetadata.fileName}"
 - fileType: "${fileMetadata.fileType}"
 ${clientId ? `- clientId: "${clientId}"` : ''}${projectId ? `\n- projectId: "${projectId}"` : ''}
 
-After receiving the analysis results, present them clearly to the user including:
-1. Document type and classification
-2. Summary
-3. Key extracted data
-4. Suggested folder placement
+STEP 2: After receiving the analysis results, AUTOMATICALLY call saveChatDocument to file the document using the analysis results. Do NOT wait for the user to ask — file it immediately. The confirmation popup will let the user review before it executes.
+
+Pass to saveChatDocument:
+- storageId, fileName, fileType from the upload
+- fileSize: ${fileMetadata.fileSize}
+- summary, fileTypeDetected, category, confidence from the analysis
+- clientId${projectId ? ', projectId' : ''} from context
+- folderId and folderType from the suggested folder
+
+STEP 3: Present the analysis results to the user including:
+1. Document type and classification (with confidence)
+2. Brief summary
+3. Key extracted data (entities, dates, amounts)
+4. Where it will be filed (folder)
 5. Any checklist items matched
 
-Then offer to file the document using the saveChatDocument tool.`;
+The user will see a confirmation popup to approve the filing.`;
     }
 
     // Build system prompt blocks (split for optimal caching)

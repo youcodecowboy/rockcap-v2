@@ -118,4 +118,27 @@ export const ANALYSIS_TOOLS: AtomicTool[] = [
     convexMapping: { type: "mutation", path: "documents.create" },
     contextRelevance: ["document", "client", "project"],
   },
+  // -------------------------------------------------------------------------
+  // READ — Re-analyze an existing filed document
+  // -------------------------------------------------------------------------
+  {
+    name: "reanalyzeDocument",
+    domain: "document",
+    action: "read",
+    description:
+      "Re-analyze an existing filed document using the V4 classification pipeline. Fetches the document from storage, runs full analysis, and updates the document's classification, summary, and metadata. Use when a user wants to re-classify or re-extract data from an already-filed document.",
+    parameters: {
+      type: "object",
+      properties: {
+        documentId: {
+          type: "string",
+          description: "The ID of the existing document to re-analyze",
+        },
+      },
+      required: ["documentId"],
+    },
+    requiresConfirmation: false,
+    convexMapping: { type: "query", path: "documents.get" },
+    contextRelevance: ["document", "client", "project"],
+  },
 ];

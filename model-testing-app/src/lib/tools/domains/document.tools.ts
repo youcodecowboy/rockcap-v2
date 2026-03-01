@@ -219,4 +219,28 @@ export const DOCUMENT_TOOLS: AtomicTool[] = [
     convexMapping: { type: "mutation", path: "documentNotes.create" },
     contextRelevance: ["document", "note"],
   },
+
+  // -------------------------------------------------------------------------
+  // DELETE
+  // -------------------------------------------------------------------------
+  {
+    name: "deleteDocument",
+    domain: "document",
+    action: "delete",
+    description:
+      "Soft-delete a document. The document is marked as deleted but can be recovered. Use when a user wants to remove a document from the library.",
+    parameters: {
+      type: "object",
+      properties: {
+        documentId: {
+          type: "string",
+          description: "The ID of the document to delete",
+        },
+      },
+      required: ["documentId"],
+    },
+    requiresConfirmation: true,
+    convexMapping: { type: "mutation", path: "documents.remove" },
+    contextRelevance: ["document"],
+  },
 ];
