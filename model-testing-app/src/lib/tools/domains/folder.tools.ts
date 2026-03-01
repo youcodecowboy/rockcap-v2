@@ -136,7 +136,7 @@ export const FOLDER_TOOLS: AtomicTool[] = [
       required: ["projectId", "name"],
     },
     requiresConfirmation: true,
-    convexMapping: { type: "mutation", path: "projects.addCustomFolder" },
+    convexMapping: { type: "mutation", path: "projects.addCustomProjectFolder" },
     contextRelevance: ["folder", "project"],
   },
   {
@@ -154,7 +154,7 @@ export const FOLDER_TOOLS: AtomicTool[] = [
       required: ["folderId", "name"],
     },
     requiresConfirmation: true,
-    convexMapping: { type: "mutation", path: "projects.renameCustomFolder" },
+    convexMapping: { type: "mutation", path: "projects.renameCustomProjectFolder" },
     contextRelevance: ["folder", "project"],
   },
   {
@@ -171,7 +171,7 @@ export const FOLDER_TOOLS: AtomicTool[] = [
       required: ["folderId"],
     },
     requiresConfirmation: true,
-    convexMapping: { type: "mutation", path: "projects.deleteCustomFolder" },
+    convexMapping: { type: "mutation", path: "projects.deleteCustomProjectFolder" },
     contextRelevance: ["folder", "project"],
   },
 ];

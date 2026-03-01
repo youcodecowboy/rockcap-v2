@@ -68,7 +68,7 @@ export const NOTE_TOOLS: AtomicTool[] = [
     name: "updateNote",
     domain: "note",
     action: "write",
-    description: "Update a note's title, content, or linked entities.",
+    description: "Update a note's title, content, or linked entities. Can also re-link to a different client or project.",
     parameters: {
       type: "object",
       properties: {
@@ -76,6 +76,8 @@ export const NOTE_TOOLS: AtomicTool[] = [
         title: { type: "string", description: "Updated title" },
         content: { type: "string", description: "Updated content" },
         tags: { type: "string", description: "Updated tags (comma-separated)" },
+        clientId: { type: "string", description: "Link the note to a different client (or null to unlink)" },
+        projectId: { type: "string", description: "Link the note to a different project (or null to unlink)" },
       },
       required: ["noteId"],
     },

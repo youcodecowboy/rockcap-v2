@@ -182,11 +182,11 @@ export default defineSchema({
     // File metadata
     fileName: v.string(),
     fileSize: v.number(),
-    fileType: v.string(),
+    fileType: v.string(), // Original MIME type from upload (e.g., "application/pdf", "image/png")
     uploadedAt: v.string(),
     // Analysis results
     summary: v.string(),
-    fileTypeDetected: v.string(),
+    fileTypeDetected: v.string(), // AI-classified document type (e.g., "RedBook Valuation", "Title Deed")
     category: v.string(),
     reasoning: v.string(),
     confidence: v.number(),
@@ -208,9 +208,9 @@ export default defineSchema({
       v.literal("client"),
       v.literal("project")
     )),
-    // Internal vs External classification
+    // @deprecated Use `scope` field instead. Kept for backward compatibility — derive via scope === "internal".
     isInternal: v.optional(v.boolean()),
-    // Document scope (client, internal company-wide, or personal/private)
+    // Document scope (client, internal company-wide, or personal/private) — primary field for access control
     scope: v.optional(v.union(
       v.literal("client"),     // Client/project documents (default for existing)
       v.literal("internal"),   // RockCap company-wide documents
@@ -849,6 +849,11 @@ export default defineSchema({
     // Timestamps
     createdAt: v.string(),
     updatedAt: v.string(),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -981,6 +986,11 @@ export default defineSchema({
     // Timestamps
     createdAt: v.string(),
     updatedAt: v.string(),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
   })
     .index("by_batch", ["batchId"])
     .index("by_status", ["status"])
@@ -1981,6 +1991,7 @@ export default defineSchema({
     // Soft delete for bad extractions
     isDeleted: v.optional(v.boolean()),
     deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
     deletedReason: v.optional(v.string()),
   })
     .index("by_document", ["documentId"])
