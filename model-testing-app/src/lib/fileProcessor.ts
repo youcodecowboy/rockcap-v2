@@ -68,14 +68,15 @@ export async function extractTextFromFile(file: File): Promise<string> {
     return result.value;
   }
 
-  // Handle DOC files (legacy format - basic text extraction)
+  // Handle DOC files (legacy format - limited support)
   if (
     fileType === 'application/msword' ||
     fileName.endsWith('.doc')
   ) {
-    // DOC files are binary and harder to parse without additional libraries
-    // For now, return a message indicating the limitation
-    throw new Error('Legacy .doc files are not fully supported. Please convert to .docx or PDF.');
+    // DOC files are binary and require specialized parsing not available in serverless.
+    // Return a descriptive placeholder instead of throwing, so the file can still be filed
+    // with limited metadata rather than blocking the entire upload.
+    return `[Legacy .doc format — limited text extraction]\n\nThis document "${file.name}" is in the legacy Microsoft Word .doc format. Full text extraction is not available for this format in the current pipeline. Please convert to .docx or PDF for complete analysis.\n\nThe document has been accepted for filing with limited metadata.`;
   }
 
   // Handle CSV files

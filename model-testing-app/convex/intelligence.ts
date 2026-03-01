@@ -1547,6 +1547,7 @@ export const mergeExtractedIntelligence = mutation({
           }
         } else {
           mergeResult.fieldsSkipped++;
+          console.log(`[Intelligence] Skipped field "${field.fieldPath}": new confidence ${field.confidence} <= existing ${existingConfidenceMap.get(field.fieldPath) || 0} (doc: ${args.documentName})`);
         }
       }
 
@@ -1725,6 +1726,7 @@ export const mergeExtractedIntelligence = mutation({
           }
         } else {
           mergeResult.fieldsSkipped++;
+          console.log(`[Intelligence:Client] Skipped field "${field.fieldPath}": new confidence ${field.confidence} <= existing ${existingConfidenceMap.get(field.fieldPath) || 0} (doc: ${args.documentName})`);
         }
       }
 

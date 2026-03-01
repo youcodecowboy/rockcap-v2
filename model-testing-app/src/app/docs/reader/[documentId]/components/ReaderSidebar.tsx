@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -17,6 +19,9 @@ import {
   CheckSquare,
   FileText,
   MessageSquare,
+  Brain,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DocumentNoteForm from './DocumentNoteForm';
@@ -50,6 +55,9 @@ interface ReaderSidebarProps {
 }
 
 export default function ReaderSidebar({ document, documentId }: ReaderSidebarProps) {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeResult, setAnalyzeResult] = useState<'success' | 'error' | null>(null);
+
   // Query document notes
   const notes = useQuery(api.documentNotes.getByDocument, { documentId });
 
@@ -215,6 +223,63 @@ export default function ReaderSidebar({ document, documentId }: ReaderSidebarPro
             <Separator />
           </>
         )}
+
+        {/* Analyze Section */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Brain className="w-4 h-4" />
+            Intelligence
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            disabled={analyzing}
+            onClick={async () => {
+              setAnalyzing(true);
+              setAnalyzeResult(null);
+              try {
+                const res = await fetch('/api/intelligence-extract', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    documentId,
+                    clientId: document.clientId,
+                    projectId: document.projectId,
+                  }),
+                });
+                if (!res.ok) throw new Error('Analysis failed');
+                setAnalyzeResult('success');
+              } catch {
+                setAnalyzeResult('error');
+              } finally {
+                setAnalyzing(false);
+              }
+            }}
+          >
+            {analyzing ? (
+              <>
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Analyzing...
+              </>
+            ) : analyzeResult === 'success' ? (
+              <>
+                <CheckCircle2 className="w-3 h-3 mr-1 text-green-600" />
+                Analysis Complete
+              </>
+            ) : (
+              <>
+                <Brain className="w-3 h-3 mr-1" />
+                Analyze Document
+              </>
+            )}
+          </Button>
+          {analyzeResult === 'error' && (
+            <p className="text-xs text-red-500 mt-1">Analysis failed. Please try again.</p>
+          )}
+        </div>
+
+        <Separator />
 
         {/* Notes Section */}
         <div>

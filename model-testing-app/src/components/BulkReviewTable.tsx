@@ -75,6 +75,7 @@ import {
   Plus,
   Check,
   X,
+  RefreshCw,
 } from 'lucide-react';
 import { FILE_CATEGORIES, FILE_TYPES as FILE_TYPES_LIST } from '@/lib/categories';
 
@@ -560,6 +561,7 @@ export default function BulkReviewTable({
   const setVersionType = useMutation(api.bulkUpload.setVersionType);
   const saveExtractedData = useMutation(api.bulkUpload.saveExtractedData);
   const updateItemNote = useMutation(api.bulkUpload.updateItemNote);
+  const updateItemStatus = useMutation(api.bulkUpload.updateItemStatus);
 
   // Stats
   const stats = useMemo(() => {
@@ -1690,8 +1692,28 @@ export default function BulkReviewTable({
                           )}
 
                           {item.error && (
-                            <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                              <span className="font-medium">Error:</span> {item.error}
+                            <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700 flex items-center justify-between gap-2">
+                              <div>
+                                <span className="font-medium">Error:</span> {item.error}
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 text-xs h-7 border-red-300 text-red-700 hover:bg-red-100"
+                                onClick={async () => {
+                                  try {
+                                    await updateItemStatus({
+                                      itemId: item._id,
+                                      status: 'pending',
+                                    });
+                                  } catch (e) {
+                                    console.error('Failed to retry item:', e);
+                                  }
+                                }}
+                              >
+                                <RefreshCw className="w-3 h-3 mr-1" />
+                                Retry
+                              </Button>
                             </div>
                           )}
                         </div>

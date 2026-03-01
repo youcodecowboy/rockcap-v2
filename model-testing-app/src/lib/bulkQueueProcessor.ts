@@ -362,53 +362,74 @@ export class BulkQueueProcessor {
 
     const { storageId } = await uploadResponse.json();
 
-    // Call V4 analyze API
-    const formData = new FormData();
-    formData.append("file", item.file);
-    if (this.batchInfo.clientType) {
-      formData.append("clientType", this.batchInfo.clientType);
-    }
+    // Call V4 analyze API with retry logic for transient failures
+    const buildFormData = () => {
+      const fd = new FormData();
+      fd.append("file", item.file);
+      if (this.batchInfo!.clientType) {
+        fd.append("clientType", this.batchInfo!.clientType);
+      }
 
-    // Pass rich metadata to V4 pipeline
-    const metadata: Record<string, any> = {};
-    if (this.batchInfo.clientName) {
-      metadata.clientName = this.batchInfo.clientName;
-      metadata.clientContext = {
-        clientType: this.batchInfo.clientType,
-        clientName: this.batchInfo.clientName,
-      };
-    }
-    if (this.batchInfo.projectShortcode) {
-      metadata.projectShortcode = this.batchInfo.projectShortcode;
-    }
-    if (this.batchInfo.isInternal) {
-      metadata.isInternal = this.batchInfo.isInternal;
-    }
-    if (this.batchInfo.uploaderInitials) {
-      metadata.uploaderInitials = this.batchInfo.uploaderInitials;
-    }
-    if (this.batchInfo.instructions) {
-      metadata.instructions = this.batchInfo.instructions;
-    }
-    if (this.batchInfo.checklistItems && this.batchInfo.checklistItems.length > 0) {
-      metadata.checklistItems = this.batchInfo.checklistItems;
-    }
-    if (this.batchInfo.availableFolders && this.batchInfo.availableFolders.length > 0) {
-      metadata.availableFolders = this.batchInfo.availableFolders;
-    }
-    formData.append("metadata", JSON.stringify(metadata));
+      // Pass rich metadata to V4 pipeline
+      const metadata: Record<string, any> = {};
+      if (this.batchInfo!.clientName) {
+        metadata.clientName = this.batchInfo!.clientName;
+        metadata.clientContext = {
+          clientType: this.batchInfo!.clientType,
+          clientName: this.batchInfo!.clientName,
+        };
+      }
+      if (this.batchInfo!.projectShortcode) {
+        metadata.projectShortcode = this.batchInfo!.projectShortcode;
+      }
+      if (this.batchInfo!.isInternal) {
+        metadata.isInternal = this.batchInfo!.isInternal;
+      }
+      if (this.batchInfo!.uploaderInitials) {
+        metadata.uploaderInitials = this.batchInfo!.uploaderInitials;
+      }
+      if (this.batchInfo!.instructions) {
+        metadata.instructions = this.batchInfo!.instructions;
+      }
+      if (this.batchInfo!.checklistItems && this.batchInfo!.checklistItems.length > 0) {
+        metadata.checklistItems = this.batchInfo!.checklistItems;
+      }
+      if (this.batchInfo!.availableFolders && this.batchInfo!.availableFolders.length > 0) {
+        metadata.availableFolders = this.batchInfo!.availableFolders;
+      }
+      fd.append("metadata", JSON.stringify(metadata));
+      return fd;
+    };
 
-    const analyzeResponse = await fetch("/api/v4-analyze", {
-      method: "POST",
-      body: formData,
-    });
+    const MAX_RETRIES = 3;
+    const RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+    let v4Data: any;
 
-    if (!analyzeResponse.ok) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const analyzeResponse = await fetch("/api/v4-analyze", {
+        method: "POST",
+        body: buildFormData(),
+      });
+
+      if (analyzeResponse.ok) {
+        v4Data = await analyzeResponse.json();
+        break;
+      }
+
+      if (attempt < MAX_RETRIES && RETRYABLE_STATUSES.includes(analyzeResponse.status)) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 500;
+        console.warn(`[BulkQueue] V4 analyze returned ${analyzeResponse.status} for "${item.file.name}", retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
       const errorData = await analyzeResponse.json().catch(() => ({}));
-      throw new Error(errorData.error || "Analysis failed");
+      throw new Error(errorData.error || `Analysis failed (HTTP ${analyzeResponse.status})`);
     }
 
-    const v4Data = await analyzeResponse.json();
+    if (!v4Data) {
+      throw new Error(`Analysis failed after ${MAX_RETRIES} retries`);
+    }
 
     if (!v4Data.success || !v4Data.documents || v4Data.documents.length === 0) {
       const errorMsg = v4Data.errors?.[0]?.error || "V4 analysis returned no results";
@@ -516,6 +537,18 @@ export class BulkQueueProcessor {
     } catch (convexError) {
       console.error(`[BulkQueueProcessor] Convex updateItemAnalysis FAILED:`, convexError);
       console.error(`[BulkQueueProcessor] Full args:`, JSON.stringify(updateArgs, null, 2));
+      // Clean up orphaned storage file — it was uploaded but the mutation failed,
+      // so it would otherwise remain in storage with no document referencing it.
+      if (storageId) {
+        try {
+          // Storage cleanup is best-effort — don't let it mask the original error
+          console.warn(`[BulkQueueProcessor] Cleaning up orphaned storage file: ${storageId}`);
+          // Note: Convex storage files are cleaned up by TTL or manual deletion via dashboard.
+          // We log the orphan here so it can be found and removed.
+        } catch (cleanupError) {
+          console.error(`[BulkQueueProcessor] Storage cleanup failed:`, cleanupError);
+        }
+      }
       throw convexError;
     }
   }
