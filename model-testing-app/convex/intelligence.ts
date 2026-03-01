@@ -1509,17 +1509,32 @@ export const mergeExtractedIntelligence = mutation({
             method: "ai_extraction" as const,
           };
 
-          // Remove old evidence for this field if exists
-          const existingIdx = newEvidenceTrail.findIndex(
+          // Keep historical evidence: retain up to 5 entries per fieldPath (sorted by confidence desc)
+          const existingForField = newEvidenceTrail.filter(
             (e) => e.fieldPath === field.fieldPath
           );
-          if (existingIdx >= 0) {
-            newEvidenceTrail.splice(existingIdx, 1);
+          if (existingForField.length > 0) {
             mergeResult.fieldsUpdated++;
           } else {
             mergeResult.fieldsAdded++;
           }
           newEvidenceTrail.push(newEvidence);
+
+          // Cap at 5 entries per fieldPath — remove lowest confidence entries
+          if (existingForField.length >= 4) {
+            const allForField = newEvidenceTrail
+              .map((e, i) => ({ entry: e, index: i }))
+              .filter((e) => e.entry.fieldPath === field.fieldPath)
+              .sort((a, b) => b.entry.confidence - a.entry.confidence);
+            // Remove entries beyond the 5th (lowest confidence)
+            for (const item of allForField.slice(5)) {
+              const removeIdx = newEvidenceTrail.indexOf(item.entry);
+              if (removeIdx >= 0) newEvidenceTrail.splice(removeIdx, 1);
+            }
+          }
+
+          // Update confidence map to reflect new highest
+          existingConfidenceMap.set(field.fieldPath, field.confidence);
 
           // Parse field path and set value (e.g., "financials.loanAmount")
           const parts = field.fieldPath.split(".");
@@ -1674,16 +1689,31 @@ export const mergeExtractedIntelligence = mutation({
             method: "ai_extraction" as const,
           };
 
-          const existingIdx = newEvidenceTrail.findIndex(
+          // Keep historical evidence: retain up to 5 entries per fieldPath (sorted by confidence desc)
+          const existingForField = newEvidenceTrail.filter(
             (e) => e.fieldPath === field.fieldPath
           );
-          if (existingIdx >= 0) {
-            newEvidenceTrail.splice(existingIdx, 1);
+          if (existingForField.length > 0) {
             mergeResult.fieldsUpdated++;
           } else {
             mergeResult.fieldsAdded++;
           }
           newEvidenceTrail.push(newEvidence);
+
+          // Cap at 5 entries per fieldPath — remove lowest confidence entries
+          if (existingForField.length >= 4) {
+            const allForField = newEvidenceTrail
+              .map((e, i) => ({ entry: e, index: i }))
+              .filter((e) => e.entry.fieldPath === field.fieldPath)
+              .sort((a, b) => b.entry.confidence - a.entry.confidence);
+            for (const item of allForField.slice(5)) {
+              const removeIdx = newEvidenceTrail.indexOf(item.entry);
+              if (removeIdx >= 0) newEvidenceTrail.splice(removeIdx, 1);
+            }
+          }
+
+          // Update confidence map to reflect new highest
+          existingConfidenceMap.set(field.fieldPath, field.confidence);
 
           const parts = field.fieldPath.split(".");
           if (parts.length === 2) {

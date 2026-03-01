@@ -458,6 +458,9 @@ export async function POST(request: NextRequest) {
         sourceText: f.sourceText,
       }));
 
+      // LEGACY: mergeExtractedIntelligence updates structured clientIntelligence/projectIntelligence tables.
+      // These are still read by the UI for structured intelligence views. Will be deprecated once
+      // all UI reads migrate to knowledgeItems queries.
       // @ts-ignore - Convex type instantiation is excessively deep
       const mergeResult = await client.mutation(api.intelligence.mergeExtractedIntelligence, {
         projectId: projectId ? (projectId as Id<"projects">) : undefined,
@@ -471,7 +474,8 @@ export async function POST(request: NextRequest) {
 
       console.log('[Intelligence Extraction] Merge result:', mergeResult);
 
-      // Also write to new knowledgeItems table (Sprint 3)
+      // PRIMARY: Write to knowledgeItems table — this is the canonical intelligence store.
+      // Errors must propagate — knowledgeItems is the source of truth.
       if (normalizedFields.length > 0) {
         const knowledgeItems = normalizedFields.map(f => ({
           fieldPath: f.fieldPath,
@@ -490,18 +494,13 @@ export async function POST(request: NextRequest) {
           normalizationConfidence: f.confidence,
         }));
 
-        try {
-          const knowledgeResult = await client.mutation(api.knowledgeLibrary.bulkAddKnowledgeItems, {
-            clientId: clientId ? (clientId as Id<"clients">) : undefined,
-            projectId: projectId ? (projectId as Id<"projects">) : undefined,
-            items: knowledgeItems,
-            addedBy: 'ai-extraction',
-          });
-          console.log('[Intelligence Extraction] Knowledge items result:', knowledgeResult);
-        } catch (knowledgeError) {
-          // Log but don't fail - legacy intelligence was already saved
-          console.error('[Intelligence Extraction] Failed to save knowledge items:', knowledgeError);
-        }
+        const knowledgeResult = await client.mutation(api.knowledgeLibrary.bulkAddKnowledgeItems, {
+          clientId: clientId ? (clientId as Id<"clients">) : undefined,
+          projectId: projectId ? (projectId as Id<"projects">) : undefined,
+          items: knowledgeItems,
+          addedBy: 'ai-extraction',
+        });
+        console.log('[Intelligence Extraction] Knowledge items result:', knowledgeResult);
       }
 
       return NextResponse.json({
@@ -696,7 +695,8 @@ export async function POST(request: NextRequest) {
       await client.mutation(api.intelligence.updateProjectIntelligence, updateData);
     }
 
-    // Also write to new knowledgeItems table (Sprint 3) - legacy mode without documentId
+    // PRIMARY: Write to knowledgeItems table — even in legacy mode without documentId.
+    // Errors must propagate — knowledgeItems is the source of truth.
     if (normalizedFields.length > 0) {
       const knowledgeItems = normalizedFields.map(f => ({
         fieldPath: f.fieldPath,
@@ -712,17 +712,13 @@ export async function POST(request: NextRequest) {
         normalizationConfidence: f.confidence,
       }));
 
-      try {
-        const knowledgeResult = await client.mutation(api.knowledgeLibrary.bulkAddKnowledgeItems, {
-          clientId: clientId ? (clientId as Id<"clients">) : undefined,
-          projectId: projectId ? (projectId as Id<"projects">) : undefined,
-          items: knowledgeItems,
-          addedBy: 'ai-extraction',
-        });
-        console.log('[Intelligence Extraction] Knowledge items result (legacy):', knowledgeResult);
-      } catch (knowledgeError) {
-        console.error('[Intelligence Extraction] Failed to save knowledge items (legacy):', knowledgeError);
-      }
+      const knowledgeResult = await client.mutation(api.knowledgeLibrary.bulkAddKnowledgeItems, {
+        clientId: clientId ? (clientId as Id<"clients">) : undefined,
+        projectId: projectId ? (projectId as Id<"projects">) : undefined,
+        items: knowledgeItems,
+        addedBy: 'ai-extraction',
+      });
+      console.log('[Intelligence Extraction] Knowledge items result (legacy):', knowledgeResult);
     }
 
     const fieldsUpdated = normalizedFields.map(f => f.fieldPath);
