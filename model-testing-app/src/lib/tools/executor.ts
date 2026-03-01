@@ -1011,6 +1011,22 @@ const handlers: Record<string, ToolHandler> = {
     }
 
     const documentId = await client.mutation(api.documents.create, createArgs);
+
+    // Auto-suggest checklist matches for the newly filed document
+    if (isConvexId(params.clientId) && params.fileTypeDetected && params.category) {
+      try {
+        await client.mutation(api.knowledgeLibrary.suggestDocumentMatches, {
+          clientId: params.clientId as Id<"clients">,
+          documentId: documentId as Id<"documents">,
+          documentType: params.fileTypeDetected,
+          category: params.category,
+        });
+      } catch (err) {
+        console.error("[saveChatDocument] Checklist suggestion failed:", err);
+        // Don't fail the filing if checklist suggestion fails
+      }
+    }
+
     return documentId;
   },
 };

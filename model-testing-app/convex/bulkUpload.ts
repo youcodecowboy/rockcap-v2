@@ -1066,6 +1066,54 @@ export const fileItem = mutation({
       }
     }
 
+    // === CHECKLIST LINKING: Auto-link document to selected checklist items ===
+    if (item.checklistItemIds && item.checklistItemIds.length > 0) {
+      for (const checklistItemId of item.checklistItemIds) {
+        try {
+          // Check if link already exists
+          const existingLink = await ctx.db
+            .query("knowledgeChecklistDocumentLinks")
+            .withIndex("by_checklist_item", (q: any) => q.eq("checklistItemId", checklistItemId))
+            .filter((q: any) => q.eq(q.field("documentId"), documentId))
+            .first();
+
+          if (!existingLink) {
+            // Check if this is the first link (will be primary)
+            const existingLinks = await ctx.db
+              .query("knowledgeChecklistDocumentLinks")
+              .withIndex("by_checklist_item", (q: any) => q.eq("checklistItemId", checklistItemId))
+              .collect();
+
+            const isPrimary = existingLinks.length === 0;
+
+            await ctx.db.insert("knowledgeChecklistDocumentLinks", {
+              checklistItemId,
+              documentId,
+              documentName: item.fileName,
+              linkedAt: now,
+              linkedBy: undefined,
+              isPrimary,
+            });
+
+            // If first link, mark checklist item as fulfilled
+            if (isPrimary) {
+              await ctx.db.patch(checklistItemId, {
+                status: "fulfilled",
+                suggestedDocumentId: undefined,
+                suggestedDocumentName: undefined,
+                suggestedConfidence: undefined,
+                updatedAt: now,
+              });
+              console.log(`[fileItem] ✅ Checklist item fulfilled: ${checklistItemId}`);
+            }
+          }
+        } catch (checklistError) {
+          console.error(`[fileItem] Failed to link checklist item ${checklistItemId}:`, checklistError);
+          // Don't fail the filing if checklist linking fails
+        }
+      }
+    }
+
     // === FEEDBACK LOOP: Capture correction on final filing ===
     // Only capture if user made edits (userEdits has original values stored)
     const userEdits = item.userEdits || {};
