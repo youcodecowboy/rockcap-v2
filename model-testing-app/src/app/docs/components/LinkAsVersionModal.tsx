@@ -54,6 +54,7 @@ export default function LinkAsVersionModal({
 }: LinkAsVersionModalProps) {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [relationship, setRelationship] = useState<'newer' | 'older'>('newer');
+  const [versionNote, setVersionNote] = useState('');
   const [isLinking, setIsLinking] = useState(false);
 
   const linkAsVersion = useMutation(api.documents.linkAsVersion);
@@ -81,6 +82,7 @@ export default function LinkAsVersionModal({
         sourceDocumentId: sourceDocument._id,
         targetDocumentId: selectedTargetId as Id<"documents">,
         relationship,
+        ...(versionNote.trim() ? { versionNote: versionNote.trim() } : {}),
       });
       onClose();
     } catch (error) {
@@ -94,6 +96,7 @@ export default function LinkAsVersionModal({
   const handleClose = () => {
     setSelectedTargetId(null);
     setRelationship('newer');
+    setVersionNote('');
     onClose();
   };
 
@@ -193,6 +196,23 @@ export default function LinkAsVersionModal({
                 </div>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Step 3: Version note (optional) */}
+        {selectedTarget && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">
+              Change note <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={versionNote}
+              onChange={(e) => setVersionNote(e.target.value)}
+              placeholder="e.g. Updated exit yield to 5.25%, revised unit mix on Block C"
+              className="w-full text-sm border rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={2}
+              maxLength={500}
+            />
           </div>
         )}
 

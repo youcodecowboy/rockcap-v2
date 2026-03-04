@@ -1884,6 +1884,7 @@ export const linkAsVersion = mutation({
     sourceDocumentId: v.id("documents"),
     targetDocumentId: v.id("documents"),
     relationship: v.union(v.literal("newer"), v.literal("older")),
+    versionNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const source = await ctx.db.get(args.sourceDocumentId);
@@ -1893,18 +1894,24 @@ export const linkAsVersion = mutation({
 
     if (args.relationship === "newer") {
       // Source is newer than target → source.previousVersionId = target._id
-      // If source already had a previousVersionId, we're re-linking it
       await ctx.db.patch(args.sourceDocumentId, {
         previousVersionId: args.targetDocumentId,
+        ...(args.versionNote ? { versionNote: args.versionNote } : {}),
       });
     } else {
       // Source is older than target → target.previousVersionId = source._id
-      // If target already had a previousVersionId, insert source between
       const oldPrevious = target.previousVersionId;
 
       await ctx.db.patch(args.targetDocumentId, {
         previousVersionId: args.sourceDocumentId,
       });
+
+      // Store the note on the source (the older version being inserted)
+      if (args.versionNote) {
+        await ctx.db.patch(args.sourceDocumentId, {
+          versionNote: args.versionNote,
+        });
+      }
 
       if (oldPrevious) {
         await ctx.db.patch(args.sourceDocumentId, {

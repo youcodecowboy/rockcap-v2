@@ -56,6 +56,7 @@ interface Document {
   noteCount?: number;
   version?: string;
   previousVersionId?: string;
+  versionNote?: string;
 }
 
 interface VersionGroup {
@@ -416,26 +417,42 @@ export default function FileList({
                   {group.versions.length} versions
                 </Badge>
               </div>
+              {group.head.versionNote && (
+                <div className="ml-14 pl-3 pb-1 -mt-0.5">
+                  <p className="text-[11px] text-gray-500 italic leading-tight">
+                    {group.head.versionNote}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Expanded older versions */}
             {isExpanded && (
               <div className="ml-6 border-l-2 border-gray-200">
                 {olderVersions.map(version => (
-                  <div key={version._id} className="flex items-center">
-                    <div className="flex-shrink-0 pl-3 pr-1">
-                      <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
-                        {version.version || 'V?'}
-                      </Badge>
+                  <div key={version._id}>
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 pl-3 pr-1">
+                        <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                          {version.version || 'V?'}
+                        </Badge>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <FileCard
+                          {...fileCardProps(version)}
+                          viewMode="list"
+                          isSelected={selectedDocIds.has(version._id)}
+                          onSelectionChange={() => toggleSelection(version._id)}
+                        />
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <FileCard
-                        {...fileCardProps(version)}
-                        viewMode="list"
-                        isSelected={selectedDocIds.has(version._id)}
-                        onSelectionChange={() => toggleSelection(version._id)}
-                      />
-                    </div>
+                    {version.versionNote && (
+                      <div className="ml-14 pl-3 pb-1.5 -mt-0.5">
+                        <p className="text-[11px] text-gray-500 italic leading-tight">
+                          {version.versionNote}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

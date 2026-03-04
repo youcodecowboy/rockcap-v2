@@ -44,6 +44,7 @@ export interface Document {
   noteCount?: number;
   version?: string;
   previousVersionId?: string;
+  versionNote?: string;
 }
 
 interface FileCardProps {
