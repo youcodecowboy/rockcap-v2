@@ -39,6 +39,7 @@ interface Document {
   clientName?: string;
   projectName?: string;
   version?: string;
+  previousVersionId?: string;
   uploaderInitials?: string;
   isInternal?: boolean;
   scope?: 'client' | 'internal' | 'personal';

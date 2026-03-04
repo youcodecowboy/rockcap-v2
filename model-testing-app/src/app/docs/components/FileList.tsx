@@ -6,6 +6,7 @@ import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -20,10 +21,13 @@ import {
   FolderOpen,
   FileText,
   ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import FileCard from './FileCard';
 import DirectUploadModal from './DirectUploadModal';
 import InternalUploadModal from './InternalUploadModal';
+import LinkAsVersionModal from './LinkAsVersionModal';
 import { cn } from '@/lib/utils';
 
 interface FolderSelection {
@@ -50,6 +54,13 @@ interface Document {
   projectName?: string;
   hasNotes?: boolean;
   noteCount?: number;
+  version?: string;
+  previousVersionId?: string;
+}
+
+interface VersionGroup {
+  head: Document;
+  versions: Document[];
 }
 
 interface FileListProps {
@@ -80,6 +91,10 @@ export default function FileList({
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [linkVersionDoc, setLinkVersionDoc] = useState<Document | null>(null);
+  const [showLinkVersionModal, setShowLinkVersionModal] = useState(false);
 
   // Convex client for on-demand queries
   const convex = useConvex();
@@ -89,6 +104,8 @@ export default function FileList({
     api.projects.get,
     selectedFolder?.projectId ? { id: selectedFolder.projectId } : "skip"
   );
+
+  const unlinkVersion = useMutation(api.documents.unlinkVersion);
 
   // Drag handlers for the empty folder drop zone
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -163,7 +180,7 @@ export default function FileList({
   // Sort documents
   const sortedDocuments = useMemo(() => {
     const docs = [...documents];
-    
+
     switch (sortBy) {
       case 'date-desc':
         return docs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
@@ -182,26 +199,100 @@ export default function FileList({
     }
   }, [documents, sortBy]);
 
+  // Build version groups from the flat document list
+  const versionGroups = useMemo(() => {
+    // Cast to our local Document type for consistent handling
+    const docs: Document[] = sortedDocuments as Document[];
+    const docById = new Map<string, Document>();
+    const hasNext = new Set<string>(); // docs that are someone's previousVersionId
+
+    docs.forEach(doc => {
+      docById.set(doc._id, doc);
+      if (doc.previousVersionId) {
+        hasNext.add(doc.previousVersionId);
+      }
+    });
+
+    // Find all docs that are in a chain
+    const inChain = new Set<string>();
+    docs.forEach(doc => {
+      if (doc.previousVersionId) {
+        inChain.add(doc._id);
+        if (docById.has(doc.previousVersionId)) {
+          inChain.add(doc.previousVersionId);
+        }
+      }
+    });
+
+    // Find heads: docs in a chain where nobody in this folder points to them as previousVersionId
+    const heads = docs.filter(doc => inChain.has(doc._id) && !hasNext.has(doc._id));
+    const chainMembers = new Set<string>();
+
+    const groups: VersionGroup[] = [];
+
+    heads.forEach(head => {
+      const chain: Document[] = [head];
+      chainMembers.add(head._id);
+      let current: Document = head;
+
+      // Walk backwards from head to build the chain
+      while (current.previousVersionId && docById.has(current.previousVersionId)) {
+        const prev = docById.get(current.previousVersionId)!;
+        chain.unshift(prev); // prepend (oldest first)
+        chainMembers.add(prev._id);
+        current = prev;
+      }
+
+      if (chain.length > 1) {
+        groups.push({ head, versions: chain });
+      } else {
+        // Single doc that has previousVersionId pointing outside this folder — treat as standalone
+        chainMembers.delete(head._id);
+      }
+    });
+
+    // Standalone docs (not in any chain within this folder)
+    const standalone = docs.filter(doc => !chainMembers.has(doc._id));
+
+    return { groups, standalone };
+  }, [sortedDocuments]);
+
+  const toggleSelection = useCallback((docId: string) => {
+    setSelectedDocIds(prev => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+  }, []);
+
+  const toggleGroup = useCallback((headId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(headId)) next.delete(headId);
+      else next.add(headId);
+      return next;
+    });
+  }, []);
+
   const handleDownload = async (doc: Document) => {
     if (!doc.fileStorageId) {
       alert('File not available for download');
       return;
     }
-    
+
     try {
-      // Get the file URL from Convex storage
-      const fileUrl = await convex.query(api.documents.getFileUrl, { 
-        storageId: doc.fileStorageId 
+      const fileUrl = await convex.query(api.documents.getFileUrl, {
+        storageId: doc.fileStorageId
       });
-      
+
       if (!fileUrl) {
         throw new Error('Could not get file URL');
       }
-      
-      // Fetch the file and trigger download
+
       const response = await fetch(fileUrl);
       if (!response.ok) throw new Error('Download failed');
-      
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = window.document.createElement('a');
@@ -221,7 +312,7 @@ export default function FileList({
     if (!confirm(`Are you sure you want to delete "${doc.fileName}"?`)) {
       return;
     }
-    
+
     try {
       await deleteDocument({ id: doc._id });
     } catch (error) {
@@ -238,16 +329,39 @@ export default function FileList({
     router.push(`/docs/reader/${doc._id}`);
   };
 
+  const handleLinkAsVersion = (doc: Document) => {
+    setLinkVersionDoc(doc);
+    setShowLinkVersionModal(true);
+  };
+
+  const handleUnlinkVersion = async (doc: Document) => {
+    if (!confirm(`Unlink "${doc.documentCode || doc.fileName}" from its version chain?`)) return;
+    try {
+      await unlinkVersion({ documentId: doc._id });
+    } catch (error) {
+      console.error('Unlink error:', error);
+      alert('Failed to unlink version');
+    }
+  };
+
   // Title based on context
   const getTitle = () => {
-    if (isInbox) {
-      return 'Inbox';
-    }
-    if (selectedFolder) {
-      return selectedFolder.folderName;
-    }
+    if (isInbox) return 'Inbox';
+    if (selectedFolder) return selectedFolder.folderName;
     return 'Select a folder';
   };
+
+  // Shared props builder for FileCard
+  const fileCardProps = (doc: Document) => ({
+    document: doc,
+    onClick: () => handleView(doc),
+    onView: () => handleView(doc),
+    onDownload: () => handleDownload(doc),
+    onDelete: () => handleDelete(doc),
+    onOpenReader: () => handleOpenReader(doc),
+    onLinkAsVersion: () => handleLinkAsVersion(doc),
+    onUnlinkVersion: () => handleUnlinkVersion(doc),
+  });
 
   // Empty state
   if (!isInbox && !selectedFolder) {
@@ -267,6 +381,80 @@ export default function FileList({
   // Allow upload in folder views (client scope needs clientId, internal/personal just need folder)
   const canUpload = selectedFolder && !isInbox && (
     scope === 'client' ? clientId : true
+  );
+
+  const renderListView = () => (
+    <div>
+      {/* Version groups */}
+      {versionGroups.groups.map(group => {
+        const isExpanded = expandedGroups.has(group.head._id);
+        const olderVersions = group.versions.filter(v => v._id !== group.head._id);
+
+        return (
+          <div key={group.head._id}>
+            {/* Head row with expand chevron */}
+            <div className="flex items-center">
+              <button
+                className="flex-shrink-0 p-1 ml-1 hover:bg-gray-100 rounded"
+                onClick={(e) => { e.stopPropagation(); toggleGroup(group.head._id); }}
+              >
+                {isExpanded
+                  ? <ChevronDown className="w-4 h-4 text-gray-400" />
+                  : <ChevronRight className="w-4 h-4 text-gray-400" />
+                }
+              </button>
+              <div className="flex-1 min-w-0 flex items-center">
+                <div className="flex-1 min-w-0">
+                  <FileCard
+                    {...fileCardProps(group.head)}
+                    viewMode="list"
+                    isSelected={selectedDocIds.has(group.head._id)}
+                    onSelectionChange={() => toggleSelection(group.head._id)}
+                  />
+                </div>
+                <Badge variant="secondary" className="text-[10px] mr-3 flex-shrink-0 whitespace-nowrap">
+                  {group.versions.length} versions
+                </Badge>
+              </div>
+            </div>
+
+            {/* Expanded older versions */}
+            {isExpanded && (
+              <div className="ml-6 border-l-2 border-gray-200">
+                {olderVersions.map(version => (
+                  <div key={version._id} className="flex items-center">
+                    <div className="flex-shrink-0 pl-3 pr-1">
+                      <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                        {version.version || 'V?'}
+                      </Badge>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <FileCard
+                        {...fileCardProps(version)}
+                        viewMode="list"
+                        isSelected={selectedDocIds.has(version._id)}
+                        onSelectionChange={() => toggleSelection(version._id)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Standalone documents */}
+      {versionGroups.standalone.map(doc => (
+        <FileCard
+          key={doc._id}
+          {...fileCardProps(doc)}
+          viewMode="list"
+          isSelected={selectedDocIds.has(doc._id)}
+          onSelectionChange={() => toggleSelection(doc._id)}
+        />
+      ))}
+    </div>
   );
 
   return (
@@ -326,8 +514,8 @@ export default function FileList({
 
           {/* Upload Button */}
           {canUpload && (
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               className="gap-1.5 h-8 flex-shrink-0"
               onClick={() => setShowUploadModal(true)}
             >
@@ -341,19 +529,19 @@ export default function FileList({
       {/* File Content */}
       <div className="flex-1 overflow-auto">
         {sortedDocuments.length === 0 ? (
-          <div 
+          <div
             className="flex items-center justify-center h-full"
             onDragOver={canUpload ? handleDragOver : undefined}
             onDragLeave={canUpload ? handleDragLeave : undefined}
             onDrop={canUpload ? handleDrop : undefined}
           >
-            <div 
+            <div
               className={cn(
                 "text-center py-12 px-8 rounded-xl transition-all max-w-md mx-4",
                 canUpload && "cursor-pointer",
-                isDragOver 
-                  ? "border-2 border-dashed border-blue-500 bg-blue-50" 
-                  : canUpload 
+                isDragOver
+                  ? "border-2 border-dashed border-blue-500 bg-blue-50"
+                  : canUpload
                     ? "border-2 border-dashed border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                     : ""
               )}
@@ -372,8 +560,8 @@ export default function FileList({
                   <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-1">No files</h3>
                   <p className="text-sm text-gray-500">
-                    {isInbox 
-                      ? 'No unfiled documents. Great job!' 
+                    {isInbox
+                      ? 'No unfiled documents. Great job!'
                       : 'This folder is empty.'}
                   </p>
                   {canUpload && (
@@ -390,31 +578,13 @@ export default function FileList({
             {sortedDocuments.map((doc) => (
               <FileCard
                 key={doc._id}
-                document={doc}
+                {...fileCardProps(doc)}
                 viewMode="grid"
-                onClick={() => handleView(doc)}
-                onView={() => handleView(doc)}
-                onDownload={() => handleDownload(doc)}
-                onDelete={() => handleDelete(doc)}
-                onOpenReader={() => handleOpenReader(doc)}
               />
             ))}
           </div>
         ) : (
-          <div>
-            {sortedDocuments.map((doc) => (
-              <FileCard
-                key={doc._id}
-                document={doc}
-                viewMode="list"
-                onClick={() => handleView(doc)}
-                onView={() => handleView(doc)}
-                onDownload={() => handleDownload(doc)}
-                onDelete={() => handleDelete(doc)}
-                onOpenReader={() => handleOpenReader(doc)}
-              />
-            ))}
-          </div>
+          renderListView()
         )}
       </div>
 
@@ -443,6 +613,16 @@ export default function FileList({
           scope={scope}
           folderId={selectedFolder.folderId}
           folderName={selectedFolder.folderName}
+        />
+      )}
+
+      {/* Link as Version Modal */}
+      {linkVersionDoc && (
+        <LinkAsVersionModal
+          isOpen={showLinkVersionModal}
+          onClose={() => { setShowLinkVersionModal(false); setLinkVersionDoc(null); }}
+          sourceDocument={linkVersionDoc}
+          folderDocuments={sortedDocuments.filter(d => d._id !== linkVersionDoc._id)}
         />
       )}
     </div>

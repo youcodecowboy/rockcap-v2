@@ -3,6 +3,7 @@
 import { Id } from '../../../../convex/_generated/dataModel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,13 +21,14 @@ import {
   Download,
   FolderInput,
   Trash2,
-  ExternalLink,
   BookOpen,
+  Layers,
+  Unlink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DocumentNotesIndicator from '@/components/DocumentNotesIndicator';
 
-interface Document {
+export interface Document {
   _id: Id<"documents">;
   fileName: string;
   documentCode?: string;
@@ -40,41 +42,51 @@ interface Document {
   projectName?: string;
   hasNotes?: boolean;
   noteCount?: number;
+  version?: string;
+  previousVersionId?: string;
 }
 
 interface FileCardProps {
   document: Document;
   viewMode: 'grid' | 'list';
+  isSelected?: boolean;
+  onSelectionChange?: (selected: boolean) => void;
   onClick: () => void;
   onView: () => void;
   onDownload: () => void;
   onMove?: () => void;
   onDelete?: () => void;
   onOpenReader?: () => void;
+  onLinkAsVersion?: () => void;
+  onUnlinkVersion?: () => void;
 }
 
 export default function FileCard({
   document,
   viewMode,
+  isSelected,
+  onSelectionChange,
   onClick,
   onView,
   onDownload,
   onMove,
   onDelete,
   onOpenReader,
+  onLinkAsVersion,
+  onUnlinkVersion,
 }: FileCardProps) {
-  const getFileIcon = () => {
+  const getFileIcon = (iconClass = "w-8 h-8") => {
     const type = document.fileType.toLowerCase();
     if (type.includes('pdf')) {
-      return <FileText className="w-8 h-8 text-red-500" />;
+      return <FileText className={cn(iconClass, "text-red-500")} />;
     }
     if (type.includes('sheet') || type.includes('excel') || type.includes('csv')) {
-      return <FileSpreadsheet className="w-8 h-8 text-green-600" />;
+      return <FileSpreadsheet className={cn(iconClass, "text-green-600")} />;
     }
     if (type.includes('image') || type.includes('png') || type.includes('jpg') || type.includes('jpeg')) {
-      return <FileImage className="w-8 h-8 text-blue-500" />;
+      return <FileImage className={cn(iconClass, "text-blue-500")} />;
     }
-    return <File className="w-8 h-8 text-gray-500" />;
+    return <File className={cn(iconClass, "text-gray-500")} />;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -110,31 +122,100 @@ export default function FileCard({
     action();
   };
 
+  const renderDropdownItems = () => (
+    <>
+      <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onView)}>
+        <Eye className="w-4 h-4 mr-2" />
+        View Details
+      </DropdownMenuItem>
+      {onOpenReader && (
+        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onOpenReader)}>
+          <BookOpen className="w-4 h-4 mr-2" />
+          Open in Reader
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDownload)}>
+        <Download className="w-4 h-4 mr-2" />
+        Download
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      {onLinkAsVersion && (
+        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onLinkAsVersion)}>
+          <Layers className="w-4 h-4 mr-2" />
+          Link as Version
+        </DropdownMenuItem>
+      )}
+      {onUnlinkVersion && document.previousVersionId && (
+        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onUnlinkVersion)}>
+          <Unlink className="w-4 h-4 mr-2" />
+          Unlink Version
+        </DropdownMenuItem>
+      )}
+      {onMove && (
+        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onMove)}>
+          <FolderInput className="w-4 h-4 mr-2" />
+          Move to Folder
+        </DropdownMenuItem>
+      )}
+      {onDelete && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={(e) => handleDropdownAction(e as any, onDelete)}
+            className="text-red-600"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete
+          </DropdownMenuItem>
+        </>
+      )}
+    </>
+  );
+
   if (viewMode === 'list') {
     return (
       <div
         onClick={onClick}
-        className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 group"
+        className="flex items-center gap-3 px-3 py-1.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 group"
       >
+        {/* Checkbox */}
+        {onSelectionChange && (
+          <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={(checked) => onSelectionChange(!!checked)}
+            />
+          </div>
+        )}
+
         {/* Icon */}
         <div className="flex-shrink-0">
-          {getFileIcon()}
+          {getFileIcon("w-5 h-5")}
         </div>
 
         {/* Main Content */}
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-gray-900 truncate">
+          <div className="text-sm font-medium text-gray-900 truncate">
             {document.documentCode || document.fileName}
           </div>
-          <div className="text-sm text-gray-500 truncate">
-            {document.documentCode ? document.fileName : document.summary.slice(0, 60) + '...'}
+          <div className="text-xs text-gray-500 truncate">
+            {document.documentCode ? document.fileName : document.summary?.slice(0, 60) + '...'}
           </div>
         </div>
+
+        {/* Version Badge */}
+        {document.version && (
+          <div className="flex-shrink-0 hidden sm:block">
+            <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
+              {document.version}
+            </Badge>
+          </div>
+        )}
 
         {/* Type Badge */}
         <div className="flex-shrink-0 hidden sm:block">
           {document.fileTypeDetected && (
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
               {document.fileTypeDetected}
             </Badge>
           )}
@@ -142,7 +223,7 @@ export default function FileCard({
 
         {/* Category Badge */}
         <div className="flex-shrink-0 hidden md:block">
-          <Badge variant="outline" className={cn("text-xs", getCategoryColor(document.category))}>
+          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getCategoryColor(document.category))}>
             {document.category}
           </Badge>
         </div>
@@ -155,12 +236,12 @@ export default function FileCard({
         )}
 
         {/* Date */}
-        <div className="flex-shrink-0 text-sm text-gray-500 hidden lg:block w-24">
+        <div className="flex-shrink-0 text-xs text-gray-500 hidden lg:block w-20">
           {formatDate(document.uploadedAt)}
         </div>
 
         {/* Size */}
-        <div className="flex-shrink-0 text-sm text-gray-500 hidden lg:block w-20 text-right">
+        <div className="flex-shrink-0 text-xs text-gray-500 hidden lg:block w-16 text-right">
           {formatFileSize(document.fileSize)}
         </div>
 
@@ -168,46 +249,17 @@ export default function FileCard({
         <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-8 w-8 p-0"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onView)}>
-                <Eye className="w-4 h-4 mr-2" />
-                View Details
-              </DropdownMenuItem>
-              {onOpenReader && (
-                <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onOpenReader)}>
-                  <BookOpen className="w-4 h-4 mr-2" />
-                  Open in Reader
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDownload)}>
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {onMove && (
-                <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onMove)}>
-                  <FolderInput className="w-4 h-4 mr-2" />
-                  Move to Folder
-                </DropdownMenuItem>
-              )}
-              {onDelete && (
-                <DropdownMenuItem
-                  onClick={(e) => handleDropdownAction(e as any, onDelete)}
-                  className="text-red-600"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              )}
+              {renderDropdownItems()}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -228,9 +280,9 @@ export default function FileCard({
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={(e) => e.stopPropagation()}
             >
@@ -238,36 +290,7 @@ export default function FileCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onView)}>
-              <Eye className="w-4 h-4 mr-2" />
-              View Details
-            </DropdownMenuItem>
-            {onOpenReader && (
-              <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onOpenReader)}>
-                <BookOpen className="w-4 h-4 mr-2" />
-                Open in Reader
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDownload)}>
-              <Download className="w-4 h-4 mr-2" />
-              Download
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {onMove && (
-              <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onMove)}>
-                <FolderInput className="w-4 h-4 mr-2" />
-                Move to Folder
-              </DropdownMenuItem>
-            )}
-            {onDelete && (
-              <DropdownMenuItem
-                onClick={(e) => handleDropdownAction(e as any, onDelete)}
-                className="text-red-600"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            )}
+            {renderDropdownItems()}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -286,6 +309,11 @@ export default function FileCard({
 
       {/* Badges */}
       <div className="flex flex-wrap gap-1.5 mb-3">
+        {document.version && (
+          <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
+            {document.version}
+          </Badge>
+        )}
         {document.fileTypeDetected && (
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
             {document.fileTypeDetected}

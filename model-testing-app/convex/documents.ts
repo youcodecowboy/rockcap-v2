@@ -1838,3 +1838,165 @@ export const getDocumentIntelligence = query({
       .collect();
   },
 });
+
+// =============================================================================
+// DOCUMENT VERSIONING
+// =============================================================================
+
+// Helper: Walk the version chain to the root (oldest) and re-assign V1.0, V2.0, etc.
+async function assignVersionNumbers(ctx: any, anyDocInChain: any) {
+  // Walk backwards to find the root (oldest version)
+  let current = await ctx.db
+    .query("documents")
+    .filter((q: any) => q.eq(q.field("_id"), anyDocInChain))
+    .first();
+  while (current?.previousVersionId) {
+    const prev = await ctx.db
+      .query("documents")
+      .filter((q: any) => q.eq(q.field("_id"), current.previousVersionId))
+      .first();
+    if (!prev || prev.isDeleted) break;
+    current = prev;
+  }
+
+  // Walk forward from root, assigning version numbers
+  let versionNum = 1;
+  let docId = current?._id;
+
+  while (docId) {
+    await ctx.db.patch(docId, { version: `V${versionNum}.0` });
+
+    // Find the next doc in chain (the one whose previousVersionId = docId)
+    const next = await ctx.db
+      .query("documents")
+      .withIndex("by_previous_version", (q: any) => q.eq("previousVersionId", docId))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
+      .first();
+
+    docId = next?._id || null;
+    versionNum++;
+  }
+}
+
+// Mutation: Link two documents as versions of each other
+export const linkAsVersion = mutation({
+  args: {
+    sourceDocumentId: v.id("documents"),
+    targetDocumentId: v.id("documents"),
+    relationship: v.union(v.literal("newer"), v.literal("older")),
+  },
+  handler: async (ctx, args) => {
+    const source = await ctx.db.get(args.sourceDocumentId);
+    const target = await ctx.db.get(args.targetDocumentId);
+    if (!source || !target) throw new Error("Document not found");
+    if (source.isDeleted || target.isDeleted) throw new Error("Cannot link deleted documents");
+
+    if (args.relationship === "newer") {
+      // Source is newer than target → source.previousVersionId = target._id
+      // If source already had a previousVersionId, we're re-linking it
+      await ctx.db.patch(args.sourceDocumentId, {
+        previousVersionId: args.targetDocumentId,
+      });
+    } else {
+      // Source is older than target → target.previousVersionId = source._id
+      // If target already had a previousVersionId, insert source between
+      const oldPrevious = target.previousVersionId;
+
+      await ctx.db.patch(args.targetDocumentId, {
+        previousVersionId: args.sourceDocumentId,
+      });
+
+      if (oldPrevious) {
+        await ctx.db.patch(args.sourceDocumentId, {
+          previousVersionId: oldPrevious,
+        });
+      }
+    }
+
+    // Auto-assign version numbers across the chain
+    await assignVersionNumbers(ctx, args.sourceDocumentId);
+
+    return { success: true };
+  },
+});
+
+// Mutation: Remove a document from its version chain
+export const unlinkVersion = mutation({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc) throw new Error("Document not found");
+
+    // Find docs pointing to this one as their previous
+    const nextDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_previous_version", (q: any) => q.eq("previousVersionId", args.documentId))
+      .filter((q: any) => q.neq(q.field("isDeleted"), true))
+      .collect();
+
+    // Relink: point next docs to this doc's previous (skip over this doc)
+    for (const nextDoc of nextDocs) {
+      await ctx.db.patch(nextDoc._id, {
+        previousVersionId: doc.previousVersionId || undefined,
+      });
+    }
+
+    // Clear this doc's version fields
+    await ctx.db.patch(args.documentId, {
+      previousVersionId: undefined,
+      version: undefined,
+    });
+
+    // Re-number remaining chain if it still exists
+    if (doc.previousVersionId) {
+      await assignVersionNumbers(ctx, doc.previousVersionId);
+    } else if (nextDocs.length > 0) {
+      await assignVersionNumbers(ctx, nextDocs[0]._id);
+    }
+
+    return { success: true };
+  },
+});
+
+// Query: Get the full version chain for a document (oldest → newest)
+export const getVersionChain = query({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db
+      .query("documents")
+      .filter((q) => q.eq(q.field("_id"), args.documentId))
+      .first();
+    if (!doc || doc.isDeleted) return [];
+
+    // Walk backwards to find root
+    let current = doc;
+    while (current.previousVersionId) {
+      const prev = await ctx.db
+        .query("documents")
+        .filter((q) => q.eq(q.field("_id"), current.previousVersionId))
+        .first();
+      if (!prev || prev.isDeleted) break;
+      current = prev;
+    }
+
+    // Walk forward from root collecting chain
+    const chain = [current];
+    let nextDoc = await ctx.db
+      .query("documents")
+      .withIndex("by_previous_version", (q: any) => q.eq("previousVersionId", current._id))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .first();
+
+    while (nextDoc) {
+      chain.push(nextDoc);
+      const nextId = nextDoc._id;
+      nextDoc = await ctx.db
+        .query("documents")
+        .withIndex("by_previous_version", (q: any) => q.eq("previousVersionId", nextId))
+        .filter((q) => q.neq(q.field("isDeleted"), true))
+        .first();
+    }
+
+    return chain; // Oldest to newest
+  },
+});
