@@ -1884,6 +1884,7 @@ export const linkAsVersion = mutation({
     sourceDocumentId: v.id("documents"),
     targetDocumentId: v.id("documents"),
     relationship: v.union(v.literal("newer"), v.literal("older")),
+    sourceVersion: v.string(), // User-specified version for the source document
     versionNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1896,21 +1897,28 @@ export const linkAsVersion = mutation({
       // Source is newer than target → source.previousVersionId = target._id
       await ctx.db.patch(args.sourceDocumentId, {
         previousVersionId: args.targetDocumentId,
+        version: args.sourceVersion,
         ...(args.versionNote ? { versionNote: args.versionNote } : {}),
       });
+      // Ensure the target has a version if it doesn't already
+      if (!target.version) {
+        await ctx.db.patch(args.targetDocumentId, { version: "V1.0" });
+      }
     } else {
       // Source is older than target → target.previousVersionId = source._id
       const oldPrevious = target.previousVersionId;
 
+      await ctx.db.patch(args.sourceDocumentId, {
+        version: args.sourceVersion,
+        ...(args.versionNote ? { versionNote: args.versionNote } : {}),
+      });
+
       await ctx.db.patch(args.targetDocumentId, {
         previousVersionId: args.sourceDocumentId,
       });
-
-      // Store the note on the source (the older version being inserted)
-      if (args.versionNote) {
-        await ctx.db.patch(args.sourceDocumentId, {
-          versionNote: args.versionNote,
-        });
+      // Ensure the target has a version if it doesn't already
+      if (!target.version) {
+        await ctx.db.patch(args.targetDocumentId, { version: "V2.0" });
       }
 
       if (oldPrevious) {
@@ -1919,9 +1927,6 @@ export const linkAsVersion = mutation({
         });
       }
     }
-
-    // Auto-assign version numbers across the chain
-    await assignVersionNumbers(ctx, args.sourceDocumentId);
 
     return { success: true };
   },

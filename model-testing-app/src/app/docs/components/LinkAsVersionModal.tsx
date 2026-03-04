@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -46,6 +46,41 @@ interface LinkAsVersionModalProps {
   folderDocuments: Document[];
 }
 
+// Parse "V1.2" → { major: 1, minor: 2 }, returns null if unparseable
+function parseVersion(v?: string): { major: number; minor: number } | null {
+  if (!v) return null;
+  const match = v.match(/^V?(\d+)\.(\d+)$/i);
+  if (!match) return null;
+  return { major: parseInt(match[1]), minor: parseInt(match[2]) };
+}
+
+// Suggest a version number based on the target's version and the relationship
+function suggestVersion(targetVersion: string | undefined, relationship: 'newer' | 'older'): string {
+  const parsed = parseVersion(targetVersion);
+
+  if (!parsed) {
+    // Target has no parseable version
+    return relationship === 'newer' ? 'V2.0' : 'V1.0';
+  }
+
+  if (relationship === 'newer') {
+    // Default: bump minor (V1.2 → V1.3). If minor is 0, bump major (V2.0 → V3.0)
+    if (parsed.minor === 0) {
+      return `V${parsed.major + 1}.0`;
+    }
+    return `V${parsed.major}.${parsed.minor + 1}`;
+  } else {
+    // Older: decrement. V2.0 → V1.0, V1.3 → V1.2
+    if (parsed.minor > 0) {
+      return `V${parsed.major}.${parsed.minor - 1}`;
+    }
+    if (parsed.major > 1) {
+      return `V${parsed.major - 1}.0`;
+    }
+    return 'V0.1';
+  }
+}
+
 export default function LinkAsVersionModal({
   isOpen,
   onClose,
@@ -54,10 +89,20 @@ export default function LinkAsVersionModal({
 }: LinkAsVersionModalProps) {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [relationship, setRelationship] = useState<'newer' | 'older'>('newer');
+  const [versionNumber, setVersionNumber] = useState('');
   const [versionNote, setVersionNote] = useState('');
   const [isLinking, setIsLinking] = useState(false);
 
   const linkAsVersion = useMutation(api.documents.linkAsVersion);
+
+  const selectedTarget = folderDocuments.find(d => d._id === selectedTargetId);
+
+  // Update suggested version when target or relationship changes
+  useEffect(() => {
+    if (selectedTarget) {
+      setVersionNumber(suggestVersion(selectedTarget.version, relationship));
+    }
+  }, [selectedTarget, relationship]);
 
   const getFileIcon = (fileType: string) => {
     const type = fileType.toLowerCase();
@@ -75,13 +120,14 @@ export default function LinkAsVersionModal({
   };
 
   const handleLink = async () => {
-    if (!selectedTargetId) return;
+    if (!selectedTargetId || !versionNumber.trim()) return;
     setIsLinking(true);
     try {
       await linkAsVersion({
         sourceDocumentId: sourceDocument._id,
         targetDocumentId: selectedTargetId as Id<"documents">,
         relationship,
+        sourceVersion: versionNumber.trim(),
         ...(versionNote.trim() ? { versionNote: versionNote.trim() } : {}),
       });
       onClose();
@@ -96,11 +142,10 @@ export default function LinkAsVersionModal({
   const handleClose = () => {
     setSelectedTargetId(null);
     setRelationship('newer');
+    setVersionNumber('');
     setVersionNote('');
     onClose();
   };
-
-  const selectedTarget = folderDocuments.find(d => d._id === selectedTargetId);
 
   // Filter out documents that are already in the same version chain
   const availableDocuments = folderDocuments.filter(d => d._id !== sourceDocument._id);
@@ -199,7 +244,32 @@ export default function LinkAsVersionModal({
           </div>
         )}
 
-        {/* Step 3: Version note (optional) */}
+        {/* Step 3: Version number */}
+        {selectedTarget && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">Version number</label>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                  {selectedTarget.version || 'V1.0'}
+                </Badge>
+                <span className="text-gray-400">&rarr;</span>
+              </div>
+              <input
+                type="text"
+                value={versionNumber}
+                onChange={(e) => setVersionNumber(e.target.value)}
+                placeholder="e.g. V2.0"
+                className="flex-1 text-sm font-mono border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <p className="text-[11px] text-gray-400">
+              Major change (V1.0 &rarr; V2.0) or minor revision (V1.0 &rarr; V1.1)
+            </p>
+          </div>
+        )}
+
+        {/* Step 4: Version note (optional) */}
         {selectedTarget && (
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700">
@@ -222,7 +292,7 @@ export default function LinkAsVersionModal({
           </Button>
           <Button
             onClick={handleLink}
-            disabled={!selectedTargetId || isLinking}
+            disabled={!selectedTargetId || !versionNumber.trim() || isLinking}
           >
             {isLinking ? 'Linking...' : 'Link Versions'}
           </Button>
