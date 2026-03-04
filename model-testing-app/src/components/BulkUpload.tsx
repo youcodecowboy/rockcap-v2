@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
@@ -21,6 +21,8 @@ import {
   Building,
   User,
   Lock,
+  Search,
+  RotateCcw,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -86,6 +88,26 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
   const [newClientType, setNewClientType] = useState<string>('');
   const [editingShortcode, setEditingShortcode] = useState(false);
   const [editShortcodeValue, setEditShortcodeValue] = useState('');
+
+  // Searchable dropdown state
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [showClientResults, setShowClientResults] = useState(false);
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const [showProjectResults, setShowProjectResults] = useState(false);
+  const clientDropdownRef = useRef<HTMLDivElement>(null);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Previous selection state
+  const [previousSelection, setPreviousSelection] = useState<{
+    scope: DocumentScope;
+    clientId?: string;
+    clientName?: string;
+    projectId?: string;
+    projectName?: string;
+    internalFolderId?: string;
+    personalFolderId?: string;
+  } | null>(null);
+  const [previousSelectionDismissed, setPreviousSelectionDismissed] = useState(false);
 
   // Background processing state (for >5 files)
   const [showBackgroundDialog, setShowBackgroundDialog] = useState(false);
@@ -186,6 +208,69 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
       setNewProjectShortcode(shortcodeSuggestion.shortcode);
     }
   }, [shortcodeSuggestion, newProjectShortcode]);
+
+  // Load previous selection from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('rockcap-filing-last-selection');
+      if (stored) {
+        setPreviousSelection(JSON.parse(stored));
+      }
+    } catch {}
+  }, []);
+
+  // Close searchable dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(event.target as Node)) {
+        setShowClientResults(false);
+      }
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(event.target as Node)) {
+        setShowProjectResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filtered clients for searchable dropdown
+  const filteredClients = useMemo(() => {
+    if (!clients) return [];
+    if (!clientSearchQuery) return clients.slice(0, 10);
+    const q = clientSearchQuery.toLowerCase();
+    return clients.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.companyName?.toLowerCase().includes(q)
+    ).slice(0, 10);
+  }, [clients, clientSearchQuery]);
+
+  // Filtered projects for searchable dropdown
+  const filteredProjects = useMemo(() => {
+    if (!projects) return [];
+    if (!projectSearchQuery) return projects.slice(0, 10);
+    const q = projectSearchQuery.toLowerCase();
+    return projects.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.projectShortcode?.toLowerCase().includes(q)
+    ).slice(0, 10);
+  }, [projects, projectSearchQuery]);
+
+  // Apply previous selection
+  const applyPreviousSelection = useCallback(() => {
+    if (!previousSelection) return;
+    setUploadScope(previousSelection.scope);
+    if (previousSelection.scope === 'client' && previousSelection.clientId) {
+      setSelectedClientId(previousSelection.clientId as Id<"clients">);
+      if (previousSelection.projectId) {
+        setSelectedProjectId(previousSelection.projectId as Id<"projects">);
+      }
+    } else if (previousSelection.scope === 'internal' && previousSelection.internalFolderId) {
+      setSelectedInternalFolderId(previousSelection.internalFolderId);
+    } else if (previousSelection.scope === 'personal' && previousSelection.personalFolderId) {
+      setSelectedPersonalFolderId(previousSelection.personalFolderId);
+    }
+    setPreviousSelectionDismissed(true);
+  }, [previousSelection]);
 
   // File handling
   const handleFiles = useCallback((newFiles: File[]) => {
@@ -309,6 +394,19 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
 
     setIsUploading(true);
     setUploadProgress({ processed: 0, total: files.length, currentFile: '' });
+
+    // Save selection to localStorage for "use previous" feature
+    try {
+      localStorage.setItem('rockcap-filing-last-selection', JSON.stringify({
+        scope: uploadScope,
+        clientId: uploadScope === 'client' ? selectedClientId || undefined : undefined,
+        clientName: uploadScope === 'client' ? selectedClient?.name : undefined,
+        projectId: uploadScope === 'client' ? selectedProjectId || undefined : undefined,
+        projectName: uploadScope === 'client' ? selectedProject?.name : undefined,
+        internalFolderId: uploadScope === 'internal' ? selectedInternalFolderId || undefined : undefined,
+        personalFolderId: uploadScope === 'personal' ? selectedPersonalFolderId || undefined : undefined,
+      }));
+    } catch {}
 
     try {
       // Create batch with scope-aware parameters
@@ -539,6 +637,38 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Use Previous Selection banner */}
+          {previousSelection && !previousSelectionDismissed && !isUploading && (
+            <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2 text-sm text-blue-800">
+                <RotateCcw className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  Use previous: <span className="font-medium">
+                    {previousSelection.scope === 'client' ? 'Client' : previousSelection.scope === 'internal' ? 'Internal' : 'Personal'}
+                    {previousSelection.clientName && ` → ${previousSelection.clientName}`}
+                    {previousSelection.projectName && ` → ${previousSelection.projectName}`}
+                  </span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs bg-white"
+                  onClick={applyPreviousSelection}
+                >
+                  Apply
+                </Button>
+                <button
+                  onClick={() => setPreviousSelectionDismissed(true)}
+                  className="text-blue-400 hover:text-blue-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-3">
             <button
               onClick={() => {
@@ -631,25 +761,71 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Select
-              value={selectedClientId || ''}
-              onValueChange={(value) => {
-                setSelectedClientId(value as Id<"clients">);
-                setSelectedProjectId(''); // Reset project when client changes
-              }}
-              disabled={isUploading}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a client..." />
-              </SelectTrigger>
-              <SelectContent>
-                {clients?.map((client) => (
-                  <SelectItem key={client._id} value={client._id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative" ref={clientDropdownRef}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  type="text"
+                  value={selectedClient ? selectedClient.name : clientSearchQuery}
+                  onChange={(e) => {
+                    setClientSearchQuery(e.target.value);
+                    setShowClientResults(true);
+                    if (selectedClientId) {
+                      setSelectedClientId('');
+                      setSelectedProjectId('');
+                    }
+                  }}
+                  onFocus={() => {
+                    if (!selectedClient) setShowClientResults(true);
+                  }}
+                  placeholder="Search for a client..."
+                  className="pl-9 pr-9"
+                  disabled={isUploading}
+                />
+                {selectedClient && (
+                  <button
+                    onClick={() => {
+                      setSelectedClientId('');
+                      setSelectedProjectId('');
+                      setClientSearchQuery('');
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {showClientResults && filteredClients.length > 0 && (
+                <div className="absolute z-[100] w-full mt-1 bg-white border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {filteredClients.map((client) => (
+                    <button
+                      key={client._id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedClientId(client._id);
+                        setSelectedProjectId('');
+                        setClientSearchQuery('');
+                        setShowClientResults(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2"
+                    >
+                      <Building2 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <div>
+                        <div className="text-sm font-medium">{client.name}</div>
+                        {client.companyName && (
+                          <div className="text-xs text-muted-foreground">{client.companyName}</div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {showClientResults && filteredClients.length === 0 && clientSearchQuery && (
+                <div className="absolute z-[100] w-full mt-1 bg-white border border-border rounded-md shadow-lg p-3 text-sm text-muted-foreground">
+                  No clients found matching &ldquo;{clientSearchQuery}&rdquo;
+                </div>
+              )}
+            </div>
 
             <Button
               variant="outline"
@@ -754,28 +930,80 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Select
-              value={selectedProjectId || 'none'}
-              onValueChange={(value) => setSelectedProjectId(value === 'none' ? '' : value as Id<"projects">)}
-              disabled={isUploading}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a project (optional)..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No project (Client-level documents)</SelectItem>
-                {projects?.map((project) => (
-                  <SelectItem key={project._id} value={project._id}>
-                    {project.name}
-                    {project.projectShortcode && (
-                      <span className="ml-2 text-muted-foreground">
-                        ({project.projectShortcode})
-                      </span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative" ref={projectDropdownRef}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  type="text"
+                  value={selectedProject ? selectedProject.name : projectSearchQuery}
+                  onChange={(e) => {
+                    setProjectSearchQuery(e.target.value);
+                    setShowProjectResults(true);
+                    if (selectedProjectId) {
+                      setSelectedProjectId('');
+                    }
+                  }}
+                  onFocus={() => {
+                    if (!selectedProject) setShowProjectResults(true);
+                  }}
+                  placeholder="Search for a project (optional)..."
+                  className="pl-9 pr-9"
+                  disabled={isUploading}
+                />
+                {selectedProject && (
+                  <button
+                    onClick={() => {
+                      setSelectedProjectId('');
+                      setProjectSearchQuery('');
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {showProjectResults && (
+                <div className="absolute z-[100] w-full mt-1 bg-white border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProjectId('');
+                      setProjectSearchQuery('');
+                      setShowProjectResults(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 border-b border-border"
+                  >
+                    <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="text-sm text-muted-foreground">No project (Client-level documents)</div>
+                  </button>
+                  {filteredProjects.map((project) => (
+                    <button
+                      key={project._id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProjectId(project._id);
+                        setProjectSearchQuery('');
+                        setShowProjectResults(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2"
+                    >
+                      <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <div>
+                        <div className="text-sm font-medium">{project.name}</div>
+                        {project.projectShortcode && (
+                          <div className="text-xs text-muted-foreground">{project.projectShortcode}</div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  {filteredProjects.length === 0 && projectSearchQuery && (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      No projects found matching &ldquo;{projectSearchQuery}&rdquo;
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <Button
               variant="outline"

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
 import { getAuthenticatedConvexClient } from '@/lib/auth';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -7,13 +8,7 @@ import { extractTextFromFile } from '@/lib/fileProcessor';
 export const runtime = 'nodejs';
 export const maxDuration = 120; // 2 minutes for extraction
 
-// OpenAI configuration
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_MODEL = 'gpt-4o';
-
-// Fallback to Together AI
-const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
-const TOGETHER_MODEL = 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
+const MODEL = 'claude-haiku-4-5-20251001';
 
 interface Attendee {
   name: string;
@@ -42,27 +37,18 @@ interface MeetingExtractionResult {
   confidence: number;
 }
 
-/**
- * Meeting Extraction Agent
- * Extracts structured meeting data from transcripts, notes, or summaries
- */
-async function runMeetingExtraction(
-  content: string,
-  apiKey: string,
-  useOpenAI: boolean
-): Promise<MeetingExtractionResult> {
-  const systemPrompt = `You are an expert meeting analysis agent for a real estate finance company called RockCap.
-Your task is to extract structured information from meeting transcripts, notes, or summaries.
+const SYSTEM_PROMPT = `You are an expert meeting analysis agent for a real estate finance company called RockCap.
+Your task is to extract structured information from meeting transcripts, notes, summaries, or structured data exports (JSON from transcription services, etc.).
 
 EXTRACTION TARGETS:
 1. TITLE: Generate a clear, descriptive meeting title (e.g., "Progress Meeting - [Project Name]")
 2. DATE: Extract the meeting date in ISO format (YYYY-MM-DD). If only relative ("last Tuesday"), estimate based on today.
 3. MEETING TYPE: Classify as: progress, kickoff, review, site_visit, call, or other
 4. ATTENDEES: Extract all people mentioned with their roles and companies if available
-5. SUMMARY: Write a 2-3 sentence executive summary of the meeting
-6. KEY POINTS: List the main discussion topics (3-7 bullet points)
-7. DECISIONS: List any decisions that were made during the meeting
-8. ACTION ITEMS: Extract all tasks/follow-ups with assignee and due date if mentioned
+5. SUMMARY: Write a concise 2-4 sentence executive summary capturing the key outcomes and context
+6. KEY POINTS: List the main discussion topics (3-7 bullet points). Each should be a complete, informative statement — not just a topic label.
+7. DECISIONS: List any decisions that were made during the meeting. Be specific about what was decided and any conditions.
+8. ACTION ITEMS: Extract ALL tasks, follow-ups, commitments, and next steps with assignee and due date if mentioned
 
 ATTENDEE GUIDELINES:
 - Include everyone mentioned as present or participating
@@ -70,10 +56,22 @@ ATTENDEE GUIDELINES:
 - Extract company if mentioned (e.g., "RockCap", "Smith Architects")
 
 ACTION ITEM GUIDELINES:
-- Each action item should be specific and actionable
-- Include assignee name if mentioned (e.g., "John to send the report")
+- Each action item should be specific and actionable — avoid vague items like "follow up"
+- Start descriptions with a verb (e.g., "Send updated cost schedule to lender", "Arrange site inspection")
+- Include assignee name if mentioned (e.g., "John to send the report" → assignee: "John")
 - Include due date if mentioned (use ISO format)
 - Generate unique IDs for each action item (e.g., "action-1", "action-2")
+- Capture implied actions too (e.g., "we need to get the valuation done" → action item)
+
+LONG TRANSCRIPT HANDLING:
+- For lengthy transcripts, synthesize the full discussion — don't just summarize the beginning
+- Group related discussion points into coherent key points
+- Capture action items from throughout the entire transcript, not just the end
+
+STRUCTURED DATA (JSON) INPUT:
+- If the input is structured JSON data (e.g., from Otter.ai, Fireflies, Teams), extract and reformat the data
+- Map any existing fields to the output format
+- Supplement with any additional insights from transcript text if available
 
 CONFIDENCE SCORING:
 - 0.9-1.0: Clear formal meeting notes with explicit structure
@@ -81,12 +79,26 @@ CONFIDENCE SCORING:
 - 0.5-0.7: Partial or unclear notes, some inference needed
 - Below 0.5: Very sparse content, significant inference
 
-You MUST respond in valid JSON format only.`;
+You MUST respond in valid JSON format only. No markdown, no explanation — just the JSON object.`;
+
+/**
+ * Meeting Extraction Agent — powered by Claude Haiku 4.5
+ * Extracts structured meeting data from transcripts, notes, summaries, or JSON exports
+ */
+async function runMeetingExtraction(
+  content: string,
+): Promise<MeetingExtractionResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY not configured');
+  }
+
+  const client = new Anthropic({ apiKey });
 
   const userPrompt = `Extract meeting information from the following content:
 
 ---
-${content.substring(0, 20000)}
+${content.substring(0, 30000)}
 ---
 
 Today's date for reference: ${new Date().toISOString().split('T')[0]}
@@ -103,7 +115,7 @@ Respond with a JSON object in this exact format:
       "company": "Their Company (optional)"
     }
   ],
-  "summary": "2-3 sentence executive summary",
+  "summary": "2-4 sentence executive summary",
   "keyPoints": [
     "Key discussion point 1",
     "Key discussion point 2"
@@ -124,62 +136,77 @@ Respond with a JSON object in this exact format:
   "confidence": 0.0-1.0
 }`;
 
-  try {
-    const apiUrl = useOpenAI ? OPENAI_API_URL : TOGETHER_API_URL;
-    const model = useOpenAI ? OPENAI_MODEL : TOGETHER_MODEL;
+  console.log(`[Meeting Extraction] Using Claude Haiku 4.5`);
 
-    console.log(`[Meeting Extraction] Using ${useOpenAI ? 'OpenAI GPT-4o' : 'Together AI Llama'}`);
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
+  // Retry with exponential backoff for transient errors (overloaded, rate limits)
+  let response;
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 4096,
+        temperature: 0.1,
+        system: SYSTEM_PROMPT,
         messages: [
-          { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.1,
-        max_tokens: 4000,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API error: ${response.status} - ${errorText}`);
+      });
+      break;
+    } catch (err: any) {
+      const isRetryable = err?.status === 529 || err?.status === 429 || err?.error?.type === 'overloaded_error';
+      if (isRetryable && attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+        console.log(`[Meeting Extraction] Retryable error (${err?.status || err?.error?.type}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
     }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '{}';
-    const parsed = JSON.parse(content);
-
-    // Ensure required fields have defaults
-    return {
-      title: parsed.title || 'Untitled Meeting',
-      meetingDate: parsed.meetingDate || new Date().toISOString().split('T')[0],
-      meetingType: parsed.meetingType || 'other',
-      attendees: parsed.attendees || [],
-      summary: parsed.summary || 'No summary available',
-      keyPoints: parsed.keyPoints || [],
-      decisions: parsed.decisions || [],
-      actionItems: (parsed.actionItems || []).map((item: any, index: number) => ({
-        id: item.id || `action-${index + 1}`,
-        description: item.description || 'No description',
-        assignee: item.assignee,
-        dueDate: item.dueDate,
-        status: item.status || 'pending',
-        createdAt: item.createdAt || new Date().toISOString(),
-      })),
-      confidence: parsed.confidence || 0.7,
-    };
-  } catch (error) {
-    console.error('[Meeting Extraction] Error:', error);
-    throw error;
   }
+
+  if (!response) {
+    throw new Error('Meeting extraction failed after retries');
+  }
+
+  // Extract text from response
+  const textContent = response.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map(block => block.text)
+    .join('');
+
+  // Strip markdown code blocks if Claude wraps the response
+  let cleaned = textContent.trim();
+  if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+  else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+  if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+  cleaned = cleaned.trim();
+
+  const parsed = JSON.parse(cleaned);
+
+  // Ensure required fields have defaults
+  return {
+    title: parsed.title || 'Untitled Meeting',
+    meetingDate: parsed.meetingDate || new Date().toISOString().split('T')[0],
+    meetingType: parsed.meetingType || 'other',
+    attendees: (parsed.attendees || []).map((a: any) => ({
+      name: a.name || 'Unknown',
+      role: a.role || undefined,
+      company: a.company || undefined,
+    })),
+    summary: parsed.summary || 'No summary available',
+    keyPoints: parsed.keyPoints || [],
+    decisions: parsed.decisions || [],
+    actionItems: (parsed.actionItems || []).map((item: any, index: number) => ({
+      id: item.id || `action-${index + 1}`,
+      description: item.description || 'No description',
+      assignee: item.assignee || undefined,
+      dueDate: item.dueDate || undefined,
+      status: item.status || 'pending',
+      createdAt: item.createdAt || new Date().toISOString(),
+    })),
+    confidence: parsed.confidence || 0.7,
+  };
 }
 
 /**
@@ -222,7 +249,6 @@ export async function POST(request: NextRequest) {
       if (textInput) {
         content = textInput;
       } else if (file) {
-        // Use extractTextFromFile for proper PDF/DOCX parsing
         content = await extractTextFromFile(file);
         documentName = documentName || file.name;
       }
@@ -242,24 +268,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get API keys
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-    const togetherApiKey = process.env.TOGETHER_API_KEY;
-    const useOpenAI = !!openaiApiKey;
-
-    if (!openaiApiKey && !togetherApiKey) {
-      return NextResponse.json(
-        { error: 'No API key configured (OPENAI_API_KEY or TOGETHER_API_KEY)' },
-        { status: 500 }
-      );
-    }
-
-    const apiKey = useOpenAI ? openaiApiKey! : togetherApiKey!;
-
     console.log(`[Meeting Extraction] Starting extraction for client ${clientId}`);
 
     // Run extraction
-    const extraction = await runMeetingExtraction(content, apiKey, useOpenAI);
+    const extraction = await runMeetingExtraction(content);
 
     console.log(`[Meeting Extraction] Extracted: ${extraction.attendees.length} attendees, ${extraction.actionItems.length} action items`);
 
@@ -267,7 +279,8 @@ export async function POST(request: NextRequest) {
     if (saveToDatabase) {
       const convex = await getAuthenticatedConvexClient();
 
-      const meetingId = await convex.mutation(api.meetings.create, {
+      // Convex meetings.create has deeply nested types that trigger TS2589
+      const createArgs: any = {
         clientId: clientId as Id<"clients">,
         projectId: projectId ? (projectId as Id<"projects">) : undefined,
         title: extraction.title,
@@ -281,7 +294,9 @@ export async function POST(request: NextRequest) {
         sourceDocumentId: documentId ? (documentId as Id<"documents">) : undefined,
         sourceDocumentName: documentName,
         extractionConfidence: extraction.confidence,
-      });
+        verified: true,
+      };
+      const meetingId = await convex.mutation(api.meetings.create, createArgs);
 
       console.log(`[Meeting Extraction] Created meeting ${meetingId}`);
 
