@@ -26,6 +26,7 @@ import {
   Unlink,
   ChevronDown,
   ChevronRight,
+  MessageSquareText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DocumentNotesIndicator from '@/components/DocumentNotesIndicator';
@@ -133,6 +134,25 @@ export default function FileCard({
     return colors[category] || 'bg-stone-50 text-stone-600 border-stone-200';
   };
 
+  const getCategoryDot = (category: string) => {
+    const dots: Record<string, string> = {
+      'Appraisals':          'bg-violet-500',
+      'Communications':      'bg-sky-500',
+      'Financial Documents': 'bg-emerald-500',
+      'Inspections':         'bg-amber-500',
+      'Insurance':           'bg-teal-500',
+      'KYC':                 'bg-yellow-500',
+      'Legal Documents':     'bg-blue-500',
+      'Loan Terms':          'bg-orange-500',
+      'Photographs':         'bg-pink-500',
+      'Plans':               'bg-indigo-500',
+      'Professional Reports':'bg-cyan-500',
+      'Project Documents':   'bg-lime-500',
+      'Warranties':          'bg-rose-500',
+    };
+    return dots[category] || 'bg-gray-400';
+  };
+
   const handleDropdownAction = (e: React.MouseEvent, action: () => void) => {
     e.stopPropagation();
     action();
@@ -189,111 +209,105 @@ export default function FileCard({
   );
 
   if (viewMode === 'list') {
-    const typeCategoryLabel = document.fileTypeDetected && document.fileTypeDetected !== document.category
-      ? document.fileTypeDetected
-      : document.category;
+    const hasSubline = !!document.documentCode;
 
     return (
       <div
         onClick={onClick}
-        className="flex items-center px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-200/60 group transition-colors"
+        className={cn(
+          "flex items-center px-3 border-b border-gray-100 cursor-pointer group transition-colors",
+          hasSubline ? "py-1.5" : "py-2",
+          isSelected ? "bg-blue-50/50" : "hover:bg-gray-50/60",
+        )}
       >
-        {/* Chevron — only for version group heads, fixed 6 width so rows align */}
-        <div className="flex-shrink-0 w-6 flex items-center justify-center">
+        {/* Expand chevron — fixed width for alignment */}
+        <div className="flex-shrink-0 w-5 flex items-center justify-center">
           {onToggleVersions && (
             <button
-              className="p-0.5 rounded hover:bg-gray-200/60 transition-colors"
+              className="p-0.5 rounded hover:bg-gray-200/50 transition-colors"
               onClick={(e) => { e.stopPropagation(); onToggleVersions(); }}
             >
               {isVersionExpanded
-                ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-                : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                ? <ChevronDown className="w-3 h-3 text-gray-400" />
+                : <ChevronRight className="w-3 h-3 text-gray-400" />
               }
             </button>
           )}
         </div>
 
-        {/* Checkbox — always present when handler exists */}
+        {/* Checkbox */}
         {onSelectionChange && (
-          <div className="flex-shrink-0 mr-3" onClick={(e) => e.stopPropagation()}>
+          <div className="flex-shrink-0 w-5 flex items-center" onClick={(e) => e.stopPropagation()}>
             <Checkbox
               checked={isSelected}
               onCheckedChange={(checked) => onSelectionChange(!!checked)}
+              className="h-3.5 w-3.5"
             />
           </div>
         )}
 
-        {/* File icon */}
-        <div className="flex-shrink-0 mr-3">
-          {getFileIcon("w-5 h-5")}
-        </div>
-
-        {/* Name block — primary content, takes remaining space */}
-        <div className="flex-1 min-w-0 mr-4">
-          <div className="flex items-baseline gap-2 min-w-0">
-            <span className="text-sm font-medium text-gray-900 truncate">
+        {/* Name block */}
+        <div className="flex-1 min-w-0 pl-2 pr-4">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[13px] font-medium text-gray-900 truncate">
               {document.documentCode || document.fileName}
             </span>
             {document.version && (
-              <span className="text-[11px] font-mono text-gray-400 flex-shrink-0">
+              <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">
                 {document.version}
               </span>
             )}
             {versionCount && versionCount > 1 && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 flex-shrink-0 font-normal">
-                {versionCount} versions
-              </Badge>
+              <span className="text-[10px] text-gray-400 flex-shrink-0 tabular-nums">
+                +{versionCount - 1} ver
+              </span>
             )}
             {document.noteCount && document.noteCount > 0 ? (
-              <div className="flex-shrink-0">
-                <DocumentNotesIndicator noteCount={document.noteCount} />
-              </div>
+              <span className="flex items-center gap-0.5 text-[10px] text-amber-600 flex-shrink-0">
+                <MessageSquareText className="w-3 h-3" />
+                {document.noteCount}
+              </span>
             ) : null}
           </div>
-          <p className="text-xs text-gray-500 truncate mt-0.5">
-            {document.documentCode ? document.fileName : document.summary?.slice(0, 100)}
-          </p>
-          {document.versionNote && (
-            <p className="text-[11px] text-gray-400 italic truncate mt-0.5">
-              {document.versionNote}
+          {hasSubline && (
+            <p className="text-[11px] text-gray-400 truncate leading-tight">
+              {document.fileName}
             </p>
           )}
         </div>
 
-        {/* Type — fixed column, always rendered for alignment */}
-        <div className="flex-shrink-0 w-[7rem] hidden sm:flex">
-          <Badge
-            variant="outline"
-            className={cn(
-              "text-[10px] px-2 py-0.5 truncate max-w-full font-normal",
-              getCategoryColor(document.category),
-            )}
-          >
-            {typeCategoryLabel}
-          </Badge>
+        {/* Type */}
+        <div className="flex-shrink-0 w-32 hidden md:block text-[12px] text-gray-500 truncate pr-3">
+          {document.fileTypeDetected || '—'}
         </div>
 
-        {/* Date — fixed column, always rendered for alignment */}
-        <div className="flex-shrink-0 w-[5.5rem] hidden lg:block text-xs text-gray-500 tabular-nums text-right">
+        {/* Category with color dot */}
+        <div className="flex-shrink-0 w-32 hidden lg:flex items-center gap-1.5 pr-3">
+          <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", getCategoryDot(document.category))} />
+          <span className="text-[12px] text-gray-500 truncate">{document.category}</span>
+        </div>
+
+        {/* Date */}
+        <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
           {formatDate(document.uploadedAt)}
         </div>
 
-        {/* Size — fixed column, always rendered for alignment */}
-        <div className="flex-shrink-0 w-16 hidden lg:block text-xs text-gray-500 tabular-nums text-right">
+        {/* Size */}
+        <div className="flex-shrink-0 w-16 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
           {formatFileSize(document.fileSize)}
         </div>
 
-        {/* Actions — always rendered for alignment */}
-        <div className="flex-shrink-0 w-8 flex justify-end">
+        {/* Actions */}
+        <div className="flex-shrink-0 w-7 flex justify-end ml-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => e.stopPropagation()}
               >
-                <MoreVertical className="w-4 h-4 text-gray-400" />
+                <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

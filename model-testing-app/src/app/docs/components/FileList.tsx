@@ -21,8 +21,6 @@ import {
   FolderOpen,
   FileText,
   ArrowUpDown,
-  ChevronDown,
-  ChevronRight,
 } from 'lucide-react';
 import FileCard from './FileCard';
 import DirectUploadModal from './DirectUploadModal';
@@ -384,8 +382,23 @@ export default function FileList({
     scope === 'client' ? clientId : true
   );
 
+  const renderListHeader = () => (
+    <div className="flex items-center h-7 px-3 border-b border-gray-200 bg-gray-50/80 text-[10px] font-medium text-gray-400 uppercase tracking-wider select-none sticky top-0 z-10">
+      <div className="w-5 flex-shrink-0" />
+      <div className="w-5 flex-shrink-0" />
+      <div className="flex-1 pl-2">Name</div>
+      <div className="w-32 flex-shrink-0 hidden md:block pr-3">Type</div>
+      <div className="w-32 flex-shrink-0 hidden lg:block pr-3">Category</div>
+      <div className="w-20 flex-shrink-0 hidden sm:block text-right">Date</div>
+      <div className="w-16 flex-shrink-0 hidden sm:block text-right">Size</div>
+      <div className="w-7 flex-shrink-0 ml-1" />
+    </div>
+  );
+
   const renderListView = () => (
     <div>
+      {renderListHeader()}
+
       {/* Version groups */}
       {versionGroups.groups.map(group => {
         const isExpanded = expandedGroups.has(group.head._id);
@@ -404,7 +417,7 @@ export default function FileList({
             />
 
             {isExpanded && (
-              <div className="border-l-2 border-gray-200 ml-7">
+              <div className="border-l border-gray-200 ml-5">
                 {olderVersions.map(version => (
                   <FileCard
                     key={version._id}
