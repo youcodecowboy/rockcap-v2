@@ -189,7 +189,6 @@ export default function FileCard({
   );
 
   if (viewMode === 'list') {
-    // Combine type + category into one badge with category color
     const typeCategoryLabel = document.fileTypeDetected && document.fileTypeDetected !== document.category
       ? document.fileTypeDetected
       : document.category;
@@ -197,50 +196,53 @@ export default function FileCard({
     return (
       <div
         onClick={onClick}
-        className="flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50/80 cursor-pointer border-b border-stone-100 group transition-colors"
+        className="flex items-center px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-200/60 group transition-colors"
       >
-        {/* Leading action: chevron for version groups, checkbox for standalone */}
-        <div className="flex-shrink-0 w-5 flex items-center justify-center">
-          {onToggleVersions ? (
+        {/* Chevron — only for version group heads, fixed 6 width so rows align */}
+        <div className="flex-shrink-0 w-6 flex items-center justify-center">
+          {onToggleVersions && (
             <button
-              className="p-0.5 hover:bg-stone-200/60 rounded transition-colors"
+              className="p-0.5 rounded hover:bg-gray-200/60 transition-colors"
               onClick={(e) => { e.stopPropagation(); onToggleVersions(); }}
             >
               {isVersionExpanded
-                ? <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
-                : <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+                ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
               }
             </button>
-          ) : onSelectionChange ? (
-            <div onClick={(e) => e.stopPropagation()}>
-              <Checkbox
-                checked={isSelected}
-                onCheckedChange={(checked) => onSelectionChange(!!checked)}
-              />
-            </div>
-          ) : null}
+          )}
         </div>
+
+        {/* Checkbox — always present when handler exists */}
+        {onSelectionChange && (
+          <div className="flex-shrink-0 mr-3" onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={(checked) => onSelectionChange(!!checked)}
+            />
+          </div>
+        )}
 
         {/* File icon */}
-        <div className="flex-shrink-0">
-          {getFileIcon("w-4 h-4")}
+        <div className="flex-shrink-0 mr-3">
+          {getFileIcon("w-5 h-5")}
         </div>
 
-        {/* Name block — takes all remaining space */}
-        <div className="flex-1 min-w-0 mr-1">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[13px] font-medium text-stone-800 truncate leading-tight">
+        {/* Name block — primary content, takes remaining space */}
+        <div className="flex-1 min-w-0 mr-4">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="text-sm font-medium text-gray-900 truncate">
               {document.documentCode || document.fileName}
             </span>
             {document.version && (
-              <span className="text-[10px] font-mono text-stone-400 flex-shrink-0 leading-none">
+              <span className="text-[11px] font-mono text-gray-400 flex-shrink-0">
                 {document.version}
               </span>
             )}
             {versionCount && versionCount > 1 && (
-              <span className="text-[10px] text-stone-400 bg-stone-100 rounded px-1.5 py-px flex-shrink-0 leading-none">
-                {versionCount}v
-              </span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 flex-shrink-0 font-normal">
+                {versionCount} versions
+              </Badge>
             )}
             {document.noteCount && document.noteCount > 0 ? (
               <div className="flex-shrink-0">
@@ -248,17 +250,22 @@ export default function FileCard({
               </div>
             ) : null}
           </div>
-          <p className="text-[11px] text-stone-400 truncate leading-tight mt-0.5">
-            {document.documentCode ? document.fileName : document.summary?.slice(0, 80)}
+          <p className="text-xs text-gray-500 truncate mt-0.5">
+            {document.documentCode ? document.fileName : document.summary?.slice(0, 100)}
           </p>
+          {document.versionNote && (
+            <p className="text-[11px] text-gray-400 italic truncate mt-0.5">
+              {document.versionNote}
+            </p>
+          )}
         </div>
 
-        {/* Type+Category — single badge, fixed column */}
-        <div className="flex-shrink-0 w-[7.5rem] hidden sm:flex">
+        {/* Type — fixed column, always rendered for alignment */}
+        <div className="flex-shrink-0 w-[7rem] hidden sm:flex">
           <Badge
             variant="outline"
             className={cn(
-              "text-[10px] px-1.5 py-0 truncate max-w-full font-normal",
+              "text-[10px] px-2 py-0.5 truncate max-w-full font-normal",
               getCategoryColor(document.category),
             )}
           >
@@ -266,27 +273,27 @@ export default function FileCard({
           </Badge>
         </div>
 
-        {/* Date */}
-        <div className="flex-shrink-0 text-[11px] text-stone-400 tabular-nums hidden lg:block w-[5.5rem] text-right">
+        {/* Date — fixed column, always rendered for alignment */}
+        <div className="flex-shrink-0 w-[5.5rem] hidden lg:block text-xs text-gray-500 tabular-nums text-right">
           {formatDate(document.uploadedAt)}
         </div>
 
-        {/* Size */}
-        <div className="flex-shrink-0 text-[11px] text-stone-400 tabular-nums hidden lg:block w-16 text-right">
+        {/* Size — fixed column, always rendered for alignment */}
+        <div className="flex-shrink-0 w-16 hidden lg:block text-xs text-gray-500 tabular-nums text-right">
           {formatFileSize(document.fileSize)}
         </div>
 
-        {/* Actions */}
-        <div className="flex-shrink-0 w-7">
+        {/* Actions — always rendered for alignment */}
+        <div className="flex-shrink-0 w-8 flex justify-end">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => e.stopPropagation()}
               >
-                <MoreVertical className="w-3.5 h-3.5 text-stone-400" />
+                <MoreVertical className="w-4 h-4 text-gray-400" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

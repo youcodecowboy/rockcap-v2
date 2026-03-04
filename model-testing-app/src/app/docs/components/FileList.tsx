@@ -393,7 +393,6 @@ export default function FileList({
 
         return (
           <div key={group.head._id}>
-            {/* Head row — chevron + version count integrated into FileCard */}
             <FileCard
               {...fileCardProps(group.head)}
               viewMode="list"
@@ -403,33 +402,17 @@ export default function FileList({
               isVersionExpanded={isExpanded}
               onToggleVersions={() => toggleGroup(group.head._id)}
             />
-            {group.head.versionNote && (
-              <div className="ml-12 pl-3 pb-1 -mt-0.5 border-b border-gray-100">
-                <p className="text-[11px] text-gray-500 italic leading-tight">
-                  {group.head.versionNote}
-                </p>
-              </div>
-            )}
 
-            {/* Expanded older versions */}
             {isExpanded && (
-              <div className="ml-6 border-l-2 border-gray-200">
+              <div className="border-l-2 border-gray-200 ml-7">
                 {olderVersions.map(version => (
-                  <div key={version._id}>
-                    <FileCard
-                      {...fileCardProps(version)}
-                      viewMode="list"
-                      isSelected={selectedDocIds.has(version._id)}
-                      onSelectionChange={() => toggleSelection(version._id)}
-                    />
-                    {version.versionNote && (
-                      <div className="ml-12 pl-3 pb-1.5 -mt-0.5 border-b border-gray-100">
-                        <p className="text-[11px] text-gray-500 italic leading-tight">
-                          {version.versionNote}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                  <FileCard
+                    key={version._id}
+                    {...fileCardProps(version)}
+                    viewMode="list"
+                    isSelected={selectedDocIds.has(version._id)}
+                    onSelectionChange={() => toggleSelection(version._id)}
+                  />
                 ))}
               </div>
             )}
