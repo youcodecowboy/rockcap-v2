@@ -44,6 +44,7 @@ export default function NotificationDropdown() {
     api.bulkUpload.getPendingBatches,
     currentUser?._id ? { userId: currentUser._id } : "skip"
   );
+  const dismissBatchNotification = useMutation(api.bulkUpload.dismissBatchNotification);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -168,7 +169,7 @@ export default function NotificationDropdown() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-[600px] flex flex-col">
+        <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-[calc(100vh-6rem)] flex flex-col">
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
@@ -214,22 +215,36 @@ export default function NotificationDropdown() {
                   };
 
                   return (
-                    <button
+                    <div
                       key={notification._id}
-                      onClick={() => handleNotificationClick(notification._id, notification.relatedId, notification.type)}
-                      className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                      className="relative group"
                     >
-                      <div className="flex items-start gap-3">
-                        {getNotificationIcon()}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{notification.message}</p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {formatTimeAgo(notification.createdAt)}
-                          </p>
+                      <button
+                        onClick={() => handleNotificationClick(notification._id, notification.relatedId, notification.type)}
+                        className="w-full px-4 py-3 pr-10 text-left hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start gap-3">
+                          {getNotificationIcon()}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{notification.message}</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatTimeAgo(notification.createdAt)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markNotificationAsRead({ id: notification._id });
+                        }}
+                        className="absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Dismiss notification"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -249,29 +264,37 @@ export default function NotificationDropdown() {
                       <p className="text-xs font-medium text-gray-700">Processing</p>
                     </div>
                     {groupedJobs.processing.map((job) => (
-                      <button
-                        key={job._id}
-                        onClick={() => handleJobClick(job._id, job.status)}
-                        className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          {getStatusIcon(job.status)}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {getStatusText(job.status, job.progress)} • {formatFileSize(job.fileSize)}
-                            </p>
-                            {job.progress !== undefined && job.progress > 0 && job.progress < 100 && (
-                              <div className="mt-2 bg-gray-200 rounded-full h-1.5">
-                                <div
-                                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                                  style={{ width: `${job.progress}%` }}
-                                />
-                              </div>
-                            )}
+                      <div key={job._id} className="relative group">
+                        <button
+                          onClick={() => handleJobClick(job._id, job.status)}
+                          className="w-full px-4 py-3 pr-10 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3">
+                            {getStatusIcon(job.status)}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {getStatusText(job.status, job.progress)} • {formatFileSize(job.fileSize)}
+                              </p>
+                              {job.progress !== undefined && job.progress > 0 && job.progress < 100 && (
+                                <div className="mt-2 bg-gray-200 rounded-full h-1.5">
+                                  <div
+                                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                                    style={{ width: `${job.progress}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); markAsRead({ jobId: job._id }); }}
+                          className="absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -283,24 +306,32 @@ export default function NotificationDropdown() {
                       <p className="text-xs font-medium text-yellow-900">Needs Review</p>
                     </div>
                     {groupedJobs.needsConfirmation.map((job) => (
-                      <button
-                        key={job._id}
-                        onClick={() => handleJobClick(job._id, job.status)}
-                        className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          {getStatusIcon(job.status)}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              Click to review • {formatFileSize(job.fileSize)}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {formatTimeAgo(job.createdAt)}
-                            </p>
+                      <div key={job._id} className="relative group">
+                        <button
+                          onClick={() => handleJobClick(job._id, job.status)}
+                          className="w-full px-4 py-3 pr-10 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3">
+                            {getStatusIcon(job.status)}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Click to review • {formatFileSize(job.fileSize)}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {formatTimeAgo(job.createdAt)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); markAsRead({ jobId: job._id }); }}
+                          className="absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -312,24 +343,32 @@ export default function NotificationDropdown() {
                       <p className="text-xs font-medium text-green-900">Completed</p>
                     </div>
                     {groupedJobs.completed.map((job) => (
-                      <button
-                        key={job._id}
-                        onClick={() => handleJobClick(job._id, job.status)}
-                        className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          {getStatusIcon(job.status)}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              Click to view details • {formatFileSize(job.fileSize)}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {formatTimeAgo(job.createdAt)}
-                            </p>
+                      <div key={job._id} className="relative group">
+                        <button
+                          onClick={() => handleJobClick(job._id, job.status)}
+                          className="w-full px-4 py-3 pr-10 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3">
+                            {getStatusIcon(job.status)}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Click to view details • {formatFileSize(job.fileSize)}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {formatTimeAgo(job.createdAt)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); markAsRead({ jobId: job._id }); }}
+                          className="absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -341,24 +380,32 @@ export default function NotificationDropdown() {
                       <p className="text-xs font-medium text-red-900">Errors</p>
                     </div>
                     {groupedJobs.errors.map((job) => (
-                      <button
-                        key={job._id}
-                        onClick={() => handleJobClick(job._id, job.status)}
-                        className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          {getStatusIcon(job.status)}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
-                            <p className="text-xs text-red-600 mt-0.5">
-                              {job.error || 'Processing failed'}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {formatTimeAgo(job.createdAt)}
-                            </p>
+                      <div key={job._id} className="relative group">
+                        <button
+                          onClick={() => handleJobClick(job._id, job.status)}
+                          className="w-full px-4 py-3 pr-10 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3">
+                            {getStatusIcon(job.status)}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{job.fileName}</p>
+                              <p className="text-xs text-red-600 mt-0.5">
+                                {job.error || 'Processing failed'}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {formatTimeAgo(job.createdAt)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); markAsRead({ jobId: job._id }); }}
+                          className="absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -411,40 +458,51 @@ export default function NotificationDropdown() {
                     };
 
                     return (
-                      <button
-                        key={batch._id}
-                        onClick={() => {
-                          router.push(`/docs/bulk/${batch._id}`);
-                          setIsOpen(false);
-                        }}
-                        className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          {getBatchStatusIcon()}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {batch.clientName}
-                              {batch.projectName && (
-                                <span className="text-gray-500 font-normal"> / {batch.projectName}</span>
+                      <div key={batch._id} className="relative group">
+                        <button
+                          onClick={() => {
+                            router.push(`/docs/bulk/${batch._id}`);
+                            setIsOpen(false);
+                          }}
+                          className="w-full px-4 py-3 pr-10 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3">
+                            {getBatchStatusIcon()}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {batch.clientName}
+                                {batch.projectName && (
+                                  <span className="text-gray-500 font-normal"> / {batch.projectName}</span>
+                                )}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {getBatchStatusText()} • {batch.totalFiles} files
+                              </p>
+                              {batch.status === 'processing' && (
+                                <div className="mt-2 bg-gray-200 rounded-full h-1.5">
+                                  <div
+                                    className="bg-purple-600 h-1.5 rounded-full transition-all duration-300"
+                                    style={{ width: `${(batch.processedFiles / batch.totalFiles) * 100}%` }}
+                                  />
+                                </div>
                               )}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {getBatchStatusText()} • {batch.totalFiles} files
-                            </p>
-                            {batch.status === 'processing' && (
-                              <div className="mt-2 bg-gray-200 rounded-full h-1.5">
-                                <div
-                                  className="bg-purple-600 h-1.5 rounded-full transition-all duration-300"
-                                  style={{ width: `${(batch.processedFiles / batch.totalFiles) * 100}%` }}
-                                />
-                              </div>
-                            )}
-                            <p className="text-xs text-gray-400 mt-1">
-                              {formatTimeAgo(batch.createdAt)}
-                            </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {formatTimeAgo(batch.createdAt)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            dismissBatchNotification({ batchId: batch._id });
+                          }}
+                          className="absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>

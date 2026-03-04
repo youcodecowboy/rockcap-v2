@@ -844,6 +844,7 @@ export default defineSchema({
     startedProcessingAt: v.optional(v.string()),
     completedProcessingAt: v.optional(v.string()),
     notificationSent: v.optional(v.boolean()),
+    notificationDismissed: v.optional(v.boolean()),
     // User tracking
     userId: v.id("users"),
     // Timestamps
@@ -972,6 +973,16 @@ export default defineSchema({
         confidence: v.number(),
         reasoning: v.optional(v.string()),
       }))),
+    })),
+    // Intelligence field selection edits (master toggle, excluded fields, modified values)
+    intelligenceEdits: v.optional(v.object({
+      skipIntelligence: v.optional(v.boolean()),
+      excludedFields: v.optional(v.array(v.string())),
+      modified: v.optional(v.array(v.object({
+        fieldPath: v.string(),
+        newValue: v.string(),
+      }))),
+      updatedAt: v.optional(v.string()),
     })),
     // User note/comment for internal context and intelligence
     userNote: v.optional(v.object({
@@ -3135,6 +3146,9 @@ export default defineSchema({
     sourceDocumentId: v.optional(v.id("documents")),
     sourceDocumentName: v.optional(v.string()),
     extractionConfidence: v.optional(v.number()),
+
+    // Verification (auto-extracted = false, user-created = true)
+    verified: v.optional(v.boolean()),
 
     // Metadata
     createdBy: v.optional(v.id("users")),

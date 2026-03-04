@@ -115,11 +115,20 @@ export const getPendingBatches = query({
       .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
       .collect();
     
-    return allBatches.filter(b => 
-      b.status === "uploading" || 
-      b.status === "processing" || 
-      b.status === "review"
+    return allBatches.filter(b =>
+      !b.notificationDismissed &&
+      (b.status === "uploading" ||
+      b.status === "processing" ||
+      b.status === "review")
     );
+  },
+});
+
+// Mutation: Dismiss a batch from the notification panel
+export const dismissBatchNotification = mutation({
+  args: { batchId: v.id("bulkUploadBatches") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.batchId, { notificationDismissed: true });
   },
 });
 
@@ -558,6 +567,50 @@ export const updateItemNote = mutation({
       updatedAt: now,
     });
     return args.itemId;
+  },
+});
+
+// Mutation: Update intelligence field selections for a bulk upload item
+export const updateIntelligenceEdits = mutation({
+  args: {
+    itemId: v.id("bulkUploadItems"),
+    skipIntelligence: v.optional(v.boolean()),
+    excludedFields: v.optional(v.array(v.string())),
+    modified: v.optional(v.array(v.object({
+      fieldPath: v.string(),
+      newValue: v.string(),
+    }))),
+  },
+  handler: async (ctx, args) => {
+    const { itemId, ...edits } = args;
+    const item = await ctx.db.get(itemId);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    const now = new Date().toISOString();
+    const existing = (item as any).intelligenceEdits || {};
+
+    const intelligenceEdits: any = {
+      ...existing,
+      updatedAt: now,
+    };
+
+    if (edits.skipIntelligence !== undefined) {
+      intelligenceEdits.skipIntelligence = edits.skipIntelligence;
+    }
+    if (edits.excludedFields !== undefined) {
+      intelligenceEdits.excludedFields = edits.excludedFields;
+    }
+    if (edits.modified !== undefined) {
+      intelligenceEdits.modified = edits.modified;
+    }
+
+    await ctx.db.patch(itemId, {
+      intelligenceEdits,
+      updatedAt: now,
+    });
+    return itemId;
   },
 });
 
@@ -1581,6 +1634,35 @@ export const fileBatch = mutation({
             );
           } else {
             extractedFields = [];
+          }
+        }
+
+        // === APPLY USER INTELLIGENCE EDITS ===
+        const intellEdits = (item as any).intelligenceEdits as {
+          skipIntelligence?: boolean;
+          excludedFields?: string[];
+          modified?: Array<{ fieldPath: string; newValue: string }>;
+        } | undefined;
+
+        if (intellEdits?.skipIntelligence) {
+          console.log(`[fileBatch] ⏭️ Skipping intelligence for "${item.fileName}" — user disabled intelligence saving`);
+          extractedFields = [];
+        }
+
+        if (intellEdits?.excludedFields && intellEdits.excludedFields.length > 0) {
+          const excludeSet = new Set(intellEdits.excludedFields);
+          const beforeCount = extractedFields.length;
+          extractedFields = extractedFields.filter(f => !excludeSet.has(f.fieldPath));
+          console.log(`[fileBatch] ✂️ Excluded ${beforeCount - extractedFields.length} fields for "${item.fileName}" per user edits`);
+        }
+
+        if (intellEdits?.modified && intellEdits.modified.length > 0) {
+          const modMap = new Map(intellEdits.modified.map(m => [m.fieldPath, m]));
+          for (const field of extractedFields) {
+            const mod = modMap.get(field.fieldPath);
+            if (mod) {
+              field.value = mod.newValue;
+            }
           }
         }
 
