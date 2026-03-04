@@ -24,6 +24,8 @@ import {
   BookOpen,
   Layers,
   Unlink,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DocumentNotesIndicator from '@/components/DocumentNotesIndicator';
@@ -60,6 +62,10 @@ interface FileCardProps {
   onOpenReader?: () => void;
   onLinkAsVersion?: () => void;
   onUnlinkVersion?: () => void;
+  // Version group props (passed by FileList for group heads)
+  versionCount?: number;
+  isVersionExpanded?: boolean;
+  onToggleVersions?: () => void;
 }
 
 export default function FileCard({
@@ -75,6 +81,9 @@ export default function FileCard({
   onOpenReader,
   onLinkAsVersion,
   onUnlinkVersion,
+  versionCount,
+  isVersionExpanded,
+  onToggleVersions,
 }: FileCardProps) {
   const getFileIcon = (iconClass = "w-8 h-8") => {
     const type = document.fileType.toLowerCase();
@@ -107,15 +116,21 @@ export default function FileCard({
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
-      'Appraisals': 'bg-purple-100 text-purple-800 border-purple-200',
-      'Financial': 'bg-green-100 text-green-800 border-green-200',
-      'Legal': 'bg-blue-100 text-blue-800 border-blue-200',
-      'Terms': 'bg-orange-100 text-orange-800 border-orange-200',
-      'Credit': 'bg-red-100 text-red-800 border-red-200',
-      'KYC': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      'Correspondence': 'bg-cyan-100 text-cyan-800 border-cyan-200',
+      'Appraisals':          'bg-violet-50 text-violet-700 border-violet-200',
+      'Communications':      'bg-sky-50 text-sky-700 border-sky-200',
+      'Financial Documents': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      'Inspections':         'bg-amber-50 text-amber-700 border-amber-200',
+      'Insurance':           'bg-teal-50 text-teal-700 border-teal-200',
+      'KYC':                 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      'Legal Documents':     'bg-blue-50 text-blue-700 border-blue-200',
+      'Loan Terms':          'bg-orange-50 text-orange-700 border-orange-200',
+      'Photographs':         'bg-pink-50 text-pink-700 border-pink-200',
+      'Plans':               'bg-indigo-50 text-indigo-700 border-indigo-200',
+      'Professional Reports':'bg-cyan-50 text-cyan-700 border-cyan-200',
+      'Project Documents':   'bg-lime-50 text-lime-700 border-lime-200',
+      'Warranties':          'bg-rose-50 text-rose-700 border-rose-200',
     };
-    return colors[category] || 'bg-gray-100 text-gray-800 border-gray-200';
+    return colors[category] || 'bg-stone-50 text-stone-600 border-stone-200';
   };
 
   const handleDropdownAction = (e: React.MouseEvent, action: () => void) => {
@@ -174,89 +189,104 @@ export default function FileCard({
   );
 
   if (viewMode === 'list') {
+    // Combine type + category into one badge with category color
+    const typeCategoryLabel = document.fileTypeDetected && document.fileTypeDetected !== document.category
+      ? document.fileTypeDetected
+      : document.category;
+
     return (
       <div
         onClick={onClick}
-        className="flex items-center gap-3 px-3 py-1.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 group"
+        className="flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50/80 cursor-pointer border-b border-stone-100 group transition-colors"
       >
-        {/* Checkbox */}
-        {onSelectionChange && (
-          <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            <Checkbox
-              checked={isSelected}
-              onCheckedChange={(checked) => onSelectionChange(!!checked)}
-            />
-          </div>
-        )}
+        {/* Leading action: chevron for version groups, checkbox for standalone */}
+        <div className="flex-shrink-0 w-5 flex items-center justify-center">
+          {onToggleVersions ? (
+            <button
+              className="p-0.5 hover:bg-stone-200/60 rounded transition-colors"
+              onClick={(e) => { e.stopPropagation(); onToggleVersions(); }}
+            >
+              {isVersionExpanded
+                ? <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+                : <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+              }
+            </button>
+          ) : onSelectionChange ? (
+            <div onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={(checked) => onSelectionChange(!!checked)}
+              />
+            </div>
+          ) : null}
+        </div>
 
-        {/* Icon */}
+        {/* File icon */}
         <div className="flex-shrink-0">
-          {getFileIcon("w-5 h-5")}
+          {getFileIcon("w-4 h-4")}
         </div>
 
-        {/* Main Content */}
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-gray-900 truncate">
-            {document.documentCode || document.fileName}
+        {/* Name block — takes all remaining space */}
+        <div className="flex-1 min-w-0 mr-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[13px] font-medium text-stone-800 truncate leading-tight">
+              {document.documentCode || document.fileName}
+            </span>
+            {document.version && (
+              <span className="text-[10px] font-mono text-stone-400 flex-shrink-0 leading-none">
+                {document.version}
+              </span>
+            )}
+            {versionCount && versionCount > 1 && (
+              <span className="text-[10px] text-stone-400 bg-stone-100 rounded px-1.5 py-px flex-shrink-0 leading-none">
+                {versionCount}v
+              </span>
+            )}
+            {document.noteCount && document.noteCount > 0 ? (
+              <div className="flex-shrink-0">
+                <DocumentNotesIndicator noteCount={document.noteCount} />
+              </div>
+            ) : null}
           </div>
-          <div className="text-xs text-gray-500 truncate">
-            {document.documentCode ? document.fileName : document.summary?.slice(0, 60) + '...'}
-          </div>
+          <p className="text-[11px] text-stone-400 truncate leading-tight mt-0.5">
+            {document.documentCode ? document.fileName : document.summary?.slice(0, 80)}
+          </p>
         </div>
 
-        {/* Version Badge */}
-        {document.version && (
-          <div className="flex-shrink-0 hidden sm:block">
-            <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
-              {document.version}
-            </Badge>
-          </div>
-        )}
-
-        {/* Type Badge */}
-        <div className="flex-shrink-0 hidden sm:block">
-          {document.fileTypeDetected && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-              {document.fileTypeDetected}
-            </Badge>
-          )}
-        </div>
-
-        {/* Category Badge */}
-        <div className="flex-shrink-0 hidden md:block">
-          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getCategoryColor(document.category))}>
-            {document.category}
+        {/* Type+Category — single badge, fixed column */}
+        <div className="flex-shrink-0 w-[7.5rem] hidden sm:flex">
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-[10px] px-1.5 py-0 truncate max-w-full font-normal",
+              getCategoryColor(document.category),
+            )}
+          >
+            {typeCategoryLabel}
           </Badge>
         </div>
 
-        {/* Notes Indicator */}
-        {document.noteCount && document.noteCount > 0 && (
-          <div className="flex-shrink-0 hidden sm:block">
-            <DocumentNotesIndicator noteCount={document.noteCount} />
-          </div>
-        )}
-
         {/* Date */}
-        <div className="flex-shrink-0 text-xs text-gray-500 hidden lg:block w-20">
+        <div className="flex-shrink-0 text-[11px] text-stone-400 tabular-nums hidden lg:block w-[5.5rem] text-right">
           {formatDate(document.uploadedAt)}
         </div>
 
         {/* Size */}
-        <div className="flex-shrink-0 text-xs text-gray-500 hidden lg:block w-16 text-right">
+        <div className="flex-shrink-0 text-[11px] text-stone-400 tabular-nums hidden lg:block w-16 text-right">
           {formatFileSize(document.fileSize)}
         </div>
 
         {/* Actions */}
-        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex-shrink-0 w-7">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 w-7 p-0"
+                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => e.stopPropagation()}
               >
-                <MoreVertical className="w-4 h-4" />
+                <MoreVertical className="w-3.5 h-3.5 text-stone-400" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

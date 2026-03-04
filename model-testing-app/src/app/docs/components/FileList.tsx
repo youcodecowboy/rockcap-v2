@@ -393,61 +393,37 @@ export default function FileList({
 
         return (
           <div key={group.head._id}>
-            {/* Head row with expand chevron */}
-            <div className="flex items-center">
-              <button
-                className="flex-shrink-0 p-1 ml-1 hover:bg-gray-100 rounded"
-                onClick={(e) => { e.stopPropagation(); toggleGroup(group.head._id); }}
-              >
-                {isExpanded
-                  ? <ChevronDown className="w-4 h-4 text-gray-400" />
-                  : <ChevronRight className="w-4 h-4 text-gray-400" />
-                }
-              </button>
-              <div className="flex-1 min-w-0 flex items-center">
-                <div className="flex-1 min-w-0">
-                  <FileCard
-                    {...fileCardProps(group.head)}
-                    viewMode="list"
-                    isSelected={selectedDocIds.has(group.head._id)}
-                    onSelectionChange={() => toggleSelection(group.head._id)}
-                  />
-                </div>
-                <Badge variant="secondary" className="text-[10px] mr-3 flex-shrink-0 whitespace-nowrap">
-                  {group.versions.length} versions
-                </Badge>
+            {/* Head row — chevron + version count integrated into FileCard */}
+            <FileCard
+              {...fileCardProps(group.head)}
+              viewMode="list"
+              isSelected={selectedDocIds.has(group.head._id)}
+              onSelectionChange={() => toggleSelection(group.head._id)}
+              versionCount={group.versions.length}
+              isVersionExpanded={isExpanded}
+              onToggleVersions={() => toggleGroup(group.head._id)}
+            />
+            {group.head.versionNote && (
+              <div className="ml-12 pl-3 pb-1 -mt-0.5 border-b border-gray-100">
+                <p className="text-[11px] text-gray-500 italic leading-tight">
+                  {group.head.versionNote}
+                </p>
               </div>
-              {group.head.versionNote && (
-                <div className="ml-14 pl-3 pb-1 -mt-0.5">
-                  <p className="text-[11px] text-gray-500 italic leading-tight">
-                    {group.head.versionNote}
-                  </p>
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Expanded older versions */}
             {isExpanded && (
               <div className="ml-6 border-l-2 border-gray-200">
                 {olderVersions.map(version => (
                   <div key={version._id}>
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 pl-3 pr-1">
-                        <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
-                          {version.version || 'V?'}
-                        </Badge>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <FileCard
-                          {...fileCardProps(version)}
-                          viewMode="list"
-                          isSelected={selectedDocIds.has(version._id)}
-                          onSelectionChange={() => toggleSelection(version._id)}
-                        />
-                      </div>
-                    </div>
+                    <FileCard
+                      {...fileCardProps(version)}
+                      viewMode="list"
+                      isSelected={selectedDocIds.has(version._id)}
+                      onSelectionChange={() => toggleSelection(version._id)}
+                    />
                     {version.versionNote && (
-                      <div className="ml-14 pl-3 pb-1.5 -mt-0.5">
+                      <div className="ml-12 pl-3 pb-1.5 -mt-0.5 border-b border-gray-100">
                         <p className="text-[11px] text-gray-500 italic leading-tight">
                           {version.versionNote}
                         </p>
