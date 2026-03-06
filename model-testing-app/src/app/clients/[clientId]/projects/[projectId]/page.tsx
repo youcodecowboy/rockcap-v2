@@ -37,7 +37,9 @@ import {
   TrendingUp,
   DollarSign,
   Settings,
+  Flag,
 } from 'lucide-react';
+import FlagCreationModal from '@/components/FlagCreationModal';
 
 // Import project-specific components
 import ProjectOverviewTab from './components/ProjectOverviewTab';
@@ -65,6 +67,7 @@ function ProjectDetailContent() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
 
   // Queries
   const client = useQuery(api.clients.get, { id: clientId });
@@ -187,70 +190,77 @@ function ProjectDetailContent() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Top Header */}
-      <header className="bg-white border-b px-6 py-4 flex-shrink-0">
+      {/* Compact Header */}
+      <header className="bg-white border-b px-4 py-2 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Link href={`/clients/${clientId}`}>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <ArrowLeft className="w-4 h-4" />
-                Back to {client.name}
+              <Button variant="ghost" size="sm" className="gap-1.5 h-7 text-xs px-2">
+                <ArrowLeft className="w-3.5 h-3.5" />
+                {client.name}
               </Button>
             </Link>
-            <div className="h-6 w-px bg-gray-200" />
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                project.status === 'active' 
-                  ? 'bg-purple-100' 
+            <div className="h-5 w-px bg-gray-200" />
+            <div className="flex items-center gap-2">
+              <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
+                project.status === 'active'
+                  ? 'bg-purple-100'
                   : 'bg-gray-100'
               }`}>
-                <Briefcase className={`w-5 h-5 ${
+                <Briefcase className={`w-3.5 h-3.5 ${
                   project.status === 'active'
                     ? 'text-purple-600'
                     : 'text-gray-500'
                 }`} />
               </div>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">{project.name}</h1>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {getStatusBadge(project.status)}
-                  {project.projectShortcode && (
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {project.projectShortcode}
-                    </Badge>
-                  )}
-                </div>
-              </div>
+              <h1 className="text-base font-semibold text-gray-900">{project.name}</h1>
+              {getStatusBadge(project.status)}
+              {project.projectShortcode && (
+                <Badge variant="outline" className="font-mono text-xs">
+                  {project.projectShortcode}
+                </Badge>
+              )}
             </div>
           </div>
-          
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-1.5">
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
+              className="h-7 text-xs px-2"
               onClick={() => {
                 setSettingsDefaultTab('general');
                 setShowSettingsPanel(true);
               }}
             >
-              <Settings className="w-4 h-4 mr-2" />
+              <Settings className="w-3.5 h-3.5 mr-1" />
               Settings
             </Button>
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
+              className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-7 text-xs px-2"
+              onClick={() => setFlagModalOpen(true)}
+            >
+              <Flag className="w-3.5 h-3.5 mr-1" />
+              Flag
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs px-2"
               onClick={() => setShowArchiveDialog(true)}
             >
-              <Archive className="w-4 h-4 mr-2" />
+              <Archive className="w-3.5 h-3.5 mr-1" />
               Archive
             </Button>
             <Button
               size="sm"
-              variant="outline"
-              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              variant="ghost"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 text-xs px-2"
               onClick={() => setShowDeleteDialog(true)}
             >
-              <Trash2 className="w-4 h-4 mr-2" />
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
               Delete
             </Button>
           </div>
@@ -289,51 +299,53 @@ function ProjectDetailContent() {
           </TabsList>
         </div>
 
-        {/* Slim Metrics Row */}
-        <div className="bg-white border-b px-6 py-3 flex-shrink-0">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            <CompactMetricCard
-              label="Documents"
-              value={documents.length}
-              icon={FileText}
-              iconColor="purple"
-            />
-            <CompactMetricCard
-              label="Clients"
-              value={clientRoles.length || 1}
-              icon={Building2}
-              iconColor="blue"
-            />
-            {project.loanAmount && (
+        {/* Slim Metrics Row - Overview only */}
+        {activeTab === 'overview' && (
+          <div className="bg-white border-b px-6 py-3 flex-shrink-0">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
               <CompactMetricCard
-                label="Loan"
-                value={formatCurrency(project.loanAmount) || ''}
-                icon={DollarSign}
-                iconColor="green"
+                label="Documents"
+                value={documents.length}
+                icon={FileText}
+                iconColor="purple"
               />
-            )}
-            <CompactMetricCard
-              label="Last Activity"
-              value={lastActivity ? lastActivity.toLocaleDateString() : 'No activity'}
-              icon={TrendingUp}
-              iconColor="orange"
-            />
-            <CompactMetricCard
-              label="Created"
-              value={new Date(project.createdAt).toLocaleDateString()}
-              icon={Calendar}
-              iconColor="gray"
-            />
-            {project.expectedCompletionDate && (
               <CompactMetricCard
-                label="Due"
-                value={new Date(project.expectedCompletionDate).toLocaleDateString()}
+                label="Clients"
+                value={clientRoles.length || 1}
+                icon={Building2}
+                iconColor="blue"
+              />
+              {project.loanAmount && (
+                <CompactMetricCard
+                  label="Loan"
+                  value={formatCurrency(project.loanAmount) || ''}
+                  icon={DollarSign}
+                  iconColor="green"
+                />
+              )}
+              <CompactMetricCard
+                label="Last Activity"
+                value={lastActivity ? lastActivity.toLocaleDateString() : 'No activity'}
+                icon={TrendingUp}
+                iconColor="orange"
+              />
+              <CompactMetricCard
+                label="Created"
+                value={new Date(project.createdAt).toLocaleDateString()}
                 icon={Calendar}
-                iconColor="red"
+                iconColor="gray"
               />
-            )}
+              {project.expectedCompletionDate && (
+                <CompactMetricCard
+                  label="Due"
+                  value={new Date(project.expectedCompletionDate).toLocaleDateString()}
+                  icon={Calendar}
+                  iconColor="red"
+                />
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Tab Content */}
         <div className="flex-1 overflow-hidden flex flex-col">
@@ -465,6 +477,18 @@ function ProjectDetailContent() {
         projectId={projectId}
         clientId={clientId}
         defaultTab={settingsDefaultTab}
+      />
+
+      {/* Flag Modal */}
+      <FlagCreationModal
+        isOpen={flagModalOpen}
+        onClose={() => setFlagModalOpen(false)}
+        entityType="project"
+        entityId={projectId}
+        entityName={project.name}
+        entityContext={client.name}
+        clientId={clientId}
+        projectId={projectId}
       />
     </div>
   );

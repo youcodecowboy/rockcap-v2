@@ -51,7 +51,9 @@ import {
   ArrowLeft,
   TrendingUp,
   Settings,
+  Flag,
 } from 'lucide-react';
+import FlagCreationModal from '@/components/FlagCreationModal';
 
 // Import tab components
 import ClientDocumentLibrary from './components/ClientDocumentLibrary';
@@ -83,6 +85,7 @@ function ClientProfileContent() {
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
 
   // Convex hooks
@@ -216,80 +219,87 @@ function ClientProfileContent() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Top Header with Back + Title */}
-      <header className="bg-white border-b px-6 py-4 flex-shrink-0">
+      {/* Compact Header */}
+      <header className="bg-white border-b px-4 py-2 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Link href="/clients">
-              <Button variant="ghost" size="sm" className="gap-2">
-                <ArrowLeft className="w-4 h-4" />
-                Back to Clients
+              <Button variant="ghost" size="sm" className="gap-1.5 h-7 text-xs px-2">
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Clients
               </Button>
             </Link>
-            <div className="h-6 w-px bg-gray-200" />
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                client.type?.toLowerCase() === 'lender' 
-                  ? 'bg-blue-100' 
+            <div className="h-5 w-px bg-gray-200" />
+            <div className="flex items-center gap-2">
+              <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
+                client.type?.toLowerCase() === 'lender'
+                  ? 'bg-blue-100'
                   : 'bg-green-100'
               }`}>
-                <Building2 className={`w-5 h-5 ${
+                <Building2 className={`w-3.5 h-3.5 ${
                   client.type?.toLowerCase() === 'lender'
                     ? 'text-blue-600'
                     : 'text-green-600'
                 }`} />
               </div>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">{client.name}</h1>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <EditableStatusBadge 
-                    status={client.status as 'prospect' | 'active' | 'archived' | 'past' | undefined}
-                    onStatusChange={handleStatusChange}
-                  />
-                  <EditableClientTypeBadge
-                    type={client.type}
-                    onTypeChange={handleTypeChange}
-                  />
-                </div>
-              </div>
+              <h1 className="text-base font-semibold text-gray-900">{client.name}</h1>
+              <EditableStatusBadge
+                status={client.status as 'prospect' | 'active' | 'archived' | 'past' | undefined}
+                onStatusChange={handleStatusChange}
+              />
+              <EditableClientTypeBadge
+                type={client.type}
+                onTypeChange={handleTypeChange}
+              />
             </div>
           </div>
-          
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-1.5">
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
+              className="h-7 text-xs px-2"
               onClick={() => {
                 setSettingsDefaultTab('general');
                 setShowSettingsPanel(true);
               }}
             >
-              <Settings className="w-4 h-4 mr-2" />
+              <Settings className="w-3.5 h-3.5 mr-1" />
               Settings
             </Button>
             <Button
               size="sm"
               onClick={() => handleTabChange('projects')}
-              className="bg-black text-white hover:bg-gray-800"
+              className="bg-black text-white hover:bg-gray-800 h-7 text-xs px-2.5"
             >
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-3.5 h-3.5 mr-1" />
               New Project
             </Button>
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
+              className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-7 text-xs px-2"
+              onClick={() => setFlagModalOpen(true)}
+            >
+              <Flag className="w-3.5 h-3.5 mr-1" />
+              Flag
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs px-2"
               onClick={() => setShowArchiveDialog(true)}
             >
-              <Archive className="w-4 h-4 mr-2" />
+              <Archive className="w-3.5 h-3.5 mr-1" />
               Archive
             </Button>
             <Button
               size="sm"
-              variant="outline"
-              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              variant="ghost"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 text-xs px-2"
               onClick={() => setShowDeleteDialog(true)}
             >
-              <Trash2 className="w-4 h-4 mr-2" />
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
               Delete
             </Button>
           </div>
@@ -302,22 +312,23 @@ function ClientProfileContent() {
         onValueChange={handleTabChange}
         className="flex-1 flex flex-col overflow-hidden"
       >
-        <div className="bg-white border-b px-4 flex-shrink-0 overflow-x-auto scrollbar-hide">
-          <TabsList className="h-11 bg-transparent p-0 gap-1 min-w-max">
+        <div className="bg-white border-b px-2 md:px-4 flex-shrink-0 overflow-x-auto scrollbar-subtle">
+          <TabsList className="h-11 bg-transparent p-0 gap-0.5 md:gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  className="relative h-11 px-2.5 text-sm rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none whitespace-nowrap"
+                  title={tab.label}
+                  className="relative h-11 px-1.5 md:px-2.5 text-xs md:text-sm rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none whitespace-nowrap"
                 >
-                  <Icon className="w-3.5 h-3.5 mr-1.5" />
-                  {tab.label}
+                  <Icon className="w-3.5 h-3.5 md:mr-1.5 flex-shrink-0" />
+                  <span className="hidden md:inline">{tab.label}</span>
                   {tab.count !== undefined && tab.count > 0 && (
                     <Badge
                       variant="secondary"
-                      className="ml-1.5 bg-gray-100 text-gray-700 hover:bg-gray-100 text-[10px] px-1.5 py-0"
+                      className="ml-1 md:ml-1.5 bg-gray-100 text-gray-700 hover:bg-gray-100 text-[10px] px-1 md:px-1.5 py-0"
                     >
                       {tab.count}
                     </Badge>
@@ -328,54 +339,56 @@ function ClientProfileContent() {
           </TabsList>
         </div>
 
-        {/* Slim Metrics Row */}
-        <div className="bg-white border-b px-6 py-3 flex-shrink-0">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            <CompactMetricCard
-              label="Documents"
-              value={documents.length}
-              icon={FileText}
-              iconColor="blue"
-            />
-            <CompactMetricCard
-              label="Projects"
-              value={projects.length}
-              icon={FolderKanban}
-              iconColor="purple"
-              badge={activeProjects.length > 0 ? { text: `${activeProjects.length} active`, variant: 'outline' } : undefined}
-            />
-            <CompactMetricCard
-              label="Contacts"
-              value={contacts.length}
-              icon={Users}
-              iconColor="green"
-            />
-            <CompactMetricCard
-              label="Last Activity"
-              value={lastActivity ? lastActivity.toLocaleDateString() : 'No activity'}
-              icon={TrendingUp}
-              iconColor="orange"
-            />
-            {client.email && (
+        {/* Slim Metrics Row - Overview only */}
+        {activeTab === 'overview' && (
+          <div className="bg-white border-b px-4 py-2 flex-shrink-0">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
               <CompactMetricCard
-                label="Email"
-                value={client.email}
-                icon={Mail}
+                label="Documents"
+                value={documents.length}
+                icon={FileText}
                 iconColor="blue"
-                onClick={() => window.location.href = `mailto:${client.email}`}
               />
-            )}
-            {client.phone && (
               <CompactMetricCard
-                label="Phone"
-                value={client.phone}
-                icon={Phone}
-                iconColor="green"
-                onClick={() => window.location.href = `tel:${client.phone}`}
+                label="Projects"
+                value={projects.length}
+                icon={FolderKanban}
+                iconColor="purple"
+                badge={activeProjects.length > 0 ? { text: `${activeProjects.length} active`, variant: 'outline' } : undefined}
               />
-            )}
+              <CompactMetricCard
+                label="Contacts"
+                value={contacts.length}
+                icon={Users}
+                iconColor="green"
+              />
+              <CompactMetricCard
+                label="Last Activity"
+                value={lastActivity ? lastActivity.toLocaleDateString() : 'No activity'}
+                icon={TrendingUp}
+                iconColor="orange"
+              />
+              {client.email && (
+                <CompactMetricCard
+                  label="Email"
+                  value={client.email}
+                  icon={Mail}
+                  iconColor="blue"
+                  onClick={() => window.location.href = `mailto:${client.email}`}
+                />
+              )}
+              {client.phone && (
+                <CompactMetricCard
+                  label="Phone"
+                  value={client.phone}
+                  icon={Phone}
+                  iconColor="green"
+                  onClick={() => window.location.href = `tel:${client.phone}`}
+                />
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Tab Content */}
         <div className="flex-1 overflow-hidden flex flex-col">
@@ -527,6 +540,16 @@ function ClientProfileContent() {
         onClose={() => setShowSettingsPanel(false)}
         clientId={clientId}
         defaultTab={settingsDefaultTab}
+      />
+
+      {/* Flag Modal */}
+      <FlagCreationModal
+        isOpen={flagModalOpen}
+        onClose={() => setFlagModalOpen(false)}
+        entityType="client"
+        entityId={clientId}
+        entityName={client.name}
+        clientId={clientId}
       />
     </div>
   );

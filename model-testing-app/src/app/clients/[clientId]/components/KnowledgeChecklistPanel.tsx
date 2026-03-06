@@ -41,7 +41,9 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
+  Flag,
 } from 'lucide-react';
+import FlagCreationModal from '@/components/FlagCreationModal';
 import { cn } from '@/lib/utils';
 
 interface LinkedDocument {
@@ -95,8 +97,10 @@ export default function KnowledgeChecklistPanel({
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [linkingItemId, setLinkingItemId] = useState<Id<"knowledgeChecklistItems"> | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<Id<"knowledgeChecklistItems"> | null>(null);
+  const [flaggingItem, setFlaggingItem] = useState<ChecklistItem | null>(null);
 
   // Query for available documents to link
+  // @ts-ignore - Known Convex TypeScript type instantiation depth issue
   const documents = useQuery(api.documents.getByClient, { clientId }) as any[] | undefined;
   
   // Query for linked documents when an item is expanded
@@ -311,9 +315,13 @@ export default function KnowledgeChecklistPanel({
                     className="flex items-center gap-2 text-xs hover:bg-gray-100 rounded px-1 py-0.5 -ml-1"
                   >
                     <FileText className="w-3.5 h-3.5 text-green-600" />
-                    <span className="text-green-700 font-medium truncate max-w-[150px]">
+                    <a
+                      href={`/docs/reader/${item.primaryDocument.documentId}`}
+                      className="text-green-700 font-medium truncate max-w-[150px] hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {item.primaryDocument.documentName}
-                    </span>
+                    </a>
                     {(item.linkedDocumentCount || 0) > 1 && (
                       <Badge variant="outline" className="text-[10px] h-4">
                         +{(item.linkedDocumentCount || 1) - 1} more
@@ -338,12 +346,16 @@ export default function KnowledgeChecklistPanel({
                     {linkedDocuments.map((doc) => (
                       <div key={doc._id} className="flex items-center gap-2 text-xs group">
                         <FileText className="w-3 h-3 text-gray-400" />
-                        <span className={cn(
-                          "truncate max-w-[140px]",
-                          doc.isPrimary ? "text-green-700 font-medium" : "text-gray-600"
-                        )}>
+                        <a
+                          href={`/docs/reader/${doc.documentId}`}
+                          className={cn(
+                            "truncate max-w-[140px] hover:underline",
+                            doc.isPrimary ? "text-green-700 font-medium" : "text-gray-600"
+                          )}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {doc.documentName}
-                        </span>
+                        </a>
                         {doc.isPrimary && (
                           <Badge variant="outline" className="text-[9px] h-3 text-green-600">
                             Primary
@@ -438,6 +450,22 @@ export default function KnowledgeChecklistPanel({
                 </Tooltip>
               </TooltipProvider>
             )}
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-gray-400 hover:text-amber-500"
+                    onClick={() => setFlaggingItem(item)}
+                  >
+                    <Flag className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Flag for review</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
             {item.isCustom && (
               <TooltipProvider>
@@ -620,6 +648,20 @@ export default function KnowledgeChecklistPanel({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Flag Modal */}
+      {flaggingItem && (
+        <FlagCreationModal
+          isOpen={!!flaggingItem}
+          onClose={() => setFlaggingItem(null)}
+          entityType="checklist_item"
+          entityId={flaggingItem._id}
+          entityName={flaggingItem.name}
+          entityContext={flaggingItem.category}
+          clientId={clientId}
+          projectId={projectId}
+        />
+      )}
     </>
   );
 }

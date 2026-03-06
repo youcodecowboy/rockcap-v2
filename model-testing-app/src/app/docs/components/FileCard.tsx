@@ -27,9 +27,12 @@ import {
   ChevronDown,
   ChevronRight,
   MessageSquareText,
+  Flag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
 import DocumentNotesIndicator from '@/components/DocumentNotesIndicator';
+import FlagCreationModal from '@/components/FlagCreationModal';
 
 export interface Document {
   _id: Id<"documents">;
@@ -86,6 +89,8 @@ export default function FileCard({
   isVersionExpanded,
   onToggleVersions,
 }: FileCardProps) {
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
+
   const getFileIcon = (iconClass = "w-8 h-8") => {
     const type = document.fileType.toLowerCase();
     if (type.includes('pdf')) {
@@ -193,6 +198,11 @@ export default function FileCard({
           Move to Folder
         </DropdownMenuItem>
       )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, () => setFlagModalOpen(true))}>
+        <Flag className="w-4 h-4 mr-2" />
+        Flag for Review
+      </DropdownMenuItem>
       {onDelete && (
         <>
           <DropdownMenuSeparator />
@@ -208,10 +218,22 @@ export default function FileCard({
     </>
   );
 
+  const flagModal = (
+    <FlagCreationModal
+      isOpen={flagModalOpen}
+      onClose={() => setFlagModalOpen(false)}
+      entityType="document"
+      entityId={document._id}
+      entityName={document.documentCode || document.fileName}
+      entityContext={[document.clientName, document.projectName].filter(Boolean).join(' / ') || undefined}
+    />
+  );
+
   if (viewMode === 'list') {
     const hasSubline = !!document.documentCode;
 
     return (
+      <>
       <div
         onClick={onClick}
         className={cn(
@@ -316,11 +338,14 @@ export default function FileCard({
           </DropdownMenu>
         </div>
       </div>
+      {flagModal}
+      </>
     );
   }
 
   // Grid view
   return (
+    <>
     <div
       onClick={onClick}
       className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group"
@@ -385,5 +410,7 @@ export default function FileCard({
         <span>{formatFileSize(document.fileSize)}</span>
       </div>
     </div>
+    {flagModal}
+    </>
   );
 }

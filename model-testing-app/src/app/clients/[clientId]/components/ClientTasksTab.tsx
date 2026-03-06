@@ -36,6 +36,7 @@ import {
   Save,
   User,
 } from 'lucide-react';
+import FlagCreationModal from '@/components/FlagCreationModal';
 
 interface ClientTasksTabProps {
   clientId: Id<"clients">;
@@ -59,6 +60,7 @@ export default function ClientTasksTab({
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editedTask, setEditedTask] = useState<any>(null);
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
 
   // Query tasks for this client
   // @ts-ignore - Convex type instantiation issue
@@ -583,6 +585,15 @@ export default function ClientTasksTab({
                       Edit
                     </Button>
                     <Button
+                      onClick={() => setFlagModalOpen(true)}
+                      size="sm"
+                      variant="outline"
+                      className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                      title="Flag for Review"
+                    >
+                      <Flag className="w-4 h-4" />
+                    </Button>
+                    <Button
                       onClick={() => handleDeleteTask(selectedTask._id)}
                       size="sm"
                       variant="outline"
@@ -755,6 +766,19 @@ export default function ClientTasksTab({
           </div>
         )}
       </div>
+
+      {selectedTask && (
+        <FlagCreationModal
+          isOpen={flagModalOpen}
+          onClose={() => setFlagModalOpen(false)}
+          entityType="task"
+          entityId={selectedTask._id}
+          entityName={selectedTask.title}
+          entityContext={clientName}
+          clientId={clientId}
+          projectId={selectedTask.projectId}
+        />
+      )}
     </div>
   );
 }

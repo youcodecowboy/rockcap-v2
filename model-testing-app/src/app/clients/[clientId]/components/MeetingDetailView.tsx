@@ -21,7 +21,11 @@ import {
   User,
   Building2,
   Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  Flag,
 } from 'lucide-react';
+import FlagCreationModal from '@/components/FlagCreationModal';
 
 interface Attendee {
   name: string;
@@ -54,6 +58,7 @@ interface Meeting {
   sourceDocumentId?: Id<"documents">;
   sourceDocumentName?: string;
   extractionConfidence?: number;
+  verified?: boolean;
   notes?: string;
   createdAt: string;
 }
@@ -84,11 +89,14 @@ const meetingTypeColors: Record<string, string> = {
 
 export default function MeetingDetailView({ meeting, clientId, onClose }: MeetingDetailViewProps) {
   const [promotingItemId, setPromotingItemId] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
 
   const currentUser = useQuery(api.users.getCurrent, {});
   const updateActionItemStatus = useMutation(api.meetings.updateActionItemStatus);
   const promoteToTask = useMutation(api.meetings.promoteActionItemToTask);
   const deleteMeeting = useMutation(api.meetings.deleteMeeting);
+  const verifyMeeting = useMutation(api.meetings.verifyMeeting);
 
   const formattedDate = new Date(meeting.meetingDate).toLocaleDateString('en-US', {
     weekday: 'long',
@@ -139,6 +147,27 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
     }
   };
 
+  const handleVerify = async () => {
+    setIsVerifying(true);
+    try {
+      await verifyMeeting({ meetingId: meeting._id });
+    } catch (error) {
+      console.error('Failed to verify meeting:', error);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleDismiss = async () => {
+    if (!confirm('Dismiss this auto-extracted meeting? This will delete it.')) return;
+    try {
+      await deleteMeeting({ meetingId: meeting._id });
+      onClose();
+    } catch (error) {
+      console.error('Failed to dismiss meeting:', error);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Header */}
@@ -162,14 +191,25 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
               </div>
               <h1 className="text-2xl font-bold text-gray-900">{meeting.title}</h1>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDelete}
-              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFlagModalOpen(true)}
+                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                title="Flag for Review"
+              >
+                <Flag className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDelete}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Attendees */}
@@ -196,6 +236,44 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
           )}
         </div>
       </div>
+
+      {/* Verification Banner */}
+      {meeting.verified === false && (
+        <div className="mx-6 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800">
+                This meeting was auto-extracted{meeting.sourceDocumentName ? ` from "${meeting.sourceDocumentName}"` : ''}. Please review before approving.
+              </p>
+              <div className="flex items-center gap-2 mt-3">
+                <Button
+                  onClick={handleVerify}
+                  disabled={isVerifying}
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {isVerifying ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 mr-1" />
+                  )}
+                  Approve Meeting
+                </Button>
+                <Button
+                  onClick={handleDismiss}
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="p-6 space-y-6">
@@ -364,6 +442,16 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
           </section>
         )}
       </div>
+
+      <FlagCreationModal
+        isOpen={flagModalOpen}
+        onClose={() => setFlagModalOpen(false)}
+        entityType="meeting"
+        entityId={meeting._id}
+        entityName={meeting.title}
+        entityContext={formattedDate}
+        clientId={clientId}
+      />
     </div>
   );
 }
