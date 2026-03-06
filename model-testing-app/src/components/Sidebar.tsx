@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 import {
   Archive,
   Building,
@@ -32,6 +34,8 @@ export default function Sidebar() {
   const [isHovered, setIsHovered] = useState(false);
   const { isOpen: isChatOpen } = useChatDrawer();
   const { isOpen: isGlobalSearchOpen } = useGlobalSearch();
+  const openFlags = useQuery(api.flags.getMyFlags, { status: "open" });
+  const unreadCount = openFlags?.length ?? 0;
 
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/';
@@ -77,14 +81,26 @@ export default function Sidebar() {
                     : 'hover:bg-gray-900'
                 } ${isHovered ? 'justify-start px-3 w-auto' : ''}`}
               >
+                <span className="relative">
                 <Icon className={`h-4 w-4 flex-shrink-0 stroke-[1.5] ${
                   active ? 'text-white' : 'text-white'
                 }`} />
+                {item.href === '/inbox' && unreadCount > 0 && !isHovered && (
+                  <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[16px] h-4 px-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold leading-none">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </span>
                 {isHovered && (
-                  <span className={`text-sm font-normal whitespace-nowrap ml-3 ${
+                  <span className={`text-sm font-normal whitespace-nowrap ml-3 flex items-center gap-2 ${
                     active ? 'text-white' : 'text-white'
                   }`}>
                     {item.label}
+                    {item.href === '/inbox' && unreadCount > 0 && (
+                      <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-white text-[10px] font-bold leading-none">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
                   </span>
                 )}
               </Link>
