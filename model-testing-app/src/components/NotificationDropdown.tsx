@@ -5,7 +5,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { useRouter } from 'next/navigation';
-import { Bell, CheckCircle2, AlertCircle, Loader2, X, Clock, CheckSquare, History, Files, FolderOpen } from 'lucide-react';
+import { Bell, CheckCircle2, AlertCircle, Loader2, X, Clock, CheckSquare, History, Files, FolderOpen, Flag } from 'lucide-react';
 
 const formatTimeAgo = (dateString: string): string => {
   const date = new Date(dateString);
@@ -141,6 +141,8 @@ export default function NotificationDropdown() {
       router.push(`/reminders`);
     } else if (type === 'task' && relatedId) {
       router.push(`/tasks`);
+    } else if (type === 'flag' && relatedId) {
+      router.push(`/inbox?flag=${relatedId}`);
     } else if (type === 'changelog') {
       router.push(`/settings/changelog`);
     }
@@ -209,6 +211,8 @@ export default function NotificationDropdown() {
                         return <CheckSquare className="w-4 h-4 text-purple-600" />;
                       case 'changelog':
                         return <History className="w-4 h-4 text-green-600" />;
+                      case 'flag':
+                        return <Flag className="w-4 h-4 text-orange-500" />;
                       default:
                         return <Bell className="w-4 h-4 text-gray-600" />;
                     }
