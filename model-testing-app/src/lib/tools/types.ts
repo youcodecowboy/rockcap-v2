@@ -24,6 +24,8 @@ export const TOOL_DOMAINS = [
   "intelligence",
   "internalDocument",
   "fileQueue",
+  "meeting",
+  "flag",
 ] as const;
 
 export type ToolDomain = (typeof TOOL_DOMAINS)[number];

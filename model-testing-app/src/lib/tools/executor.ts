@@ -973,6 +973,175 @@ const handlers: Record<string, ToolHandler> = {
     };
   },
 
+  // ==========================================================================
+  // MEETINGS
+  // ==========================================================================
+  getMeetingsByClient: async (params, client) =>
+    client.query(api.meetings.getByClient, {
+      clientId: params.clientId as Id<"clients">,
+      limit: params.limit ? parseInt(params.limit, 10) : undefined,
+    }),
+
+  getMeetingsByProject: async (params, client) =>
+    client.query(api.meetings.getByProject, {
+      projectId: params.projectId as Id<"projects">,
+      limit: params.limit ? parseInt(params.limit, 10) : undefined,
+    }),
+
+  getMeeting: async (params, client) =>
+    client.query(api.meetings.get, {
+      meetingId: params.meetingId as Id<"meetings">,
+    }),
+
+  getMeetingCount: async (params, client) =>
+    client.query(api.meetings.getCountByClient, {
+      clientId: params.clientId as Id<"clients">,
+    }),
+
+  getPendingActionItems: async (params, client) =>
+    client.query(api.meetings.getPendingActionItemsCount, {
+      clientId: params.clientId as Id<"clients">,
+    }),
+
+  createMeeting: async (params, client) => {
+    const now = new Date().toISOString();
+    const parseJsonArray = (val: any) => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === "string") {
+        try { return JSON.parse(val); } catch { return []; }
+      }
+      return [];
+    };
+
+    return client.mutation(api.meetings.create, {
+      clientId: params.clientId as Id<"clients">,
+      projectId: params.projectId ? (params.projectId as Id<"projects">) : undefined,
+      title: params.title,
+      meetingDate: params.meetingDate,
+      meetingType: params.meetingType,
+      summary: params.summary,
+      keyPoints: parseJsonArray(params.keyPoints),
+      decisions: parseJsonArray(params.decisions),
+      actionItems: parseJsonArray(params.actionItems).map((item: any, i: number) => ({
+        id: item.id || `action-${i + 1}`,
+        description: item.description || "",
+        assignee: item.assignee,
+        dueDate: item.dueDate,
+        status: item.status || "pending",
+        createdAt: item.createdAt || now,
+      })),
+      attendees: parseJsonArray(params.attendees).map((a: any) => ({
+        name: a.name || "Unknown",
+        role: a.role,
+        company: a.company,
+      })),
+      notes: params.notes,
+    });
+  },
+
+  updateMeeting: async (params, client) =>
+    client.mutation(api.meetings.update, {
+      meetingId: params.meetingId as Id<"meetings">,
+      title: params.title,
+      meetingDate: params.meetingDate,
+      meetingType: params.meetingType,
+      summary: params.summary,
+      notes: params.notes,
+    }),
+
+  updateActionItemStatus: async (params, client) =>
+    client.mutation(api.meetings.updateActionItemStatus, {
+      meetingId: params.meetingId as Id<"meetings">,
+      actionItemId: params.actionItemId,
+      status: params.status,
+    }),
+
+  extractMeetingFromText: async (params, _client) => {
+    // Call the meeting-extract API route which uses Claude Haiku 4.5
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000";
+
+    const response = await fetch(`${baseUrl}/api/meeting-extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: params.clientId,
+        projectId: params.projectId,
+        content: params.content,
+        documentName: params.documentName,
+        save: true,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Meeting extraction failed");
+    }
+
+    const result = await response.json();
+    return {
+      meetingId: result.meetingId,
+      extraction: result.extraction,
+      message: `Created meeting "${result.extraction.title}" with ${result.extraction.actionItems.length} action items and ${result.extraction.attendees.length} attendees.`,
+    };
+  },
+
+  verifyMeeting: async (params, client) =>
+    client.mutation(api.meetings.verifyMeeting, {
+      meetingId: params.meetingId as Id<"meetings">,
+    }),
+
+  deleteMeeting: async (params, client) =>
+    client.mutation(api.meetings.deleteMeeting, {
+      meetingId: params.meetingId as Id<"meetings">,
+    }),
+
+  // ==========================================================================
+  // FLAG
+  // ==========================================================================
+  getFlags: async (params, client) =>
+    client.query(api.flags.getByEntity, {
+      entityType: params.entityType,
+      entityId: params.entityId,
+    }),
+
+  getFlagThread: async (params, client) =>
+    client.query(api.flags.getThread, {
+      flagId: params.flagId as Id<"flags">,
+    }),
+
+  createFlag: async (params, client) =>
+    client.mutation(api.flags.create, {
+      entityType: params.entityType,
+      entityId: params.entityId,
+      assignedTo: params.assignedTo ? (params.assignedTo as Id<"users">) : undefined,
+      note: params.note,
+      priority: params.priority,
+      clientId: params.clientId ? (params.clientId as Id<"clients">) : undefined,
+      projectId: params.projectId ? (params.projectId as Id<"projects">) : undefined,
+    }),
+
+  replyToFlag: async (params, client) =>
+    client.mutation(api.flags.reply, {
+      flagId: params.flagId as Id<"flags">,
+      content: params.content,
+      resolve: params.resolve,
+    }),
+
+  resolveFlag: async (params, client) =>
+    client.mutation(api.flags.resolve, {
+      id: params.flagId as Id<"flags">,
+    }),
+
+  deleteFlag: async (params, client) =>
+    client.mutation(api.flags.remove, {
+      id: params.flagId as Id<"flags">,
+    }),
+
+  // ==========================================================================
+  // ANALYSIS / FILING
+  // ==========================================================================
   saveChatDocument: async (params, client) => {
     // Convex IDs are lowercase alphanumeric, 20+ chars — validate before passing
     const isConvexId = (v: unknown) =>

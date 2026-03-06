@@ -25,6 +25,8 @@ import { INTELLIGENCE_TOOLS } from "./domains/intelligence.tools";
 import { INTERNAL_DOCUMENT_TOOLS } from "./domains/internalDocument.tools";
 import { FILE_QUEUE_TOOLS } from "./domains/fileQueue.tools";
 import { ANALYSIS_TOOLS } from "./domains/analysis.tools";
+import { MEETING_TOOLS } from "./domains/meeting.tools";
+import { FLAG_TOOLS } from "./domains/flag.tools";
 
 /**
  * Core write tools always available in global context
@@ -38,6 +40,9 @@ const GLOBAL_WRITE_TOOLS = new Set([
   "createNote",
   "createContact",
   "saveChatDocument",
+  "createMeeting",
+  "extractMeetingFromText",
+  "createFlag",
 ]);
 
 /**
@@ -59,6 +64,8 @@ const CLIENT_CONTEXT_DOMAINS: ToolDomain[] = [
   "knowledgeBank",
   "intelligence",
   "internalDocument",
+  "meeting",
+  "flag",
 ];
 
 const PROJECT_CONTEXT_DOMAINS: ToolDomain[] = [
@@ -73,6 +80,8 @@ const PROJECT_CONTEXT_DOMAINS: ToolDomain[] = [
   "knowledgeBank",
   "intelligence",
   "fileQueue",
+  "meeting",
+  "flag",
 ];
 
 export class ToolRegistry {
@@ -95,6 +104,8 @@ export class ToolRegistry {
       ...INTERNAL_DOCUMENT_TOOLS,
       ...FILE_QUEUE_TOOLS,
       ...ANALYSIS_TOOLS,
+      ...MEETING_TOOLS,
+      ...FLAG_TOOLS,
     ]);
   }
 
