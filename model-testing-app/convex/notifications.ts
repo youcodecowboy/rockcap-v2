@@ -28,7 +28,8 @@ export const create = mutation({
       v.literal("file_upload"),
       v.literal("reminder"),
       v.literal("task"),
-      v.literal("changelog")
+      v.literal("changelog"),
+      v.literal("flag")
     ),
     title: v.string(),
     message: v.string(),
@@ -63,7 +64,9 @@ export const getByUser = query({
     type: v.optional(v.union(
       v.literal("file_upload"),
       v.literal("reminder"),
-      v.literal("task")
+      v.literal("task"),
+      v.literal("changelog"),
+      v.literal("flag")
     )),
     isRead: v.optional(v.boolean()),
     limit: v.optional(v.number()),
@@ -145,7 +148,9 @@ export const markAllAsRead = mutation({
     type: v.optional(v.union(
       v.literal("file_upload"),
       v.literal("reminder"),
-      v.literal("task")
+      v.literal("task"),
+      v.literal("changelog"),
+      v.literal("flag")
     )),
   },
   handler: async (ctx, args) => {
@@ -182,7 +187,9 @@ export const getUnreadCount = query({
     type: v.optional(v.union(
       v.literal("file_upload"),
       v.literal("reminder"),
-      v.literal("task")
+      v.literal("task"),
+      v.literal("changelog"),
+      v.literal("flag")
     )),
   },
   handler: async (ctx, args) => {
