@@ -5,6 +5,7 @@ import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { CheckSquare, Circle, Clock, User, Building2, FolderKanban, Tag } from 'lucide-react';
 import Link from 'next/link';
+import { FlagIndicator } from '@/components/FlagIndicator';
 
 interface TaskCardProps {
   task: {
@@ -77,6 +78,7 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
           <div className="flex items-center gap-2 mb-1">
             {getStatusIcon()}
             <h3 className="font-semibold text-gray-900">{task.title}</h3>
+            <FlagIndicator entityType="task" entityId={task._id} />
           </div>
           {task.description && (
             <p className="text-sm text-gray-600 mb-2">{task.description}</p>

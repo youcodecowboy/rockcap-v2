@@ -54,6 +54,7 @@ import {
   Flag,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
+import { FlagIndicator } from '@/components/FlagIndicator';
 
 // Import tab components
 import ClientDocumentLibrary from './components/ClientDocumentLibrary';
@@ -243,6 +244,7 @@ function ClientProfileContent() {
                 }`} />
               </div>
               <h1 className="text-base font-semibold text-gray-900">{client.name}</h1>
+              <FlagIndicator entityType="client" entityId={clientId} />
               <EditableStatusBadge
                 status={client.status as 'prospect' | 'active' | 'archived' | 'past' | undefined}
                 onStatusChange={handleStatusChange}

@@ -2,6 +2,7 @@
 
 import { Calendar, Users, CheckSquare, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { FlagIndicator } from '@/components/FlagIndicator';
 
 interface Attendee {
   name: string;
@@ -24,6 +25,7 @@ interface Meeting {
   attendees: Attendee[];
   summary: string;
   actionItems: ActionItem[];
+  verified?: boolean;
 }
 
 interface MeetingCardProps {
@@ -77,19 +79,30 @@ export default function MeetingCard({ meeting, isSelected, onClick }: MeetingCar
           <Calendar className="w-3 h-3" />
           <span>{formattedDate}{showYear ? `, ${year}` : ''}</span>
         </div>
-        {meeting.meetingType && (
-          <Badge
-            variant="secondary"
-            className={`text-[10px] px-1.5 py-0.5 ${meetingTypeColors[meeting.meetingType] || meetingTypeColors.other}`}
-          >
-            {meetingTypeLabels[meeting.meetingType] || meeting.meetingType}
-          </Badge>
-        )}
+        <div className="flex items-center gap-1">
+          {meeting.verified === false && (
+            <Badge
+              variant="secondary"
+              className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700"
+            >
+              Needs Review
+            </Badge>
+          )}
+          {meeting.meetingType && (
+            <Badge
+              variant="secondary"
+              className={`text-[10px] px-1.5 py-0.5 ${meetingTypeColors[meeting.meetingType] || meetingTypeColors.other}`}
+            >
+              {meetingTypeLabels[meeting.meetingType] || meeting.meetingType}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Title */}
-      <h4 className="font-medium text-gray-900 text-sm mb-1 line-clamp-1">
-        {meeting.title}
+      <h4 className="font-medium text-gray-900 text-sm mb-1 line-clamp-1 flex items-center gap-1">
+        <span>{meeting.title}</span>
+        <FlagIndicator entityType="meeting" entityId={meeting._id} />
       </h4>
 
       {/* Summary Preview */}

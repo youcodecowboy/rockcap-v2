@@ -40,6 +40,7 @@ import {
   Flag,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
+import { FlagIndicator } from '@/components/FlagIndicator';
 
 // Import project-specific components
 import ProjectOverviewTab from './components/ProjectOverviewTab';
@@ -214,6 +215,7 @@ function ProjectDetailContent() {
                 }`} />
               </div>
               <h1 className="text-base font-semibold text-gray-900">{project.name}</h1>
+              <FlagIndicator entityType="project" entityId={projectId} />
               {getStatusBadge(project.status)}
               {project.projectShortcode && (
                 <Badge variant="outline" className="font-mono text-xs">

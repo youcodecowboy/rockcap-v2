@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import DocumentNotesIndicator from '@/components/DocumentNotesIndicator';
 import FlagCreationModal from '@/components/FlagCreationModal';
+import { FlagIndicator } from '@/components/FlagIndicator';
 
 export interface Document {
   _id: Id<"documents">;
@@ -284,6 +285,7 @@ export default function FileCard({
                 +{versionCount - 1} ver
               </span>
             )}
+            <FlagIndicator entityType="document" entityId={document._id} />
             {document.noteCount && document.noteCount > 0 ? (
               <span className="flex items-center gap-0.5 text-[10px] text-amber-600 flex-shrink-0">
                 <MessageSquareText className="w-3 h-3" />
@@ -374,8 +376,9 @@ export default function FileCard({
 
       {/* Document Name */}
       <div className="mb-2">
-        <div className="font-medium text-gray-900 text-sm truncate">
-          {document.documentCode || document.fileName}
+        <div className="flex items-center gap-1 font-medium text-gray-900 text-sm">
+          <span className="truncate">{document.documentCode || document.fileName}</span>
+          <FlagIndicator entityType="document" entityId={document._id} />
         </div>
         {document.documentCode && (
           <div className="text-xs text-gray-500 truncate mt-0.5">
