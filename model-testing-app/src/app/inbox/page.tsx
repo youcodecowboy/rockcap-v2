@@ -1,33 +1,131 @@
 'use client';
 
-import { Mail } from 'lucide-react';
+import { Suspense } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useCallback, useMemo } from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import InboxSidebar, { type InboxFilter } from './components/InboxSidebar';
+import InboxItemList, { type InboxItem } from './components/InboxItemList';
+import InboxDetailPanel from './components/InboxDetailPanel';
 
-export default function InboxPage() {
+const VALID_FILTERS: InboxFilter[] = ['all', 'flags', 'notifications', 'mentions', 'resolved'];
+
+function InboxPageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Read URL state
+  const filterParam = searchParams.get('filter') as InboxFilter | null;
+  const activeFilter: InboxFilter =
+    filterParam && VALID_FILTERS.includes(filterParam) ? filterParam : 'all';
+  const selectedId = searchParams.get('selected') || searchParams.get('flag') || null;
+
+  // Query all filter counts in parallel
+  const allItems = useQuery(api.flags.getInboxItems, { filter: 'all' });
+  const flagItems = useQuery(api.flags.getInboxItems, { filter: 'flags' });
+  const notifItems = useQuery(api.flags.getInboxItems, { filter: 'notifications' });
+  const mentionItems = useQuery(api.flags.getInboxItems, { filter: 'mentions' });
+  const resolvedItems = useQuery(api.flags.getInboxItems, { filter: 'resolved' });
+
+  // Current filter items
+  const currentItems: InboxItem[] = useMemo(() => {
+    const itemMap: Record<InboxFilter, typeof allItems> = {
+      all: allItems,
+      flags: flagItems,
+      notifications: notifItems,
+      mentions: mentionItems,
+      resolved: resolvedItems,
+    };
+    return (itemMap[activeFilter] || []) as InboxItem[];
+  }, [activeFilter, allItems, flagItems, notifItems, mentionItems, resolvedItems]);
+
+  const counts = useMemo(
+    () => ({
+      all: allItems?.length || 0,
+      flags: flagItems?.length || 0,
+      notifications: notifItems?.length || 0,
+      mentions: mentionItems?.length || 0,
+      resolved: resolvedItems?.length || 0,
+    }),
+    [allItems, flagItems, notifItems, mentionItems, resolvedItems]
+  );
+
+  // Determine kind of selected item
+  const selectedKind = useMemo(() => {
+    if (!selectedId || !currentItems) return null;
+    const item = currentItems.find((i) => i.id === selectedId);
+    return item?.kind || null;
+  }, [selectedId, currentItems]);
+
+  // URL state updaters
+  const updateParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null) {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      }
+      // Clean up legacy 'flag' param
+      params.delete('flag');
+      const qs = params.toString();
+      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+    },
+    [searchParams, router, pathname]
+  );
+
+  const handleFilterChange = useCallback(
+    (filter: InboxFilter) => {
+      updateParams({ filter: filter === 'all' ? null : filter, selected: null });
+    },
+    [updateParams]
+  );
+
+  const handleSelect = useCallback(
+    (id: string) => {
+      updateParams({ selected: id });
+    },
+    [updateParams]
+  );
+
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Development Banner */}
-        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-3">
-          <div className="flex items-center gap-2">
-            <span className="text-amber-600">🚧</span>
-            <p className="text-sm text-amber-800">
-              <span className="font-medium">In Development</span> — This feature is not yet functional. Google Workspace integration will be deployed in a future release.
-            </p>
-          </div>
-        </div>
+    <div className="flex h-[calc(100vh-4rem)] bg-white">
+      {/* Left Panel */}
+      <InboxSidebar
+        activeFilter={activeFilter}
+        onFilterChange={handleFilterChange}
+        counts={counts}
+      >
+        <InboxItemList
+          items={currentItems || []}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+        />
+      </InboxSidebar>
 
-        {/* Coming Soon Content */}
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center">
-            <Mail className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Coming Soon</h1>
-            <p className="text-gray-600 max-w-md">
-              This inbox will be connected to Google Workspace for mail integration.
-            </p>
-          </div>
-        </div>
+      {/* Right Panel */}
+      <div className="flex-1 min-w-0">
+        <InboxDetailPanel selectedId={selectedId} selectedKind={selectedKind} />
       </div>
     </div>
   );
 }
 
+// Wrap in Suspense for useSearchParams
+export default function InboxPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex-1 flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+        </div>
+      }
+    >
+      <InboxPageContent />
+    </Suspense>
+  );
+}
