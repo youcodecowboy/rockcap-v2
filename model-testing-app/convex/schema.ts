@@ -1633,7 +1633,8 @@ export default defineSchema({
       v.literal("file_upload"),
       v.literal("reminder"),
       v.literal("task"),
-      v.literal("changelog")
+      v.literal("changelog"),
+      v.literal("flag")
     ),
     title: v.string(),
     message: v.string(),
@@ -3223,5 +3224,48 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_table", ["tableName"])
     .index("by_action", ["action"]),
+
+  // ============================================================================
+  // FLAGS - Universal flagging system for cross-team collaboration
+  // ============================================================================
+
+  flags: defineTable({
+    entityType: v.union(
+      v.literal("document"),
+      v.literal("meeting"),
+      v.literal("task"),
+      v.literal("project"),
+      v.literal("client"),
+      v.literal("checklist_item")
+    ),
+    entityId: v.string(),
+    createdBy: v.id("users"),
+    assignedTo: v.id("users"),
+    note: v.string(),
+    status: v.union(v.literal("open"), v.literal("resolved")),
+    priority: v.union(v.literal("normal"), v.literal("urgent")),
+    resolvedBy: v.optional(v.id("users")),
+    resolvedAt: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    createdAt: v.string(),
+  })
+    .index("by_assignedTo", ["assignedTo"])
+    .index("by_createdBy", ["createdBy"])
+    .index("by_entity", ["entityType", "entityId"])
+    .index("by_status", ["status"])
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .index("by_assignedTo_status", ["assignedTo", "status"]),
+
+  flagThreadEntries: defineTable({
+    flagId: v.id("flags"),
+    entryType: v.union(v.literal("message"), v.literal("activity")),
+    userId: v.optional(v.id("users")),
+    content: v.string(),
+    metadata: v.optional(v.any()),
+    createdAt: v.string(),
+  })
+    .index("by_flag", ["flagId", "createdAt"]),
 });
 
