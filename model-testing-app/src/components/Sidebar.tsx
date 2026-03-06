@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useQuery } from 'convex/react';
+import { useConvexAuth, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import {
   Archive,
@@ -34,7 +34,8 @@ export default function Sidebar() {
   const [isHovered, setIsHovered] = useState(false);
   const { isOpen: isChatOpen } = useChatDrawer();
   const { isOpen: isGlobalSearchOpen } = useGlobalSearch();
-  const openFlags = useQuery(api.flags.getMyFlags, { status: "open" });
+  const { isAuthenticated } = useConvexAuth();
+  const openFlags = useQuery(api.flags.getMyFlags, isAuthenticated ? { status: "open" } : "skip");
   const unreadCount = openFlags?.length ?? 0;
 
   const isActive = (path: string) => {
