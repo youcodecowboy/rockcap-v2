@@ -842,6 +842,36 @@ export const update = mutation({
       }
     }
 
+    // Log flag activity for meaningful changes
+    const changedFields: string[] = [];
+    if (updates.fileTypeDetected !== undefined && updates.fileTypeDetected !== existing.fileTypeDetected) {
+      changedFields.push(`file type to "${updates.fileTypeDetected}"`);
+    }
+    if (updates.category !== undefined && updates.category !== existing.category) {
+      changedFields.push(`category to "${updates.category}"`);
+    }
+    if (updates.status !== undefined && updates.status !== existing.status) {
+      changedFields.push(`status to "${updates.status}"`);
+    }
+    if (changedFields.length > 0) {
+      const openFlags = await ctx.db
+        .query("flags")
+        .withIndex("by_entity", (q: any) =>
+          q.eq("entityType", "document").eq("entityId", id)
+        )
+        .collect();
+      const now = new Date().toISOString();
+      for (const flag of openFlags.filter((f) => f.status === "open")) {
+        await ctx.db.insert("flagThreadEntries", {
+          flagId: flag._id,
+          entryType: "activity",
+          content: `Updated document: changed ${changedFields.join(", ")}`,
+          metadata: { action: "updated", changes: changedFields },
+          createdAt: now,
+        });
+      }
+    }
+
     return id;
   },
 });
@@ -1088,7 +1118,27 @@ export const moveDocument = mutation({
       isBaseDocument: args.isBaseDocument,
       documentCode: newDocumentCode || doc.documentCode,
     });
-    
+
+    // Log flag activity
+    const destination = args.isBaseDocument
+      ? "base documents"
+      : `project "${args.targetProjectName || "unknown"}"`;
+    const openFlags = await ctx.db
+      .query("flags")
+      .withIndex("by_entity", (q: any) =>
+        q.eq("entityType", "document").eq("entityId", args.documentId)
+      )
+      .collect();
+    for (const flag of openFlags.filter((f) => f.status === "open")) {
+      await ctx.db.insert("flagThreadEntries", {
+        flagId: flag._id,
+        entryType: "activity",
+        content: `Moved document to ${destination}`,
+        metadata: { action: "moved", to: destination },
+        createdAt: new Date().toISOString(),
+      });
+    }
+
     return args.documentId;
   },
 });
@@ -1252,6 +1302,29 @@ export const moveDocumentCrossScope = mutation({
         // Clear project ID for internal/personal or base documents
         await ctx.db.patch(extraction._id, { projectId: undefined });
       }
+    }
+
+    // Log flag activity for scope change
+    const scopeLabel = args.targetScope === "client"
+      ? `client scope (${clientName || "unknown"})`
+      : args.targetScope === "internal"
+        ? "internal scope"
+        : "personal scope";
+    const crossScopeFlags = await ctx.db
+      .query("flags")
+      .withIndex("by_entity", (q: any) =>
+        q.eq("entityType", "document").eq("entityId", args.documentId)
+      )
+      .collect();
+    for (const flag of crossScopeFlags.filter((f) => f.status === "open")) {
+      await ctx.db.insert("flagThreadEntries", {
+        flagId: flag._id,
+        entryType: "activity",
+        userId: user._id,
+        content: `Moved document to ${scopeLabel}`,
+        metadata: { action: "scope_change", to: args.targetScope },
+        createdAt: new Date().toISOString(),
+      });
     }
 
     return { documentId: args.documentId, newDocumentCode };

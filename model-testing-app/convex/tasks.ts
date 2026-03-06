@@ -113,6 +113,43 @@ export const update = mutation({
     if (patchData.dueDate === null) patchData.dueDate = undefined;
 
     await ctx.db.patch(id, patchData);
+
+    // Log flag activity for status or assignedTo changes
+    const activityMessages: string[] = [];
+    if (args.status !== undefined && args.status !== existing.status) {
+      activityMessages.push(`Changed task status to "${args.status}"`);
+    }
+    if (args.assignedTo !== undefined && args.assignedTo !== existing.assignedTo) {
+      if (args.assignedTo) {
+        const assignedUser = await ctx.db.get(args.assignedTo);
+        const assigneeName = assignedUser?.name || assignedUser?.email || "unknown";
+        activityMessages.push(`Reassigned task to ${assigneeName}`);
+      } else {
+        activityMessages.push("Unassigned task");
+      }
+    }
+    if (activityMessages.length > 0) {
+      const openFlags = await ctx.db
+        .query("flags")
+        .withIndex("by_entity", (q: any) =>
+          q.eq("entityType", "task").eq("entityId", id)
+        )
+        .collect();
+      const now = new Date().toISOString();
+      for (const flag of openFlags.filter((f) => f.status === "open")) {
+        for (const msg of activityMessages) {
+          await ctx.db.insert("flagThreadEntries", {
+            flagId: flag._id,
+            entryType: "activity",
+            userId: user._id,
+            content: msg,
+            metadata: { action: "updated" },
+            createdAt: now,
+          });
+        }
+      }
+    }
+
     return id;
   },
 });
@@ -146,6 +183,25 @@ export const assign = mutation({
       assignedTo: args.assignedTo,
       updatedAt: new Date().toISOString(),
     });
+
+    // Log flag activity for reassignment
+    const assigneeName = assignedUser.name || assignedUser.email || "unknown";
+    const openFlags = await ctx.db
+      .query("flags")
+      .withIndex("by_entity", (q: any) =>
+        q.eq("entityType", "task").eq("entityId", args.id)
+      )
+      .collect();
+    for (const flag of openFlags.filter((f) => f.status === "open")) {
+      await ctx.db.insert("flagThreadEntries", {
+        flagId: flag._id,
+        entryType: "activity",
+        userId: user._id,
+        content: `Reassigned task to ${assigneeName}`,
+        metadata: { action: "reassigned", to: assigneeName },
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     return args.id;
   },
@@ -260,6 +316,24 @@ export const complete = mutation({
       status: "completed",
       updatedAt: new Date().toISOString(),
     });
+
+    // Log flag activity for completion
+    const openFlags = await ctx.db
+      .query("flags")
+      .withIndex("by_entity", (q: any) =>
+        q.eq("entityType", "task").eq("entityId", args.id)
+      )
+      .collect();
+    for (const flag of openFlags.filter((f) => f.status === "open")) {
+      await ctx.db.insert("flagThreadEntries", {
+        flagId: flag._id,
+        entryType: "activity",
+        userId: user._id,
+        content: 'Changed task status to "completed"',
+        metadata: { action: "completed" },
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     return args.id;
   },

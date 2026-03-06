@@ -91,6 +91,23 @@ export const getCountByClient = query({
 });
 
 /**
+ * Get unverified (auto-extracted) meetings for a client
+ */
+export const getUnverifiedByClient = query({
+  args: {
+    clientId: v.id("clients"),
+  },
+  handler: async (ctx, args) => {
+    const meetings = await ctx.db
+      .query("meetings")
+      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    return meetings.filter((m) => m.verified === false);
+  },
+});
+
+/**
  * Get pending action items count for a client (for notifications)
  */
 export const getPendingActionItemsCount = query({
@@ -154,6 +171,7 @@ export const create = mutation({
     sourceDocumentId: v.optional(v.id("documents")),
     sourceDocumentName: v.optional(v.string()),
     extractionConfidence: v.optional(v.number()),
+    verified: v.optional(v.boolean()),
     createdBy: v.optional(v.id("users")),
     tags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
@@ -175,6 +193,7 @@ export const create = mutation({
       sourceDocumentId: args.sourceDocumentId,
       sourceDocumentName: args.sourceDocumentName,
       extractionConfidence: args.extractionConfidence,
+      verified: args.verified !== undefined ? args.verified : true,
       createdBy: args.createdBy,
       tags: args.tags,
       notes: args.notes,
@@ -222,6 +241,7 @@ export const update = mutation({
       completedAt: v.optional(v.string()),
     }))),
     projectId: v.optional(v.id("projects")),
+    verified: v.optional(v.boolean()),
     tags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
   },
@@ -246,10 +266,32 @@ export const update = mutation({
     if (updates.decisions !== undefined) updateObj.decisions = updates.decisions;
     if (updates.actionItems !== undefined) updateObj.actionItems = updates.actionItems;
     if (updates.projectId !== undefined) updateObj.projectId = updates.projectId;
+    if (updates.verified !== undefined) updateObj.verified = updates.verified;
     if (updates.tags !== undefined) updateObj.tags = updates.tags;
     if (updates.notes !== undefined) updateObj.notes = updates.notes;
 
     await ctx.db.patch(meetingId, updateObj);
+
+    // Log flag activity
+    const changedKeys = Object.keys(updates).filter((k) => (updates as any)[k] !== undefined);
+    if (changedKeys.length > 0) {
+      const openFlags = await ctx.db
+        .query("flags")
+        .withIndex("by_entity", (q: any) =>
+          q.eq("entityType", "meeting").eq("entityId", meetingId)
+        )
+        .collect();
+      for (const flag of openFlags.filter((f) => f.status === "open")) {
+        await ctx.db.insert("flagThreadEntries", {
+          flagId: flag._id,
+          entryType: "activity",
+          content: `Updated meeting details (${changedKeys.join(", ")})`,
+          metadata: { action: "updated", fields: changedKeys },
+          createdAt: now,
+        });
+      }
+    }
+
     return meetingId;
   },
 });
@@ -268,6 +310,28 @@ export const deleteMeeting = mutation({
     }
 
     await ctx.db.delete(args.meetingId);
+    return { success: true };
+  },
+});
+
+/**
+ * Verify (approve) an auto-extracted meeting
+ */
+export const verifyMeeting = mutation({
+  args: {
+    meetingId: v.id("meetings"),
+  },
+  handler: async (ctx, args) => {
+    const meeting = await ctx.db.get(args.meetingId);
+    if (!meeting) {
+      throw new Error("Meeting not found");
+    }
+
+    await ctx.db.patch(args.meetingId, {
+      verified: true,
+      updatedAt: new Date().toISOString(),
+    });
+
     return { success: true };
   },
 });
@@ -303,6 +367,25 @@ export const updateActionItemStatus = mutation({
       actionItems: updatedActionItems,
       updatedAt: now,
     });
+
+    // Log flag activity for action item status change
+    const actionItem = meeting.actionItems.find((item) => item.id === args.actionItemId);
+    const itemTitle = actionItem ? actionItem.description.substring(0, 60) : args.actionItemId;
+    const openFlags = await ctx.db
+      .query("flags")
+      .withIndex("by_entity", (q: any) =>
+        q.eq("entityType", "meeting").eq("entityId", args.meetingId)
+      )
+      .collect();
+    for (const flag of openFlags.filter((f) => f.status === "open")) {
+      await ctx.db.insert("flagThreadEntries", {
+        flagId: flag._id,
+        entryType: "activity",
+        content: `Marked action item "${itemTitle}" as ${args.status}`,
+        metadata: { action: "action_item_status", status: args.status, actionItemId: args.actionItemId },
+        createdAt: now,
+      });
+    }
 
     return { success: true };
   },
