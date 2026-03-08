@@ -447,7 +447,7 @@ export default function BulkReviewPage() {
 
       {/* Review Table */}
       <BulkReviewTable
-        items={items}
+        items={items as any}
         batchIsInternal={batch.isInternal}
         hasProject={!!batch.projectId}
         clientId={batch.clientId}
