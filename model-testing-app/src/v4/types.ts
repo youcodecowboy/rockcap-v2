@@ -112,6 +112,8 @@ export interface DocumentHints {
   isSpreadsheet: boolean;
   /** Whether this is an image/scan */
   isImage: boolean;
+  /** Subfolder name from webkitRelativePath (e.g., "Wimbledon Park") */
+  folderHint?: string;
 }
 
 // =============================================================================
@@ -210,6 +212,17 @@ export interface DocumentClassification {
     originalLabel: string;
     pageReference?: string;
   }>;
+  /** Project inference (only present in multi-project mode) */
+  projectInference?: {
+    /** ID of suggested existing project, or null if suggesting new */
+    suggestedProjectId: string | null;
+    /** Suggested new project name (when no existing project matches) */
+    suggestedProjectName: string | null;
+    /** Confidence in the project suggestion (0-1) */
+    confidence: number;
+    /** Reasoning for the project suggestion */
+    reasoning: string;
+  };
 }
 
 // =============================================================================
@@ -302,6 +315,13 @@ export interface ClientContext {
   projectId?: string;
   clientType?: string;
   clientName?: string;
+  /** Available projects for this client (enables project inference in multi-project mode) */
+  availableProjects?: Array<{
+    id: string;
+    name: string;
+    shortcode?: string;
+    address?: string;
+  }>;
 }
 
 // =============================================================================

@@ -66,6 +66,8 @@ export interface PipelineInput {
   instructions?: string;
   /** Pipeline configuration */
   config: V4PipelineConfig;
+  /** Folder hints from webkitRelativePath — maps file index to subfolder name */
+  folderHints?: Map<number, string>;
 }
 
 /** Extended result that includes placement decisions and intelligence */
