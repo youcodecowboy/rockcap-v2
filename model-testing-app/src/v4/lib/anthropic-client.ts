@@ -117,6 +117,17 @@ export function buildBatchUserMessage(
     contextText += '\n';
   }
 
+  // Available projects for multi-project inference
+  const includeProjectInference = clientContext.availableProjects && clientContext.availableProjects.length > 0 && !clientContext.projectId;
+
+  if (includeProjectInference) {
+    contextText += `\n## Available Projects for This Client\n`;
+    contextText += clientContext.availableProjects!.map(p =>
+      `- [${p.id}] "${p.name}"${p.shortcode ? ` (${p.shortcode})` : ''}${p.address ? ` — ${p.address}` : ''}`
+    ).join('\n');
+    contextText += `\n\nFor each document, determine which project it belongs to. If no existing project matches, suggest a new project name. If the document is a client-level document (not project-specific), indicate that.\n`;
+  }
+
   // User-provided instructions (uploader guidance)
   if (instructions) {
     contextText += `\n## Uploader Instructions\nThe person uploading these documents provided the following guidance:\n> ${instructions}\n\nUse this as additional context when classifying — it may indicate the document types, purpose, or scope.\n`;
@@ -157,6 +168,9 @@ export function buildBatchUserMessage(
           : '') +
         (doc.hints.matchedTags.length > 0
           ? `Matched tags: ${doc.hints.matchedTags.join(', ')}\n`
+          : '') +
+        (doc.hints.folderHint
+          ? `Folder path hint: "${doc.hints.folderHint}"\n`
           : ''),
     });
 
@@ -209,6 +223,16 @@ export function buildBatchUserMessage(
   }
 
   // Output format instruction
+  const projectInferenceSchema = includeProjectInference
+    ? `,
+    "projectInference": {
+      "suggestedProjectId": "existing_project_id_or_null",
+      "suggestedProjectName": "New Project Name or null",
+      "confidence": 0.85,
+      "reasoning": "Document references 28 Wimbledon Park Road which matches project..."
+    }`
+    : '';
+
   blocks.push({
     type: 'text',
     text: `\n---\n## Required Output Format\n` +
@@ -241,7 +265,7 @@ export function buildBatchUserMessage(
     ],
     "intelligenceFields": [
       {"fieldPath": "financials.propertyValue", "label": "Property Value", "value": "2500000", "valueType": "currency", "confidence": 0.9, "sourceText": "Market value: £2,500,000", "templateTags": ["lenders_note", "perspective"]}
-    ]
+    ]${projectInferenceSchema}
   }
 ]\n` +
       '```\n' +
@@ -413,6 +437,7 @@ function normalizeClassification(raw: any): DocumentClassification {
     },
     checklistMatches: Array.isArray(raw.checklistMatches) ? raw.checklistMatches : [],
     intelligenceFields: Array.isArray(raw.intelligenceFields) ? raw.intelligenceFields : [],
+    ...(raw.projectInference ? { projectInference: raw.projectInference } : {}),
   };
 }
 

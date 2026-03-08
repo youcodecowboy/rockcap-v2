@@ -113,6 +113,16 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
     input.files.map((f, i) => preprocessDocument(f.file, i, f.extractedText))
   );
 
+  // Attach folder hints from webkitRelativePath
+  if (input.folderHints) {
+    for (const doc of batchDocuments) {
+      const hint = input.folderHints.get(doc.index);
+      if (hint) {
+        doc.hints.folderHint = hint;
+      }
+    }
+  }
+
   console.log(`[STAGE 1] Pre-processed in ${Date.now() - preprocessStart}ms`);
   for (const doc of batchDocuments) {
     console.log(`  - "${doc.fileName}": hint=${doc.hints.filenameTypeHint || 'none'}, tags=[${doc.hints.matchedTags.join(',')}]`);

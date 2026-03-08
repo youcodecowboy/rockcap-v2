@@ -80,6 +80,9 @@ export async function POST(request: NextRequest) {
       isInternal?: boolean;
       uploaderInitials?: string;
       instructions?: string;
+      // Multi-project mode
+      availableProjects?: Array<{ id: string; name: string; shortcode?: string; address?: string }>;
+      folderHints?: Record<string, string>;
     } = {};
 
     if (metadataStr) {
@@ -97,6 +100,19 @@ export async function POST(request: NextRequest) {
     const clientContext: ClientContext = metadata.clientContext || {};
     if (clientType && !clientContext.clientType) {
       clientContext.clientType = clientType;
+    }
+
+    // Multi-project mode: merge available projects into client context
+    if (metadata.availableProjects && metadata.availableProjects.length > 0) {
+      clientContext.availableProjects = metadata.availableProjects;
+    }
+
+    // Reconstruct folderHints Map from serialized JSON
+    let folderHints: Map<number, string> | undefined;
+    if (metadata.folderHints) {
+      folderHints = new Map(
+        Object.entries(metadata.folderHints).map(([k, v]) => [parseInt(k), v])
+      );
     }
 
     // ── Server-side text extraction ──
@@ -145,6 +161,7 @@ export async function POST(request: NextRequest) {
       checklistItems: metadata.checklistItems || [],
       corrections: metadata.corrections,
       instructions: metadata.instructions,
+      folderHints,
       config,
     });
 
@@ -195,6 +212,9 @@ export async function POST(request: NextRequest) {
 
         // Intelligence fields from dedicated extraction call
         intelligenceFields: result.intelligence[doc.documentIndex] || [],
+
+        // Project inference (multi-project mode)
+        projectInference: result.documents[doc.documentIndex]?.projectInference || null,
 
         // Extracted text content for re-analysis without re-uploading
         extractedText: fullTexts.get(doc.documentIndex) || null,
