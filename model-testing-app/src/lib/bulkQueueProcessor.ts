@@ -11,6 +11,7 @@ import { generateDocumentName, generateBasePattern } from './documentNaming';
 interface BulkQueueItem {
   itemId: Id<"bulkUploadItems">;
   file: File;
+  folderHint?: string;
 }
 
 interface SuggestedChecklistItem {
@@ -146,6 +147,10 @@ export interface BulkQueueProcessorCallbacks {
     documentAnalysis?: DocumentAnalysis;
     classificationReasoning?: string;
     textContent?: string;
+    suggestedProjectId?: Id<"projects">;
+    suggestedProjectName?: string;
+    projectConfidence?: number;
+    projectReasoning?: string;
   }) => Promise<Id<"bulkUploadItems">>;
   
   updateBatchStatus: (args: {
@@ -206,6 +211,17 @@ export interface BatchInfo {
     name: string;
     level: 'client' | 'project';
   }>;
+  /** Multi-project mode — documents may belong to different projects */
+  isMultiProject?: boolean;
+  /** Available projects for AI project inference in multi-project mode */
+  availableProjects?: Array<{
+    id: string;
+    name: string;
+    shortcode?: string;
+    address?: string;
+  }>;
+  /** Map of file index to project subfolder name extracted from folder structure */
+  folderHints?: Record<string, string>;
 }
 
 export class BulkQueueProcessor {
@@ -231,8 +247,8 @@ export class BulkQueueProcessor {
   /**
    * Add an item to the processing queue
    */
-  addItem(itemId: Id<"bulkUploadItems">, file: File) {
-    this.queue.push({ itemId, file });
+  addItem(itemId: Id<"bulkUploadItems">, file: File, folderHint?: string) {
+    this.queue.push({ itemId, file, folderHint });
   }
 
   /**
@@ -397,6 +413,14 @@ export class BulkQueueProcessor {
       if (this.batchInfo!.availableFolders && this.batchInfo!.availableFolders.length > 0) {
         metadata.availableFolders = this.batchInfo!.availableFolders;
       }
+      // Multi-project mode: pass available projects for AI project inference
+      if (this.batchInfo!.isMultiProject && this.batchInfo!.availableProjects && this.batchInfo!.availableProjects.length > 0) {
+        metadata.availableProjects = this.batchInfo!.availableProjects;
+      }
+      // Pass folder hint for this item (single file, so index is always 0)
+      if (item.folderHint) {
+        metadata.folderHints = { "0": item.folderHint };
+      }
       fd.append("metadata", JSON.stringify(metadata));
       return fd;
     };
@@ -460,6 +484,8 @@ export class BulkQueueProcessor {
       : undefined;
     const documentAnalysis = doc.documentAnalysis || undefined;
     const classificationReasoning = doc.classificationReasoning || undefined;
+    // Extract project inference from V4 response (multi-project mode only)
+    const projectInference = doc.projectInference || null;
     console.log(`[BulkQueueProcessor] V4 result: ${doc.fileType} (${(doc.confidence * 100).toFixed(0)}% confidence, mock=${v4Data.isMock})`);
     if (extractedIntelligence) {
       console.log(`[BulkQueueProcessor] Intelligence fields: ${extractedIntelligence.fields.length}`);
@@ -502,7 +528,7 @@ export class BulkQueueProcessor {
     });
 
     // Update item with analysis results
-    const updateArgs = {
+    const updateArgs: Parameters<typeof this.callbacks.updateItemAnalysis>[0] = {
       itemId: item.itemId,
       fileStorageId: storageId,
       summary: result.summary,
@@ -519,6 +545,23 @@ export class BulkQueueProcessor {
       documentAnalysis: documentAnalysis,
       classificationReasoning: classificationReasoning,
     };
+
+    // Map project inference results (multi-project mode)
+    if (projectInference) {
+      // Only set suggestedProjectId if it looks like a valid Convex ID (starts with a letter + contains alphanumeric chars)
+      if (projectInference.suggestedProjectId && /^[a-z][a-z0-9]+$/.test(projectInference.suggestedProjectId)) {
+        updateArgs.suggestedProjectId = projectInference.suggestedProjectId as Id<"projects">;
+      }
+      if (projectInference.suggestedProjectName) {
+        updateArgs.suggestedProjectName = projectInference.suggestedProjectName;
+      }
+      if (typeof projectInference.confidence === 'number') {
+        updateArgs.projectConfidence = projectInference.confidence;
+      }
+      if (projectInference.reasoning) {
+        updateArgs.projectReasoning = projectInference.reasoning;
+      }
+    }
 
     console.log(`[BulkQueueProcessor] Saving to Convex:`, JSON.stringify({
       fileType: updateArgs.fileTypeDetected,

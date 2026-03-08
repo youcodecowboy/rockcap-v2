@@ -32,6 +32,7 @@ import type { Id } from '../../../convex/_generated/dataModel';
 interface V4QueueItem {
   itemId: Id<'bulkUploadItems'>;
   file: File;
+  folderHint?: string;
 }
 
 export interface V4BatchProcessorCallbacks {
@@ -83,6 +84,10 @@ export interface V4BatchProcessorCallbacks {
     };
     documentAnalysis?: Record<string, any>;
     classificationReasoning?: string;
+    suggestedProjectId?: Id<'projects'>;
+    suggestedProjectName?: string;
+    projectConfidence?: number;
+    projectReasoning?: string;
   }) => Promise<Id<'bulkUploadItems'>>;
 
   updateBatchStatus: (args: {
@@ -119,6 +124,15 @@ export interface V4BatchInfo {
   isInternal: boolean;
   instructions?: string;
   uploaderInitials: string;
+  /** Multi-project mode — documents may belong to different projects */
+  isMultiProject?: boolean;
+  /** Available projects for AI project inference in multi-project mode */
+  availableProjects?: Array<{
+    id: string;
+    name: string;
+    shortcode?: string;
+    address?: string;
+  }>;
 }
 
 export interface V4BatchProcessorOptions {
@@ -152,8 +166,8 @@ export class V4BatchProcessor {
     this.batchInfo = info;
   }
 
-  addItem(itemId: Id<'bulkUploadItems'>, file: File) {
-    this.queue.push({ itemId, file });
+  addItem(itemId: Id<'bulkUploadItems'>, file: File, folderHint?: string) {
+    this.queue.push({ itemId, file, folderHint });
   }
 
   getQueueSize(): number {
@@ -265,8 +279,16 @@ export class V4BatchProcessor {
         formData.append(`file_${index}`, item.file);
       });
 
+      // Build folder hints map from items that have folder hints
+      const folderHints: Record<string, string> = {};
+      items.forEach((item, index) => {
+        if (item.folderHint) {
+          folderHints[String(index)] = item.folderHint;
+        }
+      });
+
       // Add metadata
-      formData.append('metadata', JSON.stringify({
+      const metadata: Record<string, any> = {
         clientContext: {
           clientName: this.batchInfo!.clientName,
           clientType: this.batchInfo!.clientType,
@@ -277,7 +299,19 @@ export class V4BatchProcessor {
         uploaderInitials: this.batchInfo!.uploaderInitials,
         checklistItems: [],
         availableFolders: [],
-      }));
+      };
+
+      // Multi-project mode: pass available projects for AI project inference
+      if (this.batchInfo!.isMultiProject && this.batchInfo!.availableProjects && this.batchInfo!.availableProjects.length > 0) {
+        metadata.availableProjects = this.batchInfo!.availableProjects;
+      }
+
+      // Pass folder hints if any items have them
+      if (Object.keys(folderHints).length > 0) {
+        metadata.folderHints = folderHints;
+      }
+
+      formData.append('metadata', JSON.stringify(metadata));
 
       if (this.batchInfo!.clientType) {
         formData.append('clientType', this.batchInfo!.clientType);
@@ -316,6 +350,12 @@ export class V4BatchProcessor {
         intelligenceFields?: any[];
         placement?: { checklistMatches?: any[] };
         reasoning?: string;
+        projectInference?: {
+          suggestedProjectId: string | null;
+          suggestedProjectName: string | null;
+          confidence: number;
+          reasoning: string;
+        };
       }> = analyzeResult.documents || [];
 
       // Map each result back to its Convex item
@@ -367,6 +407,25 @@ export class V4BatchProcessor {
               ? { fields: docResult.extractedData }
               : undefined;
 
+          // Extract project inference from V4 response (multi-project mode)
+          const projectInference = docResult.projectInference || null;
+          const projectInferenceFields: Record<string, any> = {};
+          if (projectInference) {
+            // Only set suggestedProjectId if it looks like a valid Convex ID (starts with a letter + contains alphanumeric chars)
+            if (projectInference.suggestedProjectId && /^[a-z][a-z0-9]+$/.test(projectInference.suggestedProjectId)) {
+              projectInferenceFields.suggestedProjectId = projectInference.suggestedProjectId as Id<'projects'>;
+            }
+            if (projectInference.suggestedProjectName) {
+              projectInferenceFields.suggestedProjectName = projectInference.suggestedProjectName;
+            }
+            if (typeof projectInference.confidence === 'number') {
+              projectInferenceFields.projectConfidence = projectInference.confidence;
+            }
+            if (projectInference.reasoning) {
+              projectInferenceFields.projectReasoning = projectInference.reasoning;
+            }
+          }
+
           // Update item with analysis results + intelligence
           await this.callbacks.updateItemAnalysis({
             itemId: item.itemId,
@@ -383,6 +442,7 @@ export class V4BatchProcessor {
             suggestedChecklistItems: docResult.placement?.checklistMatches || undefined,
             extractedIntelligence,
             classificationReasoning: docResult.reasoning || undefined,
+            ...projectInferenceFields,
           });
 
           this.processedCount++;
