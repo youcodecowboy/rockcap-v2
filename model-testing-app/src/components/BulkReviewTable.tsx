@@ -494,6 +494,8 @@ interface BulkReviewTableProps {
   clientId?: Id<"clients">;
   projectId?: Id<"projects">;
   onRefresh?: () => void;
+  isMultiProject?: boolean;
+  projects?: Array<{ _id: Id<"projects">; name: string; projectShortcode?: string }>;
 }
 
 export default function BulkReviewTable({
@@ -503,6 +505,8 @@ export default function BulkReviewTable({
   clientId,
   projectId,
   onRefresh,
+  isMultiProject,
+  projects,
 }: BulkReviewTableProps) {
   const [selectedItems, setSelectedItems] = useState<Set<Id<"bulkUploadItems">>>(new Set());
   const [expandedItems, setExpandedItems] = useState<Set<Id<"bulkUploadItems">>>(new Set());
@@ -513,6 +517,17 @@ export default function BulkReviewTable({
   const [editingNoteItemId, setEditingNoteItemId] = useState<Id<"bulkUploadItems"> | null>(null);
   const [noteContent, setNoteContent] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
+
+  // Multi-project assignment handlers
+  const updateItemProject = useMutation(api.bulkUpload.updateItemProject);
+
+  const handleProjectAssign = async (itemId: Id<"bulkUploadItems">, projectId: Id<"projects">) => {
+    await updateItemProject({ itemId, itemProjectId: projectId, isClientLevel: false });
+  };
+
+  const handleSetClientLevel = async (itemId: Id<"bulkUploadItems">) => {
+    await updateItemProject({ itemId, itemProjectId: undefined, isClientLevel: true });
+  };
 
   // Query for checklist items
   const checklistItems = useQuery(
@@ -796,6 +811,9 @@ export default function BulkReviewTable({
                 </TableHead>
                 <TableHead className="w-8 px-1"></TableHead>
                 <TableHead className="min-w-[100px]">File</TableHead>
+                {isMultiProject && (
+                  <TableHead className="w-[120px]">Project</TableHead>
+                )}
                 <TableHead className="min-w-[140px] hidden xl:table-cell">Generated Name</TableHead>
                 <TableHead className="w-[100px]">Type</TableHead>
                 <TableHead className="w-[90px]">Category</TableHead>
@@ -842,7 +860,19 @@ export default function BulkReviewTable({
                         </span>
                       </div>
                     </TableCell>
-                    
+
+                    {/* Project Assignment (multi-project mode) */}
+                    {isMultiProject && projects && (
+                      <TableCell className="py-2">
+                        <ProjectBadge
+                          item={item}
+                          projects={projects}
+                          onAssign={(pid) => handleProjectAssign(item._id, pid)}
+                          onSetClientLevel={() => handleSetClientLevel(item._id)}
+                        />
+                      </TableCell>
+                    )}
+
                     {/* Generated Document Name - Hidden on smaller screens */}
                     <TableCell className="py-2 hidden xl:table-cell">
                       {item.generatedDocumentCode ? (
@@ -1784,5 +1814,82 @@ export default function BulkReviewTable({
         </Dialog>
       </div>
     </TooltipProvider>
+  );
+}
+
+function ProjectBadge({
+  item,
+  projects,
+  onAssign,
+  onSetClientLevel,
+}: {
+  item: any; // BulkUploadItem with project fields
+  projects: Array<{ _id: Id<"projects">; name: string; projectShortcode?: string }>;
+  onAssign: (projectId: Id<"projects">) => void;
+  onSetClientLevel: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const assignedProject = item.itemProjectId
+    ? projects.find((p: any) => p._id === item.itemProjectId)
+    : null;
+  const suggestedProject = item.suggestedProjectId
+    ? projects.find((p: any) => p._id === item.suggestedProjectId)
+    : null;
+  const isNew = item.suggestedProjectName && !item.suggestedProjectId && !item.itemProjectId;
+  const isClientLevel = item.isClientLevel;
+
+  // Auto-assign: if AI suggested an existing project but it hasn't been confirmed yet
+  const displayProject = assignedProject || suggestedProject;
+
+  return (
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <button className="text-left">
+          {displayProject && (
+            <Badge className={assignedProject ? "bg-green-100 text-green-800 cursor-pointer hover:bg-green-200" : "bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200"}>
+              {displayProject.name}
+              {!assignedProject && <span className="ml-1 text-xs opacity-60">?</span>}
+            </Badge>
+          )}
+          {isNew && !displayProject && (
+            <Badge className="bg-amber-100 text-amber-800 cursor-pointer hover:bg-amber-200">
+              New: {item.suggestedProjectName}
+            </Badge>
+          )}
+          {isClientLevel && !displayProject && !isNew && (
+            <Badge variant="secondary" className="cursor-pointer">
+              Client-level
+            </Badge>
+          )}
+          {!displayProject && !isNew && !isClientLevel && (
+            <Badge variant="outline" className="cursor-pointer text-gray-400">
+              Unassigned
+            </Badge>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2">
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-gray-500 px-2 py-1">Assign to project</p>
+          {projects.map((p: any) => (
+            <button
+              key={p._id}
+              className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100"
+              onClick={() => { onAssign(p._id); setIsOpen(false); }}
+            >
+              {p.name} {p.projectShortcode && <span className="text-gray-400">({p.projectShortcode})</span>}
+            </button>
+          ))}
+          <hr className="my-1" />
+          <button
+            className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 text-gray-600"
+            onClick={() => { onSetClientLevel(); setIsOpen(false); }}
+          >
+            Client-level document
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
