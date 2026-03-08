@@ -35,6 +35,7 @@ export const createBatch = mutation({
     personalFolderId: v.optional(v.string()),
     personalFolderName: v.optional(v.string()),
     isInternal: v.boolean(),
+    isMultiProject: v.optional(v.boolean()),
     instructions: v.optional(v.string()),
     userId: v.id("users"),
     totalFiles: v.number(),
@@ -69,6 +70,7 @@ export const createBatch = mutation({
       processedFiles: 0,
       filedFiles: 0,
       isInternal: args.isInternal,
+      isMultiProject: args.isMultiProject,
       instructions: args.instructions,
       processingMode: args.processingMode,
       userId: args.userId,
@@ -186,22 +188,24 @@ export const addItemToBatch = mutation({
     fileSize: v.number(),
     fileType: v.string(),
     fileStorageId: v.optional(v.id("_storage")),
+    folderHint: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
-    
+
     // Get batch to inherit isInternal default
     const batch = await ctx.db.get(args.batchId);
     if (!batch) {
       throw new Error("Batch not found");
     }
-    
+
     const itemId = await ctx.db.insert("bulkUploadItems", {
       batchId: args.batchId,
       fileName: args.fileName,
       fileSize: args.fileSize,
       fileType: args.fileType,
       fileStorageId: args.fileStorageId,
+      folderHint: args.folderHint,
       status: "pending",
       isInternal: batch.isInternal, // Inherit from batch
       createdAt: now,
@@ -388,9 +392,14 @@ export const updateItemAnalysis = mutation({
     extractedData: v.optional(v.any()),
     // Full parsed text content for re-analysis
     textContent: v.optional(v.string()),
+    // Multi-project: AI-suggested project assignment
+    suggestedProjectId: v.optional(v.id("projects")),
+    suggestedProjectName: v.optional(v.string()),
+    projectConfidence: v.optional(v.number()),
+    projectReasoning: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, textContent, ...updates } = args;
+    const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, textContent, suggestedProjectId, suggestedProjectName, projectConfidence, projectReasoning, ...updates } = args;
 
     // If there are AI-suggested checklist items, pre-select ONLY the highest confidence one
     // Other suggestions are still shown but not auto-checked - user can manually select more
@@ -416,6 +425,11 @@ export const updateItemAnalysis = mutation({
       classificationReasoning: classificationReasoning,
       // Store parsed text for re-analysis
       textContent: textContent,
+      // Multi-project: AI-suggested project assignment
+      suggestedProjectId,
+      suggestedProjectName,
+      projectConfidence,
+      projectReasoning,
       status: "ready_for_review",
       updatedAt: new Date().toISOString(),
     });
@@ -500,6 +514,22 @@ export const updateItemDetails = mutation({
 
     await ctx.db.patch(itemId, cleanUpdates);
     return itemId;
+  },
+});
+
+// Mutation: Update per-item project assignment (for multi-project review)
+export const updateItemProject = mutation({
+  args: {
+    itemId: v.id("bulkUploadItems"),
+    itemProjectId: v.optional(v.id("projects")),
+    isClientLevel: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.itemId, {
+      itemProjectId: args.itemProjectId,
+      isClientLevel: args.isClientLevel,
+      updatedAt: new Date().toISOString(),
+    });
   },
 });
 
@@ -1403,8 +1433,9 @@ export const fileBatch = mutation({
         
         // Determine folder info based on scope
         const scope = batch.scope || "client";
+        const effectiveProjectId = item.itemProjectId || batch.projectId;
         let folderId = item.targetFolder;
-        let folderType: "client" | "project" | undefined = batch.projectId ? "project" : "client";
+        let folderType: "client" | "project" | undefined = effectiveProjectId ? "project" : "client";
 
         if (scope === "internal") {
           folderId = batch.internalFolderId || item.targetFolder;
@@ -1429,7 +1460,7 @@ export const fileBatch = mutation({
           tokensUsed: 0,
           clientId: batch.clientId,
           clientName: batch.clientName,
-          projectId: batch.projectId,
+          projectId: effectiveProjectId,
           projectName: batch.projectName,
           documentCode: item.generatedDocumentCode,
           folderId,
@@ -1506,13 +1537,13 @@ export const fileBatch = mutation({
         
         // Create extraction job if extraction is enabled and we have a file storage ID
         // This runs AFTER the document is created, so projectId is properly set
-        if (item.extractionEnabled && item.fileStorageId && batch.projectId) {
+        if (item.extractionEnabled && item.fileStorageId && effectiveProjectId) {
           const isSpreadsheet = /\.(xlsx?|csv)$/i.test(item.fileName);
           if (isSpreadsheet) {
             try {
               await ctx.db.insert("extractionJobs", {
                 documentId,
-                projectId: batch.projectId,
+                projectId: effectiveProjectId,
                 clientId: batch.clientId,
                 fileStorageId: item.fileStorageId,
                 fileName: item.fileName,
@@ -1533,7 +1564,7 @@ export const fileBatch = mutation({
           try {
             await ctx.db.insert("knowledgeBankEntries", {
               clientId: batch.clientId,
-              projectId: batch.projectId,
+              projectId: effectiveProjectId,
               sourceType: "document",
               sourceId: documentId,
               entryType: "document_summary",
@@ -1554,7 +1585,7 @@ export const fileBatch = mutation({
         // ============================================================================
         // V4 pipeline pre-extracts structured intelligence fields in Stage 5.5.
         // Falls back to documentAnalysis extraction for older pipeline results.
-        const hasProjectContext = !!batch.projectId;
+        const hasProjectContext = !!effectiveProjectId;
 
         // Check for pre-extracted intelligence from V4 pipeline
         const preExtracted = item.extractedIntelligence as {
@@ -1679,9 +1710,9 @@ export const fileBatch = mutation({
           for (const field of extractedFields) {
             try {
               // Determine target based on field scope (client vs project)
-              const isProjectField = field.scope === 'project' && batch.projectId;
+              const isProjectField = field.scope === 'project' && effectiveProjectId;
               const targetClientId = isProjectField ? undefined : batch.clientId;
-              const targetProjectId = isProjectField ? batch.projectId : undefined;
+              const targetProjectId = isProjectField ? effectiveProjectId : undefined;
 
               // Safety: skip if both target IDs are undefined (item would be orphaned)
               if (!targetClientId && !targetProjectId) {
@@ -1828,7 +1859,7 @@ export const fileBatch = mutation({
               await ctx.db.insert("meetingExtractionJobs", {
                 documentId,
                 clientId: batch.clientId,
-                projectId: batch.projectId,
+                projectId: effectiveProjectId,
                 fileStorageId: item.fileStorageId,
                 documentName: item.fileName,
                 status: "pending",
@@ -1850,14 +1881,14 @@ export const fileBatch = mutation({
         // If user added a note with addToIntelligence enabled, create a knowledge item
         if (item.userNote?.addToIntelligence && item.userNote.content.trim()) {
           try {
-            const noteTarget = item.userNote.intelligenceTarget || (batch.projectId ? 'project' : 'client');
+            const noteTarget = item.userNote.intelligenceTarget || (effectiveProjectId ? 'project' : 'client');
             const docTypeSlug = (item.fileTypeDetected || 'document')
               .toLowerCase()
               .replace(/[^a-z0-9]+/g, '_');
 
             await ctx.db.insert("knowledgeItems", {
               clientId: batch.clientId,
-              projectId: noteTarget === 'project' ? batch.projectId : undefined,
+              projectId: noteTarget === 'project' ? effectiveProjectId : undefined,
               fieldPath: `notes.${docTypeSlug}_context`,
               isCanonical: false,
               category: "notes",
