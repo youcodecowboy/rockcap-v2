@@ -80,6 +80,12 @@ export default function BulkReviewPage() {
     return { total, fulfilled, missing };
   }, [checklistItems]);
   
+  // Query projects for multi-project batches
+  const clientProjects = useQuery(
+    api.projects.getByClient,
+    batch?.clientId && batch?.isMultiProject ? { clientId: batch.clientId } : "skip"
+  );
+
   // Check shortcode availability
   const shortcodeAvailable = useQuery(
     api.projects.isShortcodeAvailable,
@@ -446,12 +452,30 @@ export default function BulkReviewPage() {
       )}
 
       {/* Review Table */}
+      {/* Multi-project summary */}
+      {batch?.isMultiProject && items && (
+        <div className="flex items-center gap-4 text-sm p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+          <span className="font-medium">{items.length} documents</span>
+          <span className="text-gray-400">|</span>
+          <span>{new Set(items.map((i: any) => i.itemProjectId).filter(Boolean)).size} projects assigned</span>
+          <span className="text-gray-400">|</span>
+          <span>{items.filter((i: any) => i.suggestedProjectName && !i.itemProjectId).length} new projects suggested</span>
+        </div>
+      )}
+
+      {/* Review Table */}
       <BulkReviewTable
         items={items as any}
         batchIsInternal={batch.isInternal}
         hasProject={!!batch.projectId}
         clientId={batch.clientId}
         projectId={batch.projectId}
+        isMultiProject={batch?.isMultiProject}
+        projects={clientProjects?.map((p: any) => ({
+          _id: p._id,
+          name: p.name,
+          projectShortcode: p.projectShortcode,
+        }))}
       />
 
       {/* Action Bar - Compact */}
