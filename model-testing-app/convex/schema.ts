@@ -846,6 +846,8 @@ export default defineSchema({
     completedProcessingAt: v.optional(v.string()),
     notificationSent: v.optional(v.boolean()),
     notificationDismissed: v.optional(v.boolean()),
+    // Multi-project mode (documents can target different projects within the client)
+    isMultiProject: v.optional(v.boolean()),
     // User tracking
     userId: v.id("users"),
     // Timestamps
@@ -953,6 +955,14 @@ export default defineSchema({
       confidence: v.number(),
       reasoning: v.optional(v.string()),
     }))),
+    // Per-item project assignment (multi-project mode)
+    itemProjectId: v.optional(v.id("projects")),            // Confirmed project for this item
+    suggestedProjectId: v.optional(v.id("projects")),       // AI-suggested existing project
+    suggestedProjectName: v.optional(v.string()),            // AI-suggested new project name
+    projectConfidence: v.optional(v.number()),               // AI confidence in project suggestion
+    projectReasoning: v.optional(v.string()),                // AI reasoning for project suggestion
+    folderHint: v.optional(v.string()),                      // Subfolder name from webkitRelativePath
+    isClientLevel: v.optional(v.boolean()),                  // Explicitly client-level (no project)
     // User edits tracking (flags + original AI values for feedback loop)
     userEdits: v.optional(v.object({
       // Flags indicating which fields were edited
@@ -1006,7 +1016,8 @@ export default defineSchema({
   })
     .index("by_batch", ["batchId"])
     .index("by_status", ["status"])
-    .index("by_batch_status", ["batchId", "status"]),
+    .index("by_batch_status", ["batchId", "status"])
+    .index("by_batch_project", ["batchId", "itemProjectId"]),
 
   // ============================================================================
   // FOLDER STRUCTURE - Client and Project folders for organized filing

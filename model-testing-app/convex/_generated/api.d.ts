@@ -40,6 +40,7 @@ import type * as fileQueue from "../fileQueue.js";
 import type * as fileTypeDefinitions from "../fileTypeDefinitions.js";
 import type * as files from "../files.js";
 import type * as filingFeedback from "../filingFeedback.js";
+import type * as flags from "../flags.js";
 import type * as folderStructure from "../folderStructure.js";
 import type * as folderTemplates from "../folderTemplates.js";
 import type * as funnels from "../funnels.js";
@@ -148,6 +149,7 @@ declare const fullApi: ApiFromModules<{
   fileTypeDefinitions: typeof fileTypeDefinitions;
   files: typeof files;
   filingFeedback: typeof filingFeedback;
+  flags: typeof flags;
   folderStructure: typeof folderStructure;
   folderTemplates: typeof folderTemplates;
   funnels: typeof funnels;
