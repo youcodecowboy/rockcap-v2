@@ -5,9 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
-import { Building } from 'lucide-react';
+import { Building, Upload } from 'lucide-react';
 import ClientsSidebar from './components/ClientsSidebar';
 import CreateClientDrawer from '@/components/CreateClientDrawer';
+import CSVClientImport from '@/components/CSVClientImport';
 
 function ClientsPortalContent() {
   const router = useRouter();
@@ -18,6 +19,7 @@ function ClientsPortalContent() {
   const [selectedClientId, setSelectedClientId] = useState<Id<"clients"> | null>(urlClientId);
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [isCSVImportOpen, setIsCSVImportOpen] = useState(false);
 
   // Fetch selected client details
   const selectedClient = useQuery(
@@ -56,6 +58,13 @@ function ClientsPortalContent() {
             <p className="text-sm text-gray-500">Manage clients, projects, and documents</p>
           </div>
         </div>
+        <button
+          onClick={() => setIsCSVImportOpen(true)}
+          className="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          <Upload className="w-4 h-4" />
+          Import CSV
+        </button>
       </header>
 
       {/* Main Content */}
@@ -119,6 +128,12 @@ function ClientsPortalContent() {
         isOpen={isCreateDrawerOpen}
         onClose={() => setIsCreateDrawerOpen(false)}
         onSuccess={handleClientCreated}
+      />
+
+      {/* CSV Client Import */}
+      <CSVClientImport
+        isOpen={isCSVImportOpen}
+        onClose={() => setIsCSVImportOpen(false)}
       />
     </div>
   );
