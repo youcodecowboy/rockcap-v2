@@ -55,6 +55,28 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const BACKGROUND_THRESHOLD = 5; // Files > this threshold trigger background processing
 const ESTIMATED_SECONDS_PER_FILE = 20;
 
+/**
+ * Extract project folder hints from webkitRelativePath.
+ * Maps file index to the first subfolder name in the path.
+ * e.g., "Wimbledon Park/valuation.pdf" → "Wimbledon Park"
+ */
+function extractFolderHints(files: File[]): Map<number, string> {
+  const hints = new Map<number, string>();
+  for (let i = 0; i < files.length; i++) {
+    const relativePath = (files[i] as any).webkitRelativePath || '';
+    if (relativePath) {
+      const parts = relativePath.split('/');
+      // parts[0] is the root folder name, parts[1] is the first subfolder
+      // If there are 3+ parts (root/subfolder/file.pdf), use subfolder as project hint
+      if (parts.length >= 3) {
+        hints.set(i, parts[1]);
+      }
+      // If 2 parts (root/file.pdf), these are client-level documents
+    }
+  }
+  return hints;
+}
+
 interface BulkUploadProps {
   onBatchCreated?: (batchId: Id<"bulkUploadBatches">) => void;
   onComplete?: (batchId: Id<"bulkUploadBatches">) => void;
@@ -89,6 +111,11 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
   const [editingShortcode, setEditingShortcode] = useState(false);
   const [editShortcodeValue, setEditShortcodeValue] = useState('');
 
+  // Folder upload state
+  const [folderHints, setFolderHints] = useState<Map<number, string>>(new Map());
+  const [detectedProjects, setDetectedProjects] = useState<string[]>([]);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
   // Searchable dropdown state
   const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [showClientResults, setShowClientResults] = useState(false);
@@ -119,6 +146,12 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     api.projects.list,
     selectedClientId ? { clientId: selectedClientId as Id<"clients"> } : "skip"
   );
+  // Client projects for folder hint matching
+  const clientProjects = useQuery(
+    api.projects.getByClient,
+    selectedClientId ? { clientId: selectedClientId as Id<"clients"> } : "skip"
+  );
+
   // Internal and personal folders for non-client scopes
   const internalFolders = useQuery(
     api.internalFolders.list,
@@ -319,6 +352,42 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
 
   const clearAllFiles = useCallback(() => {
     setFiles([]);
+    setFolderHints(new Map());
+    setDetectedProjects([]);
+  }, []);
+
+  const handleFolderSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const allFiles = Array.from(fileList);
+
+    // Filter to supported file types only
+    const supportedFiles = allFiles.filter(f => {
+      const ext = f.name.split('.').pop()?.toLowerCase();
+      return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls'].includes(ext || '');
+    });
+
+    if (supportedFiles.length === 0) {
+      toast.error('No supported documents found in the selected folder');
+      return;
+    }
+
+    // Extract folder hints
+    const hints = extractFolderHints(supportedFiles);
+    setFolderHints(hints);
+
+    // Detect unique project names from subfolder structure
+    const projectNames = [...new Set(hints.values())];
+    setDetectedProjects(projectNames);
+
+    // Add files to the upload queue
+    setFiles(prev => {
+      const newFiles = [...prev, ...supportedFiles].slice(0, MAX_FILES);
+      return newFiles;
+    });
+
+    e.target.value = '';
   }, []);
 
   // Create new client
@@ -555,6 +624,17 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           }
         }
 
+        // Determine if this is a multi-project upload (folder hints present, no project pre-selected)
+        const isMultiProject = folderHints.size > 0 && !selectedProjectId;
+
+        // Build available projects list for AI matching
+        const availableProjectsList = clientProjects?.map(p => ({
+          id: p._id,
+          name: p.name,
+          shortcode: p.projectShortcode,
+          address: p.address,
+        }));
+
         // Set batch info based on scope
         const batchInfo: BatchInfo = {
           batchId,
@@ -568,18 +648,22 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           uploaderInitials,
           checklistItems: checklistForPipeline,
           availableFolders: foldersForPipeline.length > 0 ? foldersForPipeline : undefined,
+          isMultiProject,
+          availableProjects: isMultiProject && availableProjectsList ? availableProjectsList : undefined,
+          folderHints: folderHints.size > 0 ? Object.fromEntries(folderHints) : undefined,
         };
         processor.setBatchInfo(batchInfo);
 
-        // Add all files to processor
-        for (const file of files) {
+        // Add all files to processor (with per-file folder hints)
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
           const itemId = await addItemToBatch({
             batchId,
             fileName: file.name,
             fileSize: file.size,
             fileType: file.type,
           });
-          processor.addItem(itemId, file);
+          processor.addItem(itemId, file, folderHints.get(i));
         }
 
         // Start processing
@@ -1195,6 +1279,15 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
                 disabled={isUploading}
               />
+              <input
+                ref={folderInputRef}
+                type="file"
+                // @ts-ignore - webkitdirectory is non-standard but widely supported
+                webkitdirectory=""
+                multiple
+                className="hidden"
+                onChange={handleFolderSelect}
+              />
               <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-lg font-medium">
                 {isDragging ? 'Drop files here' : 'Drag & drop files here'}
@@ -1206,6 +1299,33 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 PDF, Word, Excel, CSV, TXT • Max 100MB per file
               </p>
             </div>
+
+            {/* Browse / Upload Folder buttons */}
+            <div className="flex items-center gap-2 justify-center">
+              <Button variant="outline" onClick={() => document.getElementById('bulk-file-input')?.click()} disabled={isUploading}>
+                <FileText className="w-4 h-4 mr-2" /> Browse Files
+              </Button>
+              <Button variant="outline" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
+                <FolderOpen className="w-4 h-4 mr-2" /> Upload Folder
+              </Button>
+            </div>
+
+            {/* Detected projects from folder structure */}
+            {detectedProjects.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                <p className="font-medium text-blue-800 mb-1">
+                  Detected {detectedProjects.length} project folder{detectedProjects.length !== 1 ? 's' : ''}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {detectedProjects.map(name => (
+                    <Badge key={name} variant="outline" className="bg-white">{name}</Badge>
+                  ))}
+                </div>
+                <p className="text-blue-600 mt-1.5 text-xs">
+                  Projects will be created or matched during analysis. You can adjust in the review step.
+                </p>
+              </div>
+            )}
 
             {/* File List */}
             {files.length > 0 && (
