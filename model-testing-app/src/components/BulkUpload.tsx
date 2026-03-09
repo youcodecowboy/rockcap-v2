@@ -57,23 +57,50 @@ const ESTIMATED_SECONDS_PER_FILE = 20;
 
 /**
  * Extract project folder hints from webkitRelativePath.
- * Maps file index to the first subfolder name in the path.
- * e.g., "Wimbledon Park/valuation.pdf" → "Wimbledon Park"
+ *
+ * Hierarchy rule:
+ * - The SELECTED root folder is always the project (or a hint toward it).
+ * - Internal subfolders are organizational, not additional projects.
+ *
+ * Exception — multi-project mode:
+ * If there are 2+ distinct immediate subfolders, each subfolder is treated
+ * as a separate project (client-level upload with project subfolders).
+ *
+ * Examples:
+ *   "Refinance Overrun/doc.pdf"               → hint: "Refinance Overrun"
+ *   "Refinance Overrun/Additional Files/x.pdf" → hint: "Refinance Overrun" (subfolder = org)
+ *   "ClientDocs/Project A/x.pdf" + "ClientDocs/Project B/y.pdf" → hints: "Project A", "Project B"
  */
 function extractFolderHints(files: File[]): Map<number, string> {
   const hints = new Map<number, string>();
-  for (let i = 0; i < files.length; i++) {
-    const relativePath = (files[i] as any).webkitRelativePath || '';
-    if (relativePath) {
-      const parts = relativePath.split('/');
-      // parts[0] is the root folder name, parts[1] is the first subfolder
-      // If there are 3+ parts (root/subfolder/file.pdf), use subfolder as project hint
-      if (parts.length >= 3) {
-        hints.set(i, parts[1]);
-      }
-      // If 2 parts (root/file.pdf), these are client-level documents
+  const allParts = files.map(f => {
+    const rel = (f as any).webkitRelativePath || '';
+    return rel ? rel.split('/') : [];
+  });
+
+  const filesWithPaths = allParts.filter(p => p.length >= 2);
+  if (filesWithPaths.length === 0) return hints;
+
+  // Count distinct immediate subfolder names (depth 2)
+  const uniqueSubfolders = new Set(
+    allParts.filter(p => p.length >= 3).map(p => p[1])
+  );
+
+  if (uniqueSubfolders.size >= 2) {
+    // Multi-project mode: root/ProjectFolder/file.pdf → ProjectFolder is the project
+    for (let i = 0; i < files.length; i++) {
+      const parts = allParts[i];
+      if (parts.length >= 3) hints.set(i, parts[1]);
+      // files at root/file.pdf are client-level — no hint
+    }
+  } else {
+    // Single-project mode: root folder IS the project, subfolders are organizational
+    for (let i = 0; i < files.length; i++) {
+      const parts = allParts[i];
+      if (parts.length >= 2) hints.set(i, parts[0]);
     }
   }
+
   return hints;
 }
 
@@ -365,7 +392,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     // Filter to supported file types only
     const supportedFiles = allFiles.filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls'].includes(ext || '');
+      return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls', 'eml'].includes(ext || '');
     });
 
     if (supportedFiles.length === 0) {
@@ -373,13 +400,13 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
       return;
     }
 
-    // Extract folder hints
-    const hints = extractFolderHints(supportedFiles);
-    setFolderHints(hints);
-
-    // Detect unique project names from subfolder structure
-    const projectNames = [...new Set(hints.values())];
-    setDetectedProjects(projectNames);
+    // Only extract folder hints when no project is pre-selected.
+    // If a project is already selected, all files simply go to that project.
+    if (!selectedProjectId) {
+      const hints = extractFolderHints(supportedFiles);
+      setFolderHints(hints);
+      setDetectedProjects([...new Set(hints.values())]);
+    }
 
     // Add files to the upload queue
     setFiles(prev => {
@@ -388,6 +415,18 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     });
 
     e.target.value = '';
+  }, [selectedProjectId]);
+
+  // Remove a single detected project (and its hints) when the user dismisses it
+  const dismissDetectedProject = useCallback((projectName: string) => {
+    setDetectedProjects(prev => prev.filter(p => p !== projectName));
+    setFolderHints(prev => {
+      const next = new Map(prev);
+      for (const [idx, name] of next.entries()) {
+        if (name === projectName) next.delete(idx);
+      }
+      return next;
+    });
   }, []);
 
   // Create new client
@@ -1276,7 +1315,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 multiple
                 className="hidden"
                 onChange={handleFileInput}
-                accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
+                accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
                 disabled={isUploading}
               />
               <input
@@ -1318,7 +1357,16 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {detectedProjects.map(name => (
-                    <Badge key={name} variant="outline" className="bg-white">{name}</Badge>
+                    <Badge key={name} variant="outline" className="bg-white flex items-center gap-1 pr-1">
+                      {name}
+                      <button
+                        onClick={() => dismissDetectedProject(name)}
+                        className="rounded-full hover:bg-gray-200 p-0.5 ml-0.5"
+                        title="Remove project detection — files will go to the selected project"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
                   ))}
                 </div>
                 <p className="text-blue-600 mt-1.5 text-xs">
