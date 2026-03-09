@@ -47,8 +47,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { getUserInitials } from '@/lib/documentNaming';
 import { BulkQueueProcessor, createBulkQueueProcessor, BatchInfo } from '@/lib/bulkQueueProcessor';
+import BulkUploadHistory from './BulkUploadHistory';
 
 const MAX_FILES = 100;
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
@@ -212,6 +214,13 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     newProjectShortcode ? { shortcode: newProjectShortcode } : "skip"
   );
   const currentUser = useQuery(api.users.getCurrent, {});
+  const pendingBatches = useQuery(
+    api.bulkUpload.getPendingBatches,
+    currentUser?._id ? { userId: currentUser._id } : 'skip'
+  );
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
 
   // Mutations
   const createBatch = useMutation(api.bulkUpload.createBatch);
@@ -635,6 +644,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             onComplete: (completedBatchId) => {
               onComplete?.(completedBatchId);
             },
+            concurrency: 3,
           }
         );
 
@@ -746,8 +756,28 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     }
   }, [uploadScope, selectedClientId, files.length, isUploading, needsShortcode]);
 
+  const activeBatchCount = (pendingBatches?.filter(
+    (b: any) => b.status === 'processing' || b.status === 'queued'
+  ) ?? []).length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Tab header */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'upload' | 'history')}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="upload">Upload Files</TabsTrigger>
+          <TabsTrigger value="history" className="flex items-center gap-1.5">
+            History
+            {activeBatchCount > 0 && (
+              <Badge variant="secondary" className="h-4 px-1.5 text-xs font-medium">
+                {activeBatchCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="upload">
+          <div className="space-y-6">
       {/* Step 1: Document Scope Selection */}
       <Card>
         <CardHeader className="pb-3">
@@ -1638,6 +1668,13 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           </DialogFooter>
         </DialogContent>
       </Dialog>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="history">
+          <BulkUploadHistory />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

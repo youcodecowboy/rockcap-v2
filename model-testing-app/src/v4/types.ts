@@ -140,7 +140,7 @@ export const BATCH_LIMITS = {
   /** Intelligence extraction: max text chars per document (truncated for batching) */
   INTEL_MAX_TEXT_PER_DOC: 8_000,
   /** Intelligence extraction: max output tokens per call */
-  INTEL_MAX_OUTPUT_TOKENS: 8_192,
+  INTEL_MAX_OUTPUT_TOKENS: 16_384,
 } as const;
 
 // =============================================================================

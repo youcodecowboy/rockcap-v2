@@ -59,13 +59,16 @@ interface Message {
 /**
  * Two-part system prompt for prompt caching.
  *
- * - stableBlock: Skill instructions (~2K tokens). Same across all batches.
+ * - stableBlock: Skill instructions + folder list (~2.5-3K tokens).
+ *   Folders are constant for a given bulk session (same client/project),
+ *   so combining them with the skill instructions maximises the cached block.
  *   Gets cache_control: ephemeral so Anthropic caches it.
- * - dynamicBlock: References + folders (~6K tokens). Changes per batch.
+ * - dynamicBlock: References only (~4-8K tokens). Selected per batch based
+ *   on document type hints — different documents → different references.
  *   No cache_control — always sent fresh.
  *
- * Cache savings: ~2K tokens cached on subsequent calls.
- * Minimum for Haiku caching: 1024 tokens.
+ * Cache savings: ~2.5-3K tokens cached on all files after the first.
+ * Minimum for Haiku 4.5 caching: 2048 tokens (Sonnet: 1024 tokens).
  */
 export interface SystemPromptBlocks {
   stableBlock: string;
@@ -88,9 +91,12 @@ export function buildSystemPrompt(
     .map(f => `- ${f.folderKey} (${f.name}, ${f.level}-level)`)
     .join('\n');
 
+  // Folder list is stable for the duration of a bulk upload session (same client/project),
+  // so it belongs in the cached stableBlock alongside skill instructions.
+  // This ensures the combined block reliably exceeds Haiku 4.5's 2048-token cache minimum.
   return {
-    stableBlock: skillInstructions,
-    dynamicBlock: `## Available Folders\n${folderList}\n\n${referenceText || 'No reference documents loaded. Classify based on your knowledge.'}`,
+    stableBlock: `${skillInstructions}\n\n## Available Folders\n${folderList || '(none)'}`,
+    dynamicBlock: referenceText || 'No reference documents loaded. Classify based on your knowledge.',
   };
 }
 
@@ -489,7 +495,7 @@ export async function callAnthropicIntelligence(
 
   const response = await client.messages.create({
     model: config.primaryModel,
-    max_tokens: 8_192,
+    max_tokens: 16_384,
     temperature: 0.1,
     system: [
       {
@@ -510,7 +516,7 @@ export async function callAnthropicIntelligence(
 
   // Detect truncation: if stop_reason is 'max_tokens', the response was cut off
   if ((response as any).stop_reason === 'max_tokens') {
-    console.warn(`[INTELLIGENCE] Response truncated at max_tokens (8192). Document may need higher limit.`);
+    console.warn(`[INTELLIGENCE] Response truncated at max_tokens (16384). Document may need higher limit.`);
   }
 
   const textContent = response.content
@@ -519,6 +525,11 @@ export async function callAnthropicIntelligence(
     .join('');
 
   const fields = parseIntelligenceResponse(textContent);
+
+  const cacheRead = (response.usage as any)?.cache_read_input_tokens ?? 0;
+  if (cacheRead > 0) {
+    console.log(`[ANTHROPIC] Intelligence cache hit: ${cacheRead} tokens read from cache`);
+  }
 
   return {
     fields,
@@ -639,7 +650,7 @@ export async function callAnthropicIntelligenceBatch(
 
   const response = await client.messages.create({
     model: config.primaryModel,
-    max_tokens: 8_192, // INTEL_MAX_OUTPUT_TOKENS
+    max_tokens: 16_384, // INTEL_MAX_OUTPUT_TOKENS
     temperature: 0.1,
     system: [
       {
@@ -758,6 +769,7 @@ function postProcessField(field: any): IntelligenceField {
     sourceText: field.sourceText || '',
     isCanonical: field.isCanonical ?? !field.fieldPath?.startsWith('custom.'),
     scope: field.scope || 'project',
+    pageReference: field.pageReference || undefined,
   };
 }
 

@@ -821,6 +821,7 @@ export default defineSchema({
     personalFolderName: v.optional(v.string()),
     // Batch status
     status: v.union(
+      v.literal("queued"), // Waiting for another batch to complete first
       v.literal("uploading"), // Files being uploaded
       v.literal("processing"), // Files being analyzed
       v.literal("review"), // Ready for user review
@@ -836,6 +837,8 @@ export default defineSchema({
     isInternal: v.boolean(), // Internal vs External batch default
     // User instructions (optional)
     instructions: v.optional(v.string()),
+    // Multi-batch queue (optional position — lower runs first)
+    queuePosition: v.optional(v.number()),
     // Background processing (for large batches >5 files)
     processingMode: v.optional(v.union(
       v.literal("foreground"),  // Small batches - client-side processing

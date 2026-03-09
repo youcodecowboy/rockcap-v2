@@ -47,23 +47,29 @@ interface ExtractedIntelligenceField {
  * The AI pipeline can generate unexpected valueType values (e.g. "months", "duration")
  * or include fields not in the Convex validator. This normalizes everything to match
  * the schema, preventing ArgumentValidationError on every new document type.
+ *
+ * Null handling:
+ * - Fields with null/undefined value are dropped entirely (no point storing "not found")
+ * - Optional string fields (pageReference, sourceText, etc.) coerce null → undefined
  */
 function sanitizeIntelligenceFields(fields: any[]): ExtractedIntelligenceField[] {
-  return fields.map(f => ({
-    fieldPath: f.fieldPath,
-    label: f.label,
-    category: f.category,
-    value: f.value,
-    valueType: VALID_VALUE_TYPES.has(f.valueType) ? f.valueType as ValidValueType : "text",
-    isCanonical: f.isCanonical ?? false,
-    confidence: typeof f.confidence === 'number' ? f.confidence : 0,
-    sourceText: f.sourceText,
-    originalLabel: f.originalLabel,
-    matchedAlias: f.matchedAlias,
-    templateTags: Array.isArray(f.templateTags) ? f.templateTags : undefined,
-    pageReference: f.pageReference,
-    scope: f.scope,
-  }));
+  return fields
+    .filter(f => f.value !== null && f.value !== undefined)
+    .map(f => ({
+      fieldPath: f.fieldPath,
+      label: f.label,
+      category: f.category,
+      value: f.value,
+      valueType: VALID_VALUE_TYPES.has(f.valueType) ? f.valueType as ValidValueType : "text",
+      isCanonical: f.isCanonical ?? false,
+      confidence: typeof f.confidence === 'number' ? f.confidence : 0,
+      sourceText: f.sourceText || undefined,
+      originalLabel: f.originalLabel || undefined,
+      matchedAlias: f.matchedAlias || undefined,
+      templateTags: Array.isArray(f.templateTags) ? f.templateTags : undefined,
+      pageReference: f.pageReference || undefined,
+      scope: f.scope || undefined,
+    }));
 }
 
 interface ExtractedIntelligence {
@@ -232,9 +238,11 @@ export class BulkQueueProcessor {
   private batchInfo: BatchInfo | null = null;
   private processedCount: number = 0;
   private errorCount: number = 0;
+  private concurrency: number;
 
-  constructor(callbacks: BulkQueueProcessorCallbacks) {
+  constructor(callbacks: BulkQueueProcessorCallbacks, options?: { concurrency?: number }) {
     this.callbacks = callbacks;
+    this.concurrency = options?.concurrency ?? 3;
   }
 
   /**
@@ -273,7 +281,10 @@ export class BulkQueueProcessor {
   }
 
   /**
-   * Start processing all queued items
+   * Start processing all queued items using N concurrent workers.
+   * Workers pull items from the shared queue until it's empty.
+   * JavaScript's single-threaded event loop makes queue.shift() inherently safe —
+   * no two workers can dequeue the same item.
    */
   async processQueue(): Promise<{ processed: number; errors: number }> {
     if (this.processing || this.queue.length === 0 || !this.batchInfo) {
@@ -293,46 +304,15 @@ export class BulkQueueProcessor {
       processedFiles: 0,
     });
 
-    while (this.queue.length > 0 && !this.aborted) {
-      const item = this.queue.shift()!;
-      
-      try {
-        await this.processItem(item);
-        this.processedCount++;
-      } catch (error) {
-        this.errorCount++;
-        console.error(`[BulkQueue] Error processing ${item.file.name}:`, error);
-        
-        // Update item status to error
-        await this.callbacks.updateItemStatus({
-          itemId: item.itemId,
-          status: "error",
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-        
-        this.callbacks.onError?.(
-          item.itemId,
-          error instanceof Error ? error.message : "Unknown error"
-        );
-      }
+    console.log(`[BulkQueue] Starting ${this.concurrency} concurrent workers for ${totalItems} items`);
 
-      // Report progress
-      this.callbacks.onProgress?.(
-        this.processedCount + this.errorCount,
-        totalItems,
-        item.file.name
-      );
+    // Spawn N workers — each pulls from the shared queue until empty
+    const workers = Array.from({ length: this.concurrency }, (_, i) =>
+      this.runWorker(i + 1, totalItems)
+    );
+    await Promise.all(workers);
 
-      // Update batch processed count
-      await this.callbacks.updateBatchStatus({
-        batchId: this.batchInfo.batchId,
-        status: "processing",
-        processedFiles: this.processedCount,
-        errorFiles: this.errorCount,
-      });
-    }
-
-    // Final batch status update
+    // Final batch status update — all workers done
     const finalStatus = this.queue.length === 0 ? "review" : "processing";
     await this.callbacks.updateBatchStatus({
       batchId: this.batchInfo.batchId,
@@ -342,12 +322,58 @@ export class BulkQueueProcessor {
     });
 
     this.processing = false;
-    
+
     if (finalStatus === "review") {
       this.callbacks.onComplete?.(this.batchInfo.batchId);
     }
 
     return { processed: this.processedCount, errors: this.errorCount };
+  }
+
+  /**
+   * A single concurrent worker. Pulls items from the queue until empty or aborted.
+   */
+  private async runWorker(workerId: number, totalItems: number): Promise<void> {
+    while (this.queue.length > 0 && !this.aborted) {
+      // Atomic dequeue — safe because JS is single-threaded at the sync level
+      const item = this.queue.shift();
+      if (!item) break;
+
+      try {
+        await this.processItem(item);
+        this.processedCount++;
+        console.log(`[BulkQueue:W${workerId}] ✓ ${item.file.name} (${this.processedCount + this.errorCount}/${totalItems})`);
+      } catch (error) {
+        this.errorCount++;
+        console.error(`[BulkQueue:W${workerId}] ✗ ${item.file.name}:`, error);
+
+        await this.callbacks.updateItemStatus({
+          itemId: item.itemId,
+          status: "error",
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+
+        this.callbacks.onError?.(
+          item.itemId,
+          error instanceof Error ? error.message : "Unknown error"
+        );
+      }
+
+      // Report progress after each item
+      this.callbacks.onProgress?.(
+        this.processedCount + this.errorCount,
+        totalItems,
+        item.file.name
+      );
+
+      // Update batch progress counts (fire-and-forget — don't block the worker)
+      this.callbacks.updateBatchStatus({
+        batchId: this.batchInfo!.batchId,
+        status: "processing",
+        processedFiles: this.processedCount,
+        errorFiles: this.errorCount,
+      }).catch(err => console.warn(`[BulkQueue:W${workerId}] Batch status update failed:`, err));
+    }
   }
 
   /**
@@ -647,10 +673,12 @@ export function createBulkQueueProcessor(
     onProgress?: BulkQueueProcessorCallbacks['onProgress'];
     onError?: BulkQueueProcessorCallbacks['onError'];
     onComplete?: BulkQueueProcessorCallbacks['onComplete'];
+    /** Number of concurrent workers (default: 3). Higher = faster but uses more API quota. */
+    concurrency?: number;
   }
 ): BulkQueueProcessor {
-  return new BulkQueueProcessor({
-    ...convexMutations,
-    ...options,
-  });
+  return new BulkQueueProcessor(
+    { ...convexMutations, ...options },
+    { concurrency: options?.concurrency }
+  );
 }

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, action } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { extractIntelligenceFromDocumentAnalysis, ExtractedField, FieldType } from "./intelligenceHelpers";
@@ -134,11 +134,82 @@ export const dismissBatchNotification = mutation({
   },
 });
 
+// Mutation: Add a batch to the queue (status → "queued", assigns queue position)
+export const enqueueBatch = mutation({
+  args: {
+    batchId: v.id("bulkUploadBatches"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    // Find the highest existing queue position
+    const queuedBatches = await ctx.db
+      .query("bulkUploadBatches")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .collect();
+
+    const maxPos = queuedBatches
+      .filter((b: any) => b.status === "queued" && b.queuePosition != null)
+      .reduce((max: number, b: any) => Math.max(max, b.queuePosition ?? 0), 0);
+
+    await ctx.db.patch(args.batchId, {
+      status: "queued",
+      queuePosition: maxPos + 1,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return { queuePosition: maxPos + 1 };
+  },
+});
+
+// Action: Start the next queued batch (called when any batch completes)
+// Looks for the lowest queuePosition batch with status "queued" and starts it.
+export const checkAndStartNextQueued = action({
+  args: {
+    userId: v.id("users"),
+    baseUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const allBatches: any[] = await ctx.runQuery(api.bulkUpload.getRecentBatches, {
+      userId: args.userId,
+      limit: 50,
+    });
+
+    // Check if any batch is currently processing
+    const isProcessing = allBatches.some((b: any) => b.status === "processing");
+    if (isProcessing) return null;
+
+    // Find the next queued batch (lowest queue position)
+    const queued = allBatches
+      .filter((b: any) => b.status === "queued")
+      .sort((a: any, b: any) => (a.queuePosition ?? 999) - (b.queuePosition ?? 999));
+
+    if (queued.length === 0) return null;
+
+    const next = queued[0];
+
+    // Change status from "queued" → "uploading" so startBackgroundProcessing accepts it
+    await ctx.runMutation(api.bulkUpload.updateBatchStatus, {
+      batchId: next._id,
+      status: "uploading",
+    });
+
+    // Start background processing
+    // @ts-ignore
+    await ctx.runMutation(internal.bulkBackgroundProcessor.startBackgroundProcessing, {
+      batchId: next._id,
+      baseUrl: args.baseUrl,
+    });
+
+    return next._id;
+  },
+});
+
 // Mutation: Update batch status
 export const updateBatchStatus = mutation({
   args: {
     batchId: v.id("bulkUploadBatches"),
     status: v.optional(v.union(
+      v.literal("queued"),
       v.literal("uploading"),
       v.literal("processing"),
       v.literal("review"),

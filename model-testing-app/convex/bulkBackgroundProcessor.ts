@@ -6,17 +6,22 @@ import { Id } from "./_generated/dataModel";
 // ============================================================================
 // BULK BACKGROUND PROCESSOR
 // Handles server-side processing for large bulk uploads (>5 files)
+// Supports parallel processing: N workers run concurrently, each claiming
+// one item at a time via an atomic mutation (claim = query + mark-processing
+// in one transaction, preventing two workers from picking the same item).
 // ============================================================================
 
 const ESTIMATED_SECONDS_PER_FILE = 20;
+const BACKGROUND_CONCURRENCY = 3; // Parallel workers per batch
 
 // ============================================================================
 // PUBLIC MUTATIONS
 // ============================================================================
 
 /**
- * Start background processing for a batch
- * Called by client after files are uploaded to storage
+ * Start background processing for a batch.
+ * Schedules BACKGROUND_CONCURRENCY parallel workers.
+ * Called by client after files are uploaded to storage.
  */
 export const startBackgroundProcessing = mutation({
   args: {
@@ -46,12 +51,15 @@ export const startBackgroundProcessing = mutation({
       updatedAt: now.toISOString(),
     });
 
-    // Schedule the first item processing
-    // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
-    await ctx.scheduler.runAfter(0, internal.bulkBackgroundProcessor.processNextItem, {
-      batchId: args.batchId,
-      baseUrl: args.baseUrl,
-    });
+    // Schedule N parallel workers — each claims items atomically
+    const concurrency = Math.min(BACKGROUND_CONCURRENCY, batch.totalFiles);
+    for (let i = 0; i < concurrency; i++) {
+      // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
+      await ctx.scheduler.runAfter(i * 100, internal.bulkBackgroundProcessor.processNextItem, {
+        batchId: args.batchId,
+        baseUrl: args.baseUrl,
+      });
+    }
 
     return {
       batchId: args.batchId,
@@ -66,9 +74,11 @@ export const startBackgroundProcessing = mutation({
 // ============================================================================
 
 /**
- * Get the next pending item for a batch
+ * Atomically claim the next pending item for processing.
+ * Query + mark-as-processing happens in a single transaction — prevents two
+ * parallel workers from claiming the same item.
  */
-export const getNextPendingItem = internalMutation({
+export const claimNextPendingItem = internalMutation({
   args: {
     batchId: v.id("bulkUploadBatches"),
   },
@@ -79,33 +89,14 @@ export const getNextPendingItem = internalMutation({
       .filter((q) => q.eq(q.field("status"), "pending"))
       .first();
 
-    if (!item) {
-      return null;
-    }
+    if (!item) return null;
 
-    // Get batch info for context
-    const batch = await ctx.db.get(args.batchId);
-
-    return {
-      item,
-      batch,
-    };
-  },
-});
-
-/**
- * Mark an item as processing
- */
-export const markItemProcessing = internalMutation({
-  args: {
-    itemId: v.id("bulkUploadItems"),
-  },
-  handler: async (ctx, args) => {
+    // Atomically mark as processing in the same transaction
     const now = new Date().toISOString();
-    await ctx.db.patch(args.itemId, {
-      status: "processing",
-      updatedAt: now,
-    });
+    await ctx.db.patch(item._id, { status: "processing", updatedAt: now });
+
+    const batch = await ctx.db.get(args.batchId);
+    return { item, batch };
   },
 });
 
@@ -152,23 +143,11 @@ export const updateItemWithResults = internalMutation({
       updatedAt: now,
     });
 
-    // Update batch progress
+    // Increment processed counter on batch (completion handled by tryCompleteBatch)
     const batch = await ctx.db.get(args.batchId);
     if (batch) {
-      const processedFiles = (batch.processedFiles || 0) + 1;
-
-      // Check if all items are done
-      const allItems = await ctx.db
-        .query("bulkUploadItems")
-        .withIndex("by_batch", (q) => q.eq("batchId", args.batchId))
-        .collect();
-
-      const pendingCount = allItems.filter(i => i.status === "pending" || i.status === "processing").length;
-      const newStatus = pendingCount === 0 ? "review" : "processing";
-
       await ctx.db.patch(args.batchId, {
-        processedFiles,
-        status: newStatus,
+        processedFiles: (batch.processedFiles || 0) + 1,
         updatedAt: now,
       });
     }
@@ -192,25 +171,12 @@ export const markItemFailed = internalMutation({
       updatedAt: now,
     });
 
-    // Update batch error count
+    // Increment error/processed counters (completion handled by tryCompleteBatch)
     const batch = await ctx.db.get(args.batchId);
     if (batch) {
-      const errorFiles = (batch.errorFiles || 0) + 1;
-      const processedFiles = (batch.processedFiles || 0) + 1;
-
-      // Check if all items are done
-      const allItems = await ctx.db
-        .query("bulkUploadItems")
-        .withIndex("by_batch", (q) => q.eq("batchId", args.batchId))
-        .collect();
-
-      const pendingCount = allItems.filter(i => i.status === "pending" || i.status === "processing").length;
-      const newStatus = pendingCount === 0 ? "review" : "processing";
-
       await ctx.db.patch(args.batchId, {
-        processedFiles,
-        errorFiles,
-        status: newStatus,
+        processedFiles: (batch.processedFiles || 0) + 1,
+        errorFiles: (batch.errorFiles || 0) + 1,
         updatedAt: now,
       });
     }
@@ -220,8 +186,91 @@ export const markItemFailed = internalMutation({
 });
 
 /**
- * Complete batch processing and send notification
+ * Idempotently complete the batch if all items are finished.
+ * Safe to call from multiple parallel workers — only the first call that
+ * finds 0 pending/processing items will perform the transition.
+ * Returns true if this call actually completed the batch.
  */
+export const tryCompleteBatch = internalMutation({
+  args: {
+    batchId: v.id("bulkUploadBatches"),
+    /** Pass through so queue orchestrator can start next queued batch */
+    baseUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db.get(args.batchId);
+    if (!batch) return false;
+
+    // Already completed — idempotent early-exit
+    if (batch.status === "review" || batch.status === "completed" || batch.status === "partial") {
+      return false;
+    }
+
+    const allItems = await ctx.db
+      .query("bulkUploadItems")
+      .withIndex("by_batch", (q) => q.eq("batchId", args.batchId))
+      .collect();
+
+    const stillRunning = allItems.filter(i => i.status === "pending" || i.status === "processing").length;
+    if (stillRunning > 0) {
+      // Other workers still active — don't complete yet
+      return false;
+    }
+
+    const now = new Date().toISOString();
+    const processedCount = allItems.filter(i => i.status === "ready_for_review").length;
+    const errorCount = allItems.filter(i => i.status === "error").length;
+    const finalStatus = errorCount > 0 && processedCount === 0 ? "partial" : "review";
+
+    await ctx.db.patch(args.batchId, {
+      status: finalStatus,
+      processedFiles: processedCount,
+      errorFiles: errorCount,
+      completedProcessingAt: now,
+      notificationSent: true,
+      updatedAt: now,
+    });
+
+    const notificationMessage = errorCount > 0
+      ? `${processedCount} of ${batch.totalFiles} files ready for review (${errorCount} errors)`
+      : `${processedCount} files ready for review`;
+
+    const clientName = batch.clientName || batch.internalFolderName || batch.personalFolderName || "Documents";
+
+    await ctx.db.insert("notifications", {
+      userId: batch.userId,
+      type: "file_upload",
+      title: "Bulk Upload Complete",
+      message: `${clientName}: ${notificationMessage}`,
+      relatedId: args.batchId,
+      isRead: false,
+      createdAt: now,
+    });
+
+    if (batch.clientId) {
+      // @ts-ignore
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, { contextType: "client", contextId: batch.clientId });
+    }
+    if (batch.projectId) {
+      // @ts-ignore
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, { contextType: "project", contextId: batch.projectId });
+    }
+
+    // Trigger queue orchestrator to start the next queued batch (if any)
+    if (args.baseUrl) {
+      // @ts-ignore
+      await ctx.scheduler.runAfter(500, api.bulkUpload.checkAndStartNextQueued, {
+        userId: batch.userId,
+        baseUrl: args.baseUrl,
+      });
+    }
+
+    console.log(`[Background Processor] Batch ${args.batchId} completed: ${processedCount} processed, ${errorCount} errors`);
+    return true;
+  },
+});
+
+// Keep completeBatch as a thin alias for backwards compatibility
 export const completeBatch = internalMutation({
   args: {
     batchId: v.id("bulkUploadBatches"),
@@ -296,8 +345,9 @@ export const completeBatch = internalMutation({
 // ============================================================================
 
 /**
- * Process the next pending item in the batch
- * This is an action because it makes HTTP calls to /api/bulk-analyze
+ * Process the next pending item in the batch.
+ * Atomically claims one item, processes it, then self-schedules.
+ * When no items remain, calls tryCompleteBatch (idempotent — safe for N workers).
  */
 export const processNextItem = internalAction({
   args: {
@@ -305,25 +355,21 @@ export const processNextItem = internalAction({
     baseUrl: v.string(),
   },
   handler: async (ctx, args) => {
-    // Get next pending item
-    const result = await ctx.runMutation(internal.bulkBackgroundProcessor.getNextPendingItem, {
+    // Atomically claim the next pending item (prevents two workers claiming same item)
+    const result = await ctx.runMutation(internal.bulkBackgroundProcessor.claimNextPendingItem, {
       batchId: args.batchId,
     });
 
     if (!result || !result.item) {
-      // No more items - complete the batch
-      await ctx.runMutation(internal.bulkBackgroundProcessor.completeBatch, {
+      // No more pending items — attempt to complete (idempotent, safe for racing workers)
+      await ctx.runMutation(internal.bulkBackgroundProcessor.tryCompleteBatch, {
         batchId: args.batchId,
+        baseUrl: args.baseUrl,
       });
       return;
     }
 
     const { item, batch } = result;
-
-    // Mark item as processing
-    await ctx.runMutation(internal.bulkBackgroundProcessor.markItemProcessing, {
-      itemId: item._id,
-    });
 
     try {
       // Get file URL from storage
@@ -466,9 +512,9 @@ export const processNextItem = internalAction({
       });
     }
 
-    // Schedule next item (500ms delay to avoid overwhelming the API)
+    // Self-schedule to pick up the next item — maintains N parallel workers
     // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
-    await ctx.scheduler.runAfter(500, internal.bulkBackgroundProcessor.processNextItem, {
+    await ctx.scheduler.runAfter(0, internal.bulkBackgroundProcessor.processNextItem, {
       batchId: args.batchId,
       baseUrl: args.baseUrl,
     });

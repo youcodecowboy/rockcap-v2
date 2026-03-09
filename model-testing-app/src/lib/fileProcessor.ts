@@ -16,6 +16,32 @@ export async function extractTextFromFile(file: File): Promise<string> {
     return await file.text();
   }
 
+  // Handle EML (email) files - parse headers and body as structured text
+  if (fileType === 'message/rfc822' || fileName.endsWith('.eml')) {
+    const raw = await file.text();
+    // Split headers from body at the first blank line
+    const blankLineIndex = raw.indexOf('\r\n\r\n') !== -1 ? raw.indexOf('\r\n\r\n') : raw.indexOf('\n\n');
+    if (blankLineIndex === -1) return raw;
+    const headerSection = raw.slice(0, blankLineIndex);
+    const body = raw.slice(blankLineIndex).trim();
+    // Extract key headers for context
+    const getHeader = (name: string) => {
+      const match = headerSection.match(new RegExp(`^${name}:\\s*(.+)`, 'im'));
+      return match ? match[1].trim() : '';
+    };
+    const from = getHeader('From');
+    const to = getHeader('To');
+    const subject = getHeader('Subject');
+    const date = getHeader('Date');
+    const parts: string[] = [];
+    if (subject) parts.push(`Subject: ${subject}`);
+    if (date) parts.push(`Date: ${date}`);
+    if (from) parts.push(`From: ${from}`);
+    if (to) parts.push(`To: ${to}`);
+    parts.push('', body);
+    return parts.join('\n');
+  }
+
   // Handle PDF files
   if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
     // Convert ArrayBuffer to Buffer for pdf-parse (primary parser)
@@ -316,6 +342,7 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     'text/plain',
     'text/markdown',
     'text/csv',
+    'message/rfc822',
     'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -331,7 +358,7 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     'image/heif',
   ];
 
-  const allowedExtensions = ['.txt', '.md', '.pdf', '.doc', '.docx', '.csv', '.xlsx', '.xls', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'];
+  const allowedExtensions = ['.txt', '.md', '.pdf', '.doc', '.docx', '.csv', '.xlsx', '.xls', '.eml', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'];
   const fileName = file.name.toLowerCase();
   const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
 
@@ -340,7 +367,7 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
   }
 
   if (!allowedTypes.includes(file.type) && !hasValidExtension) {
-    return { valid: false, error: 'Unsupported file type. Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls, .png, .jpg, .gif, .webp' };
+    return { valid: false, error: 'Unsupported file type. Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls, .eml, .png, .jpg, .gif, .webp' };
   }
 
   return { valid: true };
