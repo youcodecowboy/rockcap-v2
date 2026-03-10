@@ -214,6 +214,7 @@ interface BulkUploadItem {
     }>;
   };
   batchId: Id<"bulkUploadBatches">;
+  updatedAt?: string;
 }
 
 interface ChecklistItem {
@@ -488,6 +489,12 @@ function getCategoryIcon(category: string) {
   }
 }
 
+const isStuck = (item: BulkUploadItem) => {
+  if (!item.updatedAt) return false;
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  return new Date(item.updatedAt).getTime() < fiveMinutesAgo;
+};
+
 interface BulkReviewTableProps {
   items: BulkUploadItem[];
   batchIsInternal: boolean;
@@ -579,6 +586,14 @@ export default function BulkReviewTable({
   const updateItemNote = useMutation(api.bulkUpload.updateItemNote);
   const updateItemStatus = useMutation(api.bulkUpload.updateItemStatus);
   const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
+
+  const handleRetryItem = async (itemId: Id<"bulkUploadItems">, batchId: Id<"bulkUploadBatches">) => {
+    try {
+      await retryItem({ itemId, batchId });
+    } catch (e) {
+      console.error('Failed to retry item:', e);
+    }
+  };
 
   // Stats
   const stats = useMemo(() => {
@@ -1732,13 +1747,7 @@ export default function BulkReviewTable({
                                 variant="outline"
                                 size="sm"
                                 className="shrink-0 text-xs h-7 border-red-300 text-red-700 hover:bg-red-100"
-                                onClick={async () => {
-                                  try {
-                                    await retryItem({ itemId: item._id, batchId: item.batchId });
-                                  } catch (e) {
-                                    console.error('Failed to retry item:', e);
-                                  }
-                                }}
+                                onClick={() => handleRetryItem(item._id, item.batchId)}
                               >
                                 <RefreshCw className="w-3 h-3 mr-1" />
                                 Retry
@@ -1746,7 +1755,7 @@ export default function BulkReviewTable({
                             </div>
                           )}
 
-                          {item.status === 'processing' && (
+                          {item.status === 'processing' && isStuck(item) && (
                             <div className="p-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-700 flex items-center justify-between gap-2">
                               <div>
                                 <span className="font-medium">Stuck:</span> This file appears to be stuck in processing.
@@ -1755,13 +1764,7 @@ export default function BulkReviewTable({
                                 variant="outline"
                                 size="sm"
                                 className="shrink-0 text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
-                                onClick={async () => {
-                                  try {
-                                    await retryItem({ itemId: item._id, batchId: item.batchId });
-                                  } catch (e) {
-                                    console.error('Failed to retry stuck item:', e);
-                                  }
-                                }}
+                                onClick={() => handleRetryItem(item._id, item.batchId)}
                               >
                                 <RefreshCw className="w-3 h-3 mr-1" />
                                 Retry
