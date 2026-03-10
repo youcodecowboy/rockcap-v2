@@ -49,6 +49,7 @@ export default function BulkReviewPage() {
   const batchId = params.batchId as Id<"bulkUploadBatches">;
 
   const [isFilingAll, setIsFilingAll] = useState(false);
+  const [isRetryingAll, setIsRetryingAll] = useState(false);
   const [showFileAllDialog, setShowFileAllDialog] = useState(false);
   const [showUploadMore, setShowUploadMore] = useState(false);
   const [filingResult, setFilingResult] = useState<{ totalFiled: number; totalErrors: number } | null>(null);
@@ -98,6 +99,7 @@ export default function BulkReviewPage() {
   const fileBatch = useMutation(api.bulkUpload.fileBatch);
   const updateProject = useMutation(api.projects.update);
   const updateBatch = useMutation(api.bulkUpload.updateBatchStatus);
+  const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
 
   // Initialize shortcode input when batch loads
   useEffect(() => {
@@ -187,6 +189,24 @@ export default function BulkReviewPage() {
     }
   };
 
+  // Retry all stuck items handler
+  const handleRetryAllStuck = async () => {
+    if (!items) return;
+    const stuckItems = items.filter((i: any) => i.status === 'processing' || i.status === 'error');
+    if (stuckItems.length === 0) return;
+
+    setIsRetryingAll(true);
+    try {
+      for (const item of stuckItems) {
+        await retryItem({ itemId: item._id, batchId });
+      }
+    } catch (e) {
+      console.error('Failed to retry all stuck items:', e);
+    } finally {
+      setIsRetryingAll(false);
+    }
+  };
+
   // Loading state
   if (!batch || !items || !stats) {
     return (
@@ -195,6 +215,9 @@ export default function BulkReviewPage() {
       </div>
     );
   }
+
+  // Stuck items count
+  const stuckCount = items?.filter((i: any) => i.status === 'processing' || i.status === 'error').length ?? 0;
 
   // Get status info
   const getStatusInfo = () => {
@@ -401,6 +424,61 @@ export default function BulkReviewPage() {
               Files are being analyzed in the background. You&apos;ll receive a notification when processing is complete.
               This page will automatically update as files are processed.
             </p>
+            {stuckCount > 0 && (
+              <div className="mt-3 flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                  onClick={handleRetryAllStuck}
+                  disabled={isRetryingAll}
+                >
+                  {isRetryingAll ? (
+                    <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3 mr-2" />
+                  )}
+                  Retry Stuck Files ({stuckCount})
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stuck items warning - shown when batch is not in processing state */}
+      {batch.status !== 'processing' && stuckCount > 0 && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-full bg-amber-100">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-amber-900">
+                    {stuckCount} file{stuckCount > 1 ? 's' : ''} need attention
+                  </h3>
+                  <p className="text-sm text-amber-700">
+                    {stuckCount} file{stuckCount > 1 ? 's are' : ' is'} stuck in processing or failed.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-100"
+                onClick={handleRetryAllStuck}
+                disabled={isRetryingAll}
+              >
+                {isRetryingAll ? (
+                  <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3 mr-2" />
+                )}
+                Retry All Stuck ({stuckCount})
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
