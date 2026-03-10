@@ -213,6 +213,7 @@ interface BulkUploadItem {
       scope: 'client' | 'project';
     }>;
   };
+  batchId: Id<"bulkUploadBatches">;
 }
 
 interface ChecklistItem {
@@ -577,6 +578,7 @@ export default function BulkReviewTable({
   const saveExtractedData = useMutation(api.bulkUpload.saveExtractedData);
   const updateItemNote = useMutation(api.bulkUpload.updateItemNote);
   const updateItemStatus = useMutation(api.bulkUpload.updateItemStatus);
+  const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
 
   // Stats
   const stats = useMemo(() => {
@@ -1732,12 +1734,32 @@ export default function BulkReviewTable({
                                 className="shrink-0 text-xs h-7 border-red-300 text-red-700 hover:bg-red-100"
                                 onClick={async () => {
                                   try {
-                                    await updateItemStatus({
-                                      itemId: item._id,
-                                      status: 'pending',
-                                    });
+                                    await retryItem({ itemId: item._id, batchId: item.batchId });
                                   } catch (e) {
                                     console.error('Failed to retry item:', e);
+                                  }
+                                }}
+                              >
+                                <RefreshCw className="w-3 h-3 mr-1" />
+                                Retry
+                              </Button>
+                            </div>
+                          )}
+
+                          {item.status === 'processing' && (
+                            <div className="p-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-700 flex items-center justify-between gap-2">
+                              <div>
+                                <span className="font-medium">Stuck:</span> This file appears to be stuck in processing.
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
+                                onClick={async () => {
+                                  try {
+                                    await retryItem({ itemId: item._id, batchId: item.batchId });
+                                  } catch (e) {
+                                    console.error('Failed to retry stuck item:', e);
                                   }
                                 }}
                               >
