@@ -46,6 +46,7 @@ export const startBackgroundProcessing = mutation({
     await ctx.db.patch(args.batchId, {
       processingMode: "background",
       status: "processing",
+      baseUrl: args.baseUrl,
       estimatedCompletionTime: estimatedCompletionTime.toISOString(),
       startedProcessingAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -66,6 +67,58 @@ export const startBackgroundProcessing = mutation({
       estimatedCompletionTime: estimatedCompletionTime.toISOString(),
       estimatedMinutes: Math.ceil(estimatedMs / 60000),
     };
+  },
+});
+
+/**
+ * Retry a single item that is stuck in 'processing' or failed with 'error'.
+ * Resets item to 'pending' and schedules a new worker to pick it up.
+ */
+export const retryItem = mutation({
+  args: {
+    itemId: v.id("bulkUploadItems"),
+    batchId: v.id("bulkUploadBatches"),
+  },
+  handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.itemId);
+    if (!item) throw new Error("Item not found");
+
+    const batch = await ctx.db.get(args.batchId);
+    if (!batch) throw new Error("Batch not found");
+
+    if (item.status !== "processing" && item.status !== "error") {
+      throw new Error(`Item is not retryable (status: ${item.status})`);
+    }
+
+    const baseUrl = batch.baseUrl;
+    if (!baseUrl) throw new Error("Batch has no baseUrl — cannot re-trigger processor");
+
+    const now = new Date().toISOString();
+
+    // Reset item to pending, clear any previous error
+    await ctx.db.patch(args.itemId, {
+      status: "pending",
+      error: undefined,
+      updatedAt: now,
+    });
+
+    // If the batch incorrectly moved to a terminal state due to this stuck item,
+    // reset it back to processing so the worker chain completes correctly.
+    if (batch.status === "review" || batch.status === "partial" || batch.status === "completed") {
+      await ctx.db.patch(args.batchId, {
+        status: "processing",
+        updatedAt: now,
+      });
+    }
+
+    // Schedule a new worker to pick up the newly-pending item
+    // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
+    await ctx.scheduler.runAfter(0, internal.bulkBackgroundProcessor.processNextItem, {
+      batchId: args.batchId,
+      baseUrl,
+    });
+
+    return { success: true };
   },
 });
 

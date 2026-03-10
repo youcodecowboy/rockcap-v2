@@ -849,6 +849,7 @@ export default defineSchema({
     completedProcessingAt: v.optional(v.string()),
     notificationSent: v.optional(v.boolean()),
     notificationDismissed: v.optional(v.boolean()),
+    baseUrl: v.optional(v.string()),
     // Multi-project mode (documents can target different projects within the client)
     isMultiProject: v.optional(v.boolean()),
     // User tracking
