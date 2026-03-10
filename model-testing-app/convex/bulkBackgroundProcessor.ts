@@ -86,6 +86,10 @@ export const retryItem = mutation({
     const batch = await ctx.db.get(args.batchId);
     if (!batch) throw new Error("Batch not found");
 
+    if (item.batchId !== args.batchId) {
+      throw new Error("Item does not belong to this batch");
+    }
+
     if (item.status !== "processing" && item.status !== "error") {
       throw new Error(`Item is not retryable (status: ${item.status})`);
     }
@@ -102,9 +106,11 @@ export const retryItem = mutation({
       updatedAt: now,
     });
 
+    console.log(`[retryItem] Retrying item ${args.itemId} (${item.fileName ?? 'unknown'}) in batch ${args.batchId}`);
+
     // If the batch incorrectly moved to a terminal state due to this stuck item,
     // reset it back to processing so the worker chain completes correctly.
-    if (batch.status === "review" || batch.status === "partial" || batch.status === "completed") {
+    if (batch.status === "review" || batch.status === "partial") {
       await ctx.db.patch(args.batchId, {
         status: "processing",
         updatedAt: now,
