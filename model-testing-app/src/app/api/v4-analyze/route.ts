@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
         isLowConfidence: doc.isLowConfidence,
         alternativeTypes: doc.alternativeTypes,
 
-        // Intelligence fields from dedicated extraction call
+        // Intelligence fields (extracted during classification call)
         intelligenceFields: result.intelligence[doc.documentIndex] || [],
 
         // Project inference (multi-project mode)
