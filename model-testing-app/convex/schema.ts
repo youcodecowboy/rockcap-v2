@@ -2876,6 +2876,10 @@ export default defineSchema({
     sourceDocumentName: v.optional(v.string()),
     sourceText: v.optional(v.string()),  // Quote from source document
 
+    // Disambiguation for multi-instance fields (e.g., multiple interest rates)
+    qualifier: v.optional(v.string()),   // e.g., "Senior Loan", "Phase 1", "Mezzanine"
+    context: v.optional(v.string()),     // One-sentence explanation for doc generation
+
     // Normalization info
     originalLabel: v.optional(v.string()),  // What the AI originally extracted as
     matchedAlias: v.optional(v.string()),   // Which alias matched
@@ -2908,7 +2912,9 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_source_document", ["sourceDocumentId"])
     .index("by_client_status", ["clientId", "status"])
-    .index("by_project_status", ["projectId", "status"]),
+    .index("by_project_status", ["projectId", "status"])
+    .index("by_project_field_qualifier", ["projectId", "fieldPath", "qualifier"])
+    .index("by_client_field_qualifier", ["clientId", "fieldPath", "qualifier"]),
 
   // Intelligence Conflicts - When multiple sources disagree
   intelligenceConflicts: defineTable({
