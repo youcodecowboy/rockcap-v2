@@ -199,19 +199,8 @@ export interface DocumentClassification {
     confidence: number;
     reasoning: string;
   }>;
-  /** Intelligence fields extracted (from classification call — lightweight) */
-  intelligenceFields: Array<{
-    fieldPath: string;
-    label: string;
-    value: string;
-    valueType: 'text' | 'currency' | 'percentage' | 'date' | 'number' | 'boolean';
-    confidence: number;
-    sourceText: string;
-    templateTags: string[];
-    category: string;
-    originalLabel: string;
-    pageReference?: string;
-  }>;
+  /** Intelligence fields extracted from the document */
+  intelligenceFields: IntelligenceField[];
   /** Project inference (only present in multi-project mode) */
   projectInference?: {
     /** ID of suggested existing project, or null if suggesting new */
@@ -226,7 +215,7 @@ export interface DocumentClassification {
 }
 
 // =============================================================================
-// INTELLIGENCE FIELD (from dedicated extraction call)
+// INTELLIGENCE FIELD (extracted during classification call)
 // =============================================================================
 
 /** A single intelligence field extracted from a document */
@@ -255,6 +244,10 @@ export interface IntelligenceField {
   originalLabel: string;
   /** Page or section reference (e.g., "p.3", "Schedule 2", "pp.12-14") */
   pageReference?: string;
+  /** Disambiguator for multi-instance fields (e.g., "Senior Loan", "Phase 1") */
+  qualifier?: string | null;
+  /** One-sentence context explanation for LLM consumption during doc generation */
+  context?: string;
 }
 
 // =============================================================================
