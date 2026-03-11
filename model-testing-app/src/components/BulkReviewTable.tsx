@@ -74,7 +74,9 @@ import {
   ArrowRightLeft,
   Link2,
   Unlink,
+  Flag,
 } from 'lucide-react';
+import FlagCreationModal from '@/components/FlagCreationModal';
 import { FILE_CATEGORIES, FILE_TYPES as FILE_TYPES_LIST } from '@/lib/categories';
 
 // Use the centralized categories and file types
@@ -547,6 +549,9 @@ export default function BulkReviewTable({
   );
   const versionLinkDocs = existingDocs || clientDocs || [];
 
+  // Flag state
+  const [flagItem, setFlagItem] = useState<BulkUploadItem | null>(null);
+
   // Checklist initialization retry
   const initializeChecklist = useMutation(api.knowledgeLibrary.initializeChecklistForProject);
   const client = useQuery(api.clients.get, clientId ? { id: clientId } : "skip");
@@ -943,6 +948,22 @@ export default function BulkReviewTable({
                 </PopoverContent>
               </Popover>
             )}
+
+            {/* Flag Selected */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5"
+              onClick={() => {
+                // Flag the first selected item, mention all in context
+                const firstId = Array.from(selectedItems)[0];
+                const firstItem = items.find(i => i._id === firstId);
+                if (firstItem) setFlagItem(firstItem);
+              }}
+            >
+              <Flag className="w-3.5 h-3.5" />
+              Flag{selectedItems.size > 1 ? ` (${selectedItems.size})` : ''}
+            </Button>
 
             <div className="flex-1" />
             <Button
@@ -2094,6 +2115,24 @@ export default function BulkReviewTable({
           setCreateTypeForItemId(null);
         }}
       />
+
+      {/* Flag Creation Modal */}
+      {flagItem && (
+        <FlagCreationModal
+          isOpen={!!flagItem}
+          onClose={() => { setFlagItem(null); setSelectedItems(new Set()); }}
+          entityType="document"
+          entityId={flagItem._id}
+          entityName={selectedItems.size > 1
+            ? `${selectedItems.size} files (${flagItem.fileName} + ${selectedItems.size - 1} more)`
+            : flagItem.fileName}
+          entityContext={`Bulk Upload Review${selectedItems.size > 1
+            ? ` — Files: ${Array.from(selectedItems).map(id => items.find(i => i._id === id)?.fileName).filter(Boolean).join(', ')}`
+            : ''}`}
+          clientId={clientId}
+          projectId={projectId}
+        />
+      )}
       </div>
     </TooltipProvider>
   );
