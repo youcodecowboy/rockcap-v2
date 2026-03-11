@@ -7,6 +7,7 @@
 // All logic is in src/v4/ — this is just the entry point.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { ConvexHttpClient } from 'convex/browser';
 import { runV4Pipeline } from '@/v4/lib/pipeline';
 import { mapBatchToConvex } from '@/v4/lib/result-mapper';
 import { extractTextFromFile } from '@/lib/fileProcessor';
@@ -144,10 +145,14 @@ export async function POST(request: NextRequest) {
     const anthropicApiKey = process.env.ANTHROPIC_API_KEY || '';
     const useMock = !anthropicApiKey;
 
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    const convexClient = convexUrl ? new ConvexHttpClient(convexUrl) : undefined;
+
     const config: V4PipelineConfig = {
       ...DEFAULT_V4_CONFIG,
       anthropicApiKey,
       useMock,
+      convexClient,
     };
 
     // ── Run pipeline ──
