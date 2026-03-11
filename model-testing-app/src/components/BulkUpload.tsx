@@ -193,7 +193,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
   // Folder upload state
   const [folderHints, setFolderHints] = useState<Map<number, string>>(new Map());
   const [detectedProjects, setDetectedProjects] = useState<string[]>([]);
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  // folderInputRef removed — now using dynamic input element in openFolderPicker
 
   // Previous selection state
   const [previousSelection, setPreviousSelection] = useState<{
@@ -465,6 +465,25 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
 
     e.target.value = '';
   }, [selectedProjectId]);
+
+  // Open folder picker by creating a dynamic input element
+  // This avoids the browser bug where a pre-mounted webkitdirectory input
+  // doesn't register the attribute on first render, causing the "Open" button
+  // to be disabled on the first click.
+  const openFolderPicker = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.setAttribute('webkitdirectory', '');
+    input.onchange = (e) => {
+      const fileList = (e.target as HTMLInputElement).files;
+      if (!fileList || fileList.length === 0) return;
+      // Reuse the same logic as handleFolderSelect
+      const fakeEvent = { target: { files: fileList, value: '' } } as any;
+      handleFolderSelect(fakeEvent);
+    };
+    input.click();
+  }, [handleFolderSelect]);
 
   // Remove a single detected project (and its hints) when the user dismisses it
   const dismissDetectedProject = useCallback((projectName: string) => {
@@ -1303,15 +1322,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
                 disabled={isUploading}
               />
-              <input
-                ref={folderInputRef}
-                type="file"
-                // @ts-ignore - webkitdirectory is non-standard but widely supported
-                webkitdirectory=""
-                multiple
-                className="hidden"
-                onChange={handleFolderSelect}
-              />
+              {/* Folder input created dynamically on click — see openFolderPicker */}
               <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-lg font-medium">
                 {isDragging ? 'Drop files here' : 'Drag & drop files here'}
@@ -1329,7 +1340,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
               <Button variant="outline" onClick={() => document.getElementById('bulk-file-input')?.click()} disabled={isUploading}>
                 <FileText className="w-4 h-4 mr-2" /> Browse Files
               </Button>
-              <Button variant="outline" onClick={() => requestAnimationFrame(() => folderInputRef.current?.click())} disabled={isUploading}>
+              <Button variant="outline" onClick={openFolderPicker} disabled={isUploading}>
                 <FolderOpen className="w-4 h-4 mr-2" /> Upload Folder
               </Button>
             </div>
