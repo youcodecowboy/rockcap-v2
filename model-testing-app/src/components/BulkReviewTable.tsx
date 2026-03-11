@@ -16,13 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect, SearchableSelectOption } from '@/components/ui/searchable-select';
+import { CreateCustomTypeModal } from '@/components/CreateCustomTypeModal';
 import {
   Dialog,
   DialogContent,
@@ -526,6 +521,11 @@ export default function BulkReviewTable({
   const [noteContent, setNoteContent] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
 
+  // Custom type modal state
+  const [createTypeModalOpen, setCreateTypeModalOpen] = useState(false);
+  const [createTypeInitialName, setCreateTypeInitialName] = useState('');
+  const [createTypeForItemId, setCreateTypeForItemId] = useState<Id<"bulkUploadItems"> | null>(null);
+
   // Multi-project assignment handlers
   const updateItemProject = useMutation(api.bulkUpload.updateItemProject);
 
@@ -577,6 +577,34 @@ export default function BulkReviewTable({
       return hasProject ? DEFAULT_PROJECT_FOLDERS : DEFAULT_CLIENT_FOLDERS;
     }
   }, [hasProject, projectFolders, clientFolders]);
+
+  // Query custom types
+  const customTypes = useQuery(api.fileTypeDefinitions.getAll);
+
+  // Build type options (standard + custom)
+  const typeOptions: SearchableSelectOption[] = useMemo(() => {
+    const standard = FILE_TYPES.map((t) => ({ value: t, label: t, group: 'Standard' }));
+    const custom = (customTypes || [])
+      .filter((ct) => !ct.isSystemDefault)
+      .map((ct) => ({ value: ct.fileType, label: ct.fileType, group: 'Custom Types' }));
+    return [...standard, ...custom];
+  }, [customTypes]);
+
+  // Build category options
+  const categoryOptions: SearchableSelectOption[] = useMemo(
+    () => CATEGORIES.map((c) => ({ value: c, label: c })),
+    []
+  );
+
+  // Build folder select options
+  const folderSelectOptions: SearchableSelectOption[] = useMemo(
+    () => folderOptions.map((f) => ({
+      value: f.value,
+      label: f.label,
+      group: f.isCustom ? 'Custom Folders' : 'Standard',
+    })),
+    [folderOptions]
+  );
 
   // Mutations
   const updateItemDetails = useMutation(api.bulkUpload.updateItemDetails);
@@ -913,21 +941,20 @@ export default function BulkReviewTable({
                               <TooltipContent>AI suggested</TooltipContent>
                             </Tooltip>
                           )}
-                          <Select
+                          <SearchableSelect
+                            options={typeOptions}
                             value={item.fileTypeDetected || ''}
-                            onValueChange={(value) => handleUpdateField(item._id, 'fileTypeDetected', value)}
-                          >
-                            <SelectTrigger className="h-7 text-xs flex-1">
-                              <SelectValue placeholder="Type..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FILE_TYPES.map((type) => (
-                                <SelectItem key={type} value={type} className="text-xs">
-                                  {type}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            onSelect={(value) => handleUpdateField(item._id, 'fileTypeDetected', value)}
+                            placeholder="Type..."
+                            compact
+                            allowCreate
+                            groupSeparator
+                            onCreateNew={(query) => {
+                              setCreateTypeInitialName(query);
+                              setCreateTypeForItemId(item._id);
+                              setCreateTypeModalOpen(true);
+                            }}
+                          />
                         </div>
                       ) : (
                         <span className="text-xs truncate">{item.fileTypeDetected || '-'}</span>
@@ -944,21 +971,13 @@ export default function BulkReviewTable({
                               <TooltipContent>AI suggested</TooltipContent>
                             </Tooltip>
                           )}
-                          <Select
+                          <SearchableSelect
+                            options={categoryOptions}
                             value={item.category || ''}
-                            onValueChange={(value) => handleUpdateField(item._id, 'category', value)}
-                          >
-                            <SelectTrigger className="h-7 text-xs flex-1">
-                              <SelectValue placeholder="..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {CATEGORIES.map((cat) => (
-                                <SelectItem key={cat} value={cat} className="text-xs">
-                                  {cat}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            onSelect={(value) => handleUpdateField(item._id, 'category', value)}
+                            placeholder="..."
+                            compact
+                          />
                         </div>
                       ) : (
                         <span className="text-xs truncate">{item.category || '-'}</span>
@@ -975,38 +994,14 @@ export default function BulkReviewTable({
                               <TooltipContent>AI suggested</TooltipContent>
                             </Tooltip>
                           )}
-                          <Select
+                          <SearchableSelect
+                            options={folderSelectOptions}
                             value={item.targetFolder || ''}
-                            onValueChange={(value) => handleUpdateField(item._id, 'targetFolder', value)}
-                          >
-                            <SelectTrigger className="h-7 text-xs flex-1">
-                              <SelectValue placeholder="..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {/* Standard folders first */}
-                              {folderOptions.filter(f => !f.isCustom).map((folder) => (
-                                <SelectItem key={folder.value} value={folder.value} className="text-xs">
-                                  {folder.label}
-                                </SelectItem>
-                              ))}
-                              {/* Custom folders section */}
-                              {folderOptions.some(f => f.isCustom) && (
-                                <>
-                                  <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground border-t mt-1">
-                                    Custom Folders
-                                  </div>
-                                  {folderOptions.filter(f => f.isCustom).map((folder) => (
-                                    <SelectItem key={folder.value} value={folder.value} className="text-xs">
-                                      <span className="flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
-                                        {folder.label}
-                                      </span>
-                                    </SelectItem>
-                                  ))}
-                                </>
-                              )}
-                            </SelectContent>
-                          </Select>
+                            onSelect={(value) => handleUpdateField(item._id, 'targetFolder', value)}
+                            placeholder="..."
+                            compact
+                            groupSeparator
+                          />
                         </div>
                       ) : (
                         <span className="text-xs truncate flex items-center gap-1">
@@ -1837,6 +1832,19 @@ export default function BulkReviewTable({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+      <CreateCustomTypeModal
+        open={createTypeModalOpen}
+        onOpenChange={setCreateTypeModalOpen}
+        initialName={createTypeInitialName}
+        existingCustomTypes={(customTypes || []).filter(ct => !ct.isSystemDefault).map(ct => ct.fileType)}
+        onCreated={(fileType) => {
+          if (createTypeForItemId) {
+            handleUpdateField(createTypeForItemId, 'fileTypeDetected', fileType);
+          }
+          setCreateTypeForItemId(null);
+        }}
+      />
       </div>
     </TooltipProvider>
   );
