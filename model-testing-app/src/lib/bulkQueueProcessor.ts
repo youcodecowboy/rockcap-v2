@@ -404,19 +404,39 @@ export class BulkQueueProcessor {
       status: "processing",
     });
 
-    // Upload file to storage
-    const uploadUrl = await this.callbacks.generateUploadUrl();
-    const uploadResponse = await fetch(uploadUrl, {
-      method: "POST",
-      headers: { "Content-Type": item.file.type },
-      body: item.file,
-    });
+    // Upload file to storage (with retry for transient failures / rate limits)
+    let storageId: Id<"_storage"> | undefined;
+    const UPLOAD_MAX_RETRIES = 3;
+    for (let uploadAttempt = 0; uploadAttempt <= UPLOAD_MAX_RETRIES; uploadAttempt++) {
+      const uploadUrl = await this.callbacks.generateUploadUrl();
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": item.file.type },
+        body: item.file,
+      });
 
-    if (!uploadResponse.ok) {
-      throw new Error("Failed to upload file to storage");
+      if (uploadResponse.ok) {
+        const result = await uploadResponse.json();
+        storageId = result.storageId;
+        break;
+      }
+
+      const status = uploadResponse.status;
+      const body = await uploadResponse.text().catch(() => '');
+      console.warn(`[BulkQueue] Storage upload failed for "${item.file.name}" (HTTP ${status}, attempt ${uploadAttempt + 1}/${UPLOAD_MAX_RETRIES + 1}): ${body.slice(0, 200)}`);
+
+      if (uploadAttempt < UPLOAD_MAX_RETRIES && (status === 429 || status >= 500)) {
+        const delay = Math.min(1000 * Math.pow(2, uploadAttempt), 8000) + Math.random() * 500;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      throw new Error(`Failed to upload file to storage (HTTP ${status})`);
     }
 
-    const { storageId } = await uploadResponse.json();
+    if (!storageId) {
+      throw new Error(`Failed to upload file to storage after ${UPLOAD_MAX_RETRIES} retries`);
+    }
 
     // Call V4 analyze API with retry logic for transient failures
     const buildFormData = () => {
