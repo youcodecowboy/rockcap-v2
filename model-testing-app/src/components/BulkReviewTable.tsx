@@ -589,7 +589,7 @@ export default function BulkReviewTable({
 
   const handleRetryItem = async (itemId: Id<"bulkUploadItems">, batchId: Id<"bulkUploadBatches">) => {
     try {
-      await retryItem({ itemId, batchId });
+      await retryItem({ itemId, batchId, baseUrl: window.location.origin });
     } catch (e) {
       console.error('Failed to retry item:', e);
     }

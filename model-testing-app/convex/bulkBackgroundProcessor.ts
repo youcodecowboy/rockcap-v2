@@ -78,6 +78,7 @@ export const retryItem = mutation({
   args: {
     itemId: v.id("bulkUploadItems"),
     batchId: v.id("bulkUploadBatches"),
+    baseUrl: v.optional(v.string()), // Fallback for batches created before baseUrl was persisted
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -94,7 +95,8 @@ export const retryItem = mutation({
       throw new Error(`Item is not retryable (status: ${item.status})`);
     }
 
-    const baseUrl = batch.baseUrl;
+    // Use batch.baseUrl if available, otherwise fall back to client-provided baseUrl
+    const baseUrl = batch.baseUrl || args.baseUrl;
     if (!baseUrl) throw new Error("Batch has no baseUrl — cannot re-trigger processor");
 
     const now = new Date().toISOString();

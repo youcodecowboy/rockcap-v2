@@ -198,7 +198,7 @@ export default function BulkReviewPage() {
     setIsRetryingAll(true);
     try {
       for (const item of stuckItems) {
-        await retryItem({ itemId: item._id, batchId });
+        await retryItem({ itemId: item._id, batchId, baseUrl: window.location.origin });
       }
     } catch (e) {
       console.error('Failed to retry all stuck items:', e);
