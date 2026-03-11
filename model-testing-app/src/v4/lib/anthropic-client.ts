@@ -22,7 +22,7 @@ import type {
 interface TextBlock {
   type: 'text';
   text: string;
-  cache_control?: { type: 'ephemeral' };
+  cache_control?: { type: 'ephemeral'; ttl?: string };
 }
 
 interface ImageBlock {
@@ -41,7 +41,7 @@ interface DocumentBlock {
     media_type: 'application/pdf';
     data: string;
   };
-  cache_control?: { type: 'ephemeral' };
+  cache_control?: { type: 'ephemeral'; ttl?: string };
 }
 
 type ContentBlock = TextBlock | ImageBlock | DocumentBlock;
@@ -327,18 +327,21 @@ export async function callAnthropicBatch(
     model: config.primaryModel,
     max_tokens: config.maxTokens,
     temperature: config.temperature,
+    // 1-hour cache TTL: costs 2x base input vs 1.25x for 5-min, but cache hits
+    // at 0.1x persist across sporadic bulk uploads without re-warming.
+    // SDK v0.39 types don't include `ttl` yet — cast through `as any`.
     system: [
       {
-        type: 'text',
+        type: 'text' as const,
         text: systemPrompt.stableBlock,
-        cache_control: { type: 'ephemeral' },
+        cache_control: { type: 'ephemeral', ttl: '1h' },
       },
       {
-        type: 'text',
+        type: 'text' as const,
         text: systemPrompt.dynamicBlock,
-        cache_control: { type: 'ephemeral' },
+        cache_control: { type: 'ephemeral', ttl: '1h' },
       },
-    ],
+    ] as any,
     messages: [
       {
         role: 'user',
@@ -457,8 +460,12 @@ function normalizeClassification(raw: any): DocumentClassification {
         projects: Array.isArray(keyEntities.projects) ? keyEntities.projects : [],
       },
       keyTerms: Array.isArray(summary.keyTerms) ? summary.keyTerms : [],
-      keyDates: Array.isArray(summary.keyDates) ? summary.keyDates : [],
-      keyAmounts: Array.isArray(summary.keyAmounts) ? summary.keyAmounts : [],
+      keyDates: Array.isArray(summary.keyDates)
+        ? summary.keyDates.map((d: any) => typeof d === 'string' ? d : `${d.label || d.date || ''}: ${d.date || d.value || ''}`.replace(/^:\s*/, ''))
+        : [],
+      keyAmounts: Array.isArray(summary.keyAmounts)
+        ? summary.keyAmounts.map((a: any) => typeof a === 'string' ? a : `${a.label || ''}: ${a.value || a.amount || ''}`.replace(/^:\s*/, ''))
+        : [],
     },
     checklistMatches: Array.isArray(raw.checklistMatches) ? raw.checklistMatches : [],
     intelligenceFields: (raw.intelligenceFields || []).map((f: any) => ({

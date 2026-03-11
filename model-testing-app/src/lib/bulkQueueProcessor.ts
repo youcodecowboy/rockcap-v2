@@ -230,6 +230,11 @@ export interface BatchInfo {
   folderHints?: Record<string, string>;
 }
 
+// Track when the last V4 API call completed (module-level, survives across processor instances).
+// Used to skip the single-file cache warm-up when the 1-hour Anthropic prompt cache is still warm.
+let lastV4ApiCallTimestamp: number = 0;
+const CACHE_TTL_MS = 55 * 60 * 1000; // 55 min buffer for 1-hour TTL
+
 export class BulkQueueProcessor {
   private queue: BulkQueueItem[] = [];
   private processing: boolean = false;
@@ -306,15 +311,24 @@ export class BulkQueueProcessor {
 
     console.log(`[BulkQueue] Starting ${this.concurrency} concurrent workers for ${totalItems} items`);
 
-    // Process the first item alone so its API call writes to the prompt cache.
-    // Subsequent workers then read from cache at 10% cost instead of all racing
-    // to write simultaneously (which causes N cache writes instead of 1).
-    await this.runWorker(1, totalItems, true); // single-item warm-up
+    // Check if the 1-hour Anthropic prompt cache is likely still warm from a previous upload.
+    // If warm, skip the single-file warm-up and go straight to concurrent processing.
+    const cacheIsWarm = (Date.now() - lastV4ApiCallTimestamp) < CACHE_TTL_MS;
+
+    if (cacheIsWarm) {
+      console.log(`[BulkQueue] Prompt cache likely warm (last call ${Math.round((Date.now() - lastV4ApiCallTimestamp) / 1000)}s ago), skipping warm-up`);
+    } else {
+      // Process the first item alone so its API call writes to the prompt cache.
+      // Subsequent workers then read from cache at 10% cost instead of all racing
+      // to write simultaneously (which causes N cache writes instead of 1).
+      console.log(`[BulkQueue] Prompt cache cold, warming up with single file first`);
+      await this.runWorker(1, totalItems, true); // single-item warm-up
+    }
 
     // Spawn remaining workers — each pulls from the shared queue until empty.
     // The prompt cache is now warm, so all calls get cache reads.
     const workers = Array.from({ length: this.concurrency }, (_, i) =>
-      this.runWorker(i + 2, totalItems)
+      this.runWorker(i + (cacheIsWarm ? 1 : 2), totalItems)
     );
     await Promise.all(workers);
 
@@ -497,6 +511,7 @@ export class BulkQueueProcessor {
 
       if (analyzeResponse.ok) {
         v4Data = await analyzeResponse.json();
+        lastV4ApiCallTimestamp = Date.now(); // Keep prompt cache TTL tracker fresh
         break;
       }
 
