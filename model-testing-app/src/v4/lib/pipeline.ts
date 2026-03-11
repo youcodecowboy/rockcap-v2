@@ -7,8 +7,8 @@
 // 1. Pre-process documents (truncation, hints, tag generation) — no LLM
 // 2. Load references from shared library (cached, 1-hour TTL)
 // 3. Select relevant references based on batch document hints
-// 4. Load skill instructions (SKILL.md)
-// 5. Chunk batch & call API (or mock) for classification
+// 4. Load skill instructions (SKILL.md) — includes intelligence extraction
+// 5. Chunk batch & call API for classification + intelligence extraction (single call)
 // 6. Apply deterministic placement rules (post-processing)
 // 7. Assemble and return structured results
 //
@@ -33,9 +33,9 @@ import type {
 import { DEFAULT_V4_CONFIG, BATCH_LIMITS } from '../types';
 import { loadSkill } from './skill-loader';
 import { loadReferencesWithMeta } from './reference-library';
-import { formatForPrompt, getAllReferences, getReferenceByType } from '../../lib/references';
-import { preprocessDocument, chunkBatch, chunkIntelligenceBatch, analyzeFilename } from './document-preprocessor';
-import { buildSystemPrompt, buildBatchUserMessage, callAnthropicBatch, callAnthropicIntelligence, callAnthropicIntelligenceBatch, type SystemPromptBlocks } from './anthropic-client';
+import { formatForPrompt, getAllReferences } from '../../lib/references';
+import { preprocessDocument, chunkBatch } from './document-preprocessor';
+import { buildSystemPrompt, buildBatchUserMessage, callAnthropicBatch, type SystemPromptBlocks } from './anthropic-client';
 import { callMockBatch } from './mock-client';
 import { resolvePlacement, getTypeAbbreviation } from './placement-rules';
 import type { PlacementResult } from './placement-rules';
@@ -290,110 +290,6 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
   }
 
   // ──────────────────────────────────────────────────────────
-  // STAGE 5.5: BATCH INTELLIGENCE EXTRACTION (dedicated second call)
-  // ──────────────────────────────────────────────────────────
-  const allIntelligence: Record<number, IntelligenceField[]> = {};
-
-  if (!isMock && input.fullTexts && input.fullTexts.size > 0 && allClassifications.length > 0) {
-    console.log(`\n[STAGE 5.5] Running batch intelligence extraction for ${allClassifications.length} document(s)...`);
-    const intelStart = Date.now();
-
-    // Load intelligence extraction skill
-    let intelSkillInstructions: string;
-    try {
-      const intelSkill = loadSkill('intelligence-extract');
-      intelSkillInstructions = intelSkill.instructions;
-    } catch {
-      console.warn(`[STAGE 5.5] Could not load intelligence-extract SKILL.md, skipping`);
-      intelSkillInstructions = '';
-    }
-
-    if (intelSkillInstructions) {
-      // Build document list for intelligence extraction
-      const intelDocs = allClassifications
-        .filter(cls => input.fullTexts?.has(cls.documentIndex))
-        .map(cls => {
-          const ref = getReferenceByType(cls.classification.fileType);
-          return {
-            index: cls.documentIndex,
-            text: input.fullTexts!.get(cls.documentIndex)!,
-            fileName: cls.fileName,
-            documentType: cls.classification.fileType,
-            documentCategory: cls.classification.category,
-            expectedFields: ref?.expectedFields || [],
-            textLength: input.fullTexts!.get(cls.documentIndex)!.length,
-          };
-        });
-
-      if (intelDocs.length === 1) {
-        // Single document — use direct (non-batch) call for simpler response format
-        const doc = intelDocs[0];
-        try {
-          const result = await callAnthropicIntelligence(
-            intelSkillInstructions,
-            doc.text,
-            doc.documentType,
-            doc.documentCategory,
-            doc.expectedFields,
-            config,
-          );
-          allIntelligence[doc.index] = result.fields;
-          totalInputTokens += result.usage.inputTokens;
-          totalOutputTokens += result.usage.outputTokens;
-          totalApiCalls++;
-          console.log(`  - [${doc.index}] "${doc.fileName}": ${result.fields.length} fields extracted in ${result.latencyMs}ms`);
-        } catch (error) {
-          console.error(`  - [${doc.index}] Intelligence extraction failed:`, (error as Error).message);
-          allIntelligence[doc.index] = [];
-        }
-      } else {
-        // Multiple documents — batch into chunks of INTEL_MAX_DOCS_PER_CALL
-        const chunks = chunkIntelligenceBatch(
-          intelDocs.map(d => ({ index: d.index, textLength: d.textLength })),
-          BATCH_LIMITS.INTEL_MAX_DOCS_PER_CALL,
-        );
-
-        console.log(`  - Split into ${chunks.length} batch(es) of up to ${BATCH_LIMITS.INTEL_MAX_DOCS_PER_CALL} docs each`);
-
-        for (let i = 0; i < chunks.length; i++) {
-          const chunkIndices = new Set(chunks[i]);
-          const chunkDocs = intelDocs.filter(d => chunkIndices.has(d.index));
-
-          try {
-            const result = await callAnthropicIntelligenceBatch(
-              intelSkillInstructions,
-              chunkDocs,
-              config,
-            );
-
-            // Merge results
-            for (const [idx, fields] of Object.entries(result.results)) {
-              allIntelligence[parseInt(idx, 10)] = fields;
-            }
-
-            totalInputTokens += result.usage.inputTokens;
-            totalOutputTokens += result.usage.outputTokens;
-            totalApiCalls++;
-
-            const totalFields = Object.values(result.results).reduce((sum, f) => sum + f.length, 0);
-            console.log(`  - Batch ${i + 1}/${chunks.length}: ${totalFields} fields from ${chunkDocs.length} docs in ${result.latencyMs}ms`);
-          } catch (error) {
-            console.error(`  - Batch ${i + 1}/${chunks.length} failed:`, (error as Error).message);
-            // Initialize failed docs with empty arrays
-            for (const idx of chunks[i]) {
-              allIntelligence[idx] = [];
-            }
-          }
-        }
-      }
-
-      console.log(`[STAGE 5.5] Intelligence extraction completed in ${Date.now() - intelStart}ms`);
-    }
-  } else if (isMock) {
-    console.log(`\n[STAGE 5.5] Skipping intelligence extraction (mock mode)`);
-  }
-
-  // ──────────────────────────────────────────────────────────
   // STAGE 6: APPLY DETERMINISTIC PLACEMENT RULES
   // ──────────────────────────────────────────────────────────
   console.log(`\n[STAGE 6] Applying placement rules...`);
@@ -430,7 +326,12 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
     success: allErrors.length === 0,
     documents: allClassifications,
     placements,
-    intelligence: allIntelligence,
+    intelligence: Object.fromEntries(
+      allClassifications.map(cls => [
+        cls.documentIndex,
+        cls.intelligenceFields || [],
+      ])
+    ),
     isMock,
     metadata: {
       model: isMock ? 'mock' : config.primaryModel,

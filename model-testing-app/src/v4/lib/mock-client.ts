@@ -329,6 +329,8 @@ function generateMockIntelligence(
       templateTags: ['general', 'lenders_note', 'credit_submission'],
       category: 'overview',
       originalLabel: 'Document Type',
+      isCanonical: true,
+      scope: 'project',
     });
   }
 
@@ -343,6 +345,8 @@ function generateMockIntelligence(
       templateTags: ['general', 'lenders_note', 'credit_submission'],
       category: 'financials',
       originalLabel: 'Facility Type',
+      isCanonical: true,
+      scope: 'project',
     });
   }
 
@@ -357,6 +361,8 @@ function generateMockIntelligence(
       templateTags: ['general', 'credit_submission'],
       category: 'company',
       originalLabel: 'KYC Document Type',
+      isCanonical: true,
+      scope: 'project',
     });
   }
 
