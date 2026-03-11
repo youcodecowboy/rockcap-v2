@@ -526,6 +526,11 @@ export default function BulkReviewTable({
   const [createTypeInitialName, setCreateTypeInitialName] = useState('');
   const [createTypeForItemId, setCreateTypeForItemId] = useState<Id<"bulkUploadItems"> | null>(null);
 
+  // Checklist initialization retry
+  const initializeChecklist = useMutation(api.knowledgeLibrary.initializeChecklistForProject);
+  const client = useQuery(api.clients.get, clientId ? { id: clientId } : "skip");
+  const [isInitializingChecklist, setIsInitializingChecklist] = useState(false);
+
   // Multi-project assignment handlers
   const updateItemProject = useMutation(api.bulkUpload.updateItemProject);
 
@@ -1128,12 +1133,41 @@ export default function BulkReviewTable({
                                   </div>
                                 )}
 
-                                {/* No project items warning */}
+                                {/* No project items — offer initialization */}
                                 {hasProject && Object.keys(projectChecklistGroups).length === 0 && (
-                                  <div className="p-2 bg-amber-50 border-b">
+                                  <div className="p-2 bg-amber-50 border-b flex items-center justify-between gap-2">
                                     <p className="text-[10px] text-amber-700">
-                                      No project-level checklist items found. Project checklist may need to be initialized.
+                                      No project-level checklist items found.
                                     </p>
+                                    {projectId && clientId && client?.type && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-6 text-[10px] px-2"
+                                        disabled={isInitializingChecklist}
+                                        onClick={async () => {
+                                          setIsInitializingChecklist(true);
+                                          try {
+                                            await initializeChecklist({
+                                              clientId,
+                                              projectId,
+                                              clientType: (client.type || 'borrower').toLowerCase(),
+                                            });
+                                          } catch (e) {
+                                            console.error('Checklist init failed:', e);
+                                          } finally {
+                                            setIsInitializingChecklist(false);
+                                          }
+                                        }}
+                                      >
+                                        {isInitializingChecklist ? (
+                                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                        ) : (
+                                          <RefreshCw className="w-3 h-3 mr-1" />
+                                        )}
+                                        Initialize Checklist
+                                      </Button>
+                                    )}
                                   </div>
                                 )}
 

@@ -222,6 +222,16 @@ export default function BulkReviewPage() {
     return projectIds.size > 1 || (projectIds.size === 1 && !batch?.projectId);
   }, [batch?.isMultiProject, batch?.projectId, items]);
 
+  // Effective project name — resolves from batch or from item assignments
+  const effectiveProjectName = useMemo(() => {
+    if (batch?.projectName) return batch.projectName;
+    if (effectiveProjectId && clientProjects) {
+      const project = clientProjects.find((p: any) => p._id === effectiveProjectId);
+      if (project) return project.name;
+    }
+    return null;
+  }, [batch?.projectName, effectiveProjectId, clientProjects]);
+
   // Computed values
   const uploaderInitials = useMemo(() => {
     const name = user?.fullName || user?.firstName || currentUser?.name || 'User';
@@ -400,7 +410,7 @@ export default function BulkReviewPage() {
               <p className="text-xs text-muted-foreground">Project</p>
               <div className="flex items-center gap-2">
                 <p className="font-medium text-sm truncate">
-                  {batch.projectName || 'Client-level'}
+                  {effectiveProjectName || 'Client-level'}
                 </p>
                 {batch.projectId && (
                   isEditingShortcode ? (
