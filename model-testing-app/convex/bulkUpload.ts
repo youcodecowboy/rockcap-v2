@@ -1602,6 +1602,10 @@ export const fileBatch = mutation({
   args: {
     batchId: v.id("bulkUploadBatches"),
     uploaderInitials: v.string(),
+    projectMapping: v.optional(v.array(v.object({
+      suggestedName: v.string(),
+      projectId: v.id("projects"),
+    }))),
   },
   handler: async (ctx, args) => {
     const batch = await ctx.db.get(args.batchId);
@@ -1625,7 +1629,15 @@ export const fileBatch = mutation({
     
     const results: { itemId: Id<"bulkUploadItems">; documentId?: Id<"documents">; error?: string }[] = [];
     const now = new Date().toISOString();
-    
+
+    // Build project mapping from suggestedName → projectId (case-insensitive)
+    const projectMap = new Map<string, Id<"projects">>();
+    if (args.projectMapping) {
+      for (const entry of args.projectMapping) {
+        projectMap.set(entry.suggestedName.toLowerCase(), entry.projectId);
+      }
+    }
+
     for (const item of readyItems) {
       try {
         // Validate required fields
@@ -1636,7 +1648,12 @@ export const fileBatch = mutation({
         
         // Determine folder info based on scope
         const scope = batch.scope || "client";
-        const effectiveProjectId = item.itemProjectId || batch.projectId;
+        // Resolve projectId: explicit assignment > project mapping from bulk creation > batch default
+        let resolvedProjectId = item.itemProjectId;
+        if (!resolvedProjectId && item.suggestedProjectName) {
+          resolvedProjectId = projectMap.get(item.suggestedProjectName.toLowerCase());
+        }
+        const effectiveProjectId = resolvedProjectId || batch.projectId;
         let folderId = item.targetFolder;
         let folderType: "client" | "project" | undefined = effectiveProjectId ? "project" : "client";
 
@@ -1696,6 +1713,14 @@ export const fileBatch = mutation({
         // Link to checklist items if any were selected
         if (item.checklistItemIds && item.checklistItemIds.length > 0) {
           for (const checklistItemId of item.checklistItemIds) {
+            // Verify checklist item still exists (may not if project is newly created
+            // and checklist init hasn't completed yet)
+            const checklistItem = await ctx.db.get(checklistItemId);
+            if (!checklistItem) {
+              console.warn(`[fileBatch] Checklist item ${checklistItemId} not found for item ${item._id} — skipping link`);
+              continue;
+            }
+
             // Check if link already exists
             const existingLink = await ctx.db
               .query("knowledgeChecklistDocumentLinks")
