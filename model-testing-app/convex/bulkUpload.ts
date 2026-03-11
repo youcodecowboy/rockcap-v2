@@ -4,6 +4,39 @@ import { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { extractIntelligenceFromDocumentAnalysis, ExtractedField, FieldType } from "./intelligenceHelpers";
 
+// Fallback project folder types (matches convex/projects.ts)
+const BULK_UPLOAD_FALLBACK_FOLDERS = [
+  { name: "Background", folderKey: "background", order: 1 },
+  { name: "Terms Comparison", folderKey: "terms_comparison", order: 2 },
+  { name: "Terms Request", folderKey: "terms_request", order: 3 },
+  { name: "Credit Submission", folderKey: "credit_submission", order: 4 },
+  { name: "Post-completion Documents", folderKey: "post_completion", order: 5 },
+  { name: "Appraisals", folderKey: "appraisals", order: 6 },
+  { name: "Notes", folderKey: "notes", order: 7 },
+  { name: "Operational Model", folderKey: "operational_model", order: 8 },
+];
+
+// Helper: Generate shortcode from project name (matches convex/projects.ts)
+function generateShortcodeSuggestion(name: string): string {
+  const cleaned = name.replace(/[^a-zA-Z0-9\s]/g, '').toUpperCase();
+  const words = cleaned.split(/\s+/).filter(w => w.length > 0);
+  if (words.length === 0) return '';
+  let shortcode = '';
+  const numbers = name.replace(/[^0-9]/g, '');
+  if (words[0]) {
+    shortcode += words[0].slice(0, words.length > 2 ? 3 : 4);
+  }
+  for (let i = 1; i < words.length && shortcode.length < 7; i++) {
+    shortcode += words[i].charAt(0);
+  }
+  if (numbers && shortcode.length + numbers.length <= 10) {
+    shortcode += numbers;
+  } else if (numbers) {
+    shortcode = shortcode.slice(0, 10 - Math.min(numbers.length, 4)) + numbers.slice(0, 4);
+  }
+  return shortcode.slice(0, 10).toUpperCase();
+}
+
 // ============================================================================
 // BULK UPLOAD SYSTEM
 // Handles batch uploads of up to 100 documents with summary-only analysis
@@ -1462,6 +1495,105 @@ export const fileItem = mutation({
     }
 
     return { itemId: args.itemId, documentId };
+  },
+});
+
+// Mutation: Create new projects for bulk upload filing
+// Called BEFORE fileBatch — returns a mapping of suggestedName → projectId
+export const createBulkUploadProjects = mutation({
+  args: {
+    batchId: v.id("bulkUploadBatches"),
+    newProjects: v.array(v.object({
+      suggestedName: v.string(),
+      name: v.string(),
+      projectShortcode: v.string(),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db.get(args.batchId);
+    if (!batch) throw new Error("Batch not found");
+    if (!batch.clientId) throw new Error("Batch has no clientId");
+
+    // Get client to determine clientType for folder templates and checklist init
+    const client = await ctx.db.get(batch.clientId);
+    if (!client) throw new Error("Client not found");
+    const clientType = (client.type || "borrower").toLowerCase();
+
+    // Validate intra-batch shortcode uniqueness (case-insensitive)
+    const shortcodes = args.newProjects.map(p => p.projectShortcode.toUpperCase());
+    const uniqueShortcodes = new Set(shortcodes);
+    if (uniqueShortcodes.size !== shortcodes.length) {
+      throw new Error("Duplicate shortcodes found within new projects");
+    }
+
+    // Look up folder template once (shared across all new projects)
+    const templates = await ctx.db
+      .query("folderTemplates")
+      .withIndex("by_client_type_level", (q: any) =>
+        q.eq("clientType", clientType).eq("level", "project")
+      )
+      .collect();
+    const folderTemplate = templates.find((t: any) => t.isDefault) || templates[0];
+    const folders = folderTemplate?.folders || BULK_UPLOAD_FALLBACK_FOLDERS;
+    const sortedFolders = [...folders].sort((a: any, b: any) => a.order - b.order);
+
+    const now = new Date().toISOString();
+    const mapping: { suggestedName: string; projectId: Id<"projects"> }[] = [];
+
+    for (const proj of args.newProjects) {
+      const shortcode = proj.projectShortcode.toUpperCase().slice(0, 10);
+
+      // Validate shortcode uniqueness vs DB
+      const existing = await ctx.db
+        .query("projects")
+        .withIndex("by_shortcode", (q: any) => q.eq("projectShortcode", shortcode))
+        .filter((q: any) => q.neq(q.field("isDeleted"), true))
+        .first();
+      if (existing) {
+        throw new Error(`Project shortcode "${shortcode}" is already in use`);
+      }
+
+      // Insert project
+      const projectId = await ctx.db.insert("projects", {
+        name: proj.name,
+        projectShortcode: shortcode,
+        clientRoles: [{ clientId: batch.clientId, role: "borrower" }],
+        status: "active",
+        createdAt: now,
+      });
+
+      // Create project folders from template
+      for (const folder of sortedFolders) {
+        await ctx.db.insert("projectFolders", {
+          projectId,
+          folderType: folder.folderKey as any,
+          name: folder.name,
+          createdAt: now,
+        });
+      }
+
+      // Schedule checklist initialization
+      await ctx.scheduler.runAfter(0, api.knowledgeLibrary.initializeChecklistForProject, {
+        clientId: batch.clientId,
+        projectId,
+        clientType,
+      });
+
+      // Schedule intelligence initialization
+      await ctx.scheduler.runAfter(0, api.intelligence.initializeProjectIntelligence, {
+        projectId,
+      });
+
+      // Schedule project summary sync to client
+      await ctx.scheduler.runAfter(0, api.intelligence.syncProjectSummariesToClient, {
+        clientId: batch.clientId,
+      });
+
+      mapping.push({ suggestedName: proj.suggestedName, projectId });
+      console.log(`[createBulkUploadProjects] Created project "${proj.name}" (${shortcode}) → ${projectId}`);
+    }
+
+    return mapping;
   },
 });
 
