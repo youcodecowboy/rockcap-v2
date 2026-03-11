@@ -63,36 +63,34 @@ function formatSingle(ref: DocumentReference, context: AIContext): string {
 // =============================================================================
 
 /**
- * Classification: Full detail — description, identification rules, disambiguation.
- * The model needs maximum information to distinguish between similar types.
+ * Classification: Compact but sufficient for distinguishing between all types.
+ * First paragraph of description + top 3 identification rules + disambiguation.
+ * Omits terminology and full descriptions to keep prompt under 20K tokens
+ * when sending all ~45 references (enables prompt caching across bulk uploads).
  */
 function formatClassification(ref: DocumentReference): string {
+  // First paragraph only — enough to understand the type
+  const shortDesc = ref.description.split('\n\n')[0];
+
   const parts = [
     `### ${ref.fileType} (${ref.category})`,
-    `Tags: ${ref.tags.map((t) => t.value).join(', ')}`,
-    `Keywords: ${ref.keywords.slice(0, 15).join(', ')}`,
+    `Keywords: ${ref.keywords.slice(0, 8).join(', ')}`,
     `Filing: ${ref.filing.targetFolder} (${ref.filing.targetLevel}-level)`,
-    '',
-    ref.description,
+    shortDesc,
   ];
 
+  // Top 3 identification rules (prioritize PRIMARY/CRITICAL)
   if (ref.identificationRules.length > 0) {
-    parts.push('', '**Identification Rules:**');
-    ref.identificationRules.forEach((rule, i) => {
-      parts.push(`${i + 1}. ${rule}`);
-    });
+    const prioritized = [
+      ...ref.identificationRules.filter((r) => r.startsWith('PRIMARY:') || r.startsWith('CRITICAL:')),
+      ...ref.identificationRules.filter((r) => !r.startsWith('PRIMARY:') && !r.startsWith('CRITICAL:')),
+    ].slice(0, 3);
+    prioritized.forEach((rule) => parts.push(`- ${rule}`));
   }
 
+  // Disambiguation is critical for similar types — always include
   if (ref.disambiguation.length > 0) {
-    parts.push('', '**Disambiguation:**');
-    ref.disambiguation.forEach((d) => parts.push(`- ${d}`));
-  }
-
-  if (Object.keys(ref.terminology).length > 0) {
-    parts.push('', '**Key Terms:**');
-    for (const [term, def] of Object.entries(ref.terminology).slice(0, 5)) {
-      parts.push(`- **${term}**: ${def}`);
-    }
+    ref.disambiguation.slice(0, 3).forEach((d) => parts.push(`- ${d}`));
   }
 
   return parts.join('\n');
