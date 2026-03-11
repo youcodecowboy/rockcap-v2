@@ -964,3 +964,54 @@ function getLatestDefinitions() {
   ];
 }
 
+/**
+ * Create a lightweight custom file type from the bulk review flow.
+ * Relaxed validation: 10-word minimum description (vs 100 for full create).
+ */
+export const createFromBulkReview = mutation({
+  args: {
+    fileType: v.string(),
+    category: v.string(),
+    description: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+
+    // Validate description is at least 10 words
+    const wordCount = args.description.trim().split(/\s+/).length;
+    if (wordCount < 10) {
+      throw new Error(`Description must be at least 10 words so the AI can recognize this type. Current: ${wordCount} words.`);
+    }
+
+    // Check uniqueness against existing fileTypeDefinitions (including inactive).
+    // Note: We cannot validate against the FILE_TYPES const array here (it's a Next.js
+    // module, not importable in Convex). Client-side validation in the modal covers that.
+    const existing = await ctx.db
+      .query("fileTypeDefinitions")
+      .collect();
+    const duplicate = existing.find(
+      (d) => d.fileType.toLowerCase() === args.fileType.trim().toLowerCase()
+    );
+    if (duplicate) {
+      throw new Error(`A document type named "${duplicate.fileType}" already exists.`);
+    }
+
+    const now = new Date().toISOString();
+
+    const id = await ctx.db.insert("fileTypeDefinitions", {
+      fileType: args.fileType.trim(),
+      category: args.category,
+      description: args.description.trim(),
+      keywords: [],
+      identificationRules: [],
+      isSystemDefault: false,
+      isActive: true,
+      createdBy: user._id,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return id;
+  },
+});
+
