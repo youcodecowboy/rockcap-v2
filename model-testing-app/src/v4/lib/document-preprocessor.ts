@@ -184,6 +184,32 @@ export function analyzeFilename(fileName: string, textContent?: string): Documen
 // =============================================================================
 
 /**
+ * Check if extracted PDF text is actually usable content vs just page numbers/markers.
+ * Scanned PDFs often produce OCR text that's only page numbers or whitespace.
+ * When text is unusable, we fall back to sending the raw PDF binary so Claude can use vision.
+ */
+function isExtractedTextUsable(text: string): boolean {
+  // Strip whitespace and check minimum content length
+  const stripped = text.replace(/\s+/g, ' ').trim();
+  if (stripped.length < 50) return false;
+
+  // Check if content is mostly just numbers/page markers
+  // Remove all digits, whitespace, punctuation, and common page markers like "Page", "-", "of"
+  const withoutPageMarkers = stripped
+    .replace(/\b(page|of|p\.?)\b/gi, '')
+    .replace(/[\d\s\-–—|_.,:;/\\()[\]{}]/g, '');
+
+  // If after removing page markers and numbers, less than 20% of content remains as real words,
+  // the text is likely just page numbers/headers/footers
+  if (withoutPageMarkers.length < stripped.length * 0.2) {
+    console.warn(`[PREPROCESS] Extracted text appears to be mostly page markers (${withoutPageMarkers.length}/${stripped.length} chars of real content), falling back to raw PDF`);
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Pre-process a PDF for the API call.
  * Strategy: If text available, use truncated text. If multimodal, send first pages as images.
  * For now, we use text content since PDF-to-image conversion requires server-side processing.
@@ -192,7 +218,7 @@ async function preprocessPdf(
   file: { arrayBuffer: () => Promise<ArrayBuffer> },
   extractedText?: string,
 ): Promise<DocumentContent> {
-  if (extractedText && extractedText.length > 0) {
+  if (extractedText && extractedText.length > 0 && isExtractedTextUsable(extractedText)) {
     return preprocessText(extractedText, '');
   }
 
@@ -202,14 +228,16 @@ async function preprocessPdf(
     const buffer = await file.arrayBuffer();
 
     // Validate PDF magic bytes — reject non-PDF files misreported by the browser
+    // PDF spec allows %PDF to appear within the first 1024 bytes (BOM, whitespace, etc.)
     if (buffer.byteLength < 5) {
       console.warn('[PREPROCESS] File too small to be a valid PDF, falling back to text');
       return { type: 'text', text: '[File too small to be a valid PDF]' };
     }
-    const headerBytes = new Uint8Array(buffer, 0, 5);
-    const headerText = String.fromCharCode(...headerBytes);
-    if (!headerText.startsWith('%PDF')) {
-      console.warn(`[PREPROCESS] File does not have PDF header (got: "${headerText.slice(0, 4)}"), falling back to text`);
+    const searchLen = Math.min(1024, buffer.byteLength);
+    const headerSearchBytes = new Uint8Array(buffer, 0, searchLen);
+    const headerSearchText = String.fromCharCode(...headerSearchBytes);
+    if (!headerSearchText.includes('%PDF')) {
+      console.warn(`[PREPROCESS] File does not have PDF header within first 1024 bytes, falling back to text`);
       return { type: 'text', text: '[File does not have a valid PDF header — may be a misidentified image or document]' };
     }
 

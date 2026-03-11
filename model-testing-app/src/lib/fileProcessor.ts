@@ -53,9 +53,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
       throw new Error('PDF file appears to be empty or invalid');
     }
     
-    // Verify it's a valid PDF by checking the header
-    const pdfHeader = buffer.slice(0, 4).toString('ascii');
-    if (pdfHeader !== '%PDF') {
+    // Verify it's a valid PDF by checking for %PDF within the first 1024 bytes
+    // (PDF spec allows leading whitespace, BOM, or other bytes before the header)
+    const headerSearchRange = buffer.slice(0, Math.min(1024, buffer.length)).toString('ascii');
+    if (!headerSearchRange.includes('%PDF')) {
       throw new Error('File does not appear to be a valid PDF');
     }
     
