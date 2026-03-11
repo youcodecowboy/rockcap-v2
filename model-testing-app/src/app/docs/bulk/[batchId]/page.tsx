@@ -421,9 +421,19 @@ export default function BulkReviewPage() {
               </div>
             </div>
             <p className="text-sm text-blue-700 mt-3">
-              Files are being analyzed in the background. You&apos;ll receive a notification when processing is complete.
+              Your files are being processed in the background. You can safely navigate away, start another upload, or come back later — you&apos;ll get a notification when it&apos;s done.
               This page will automatically update as files are processed.
             </p>
+            <div className="mt-2">
+              <Button
+                variant="link"
+                size="sm"
+                className="text-blue-700 hover:text-blue-900 p-0 h-auto"
+                onClick={() => router.push('/docs/upload')}
+              >
+                Start Another Upload →
+              </Button>
+            </div>
             {stuckCount > 0 && (
               <div className="mt-3 flex justify-end">
                 <Button
