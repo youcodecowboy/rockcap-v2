@@ -1600,6 +1600,8 @@ export const addKnowledgeItem = mutation({
     originalLabel: v.optional(v.string()),
     matchedAlias: v.optional(v.string()),
     normalizationConfidence: v.optional(v.number()),
+    qualifier: v.optional(v.string()),
+    context: v.optional(v.string()),
     addedBy: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1614,7 +1616,9 @@ export const addKnowledgeItem = mutation({
           q.eq("clientId", args.clientId).eq("fieldPath", args.fieldPath)
         )
         .collect();
-      existingItem = items.find((i) => i.status === "active");
+      existingItem = items.find((i) =>
+        i.status === "active" && (i.qualifier ?? null) === (args.qualifier ?? null)
+      );
     } else if (args.projectId) {
       const items = await ctx.db
         .query("knowledgeItems")
@@ -1622,7 +1626,9 @@ export const addKnowledgeItem = mutation({
           q.eq("projectId", args.projectId).eq("fieldPath", args.fieldPath)
         )
         .collect();
-      existingItem = items.find((i) => i.status === "active");
+      existingItem = items.find((i) =>
+        i.status === "active" && (i.qualifier ?? null) === (args.qualifier ?? null)
+      );
     }
 
     // If exists, supersede it
@@ -1650,6 +1656,8 @@ export const addKnowledgeItem = mutation({
       originalLabel: args.originalLabel,
       matchedAlias: args.matchedAlias,
       normalizationConfidence: args.normalizationConfidence,
+      qualifier: args.qualifier,
+      context: args.context,
       status: "active",
       addedAt: now,
       updatedAt: now,
@@ -1780,6 +1788,8 @@ export const bulkAddKnowledgeItems = mutation({
       originalLabel: v.optional(v.string()),
       matchedAlias: v.optional(v.string()),
       normalizationConfidence: v.optional(v.number()),
+      qualifier: v.optional(v.string()),
+      context: v.optional(v.string()),
     })),
     addedBy: v.optional(v.string()),
   },
@@ -1801,7 +1811,9 @@ export const bulkAddKnowledgeItems = mutation({
             q.eq("clientId", args.clientId).eq("fieldPath", item.fieldPath)
           )
           .collect();
-        existingItem = items.find((i) => i.status === "active");
+        existingItem = items.find((i) =>
+          i.status === "active" && (i.qualifier ?? null) === (item.qualifier ?? null)
+        );
       } else if (args.projectId) {
         const items = await ctx.db
           .query("knowledgeItems")
@@ -1809,7 +1821,9 @@ export const bulkAddKnowledgeItems = mutation({
             q.eq("projectId", args.projectId).eq("fieldPath", item.fieldPath)
           )
           .collect();
-        existingItem = items.find((i) => i.status === "active");
+        existingItem = items.find((i) =>
+          i.status === "active" && (i.qualifier ?? null) === (item.qualifier ?? null)
+        );
       }
 
       // If exists with same value, skip
@@ -1844,6 +1858,8 @@ export const bulkAddKnowledgeItems = mutation({
         originalLabel: item.originalLabel,
         matchedAlias: item.matchedAlias,
         normalizationConfidence: item.normalizationConfidence,
+        qualifier: item.qualifier,
+        context: item.context,
         status: "active",
         addedAt: now,
         updatedAt: now,
@@ -2327,6 +2343,7 @@ export const applyConsolidation = mutation({
       if (!item || item.status !== "active") continue;
 
       // Check for existing item at new path
+      const reclassifiedItem = await ctx.db.get(reclassify.itemId);
       let existingItem = null;
       if (args.clientId) {
         const items = await ctx.db
@@ -2335,7 +2352,10 @@ export const applyConsolidation = mutation({
             q.eq("clientId", args.clientId).eq("fieldPath", reclassify.newFieldPath)
           )
           .collect();
-        existingItem = items.find((i) => i.status === "active" && i._id !== reclassify.itemId);
+        existingItem = items.find((i) =>
+          i.status === "active" && i._id !== reclassify.itemId &&
+          (i.qualifier ?? null) === (reclassifiedItem?.qualifier ?? null)
+        );
       } else if (args.projectId) {
         const items = await ctx.db
           .query("knowledgeItems")
@@ -2343,7 +2363,10 @@ export const applyConsolidation = mutation({
             q.eq("projectId", args.projectId).eq("fieldPath", reclassify.newFieldPath)
           )
           .collect();
-        existingItem = items.find((i) => i.status === "active" && i._id !== reclassify.itemId);
+        existingItem = items.find((i) =>
+          i.status === "active" && i._id !== reclassify.itemId &&
+          (i.qualifier ?? null) === (reclassifiedItem?.qualifier ?? null)
+        );
       }
 
       if (existingItem) {
