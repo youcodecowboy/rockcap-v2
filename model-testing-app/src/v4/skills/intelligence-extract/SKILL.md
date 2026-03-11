@@ -312,6 +312,57 @@ Before finalizing your extraction, review EVERY field against these checks:
 
 If any check fails, fix the field or remove it entirely. Precision matters more than volume.
 
+## UK Property Finance Domain Knowledge
+
+This system processes documents for UK property development lending. Apply these conventions:
+
+### Currency & Numbers
+- All amounts are GBP (£) unless explicitly stated otherwise
+- "£2.5m" = "2500000", "£500k" = "500000", "£1.2bn" = "1200000000"
+- Stamp Duty Land Tax (SDLT) is a common line item — extract as `financials.sdlt`
+- VAT is typically 20% — if amounts are stated "plus VAT" or "exclusive of VAT", note this
+
+### Common UK Abbreviations
+- **GDV**: Gross Development Value (total end value of completed scheme)
+- **TDC**: Total Development Cost (all-in cost including land, build, fees, finance)
+- **PC**: Practical Completion (construction milestone)
+- **CIL**: Community Infrastructure Levy (planning obligation)
+- **S106**: Section 106 agreement (planning obligation, Town & Country Planning Act 1990)
+- **LPA**: Local Planning Authority
+- **RICS**: Royal Institution of Chartered Surveyors (governs valuations)
+- **NHBC**: National House Building Council (new build warranties)
+- **GIA/GIFA**: Gross Internal Area / Gross Internal Floor Area
+- **NIA**: Net Internal Area
+- **LTV**: Loan to Value (loan ÷ current value)
+- **LTGDV**: Loan to Gross Development Value (loan ÷ GDV)
+- **LTC**: Loan to Cost (loan ÷ total development cost)
+- **ICR/DSCR**: Interest Cover Ratio / Debt Service Coverage Ratio
+- **SPV**: Special Purpose Vehicle (borrower entity for ring-fencing)
+- **PG**: Personal Guarantee
+- **CP/CS**: Conditions Precedent / Conditions Subsequent
+- **DD**: Due Diligence
+- **PMS**: Project Monitoring Surveyor
+- **QS**: Quantity Surveyor
+- **M&E**: Mechanical & Electrical (building services)
+- **BREEAM**: Building Research Establishment Environmental Assessment Method
+
+### UK Legal Conventions
+- Title numbers: Format is typically county prefix + numbers (e.g., "SY123456", "TGL456789")
+- Land Registry: HM Land Registry manages title registration
+- Freehold vs Leasehold: Always extract tenure as `legal.tenure`
+- Companies House number: 8-digit format (e.g., "12345678") — extract as `company.registrationNumber`
+- Solicitor firms often appear as "acting for the Borrower/Lender" — note which party
+
+### Valuation-Specific
+- Red Book: RICS Valuation — Global Standards (formal valuation methodology)
+- Desktop vs Full valuation: Desktop = no site visit, lower confidence
+- "Market Value" vs "Market Value subject to Special Assumptions": Different bases, extract both
+- Reinstatement value: Insurance rebuild cost, NOT market value — extract separately
+- Day 1 / 90-day value: Forced sale or restricted marketing period values
+
+### Document Cross-References
+When a document references another document (e.g., "as per the valuation dated 15 March 2024"), extract the reference as a field with category `references` — this helps build the document graph for the knowledge base.
+
 ## Important
 
 1. Extract as MANY fields as possible — err on the side of including more rather than less
