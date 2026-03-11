@@ -271,7 +271,22 @@ export function buildBatchUserMessage(
       {"itemId": "abc123", "itemName": "Valuation Report", "category": "Appraisals", "confidence": 0.95, "reasoning": "..."}
     ],
     "intelligenceFields": [
-      {"fieldPath": "financials.propertyValue", "label": "Property Value", "value": "2500000", "valueType": "currency", "confidence": 0.9, "sourceText": "Market value: £2,500,000", "templateTags": ["lenders_note", "perspective"]}
+      {
+        "fieldPath": "financials.propertyValue",
+        "label": "Property Value",
+        "value": "2500000",
+        "valueType": "currency",
+        "confidence": 0.9,
+        "sourceText": "Market value: £2,500,000",
+        "isCanonical": true,
+        "scope": "project",
+        "templateTags": ["general", "lenders_note", "valuation_summary"],
+        "category": "financials",
+        "originalLabel": "Market Value",
+        "pageReference": "p.8",
+        "qualifier": null,
+        "context": "Current market value of the completed development as assessed by RICS Red Book valuation"
+      }
     ]${projectInferenceSchema}
   }
 ]\n` +
@@ -447,7 +462,22 @@ function normalizeClassification(raw: any): DocumentClassification {
       keyAmounts: Array.isArray(summary.keyAmounts) ? summary.keyAmounts : [],
     },
     checklistMatches: Array.isArray(raw.checklistMatches) ? raw.checklistMatches : [],
-    intelligenceFields: Array.isArray(raw.intelligenceFields) ? raw.intelligenceFields : [],
+    intelligenceFields: (raw.intelligenceFields || []).map((f: any) => ({
+      fieldPath: f.fieldPath || '',
+      label: f.label || '',
+      value: f.value || '',
+      valueType: f.valueType || 'text',
+      confidence: f.confidence || 0,
+      sourceText: f.sourceText || '',
+      isCanonical: f.isCanonical ?? false,
+      scope: f.scope || 'project',
+      templateTags: f.templateTags || ['general'],
+      category: f.category || f.fieldPath?.split('.')[0] || 'custom',
+      originalLabel: f.originalLabel || f.label || '',
+      pageReference: f.pageReference,
+      qualifier: f.qualifier ?? null,
+      context: f.context || '',
+    })),
     ...(raw.projectInference ? { projectInference: raw.projectInference } : {}),
   };
 }
