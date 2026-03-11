@@ -72,6 +72,8 @@ import {
   X,
   RefreshCw,
   ArrowRightLeft,
+  Link2,
+  Unlink,
 } from 'lucide-react';
 import { FILE_CATEGORIES, FILE_TYPES as FILE_TYPES_LIST } from '@/lib/categories';
 
@@ -527,6 +529,24 @@ export default function BulkReviewTable({
   const [createTypeInitialName, setCreateTypeInitialName] = useState('');
   const [createTypeForItemId, setCreateTypeForItemId] = useState<Id<"bulkUploadItems"> | null>(null);
 
+  // Version linking state
+  const [versionLinkItem, setVersionLinkItem] = useState<BulkUploadItem | null>(null);
+  const [versionLinkStep, setVersionLinkStep] = useState<'select' | 'type'>('select');
+  const [versionLinkTarget, setVersionLinkTarget] = useState<Id<"documents"> | null>(null);
+  const linkItemToDocument = useMutation(api.bulkUpload.linkItemToDocument);
+  const unlinkItemVersion = useMutation(api.bulkUpload.unlinkItemVersion);
+
+  // Query existing documents for version linking
+  const existingDocs = useQuery(
+    api.documents.getByProject,
+    projectId ? { projectId } : "skip"
+  );
+  const clientDocs = useQuery(
+    api.documents.getByClient,
+    clientId && !projectId ? { clientId } : "skip"
+  );
+  const versionLinkDocs = existingDocs || clientDocs || [];
+
   // Checklist initialization retry
   const initializeChecklist = useMutation(api.knowledgeLibrary.initializeChecklistForProject);
   const client = useQuery(api.clients.get, clientId ? { id: clientId } : "skip");
@@ -757,7 +777,7 @@ export default function BulkReviewTable({
     }
   };
 
-  // Handle version type selection
+  // Handle version type selection (for auto-detected duplicates)
   const handleSetVersionType = async (itemId: Id<"bulkUploadItems">, versionType: "minor" | "significant") => {
     try {
       await setVersionType({ itemId, versionType });
@@ -765,6 +785,32 @@ export default function BulkReviewTable({
       onRefresh?.();
     } catch (error) {
       console.error('Failed to set version type:', error);
+    }
+  };
+
+  // Handle manual version linking to existing document
+  const handleLinkVersion = async (versionType: "minor" | "significant") => {
+    if (!versionLinkItem || !versionLinkTarget) return;
+    try {
+      await linkItemToDocument({
+        itemId: versionLinkItem._id,
+        documentId: versionLinkTarget,
+        versionType,
+      });
+      setVersionLinkItem(null);
+      setVersionLinkStep('select');
+      setVersionLinkTarget(null);
+    } catch (error) {
+      console.error('Failed to link version:', error);
+    }
+  };
+
+  // Handle unlinking a version
+  const handleUnlinkVersion = async (itemId: Id<"bulkUploadItems">) => {
+    try {
+      await unlinkItemVersion({ itemId });
+    } catch (error) {
+      console.error('Failed to unlink version:', error);
     }
   };
 
@@ -1317,9 +1363,29 @@ export default function BulkReviewTable({
                           </TooltipContent>
                         </Tooltip>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">
-                          {item.version || 'V1.0'}
-                        </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              className="text-[10px] text-muted-foreground hover:text-foreground hover:underline cursor-pointer"
+                              onClick={() => {
+                                if (item.duplicateOfDocumentId) {
+                                  // Already linked manually — offer unlink
+                                  handleUnlinkVersion(item._id);
+                                } else {
+                                  setVersionLinkItem(item);
+                                  setVersionLinkStep('select');
+                                  setVersionLinkTarget(null);
+                                }
+                              }}
+                              disabled={item.status !== 'ready_for_review'}
+                            >
+                              {item.version || 'V1.0'}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{item.duplicateOfDocumentId ? 'Click to unlink version' : 'Click to link as version of existing document'}</p>
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                     </TableCell>
                     <TableCell className="text-center px-1 py-2 hidden lg:table-cell">
@@ -1927,6 +1993,92 @@ export default function BulkReviewTable({
                 Cancel
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Version Link to Existing Document Dialog */}
+        <Dialog open={!!versionLinkItem} onOpenChange={() => { setVersionLinkItem(null); setVersionLinkStep('select'); setVersionLinkTarget(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {versionLinkStep === 'select' ? 'Link as Version' : 'Select Version Type'}
+              </DialogTitle>
+              <DialogDescription>
+                {versionLinkStep === 'select'
+                  ? 'Select an existing document this file is a new version of.'
+                  : 'Is this a minor or significant update?'}
+              </DialogDescription>
+            </DialogHeader>
+            {versionLinkItem && versionLinkStep === 'select' && (
+              <div className="space-y-3">
+                <div className="p-2 bg-muted rounded-lg">
+                  <div className="text-sm font-medium">{versionLinkItem.fileName}</div>
+                </div>
+                <div className="max-h-64 overflow-y-auto space-y-1">
+                  {versionLinkDocs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground p-2">No existing documents found to link to.</p>
+                  ) : (
+                    versionLinkDocs.map((doc: any) => (
+                      <button
+                        key={doc._id}
+                        className={`w-full text-left px-3 py-2 rounded text-xs hover:bg-gray-100 flex items-center gap-2 ${
+                          versionLinkTarget === doc._id ? 'bg-blue-50 border border-blue-200' : ''
+                        }`}
+                        onClick={() => setVersionLinkTarget(doc._id)}
+                      >
+                        <FileText className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{doc.fileName}</div>
+                          <div className="text-muted-foreground truncate">
+                            {doc.fileTypeDetected || doc.category} · {doc.version || 'V1.0'}
+                          </div>
+                        </div>
+                        {doc.version && (
+                          <Badge variant="outline" className="text-[9px] flex-shrink-0">{doc.version}</Badge>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => { setVersionLinkItem(null); setVersionLinkTarget(null); }}>Cancel</Button>
+                  <Button
+                    size="sm"
+                    disabled={!versionLinkTarget}
+                    onClick={() => setVersionLinkStep('type')}
+                  >
+                    Next
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+            {versionLinkItem && versionLinkStep === 'type' && (
+              <div className="space-y-3 py-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3"
+                  onClick={() => handleLinkVersion('minor')}
+                >
+                  <div className="text-left">
+                    <div className="font-medium">Minor Update</div>
+                    <div className="text-xs text-muted-foreground">Small corrections, formatting changes</div>
+                  </div>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3"
+                  onClick={() => handleLinkVersion('significant')}
+                >
+                  <div className="text-left">
+                    <div className="font-medium">Significant Update</div>
+                    <div className="text-xs text-muted-foreground">Major updates, new content, structural changes</div>
+                  </div>
+                </Button>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => setVersionLinkStep('select')}>Back</Button>
+                </DialogFooter>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 

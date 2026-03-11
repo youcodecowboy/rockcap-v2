@@ -809,6 +809,66 @@ export const setVersionType = mutation({
   },
 });
 
+// Mutation: Link a bulk upload item to an existing document as a version
+export const linkItemToDocument = mutation({
+  args: {
+    itemId: v.id("bulkUploadItems"),
+    documentId: v.id("documents"),
+    versionType: v.union(v.literal("minor"), v.literal("significant")),
+  },
+  handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.itemId);
+    if (!item) throw new Error("Item not found");
+
+    const existingDoc = await ctx.db.get(args.documentId);
+    if (!existingDoc) throw new Error("Document not found");
+
+    // Calculate version number from existing document
+    let newVersion = "V2.0";
+    if (existingDoc.version) {
+      const match = existingDoc.version.match(/^V(\d+)\.(\d+)$/);
+      if (match) {
+        const major = parseInt(match[1], 10);
+        const minor = parseInt(match[2], 10);
+        newVersion = args.versionType === "significant"
+          ? `V${major + 1}.0`
+          : `V${major}.${minor + 1}`;
+      }
+    }
+
+    await ctx.db.patch(args.itemId, {
+      duplicateOfDocumentId: args.documentId,
+      isDuplicate: true,
+      versionType: args.versionType,
+      version: newVersion,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return { itemId: args.itemId, version: newVersion, linkedTo: existingDoc.fileName };
+  },
+});
+
+// Mutation: Unlink a bulk upload item from its version target
+export const unlinkItemVersion = mutation({
+  args: {
+    itemId: v.id("bulkUploadItems"),
+  },
+  handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.itemId);
+    if (!item) throw new Error("Item not found");
+
+    await ctx.db.patch(args.itemId, {
+      duplicateOfDocumentId: undefined,
+      isDuplicate: false,
+      versionType: undefined,
+      version: undefined,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return { itemId: args.itemId };
+  },
+});
+
 // ============================================================================
 // DUPLICATE DETECTION
 // ============================================================================
