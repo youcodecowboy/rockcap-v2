@@ -297,6 +297,7 @@ export const ensureProjectFolders = mutation({
       { type: "appraisals" as const, name: "Appraisals" },
       { type: "notes" as const, name: "Notes" },
       { type: "operational_model" as const, name: "Operational Model" },
+      { type: "unfiled" as const, name: "Unfiled" },
     ];
     
     const now = new Date().toISOString();
@@ -416,6 +417,7 @@ export const getFolderDisplayNames = query({
         appraisals: "Appraisals",
         notes: "Notes",
         operational_model: "Operational Model",
+        unfiled: "Unfiled",
       },
     };
   },

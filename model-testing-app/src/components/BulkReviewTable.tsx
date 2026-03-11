@@ -94,6 +94,7 @@ const DEFAULT_PROJECT_FOLDERS = [
   { value: 'appraisals', label: 'Appraisals', isCustom: false },
   { value: 'notes', label: 'Notes', isCustom: false },
   { value: 'operational_model', label: 'Operational Model', isCustom: false },
+  { value: 'unfiled', label: 'Unfiled', isCustom: false },
 ];
 
 // Default client-level folders (fallback if no custom folders loaded)
@@ -200,6 +201,8 @@ interface BulkUploadItem {
       isCanonical?: boolean;
       scope: 'client' | 'project';
       templateTags?: string[];
+      qualifier?: string | null;
+      context?: string;
     }>;
   };
   // User edits to intelligence fields
@@ -336,9 +339,9 @@ function IntelligenceFieldsPanel({
           </div>
 
           <div className="space-y-0.5">
-            {categoryFields.map((field) => (
+            {categoryFields.map((field, idx) => (
               <div
-                key={field.fieldPath}
+                key={field.qualifier ? `${field.fieldPath}::${field.qualifier}` : `${field.fieldPath}::${idx}`}
                 className="flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-50 group text-sm"
               >
                 {/* Canonical indicator */}
@@ -348,9 +351,12 @@ function IntelligenceFieldsPanel({
                   <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
                 )}
 
-                {/* Label */}
-                <span className="text-xs text-gray-500 w-32 flex-shrink-0 truncate" title={field.fieldPath}>
+                {/* Label + Qualifier */}
+                <span className="text-xs text-gray-500 w-32 flex-shrink-0 truncate" title={field.qualifier ? `${field.fieldPath} (${field.qualifier})` : field.fieldPath}>
                   {field.label}
+                  {field.qualifier && (
+                    <span className="ml-1 text-indigo-500 font-medium">({field.qualifier})</span>
+                  )}
                 </span>
 
                 {/* Value (editable) */}
@@ -943,6 +949,94 @@ export default function BulkReviewTable({
             <>
               <div className="w-px h-4 bg-gray-300" />
               <span className="text-[10px] font-medium text-blue-700">{selectedItems.size} selected</span>
+
+              {/* Bulk Set Type */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1">
+                    <Tag className="w-3 h-3" />
+                    Set Type
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2" align="start">
+                  <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Set type for {selectedItems.size} items:</div>
+                  <SearchableSelect
+                    options={typeOptions}
+                    value=""
+                    onSelect={async (value) => {
+                      for (const itemId of selectedItems) {
+                        await handleUpdateField(itemId, 'fileTypeDetected', value);
+                      }
+                      toast.success(`Updated type to "${value}" for ${selectedItems.size} items`);
+                    }}
+                    placeholder="Choose type..."
+                    groupSeparator
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {/* Bulk Set Category */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1">
+                    <Database className="w-3 h-3" />
+                    Set Category
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2" align="start">
+                  <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Set category for {selectedItems.size} items:</div>
+                  <SearchableSelect
+                    options={categoryOptions}
+                    value=""
+                    onSelect={async (value) => {
+                      for (const itemId of selectedItems) {
+                        await handleUpdateField(itemId, 'category', value);
+                      }
+                      toast.success(`Updated category to "${value}" for ${selectedItems.size} items`);
+                    }}
+                    placeholder="Choose category..."
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {/* Bulk Set Folder */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1">
+                    <HardDrive className="w-3 h-3" />
+                    Set Folder
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2" align="start">
+                  <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Set folder for {selectedItems.size} items:</div>
+                  <div className="text-[10px] text-muted-foreground mb-1 px-1 italic">Project folders</div>
+                  <SearchableSelect
+                    options={projectFolderSelectOptions}
+                    value=""
+                    onSelect={async (value) => {
+                      for (const itemId of selectedItems) {
+                        await handleUpdateField(itemId, 'targetFolder', value);
+                      }
+                      toast.success(`Updated folder to "${value}" for ${selectedItems.size} items`);
+                    }}
+                    placeholder="Choose project folder..."
+                    groupSeparator
+                  />
+                  <div className="text-[10px] text-muted-foreground mt-2 mb-1 px-1 italic">Client folders</div>
+                  <SearchableSelect
+                    options={clientFolderSelectOptions}
+                    value=""
+                    onSelect={async (value) => {
+                      for (const itemId of selectedItems) {
+                        await handleUpdateField(itemId, 'targetFolder', value);
+                      }
+                      toast.success(`Updated folder to "${value}" for ${selectedItems.size} items`);
+                    }}
+                    placeholder="Choose client folder..."
+                    groupSeparator
+                  />
+                </PopoverContent>
+              </Popover>
             </>
           )}
 

@@ -56,6 +56,7 @@ export const FOLDER_DEFINITIONS: Record<string, { name: string; level: 'client' 
   'post_completion': { name: 'Post Completion', level: 'project', description: 'Post-completion docs, insurance, monitoring' },
   'notes': { name: 'Notes', level: 'project', description: 'Meeting notes, correspondence, memos' },
   'operational_model': { name: 'Operational Model', level: 'project', description: 'Financial models, cashflows, projections' },
+  'unfiled': { name: 'Unfiled', level: 'project', description: 'Documents awaiting manual folder assignment' },
 };
 
 // =============================================================================
@@ -209,13 +210,14 @@ export function resolvePlacement(
     };
   }
 
-  // Priority 5: Fallback
+  // Priority 5: Fallback — project-level gets "unfiled", client-level gets "miscellaneous"
+  const isProjectScoped = modelTargetLevel === 'project';
   return {
-    folderKey: 'miscellaneous',
-    folderName: 'Miscellaneous',
-    targetLevel: 'client',
+    folderKey: isProjectScoped ? 'unfiled' : 'miscellaneous',
+    folderName: isProjectScoped ? 'Unfiled' : 'Miscellaneous',
+    targetLevel: isProjectScoped ? 'project' : 'client',
     wasOverridden: true,
-    reason: `No placement rule for "${fileType}" (${category}). Defaulting to miscellaneous.`,
+    reason: `No placement rule for "${fileType}" (${category}). Defaulting to ${isProjectScoped ? 'unfiled' : 'miscellaneous'}.`,
   };
 }
 
