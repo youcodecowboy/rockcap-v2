@@ -39,6 +39,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import BulkReviewTable from '@/components/BulkReviewTable';
+import NewProjectsPanel, { NewProjectEntry, buildNewProjectEntries } from '@/components/NewProjectsPanel';
 import UploadMoreModal from './components/UploadMoreModal';
 import { getUserInitials } from '@/lib/documentNaming';
 
@@ -58,6 +59,9 @@ export default function BulkReviewPage() {
   const [isEditingShortcode, setIsEditingShortcode] = useState(false);
   const [shortcodeInput, setShortcodeInput] = useState('');
   const [shortcodeSaving, setShortcodeSaving] = useState(false);
+
+  // New projects panel state
+  const [newProjects, setNewProjects] = useState<NewProjectEntry[]>([]);
 
   // Queries
   const batch = useQuery(api.bulkUpload.getBatch, { batchId });
@@ -100,6 +104,7 @@ export default function BulkReviewPage() {
   const updateProject = useMutation(api.projects.update);
   const updateBatch = useMutation(api.bulkUpload.updateBatchStatus);
   const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
+  const createBulkUploadProjects = useMutation(api.bulkUpload.createBulkUploadProjects);
 
   // Initialize shortcode input when batch loads
   useEffect(() => {
@@ -107,6 +112,17 @@ export default function BulkReviewPage() {
       setShortcodeInput(batch.projectShortcode);
     }
   }, [batch?.projectShortcode]);
+
+  // Build new projects list when items and client projects load
+  useEffect(() => {
+    if (!items || !batch?.isMultiProject || batch.status !== 'review') {
+      setNewProjects([]);
+      return;
+    }
+    const existingNames = (clientProjects || []).map((p: any) => p.name);
+    const entries = buildNewProjectEntries(items as any, existingNames);
+    setNewProjects(entries);
+  }, [items, clientProjects, batch?.isMultiProject, batch?.status]);
 
   // Handle shortcode save
   const handleSaveShortcode = async () => {
@@ -152,6 +168,12 @@ export default function BulkReviewPage() {
     return stats.statusCounts.ready_for_review > 0 && stats.unresolvedDuplicates === 0;
   }, [stats]);
 
+  const hasNewProjectDuplicates = useMemo(() => {
+    const enabled = newProjects.filter(p => p.enabled);
+    const shortcodes = enabled.map(p => p.projectShortcode.toUpperCase());
+    return new Set(shortcodes).size !== shortcodes.length;
+  }, [newProjects]);
+
   // Handle file all
   const handleFileAll = async () => {
     if (!batch || !canFileAll) return;
@@ -160,14 +182,30 @@ export default function BulkReviewPage() {
     setIsFilingAll(true);
 
     try {
+      // Step 1: Create new projects if any are enabled
+      let projectMapping: { suggestedName: string; projectId: any }[] | undefined;
+      const enabledProjects = newProjects.filter(p => p.enabled && p.name.trim() && p.projectShortcode.trim());
+
+      if (enabledProjects.length > 0) {
+        projectMapping = await createBulkUploadProjects({
+          batchId,
+          newProjects: enabledProjects.map(p => ({
+            suggestedName: p.suggestedName,
+            name: p.name.trim(),
+            projectShortcode: p.projectShortcode.trim().toUpperCase(),
+          })),
+        });
+      }
+
+      // Step 2: File all items with the project mapping
       const result = await fileBatch({
         batchId,
         uploaderInitials,
+        projectMapping,
       });
       setFilingResult(result);
-      
+
       // Trigger extraction queue processing (non-blocking)
-      // This processes any documents that had extraction enabled (spreadsheets)
       fetch('/api/process-extraction-queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -179,9 +217,6 @@ export default function BulkReviewPage() {
       }).catch(err => {
         console.error('[BulkUpload] Failed to trigger extraction queue:', err);
       });
-
-      // DEPRECATED: Intelligence extraction is now handled within the bulk upload pipeline skills.
-      // The legacy /api/process-intelligence-queue trigger has been disabled.
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to file documents');
     } finally {
@@ -539,6 +574,14 @@ export default function BulkReviewPage() {
         </div>
       )}
 
+      {/* New Projects Panel — shown when new projects are detected */}
+      {batch?.status === 'review' && newProjects.length > 0 && (
+        <NewProjectsPanel
+          projects={newProjects}
+          onChange={setNewProjects}
+        />
+      )}
+
       {/* Review Table */}
       {/* Multi-project summary */}
       {batch?.isMultiProject && items && (
@@ -592,7 +635,7 @@ export default function BulkReviewPage() {
               </Button>
               <Button
                 onClick={() => setShowFileAllDialog(true)}
-                disabled={!canFileAll || isFilingAll}
+                disabled={!canFileAll || isFilingAll || hasNewProjectDuplicates}
               >
                 {isFilingAll ? (
                   <>
