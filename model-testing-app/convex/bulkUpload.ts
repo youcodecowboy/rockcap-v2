@@ -1632,19 +1632,122 @@ export const createBulkUploadProjects = mutation({
         });
       }
 
-      // Schedule checklist initialization
-      await ctx.scheduler.runAfter(0, api.knowledgeLibrary.initializeChecklistForProject, {
-        clientId: batch.clientId,
-        projectId,
-        clientType,
-      });
+      // Initialize checklist INLINE (not via scheduler) so items exist immediately
+      const checklistTemplate = await (async () => {
+        // Try exact clientType match first
+        const exactTemplates = await ctx.db
+          .query("knowledgeRequirementTemplates")
+          .withIndex("by_client_type", (q: any) => q.eq("clientType", clientType))
+          .collect();
+        const exact = exactTemplates.find((t: any) => t.level === "project");
+        if (exact) return exact;
+        // Fallback to borrower template
+        if (clientType !== "borrower") {
+          const borrowerTemplates = await ctx.db
+            .query("knowledgeRequirementTemplates")
+            .withIndex("by_client_type", (q: any) => q.eq("clientType", "borrower"))
+            .collect();
+          return borrowerTemplates.find((t: any) => t.level === "project") || null;
+        }
+        return null;
+      })();
 
-      // Schedule intelligence initialization
+      const createdChecklistItems: Array<{ _id: Id<"knowledgeChecklistItems">; name: string; category: string; matchingDocumentTypes?: string[] }> = [];
+      if (checklistTemplate) {
+        for (const req of checklistTemplate.requirements) {
+          const checklistItemId = await ctx.db.insert("knowledgeChecklistItems", {
+            clientId: batch.clientId,
+            projectId,
+            requirementTemplateId: checklistTemplate._id,
+            requirementId: req.id,
+            name: req.name,
+            category: req.category,
+            phaseRequired: req.phaseRequired,
+            priority: req.priority,
+            description: req.description,
+            matchingDocumentTypes: req.matchingDocumentTypes,
+            order: req.order,
+            status: "missing",
+            isCustom: false,
+            createdAt: now,
+            updatedAt: now,
+          });
+          createdChecklistItems.push({
+            _id: checklistItemId,
+            name: req.name,
+            category: req.category,
+            matchingDocumentTypes: req.matchingDocumentTypes,
+          });
+        }
+        console.log(`[createBulkUploadProjects] Created ${createdChecklistItems.length} checklist items for "${proj.name}"`);
+      } else {
+        console.log(`[createBulkUploadProjects] No checklist template found for clientType="${clientType}"`);
+      }
+
+      // Auto-match batch items to new checklist items using matchingDocumentTypes
+      if (createdChecklistItems.length > 0) {
+        const batchItems = await ctx.db
+          .query("bulkUploadItems")
+          .withIndex("by_batch", (q: any) => q.eq("batchId", args.batchId))
+          .collect();
+
+        // Only match items assigned to this project (by suggestedProjectName)
+        const projectItems = batchItems.filter((item: any) =>
+          item.suggestedProjectName &&
+          item.suggestedProjectName.toLowerCase() === proj.suggestedName.toLowerCase()
+        );
+
+        for (const item of projectItems) {
+          const fileType = (item as any).fileTypeDetected || '';
+          const category = (item as any).category || '';
+          const suggestions: Array<{ itemId: Id<"knowledgeChecklistItems">; itemName: string; category: string; confidence: number; reasoning: string }> = [];
+
+          for (const checkItem of createdChecklistItems) {
+            const matchingTypes = checkItem.matchingDocumentTypes || [];
+            // Direct file type match
+            if (matchingTypes.some(t => t.toLowerCase() === fileType.toLowerCase())) {
+              suggestions.push({
+                itemId: checkItem._id,
+                itemName: checkItem.name,
+                category: checkItem.category,
+                confidence: 0.92,
+                reasoning: `File type "${fileType}" matches checklist requirement`,
+              });
+            }
+            // Category match (lower confidence)
+            else if (checkItem.category.toLowerCase() === category.toLowerCase() && category) {
+              suggestions.push({
+                itemId: checkItem._id,
+                itemName: checkItem.name,
+                category: checkItem.category,
+                confidence: 0.75,
+                reasoning: `Category "${category}" matches checklist category`,
+              });
+            }
+          }
+
+          if (suggestions.length > 0) {
+            // Sort by confidence and auto-check the top one if >= 0.7
+            suggestions.sort((a, b) => b.confidence - a.confidence);
+            const topSuggestion = suggestions[0];
+            const autoCheckIds = topSuggestion.confidence >= 0.7 ? [topSuggestion.itemId] : [];
+
+            await ctx.db.patch(item._id, {
+              suggestedChecklistItems: suggestions,
+              checklistItemIds: autoCheckIds.length > 0 ? autoCheckIds : undefined,
+              updatedAt: now,
+            });
+            console.log(`[createBulkUploadProjects] Auto-matched "${(item as any).fileName}" → "${topSuggestion.itemName}" (${topSuggestion.confidence})`);
+          }
+        }
+      }
+
+      // Schedule intelligence initialization (keep async — not blocking)
       await ctx.scheduler.runAfter(0, api.intelligence.initializeProjectIntelligence, {
         projectId,
       });
 
-      // Schedule project summary sync to client
+      // Schedule project summary sync to client (keep async — not blocking)
       await ctx.scheduler.runAfter(0, api.intelligence.syncProjectSummariesToClient, {
         clientId: batch.clientId,
       });
