@@ -69,12 +69,21 @@ export default function BulkReviewPage() {
   const items = useQuery(api.bulkUpload.getBatchItems, { batchId });
   const stats = useQuery(api.bulkUpload.getBatchStats, { batchId });
   const currentUser = useQuery(api.users.getCurrent, {});
-  
-  // Query checklist items for missing documents count
+
+  // Compute effective projectId for checklist: use per-item project assignment if batch has none
+  const effectiveProjectId = useMemo(() => {
+    if (batch?.projectId) return batch.projectId;
+    if (!items) return undefined;
+    const projectIds = items.map((i: any) => i.itemProjectId).filter(Boolean);
+    if (projectIds.length > 0) return projectIds[0];
+    return undefined;
+  }, [batch?.projectId, items]);
+
+  // Query checklist items — includes project-level items when items are assigned to a project
   // @ts-ignore - Known Convex TypeScript type instantiation depth issue
   const checklistItems = useQuery(
     api.knowledgeLibrary.getAllChecklistItemsForClient,
-    batch?.clientId ? { clientId: batch.clientId, projectId: batch.projectId } : "skip"
+    batch?.clientId ? { clientId: batch.clientId, projectId: effectiveProjectId } : "skip"
   );
   
   // Calculate checklist stats
@@ -202,12 +211,16 @@ export default function BulkReviewPage() {
     }
   };
 
-  // Detect multi-project mode from batch flag OR from items with suggestedProjectName
+  // Detect multi-project mode: batch flag, suggested projects, OR items assigned to different projects
   const isEffectivelyMultiProject = useMemo(() => {
     if (batch?.isMultiProject) return true;
     if (!items) return false;
-    return items.some((i: any) => i.suggestedProjectName && !i.itemProjectId);
-  }, [batch?.isMultiProject, items]);
+    // Any item with a suggested project name (even if already assigned) = multi-project
+    if (items.some((i: any) => i.suggestedProjectName)) return true;
+    // Items assigned to different projects = multi-project
+    const projectIds = new Set(items.map((i: any) => i.itemProjectId).filter(Boolean));
+    return projectIds.size > 1 || (projectIds.size === 1 && !batch?.projectId);
+  }, [batch?.isMultiProject, batch?.projectId, items]);
 
   // Computed values
   const uploaderInitials = useMemo(() => {
@@ -657,9 +670,9 @@ export default function BulkReviewPage() {
       <BulkReviewTable
         items={items as any}
         batchIsInternal={batch.isInternal}
-        hasProject={!!batch.projectId}
+        hasProject={!!effectiveProjectId}
         clientId={batch.clientId}
-        projectId={batch.projectId}
+        projectId={effectiveProjectId}
         isMultiProject={isEffectivelyMultiProject}
         projects={clientProjects?.map((p: any) => ({
           _id: p._id,
