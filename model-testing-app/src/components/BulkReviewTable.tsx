@@ -77,6 +77,7 @@ import {
   Flag,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
+import { toast } from 'sonner';
 import { FILE_CATEGORIES, FILE_TYPES as FILE_TYPES_LIST } from '@/lib/categories';
 
 // Use the centralized categories and file types
@@ -1284,15 +1285,20 @@ export default function BulkReviewTable({
                                           setIsInitializingChecklist(true);
                                           try {
                                             const clientType = (client?.type || 'borrower').toLowerCase();
-                                            console.log('[InitChecklist] Calling with:', { clientId, projectId, clientType });
-                                            const result = await initializeChecklist({
+                                            const result: any = await initializeChecklist({
                                               clientId,
                                               projectId,
                                               clientType,
                                             });
-                                            console.log('[InitChecklist] Result:', result);
-                                          } catch (e) {
-                                            console.error('[InitChecklist] Failed:', e);
+                                            if (result?.success && result?.created > 0) {
+                                              toast.success(`Created ${result.created} project checklist items`);
+                                            } else if (result?.success && result?.created === 0) {
+                                              toast.info(result.message || 'Checklist already exists');
+                                            } else {
+                                              toast.error(result?.message || 'Failed to initialize checklist — no template found. Run: npx convex run migrations/seedKnowledgeTemplates:seed');
+                                            }
+                                          } catch (e: any) {
+                                            toast.error(`Checklist init error: ${e.message || e}`);
                                           } finally {
                                             setIsInitializingChecklist(false);
                                           }
