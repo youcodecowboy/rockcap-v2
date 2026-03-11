@@ -85,10 +85,10 @@ export default function BulkReviewPage() {
     return { total, fulfilled, missing };
   }, [checklistItems]);
   
-  // Query projects for multi-project batches
+  // Query projects for multi-project batches (also fetches when items suggest new projects)
   const clientProjects = useQuery(
     api.projects.getByClient,
-    batch?.clientId && batch?.isMultiProject ? { clientId: batch.clientId } : "skip"
+    batch?.clientId ? { clientId: batch.clientId } : "skip"
   );
 
   // Check shortcode availability
@@ -114,8 +114,15 @@ export default function BulkReviewPage() {
   }, [batch?.projectShortcode]);
 
   // Build new projects list when items and client projects load
+  // Detects new projects from items with suggestedProjectName (works even if isMultiProject wasn't set)
   useEffect(() => {
-    if (!items || !batch?.isMultiProject || batch.status !== 'review') {
+    if (!items || batch?.status !== 'review') {
+      setNewProjects([]);
+      return;
+    }
+    // Check if any items have suggested project names (auto-detect multi-project)
+    const hasSuggestedProjects = items.some((i: any) => i.suggestedProjectName && !i.itemProjectId);
+    if (!batch?.isMultiProject && !hasSuggestedProjects) {
       setNewProjects([]);
       return;
     }
@@ -151,6 +158,13 @@ export default function BulkReviewPage() {
       setShortcodeSaving(false);
     }
   };
+
+  // Detect multi-project mode from batch flag OR from items with suggestedProjectName
+  const isEffectivelyMultiProject = useMemo(() => {
+    if (batch?.isMultiProject) return true;
+    if (!items) return false;
+    return items.some((i: any) => i.suggestedProjectName && !i.itemProjectId);
+  }, [batch?.isMultiProject, items]);
 
   // Computed values
   const uploaderInitials = useMemo(() => {
@@ -584,7 +598,7 @@ export default function BulkReviewPage() {
 
       {/* Review Table */}
       {/* Multi-project summary */}
-      {batch?.isMultiProject && items && (
+      {isEffectivelyMultiProject && items && (
         <div className="flex items-center gap-4 text-sm p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
           <span className="font-medium">{items.length} documents</span>
           <span className="text-gray-400">|</span>
@@ -601,7 +615,7 @@ export default function BulkReviewPage() {
         hasProject={!!batch.projectId}
         clientId={batch.clientId}
         projectId={batch.projectId}
-        isMultiProject={batch?.isMultiProject}
+        isMultiProject={isEffectivelyMultiProject}
         projects={clientProjects?.map((p: any) => ({
           _id: p._id,
           name: p.name,

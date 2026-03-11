@@ -579,6 +579,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
         personalFolderId: uploadScope === 'personal' ? selectedPersonalFolderId || undefined : undefined,
         personalFolderName: uploadScope === 'personal' && selectedPersonalFolder ? selectedPersonalFolder.name : undefined,
         isInternal: uploadScope === 'internal' || isInternal,
+        isMultiProject: folderHints.size > 0 && !selectedProjectId,
         instructions: instructions || undefined,
         userId: currentUser._id,
         totalFiles: files.length,
