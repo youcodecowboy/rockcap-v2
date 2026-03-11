@@ -21,7 +21,6 @@ import {
   Building,
   User,
   Lock,
-  Search,
   RotateCcw,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
@@ -51,6 +50,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { getUserInitials } from '@/lib/documentNaming';
 import { BulkQueueProcessor, createBulkQueueProcessor, BatchInfo } from '@/lib/bulkQueueProcessor';
 import BulkUploadHistory from './BulkUploadHistory';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 
 const MAX_FILES = 100;
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
@@ -144,14 +144,6 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
   const [folderHints, setFolderHints] = useState<Map<number, string>>(new Map());
   const [detectedProjects, setDetectedProjects] = useState<string[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
-
-  // Searchable dropdown state
-  const [clientSearchQuery, setClientSearchQuery] = useState('');
-  const [showClientResults, setShowClientResults] = useState(false);
-  const [projectSearchQuery, setProjectSearchQuery] = useState('');
-  const [showProjectResults, setShowProjectResults] = useState(false);
-  const clientDropdownRef = useRef<HTMLDivElement>(null);
-  const projectDropdownRef = useRef<HTMLDivElement>(null);
 
   // Previous selection state
   const [previousSelection, setPreviousSelection] = useState<{
@@ -287,42 +279,6 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
       }
     } catch {}
   }, []);
-
-  // Close searchable dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (clientDropdownRef.current && !clientDropdownRef.current.contains(event.target as Node)) {
-        setShowClientResults(false);
-      }
-      if (projectDropdownRef.current && !projectDropdownRef.current.contains(event.target as Node)) {
-        setShowProjectResults(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Filtered clients for searchable dropdown
-  const filteredClients = useMemo(() => {
-    if (!clients) return [];
-    if (!clientSearchQuery) return clients.slice(0, 10);
-    const q = clientSearchQuery.toLowerCase();
-    return clients.filter(c =>
-      c.name.toLowerCase().includes(q) ||
-      c.companyName?.toLowerCase().includes(q)
-    ).slice(0, 10);
-  }, [clients, clientSearchQuery]);
-
-  // Filtered projects for searchable dropdown
-  const filteredProjects = useMemo(() => {
-    if (!projects) return [];
-    if (!projectSearchQuery) return projects.slice(0, 10);
-    const q = projectSearchQuery.toLowerCase();
-    return projects.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      p.projectShortcode?.toLowerCase().includes(q)
-    ).slice(0, 10);
-  }, [projects, projectSearchQuery]);
 
   // Apply previous selection
   const applyPreviousSelection = useCallback(() => {
@@ -914,71 +870,33 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="relative" ref={clientDropdownRef}>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  type="text"
-                  value={selectedClient ? selectedClient.name : clientSearchQuery}
-                  onChange={(e) => {
-                    setClientSearchQuery(e.target.value);
-                    setShowClientResults(true);
-                    if (selectedClientId) {
-                      setSelectedClientId('');
-                      setSelectedProjectId('');
-                    }
-                  }}
-                  onFocus={() => {
-                    if (!selectedClient) setShowClientResults(true);
-                  }}
-                  placeholder="Search for a client..."
-                  className="pl-9 pr-9"
-                  disabled={isUploading}
-                />
-                {selectedClient && (
-                  <button
-                    onClick={() => {
-                      setSelectedClientId('');
-                      setSelectedProjectId('');
-                      setClientSearchQuery('');
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-              {showClientResults && filteredClients.length > 0 && (
-                <div className="absolute z-[100] w-full mt-1 bg-white border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {filteredClients.map((client) => (
-                    <button
-                      key={client._id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedClientId(client._id);
-                        setSelectedProjectId('');
-                        setClientSearchQuery('');
-                        setShowClientResults(false);
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2"
-                    >
-                      <Building2 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                      <div>
-                        <div className="text-sm font-medium">{client.name}</div>
-                        {client.companyName && (
-                          <div className="text-xs text-muted-foreground">{client.companyName}</div>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {showClientResults && filteredClients.length === 0 && clientSearchQuery && (
-                <div className="absolute z-[100] w-full mt-1 bg-white border border-border rounded-md shadow-lg p-3 text-sm text-muted-foreground">
-                  No clients found matching &ldquo;{clientSearchQuery}&rdquo;
-                </div>
-              )}
-            </div>
+            <SearchableSelect
+              options={(clients || []).map((c) => ({
+                value: c._id,
+                label: c.name,
+              }))}
+              value={selectedClientId}
+              onSelect={(val) => {
+                setSelectedClientId(val as Id<"clients"> | '');
+                setSelectedProjectId('');
+              }}
+              placeholder="Search for a client..."
+              disabled={isUploading}
+              renderOption={(option) => {
+                const client = clients?.find((c) => c._id === option.value);
+                return (
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div>
+                      <div className="text-sm font-medium">{option.label}</div>
+                      {client?.companyName && (
+                        <div className="text-xs text-muted-foreground">{client.companyName}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }}
+            />
 
             <Button
               variant="outline"
@@ -1083,80 +1001,32 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="relative" ref={projectDropdownRef}>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  type="text"
-                  value={selectedProject ? selectedProject.name : projectSearchQuery}
-                  onChange={(e) => {
-                    setProjectSearchQuery(e.target.value);
-                    setShowProjectResults(true);
-                    if (selectedProjectId) {
-                      setSelectedProjectId('');
-                    }
-                  }}
-                  onFocus={() => {
-                    if (!selectedProject) setShowProjectResults(true);
-                  }}
-                  placeholder="Search for a project (optional)..."
-                  className="pl-9 pr-9"
-                  disabled={isUploading}
-                />
-                {selectedProject && (
-                  <button
-                    onClick={() => {
-                      setSelectedProjectId('');
-                      setProjectSearchQuery('');
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-              {showProjectResults && (
-                <div className="absolute z-[100] w-full mt-1 bg-white border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedProjectId('');
-                      setProjectSearchQuery('');
-                      setShowProjectResults(false);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 border-b border-border"
-                  >
+            <SearchableSelect
+              options={(projects || []).map((p) => ({
+                value: p._id,
+                label: p.name,
+              }))}
+              value={selectedProjectId}
+              onSelect={(val) => {
+                setSelectedProjectId(val as Id<"projects"> | '');
+              }}
+              placeholder="Search for a project (optional)..."
+              disabled={isUploading}
+              renderOption={(option) => {
+                const project = projects?.find((p) => p._id === option.value);
+                return (
+                  <div className="flex items-center gap-2">
                     <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    <div className="text-sm text-muted-foreground">No project (Client-level documents)</div>
-                  </button>
-                  {filteredProjects.map((project) => (
-                    <button
-                      key={project._id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedProjectId(project._id);
-                        setProjectSearchQuery('');
-                        setShowProjectResults(false);
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2"
-                    >
-                      <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                      <div>
-                        <div className="text-sm font-medium">{project.name}</div>
-                        {project.projectShortcode && (
-                          <div className="text-xs text-muted-foreground">{project.projectShortcode}</div>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                  {filteredProjects.length === 0 && projectSearchQuery && (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      No projects found matching &ldquo;{projectSearchQuery}&rdquo;
+                    <div>
+                      <div className="text-sm font-medium">{option.label}</div>
+                      {project?.projectShortcode && (
+                        <div className="text-xs text-muted-foreground">{project.projectShortcode}</div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                );
+              }}
+            />
 
             <Button
               variant="outline"
