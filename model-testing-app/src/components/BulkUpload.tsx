@@ -58,6 +58,56 @@ const BACKGROUND_THRESHOLD = 5; // Files > this threshold trigger background pro
 const ESTIMATED_SECONDS_PER_FILE = 20;
 
 /**
+ * Recursively traverse a FileSystemEntry tree and collect all files.
+ * Used for drag-and-drop folder support.
+ */
+async function traverseFileTree(entry: FileSystemEntry, path: string = ''): Promise<File[]> {
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      (entry as FileSystemFileEntry).file((file) => {
+        // Attach the relative path so extractFolderHints can use it
+        Object.defineProperty(file, 'webkitRelativePath', {
+          value: path + file.name,
+          writable: false,
+        });
+        resolve([file]);
+      }, () => resolve([])); // Skip files that can't be read
+    });
+  }
+
+  if (entry.isDirectory) {
+    const dirReader = (entry as FileSystemDirectoryEntry).createReader();
+
+    // readEntries returns batches of up to 100 — must loop until empty
+    const readAllEntries = (): Promise<FileSystemEntry[]> =>
+      new Promise((resolve) => {
+        const batch: FileSystemEntry[] = [];
+        const readBatch = () => {
+          dirReader.readEntries((results) => {
+            if (results.length === 0) {
+              resolve(batch);
+            } else {
+              batch.push(...results);
+              readBatch();
+            }
+          }, () => resolve(batch)); // Skip unreadable dirs
+        };
+        readBatch();
+      });
+
+    const childEntries = await readAllEntries();
+    const files: File[] = [];
+    for (const child of childEntries) {
+      const childFiles = await traverseFileTree(child, path + entry.name + '/');
+      files.push(...childFiles);
+    }
+    return files;
+  }
+
+  return [];
+}
+
+/**
  * Extract project folder hints from webkitRelativePath.
  *
  * Hierarchy rule:
@@ -325,12 +375,46 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     }
   }, [files.length]);
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    handleFiles(droppedFiles);
-  }, [handleFiles]);
+
+    const items = e.dataTransfer.items;
+    const allFiles: File[] = [];
+
+    // Use webkitGetAsEntry to detect folders vs files
+    const entries: FileSystemEntry[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i].webkitGetAsEntry?.();
+      if (entry) {
+        entries.push(entry);
+      }
+    }
+
+    if (entries.length > 0) {
+      // We have entries — traverse any directories
+      for (const entry of entries) {
+        const files = await traverseFileTree(entry);
+        allFiles.push(...files);
+      }
+    } else {
+      // Fallback: browser doesn't support webkitGetAsEntry
+      allFiles.push(...Array.from(e.dataTransfer.files));
+    }
+
+    if (allFiles.length === 0) return;
+
+    // Extract folder hints if no project is pre-selected (same as handleFolderSelect)
+    if (!selectedProjectId) {
+      const hints = extractFolderHints(allFiles);
+      if (hints.size > 0) {
+        setFolderHints(hints);
+        setDetectedProjects([...new Set(hints.values())]);
+      }
+    }
+
+    handleFiles(allFiles);
+  }, [handleFiles, selectedProjectId]);
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
