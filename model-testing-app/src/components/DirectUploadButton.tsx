@@ -151,7 +151,7 @@ export default function DirectUploadButton({
         className="hidden"
         onChange={handleFileSelect}
         disabled={isUploading}
-        accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
+        accept=".pdf,.docx,.doc,.xls,.xlsx,.xlsm,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
       />
       <Button
         variant="outline"

@@ -135,8 +135,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
   if (
     fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
     fileType === 'application/vnd.ms-excel' ||
+    fileType === 'application/vnd.ms-excel.sheet.macroEnabled.12' ||
     fileName.endsWith('.xlsx') ||
-    fileName.endsWith('.xls')
+    fileName.endsWith('.xls') ||
+    fileName.endsWith('.xlsm')
   ) {
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -259,8 +261,10 @@ export async function convertSpreadsheetToMarkdown(file: File): Promise<string> 
   if (
     fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
     fileType === 'application/vnd.ms-excel' ||
+    fileType === 'application/vnd.ms-excel.sheet.macroEnabled.12' ||
     fileName.endsWith('.xlsx') ||
-    fileName.endsWith('.xls')
+    fileName.endsWith('.xls') ||
+    fileName.endsWith('.xlsm')
   ) {
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -348,6 +352,7 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-excel',
+    'application/vnd.ms-excel.sheet.macroEnabled.12',
     'application/msword',
     // Image types - handled separately by vision analysis
     'image/png',
@@ -359,7 +364,7 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     'image/heif',
   ];
 
-  const allowedExtensions = ['.txt', '.md', '.pdf', '.doc', '.docx', '.csv', '.xlsx', '.xls', '.eml', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'];
+  const allowedExtensions = ['.txt', '.md', '.pdf', '.doc', '.docx', '.csv', '.xlsx', '.xls', '.xlsm', '.eml', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif'];
   const fileName = file.name.toLowerCase();
   const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
 
@@ -368,7 +373,7 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
   }
 
   if (!allowedTypes.includes(file.type) && !hasValidExtension) {
-    return { valid: false, error: 'Unsupported file type. Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls, .eml, .png, .jpg, .gif, .webp' };
+    return { valid: false, error: 'Unsupported file type. Supported: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls, .xlsm, .eml, .png, .jpg, .gif, .webp' };
   }
 
   return { valid: true };

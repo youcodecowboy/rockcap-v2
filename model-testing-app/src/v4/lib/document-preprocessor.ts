@@ -163,7 +163,7 @@ export function analyzeFilename(fileName: string, textContent?: string): Documen
   hints.isFinancial = FINANCIAL_KEYWORDS.test(searchText);
   hints.isLegal = LEGAL_KEYWORDS.test(searchText);
   hints.isIdentity = IDENTITY_KEYWORDS.test(searchText);
-  hints.isSpreadsheet = /\.(xlsx?|csv|ods)$/i.test(fileName);
+  hints.isSpreadsheet = /\.(xlsx?|xlsm|csv|ods)$/i.test(fileName);
   hints.isImage = /\.(jpe?g|png|gif|webp|tiff?|bmp)$/i.test(fileName);
 
   // Add characteristic-based tags
@@ -323,7 +323,7 @@ function isSpreadsheet(mediaType: string, fileName: string): boolean {
   return (
     mediaType.includes('spreadsheet') ||
     mediaType.includes('excel') ||
-    /\.(xlsx?|csv|ods)$/i.test(fileName)
+    /\.(xlsx?|xlsm|csv|ods)$/i.test(fileName)
   );
 }
 

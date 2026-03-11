@@ -256,7 +256,7 @@ export default function FileUpload({ onFileAnalyzed, onError }: FileUploadProps)
           type="file"
           id="file-input"
           multiple
-          accept=".txt,.md,.pdf,.doc,.docx,.csv,.xlsx,.xls"
+          accept=".txt,.md,.pdf,.doc,.docx,.csv,.xlsx,.xls,.xlsm,.eml"
           onChange={handleFileInput}
           className="hidden"
           disabled={isDisabled}
