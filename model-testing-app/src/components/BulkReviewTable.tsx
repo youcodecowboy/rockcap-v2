@@ -71,6 +71,7 @@ import {
   Check,
   X,
   RefreshCw,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { FILE_CATEGORIES, FILE_TYPES as FILE_TYPES_LIST } from '@/lib/categories';
 
@@ -847,6 +848,68 @@ export default function BulkReviewTable({
           
           <div className="flex-1" />
         </div>
+
+        {/* Selection Actions Toolbar */}
+        {selectedItems.size > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+            <span className="font-medium text-blue-700">{selectedItems.size} selected</span>
+            <div className="w-px h-4 bg-blue-200" />
+
+            {/* Move to Project */}
+            {projects && projects.length > 0 && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5">
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    Move to Project
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2" align="start">
+                  <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Assign selected files to:</div>
+                  <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                    <button
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-gray-100 text-muted-foreground"
+                      onClick={async () => {
+                        for (const itemId of selectedItems) {
+                          await handleSetClientLevel(itemId);
+                        }
+                        setSelectedItems(new Set());
+                      }}
+                    >
+                      Client-level (no project)
+                    </button>
+                    {projects.map((project) => (
+                      <button
+                        key={project._id}
+                        className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-gray-100 flex items-center gap-2"
+                        onClick={async () => {
+                          for (const itemId of selectedItems) {
+                            await handleProjectAssign(itemId, project._id);
+                          }
+                          setSelectedItems(new Set());
+                        }}
+                      >
+                        <Badge className="bg-green-100 text-green-800 text-[10px]">{project.projectShortcode || project.name}</Badge>
+                        <span className="truncate">{project.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+
+            <div className="flex-1" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setSelectedItems(new Set())}
+            >
+              <X className="w-3.5 h-3.5 mr-1" />
+              Clear
+            </Button>
+          </div>
+        )}
 
         {/* Table */}
         <div className="border rounded-lg overflow-x-auto">
