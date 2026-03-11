@@ -1418,14 +1418,20 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
 
             {/* Upload Progress */}
             {isUploading && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
                   <span>Processing: {uploadProgress.currentFile}</span>
                   <span>{uploadProgress.processed} / {uploadProgress.total}</span>
                 </div>
-                <Progress 
-                  value={(uploadProgress.processed / uploadProgress.total) * 100} 
+                <Progress
+                  value={(uploadProgress.processed / uploadProgress.total) * 100}
                 />
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800 font-medium">You can safely navigate away</p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Files are being analyzed in the background. You can start another upload, browse other pages, or come back later — you'll get a notification when it's done.
+                  </p>
+                </div>
               </div>
             )}
 

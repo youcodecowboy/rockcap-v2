@@ -164,11 +164,26 @@ export default function BulkReviewPage() {
           projectMap.set(entry.suggestedName.toLowerCase(), entry.projectId);
         }
 
+        // Also build set of disabled project names (unchecked by user)
+        const disabledNames = new Set(
+          newProjects
+            .filter(p => !p.enabled)
+            .map(p => p.suggestedName.toLowerCase())
+        );
+
+        // Default project: if user only created one project, unmatched items go there
+        const defaultProjectId = mapping.length === 1 ? mapping[0].projectId : null;
+
         for (const item of items as any[]) {
           if (item.suggestedProjectName && !item.itemProjectId) {
-            const projectId = projectMap.get(item.suggestedProjectName.toLowerCase());
+            const suggestedKey = item.suggestedProjectName.toLowerCase();
+            const projectId = projectMap.get(suggestedKey);
             if (projectId) {
+              // Direct match — assign to the created project
               await updateItemProject({ itemId: item._id, itemProjectId: projectId, isClientLevel: false });
+            } else if (disabledNames.has(suggestedKey) && defaultProjectId) {
+              // Suggested project was rejected — assign to the remaining project
+              await updateItemProject({ itemId: item._id, itemProjectId: defaultProjectId, isClientLevel: false });
             }
           }
         }
