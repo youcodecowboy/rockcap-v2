@@ -200,6 +200,19 @@ async function preprocessPdf(
   // This path requires the Anthropic PDF document support
   try {
     const buffer = await file.arrayBuffer();
+
+    // Validate PDF magic bytes — reject non-PDF files misreported by the browser
+    if (buffer.byteLength < 5) {
+      console.warn('[PREPROCESS] File too small to be a valid PDF, falling back to text');
+      return { type: 'text', text: '[File too small to be a valid PDF]' };
+    }
+    const headerBytes = new Uint8Array(buffer, 0, 5);
+    const headerText = String.fromCharCode(...headerBytes);
+    if (!headerText.startsWith('%PDF')) {
+      console.warn(`[PREPROCESS] File does not have PDF header (got: "${headerText.slice(0, 4)}"), falling back to text`);
+      return { type: 'text', text: '[File does not have a valid PDF header — may be a misidentified image or document]' };
+    }
+
     const base64 = Buffer.from(buffer).toString('base64');
 
     // For large PDFs, we rely on Anthropic's built-in page handling
