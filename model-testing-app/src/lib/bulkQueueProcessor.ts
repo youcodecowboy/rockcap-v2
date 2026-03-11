@@ -242,7 +242,7 @@ export class BulkQueueProcessor {
 
   constructor(callbacks: BulkQueueProcessorCallbacks, options?: { concurrency?: number }) {
     this.callbacks = callbacks;
-    this.concurrency = options?.concurrency ?? 3;
+    this.concurrency = options?.concurrency ?? 5;
   }
 
   /**
@@ -306,9 +306,15 @@ export class BulkQueueProcessor {
 
     console.log(`[BulkQueue] Starting ${this.concurrency} concurrent workers for ${totalItems} items`);
 
-    // Spawn N workers — each pulls from the shared queue until empty
+    // Process the first item alone so its API call writes to the prompt cache.
+    // Subsequent workers then read from cache at 10% cost instead of all racing
+    // to write simultaneously (which causes N cache writes instead of 1).
+    await this.runWorker(1, totalItems, true); // single-item warm-up
+
+    // Spawn remaining workers — each pulls from the shared queue until empty.
+    // The prompt cache is now warm, so all calls get cache reads.
     const workers = Array.from({ length: this.concurrency }, (_, i) =>
-      this.runWorker(i + 1, totalItems)
+      this.runWorker(i + 2, totalItems)
     );
     await Promise.all(workers);
 
@@ -332,8 +338,9 @@ export class BulkQueueProcessor {
 
   /**
    * A single concurrent worker. Pulls items from the queue until empty or aborted.
+   * If singleItem is true, processes exactly one item then returns (used for cache warm-up).
    */
-  private async runWorker(workerId: number, totalItems: number): Promise<void> {
+  private async runWorker(workerId: number, totalItems: number, singleItem?: boolean): Promise<void> {
     while (this.queue.length > 0 && !this.aborted) {
       // Atomic dequeue — safe because JS is single-threaded at the sync level
       const item = this.queue.shift();
@@ -373,6 +380,13 @@ export class BulkQueueProcessor {
         processedFiles: this.processedCount,
         errorFiles: this.errorCount,
       }).catch(err => console.warn(`[BulkQueue:W${workerId}] Batch status update failed:`, err));
+
+      // Cache warm-up mode: process exactly one item then return so the
+      // Anthropic prompt cache is populated before parallel workers start.
+      if (singleItem) {
+        console.log(`[BulkQueue:W${workerId}] Cache warm-up complete — starting parallel workers`);
+        return;
+      }
     }
   }
 
@@ -673,7 +687,7 @@ export function createBulkQueueProcessor(
     onProgress?: BulkQueueProcessorCallbacks['onProgress'];
     onError?: BulkQueueProcessorCallbacks['onError'];
     onComplete?: BulkQueueProcessorCallbacks['onComplete'];
-    /** Number of concurrent workers (default: 3). Higher = faster but uses more API quota. */
+    /** Number of concurrent workers (default: 5). Higher = faster but uses more API quota. */
     concurrency?: number;
   }
 ): BulkQueueProcessor {

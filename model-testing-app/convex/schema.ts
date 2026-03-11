@@ -884,7 +884,8 @@ export default defineSchema({
       v.literal("processing"), // Currently being analyzed
       v.literal("ready_for_review"), // Analysis complete, awaiting user review
       v.literal("filed"), // Successfully filed to documents
-      v.literal("error") // Processing failed
+      v.literal("error"), // Processing failed
+      v.literal("discarded") // Batch was discarded by user
     ),
     // Analysis results (from summary-only analysis)
     summary: v.optional(v.string()),

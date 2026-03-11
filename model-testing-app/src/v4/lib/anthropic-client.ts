@@ -63,11 +63,12 @@ interface Message {
  *   Folders are constant for a given bulk session (same client/project),
  *   so combining them with the skill instructions maximises the cached block.
  *   Gets cache_control: ephemeral so Anthropic caches it.
- * - dynamicBlock: References only (~4-8K tokens). Selected per batch based
- *   on document type hints — different documents → different references.
- *   No cache_control — always sent fresh.
+ * - dynamicBlock: References only (~4-8K tokens). Stable for a given bulk
+ *   upload session (same client/project context), so also cached.
+ *   Gets cache_control: ephemeral so Anthropic caches it.
  *
- * Cache savings: ~2.5-3K tokens cached on all files after the first.
+ * Cache savings: ~6.5-11K tokens cached on all files after the first
+ * (stableBlock ~2.5-3K + dynamicBlock ~4-8K).
  * Minimum for Haiku 4.5 caching: 2048 tokens (Sonnet: 1024 tokens).
  */
 export interface SystemPromptBlocks {
@@ -290,8 +291,8 @@ export function buildBatchUserMessage(
  * Returns parsed DocumentClassification[] for all documents in the batch.
  *
  * System prompt is split into two blocks for caching:
- * - stableBlock (skill instructions) gets cache_control → cached across calls
- * - dynamicBlock (refs + folders) sent fresh each time
+ * - stableBlock (skill instructions + folders) gets cache_control → cached across calls
+ * - dynamicBlock (references) gets cache_control → cached across calls in same session
  */
 export async function callAnthropicBatch(
   systemPrompt: SystemPromptBlocks,
@@ -321,6 +322,7 @@ export async function callAnthropicBatch(
       {
         type: 'text',
         text: systemPrompt.dynamicBlock,
+        cache_control: { type: 'ephemeral' },
       },
     ],
     messages: [
@@ -344,8 +346,11 @@ export async function callAnthropicBatch(
 
   const cacheRead = (response.usage as any)?.cache_read_input_tokens ?? 0;
   const cacheCreation = (response.usage as any)?.cache_creation_input_tokens ?? 0;
+  if (cacheCreation > 0) {
+    console.log(`[ANTHROPIC] Cache write: ${cacheCreation} tokens written to cache`);
+  }
   if (cacheRead > 0) {
-    console.log(`[ANTHROPIC] Cache hit: ${cacheRead} tokens read from cache`);
+    console.log(`[ANTHROPIC] Cache hit: ${cacheRead} tokens read from cache (90% savings on ${cacheRead} tokens)`);
   }
 
   return {
@@ -527,6 +532,10 @@ export async function callAnthropicIntelligence(
   const fields = parseIntelligenceResponse(textContent);
 
   const cacheRead = (response.usage as any)?.cache_read_input_tokens ?? 0;
+  const cacheCreation = (response.usage as any)?.cache_creation_input_tokens ?? 0;
+  if (cacheCreation > 0) {
+    console.log(`[ANTHROPIC] Intelligence cache write: ${cacheCreation} tokens written to cache`);
+  }
   if (cacheRead > 0) {
     console.log(`[ANTHROPIC] Intelligence cache hit: ${cacheRead} tokens read from cache`);
   }
@@ -677,6 +686,10 @@ export async function callAnthropicIntelligenceBatch(
   const results = parseIntelligenceBatchResponse(textContent, documents.map(d => d.index));
 
   const cacheRead = (response.usage as any)?.cache_read_input_tokens ?? 0;
+  const cacheCreation = (response.usage as any)?.cache_creation_input_tokens ?? 0;
+  if (cacheCreation > 0) {
+    console.log(`[ANTHROPIC] Intelligence batch cache write: ${cacheCreation} tokens written to cache`);
+  }
   if (cacheRead > 0) {
     console.log(`[ANTHROPIC] Intelligence batch cache hit: ${cacheRead} tokens from cache`);
   }

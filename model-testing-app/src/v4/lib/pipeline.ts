@@ -33,8 +33,7 @@ import type {
 import { DEFAULT_V4_CONFIG, BATCH_LIMITS } from '../types';
 import { loadSkill } from './skill-loader';
 import { loadReferencesWithMeta } from './reference-library';
-import { resolveReferencesForBatch, formatForPrompt, getReferenceByType } from '../../lib/references';
-import type { BatchDocumentInput } from '../../lib/references';
+import { formatForPrompt, getAllReferences, getReferenceByType } from '../../lib/references';
 import { preprocessDocument, chunkBatch, chunkIntelligenceBatch, analyzeFilename } from './document-preprocessor';
 import { buildSystemPrompt, buildBatchUserMessage, callAnthropicBatch, callAnthropicIntelligence, callAnthropicIntelligenceBatch, type SystemPromptBlocks } from './anthropic-client';
 import { callMockBatch } from './mock-client';
@@ -139,27 +138,22 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
   let cachedHit = false;
 
   if (config.loadReferences) {
-    // Map batch documents to resolver inputs with signals from preprocessing
-    const batchInputs: BatchDocumentInput[] = batchDocuments.map(doc => ({
-      fileName: doc.fileName,
-      signals: doc.hints.matchedTags,
-      textSample: doc.processedContent.type === 'text'
-        ? doc.processedContent.text.slice(0, 500) : undefined,
-    }));
-
-    // Smart resolve: namespaced tags, filename patterns, decision rules, keyword matching
-    const resolved = resolveReferencesForBatch(batchInputs, 'classification', config.maxReferencesPerCall);
+    // Load ALL references (not per-document selection) so the system prompt is
+    // identical across API calls. This enables Anthropic prompt caching — the first
+    // call writes ~18K tokens to cache, all subsequent calls read at 10% cost.
+    // Trade-off: larger prompt (~18K vs ~5K) but massive cache savings in bulk uploads.
+    const allRefs = getAllReferences();
 
     // Format with full classification detail (descriptions, identification rules, disambiguation)
-    referencePromptText = formatForPrompt(resolved.references, 'classification');
+    referencePromptText = formatForPrompt(allRefs, 'classification');
 
     // Load Convex user-created definitions (merge any custom types not in shared library)
     if (config.convexClient) {
       const userRefResult = await loadReferencesWithMeta(config.convexClient, config.referenceCacheTtlMs);
       cachedHit = userRefResult.cacheHit;
-      const resolvedFileTypes = new Set(resolved.references.map(r => r.fileType.toLowerCase()));
+      const systemFileTypes = new Set(allRefs.map(r => r.fileType.toLowerCase()));
       const extraUserRefs = userRefResult.references.filter(
-        r => r.source === 'user' && !resolvedFileTypes.has(r.fileType.toLowerCase())
+        r => r.source === 'user' && !systemFileTypes.has(r.fileType.toLowerCase())
       );
       if (extraUserRefs.length > 0) {
         referencePromptText += '\n\n## Additional User-Defined References\n';
@@ -170,7 +164,7 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
     }
 
     // Map to V4 simplified format for mock client and metadata
-    selectedReferences = resolved.references.map(ref => ({
+    selectedReferences = allRefs.map(ref => ({
       id: ref.id,
       fileType: ref.fileType,
       category: ref.category,
@@ -182,8 +176,7 @@ export async function runV4Pipeline(input: PipelineInput): Promise<V4PipelineRes
       updatedAt: ref.updatedAt,
     }));
 
-    console.log(`[STAGE 2] Resolved ${resolved.references.length} references in ${Date.now() - refStart}ms`);
-    console.log(`[STAGE 3] Top scores: ${resolved.scores.slice(0, 5).map(s => `${s.reference.fileType}(${s.score})`).join(', ')}`);
+    console.log(`[STAGE 2] Loaded all ${allRefs.length} references for caching in ${Date.now() - refStart}ms`);
   }
 
   // ──────────────────────────────────────────────────────────

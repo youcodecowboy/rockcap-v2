@@ -22,6 +22,7 @@ import {
   ExternalLink,
   ClipboardList,
   Plus,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,6 +53,8 @@ export default function BulkReviewPage() {
   const [isFilingAll, setIsFilingAll] = useState(false);
   const [isRetryingAll, setIsRetryingAll] = useState(false);
   const [showFileAllDialog, setShowFileAllDialog] = useState(false);
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const [isDiscarding, setIsDiscarding] = useState(false);
   const [showUploadMore, setShowUploadMore] = useState(false);
   const [filingResult, setFilingResult] = useState<{ totalFiled: number; totalErrors: number } | null>(null);
   
@@ -116,6 +119,7 @@ export default function BulkReviewPage() {
   const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
   const createBulkUploadProjects = useMutation(api.bulkUpload.createBulkUploadProjects);
   const updateItemProject = useMutation(api.bulkUpload.updateItemProject);
+  const discardBatch = useMutation(api.bulkUpload.discardBatch);
 
   // Initialize shortcode input when batch loads
   useEffect(() => {
@@ -337,6 +341,19 @@ export default function BulkReviewPage() {
     );
   }
 
+  // Discarded batch — redirect
+  if (batch.isDeleted) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
+        <Trash2 className="w-8 h-8 text-muted-foreground" />
+        <p className="text-muted-foreground">This upload has been discarded.</p>
+        <Button variant="outline" onClick={() => router.push('/filing')}>
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Filing
+        </Button>
+      </div>
+    );
+  }
+
   // Stuck items count
   const stuckCount = items?.filter((i: any) => i.status === 'processing' || i.status === 'error').length ?? 0;
 
@@ -382,10 +399,23 @@ export default function BulkReviewPage() {
             </p>
           </div>
         </div>
-        <Badge className={statusInfo.color}>
-          <StatusIcon className={`w-3 h-3 mr-1 ${batch.status === 'processing' || batch.status === 'uploading' ? 'animate-spin' : ''}`} />
-          {statusInfo.label}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge className={statusInfo.color}>
+            <StatusIcon className={`w-3 h-3 mr-1 ${batch.status === 'processing' || batch.status === 'uploading' ? 'animate-spin' : ''}`} />
+            {statusInfo.label}
+          </Badge>
+          {batch.status !== 'completed' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-destructive"
+              onClick={() => setShowDiscardDialog(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              Discard
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Batch Info - Compact horizontal layout */}
@@ -775,6 +805,44 @@ export default function BulkReviewPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleFileAll}>
               File All Documents
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Discard Batch Dialog */}
+      <AlertDialog open={showDiscardDialog} onOpenChange={setShowDiscardDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard This Upload?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently discard all {batch.totalFiles} files in this batch and delete the uploaded files from storage. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isDiscarding}
+              onClick={async () => {
+                setIsDiscarding(true);
+                try {
+                  await discardBatch({ batchId });
+                  router.push('/filing');
+                } catch (e) {
+                  console.error('Failed to discard batch:', e);
+                  setIsDiscarding(false);
+                }
+              }}
+            >
+              {isDiscarding ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Discarding...
+                </>
+              ) : (
+                'Discard Batch'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

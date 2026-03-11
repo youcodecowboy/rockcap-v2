@@ -733,7 +733,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             onComplete: (completedBatchId) => {
               onComplete?.(completedBatchId);
             },
-            concurrency: 3,
+            concurrency: 5,
           }
         );
 

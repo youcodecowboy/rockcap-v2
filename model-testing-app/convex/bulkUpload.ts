@@ -621,7 +621,56 @@ export const updateItemDetails = mutation({
   },
 });
 
-// Mutation: Update per-item project assignment (for multi-project review)
+// Mutation: Soft-delete a batch and all its items
+export const discardBatch = mutation({
+  args: {
+    batchId: v.id("bulkUploadBatches"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db.get(args.batchId);
+    if (!batch) throw new Error("Batch not found");
+
+    const now = new Date().toISOString();
+
+    // Soft-delete all items in this batch
+    const items = await ctx.db
+      .query("bulkUploadItems")
+      .withIndex("by_batch", (q: any) => q.eq("batchId", args.batchId))
+      .collect();
+
+    for (const item of items) {
+      // Delete the stored file if it exists
+      if (item.fileStorageId) {
+        try {
+          await ctx.storage.delete(item.fileStorageId);
+        } catch {
+          // File may already be deleted — ignore
+        }
+      }
+      await ctx.db.patch(item._id, {
+        isDeleted: true,
+        deletedAt: now,
+        deletedReason: args.reason || "Batch discarded by user",
+        status: "discarded",
+        updatedAt: now,
+      });
+    }
+
+    // Soft-delete the batch itself
+    await ctx.db.patch(args.batchId, {
+      isDeleted: true,
+      deletedAt: now,
+      deletedReason: args.reason || "Discarded by user",
+      status: "completed", // Mark as terminal state
+      updatedAt: now,
+    });
+
+    return { discarded: items.length };
+  },
+});
+
+// Mutation: Update per-item project assignment with document code regeneration
 export const updateItemProject = mutation({
   args: {
     itemId: v.id("bulkUploadItems"),
@@ -629,13 +678,72 @@ export const updateItemProject = mutation({
     isClientLevel: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.itemId);
+    if (!item) throw new Error("Item not found");
+
+    const batch = await ctx.db.get(item.batchId);
+    if (!batch) throw new Error("Batch not found");
+
+    // Determine the new shortcode based on target
+    let newShortcode: string | undefined;
+    if (args.isClientLevel) {
+      // Moving to client level — use client name derived shortcode
+      newShortcode = deriveShortcodeFromName(batch.clientName || "DOC");
+    } else if (args.itemProjectId) {
+      // Moving to a project — use that project's shortcode
+      const project = await ctx.db.get(args.itemProjectId);
+      if (project) {
+        newShortcode = project.projectShortcode || deriveShortcodeFromName(project.name);
+      }
+    }
+
+    // Regenerate document code if we have a new shortcode and an existing code
+    let updatedDocCode = item.generatedDocumentCode;
+    if (newShortcode && item.generatedDocumentCode) {
+      updatedDocCode = replaceShortcodeInDocumentCode(item.generatedDocumentCode, newShortcode);
+    }
+
     await ctx.db.patch(args.itemId, {
       itemProjectId: args.itemProjectId,
       isClientLevel: args.isClientLevel,
+      generatedDocumentCode: updatedDocCode,
       updatedAt: new Date().toISOString(),
     });
   },
 });
+
+/** Derive a shortcode from a name (uppercase, alphanumeric, max 10 chars) */
+function deriveShortcodeFromName(name: string): string {
+  return name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 10) || "DOC";
+}
+
+/**
+ * Replace the shortcode prefix in a document code.
+ * Format: {SHORTCODE}-{TYPEABBREV}-{INTEXT}-{INITIALS}-{VERSION}-{DATE}
+ * We find the boundary by looking for -EXT- or -INT- which is always the 3rd segment.
+ */
+function replaceShortcodeInDocumentCode(code: string, newShortcode: string): string {
+  // Find -EXT- or -INT- marker which separates shortcode+typeAbbrev from the rest
+  const extMatch = code.match(/^(.+?)-(EXT|INT)-(.+)$/);
+  if (!extMatch) return code; // Can't parse — leave unchanged
+
+  const beforeIntExt = extMatch[1]; // e.g. "MP-RF-OTHERDOCUM"
+  const intExt = extMatch[2]; // "EXT" or "INT"
+  const afterIntExt = extMatch[3]; // e.g. "KH-V1.0-2026-03-11"
+
+  // The beforeIntExt is "{SHORTCODE}-{TYPEABBREV}" — we need to find where shortcode ends
+  // The type abbreviation is always the LAST segment before -EXT-/-INT-
+  const segments = beforeIntExt.split("-");
+  if (segments.length < 2) return code;
+
+  // Last segment is always the type abbreviation
+  const typeAbbrev = segments[segments.length - 1];
+
+  return `${newShortcode}-${typeAbbrev}-${intExt}-${afterIntExt}`;
+}
 
 // Helper function for generating content hash (djb2 algorithm)
 function generateSimpleHash(content: string): string {
@@ -2373,12 +2481,13 @@ export const getBatchStats = query({
       .withIndex("by_batch", (q: any) => q.eq("batchId", args.batchId))
       .collect();
     
-    const statusCounts = {
+    const statusCounts: Record<string, number> = {
       pending: 0,
       processing: 0,
       ready_for_review: 0,
       filed: 0,
       error: 0,
+      discarded: 0,
     };
     
     let duplicatesCount = 0;
