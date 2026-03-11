@@ -775,11 +775,25 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           processor.addItem(itemId, file, folderHints.get(i));
         }
 
-        // Start processing
-        await processor.processQueue();
+        // Reset form and navigate immediately — processing continues in background
+        setIsUploading(false);
+        setFiles([]);
 
-        // Navigate to review page
+        toast.success('Files uploaded successfully', {
+          description: `${files.length} files are processing. You'll be notified when ready.`,
+          duration: 5000,
+          action: {
+            label: 'Watch Progress',
+            onClick: () => router.push(`/docs/bulk/${batchId}`),
+          },
+        });
+
         router.push(`/docs/bulk/${batchId}`);
+
+        // Start processing in background (don't await — page already navigated)
+        processor.processQueue().catch(err => {
+          console.error('[BulkUpload] Background processing error:', err);
+        });
       }
     } catch (error) {
       console.error('Error starting bulk upload:', error);
