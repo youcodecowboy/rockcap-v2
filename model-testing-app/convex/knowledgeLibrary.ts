@@ -417,8 +417,44 @@ export const initializeChecklistForProject = mutation({
 
     const template = templates.find((t) => t.isDefault) || templates[0];
 
+    console.log(`[initChecklist] clientType="${args.clientType}", templates found=${templates.length}, projectId=${args.projectId}`);
+
     if (!template) {
-      return { success: false, message: "No project template found for client type", created: 0 };
+      // Fallback: try without the level filter
+      const allTemplates = await ctx.db
+        .query("knowledgeRequirementTemplates")
+        .withIndex("by_client_type", (q) => q.eq("clientType", args.clientType.toLowerCase()))
+        .collect();
+      console.log(`[initChecklist] Fallback: all templates for clientType="${args.clientType}":`, allTemplates.map(t => ({ id: t._id, level: t.level, clientType: t.clientType })));
+
+      const fallbackTemplate = allTemplates.find(t => t.level === "project");
+      if (fallbackTemplate) {
+        // Use the fallback template
+        let created = 0;
+        for (const req of fallbackTemplate.requirements) {
+          await ctx.db.insert("knowledgeChecklistItems", {
+            clientId: args.clientId,
+            projectId: args.projectId,
+            requirementTemplateId: fallbackTemplate._id,
+            requirementId: req.id,
+            name: req.name,
+            category: req.category,
+            phaseRequired: req.phaseRequired,
+            priority: req.priority,
+            description: req.description,
+            matchingDocumentTypes: req.matchingDocumentTypes,
+            order: req.order,
+            status: "missing",
+            isCustom: false,
+            createdAt: now,
+            updatedAt: now,
+          });
+          created++;
+        }
+        return { success: true, message: `Created ${created} project checklist items (fallback)`, created };
+      }
+
+      return { success: false, message: `No project template found for client type "${args.clientType}"`, created: 0 };
     }
 
     // Create checklist items from template
