@@ -454,6 +454,40 @@ export const initializeChecklistForProject = mutation({
         return { success: true, message: `Created ${created} project checklist items (fallback)`, created };
       }
 
+      // Final fallback: use "borrower" template (the default) if client type has no template
+      if (args.clientType.toLowerCase() !== "borrower") {
+        console.log(`[initChecklist] No template for "${args.clientType}", falling back to "borrower"`);
+        const borrowerTemplates = await ctx.db
+          .query("knowledgeRequirementTemplates")
+          .withIndex("by_client_type", (q) => q.eq("clientType", "borrower"))
+          .collect();
+        const borrowerProject = borrowerTemplates.find(t => t.level === "project");
+        if (borrowerProject) {
+          let created = 0;
+          for (const req of borrowerProject.requirements) {
+            await ctx.db.insert("knowledgeChecklistItems", {
+              clientId: args.clientId,
+              projectId: args.projectId,
+              requirementTemplateId: borrowerProject._id,
+              requirementId: req.id,
+              name: req.name,
+              category: req.category,
+              phaseRequired: req.phaseRequired,
+              priority: req.priority,
+              description: req.description,
+              matchingDocumentTypes: req.matchingDocumentTypes,
+              order: req.order,
+              status: "missing",
+              isCustom: false,
+              createdAt: now,
+              updatedAt: now,
+            });
+            created++;
+          }
+          return { success: true, message: `Created ${created} project checklist items (using borrower template)`, created };
+        }
+      }
+
       return { success: false, message: `No project template found for client type "${args.clientType}"`, created: 0 };
     }
 
