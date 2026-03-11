@@ -195,34 +195,27 @@ For domain-specific fields not in the canonical list, prefer the correct categor
 
 ### Qualifier Rules
 
-When a field path would collide because the same logical field appears multiple times with different qualifiers, append a qualifier to disambiguate.
-
-**When to use qualifiers:**
-- The same `fieldPath` would otherwise appear twice in the same extraction
-- The document explicitly distinguishes variants (e.g., "Tranche A" vs "Tranche B")
+When a document contains **multiple values for the same data type**, you MUST provide a `qualifier` string that distinguishes them. The qualifier is a **separate field** in the output — do NOT embed it in the `fieldPath`. Also use qualifiers when a value applies to a specific tranche, phase, building, unit type, or time period — even if it's the only instance (future documents may add more).
 
 **Common qualifier patterns:**
-- **Loan tranches**: `financials.loanAmount[tranche_a]`, `financials.loanAmount[tranche_b]`
-- **Project phases**: `financials.gdv[phase_1]`, `financials.gdv[phase_2]`
-- **Time periods**: `valuation.marketValue[current]`, `valuation.marketValue[on_completion]`
-- **Asset types**: `insurance.coverAmount[car]`, `insurance.coverAmount[pi]`
-- **Valuation bases**: `valuation.marketValue[market_value]`, `valuation.marketValue[reinstatement]`
-- **Buildings**: `overview.unitCount[block_a]`, `overview.unitCount[block_b]`
+- **Loan tranches**: qualifier = "Senior", "Mezzanine", "Tranche A", "Tranche B"
+- **Project phases**: qualifier = "Phase 1", "Phase 2"
+- **Time periods**: qualifier = "Day 1", "Post-PC", "Year 1"
+- **Asset types**: qualifier = "Residential", "Commercial", "Retail"
+- **Valuation bases**: qualifier = "Market Value", "Reinstatement", "90-Day"
+- **Buildings**: qualifier = "Block A", "Block B", "Tower", "Podium"
 
-Format: `fieldPath[qualifier]` where qualifier is snake_case. Include the qualifier in `originalLabel` for clarity.
+Qualifier should be short (2-5 words), consistent across documents, and describe WHAT the value applies to. Set to `null` when the value is unambiguous (e.g., single site address, single company name).
 
 ### Context Rules
 
-Every extracted field MUST have a `context` string that describes where and how the value was found:
-- What section or part of the document it appeared in
-- Whether it was a headline figure, footnote, table cell, or narrative mention
-- Any caveats or conditions attached to the value
+Every extracted field MUST have a `context` string — a one-sentence explanation of what this value means in the deal. This is for LLM consumption during document generation, NOT a description of where it appeared (that's what `sourceText` and `pageReference` are for).
 
 Examples:
-- `"Stated as headline figure on cover page"`
-- `"From financial summary table, row 'Senior Debt'"`
-- `"Mentioned in paragraph 3.2, subject to planning approval"`
-- `"Footnote on page 4, VAT exclusive"`
+- `"Senior secured development facility interest rate, fixed for 18 months from first drawdown"`
+- `"GDV for the completed 24-unit residential scheme as stated in the RICS Red Book valuation"`
+- `"Company registration number for the SPV borrower entity"`
+- `"Construction cost estimate from QS report, excluding contingency and professional fees"`
 
 ### Confidence Scoring
 
