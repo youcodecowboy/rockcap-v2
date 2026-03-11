@@ -1328,7 +1328,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
               <Button variant="outline" onClick={() => document.getElementById('bulk-file-input')?.click()} disabled={isUploading}>
                 <FileText className="w-4 h-4 mr-2" /> Browse Files
               </Button>
-              <Button variant="outline" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
+              <Button variant="outline" onClick={() => requestAnimationFrame(() => folderInputRef.current?.click())} disabled={isUploading}>
                 <FolderOpen className="w-4 h-4 mr-2" /> Upload Folder
               </Button>
             </div>
