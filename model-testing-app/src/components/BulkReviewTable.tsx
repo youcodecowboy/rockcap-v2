@@ -1269,7 +1269,7 @@ export default function BulkReviewTable({
                                     <p className="text-[10px] text-amber-700">
                                       No project-level checklist items found.
                                     </p>
-                                    {projectId && clientId && client?.type && (
+                                    {projectId && clientId && (
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -1278,13 +1278,16 @@ export default function BulkReviewTable({
                                         onClick={async () => {
                                           setIsInitializingChecklist(true);
                                           try {
-                                            await initializeChecklist({
+                                            const clientType = (client?.type || 'borrower').toLowerCase();
+                                            console.log('[InitChecklist] Calling with:', { clientId, projectId, clientType });
+                                            const result = await initializeChecklist({
                                               clientId,
                                               projectId,
-                                              clientType: (client.type || 'borrower').toLowerCase(),
+                                              clientType,
                                             });
+                                            console.log('[InitChecklist] Result:', result);
                                           } catch (e) {
-                                            console.error('Checklist init failed:', e);
+                                            console.error('[InitChecklist] Failed:', e);
                                           } finally {
                                             setIsInitializingChecklist(false);
                                           }
@@ -1386,11 +1389,16 @@ export default function BulkReviewTable({
                       ) : (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <button
-                              className="text-[10px] text-muted-foreground hover:text-foreground hover:underline cursor-pointer"
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`h-6 text-[10px] px-1.5 font-mono ${
+                                item.duplicateOfDocumentId
+                                  ? 'text-blue-700 bg-blue-50 hover:bg-blue-100'
+                                  : 'text-muted-foreground hover:bg-gray-100'
+                              }`}
                               onClick={() => {
                                 if (item.duplicateOfDocumentId) {
-                                  // Already linked manually — offer unlink
                                   handleUnlinkVersion(item._id);
                                 } else {
                                   setVersionLinkItem(item);
@@ -1400,11 +1408,12 @@ export default function BulkReviewTable({
                               }}
                               disabled={item.status !== 'ready_for_review'}
                             >
+                              {item.duplicateOfDocumentId && <Link2 className="w-2.5 h-2.5 mr-0.5" />}
                               {item.version || 'V1.0'}
-                            </button>
+                            </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>{item.duplicateOfDocumentId ? 'Click to unlink version' : 'Click to link as version of existing document'}</p>
+                            <p>{item.duplicateOfDocumentId ? 'Linked — click to unlink' : 'Link as version of existing document'}</p>
                           </TooltipContent>
                         </Tooltip>
                       )}
