@@ -146,7 +146,7 @@ interface BulkUploadItem {
   fileSize: number;
   fileType: string;
   fileStorageId?: string;
-  status: "pending" | "processing" | "ready_for_review" | "filed" | "error";
+  status: "pending" | "processing" | "ready_for_review" | "filed" | "error" | "discarded";
   summary?: string;
   fileTypeDetected?: string;
   category?: string;
@@ -216,6 +216,9 @@ interface BulkUploadItem {
   };
   batchId: Id<"bulkUploadBatches">;
   updatedAt?: string;
+  // Per-item project assignment
+  itemProjectId?: Id<"projects">;
+  isClientLevel?: boolean;
 }
 
 interface ChecklistItem {
@@ -576,10 +579,10 @@ export default function BulkReviewTable({
     clientId ? { clientId, projectId } : "skip"
   ) as ChecklistItem[] | undefined;
 
-  // Query for client folders (when no project selected)
+  // Query for client folders (always load — items may be moved to client level)
   const clientFolders = useQuery(
     api.clients.getClientFolders,
-    clientId && !projectId ? { clientId } : "skip"
+    clientId ? { clientId } : "skip"
   );
 
   // Query for project folders (when project selected)
@@ -588,27 +591,41 @@ export default function BulkReviewTable({
     projectId ? { projectId } : "skip"
   );
 
-  // Build folder options combining defaults with custom folders
-  const folderOptions = useMemo(() => {
-    if (hasProject && projectFolders) {
-      // Project level: use project folders from database
+  // Build folder options for both levels — items can be individually moved to client level
+  const projectFolderOptions = useMemo(() => {
+    if (projectFolders) {
       return projectFolders.map(f => ({
         value: f.folderType,
         label: f.name,
         isCustom: f.isCustom || false,
       }));
-    } else if (!hasProject && clientFolders) {
-      // Client level: use client folders from database
+    }
+    return DEFAULT_PROJECT_FOLDERS;
+  }, [projectFolders]);
+
+  const clientFolderOptions = useMemo(() => {
+    if (clientFolders) {
       return clientFolders.map(f => ({
         value: f.folderType,
         label: f.name,
         isCustom: f.isCustom || false,
       }));
-    } else {
-      // Fallback to defaults
-      return hasProject ? DEFAULT_PROJECT_FOLDERS : DEFAULT_CLIENT_FOLDERS;
     }
-  }, [hasProject, projectFolders, clientFolders]);
+    return DEFAULT_CLIENT_FOLDERS;
+  }, [clientFolders]);
+
+  // Default folder options for the table (used for batch-level context)
+  const folderOptions = hasProject ? projectFolderOptions : clientFolderOptions;
+
+  /** Get the correct folder options for a specific item based on its level */
+  const getFolderOptionsForItem = (item: BulkUploadItem) => {
+    // If item is explicitly client-level, use client folders
+    if (item.isClientLevel) return clientFolderOptions;
+    // If item has a project assignment, use project folders
+    if (item.itemProjectId) return projectFolderOptions;
+    // Fall back to batch-level default
+    return folderOptions;
+  };
 
   // Query custom types
   const customTypes = useQuery(api.fileTypeDefinitions.getAll);
@@ -628,7 +645,7 @@ export default function BulkReviewTable({
     []
   );
 
-  // Build folder select options
+  // Build folder select options (default for batch-level)
   const folderSelectOptions: SearchableSelectOption[] = useMemo(
     () => folderOptions.map((f) => ({
       value: f.value,
@@ -637,6 +654,27 @@ export default function BulkReviewTable({
     })),
     [folderOptions]
   );
+
+  // Per-item folder select options (respects item-level project/client assignment)
+  const projectFolderSelectOptions: SearchableSelectOption[] = useMemo(
+    () => projectFolderOptions.map((f) => ({
+      value: f.value, label: f.label,
+      group: f.isCustom ? 'Custom Folders' : 'Standard',
+    })),
+    [projectFolderOptions]
+  );
+  const clientFolderSelectOptions: SearchableSelectOption[] = useMemo(
+    () => clientFolderOptions.map((f) => ({
+      value: f.value, label: f.label,
+      group: f.isCustom ? 'Custom Folders' : 'Standard',
+    })),
+    [clientFolderOptions]
+  );
+  const getFolderSelectOptionsForItem = (item: BulkUploadItem): SearchableSelectOption[] => {
+    if (item.isClientLevel) return clientFolderSelectOptions;
+    if (item.itemProjectId) return projectFolderSelectOptions;
+    return folderSelectOptions;
+  };
 
   // Mutations
   const updateItemDetails = useMutation(api.bulkUpload.updateItemDetails);
@@ -1136,7 +1174,7 @@ export default function BulkReviewTable({
                             </Tooltip>
                           )}
                           <SearchableSelect
-                            options={folderSelectOptions}
+                            options={getFolderSelectOptionsForItem(item)}
                             value={item.targetFolder || ''}
                             onSelect={(value) => handleUpdateField(item._id, 'targetFolder', value)}
                             placeholder="..."
@@ -1146,10 +1184,10 @@ export default function BulkReviewTable({
                         </div>
                       ) : (
                         <span className="text-xs truncate flex items-center gap-1">
-                          {folderOptions.find(f => f.value === item.targetFolder)?.isCustom && (
+                          {getFolderOptionsForItem(item).find(f => f.value === item.targetFolder)?.isCustom && (
                             <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
                           )}
-                          {folderOptions.find(f => f.value === item.targetFolder)?.label || item.targetFolder || '-'}
+                          {getFolderOptionsForItem(item).find(f => f.value === item.targetFolder)?.label || item.targetFolder || '-'}
                         </span>
                       )}
                     </TableCell>
