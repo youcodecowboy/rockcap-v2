@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FolderPlus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { FolderPlus, Loader2, Check } from 'lucide-react';
 import { generateShortcodeSuggestion } from '@/lib/shortcodeUtils';
 
 export interface NewProjectEntry {
@@ -19,9 +20,12 @@ export interface NewProjectEntry {
 interface NewProjectsPanelProps {
   projects: NewProjectEntry[];
   onChange: (projects: NewProjectEntry[]) => void;
+  onCreateProjects: (projects: NewProjectEntry[]) => Promise<void>;
+  isCreating?: boolean;
+  createdCount?: number;  // How many projects were already created
 }
 
-export default function NewProjectsPanel({ projects, onChange }: NewProjectsPanelProps) {
+export default function NewProjectsPanel({ projects, onChange, onCreateProjects, isCreating, createdCount }: NewProjectsPanelProps) {
   // Check for duplicate shortcodes (case-insensitive) among enabled projects
   const duplicateShortcodes = useMemo(() => {
     const enabled = projects.filter(p => p.enabled);
@@ -36,6 +40,7 @@ export default function NewProjectsPanel({ projects, onChange }: NewProjectsPane
   }, [projects]);
 
   const hasDuplicates = duplicateShortcodes.size > 0;
+  const enabledCount = projects.filter(p => p.enabled).length;
 
   const updateProject = (index: number, updates: Partial<NewProjectEntry>) => {
     const updated = projects.map((p, i) => {
@@ -53,6 +58,12 @@ export default function NewProjectsPanel({ projects, onChange }: NewProjectsPane
     onChange(updated);
   };
 
+  const handleCreate = async () => {
+    const enabled = projects.filter(p => p.enabled && p.name.trim() && p.projectShortcode.trim());
+    if (enabled.length === 0) return;
+    await onCreateProjects(enabled);
+  };
+
   if (projects.length === 0) return null;
 
   return (
@@ -62,7 +73,7 @@ export default function NewProjectsPanel({ projects, onChange }: NewProjectsPane
           <FolderPlus className="w-5 h-5 text-purple-600" />
           <CardTitle className="text-base">New Projects Detected</CardTitle>
           <Badge variant="secondary" className="ml-auto">
-            {projects.filter(p => p.enabled).length} of {projects.length} selected
+            {enabledCount} of {projects.length} selected
           </Badge>
         </div>
       </CardHeader>
@@ -89,18 +100,19 @@ export default function NewProjectsPanel({ projects, onChange }: NewProjectsPane
                 <Checkbox
                   checked={project.enabled}
                   onCheckedChange={(checked) => updateProject(index, { enabled: !!checked })}
+                  disabled={isCreating}
                 />
                 <Input
                   value={project.name}
                   onChange={(e) => updateProject(index, { name: e.target.value })}
-                  disabled={!project.enabled}
+                  disabled={!project.enabled || isCreating}
                   className="h-8 text-sm"
                 />
                 <div className="relative">
                   <Input
                     value={project.projectShortcode}
                     onChange={(e) => updateProject(index, { projectShortcode: e.target.value.toUpperCase().slice(0, 10) })}
-                    disabled={!project.enabled}
+                    disabled={!project.enabled || isCreating}
                     className={`h-8 text-sm font-mono ${isDupe ? 'border-red-400 text-red-700' : ''}`}
                     maxLength={10}
                   />
@@ -122,9 +134,23 @@ export default function NewProjectsPanel({ projects, onChange }: NewProjectsPane
           </p>
         )}
 
-        <p className="text-xs text-muted-foreground mt-3">
-          Projects will be created when you click &quot;File All&quot;
-        </p>
+        <div className="flex items-center justify-between mt-4 pt-3 border-t">
+          <p className="text-xs text-muted-foreground">
+            Create projects now so you can link files to their checklists before filing.
+          </p>
+          <Button
+            size="sm"
+            onClick={handleCreate}
+            disabled={hasDuplicates || enabledCount === 0 || isCreating}
+          >
+            {isCreating ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <FolderPlus className="w-4 h-4 mr-2" />
+            )}
+            {isCreating ? 'Creating...' : `Create ${enabledCount} Project${enabledCount !== 1 ? 's' : ''}`}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

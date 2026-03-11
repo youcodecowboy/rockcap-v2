@@ -62,6 +62,7 @@ export default function BulkReviewPage() {
 
   // New projects panel state
   const [newProjects, setNewProjects] = useState<NewProjectEntry[]>([]);
+  const [isCreatingProjects, setIsCreatingProjects] = useState(false);
 
   // Queries
   const batch = useQuery(api.bulkUpload.getBatch, { batchId });
@@ -105,6 +106,7 @@ export default function BulkReviewPage() {
   const updateBatch = useMutation(api.bulkUpload.updateBatchStatus);
   const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
   const createBulkUploadProjects = useMutation(api.bulkUpload.createBulkUploadProjects);
+  const updateItemProject = useMutation(api.bulkUpload.updateItemProject);
 
   // Initialize shortcode input when batch loads
   useEffect(() => {
@@ -130,6 +132,47 @@ export default function BulkReviewPage() {
     const entries = buildNewProjectEntries(items as any, existingNames);
     setNewProjects(entries);
   }, [items, clientProjects, batch?.isMultiProject, batch?.status]);
+
+  // Handle creating new projects from the panel (before filing)
+  const handleCreateProjects = async (enabledProjects: NewProjectEntry[]) => {
+    if (!batch) return;
+    setIsCreatingProjects(true);
+    try {
+      // Create projects and get mapping
+      const mapping = await createBulkUploadProjects({
+        batchId,
+        newProjects: enabledProjects.map(p => ({
+          suggestedName: p.suggestedName,
+          name: p.name.trim(),
+          projectShortcode: p.projectShortcode.trim().toUpperCase(),
+        })),
+      });
+
+      // Assign items to the newly created projects
+      if (mapping && items) {
+        const projectMap = new Map<string, any>();
+        for (const entry of mapping) {
+          projectMap.set(entry.suggestedName.toLowerCase(), entry.projectId);
+        }
+
+        for (const item of items as any[]) {
+          if (item.suggestedProjectName && !item.itemProjectId) {
+            const projectId = projectMap.get(item.suggestedProjectName.toLowerCase());
+            if (projectId) {
+              await updateItemProject({ itemId: item._id, itemProjectId: projectId, isClientLevel: false });
+            }
+          }
+        }
+      }
+
+      // Clear new projects panel — they're now existing projects
+      setNewProjects([]);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to create projects');
+    } finally {
+      setIsCreatingProjects(false);
+    }
+  };
 
   // Handle shortcode save
   const handleSaveShortcode = async () => {
@@ -593,6 +636,8 @@ export default function BulkReviewPage() {
         <NewProjectsPanel
           projects={newProjects}
           onChange={setNewProjects}
+          onCreateProjects={handleCreateProjects}
+          isCreating={isCreatingProjects}
         />
       )}
 
