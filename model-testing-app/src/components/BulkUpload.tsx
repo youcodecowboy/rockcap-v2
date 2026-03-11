@@ -123,6 +123,20 @@ async function traverseFileTree(entry: FileSystemEntry, path: string = ''): Prom
  *   "Refinance Overrun/Additional Files/x.pdf" → hint: "Refinance Overrun" (subfolder = org)
  *   "ClientDocs/Project A/x.pdf" + "ClientDocs/Project B/y.pdf" → hints: "Project A", "Project B"
  */
+// Known organizational folder names — subfolders matching these are filing categories,
+// not projects. Case-insensitive matching.
+const ORGANIZATIONAL_FOLDER_NAMES = new Set([
+  'kyc', 'background', 'plans', 'monitoring', 'appraisals', 'legal',
+  'notes', 'photos', 'photographs', 'pictures', 'images',
+  'terms', 'terms comparison', 'terms request', 'credit submission',
+  'post completion', 'post-completion', 'professional reports',
+  'insurance', 'warranties', 'financial', 'financials',
+  'correspondence', 'communications', 'miscellaneous', 'other',
+  'operational model', 'valuations', 'inspections', 'documents',
+  'contracts', 'invoices', 'receipts', 'reports', 'drawings',
+  'planning', 'surveys', 'titles', 'certificates',
+]);
+
 function extractFolderHints(files: File[]): Map<number, string> {
   const hints = new Map<number, string>();
   const allParts = files.map(f => {
@@ -134,16 +148,31 @@ function extractFolderHints(files: File[]): Map<number, string> {
   if (filesWithPaths.length === 0) return hints;
 
   // Count distinct immediate subfolder names (depth 2)
-  const uniqueSubfolders = new Set(
-    allParts.filter(p => p.length >= 3).map(p => p[1])
-  );
+  const subfolderNames = allParts.filter(p => p.length >= 3).map(p => p[1]);
+  const uniqueSubfolders = new Set(subfolderNames);
 
   if (uniqueSubfolders.size >= 2) {
-    // Multi-project mode: root/ProjectFolder/file.pdf → ProjectFolder is the project
-    for (let i = 0; i < files.length; i++) {
-      const parts = allParts[i];
-      if (parts.length >= 3) hints.set(i, parts[1]);
-      // files at root/file.pdf are client-level — no hint
+    // Check if subfolders look like organizational categories vs project names.
+    // If most subfolders match known category names, this is a single project
+    // with organizational subfolders (e.g., Creeland Grove/KYC/, Creeland Grove/Plans/)
+    const orgCount = [...uniqueSubfolders].filter(name =>
+      ORGANIZATIONAL_FOLDER_NAMES.has(name.toLowerCase())
+    ).length;
+    const orgRatio = orgCount / uniqueSubfolders.size;
+
+    if (orgRatio > 0.4) {
+      // Most subfolders are organizational — treat root as single project
+      for (let i = 0; i < files.length; i++) {
+        const parts = allParts[i];
+        if (parts.length >= 2) hints.set(i, parts[0]);
+      }
+    } else {
+      // Multi-project mode: root/ProjectFolder/file.pdf → ProjectFolder is the project
+      for (let i = 0; i < files.length; i++) {
+        const parts = allParts[i];
+        if (parts.length >= 3) hints.set(i, parts[1]);
+        // files at root/file.pdf are client-level — no hint
+      }
     }
   } else {
     // Single-project mode: root folder IS the project, subfolders are organizational
