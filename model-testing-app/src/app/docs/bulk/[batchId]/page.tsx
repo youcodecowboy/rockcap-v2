@@ -300,18 +300,9 @@ export default function BulkReviewPage() {
       });
       setFilingResult(result);
 
-      // Trigger extraction queue processing (non-blocking)
-      fetch('/api/process-extraction-queue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 20 }),
-      }).then(response => {
-        if (response.ok) {
-          console.log('[BulkUpload] Extraction queue processing started');
-        }
-      }).catch(err => {
-        console.error('[BulkUpload] Failed to trigger extraction queue:', err);
-      });
+      // NOTE: process-extraction-queue call removed — V4 pipeline handles
+      // extraction during the initial analysis stage, making the post-filing
+      // extraction queue redundant.
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to file documents');
     } finally {
