@@ -67,6 +67,7 @@ interface ProjectWithFolders {
   projectShortcode?: string;
   folders: FolderWithCount[];
   totalDocuments: number;
+  unfiledCount: number;
 }
 
 type AddFolderTarget = 
@@ -74,17 +75,19 @@ type AddFolderTarget =
   | { type: 'project'; projectId: Id<"projects">; projectName: string }
   | null;
 
-// Helper component for unfiled folder row (needs its own useQuery call)
-interface UnfiledFolderRowProps {
+// Inline unfiled folder row — uses computed count (total - sum of folder counts)
+function UnfiledFolderRow({
+  projectId,
+  count,
+  selectedFolder,
+  onFolderSelect,
+}: {
   projectId: Id<"projects">;
+  count: number;
   selectedFolder: FolderSelection | null;
   onFolderSelect: (folder: FolderSelection) => void;
-}
-
-function UnfiledFolderRow({ projectId, selectedFolder, onFolderSelect }: UnfiledFolderRowProps) {
-  const count = useQuery(api.documents.getUnfiledCountByProject, { projectId });
-
-  if (!count) return null;
+}) {
+  if (count <= 0) return null;
 
   const selected =
     selectedFolder?.type === 'project' &&
@@ -225,12 +228,16 @@ export default function FolderBrowser({
         isCustom: folder.isCustom,
       }));
       
+      const filedCount = folders.reduce((sum, f) => sum + f.documentCount, 0);
+      const total = projectData.total || 0;
+
       return {
         _id: project._id,
         name: project.name,
         projectShortcode: project.projectShortcode,
         folders,
-        totalDocuments: projectData.total || 0,
+        totalDocuments: total,
+        unfiledCount: total - filedCount,
       };
     });
   }, [projects, projectFoldersMap, allProjectFolders]);
@@ -328,7 +335,7 @@ export default function FolderBrowser({
   };
 
   return (
-    <div className="w-[320px] min-w-[320px] border-r border-gray-200 bg-white flex flex-col h-full">
+    <div className="w-[380px] min-w-[320px] border-r border-gray-200 bg-white flex flex-col h-full">
       {/* Client Header */}
       <div className="p-3 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center gap-2">
@@ -487,6 +494,7 @@ export default function FolderBrowser({
                           {/* Unfiled Folder Row */}
                           <UnfiledFolderRow
                             projectId={project._id}
+                            count={project.unfiledCount}
                             selectedFolder={selectedFolder}
                             onFolderSelect={onFolderSelect}
                           />

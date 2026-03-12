@@ -1530,9 +1530,14 @@ export const getByFolder = query({
         .collect();
 
       // Filter for documents in this specific folder within the project
-      // For "unfiled", also include docs with null/undefined folderId
+      // For "unfiled", return docs not matching any known project folder
       if (args.folderType === "unfiled") {
-        return docs.filter(doc => !doc.folderId || doc.folderId === "unfiled");
+        const projectFolders = await ctx.db
+          .query("projectFolders")
+          .filter((q) => q.eq(q.field("projectId"), args.projectId))
+          .collect();
+        const knownTypes = new Set(projectFolders.map(f => f.folderType));
+        return docs.filter(doc => !doc.folderId || !knownTypes.has(doc.folderId));
       }
       return docs.filter(doc => doc.folderId === args.folderType);
     } else {
