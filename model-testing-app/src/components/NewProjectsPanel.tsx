@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { FolderPlus, Loader2, Check, Merge } from 'lucide-react';
 import { generateShortcodeSuggestion } from '@/lib/shortcodeUtils';
 
@@ -174,22 +174,24 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
                 </div>
                 <div>
                   {isDupe && mergeTarget !== undefined && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-purple-600 hover:text-purple-800 hover:bg-purple-100"
-                          onClick={() => mergeInto(mergeTarget, index)}
-                          disabled={isCreating}
-                        >
-                          <Merge className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Merge into &quot;{projects[mergeTarget].name}&quot;
-                      </TooltipContent>
-                    </Tooltip>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-purple-600 hover:text-purple-800 hover:bg-purple-100"
+                            onClick={() => mergeInto(mergeTarget, index)}
+                            disabled={isCreating}
+                          >
+                            <Merge className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Merge into &quot;{projects[mergeTarget].name}&quot;
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   )}
                 </div>
               </div>
