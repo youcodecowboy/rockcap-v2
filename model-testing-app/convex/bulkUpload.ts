@@ -534,6 +534,8 @@ export const updateItemAnalysis = mutation({
       suggestedProjectName,
       projectConfidence,
       projectReasoning,
+      // Auto-assign to existing project when AI suggests one — user can override in review
+      ...(suggestedProjectId ? { itemProjectId: suggestedProjectId } : {}),
       status: "ready_for_review",
       updatedAt: new Date().toISOString(),
     });
@@ -974,6 +976,56 @@ export const unlinkItemVersion = mutation({
     });
 
     return { itemId: args.itemId };
+  },
+});
+
+// Delete items from a batch (bulk delete from review table)
+export const deleteItems = mutation({
+  args: {
+    batchId: v.id("bulkUploadBatches"),
+    itemIds: v.array(v.id("bulkUploadItems")),
+  },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db.get(args.batchId);
+    if (!batch) throw new Error("Batch not found");
+
+    let totalDecrement = 0;
+    let processedDecrement = 0;
+    let errorDecrement = 0;
+
+    for (const itemId of args.itemIds) {
+      const item = await ctx.db.get(itemId);
+      if (!item || item.batchId !== args.batchId) continue;
+
+      // Decrement counters based on item status
+      totalDecrement++;
+      if (item.status === "ready_for_review" || item.status === "filed") {
+        processedDecrement++;
+      } else if (item.status === "error") {
+        errorDecrement++;
+      }
+
+      // Clean up storage
+      if (item.fileStorageId) {
+        try {
+          await ctx.storage.delete(item.fileStorageId);
+        } catch {
+          // Storage already deleted — ignore
+        }
+      }
+
+      await ctx.db.delete(itemId);
+    }
+
+    // Update batch counters
+    await ctx.db.patch(args.batchId, {
+      totalFiles: Math.max(0, (batch.totalFiles || 0) - totalDecrement),
+      processedFiles: Math.max(0, (batch.processedFiles || 0) - processedDecrement),
+      errorFiles: Math.max(0, (batch.errorFiles || 0) - errorDecrement),
+      updatedAt: new Date().toISOString(),
+    });
+
+    return { deleted: totalDecrement };
   },
 });
 
