@@ -16,30 +16,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
     return await file.text();
   }
 
-  // Handle EML (email) files - parse headers and body as structured text
+  // Handle EML (email) files — extract body only for classification (no headers)
   if (fileType === 'message/rfc822' || fileName.endsWith('.eml')) {
     const raw = await file.text();
-    // Split headers from body at the first blank line
-    const blankLineIndex = raw.indexOf('\r\n\r\n') !== -1 ? raw.indexOf('\r\n\r\n') : raw.indexOf('\n\n');
-    if (blankLineIndex === -1) return raw;
-    const headerSection = raw.slice(0, blankLineIndex);
-    const body = raw.slice(blankLineIndex).trim();
-    // Extract key headers for context
-    const getHeader = (name: string) => {
-      const match = headerSection.match(new RegExp(`^${name}:\\s*(.+)`, 'im'));
-      return match ? match[1].trim() : '';
-    };
-    const from = getHeader('From');
-    const to = getHeader('To');
-    const subject = getHeader('Subject');
-    const date = getHeader('Date');
-    const parts: string[] = [];
-    if (subject) parts.push(`Subject: ${subject}`);
-    if (date) parts.push(`Date: ${date}`);
-    if (from) parts.push(`From: ${from}`);
-    if (to) parts.push(`To: ${to}`);
-    parts.push('', body);
-    return parts.join('\n');
+    return extractEmailBody(raw);
   }
 
   // Handle PDF files
@@ -379,3 +359,43 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
+/**
+ * Extract the body content from a raw .eml file, stripping all email headers.
+ * This ensures classification is based on document content, not email format.
+ */
+export function extractEmailBody(raw: string): string {
+  const blankLineIndex = raw.indexOf('\r\n\r\n') !== -1 ? raw.indexOf('\r\n\r\n') : raw.indexOf('\n\n');
+  if (blankLineIndex === -1) return raw;
+  let body = raw.slice(blankLineIndex).trim();
+
+  // Strip quoted headers from forwarded messages (lines starting with "> From:", etc.)
+  body = body.replace(/^>?\s*(From|To|Cc|Bcc|Date|Subject|Sent|Reply-To):.*$/gm, '');
+  // Strip common forward/reply markers
+  body = body.replace(/^-{3,}\s*(Forwarded|Original)\s+[Mm]essage\s*-{3,}$/gm, '');
+
+  return body.trim();
+}
+
+/**
+ * Extract structured email metadata from a raw .eml file for provenance storage.
+ */
+export function extractEmailMetadata(raw: string): {
+  from?: string;
+  to?: string;
+  subject?: string;
+  date?: string;
+} {
+  const blankLineIndex = raw.indexOf('\r\n\r\n') !== -1 ? raw.indexOf('\r\n\r\n') : raw.indexOf('\n\n');
+  if (blankLineIndex === -1) return {};
+  const headerSection = raw.slice(0, blankLineIndex);
+  const getHeader = (name: string) => {
+    const match = headerSection.match(new RegExp(`^${name}:\\s*(.+)`, 'im'));
+    return match ? match[1].trim() : undefined;
+  };
+  return {
+    from: getHeader('From'),
+    to: getHeader('To'),
+    subject: getHeader('Subject'),
+    date: getHeader('Date'),
+  };
+}
