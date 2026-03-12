@@ -1530,6 +1530,10 @@ export const getByFolder = query({
         .collect();
 
       // Filter for documents in this specific folder within the project
+      // For "unfiled", also include docs with null/undefined folderId
+      if (args.folderType === "unfiled") {
+        return docs.filter(doc => !doc.folderId || doc.folderId === "unfiled");
+      }
       return docs.filter(doc => doc.folderId === args.folderType);
     } else {
       // Client-level folder
@@ -1765,7 +1769,7 @@ export const getUnfiledCountByProject = query({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .filter((q) =>
         q.and(
-          q.eq(q.field("isDeleted"), false),
+          q.neq(q.field("isDeleted"), true),
           q.or(
             q.eq(q.field("folderId"), "unfiled"),
             q.eq(q.field("folderId"), undefined),
