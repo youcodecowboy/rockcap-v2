@@ -87,8 +87,6 @@ function UnfiledFolderRow({
   selectedFolder: FolderSelection | null;
   onFolderSelect: (folder: FolderSelection) => void;
 }) {
-  if (count <= 0) return null;
-
   const selected =
     selectedFolder?.type === 'project' &&
     selectedFolder?.folderId === 'unfiled' &&
@@ -99,8 +97,8 @@ function UnfiledFolderRow({
       className={cn(
         "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
         selected
-          ? "bg-blue-100 text-blue-900"
-          : "hover:bg-gray-100 text-gray-700"
+          ? "bg-orange-100 text-orange-900"
+          : "hover:bg-gray-100 text-orange-600/70"
       )}
     >
       <button
@@ -115,11 +113,11 @@ function UnfiledFolderRow({
         {selected ? (
           <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
         ) : (
-          <Folder className="w-4 h-4 text-orange-400 flex-shrink-0" />
+          <Folder className="w-4 h-4 text-orange-300 flex-shrink-0" />
         )}
-        <span className="flex-1 text-left truncate italic">Unfiled</span>
+        <span className="flex-1 text-left truncate italic text-sm">Unfiled</span>
       </button>
-      <span className="text-xs text-gray-400 flex-shrink-0">({count})</span>
+      <span className="text-xs text-orange-400 flex-shrink-0">({count})</span>
     </div>
   );
 }
@@ -282,7 +280,12 @@ export default function FolderBrowser({
 
     return (
       <div key={folder._id} className="group">
-        <div
+        <button
+          onClick={() => onFolderSelect({
+            type: 'client',
+            folderId: folder.folderType,
+            folderName: folder.name,
+          })}
           className={cn(
             "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
             selected
@@ -291,28 +294,19 @@ export default function FolderBrowser({
             depth > 0 && "ml-4"
           )}
         >
-          <button
-            onClick={() => onFolderSelect({
-              type: 'client',
-              folderId: folder.folderType,
-              folderName: folder.name,
-            })}
-            className="flex items-center gap-2 flex-1 min-w-0"
-          >
-            {selected ? (
-              <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            ) : (
-              <Folder className={cn(
-                "w-4 h-4 flex-shrink-0",
-                folder.isCustom ? "text-purple-500" : "text-amber-500"
-              )} />
-            )}
-            <span className="flex-1 text-left truncate">{folder.name}</span>
-            {folder.isCustom && (
-              <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
-            )}
-          </button>
-          <span className="text-xs text-gray-400 flex-shrink-0">({folder.documentCount})</span>
+          {selected ? (
+            <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          ) : (
+            <Folder className={cn(
+              "w-4 h-4 flex-shrink-0",
+              folder.isCustom ? "text-purple-500" : "text-amber-500"
+            )} />
+          )}
+          <span className="flex-1 text-left truncate min-w-0">{folder.name}</span>
+          {folder.isCustom && (
+            <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
+          )}
+          <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">({folder.documentCount})</span>
           {folder.isCustom && (
             <button
               onClick={(e) => {
@@ -324,7 +318,7 @@ export default function FolderBrowser({
               <Trash2 className="w-3 h-3 text-red-500" />
             </button>
           )}
-        </div>
+        </button>
         {hasChildren && (
           <div className="ml-2 border-l border-gray-200">
             {children.map(child => renderClientFolder(child, depth + 1))}
@@ -372,7 +366,7 @@ export default function FolderBrowser({
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-2">
+        <div className="p-2 overflow-hidden">
           {/* Client-level Folders */}
           <div className="mb-4">
             <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
@@ -445,7 +439,13 @@ export default function FolderBrowser({
                             
                             return (
                               <div key={folder._id} className="group">
-                                <div
+                                <button
+                                  onClick={() => onFolderSelect({
+                                    type: 'project',
+                                    folderId: folder.folderType,
+                                    folderName: folder.name,
+                                    projectId: project._id,
+                                  })}
                                   className={cn(
                                     "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
                                     selected
@@ -453,29 +453,19 @@ export default function FolderBrowser({
                                       : "hover:bg-gray-100 text-gray-700"
                                   )}
                                 >
-                                  <button
-                                    onClick={() => onFolderSelect({
-                                      type: 'project',
-                                      folderId: folder.folderType,
-                                      folderName: folder.name,
-                                      projectId: project._id,
-                                    })}
-                                    className="flex items-center gap-2 flex-1 min-w-0"
-                                  >
-                                    {selected ? (
-                                      <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                                    ) : (
-                                      <Folder className={cn(
-                                        "w-4 h-4 flex-shrink-0",
-                                        folder.isCustom ? "text-purple-500" : "text-amber-500"
-                                      )} />
-                                    )}
-                                    <span className="flex-1 text-left truncate">{folder.name}</span>
-                                    {folder.isCustom && (
-                                      <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
-                                    )}
-                                  </button>
-                                  <span className="text-xs text-gray-400 flex-shrink-0">({folder.documentCount})</span>
+                                  {selected ? (
+                                    <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                  ) : (
+                                    <Folder className={cn(
+                                      "w-4 h-4 flex-shrink-0",
+                                      folder.isCustom ? "text-purple-500" : "text-amber-500"
+                                    )} />
+                                  )}
+                                  <span className="flex-1 text-left truncate min-w-0">{folder.name}</span>
+                                  {folder.isCustom && (
+                                    <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                                  )}
+                                  <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">({folder.documentCount})</span>
                                   {folder.isCustom && (
                                     <button
                                       onClick={(e) => {
@@ -487,7 +477,7 @@ export default function FolderBrowser({
                                       <Trash2 className="w-3 h-3 text-red-500" />
                                     </button>
                                   )}
-                                </div>
+                                </button>
                               </div>
                             );
                           })}
