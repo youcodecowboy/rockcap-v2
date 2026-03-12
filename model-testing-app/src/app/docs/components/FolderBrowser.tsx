@@ -7,7 +7,6 @@ import { Id } from '../../../../convex/_generated/dataModel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
@@ -93,7 +92,13 @@ function UnfiledFolderRow({
     selectedFolder?.projectId === projectId;
 
   return (
-    <div
+    <button
+      onClick={() => onFolderSelect({
+        type: 'project',
+        folderId: 'unfiled',
+        folderName: 'Unfiled',
+        projectId,
+      })}
       className={cn(
         "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
         selected
@@ -101,24 +106,14 @@ function UnfiledFolderRow({
           : "hover:bg-gray-100 text-orange-600/70"
       )}
     >
-      <button
-        onClick={() => onFolderSelect({
-          type: 'project',
-          folderId: 'unfiled',
-          folderName: 'Unfiled',
-          projectId,
-        })}
-        className="flex items-center gap-2 flex-1 min-w-0"
-      >
-        {selected ? (
-          <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
-        ) : (
-          <Folder className="w-4 h-4 text-orange-300 flex-shrink-0" />
-        )}
-        <span className="flex-1 text-left truncate italic text-sm">Unfiled</span>
-      </button>
-      <span className="text-xs text-orange-400 flex-shrink-0">({count})</span>
-    </div>
+      {selected ? (
+        <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
+      ) : (
+        <Folder className="w-4 h-4 text-orange-300 flex-shrink-0" />
+      )}
+      <span className="flex-1 text-left truncate min-w-0 italic">Unfiled</span>
+      <span className="text-xs text-orange-400 flex-shrink-0 ml-auto">({count})</span>
+    </button>
   );
 }
 
@@ -365,8 +360,8 @@ export default function FolderBrowser({
         )}
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-2 overflow-hidden">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="p-2">
           {/* Client-level Folders */}
           <div className="mb-4">
             <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
@@ -516,7 +511,7 @@ export default function FolderBrowser({
             </div>
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Add Custom Folder Dialog */}
       <Dialog open={addFolderTarget !== null} onOpenChange={(open) => !open && setAddFolderTarget(null)}>
