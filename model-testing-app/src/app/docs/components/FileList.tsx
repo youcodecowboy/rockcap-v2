@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
@@ -15,17 +15,32 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
   LayoutGrid,
   List,
   Upload,
   FolderOpen,
   FileText,
   ArrowUpDown,
+  FolderInput,
+  Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import FileCard from './FileCard';
 import DirectUploadModal from './DirectUploadModal';
 import InternalUploadModal from './InternalUploadModal';
 import LinkAsVersionModal from './LinkAsVersionModal';
+import BulkMoveModal from './BulkMoveModal';
 import { cn } from '@/lib/utils';
 
 interface FolderSelection {
@@ -94,6 +109,10 @@ export default function FileList({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [linkVersionDoc, setLinkVersionDoc] = useState<Document | null>(null);
   const [showLinkVersionModal, setShowLinkVersionModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showBulkMoveModal, setShowBulkMoveModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const bulkDeleteMutation = useMutation(api.documents.bulkDelete);
 
   // Convex client for on-demand queries
   const convex = useConvex();
@@ -265,6 +284,36 @@ export default function FileList({
     });
   }, []);
 
+  const handleBulkDelete = async () => {
+    if (selectedDocIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const result = await bulkDeleteMutation({
+        documentIds: Array.from(selectedDocIds) as Id<"documents">[],
+      });
+      toast.success(`Deleted ${result.deletedCount} document${result.deletedCount !== 1 ? 's' : ''}`);
+      setSelectedDocIds(new Set());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete documents');
+    } finally {
+      setIsBulkDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleSelectAll = useCallback(() => {
+    if (selectedDocIds.size === sortedDocuments.length) {
+      setSelectedDocIds(new Set());
+    } else {
+      setSelectedDocIds(new Set(sortedDocuments.map(d => d._id)));
+    }
+  }, [selectedDocIds.size, sortedDocuments]);
+
+  // Clear selection on folder change
+  useEffect(() => {
+    setSelectedDocIds(new Set());
+  }, [selectedFolder?.folderId, selectedFolder?.projectId]);
+
   const toggleGroup = useCallback((headId: string) => {
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -384,7 +433,13 @@ export default function FileList({
 
   const renderListHeader = () => (
     <div className="flex items-center h-7 px-3 border-b border-gray-200 bg-gray-50/80 text-[10px] font-medium text-gray-400 uppercase tracking-wider select-none sticky top-0 z-10">
-      <div className="w-5 flex-shrink-0" />
+      <div className="w-5 flex-shrink-0 flex items-center justify-center">
+        <Checkbox
+          checked={sortedDocuments.length > 0 && selectedDocIds.size === sortedDocuments.length}
+          onCheckedChange={handleSelectAll}
+          className="h-3 w-3"
+        />
+      </div>
       <div className="w-5 flex-shrink-0" />
       <div className="flex-1 pl-2">Name</div>
       <div className="w-32 flex-shrink-0 hidden md:block pr-3">Type</div>
@@ -459,6 +514,26 @@ export default function FileList({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Bulk selection actions */}
+          {selectedDocIds.size > 0 && (
+            <Badge variant="secondary" className="text-xs">
+              {selectedDocIds.size} selected
+            </Badge>
+          )}
+          <Button size="sm" variant="outline" className="gap-1.5 h-8"
+            disabled={selectedDocIds.size === 0}
+            onClick={() => setShowBulkMoveModal(true)}>
+            <FolderInput className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Move</span>
+          </Button>
+          <Button size="sm" variant="outline"
+            className="gap-1.5 h-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+            disabled={selectedDocIds.size === 0}
+            onClick={() => setShowDeleteConfirm(true)}>
+            <Trash2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Delete</span>
+          </Button>
+
           {/* Sort */}
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
             <SelectTrigger className="w-[130px] h-8 text-xs">
@@ -614,6 +689,34 @@ export default function FileList({
           folderDocuments={sortedDocuments.filter(d => d._id !== linkVersionDoc._id)}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedDocIds.size} document{selectedDocIds.size !== 1 ? 's' : ''}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the selected documents. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} disabled={isBulkDeleting} className="bg-red-600 hover:bg-red-700">
+              {isBulkDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Move Modal */}
+      <BulkMoveModal
+        isOpen={showBulkMoveModal}
+        onClose={() => setShowBulkMoveModal(false)}
+        documentIds={Array.from(selectedDocIds)}
+        currentClientId={clientId || undefined}
+        currentProjectId={selectedFolder?.projectId}
+        onMoveComplete={() => setSelectedDocIds(new Set())}
+      />
     </div>
   );
 }
