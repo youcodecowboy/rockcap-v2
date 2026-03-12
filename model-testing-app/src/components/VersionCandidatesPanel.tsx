@@ -150,7 +150,7 @@ export default function VersionCandidatesPanel({ groups, onApplyVersions, onDele
           {groups.map((group, groupIdx) => {
             const selectedCount = getSelectedCount(groupIdx);
             return (
-              <div key={group.normalizedName} className="border rounded-md p-3 bg-white">
+              <div key={`${group.normalizedName}-${groupIdx}`} className="border rounded-md p-3 bg-white">
                 <div className="text-sm font-medium text-amber-800 mb-2 capitalize">
                   {group.normalizedName}
                   <span className="text-xs font-normal text-muted-foreground ml-2">

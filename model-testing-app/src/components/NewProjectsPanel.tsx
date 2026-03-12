@@ -6,8 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { FolderPlus, Loader2, Check, Merge } from 'lucide-react';
+import { FolderPlus, Loader2, Merge, X } from 'lucide-react';
 import { generateShortcodeSuggestion } from '@/lib/shortcodeUtils';
 
 export interface NewProjectEntry {
@@ -28,6 +27,9 @@ interface NewProjectsPanelProps {
 }
 
 export default function NewProjectsPanel({ projects, onChange, onCreateProjects, isCreating, createdCount }: NewProjectsPanelProps) {
+  const [mergeSelection, setMergeSelection] = useState<Set<number>>(new Set());
+  const isMergeMode = mergeSelection.size > 0;
+
   // Check for duplicate shortcodes (case-insensitive) among enabled projects
   const duplicateShortcodes = useMemo(() => {
     const enabled = projects.filter(p => p.enabled);
@@ -43,18 +45,6 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
 
   const hasDuplicates = duplicateShortcodes.size > 0;
   const enabledCount = projects.filter(p => p.enabled).length;
-
-  // Build map of shortcode → indices for merge targets
-  const duplicateGroups = useMemo(() => {
-    const groups = new Map<string, number[]>();
-    projects.forEach((p, i) => {
-      if (!p.enabled) return;
-      const key = p.projectShortcode.toUpperCase();
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(i);
-    });
-    return groups;
-  }, [projects]);
 
   const updateProject = (index: number, updates: Partial<NewProjectEntry>) => {
     const updated = projects.map((p, i) => {
@@ -72,27 +62,52 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
     onChange(updated);
   };
 
-  const mergeInto = (targetIndex: number, sourceIndex: number) => {
-    const target = projects[targetIndex];
-    const source = projects[sourceIndex];
-    // Combine all suggested names from both entries
-    const targetNames = target.mergedSuggestedNames || [target.suggestedName];
-    const sourceNames = source.mergedSuggestedNames || [source.suggestedName];
-    const allNames = [...new Set([...targetNames, ...sourceNames])];
+  const toggleMergeSelect = (index: number) => {
+    setMergeSelection(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
 
+  const handleMergeSelected = () => {
+    if (mergeSelection.size < 2) return;
+    const indices = Array.from(mergeSelection).sort((a, b) => a - b);
+    const targetIdx = indices[0]; // Keep the first selected entry
+    const target = projects[targetIdx];
+
+    // Collect all suggested names and sum file counts from all selected
+    let totalFiles = 0;
+    const allNames: string[] = [];
+    for (const idx of indices) {
+      const p = projects[idx];
+      totalFiles += p.fileCount;
+      const names = p.mergedSuggestedNames || [p.suggestedName];
+      for (const n of names) {
+        if (!allNames.includes(n)) allNames.push(n);
+      }
+    }
+
+    // Remove all selected except the target, update the target
+    const removeSet = new Set(indices.slice(1));
     const updated = projects
-      .filter((_, i) => i !== sourceIndex) // Remove the source entry
-      .map((p, i) => {
-        // Adjust target index if source was before it
-        const adjustedTarget = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-        if (i !== adjustedTarget) return p;
+      .filter((_, i) => !removeSet.has(i))
+      .map((p) => {
+        // Find the target by suggestedName since indices shift after filter
+        if (p.suggestedName !== target.suggestedName) return p;
         return {
           ...p,
-          fileCount: target.fileCount + source.fileCount,
+          fileCount: totalFiles,
           mergedSuggestedNames: allNames,
         };
       });
+
     onChange(updated);
+    setMergeSelection(new Set());
   };
 
   const handleCreate = async () => {
@@ -115,30 +130,67 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
         </div>
       </CardHeader>
       <CardContent>
+        {/* Merge toolbar — appears when 2+ rows are selected for merge */}
+        {isMergeMode && (
+          <div className="flex items-center gap-2 mb-3 p-2 bg-purple-100 border border-purple-300 rounded-md">
+            <Merge className="w-4 h-4 text-purple-700" />
+            <span className="text-sm text-purple-800 font-medium">
+              {mergeSelection.size} selected for merge
+            </span>
+            <Button
+              size="sm"
+              variant="default"
+              className="ml-auto bg-purple-600 hover:bg-purple-700"
+              onClick={handleMergeSelected}
+              disabled={mergeSelection.size < 2}
+            >
+              <Merge className="w-3 h-3 mr-1" />
+              Merge into first
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setMergeSelection(new Set())}
+            >
+              <X className="w-3 h-3 mr-1" />
+              Cancel
+            </Button>
+          </div>
+        )}
+
         <div className="space-y-2">
           {/* Header row */}
-          <div className="grid grid-cols-[40px_1fr_160px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
+          <div className="grid grid-cols-[32px_40px_1fr_160px_80px] gap-2 text-xs font-medium text-muted-foreground px-1">
+            <div className="text-center text-[10px]">Merge</div>
             <div></div>
             <div>Project Name</div>
             <div>Shortcode</div>
             <div className="text-right">Files</div>
-            <div></div>
           </div>
 
           {/* Project rows */}
           {projects.map((project, index) => {
             const isDupe = project.enabled && duplicateShortcodes.has(project.projectShortcode.toUpperCase());
-            const dupeGroup = isDupe ? duplicateGroups.get(project.projectShortcode.toUpperCase()) || [] : [];
-            // Find the first other entry in the same duplicate group to merge into
-            const mergeTarget = dupeGroup.find(i => i !== index && i < index);
             const hasMergedNames = project.mergedSuggestedNames && project.mergedSuggestedNames.length > 1;
+            const isSelected = mergeSelection.has(index);
             return (
               <div
-                key={project.suggestedName}
-                className={`grid grid-cols-[40px_1fr_160px_80px_36px] gap-2 items-center p-2 rounded-md ${
+                key={`${project.suggestedName}-${index}`}
+                className={`grid grid-cols-[32px_40px_1fr_160px_80px] gap-2 items-center p-2 rounded-md ${
+                  isSelected ? 'bg-purple-50 border border-purple-400' :
                   project.enabled ? 'bg-white border' : 'bg-gray-50 opacity-60'
-                } ${isDupe ? 'border-red-300' : 'border-gray-200'}`}
+                } ${isDupe && !isSelected ? 'border-red-300' : !isSelected ? 'border-gray-200' : ''}`}
               >
+                {/* Merge select checkbox */}
+                <div className="flex justify-center">
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => toggleMergeSelect(index)}
+                    disabled={isCreating || !project.enabled}
+                    className="border-purple-400 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                  />
+                </div>
+                {/* Enable/disable checkbox */}
                 <Checkbox
                   checked={project.enabled}
                   onCheckedChange={(checked) => updateProject(index, { enabled: !!checked })}
@@ -171,28 +223,6 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
                 </div>
                 <div className="text-right text-sm text-muted-foreground">
                   {project.fileCount}
-                </div>
-                <div>
-                  {isDupe && mergeTarget !== undefined && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-purple-600 hover:text-purple-800 hover:bg-purple-100"
-                            onClick={() => mergeInto(mergeTarget, index)}
-                            disabled={isCreating}
-                          >
-                            <Merge className="w-4 h-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Merge into &quot;{projects[mergeTarget].name}&quot;
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
                 </div>
               </div>
             );
