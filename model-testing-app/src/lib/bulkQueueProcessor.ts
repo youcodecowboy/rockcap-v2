@@ -429,9 +429,10 @@ export class BulkQueueProcessor {
     const UPLOAD_MAX_RETRIES = 3;
     for (let uploadAttempt = 0; uploadAttempt <= UPLOAD_MAX_RETRIES; uploadAttempt++) {
       const uploadUrl = await this.callbacks.generateUploadUrl();
+      const contentType = item.file.type || 'application/octet-stream';
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
-        headers: { "Content-Type": item.file.type },
+        headers: { "Content-Type": contentType },
         body: item.file,
       });
 
@@ -451,7 +452,7 @@ export class BulkQueueProcessor {
         continue;
       }
 
-      throw new Error(`Failed to upload file to storage (HTTP ${status})`);
+      throw new Error(`Failed to upload file to storage (HTTP ${status}): ${body.slice(0, 200)}`);
     }
 
     if (!storageId) {
