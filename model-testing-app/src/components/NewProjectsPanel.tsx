@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FolderPlus, Loader2, Check } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { FolderPlus, Loader2, Check, Merge } from 'lucide-react';
 import { generateShortcodeSuggestion } from '@/lib/shortcodeUtils';
 
 export interface NewProjectEntry {
@@ -15,6 +16,7 @@ export interface NewProjectEntry {
   projectShortcode: string; // Editable shortcode
   enabled: boolean;        // Whether to create this project
   fileCount: number;       // Number of items assigned
+  mergedSuggestedNames?: string[]; // All original suggested names (when entries are merged)
 }
 
 interface NewProjectsPanelProps {
@@ -42,6 +44,18 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
   const hasDuplicates = duplicateShortcodes.size > 0;
   const enabledCount = projects.filter(p => p.enabled).length;
 
+  // Build map of shortcode → indices for merge targets
+  const duplicateGroups = useMemo(() => {
+    const groups = new Map<string, number[]>();
+    projects.forEach((p, i) => {
+      if (!p.enabled) return;
+      const key = p.projectShortcode.toUpperCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(i);
+    });
+    return groups;
+  }, [projects]);
+
   const updateProject = (index: number, updates: Partial<NewProjectEntry>) => {
     const updated = projects.map((p, i) => {
       if (i !== index) return p;
@@ -55,6 +69,29 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
       }
       return merged;
     });
+    onChange(updated);
+  };
+
+  const mergeInto = (targetIndex: number, sourceIndex: number) => {
+    const target = projects[targetIndex];
+    const source = projects[sourceIndex];
+    // Combine all suggested names from both entries
+    const targetNames = target.mergedSuggestedNames || [target.suggestedName];
+    const sourceNames = source.mergedSuggestedNames || [source.suggestedName];
+    const allNames = [...new Set([...targetNames, ...sourceNames])];
+
+    const updated = projects
+      .filter((_, i) => i !== sourceIndex) // Remove the source entry
+      .map((p, i) => {
+        // Adjust target index if source was before it
+        const adjustedTarget = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+        if (i !== adjustedTarget) return p;
+        return {
+          ...p,
+          fileCount: target.fileCount + source.fileCount,
+          mergedSuggestedNames: allNames,
+        };
+      });
     onChange(updated);
   };
 
@@ -80,20 +117,25 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
       <CardContent>
         <div className="space-y-2">
           {/* Header row */}
-          <div className="grid grid-cols-[40px_1fr_160px_80px] gap-2 text-xs font-medium text-muted-foreground px-1">
+          <div className="grid grid-cols-[40px_1fr_160px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
             <div></div>
             <div>Project Name</div>
             <div>Shortcode</div>
             <div className="text-right">Files</div>
+            <div></div>
           </div>
 
           {/* Project rows */}
           {projects.map((project, index) => {
             const isDupe = project.enabled && duplicateShortcodes.has(project.projectShortcode.toUpperCase());
+            const dupeGroup = isDupe ? duplicateGroups.get(project.projectShortcode.toUpperCase()) || [] : [];
+            // Find the first other entry in the same duplicate group to merge into
+            const mergeTarget = dupeGroup.find(i => i !== index && i < index);
+            const hasMergedNames = project.mergedSuggestedNames && project.mergedSuggestedNames.length > 1;
             return (
               <div
                 key={project.suggestedName}
-                className={`grid grid-cols-[40px_1fr_160px_80px] gap-2 items-center p-2 rounded-md ${
+                className={`grid grid-cols-[40px_1fr_160px_80px_36px] gap-2 items-center p-2 rounded-md ${
                   project.enabled ? 'bg-white border' : 'bg-gray-50 opacity-60'
                 } ${isDupe ? 'border-red-300' : 'border-gray-200'}`}
               >
@@ -102,12 +144,19 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
                   onCheckedChange={(checked) => updateProject(index, { enabled: !!checked })}
                   disabled={isCreating}
                 />
-                <Input
-                  value={project.name}
-                  onChange={(e) => updateProject(index, { name: e.target.value })}
-                  disabled={!project.enabled || isCreating}
-                  className="h-8 text-sm"
-                />
+                <div>
+                  <Input
+                    value={project.name}
+                    onChange={(e) => updateProject(index, { name: e.target.value })}
+                    disabled={!project.enabled || isCreating}
+                    className="h-8 text-sm"
+                  />
+                  {hasMergedNames && (
+                    <p className="text-[10px] text-purple-500 mt-0.5 px-1 truncate">
+                      Merged: {project.mergedSuggestedNames!.join(', ')}
+                    </p>
+                  )}
+                </div>
                 <div className="relative">
                   <Input
                     value={project.projectShortcode}
@@ -123,6 +172,26 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
                 <div className="text-right text-sm text-muted-foreground">
                   {project.fileCount}
                 </div>
+                <div>
+                  {isDupe && mergeTarget !== undefined && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-purple-600 hover:text-purple-800 hover:bg-purple-100"
+                          onClick={() => mergeInto(mergeTarget, index)}
+                          disabled={isCreating}
+                        >
+                          <Merge className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Merge into &quot;{projects[mergeTarget].name}&quot;
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -130,7 +199,7 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
 
         {hasDuplicates && (
           <p className="text-xs text-red-600 mt-3">
-            Resolve duplicate shortcodes before filing.
+            Resolve duplicate shortcodes — merge entries, edit shortcodes, or uncheck duplicates.
           </p>
         )}
 

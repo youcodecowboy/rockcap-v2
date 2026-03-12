@@ -179,6 +179,18 @@ export default function BulkReviewPage() {
           projectMap.set(entry.suggestedName.toLowerCase(), entry.projectId);
         }
 
+        // Also map merged suggested names to the same project
+        for (const proj of enabledProjects) {
+          if (proj.mergedSuggestedNames && proj.mergedSuggestedNames.length > 1) {
+            const projectId = projectMap.get(proj.suggestedName.toLowerCase());
+            if (projectId) {
+              for (const name of proj.mergedSuggestedNames) {
+                projectMap.set(name.toLowerCase(), projectId);
+              }
+            }
+          }
+        }
+
         // Also build set of disabled project names (unchecked by user)
         const disabledNames = new Set(
           newProjects
