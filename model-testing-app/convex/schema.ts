@@ -951,6 +951,7 @@ export default defineSchema({
     version: v.optional(v.string()), // "V1.0", "V1.1", "V2.0"
     isDuplicate: v.optional(v.boolean()), // Flag if duplicate detected
     duplicateOfDocumentId: v.optional(v.id("documents")), // Reference to existing document
+    duplicateOfItemId: v.optional(v.id("bulkUploadItems")), // Reference to another unfiled item (version linking)
     versionType: v.optional(v.union(
       v.literal("minor"), // V1.1
       v.literal("significant") // V2.0

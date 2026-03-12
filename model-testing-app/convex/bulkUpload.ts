@@ -1037,6 +1037,35 @@ export const deleteItems = mutation({
   },
 });
 
+// Apply version labels to a group of items (from version candidates panel)
+export const applyVersionLabels = mutation({
+  args: {
+    batchId: v.id("bulkUploadBatches"),
+    versions: v.array(v.object({
+      itemId: v.id("bulkUploadItems"),
+      version: v.string(),
+      isBase: v.boolean(),
+    })),
+  },
+  handler: async (ctx, args) => {
+    // Find the base item
+    const baseEntry = args.versions.find(entry => entry.isBase);
+    if (!baseEntry) throw new Error("No base version specified");
+
+    for (const entry of args.versions) {
+      await ctx.db.patch(entry.itemId, {
+        version: entry.version,
+        isDuplicate: !entry.isBase,
+        versionType: entry.isBase ? undefined : "significant",
+        duplicateOfItemId: entry.isBase ? undefined : baseEntry.itemId,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return { updated: args.versions.length };
+  },
+});
+
 // ============================================================================
 // DUPLICATE DETECTION
 // ============================================================================
