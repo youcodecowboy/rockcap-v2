@@ -404,60 +404,68 @@ export async function callAnthropicBatch(
 // =============================================================================
 
 /**
- * Attempt to repair a truncated JSON string by closing open strings, objects, and arrays.
- * Returns null if the input doesn't look like a repairable JSON structure.
+ * Attempt to repair a truncated JSON string by finding the last valid truncation
+ * point and closing open structures. Uses a trial-and-error approach that's robust
+ * against unescaped quotes and other malformed content in string values.
  */
 function repairTruncatedJson(text: string): string | null {
-  // Must start with [ or { to be repairable
   const trimmed = text.trim();
   if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return null;
 
-  let repaired = trimmed;
+  // Strategy: search backward from the end for potential truncation points.
+  // Try each one — the first that produces valid JSON wins.
+  // Look for lines ending with a value terminator followed by comma or closing brace.
+  const truncationCandidates: number[] = [];
 
-  // Walk the string tracking position and find the last point where a
-  // complete key-value pair or array element ends (after }, ], or ,)
-  // Exclude ":" — that's after a key name, before the value, not a clean break.
-  let inString = false;
-  let lastCleanBreak = 0;
-  for (let i = 0; i < repaired.length; i++) {
-    const ch = repaired[i];
-    if (ch === '\\' && inString) { i++; continue; }
-    if (ch === '"') inString = !inString;
-    if (!inString && (ch === ',' || ch === '}' || ch === ']')) {
-      lastCleanBreak = i + 1;
+  // Find all positions where a line ends with a complete value (number, string, true/false/null, }, ])
+  // followed by a comma. These are safe truncation points.
+  const lineEndPattern = /(?:(?:\d+(?:\.\d+)?)|true|false|null|"[^"]*"|\}|\])\s*,\s*$/gm;
+  let match;
+  while ((match = lineEndPattern.exec(trimmed)) !== null) {
+    // Position right before the trailing comma
+    const commaPos = trimmed.indexOf(',', match.index + match[0].trimEnd().length - 1);
+    if (commaPos !== -1) {
+      truncationCandidates.push(commaPos);
     }
   }
 
-  // Truncate to last clean break point
-  if (lastCleanBreak > 0 && lastCleanBreak < repaired.length) {
-    repaired = repaired.slice(0, lastCleanBreak);
+  // Also look for closing } or ] not followed by comma (end of a block)
+  const blockEndPattern = /(\}|\])\s*$/gm;
+  while ((match = blockEndPattern.exec(trimmed)) !== null) {
+    truncationCandidates.push(match.index + 1);
   }
 
-  // Remove trailing comma or incomplete property name (e.g. ,"key":)
-  repaired = repaired.replace(/,\s*"[^"]*"\s*:\s*$/, '');
-  repaired = repaired.replace(/,\s*$/, '');
+  // Sort candidates descending (try longest viable truncation first)
+  truncationCandidates.sort((a, b) => b - a);
 
-  // Count open braces/brackets and close them
-  let openBraces = 0;
-  let openBrackets = 0;
-  inString = false;
-  for (let i = 0; i < repaired.length; i++) {
-    const ch = repaired[i];
-    if (ch === '\\' && inString) { i++; continue; }
-    if (ch === '"') inString = !inString;
-    if (!inString) {
-      if (ch === '{') openBraces++;
-      if (ch === '}') openBraces--;
-      if (ch === '[') openBrackets++;
-      if (ch === ']') openBrackets--;
+  for (const pos of truncationCandidates) {
+    let candidate = trimmed.slice(0, pos);
+    // Strip trailing comma
+    candidate = candidate.replace(/,\s*$/, '');
+
+    // Count unmatched open braces/brackets to close them
+    // Use a simple count — not string-aware, but we're testing parse anyway
+    let braces = 0, brackets = 0;
+    for (const ch of candidate) {
+      if (ch === '{') braces++;
+      else if (ch === '}') braces--;
+      else if (ch === '[') brackets++;
+      else if (ch === ']') brackets--;
+    }
+
+    let closed = candidate;
+    for (let i = 0; i < braces; i++) closed += '}';
+    for (let i = 0; i < brackets; i++) closed += ']';
+
+    try {
+      JSON.parse(closed);
+      return closed;
+    } catch {
+      // Try next candidate
     }
   }
 
-  // Close open structures (braces first, then brackets for [...{...}...])
-  for (let i = 0; i < openBraces; i++) repaired += '}';
-  for (let i = 0; i < openBrackets; i++) repaired += ']';
-
-  return repaired;
+  return null;
 }
 
 /**

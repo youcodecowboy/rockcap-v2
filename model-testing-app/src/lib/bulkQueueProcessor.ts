@@ -494,9 +494,12 @@ export class BulkQueueProcessor {
       if (this.batchInfo!.availableFolders && this.batchInfo!.availableFolders.length > 0) {
         metadata.availableFolders = this.batchInfo!.availableFolders;
       }
-      // Multi-project mode: pass available projects for AI project inference
-      if (this.batchInfo!.isMultiProject && this.batchInfo!.availableProjects && this.batchInfo!.availableProjects.length > 0) {
-        metadata.availableProjects = this.batchInfo!.availableProjects;
+      // Multi-project mode: pass flag and available projects for AI project inference
+      if (this.batchInfo!.isMultiProject) {
+        metadata.isMultiProject = true;
+        if (this.batchInfo!.availableProjects && this.batchInfo!.availableProjects.length > 0) {
+          metadata.availableProjects = this.batchInfo!.availableProjects;
+        }
       }
       // Pass folder hint for this item (single file, so index is always 0)
       if (item.folderHint) {
