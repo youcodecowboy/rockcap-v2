@@ -52,7 +52,7 @@ import { BulkQueueProcessor, createBulkQueueProcessor, BatchInfo } from '@/lib/b
 import BulkUploadHistory from './BulkUploadHistory';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 
-const MAX_FILES = 100;
+const MAX_FILES = 500;
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const BACKGROUND_THRESHOLD = 5; // Files > this threshold trigger background processing
 const ESTIMATED_SECONDS_PER_FILE = 20;
