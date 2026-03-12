@@ -157,6 +157,12 @@ export interface BulkQueueProcessorCallbacks {
     suggestedProjectName?: string;
     projectConfidence?: number;
     projectReasoning?: string;
+    emailMetadata?: {
+      from?: string;
+      to?: string;
+      subject?: string;
+      date?: string;
+    };
   }) => Promise<Id<"bulkUploadItems">>;
   
   updateBatchStatus: (args: {
@@ -559,6 +565,8 @@ export class BulkQueueProcessor {
       : undefined;
     const documentAnalysis = doc.documentAnalysis || undefined;
     const classificationReasoning = doc.classificationReasoning || undefined;
+    // Extract email provenance metadata (only present for .eml files)
+    const emailMetadata = doc.emailMetadata || undefined;
     // Extract project inference from V4 response (multi-project mode only)
     const projectInference = doc.projectInference || null;
     console.log(`[BulkQueueProcessor] V4 result: ${doc.fileType} (${(doc.confidence * 100).toFixed(0)}% confidence, mock=${v4Data.isMock})`);
@@ -619,6 +627,7 @@ export class BulkQueueProcessor {
       extractedIntelligence: extractedIntelligence,
       documentAnalysis: documentAnalysis,
       classificationReasoning: classificationReasoning,
+      emailMetadata: emailMetadata,
     };
 
     // Map project inference results (multi-project mode)

@@ -82,6 +82,7 @@ export async function POST(request: NextRequest) {
       uploaderInitials?: string;
       instructions?: string;
       // Multi-project mode
+      isMultiProject?: boolean;
       availableProjects?: Array<{ id: string; name: string; shortcode?: string; address?: string }>;
       folderHints?: Record<string, string>;
     } = {};
@@ -103,7 +104,10 @@ export async function POST(request: NextRequest) {
       clientContext.clientType = clientType;
     }
 
-    // Multi-project mode: merge available projects into client context
+    // Multi-project mode: merge flag and available projects into client context
+    if (metadata.isMultiProject) {
+      clientContext.isMultiProject = true;
+    }
     if (metadata.availableProjects && metadata.availableProjects.length > 0) {
       clientContext.availableProjects = metadata.availableProjects;
     }
@@ -121,6 +125,7 @@ export async function POST(request: NextRequest) {
     // Saves ~75% tokens (37K → ~9K for a typical PDF).
     // Full text is stored separately for intelligence extraction (Phase B).
     const fullTexts: Map<number, string> = new Map();
+    const emailMetadataMap: Map<number, { from?: string; to?: string; subject?: string; date?: string }> = new Map();
 
     for (let i = 0; i < files.length; i++) {
       const { file, extractedText } = files[i];
@@ -137,6 +142,22 @@ export async function POST(request: NextRequest) {
         } catch (err) {
           // Extraction failed (scanned PDF, etc.) — pipeline will use raw file as fallback
           console.warn(`[V4 API] Text extraction failed for "${file.name}":`, (err as Error).message);
+        }
+      }
+
+      // Extract email metadata for .eml files (provenance tracking)
+      const fileName = file.name;
+      const fileType = file.type;
+      if (fileName.endsWith('.eml') || fileType === 'message/rfc822') {
+        try {
+          const { extractEmailMetadata } = await import('@/lib/fileProcessor');
+          const raw = await file.text();
+          const emailMeta = extractEmailMetadata(raw);
+          if (emailMeta.from || emailMeta.subject) {
+            emailMetadataMap.set(i, emailMeta);
+          }
+        } catch {
+          // Ignore — metadata is optional provenance
         }
       }
     }
@@ -223,6 +244,9 @@ export async function POST(request: NextRequest) {
 
         // Extracted text content for re-analysis without re-uploading
         extractedText: fullTexts.get(doc.documentIndex) || null,
+
+        // Email provenance metadata (only present for .eml files)
+        emailMetadata: emailMetadataMap.get(doc.documentIndex) || null,
 
         // Backward compat
         originalFileName: doc.fileName,

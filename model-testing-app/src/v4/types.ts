@@ -315,6 +315,8 @@ export interface ClientContext {
     shortcode?: string;
     address?: string;
   }>;
+  /** Enables multi-project mode (folder hints detected or explicitly set) */
+  isMultiProject?: boolean;
 }
 
 // =============================================================================
