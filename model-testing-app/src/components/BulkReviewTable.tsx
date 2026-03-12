@@ -44,6 +44,17 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -690,6 +701,7 @@ export default function BulkReviewTable({
   const updateItemNote = useMutation(api.bulkUpload.updateItemNote);
   const updateItemStatus = useMutation(api.bulkUpload.updateItemStatus);
   const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
+  const deleteItems = useMutation(api.bulkUpload.deleteItems);
 
   const handleRetryItem = async (itemId: Id<"bulkUploadItems">, batchId: Id<"bulkUploadBatches">) => {
     try {
@@ -1037,6 +1049,39 @@ export default function BulkReviewTable({
                   />
                 </PopoverContent>
               </Popover>
+
+              {/* Bulk Delete */}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1 text-red-600 border-red-200 hover:bg-red-50">
+                    <Trash2 className="w-3 h-3" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete {selectedItems.size} items?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This removes them from this batch permanently. Files will be deleted from storage.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={async () => {
+                        const batchId = items[0]?.batchId;
+                        if (!batchId) return;
+                        await deleteItems({ batchId, itemIds: Array.from(selectedItems) as any });
+                        setSelectedItems(new Set());
+                        toast.success(`Deleted ${selectedItems.size} items`);
+                      }}
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </>
           )}
 
@@ -1117,8 +1162,11 @@ export default function BulkReviewTable({
         </div>
 
         {/* Table */}
-        <div className="border rounded-lg overflow-x-auto">
-          <Table className="w-full min-w-[800px]">
+        <div className="border rounded-lg overflow-x-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e0 transparent' }}>
+          <Table className={`w-full ${isMultiProject ? 'table-fixed' : ''}`}>
+            {isMultiProject && (
+              <colgroup><col className="w-8" /><col className="w-8" /><col style={{ width: '18%' }} /><col style={{ width: '12%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} />{clientId && checklistItems && checklistItems.length > 0 && <col style={{ width: '8%' }} />}<col className="w-10" /><col className="w-10" /><col className="w-14" /></colgroup>
+            )}
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8 px-2">
@@ -1128,16 +1176,18 @@ export default function BulkReviewTable({
                   />
                 </TableHead>
                 <TableHead className="w-8 px-1"></TableHead>
-                <TableHead className="min-w-[100px]">File</TableHead>
+                <TableHead className={isMultiProject ? "" : "min-w-[100px]"}>File</TableHead>
                 {isMultiProject && (
-                  <TableHead className="w-[120px]">Project</TableHead>
+                  <TableHead>Project</TableHead>
                 )}
-                <TableHead className="min-w-[140px] hidden xl:table-cell">Generated Name</TableHead>
-                <TableHead className="w-[100px]">Type</TableHead>
-                <TableHead className="w-[90px]">Category</TableHead>
-                <TableHead className="w-[90px] hidden lg:table-cell">Folder</TableHead>
+                {!isMultiProject && (
+                  <TableHead className="min-w-[140px] hidden xl:table-cell">Generated Name</TableHead>
+                )}
+                <TableHead className={isMultiProject ? "" : "w-[100px]"}>Type</TableHead>
+                <TableHead className={isMultiProject ? "" : "w-[90px]"}>Category</TableHead>
+                <TableHead className={isMultiProject ? "" : "w-[90px] hidden lg:table-cell"}>Folder</TableHead>
                 {clientId && checklistItems && checklistItems.length > 0 && (
-                  <TableHead className="w-[80px] hidden lg:table-cell">Checklist</TableHead>
+                  <TableHead className={isMultiProject ? "" : "w-[80px] hidden lg:table-cell"}>Checklist</TableHead>
                 )}
                 <TableHead className="w-10 text-center px-1">Ver</TableHead>
                 <TableHead className="w-10 text-center px-1 hidden lg:table-cell">Ext</TableHead>
@@ -1170,10 +1220,10 @@ export default function BulkReviewTable({
                       </Button>
                     </TableCell>
                     {/* Original File Name */}
-                    <TableCell className="py-2">
+                    <TableCell className="py-2 overflow-hidden">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <FileText className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="text-xs truncate max-w-[150px]" title={item.fileName}>
+                        <span className="text-xs truncate" title={item.fileName}>
                           {item.fileName}
                         </span>
                       </div>
@@ -1181,7 +1231,7 @@ export default function BulkReviewTable({
 
                     {/* Project Assignment (multi-project mode) */}
                     {isMultiProject && projects && (
-                      <TableCell className="py-2">
+                      <TableCell className="py-2 overflow-hidden">
                         <ProjectBadge
                           item={item}
                           projects={projects}
@@ -1191,8 +1241,8 @@ export default function BulkReviewTable({
                       </TableCell>
                     )}
 
-                    {/* Generated Document Name - Hidden on smaller screens */}
-                    <TableCell className="py-2 hidden xl:table-cell">
+                    {/* Generated Document Name - Hidden on smaller screens, hidden entirely in multi-project mode */}
+                    {!isMultiProject && <TableCell className="py-2 hidden xl:table-cell">
                       {item.generatedDocumentCode ? (
                         <span className="text-xs font-mono text-muted-foreground truncate block max-w-[180px]" title={item.generatedDocumentCode}>
                           {item.generatedDocumentCode}
@@ -1200,8 +1250,8 @@ export default function BulkReviewTable({
                       ) : (
                         <span className="text-xs text-muted-foreground italic">Pending...</span>
                       )}
-                    </TableCell>
-                    
+                    </TableCell>}
+
                     {/* Type */}
                     <TableCell className="py-2">
                       {item.status === 'ready_for_review' ? (
@@ -1256,7 +1306,7 @@ export default function BulkReviewTable({
                         <span className="text-xs truncate">{item.category || '-'}</span>
                       )}
                     </TableCell>
-                    <TableCell className="py-2 hidden lg:table-cell">
+                    <TableCell className={isMultiProject ? "py-2" : "py-2 hidden lg:table-cell"}>
                       {item.status === 'ready_for_review' ? (
                         <div className="flex items-center gap-1">
                           {item.targetFolder && !item.userEdits?.targetFolder && (
@@ -1287,7 +1337,7 @@ export default function BulkReviewTable({
                     </TableCell>
                     {/* Checklist Column */}
                     {clientId && checklistItems && checklistItems.length > 0 && (
-                      <TableCell className="py-2 hidden lg:table-cell">
+                      <TableCell className={isMultiProject ? "py-2" : "py-2 hidden lg:table-cell"}>
                         {item.status === 'ready_for_review' ? (
                           <Popover 
                             open={checklistPopoverOpen === item._id} 
@@ -2318,15 +2368,15 @@ function ProjectBadge({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <button className="text-left">
+        <button className="text-left max-w-full overflow-hidden">
           {displayProject && (
-            <Badge className={assignedProject ? "bg-green-100 text-green-800 cursor-pointer hover:bg-green-200" : "bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200"}>
+            <Badge className={`max-w-full truncate block ${assignedProject ? "bg-green-100 text-green-800 cursor-pointer hover:bg-green-200" : "bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200"}`} title={displayProject.name}>
               {displayProject.name}
               {!assignedProject && <span className="ml-1 text-xs opacity-60">?</span>}
             </Badge>
           )}
           {isNew && !displayProject && (
-            <Badge className="bg-amber-100 text-amber-800 cursor-pointer hover:bg-amber-200">
+            <Badge className="max-w-full truncate block bg-amber-100 text-amber-800 cursor-pointer hover:bg-amber-200" title={`New: ${item.suggestedProjectName}`}>
               New: {item.suggestedProjectName}
             </Badge>
           )}
