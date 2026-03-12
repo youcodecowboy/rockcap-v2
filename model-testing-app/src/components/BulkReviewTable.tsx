@@ -86,6 +86,7 @@ import {
   Link2,
   Unlink,
   Flag,
+  Mail,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { toast } from 'sonner';
@@ -233,6 +234,13 @@ interface BulkUploadItem {
   // Per-item project assignment
   itemProjectId?: Id<"projects">;
   isClientLevel?: boolean;
+  // Email provenance metadata (populated for .eml files)
+  emailMetadata?: {
+    from?: string;
+    to?: string;
+    subject?: string;
+    date?: string;
+  };
 }
 
 interface ChecklistItem {
@@ -1226,6 +1234,18 @@ export default function BulkReviewTable({
                         <span className="text-xs truncate" title={item.fileName}>
                           {item.fileName}
                         </span>
+                        {item.emailMetadata && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Mail className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {item.emailMetadata.from ? `Via email from ${item.emailMetadata.from}` : 'Received via email'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </div>
                     </TableCell>
 

@@ -501,9 +501,15 @@ export const updateItemAnalysis = mutation({
     suggestedProjectName: v.optional(v.string()),
     projectConfidence: v.optional(v.number()),
     projectReasoning: v.optional(v.string()),
+    emailMetadata: v.optional(v.object({
+      from: v.optional(v.string()),
+      to: v.optional(v.string()),
+      subject: v.optional(v.string()),
+      date: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args) => {
-    const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, textContent, suggestedProjectId, suggestedProjectName, projectConfidence, projectReasoning, ...updates } = args;
+    const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, textContent, suggestedProjectId, suggestedProjectName, projectConfidence, projectReasoning, emailMetadata, ...updates } = args;
 
     // If there are AI-suggested checklist items, pre-select ONLY the highest confidence one
     // Other suggestions are still shown but not auto-checked - user can manually select more
@@ -534,6 +540,8 @@ export const updateItemAnalysis = mutation({
       suggestedProjectName,
       projectConfidence,
       projectReasoning,
+      // Email provenance metadata
+      emailMetadata,
       // Auto-assign to existing project when AI suggests one — user can override in review
       ...(suggestedProjectId ? { itemProjectId: suggestedProjectId } : {}),
       status: "ready_for_review",

@@ -878,6 +878,12 @@ export default defineSchema({
     fileSize: v.number(),
     fileType: v.string(),
     fileStorageId: v.optional(v.id("_storage")),
+    emailMetadata: v.optional(v.object({
+      from: v.optional(v.string()),
+      to: v.optional(v.string()),
+      subject: v.optional(v.string()),
+      date: v.optional(v.string()),
+    })),
     // Processing status
     status: v.union(
       v.literal("pending"), // Not yet processed
