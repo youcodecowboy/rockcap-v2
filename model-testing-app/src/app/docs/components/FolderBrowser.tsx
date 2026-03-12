@@ -74,6 +74,53 @@ type AddFolderTarget =
   | { type: 'project'; projectId: Id<"projects">; projectName: string }
   | null;
 
+// Helper component for unfiled folder row (needs its own useQuery call)
+interface UnfiledFolderRowProps {
+  projectId: Id<"projects">;
+  selectedFolder: FolderSelection | null;
+  onFolderSelect: (folder: FolderSelection) => void;
+}
+
+function UnfiledFolderRow({ projectId, selectedFolder, onFolderSelect }: UnfiledFolderRowProps) {
+  const count = useQuery(api.documents.getUnfiledCountByProject, { projectId });
+
+  if (!count) return null;
+
+  const selected =
+    selectedFolder?.type === 'project' &&
+    selectedFolder?.folderId === 'unfiled' &&
+    selectedFolder?.projectId === projectId;
+
+  return (
+    <div
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
+        selected
+          ? "bg-blue-100 text-blue-900"
+          : "hover:bg-gray-100 text-gray-700"
+      )}
+    >
+      <button
+        onClick={() => onFolderSelect({
+          type: 'project',
+          folderId: 'unfiled',
+          folderName: 'Unfiled',
+          projectId,
+        })}
+        className="flex items-center gap-2 flex-1 min-w-0"
+      >
+        {selected ? (
+          <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
+        ) : (
+          <Folder className="w-4 h-4 text-orange-400 flex-shrink-0" />
+        )}
+        <span className="flex-1 text-left truncate italic">Unfiled</span>
+      </button>
+      <span className="text-xs text-gray-400 flex-shrink-0">({count})</span>
+    </div>
+  );
+}
+
 export default function FolderBrowser({
   clientId,
   clientName,
@@ -437,9 +484,15 @@ export default function FolderBrowser({
                               </div>
                             );
                           })}
+                          {/* Unfiled Folder Row */}
+                          <UnfiledFolderRow
+                            projectId={project._id}
+                            selectedFolder={selectedFolder}
+                            onFolderSelect={onFolderSelect}
+                          />
                           {/* Add Custom Folder Button */}
                           <button
-                            onClick={() => setAddFolderTarget({ 
+                            onClick={() => setAddFolderTarget({
                               type: 'project', 
                               projectId: project._id,
                               projectName: project.name 
