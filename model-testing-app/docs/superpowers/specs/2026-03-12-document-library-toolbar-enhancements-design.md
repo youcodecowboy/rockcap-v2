@@ -27,37 +27,37 @@ When documents are filed to a project but their category doesn't match any folde
 
 ### Solution
 
-Add a virtual "Unfiled" folder at the bottom of each project's folder list in `FolderBrowser.tsx`.
+Render the existing "Unfiled" project folder (already seeded as `folderType: "unfiled"` in `convex/folderStructure.ts` PROJECT_FOLDER_TYPES) in `FolderBrowser.tsx` when it has documents. The folder record already exists in the database for every project — the issue is purely that the sidebar doesn't render it.
+
+### Existing Infrastructure
+
+- `convex/folderStructure.ts` already defines an `"unfiled"` folder type in `PROJECT_FOLDER_TYPES`
+- Every project already gets an `unfiled` folder record in `projectFolders` table at creation time
+- `documents.getUnfiled()` and `documents.getUnfiledCount()` queries exist in `convex/documents.ts` but target the global Inbox (docs without a clientId) — these are **not** what we need here
 
 ### Behavior
 
-- **Visibility**: Appears only when a project has 1+ documents with no matching folder (`folderId` is null, empty, or doesn't match any existing project folder)
+- **Visibility**: Appears only when a project has 1+ documents assigned to the `unfiled` project folder (count > 0)
 - **Position**: Rendered at the bottom of the project's folder list, below all real folders and below "Add custom folder..."
 - **Styling**: Muted/dashed style to visually distinguish from real folders and signal "needs attention"
-- **Click action**: Sets folder selection to a special `__unfiled__` sentinel value, causing `FileList` to query unfiled documents for that project
-- **Disappears**: When all documents in the project are properly filed (unfiled count = 0)
+- **Click action**: Selects the real `unfiled` folder record, causing `FileList` to query documents in that folder via the existing `documents.getByFolder()` query
+- **Disappears**: When all documents are refiled out (count = 0)
 
-### Not a database record
+### Filing: Route unmatched documents to "Unfiled"
 
-The "Unfiled" folder is computed client-side. No new folder record is created. It's derived from the difference between documents belonging to a project and documents with a valid folder assignment.
+When documents are filed to a project but their category doesn't match any folder in the `CATEGORY_TO_FOLDER_MAP`, the filing logic should assign them to the project's `unfiled` folder rather than leaving `folderId` null. This ensures they're always navigable.
 
-### New Convex Queries
+### New Convex Query
 
 ```typescript
-// documents.getUnfiledByProject
-// Returns documents where projectId matches but folderId is null or doesn't match any project folder
-getUnfiledByProject({
-  projectId: v.id("projects"),
-  sortBy?: v.optional(v.string()),
-  sortOrder?: v.optional(v.string()),
-}) => Document[]
-
 // documents.getUnfiledCountByProject
-// Returns count for the folder badge
+// Returns count of documents in the "unfiled" project folder — used for conditional rendering
 getUnfiledCountByProject({
   projectId: v.id("projects"),
 }) => number
 ```
+
+Note: No new "get documents" query is needed — the existing `documents.getByFolder()` query handles fetching documents from any folder including `unfiled`.
 
 ---
 
@@ -174,12 +174,15 @@ AlertDialog:
 ```typescript
 bulkMove({
   documentIds: v.array(v.id("documents")),
+  targetScope: v.literal("client"), // Explicitly client-scope only for now
   targetClientId: v.id("clients"),
   targetProjectId: v.optional(v.id("projects")),
   targetFolderId: v.string(),
   targetFolderType: v.union(v.literal("client"), v.literal("project")),
 })
 ```
+
+Note: `targetScope` is always `"client"` in this version. The field exists for forward-compatibility with internal/personal scope moves in the future.
 
 **Behavior per document:**
 - Update `clientId`, `projectId`, `folderId`, `folderType`
@@ -198,20 +201,11 @@ bulkDelete({
 ```
 
 **Behavior per document:**
-- Delete the document record
-- Delete associated storage file (if any)
-- Remove from any version chains
+- Soft delete: set `isDeleted: true` and `deletedAt` timestamp (matches existing codebase pattern)
+- Documents with `isDeleted: true` are filtered out of all queries
+- Storage files are NOT deleted immediately (allows potential recovery)
+- Unlink from any version chains (set `parentDocumentId` to null on child versions)
 - All within a single Convex mutation (atomic)
-
-### `documents.getUnfiledByProject`
-
-```typescript
-getUnfiledByProject({
-  projectId: v.id("projects"),
-})
-```
-
-Returns documents where `projectId` matches and (`folderId` is null/undefined OR `folderId` doesn't match any folder in the project's folder list).
 
 ### `documents.getUnfiledCountByProject`
 
@@ -221,25 +215,25 @@ getUnfiledCountByProject({
 })
 ```
 
-Returns count of unfiled documents for badge display.
+Returns count of documents in the project's `unfiled` folder. Used by `FolderBrowser` to conditionally render the Unfiled folder row. Note: document fetching uses the existing `documents.getByFolder()` query — no new document listing query is needed.
 
 ---
 
 ## Files Affected
 
 ### New Files
-- None — all changes are additions to existing files
+- `src/app/docs/components/BulkMoveModal.tsx` — Move destination picker modal
 
 ### Modified Files
 
 | File | Change |
 |------|--------|
-| `convex/documents.ts` | Add `bulkMove`, `bulkDelete`, `getUnfiledByProject`, `getUnfiledCountByProject` |
+| `convex/documents.ts` | Add `bulkMove`, `bulkDelete`, `getUnfiledCountByProject` |
 | `src/app/docs/components/FolderBrowser.tsx` | Render virtual "Unfiled" folder per project |
 | `src/app/docs/components/FileList.tsx` | Add Move/Delete buttons to toolbar, select-all checkbox, wire bulk actions |
 | `src/app/docs/components/FileCard.tsx` | No changes expected (checkbox already works) |
-| `src/app/docs/page.tsx` | Handle `__unfiled__` folder selection, pass bulk action handlers |
-| New component: `src/app/docs/components/BulkMoveModal.tsx` | Move destination picker modal |
+| `src/app/docs/page.tsx` | Pass bulk action handlers down to FileList |
+| `convex/folderStructure.ts` | Ensure unmatched docs route to `unfiled` folder during filing |
 
 ---
 
