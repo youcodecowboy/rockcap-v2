@@ -248,3 +248,314 @@ git commit -m "feat: add bulkMove mutation for cross-client document moves"
 ```
 
 ---
+
+## Chunk 2: Unfiled Folder in Sidebar + Toolbar Bulk Actions
+
+### Task 4: Render "Unfiled" folder in FolderBrowser
+
+**Files:**
+- Modify: `src/app/docs/components/FolderBrowser.tsx`
+
+**Context:** The folder sidebar renders project folders at lines 388-439, followed by "Add custom folder..." at lines 441-451. We need to add an "Unfiled" row **between the regular folders and the "Add custom folder..." button**, only when the unfiled count > 0. The unfiled folder already exists in the `projectFolders` table but may be filtered out of the `project.folders` array. We query the count separately.
+
+**Existing rendering pattern (lines 388-439):**
+Each project folder is rendered with: Folder icon, name, document count, optional delete button. The folder is selected via `onFolderSelect({ type: 'project', folderId: folder.folderType, folderName: folder.name, projectId: project._id })`.
+
+- [ ] **Step 1: Add unfiled count query**
+
+In `FolderBrowser.tsx`, add after the existing queries (~line 94):
+
+```typescript
+// Import useQuery if not already imported (it is)
+// Add per-project unfiled count queries — we'll handle this in the rendering logic
+// since we need one per project, we'll use a small helper component
+```
+
+Actually, since we need per-project counts and `useQuery` can't be called in a loop, create a small inner component:
+
+```typescript
+// Add before the main component export, or inside the file as a helper:
+
+function UnfiledFolderRow({
+  projectId,
+  selectedFolder,
+  onFolderSelect,
+}: {
+  projectId: Id<"projects">;
+  selectedFolder: FolderSelection | null;
+  onFolderSelect: (folder: FolderSelection) => void;
+}) {
+  const unfiledCount = useQuery(api.documents.getUnfiledCountByProject, { projectId });
+
+  if (!unfiledCount || unfiledCount === 0) return null;
+
+  const selected = selectedFolder?.type === 'project' &&
+    selectedFolder?.folderId === 'unfiled' &&
+    selectedFolder?.projectId === projectId;
+
+  return (
+    <div className="group">
+      <div
+        className={cn(
+          "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
+          selected
+            ? "bg-blue-100 text-blue-900"
+            : "hover:bg-gray-100 text-gray-500"
+        )}
+      >
+        <button
+          onClick={() => onFolderSelect({
+            type: 'project',
+            folderId: 'unfiled',
+            folderName: 'Unfiled',
+            projectId,
+          })}
+          className="flex items-center gap-2 flex-1 min-w-0"
+        >
+          {selected ? (
+            <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
+          ) : (
+            <Folder className="w-4 h-4 text-orange-400 flex-shrink-0 opacity-60" />
+          )}
+          <span className="flex-1 text-left truncate italic">Unfiled</span>
+        </button>
+        <span className="text-xs text-orange-400 flex-shrink-0">({unfiledCount})</span>
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Insert the component in the project folder section**
+
+In the project folders rendering block, add `<UnfiledFolderRow>` after the folder map loop (after line 439) and before the "Add custom folder..." button (line 441):
+
+```tsx
+{/* After project.folders.map(...) closing */}
+
+{/* Unfiled folder — only renders when count > 0 */}
+<UnfiledFolderRow
+  projectId={project._id}
+  selectedFolder={selectedFolder}
+  onFolderSelect={onFolderSelect}
+/>
+
+{/* Add Custom Folder Button (existing) */}
+<button
+  onClick={() => setAddFolderTarget({...})}
+  ...
+```
+
+- [ ] **Step 3: Verify the Folder/FolderOpen icons are already imported**
+
+Check imports at top of FolderBrowser.tsx — `Folder` and `FolderOpen` should already be imported from lucide-react. The `cn` utility should also already be imported. The `Id` type from convex should be imported. Add any missing imports.
+
+- [ ] **Step 4: Test manually**
+
+Navigate to a client with a project that has documents with `folderId: "unfiled"` or `folderId: null`. Verify:
+- The "Unfiled" folder appears at the bottom of the project's folder list
+- Clicking it shows those documents
+- It doesn't appear for projects with 0 unfiled docs
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/app/docs/components/FolderBrowser.tsx
+git commit -m "feat: render Unfiled folder in project sidebar when docs exist"
+```
+
+---
+
+### Task 5: Add bulk action buttons to FileList toolbar
+
+**Files:**
+- Modify: `src/app/docs/components/FileList.tsx`
+
+**Context:** The toolbar is at lines 451-516 of FileList.tsx. It has a left side (folder icon, title, file count) and a right side (sort dropdown, view toggle, upload button). We add Move and Delete buttons to the right side, before the sort dropdown. They're always visible but disabled when `selectedDocIds.size === 0`.
+
+- [ ] **Step 1: Add imports**
+
+Add to the existing lucide-react imports in FileList.tsx:
+
+```typescript
+import { FolderInput, Trash2 } from 'lucide-react';
+```
+
+Also add AlertDialog imports:
+
+```typescript
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+```
+
+Add toast import:
+
+```typescript
+import { toast } from 'sonner';
+```
+
+- [ ] **Step 2: Add state and mutation**
+
+After the existing state declarations (~line 96), add:
+
+```typescript
+const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+const [showBulkMoveModal, setShowBulkMoveModal] = useState(false);
+const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+const bulkDeleteMutation = useMutation(api.documents.bulkDelete);
+```
+
+- [ ] **Step 3: Add delete handler**
+
+After the toggleSelection function (~line 266), add:
+
+```typescript
+const handleBulkDelete = async () => {
+  if (selectedDocIds.size === 0) return;
+  setIsBulkDeleting(true);
+  try {
+    const result = await bulkDeleteMutation({
+      documentIds: Array.from(selectedDocIds) as Id<"documents">[],
+    });
+    toast.success(`Deleted ${result.deletedCount} document${result.deletedCount !== 1 ? 's' : ''}`);
+    setSelectedDocIds(new Set());
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Failed to delete documents');
+  } finally {
+    setIsBulkDeleting(false);
+    setShowDeleteConfirm(false);
+  }
+};
+```
+
+- [ ] **Step 4: Add select-all handler**
+
+After the handleBulkDelete function, add:
+
+```typescript
+const handleSelectAll = useCallback(() => {
+  if (selectedDocIds.size === sortedDocuments.length) {
+    setSelectedDocIds(new Set());
+  } else {
+    setSelectedDocIds(new Set(sortedDocuments.map(d => d._id)));
+  }
+}, [selectedDocIds.size, sortedDocuments]);
+```
+
+- [ ] **Step 5: Update the toolbar — add bulk action buttons**
+
+In the toolbar div (right side, ~line 461), add before the Sort dropdown:
+
+```tsx
+<div className="flex items-center gap-2 flex-shrink-0">
+  {/* Bulk Actions */}
+  {selectedDocIds.size > 0 && (
+    <Badge variant="secondary" className="text-xs">
+      {selectedDocIds.size} selected
+    </Badge>
+  )}
+  <Button
+    size="sm"
+    variant="outline"
+    className="gap-1.5 h-8"
+    disabled={selectedDocIds.size === 0}
+    onClick={() => setShowBulkMoveModal(true)}
+  >
+    <FolderInput className="w-3.5 h-3.5" />
+    <span className="hidden sm:inline">Move</span>
+  </Button>
+  <Button
+    size="sm"
+    variant="outline"
+    className="gap-1.5 h-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+    disabled={selectedDocIds.size === 0}
+    onClick={() => setShowDeleteConfirm(true)}
+  >
+    <Trash2 className="w-3.5 h-3.5" />
+    <span className="hidden sm:inline">Delete</span>
+  </Button>
+
+  {/* Sort (existing) */}
+  <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+    ...existing sort code...
+  </Select>
+  ...rest of existing toolbar...
+```
+
+Make sure Badge is imported from `@/components/ui/badge`.
+
+- [ ] **Step 6: Add select-all checkbox to list header**
+
+Update the `renderListHeader` function (line 385). Replace the first empty `<div className="w-5 flex-shrink-0" />` with:
+
+```tsx
+<div className="w-5 flex-shrink-0 flex items-center justify-center">
+  <Checkbox
+    checked={sortedDocuments.length > 0 && selectedDocIds.size === sortedDocuments.length}
+    onCheckedChange={handleSelectAll}
+    className="h-3 w-3"
+  />
+</div>
+```
+
+Import Checkbox if not already imported:
+
+```typescript
+import { Checkbox } from '@/components/ui/checkbox';
+```
+
+- [ ] **Step 7: Add delete confirmation AlertDialog**
+
+At the bottom of the component's return, before the closing `</div>`, add:
+
+```tsx
+{/* Bulk Delete Confirmation */}
+<AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Delete {selectedDocIds.size} document{selectedDocIds.size !== 1 ? 's' : ''}?</AlertDialogTitle>
+      <AlertDialogDescription>
+        This will permanently delete the selected documents. This action cannot be undone.
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+      <AlertDialogAction
+        onClick={handleBulkDelete}
+        disabled={isBulkDeleting}
+        className="bg-red-600 hover:bg-red-700"
+      >
+        {isBulkDeleting ? 'Deleting...' : 'Delete'}
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+```
+
+- [ ] **Step 8: Clear selection on folder change**
+
+Add a `useEffect` to clear selection when the folder changes:
+
+```typescript
+useEffect(() => {
+  setSelectedDocIds(new Set());
+}, [selectedFolder?.folderId, selectedFolder?.projectId]);
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/app/docs/components/FileList.tsx
+git commit -m "feat: add Move/Delete bulk action buttons and select-all to FileList toolbar"
+```
+
+---
