@@ -461,6 +461,46 @@ function repairTruncatedJson(text: string): string | null {
 }
 
 /**
+ * Aggressive fallback: extract complete top-level objects from a truncated JSON array.
+ * Walks the string tracking brace depth to find each complete {...} at depth 1.
+ * Returns null if nothing can be extracted.
+ */
+function extractCompleteObjects(text: string): any[] | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('[')) return null;
+
+  const objects: any[] = [];
+  let depth = 0;
+  let inString = false;
+  let objectStart = -1;
+
+  for (let i = 1; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (ch === '\\' && inString) { i++; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (ch === '{') {
+      if (depth === 0) objectStart = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && objectStart !== -1) {
+        const objectStr = trimmed.slice(objectStart, i + 1);
+        try {
+          objects.push(JSON.parse(objectStr));
+        } catch {
+          // Skip malformed object
+        }
+        objectStart = -1;
+      }
+    }
+  }
+
+  return objects.length > 0 ? objects : null;
+}
+
+/**
  * Parse Claude's JSON response into DocumentClassification[].
  * Handles common issues: markdown code blocks, trailing commas, etc.
  * Validates and defaults all required fields to prevent undefined propagation.
@@ -497,7 +537,7 @@ function parseClassificationResponse(text: string): DocumentClassification[] {
         // Fall through to truncation repair
       }
     }
-    // Truncation repair: if response was cut off mid-JSON, try to close open braces/brackets
+    // Truncation repair: try structured repair first, then aggressive fallback
     if (!raw!) {
       const repaired = repairTruncatedJson(cleaned);
       if (repaired) {
@@ -505,9 +545,17 @@ function parseClassificationResponse(text: string): DocumentClassification[] {
           const parsed = JSON.parse(repaired);
           raw = Array.isArray(parsed) ? parsed : [parsed];
           console.warn(`[ANTHROPIC] Repaired truncated JSON response (original length: ${cleaned.length})`);
-        } catch {
-          // Fall through to error
+        } catch (repairErr) {
+          console.warn(`[ANTHROPIC] Structured repair failed: ${(repairErr as Error).message}. Trying aggressive fallback.`);
         }
+      }
+    }
+    // Aggressive fallback: find the last complete top-level object in the array
+    if (!raw!) {
+      const fallback = extractCompleteObjects(cleaned);
+      if (fallback && fallback.length > 0) {
+        raw = fallback;
+        console.warn(`[ANTHROPIC] Aggressive fallback recovered ${fallback.length} complete document(s) from truncated response`);
       }
     }
     if (!raw!) {
