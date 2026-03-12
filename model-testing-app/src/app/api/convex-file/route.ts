@@ -27,10 +27,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Get the file URL from Convex storage using documents.getFileUrl
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fileUrl = await (client.query as any)(api.documents.getFileUrl, {
+    const fileUrl = await client.query(api.documents.getFileUrl, {
       storageId: storageId as Id<"_storage">
-    }) as string | null;
+    });
 
     if (!fileUrl) {
       return ErrorResponses.notFound('File not found in storage');
