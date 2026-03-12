@@ -1754,6 +1754,149 @@ export const getProjectFolderCounts = query({
   },
 });
 
+// Query: Get count of unfiled documents by project
+export const getUnfiledCountByProject = query({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("isDeleted"), false),
+          q.or(
+            q.eq(q.field("folderId"), "unfiled"),
+            q.eq(q.field("folderId"), undefined),
+            q.eq(q.field("folderId"), null)
+          )
+        )
+      )
+      .collect();
+    return docs.length;
+  },
+});
+
+// Mutation: Bulk soft-delete documents
+export const bulkDelete = mutation({
+  args: {
+    documentIds: v.array(v.id("documents")),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const now = new Date().toISOString();
+    let deletedCount = 0;
+
+    for (const docId of args.documentIds) {
+      const doc = await ctx.db.get(docId);
+      if (!doc || doc.isDeleted) continue;
+
+      await ctx.db.patch(docId, {
+        isDeleted: true,
+        deletedAt: now,
+        deletedReason: "bulk_delete",
+      });
+
+      const children = await ctx.db
+        .query("documents")
+        .filter((q) => q.eq(q.field("parentDocumentId"), docId))
+        .collect();
+      for (const child of children) {
+        await ctx.db.patch(child._id, { parentDocumentId: undefined });
+      }
+
+      deletedCount++;
+    }
+
+    return { deletedCount };
+  },
+});
+
+// Mutation: Bulk move documents to a new client/project/folder
+export const bulkMove = mutation({
+  args: {
+    documentIds: v.array(v.id("documents")),
+    targetScope: v.literal("client"),
+    targetClientId: v.id("clients"),
+    targetProjectId: v.optional(v.id("projects")),
+    targetFolderId: v.string(),
+    targetFolderType: v.union(v.literal("client"), v.literal("project")),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const targetClient = await ctx.db.get(args.targetClientId);
+    if (!targetClient) throw new Error("Target client not found");
+
+    let targetProject: any = null;
+    if (args.targetProjectId) {
+      targetProject = await ctx.db.get(args.targetProjectId);
+      if (!targetProject) throw new Error("Target project not found");
+    }
+
+    let movedCount = 0;
+
+    for (const docId of args.documentIds) {
+      const doc = await ctx.db.get(docId);
+      if (!doc || doc.isDeleted) continue;
+
+      const newCode = generateDocumentCode(
+        targetClient.name,
+        doc.category || "Other",
+        targetProject?.name,
+        doc.uploadedAt || new Date().toISOString(),
+      );
+
+      const updates: Record<string, any> = {
+        clientId: args.targetClientId,
+        folderId: args.targetFolderId,
+        folderType: args.targetFolderType,
+        scope: "client",
+        documentCode: newCode,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (args.targetProjectId) {
+        updates.projectId = args.targetProjectId;
+      } else {
+        updates.projectId = undefined;
+      }
+
+      if (doc.clientId !== args.targetClientId) {
+        updates.isBaseDocument = false;
+      }
+
+      await ctx.db.patch(docId, updates);
+
+      const flags = await ctx.db
+        .query("flags")
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("entityId"), docId),
+            q.neq(q.field("status"), "resolved")
+          )
+        )
+        .collect();
+      for (const flag of flags) {
+        await ctx.db.insert("flagThreadEntries", {
+          flagId: flag._id,
+          entryType: "activity",
+          content: `Moved to ${targetClient.name}${targetProject ? ` / ${targetProject.name}` : ""} / ${args.targetFolderId}`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      movedCount++;
+    }
+
+    return { movedCount };
+  },
+});
+
 // =============================================================================
 // SAVE DOCUMENT INTELLIGENCE
 // =============================================================================
