@@ -1053,13 +1053,16 @@ export const applyVersionLabels = mutation({
     if (!baseEntry) throw new Error("No base version specified");
 
     for (const entry of args.versions) {
-      await ctx.db.patch(entry.itemId, {
+      const patch: Record<string, any> = {
         version: entry.version,
         isDuplicate: !entry.isBase,
-        versionType: entry.isBase ? undefined : "significant",
-        duplicateOfItemId: entry.isBase ? undefined : baseEntry.itemId,
         updatedAt: new Date().toISOString(),
-      });
+      };
+      if (!entry.isBase) {
+        patch.versionType = "significant";
+        patch.duplicateOfItemId = baseEntry.itemId;
+      }
+      await ctx.db.patch(entry.itemId, patch);
     }
 
     return { updated: args.versions.length };
