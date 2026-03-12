@@ -364,6 +364,11 @@ export async function callAnthropicBatch(
 
   const latencyMs = Date.now() - startTime;
 
+  // Detect max_tokens truncation
+  if (response.stop_reason === 'max_tokens') {
+    console.warn(`[ANTHROPIC] Response truncated by max_tokens (${config.maxTokens}). Output may be incomplete — repair will be attempted.`);
+  }
+
   // Extract text response
   const textContent = response.content
     .filter((block: any) => block.type === 'text')
@@ -407,20 +412,18 @@ function repairTruncatedJson(text: string): string | null {
   const trimmed = text.trim();
   if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return null;
 
-  // Truncate at the last complete property value boundary we can find
-  // Look for the last complete key-value pair or array element
   let repaired = trimmed;
 
-  // If we're inside a string value, close it
-  // Count unescaped quotes to detect if we're mid-string
+  // Walk the string tracking position and find the last point where a
+  // complete key-value pair or array element ends (after }, ], or ,)
+  // Exclude ":" — that's after a key name, before the value, not a clean break.
   let inString = false;
   let lastCleanBreak = 0;
   for (let i = 0; i < repaired.length; i++) {
     const ch = repaired[i];
-    if (ch === '\\' && inString) { i++; continue; } // skip escaped char
+    if (ch === '\\' && inString) { i++; continue; }
     if (ch === '"') inString = !inString;
-    // Track positions after complete values (after closing quote, number, true/false/null, }, ])
-    if (!inString && (ch === ',' || ch === '}' || ch === ']' || ch === ':')) {
+    if (!inString && (ch === ',' || ch === '}' || ch === ']')) {
       lastCleanBreak = i + 1;
     }
   }
@@ -430,7 +433,8 @@ function repairTruncatedJson(text: string): string | null {
     repaired = repaired.slice(0, lastCleanBreak);
   }
 
-  // Remove any trailing comma
+  // Remove trailing comma or incomplete property name (e.g. ,"key":)
+  repaired = repaired.replace(/,\s*"[^"]*"\s*:\s*$/, '');
   repaired = repaired.replace(/,\s*$/, '');
 
   // Count open braces/brackets and close them
@@ -449,7 +453,7 @@ function repairTruncatedJson(text: string): string | null {
     }
   }
 
-  // Close open structures
+  // Close open structures (braces first, then brackets for [...{...}...])
   for (let i = 0; i < openBraces; i++) repaired += '}';
   for (let i = 0; i < openBrackets; i++) repaired += ']';
 
