@@ -559,3 +559,427 @@ git commit -m "feat: add Move/Delete bulk action buttons and select-all to FileL
 ```
 
 ---
+
+## Chunk 3: BulkMoveModal + Wiring + Build Verification
+
+### Task 6: Create BulkMoveModal component
+
+**Files:**
+- Create: `src/app/docs/components/BulkMoveModal.tsx`
+
+**Context:** This modal follows the same pattern as `src/components/MoveDocumentCrossScopeModal.tsx` (lines 1-140) but operates on multiple documents and is client-scope only. It uses the same Convex queries for client/project/folder lists and calls the new `bulkMove` mutation.
+
+**Existing modal queries to reuse (from MoveDocumentCrossScopeModal):**
+- `api.clients.list` — all clients
+- `api.projects.getByClient` — projects for selected client
+- `api.clients.getClientFolders` — client-level folders
+- `api.projects.getProjectFolders` — project-level folders
+
+- [ ] **Step 1: Create the component file**
+
+Create `src/app/docs/components/BulkMoveModal.tsx`:
+
+```tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
+import { Id } from '../../../../convex/_generated/dataModel';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { Loader2, FolderInput, Building2, FolderKanban } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface BulkMoveModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  documentIds: string[];
+  currentClientId?: Id<"clients">;
+  currentProjectId?: Id<"projects">;
+  onMoveComplete?: () => void;
+}
+
+export default function BulkMoveModal({
+  isOpen,
+  onClose,
+  documentIds,
+  currentClientId,
+  currentProjectId,
+  onMoveComplete,
+}: BulkMoveModalProps) {
+  const [selectedClientId, setSelectedClientId] = useState<Id<"clients"> | null>(
+    currentClientId || null
+  );
+  const [destinationType, setDestinationType] = useState<'client' | 'project'>('project');
+  const [selectedProjectId, setSelectedProjectId] = useState<Id<"projects"> | null>(
+    currentProjectId || null
+  );
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
+
+  // Reset downstream selections when parent changes
+  useEffect(() => {
+    setSelectedProjectId(null);
+    setSelectedFolderId(null);
+  }, [selectedClientId]);
+
+  useEffect(() => {
+    setSelectedFolderId(null);
+  }, [destinationType, selectedProjectId]);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedClientId(currentClientId || null);
+      setDestinationType('project');
+      setSelectedProjectId(currentProjectId || null);
+      setSelectedFolderId(null);
+    }
+  }, [isOpen, currentClientId, currentProjectId]);
+
+  // Queries
+  const clients = useQuery(api.clients.list, {}) || [];
+  const projects = useQuery(
+    api.projects.getByClient,
+    selectedClientId ? { clientId: selectedClientId } : 'skip'
+  ) || [];
+  const clientFolders = useQuery(
+    api.clients.getClientFolders,
+    selectedClientId && destinationType === 'client'
+      ? { clientId: selectedClientId }
+      : 'skip'
+  ) || [];
+  const projectFolders = useQuery(
+    api.projects.getProjectFolders,
+    selectedProjectId && destinationType === 'project'
+      ? { projectId: selectedProjectId }
+      : 'skip'
+  ) || [];
+
+  const bulkMove = useMutation(api.documents.bulkMove);
+
+  const canMove = selectedClientId && selectedFolderId && (
+    destinationType === 'client' || (destinationType === 'project' && selectedProjectId)
+  );
+
+  const handleMove = async () => {
+    if (!canMove || !selectedClientId || !selectedFolderId) return;
+
+    setIsMoving(true);
+    try {
+      const result = await bulkMove({
+        documentIds: documentIds as Id<"documents">[],
+        targetScope: 'client',
+        targetClientId: selectedClientId,
+        targetProjectId: destinationType === 'project' ? selectedProjectId! : undefined,
+        targetFolderId: selectedFolderId,
+        targetFolderType: destinationType,
+      });
+
+      // Build destination label for toast
+      const client = clients.find(c => c._id === selectedClientId);
+      const project = projects.find(p => p._id === selectedProjectId);
+      const folderName = destinationType === 'project'
+        ? projectFolders.find((f: any) => f.folderType === selectedFolderId)?.name
+        : clientFolders.find((f: any) => f.folderType === selectedFolderId)?.name;
+
+      const destination = [
+        client?.name,
+        project?.name,
+        folderName || selectedFolderId,
+      ].filter(Boolean).join(' / ');
+
+      toast.success(`Moved ${result.movedCount} document${result.movedCount !== 1 ? 's' : ''} to ${destination}`);
+      onMoveComplete?.();
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to move documents');
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FolderInput className="w-5 h-5" />
+            Move {documentIds.length} document{documentIds.length !== 1 ? 's' : ''}
+          </DialogTitle>
+          <DialogDescription>
+            Choose a destination client, project, and folder.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Client Selector */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Client</Label>
+            <Select
+              value={selectedClientId || ''}
+              onValueChange={(v) => setSelectedClientId(v as Id<"clients">)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select client..." />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((client: any) => (
+                  <SelectItem key={client._id} value={client._id}>
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                      {client.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Destination Type */}
+          {selectedClientId && (
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Move to</Label>
+              <RadioGroup
+                value={destinationType}
+                onValueChange={(v) => setDestinationType(v as 'client' | 'project')}
+                className="flex gap-4"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="project" id="dest-project" />
+                  <Label htmlFor="dest-project" className="text-sm cursor-pointer">Project Folder</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="client" id="dest-client" />
+                  <Label htmlFor="dest-client" className="text-sm cursor-pointer">Client Folder</Label>
+                </div>
+              </RadioGroup>
+            </div>
+          )}
+
+          {/* Project Selector (only for project destination) */}
+          {selectedClientId && destinationType === 'project' && (
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Project</Label>
+              <Select
+                value={selectedProjectId || ''}
+                onValueChange={(v) => setSelectedProjectId(v as Id<"projects">)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project: any) => (
+                    <SelectItem key={project._id} value={project._id}>
+                      <div className="flex items-center gap-2">
+                        <FolderKanban className="w-3.5 h-3.5 text-gray-400" />
+                        {project.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Folder Selector */}
+          {selectedClientId && (
+            destinationType === 'client' ? (
+              clientFolders.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Folder</Label>
+                  <div className="border rounded-md max-h-48 overflow-y-auto">
+                    {clientFolders.map((folder: any) => (
+                      <button
+                        key={folder._id}
+                        onClick={() => setSelectedFolderId(folder.folderType)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                          selectedFolderId === folder.folderType
+                            ? 'bg-blue-50 text-blue-900'
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <FolderKanban className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        {folder.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            ) : (
+              selectedProjectId && projectFolders.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Folder</Label>
+                  <div className="border rounded-md max-h-48 overflow-y-auto">
+                    {projectFolders.map((folder: any) => (
+                      <button
+                        key={folder._id}
+                        onClick={() => setSelectedFolderId(folder.folderType)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                          selectedFolderId === folder.folderType
+                            ? 'bg-blue-50 text-blue-900'
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <FolderKanban className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        {folder.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            )
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isMoving}>
+            Cancel
+          </Button>
+          <Button onClick={handleMove} disabled={!canMove || isMoving}>
+            {isMoving ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Moving...
+              </>
+            ) : (
+              <>
+                <FolderInput className="w-4 h-4 mr-2" />
+                Move
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/app/docs/components/BulkMoveModal.tsx
+git commit -m "feat: create BulkMoveModal component for bulk document moves"
+```
+
+---
+
+### Task 7: Wire BulkMoveModal into FileList
+
+**Files:**
+- Modify: `src/app/docs/components/FileList.tsx`
+
+**Context:** In Task 5, we added a `showBulkMoveModal` state and the Move button that sets it. Now we import and render the BulkMoveModal component.
+
+- [ ] **Step 1: Import BulkMoveModal**
+
+Add at the top of FileList.tsx:
+
+```typescript
+import BulkMoveModal from './BulkMoveModal';
+```
+
+- [ ] **Step 2: Render the modal**
+
+At the bottom of the component's return (alongside the AlertDialog added in Task 5), add:
+
+```tsx
+{/* Bulk Move Modal */}
+<BulkMoveModal
+  isOpen={showBulkMoveModal}
+  onClose={() => setShowBulkMoveModal(false)}
+  documentIds={Array.from(selectedDocIds)}
+  currentClientId={clientId || undefined}
+  currentProjectId={selectedFolder?.projectId}
+  onMoveComplete={() => setSelectedDocIds(new Set())}
+/>
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/app/docs/components/FileList.tsx
+git commit -m "feat: wire BulkMoveModal into FileList toolbar"
+```
+
+---
+
+### Task 8: Route unmatched documents to "unfiled" folder during filing
+
+**Files:**
+- Modify: `convex/folderStructure.ts` (~line 101, `mapCategoryToFolder` query)
+
+**Context:** The `mapCategoryToFolder` query (line 101) returns a folder mapping for a given category. When no mapping is found, it currently returns `null` (line 153). The filing code then leaves `folderId` unset, making the document invisible. Instead, when filing to a project and no folder matches, default to `"unfiled"`.
+
+- [ ] **Step 1: Update mapCategoryToFolder to fall back to "unfiled"**
+
+In the `mapCategoryToFolder` query handler, find the return statement where no mapping is found (approximately line 150-153) and update:
+
+```typescript
+// Before (returns null when no mapping found):
+// return null;
+
+// After: when filing at project level and no category match, default to unfiled
+if (args.level === 'project') {
+  return { folderType: 'unfiled', level: 'project' };
+}
+return null;
+```
+
+This ensures documents filed to a project always land in a navigable folder.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add convex/folderStructure.ts
+git commit -m "feat: route unmatched project documents to unfiled folder"
+```
+
+---
+
+### Task 9: Build verification and final push
+
+**Files:** None (verification only)
+
+- [ ] **Step 1: Run the build**
+
+Run: `npx next build`
+Expected: Build completes successfully with no errors.
+
+If there are TypeScript errors, fix them. Common issues to check:
+- Missing imports (Badge, Checkbox, Id types)
+- Convex API types not generated (run `npx convex codegen`)
+- RadioGroup/RadioGroupItem not available (install: `npx shadcn-ui@latest add radio-group`)
+
+- [ ] **Step 2: Commit any build fixes**
+
+```bash
+git add -A
+git commit -m "fix: resolve build errors from toolbar enhancements"
+```
+
+- [ ] **Step 3: Push to GitHub**
+
+```bash
+git push
+```
+
+---
