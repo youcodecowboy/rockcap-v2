@@ -77,7 +77,7 @@ const FILENAME_PATTERNS: Array<{
   { pattern: /receipt/i, fileType: 'Receipt', category: 'Financial Documents', tags: ['financial'] },
 
   // Communications
-  { pattern: /email|correspondence|letter/i, fileType: 'Email/Correspondence', category: 'Communications', tags: ['communications'] },
+  { pattern: /correspondence|letter/i, fileType: 'Email/Correspondence', category: 'Communications', tags: ['communications'] },
   { pattern: /meeting.?minutes/i, fileType: 'Meeting Minutes', category: 'Communications', tags: ['communications'] },
 ];
 

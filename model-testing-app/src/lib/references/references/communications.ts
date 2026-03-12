@@ -105,8 +105,8 @@ export const COMMUNICATION_REFERENCES: DocumentReference[] = [
       {
         condition: 'Document contains email headers (From/To/Subject/Date)',
         signals: ['email-headers', 'from-to-subject'],
-        priority: 9,
-        action: 'require',
+        priority: 3,
+        action: 'boost',
       },
       {
         condition: 'Document is formatted as a formal letter on headed paper',
@@ -123,8 +123,8 @@ export const COMMUNICATION_REFERENCES: DocumentReference[] = [
       {
         condition: 'File extension is .eml or .msg indicating native email format',
         signals: ['eml-extension', 'msg-extension'],
-        priority: 10,
-        action: 'require',
+        priority: 3,
+        action: 'boost',
       },
     ],
 

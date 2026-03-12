@@ -95,7 +95,7 @@ export function buildSystemPrompt(
   // so it belongs in the cached stableBlock alongside skill instructions.
   // This ensures the combined block reliably exceeds Haiku 4.5's 2048-token cache minimum.
   return {
-    stableBlock: `${skillInstructions}\n\n## Available Folders\n${folderList || '(none)'}`,
+    stableBlock: `${skillInstructions}\n\n## Available Folders\n${folderList || '(none)'}\n\n## Email File Handling\nFor .eml or .msg files, classify based on the document content within the email body, not the email container format. The email format is a delivery mechanism, not a document type. A valuation report forwarded by email is still a valuation report.`,
     dynamicBlock: referenceText || 'No reference documents loaded. Classify based on your knowledge.',
   };
 }
@@ -124,14 +124,22 @@ export function buildBatchUserMessage(
   }
 
   // Available projects for multi-project inference
-  const includeProjectInference = clientContext.availableProjects && clientContext.availableProjects.length > 0 && !clientContext.projectId;
+  // Activate when: (a) existing projects are available, OR (b) multi-project mode (folder hints detected)
+  const hasExistingProjects = clientContext.availableProjects && clientContext.availableProjects.length > 0;
+  const includeProjectInference = (hasExistingProjects || clientContext.isMultiProject) && !clientContext.projectId;
 
   if (includeProjectInference) {
-    contextText += `\n## Available Projects for This Client\n`;
-    contextText += clientContext.availableProjects!.map(p =>
-      `- [${p.id}] "${p.name}"${p.shortcode ? ` (${p.shortcode})` : ''}${p.address ? ` — ${p.address}` : ''}`
-    ).join('\n');
-    contextText += `\n\nFor each document, determine which project it belongs to. If no existing project matches, suggest a new project name. If the document is a client-level document (not project-specific), indicate that.\n`;
+    if (hasExistingProjects) {
+      contextText += `\n## Available Projects for This Client\n`;
+      contextText += clientContext.availableProjects!.map(p =>
+        `- [${p.id}] "${p.name}"${p.shortcode ? ` (${p.shortcode})` : ''}${p.address ? ` — ${p.address}` : ''}`
+      ).join('\n');
+      contextText += `\n\nFor each document, determine which project it belongs to. If no existing project matches, suggest a new project name. If the document is a client-level document (not project-specific), indicate that.\n`;
+    } else {
+      contextText += `\n## Multi-Project Upload\n`;
+      contextText += `This is a multi-project upload. Documents have folder path hints indicating which project they belong to.\n`;
+      contextText += `For each document, use the folder path hint to determine a project name. If the document is a client-level document (not project-specific), leave projectInference null.\n`;
+    }
   }
 
   // User-provided instructions (uploader guidance)
@@ -323,7 +331,10 @@ export async function callAnthropicBatch(
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
-  const response = await client.messages.create({
+  // Use streaming to avoid Anthropic's non-streaming timeout rejection
+  // (API rejects non-streaming requests when max_tokens is high enough that
+  // responses could exceed 10 minutes). Stream collects the full response.
+  const stream = client.messages.stream({
     model: config.primaryModel,
     max_tokens: config.maxTokens,
     temperature: config.temperature,
@@ -348,7 +359,8 @@ export async function callAnthropicBatch(
         content: userBlocks as any,
       },
     ],
-  });
+  } as any);
+  const response = await stream.finalMessage();
 
   const latencyMs = Date.now() - startTime;
 
@@ -387,6 +399,64 @@ export async function callAnthropicBatch(
 // =============================================================================
 
 /**
+ * Attempt to repair a truncated JSON string by closing open strings, objects, and arrays.
+ * Returns null if the input doesn't look like a repairable JSON structure.
+ */
+function repairTruncatedJson(text: string): string | null {
+  // Must start with [ or { to be repairable
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return null;
+
+  // Truncate at the last complete property value boundary we can find
+  // Look for the last complete key-value pair or array element
+  let repaired = trimmed;
+
+  // If we're inside a string value, close it
+  // Count unescaped quotes to detect if we're mid-string
+  let inString = false;
+  let lastCleanBreak = 0;
+  for (let i = 0; i < repaired.length; i++) {
+    const ch = repaired[i];
+    if (ch === '\\' && inString) { i++; continue; } // skip escaped char
+    if (ch === '"') inString = !inString;
+    // Track positions after complete values (after closing quote, number, true/false/null, }, ])
+    if (!inString && (ch === ',' || ch === '}' || ch === ']' || ch === ':')) {
+      lastCleanBreak = i + 1;
+    }
+  }
+
+  // Truncate to last clean break point
+  if (lastCleanBreak > 0 && lastCleanBreak < repaired.length) {
+    repaired = repaired.slice(0, lastCleanBreak);
+  }
+
+  // Remove any trailing comma
+  repaired = repaired.replace(/,\s*$/, '');
+
+  // Count open braces/brackets and close them
+  let openBraces = 0;
+  let openBrackets = 0;
+  inString = false;
+  for (let i = 0; i < repaired.length; i++) {
+    const ch = repaired[i];
+    if (ch === '\\' && inString) { i++; continue; }
+    if (ch === '"') inString = !inString;
+    if (!inString) {
+      if (ch === '{') openBraces++;
+      if (ch === '}') openBraces--;
+      if (ch === '[') openBrackets++;
+      if (ch === ']') openBrackets--;
+    }
+  }
+
+  // Close open structures
+  for (let i = 0; i < openBraces; i++) repaired += '}';
+  for (let i = 0; i < openBrackets; i++) repaired += ']';
+
+  return repaired;
+}
+
+/**
  * Parse Claude's JSON response into DocumentClassification[].
  * Handles common issues: markdown code blocks, trailing commas, etc.
  * Validates and defaults all required fields to prevent undefined propagation.
@@ -420,7 +490,20 @@ function parseClassificationResponse(text: string): DocumentClassification[] {
       try {
         raw = JSON.parse(jsonMatch[0]);
       } catch {
-        // Fall through to error
+        // Fall through to truncation repair
+      }
+    }
+    // Truncation repair: if response was cut off mid-JSON, try to close open braces/brackets
+    if (!raw!) {
+      const repaired = repairTruncatedJson(cleaned);
+      if (repaired) {
+        try {
+          const parsed = JSON.parse(repaired);
+          raw = Array.isArray(parsed) ? parsed : [parsed];
+          console.warn(`[ANTHROPIC] Repaired truncated JSON response (original length: ${cleaned.length})`);
+        } catch {
+          // Fall through to error
+        }
       }
     }
     if (!raw!) {
