@@ -144,7 +144,14 @@ export const mapCategoryToFolder = query({
       }
     }
     
-    // Default to miscellaneous
+    // Default: if project exists, route to project's "unfiled" folder; otherwise client "miscellaneous"
+    if (args.hasProject) {
+      return {
+        level: "project" as const,
+        folderType: "unfiled",
+        reason: "No category mapping found — routed to project unfiled",
+      };
+    }
     return {
       level: "client" as const,
       folderType: "miscellaneous",
