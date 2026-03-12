@@ -41,8 +41,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import BulkReviewTable from '@/components/BulkReviewTable';
 import NewProjectsPanel, { NewProjectEntry, buildNewProjectEntries } from '@/components/NewProjectsPanel';
+import VersionCandidatesPanel from '@/components/VersionCandidatesPanel';
+import { buildVersionCandidateGroups } from '@/lib/versionDetection';
 import UploadMoreModal from './components/UploadMoreModal';
 import { getUserInitials } from '@/lib/documentNaming';
+import { toast } from 'sonner';
 
 export default function BulkReviewPage() {
   const params = useParams();
@@ -120,6 +123,8 @@ export default function BulkReviewPage() {
   const createBulkUploadProjects = useMutation(api.bulkUpload.createBulkUploadProjects);
   const updateItemProject = useMutation(api.bulkUpload.updateItemProject);
   const discardBatch = useMutation(api.bulkUpload.discardBatch);
+  const applyVersionLabels = useMutation(api.bulkUpload.applyVersionLabels);
+  const deleteItemsMutation = useMutation(api.bulkUpload.deleteItems);
 
   // Initialize shortcode input when batch loads
   useEffect(() => {
@@ -145,6 +150,12 @@ export default function BulkReviewPage() {
     const entries = buildNewProjectEntries(items as any, existingNames);
     setNewProjects(entries);
   }, [items, clientProjects, batch?.isMultiProject, batch?.status]);
+
+  // Build version candidate groups from items
+  const versionCandidateGroups = useMemo(() => {
+    if (!items || batch?.status !== 'review') return [];
+    return buildVersionCandidateGroups(items as any);
+  }, [items, batch?.status]);
 
   // Handle creating new projects from the panel (before filing)
   const handleCreateProjects = async (enabledProjects: NewProjectEntry[]) => {
@@ -200,6 +211,18 @@ export default function BulkReviewPage() {
     } finally {
       setIsCreatingProjects(false);
     }
+  };
+
+  const handleApplyVersions = async (versions: Array<{ itemId: any; version: string; isBase: boolean }>) => {
+    if (!batch) return;
+    await applyVersionLabels({ batchId: batch._id, versions });
+    toast.success(`Applied version labels to ${versions.length} items`);
+  };
+
+  const handleDeleteItems = async (itemIds: any[]) => {
+    if (!batch) return;
+    await deleteItemsMutation({ batchId: batch._id, itemIds });
+    toast.success(`Deleted ${itemIds.length} items`);
   };
 
   // Handle shortcode save
@@ -700,6 +723,15 @@ export default function BulkReviewPage() {
         />
       )}
 
+      {/* Version Candidates Panel — shown when version candidate groups are detected */}
+      {batch?.status === 'review' && versionCandidateGroups.length > 0 && (
+        <VersionCandidatesPanel
+          groups={versionCandidateGroups}
+          onApplyVersions={handleApplyVersions}
+          onDeleteItems={handleDeleteItems}
+        />
+      )}
+
       {/* Review Table */}
       {/* Multi-project summary */}
       {isEffectivelyMultiProject && items && (
@@ -713,19 +745,25 @@ export default function BulkReviewPage() {
       )}
 
       {/* Review Table */}
-      <BulkReviewTable
-        items={items as any}
-        batchIsInternal={batch.isInternal}
-        hasProject={!!effectiveProjectId}
-        clientId={batch.clientId}
-        projectId={effectiveProjectId}
-        isMultiProject={isEffectivelyMultiProject}
-        projects={clientProjects?.map((p: any) => ({
-          _id: p._id,
-          name: p.name,
-          projectShortcode: p.projectShortcode,
-        }))}
-      />
+      {items && items.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          All items have been removed from this batch.
+        </div>
+      ) : (
+        <BulkReviewTable
+          items={items as any}
+          batchIsInternal={batch.isInternal}
+          hasProject={!!effectiveProjectId}
+          clientId={batch.clientId}
+          projectId={effectiveProjectId}
+          isMultiProject={isEffectivelyMultiProject}
+          projects={clientProjects?.map((p: any) => ({
+            _id: p._id,
+            name: p.name,
+            projectShortcode: p.projectShortcode,
+          }))}
+        />
+      )}
 
       {/* Action Bar - Compact */}
       <div className="flex items-center justify-between p-3 bg-background border-t sticky bottom-0 z-40">
