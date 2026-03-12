@@ -229,7 +229,7 @@ Returns count of documents in the project's `unfiled` folder. Used by `FolderBro
 | File | Change |
 |------|--------|
 | `convex/documents.ts` | Add `bulkMove`, `bulkDelete`, `getUnfiledCountByProject` |
-| `src/app/docs/components/FolderBrowser.tsx` | Render virtual "Unfiled" folder per project |
+| `src/app/docs/components/FolderBrowser.tsx` | Render existing "Unfiled" folder when count > 0 |
 | `src/app/docs/components/FileList.tsx` | Add Move/Delete buttons to toolbar, select-all checkbox, wire bulk actions |
 | `src/app/docs/components/FileCard.tsx` | No changes expected (checkbox already works) |
 | `src/app/docs/page.tsx` | Pass bulk action handlers down to FileList |
