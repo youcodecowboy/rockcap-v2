@@ -192,6 +192,7 @@ export interface BulkQueueProcessorCallbacks {
   
   // File storage
   generateUploadUrl: () => Promise<string>;
+  getStorageUrl: (storageId: Id<"_storage">) => Promise<string | null>;
   
   // Progress callback
   onProgress?: (processed: number, total: number, currentFile: string) => void;
@@ -459,10 +460,27 @@ export class BulkQueueProcessor {
       throw new Error(`Failed to upload file to storage after ${UPLOAD_MAX_RETRIES} retries`);
     }
 
+    // Get storage URL so we can send a URL reference instead of the raw file.
+    // This avoids the Vercel 4.5MB serverless body limit for large PDFs.
+    let storageUrl: string | null = null;
+    try {
+      storageUrl = await this.callbacks.getStorageUrl(storageId);
+    } catch {
+      console.warn(`[BulkQueue] Could not get storage URL, will send raw file`);
+    }
+
     // Call V4 analyze API with retry logic for transient failures
     const buildFormData = () => {
       const fd = new FormData();
-      fd.append("file", item.file);
+      if (storageUrl) {
+        // Send URL reference — API fetches server-side (no body limit)
+        fd.append("fileUrl_0", storageUrl);
+        fd.append("fileName_0", item.file.name);
+        fd.append("fileType_0", item.file.type || 'application/octet-stream');
+      } else {
+        // Fallback: send raw file (works for files < 4.5MB)
+        fd.append("file_0", item.file);
+      }
       if (this.batchInfo!.clientType) {
         fd.append("clientType", this.batchInfo!.clientType);
       }
@@ -730,6 +748,7 @@ export function createBulkQueueProcessor(
     updateBatchStatus: BulkQueueProcessorCallbacks['updateBatchStatus'];
     checkForDuplicates: BulkQueueProcessorCallbacks['checkForDuplicates'];
     generateUploadUrl: BulkQueueProcessorCallbacks['generateUploadUrl'];
+    getStorageUrl: BulkQueueProcessorCallbacks['getStorageUrl'];
   },
   options?: {
     onProgress?: BulkQueueProcessorCallbacks['onProgress'];

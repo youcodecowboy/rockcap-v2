@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation, useQuery, useConvex } from 'convex/react';
 import { useUser } from '@clerk/nextjs';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
@@ -75,6 +75,7 @@ export default function UploadMoreModal({
   const updateItemAnalysis = useMutation(api.bulkUpload.updateItemAnalysis);
   const updateBatchStatus = useMutation(api.bulkUpload.updateBatchStatus);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
+  const convex = useConvex();
 
   // User initials
   const uploaderInitials = getUserInitials(
@@ -164,6 +165,7 @@ export default function UploadMoreModal({
             return response.json();
           },
           generateUploadUrl,
+          getStorageUrl: (storageId) => convex.query(api.documents.getFileUrl, { storageId }),
         },
         {
           onProgress: (processed, total, currentFile) => {

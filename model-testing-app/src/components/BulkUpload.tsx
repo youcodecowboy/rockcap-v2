@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { useUser } from '@clerk/nextjs';
@@ -301,6 +301,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
   const updateBatchStatus = useMutation(api.bulkUpload.updateBatchStatus);
   const checkForDuplicates = useQuery(api.bulkUpload.checkForDuplicates, "skip");
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
+  const convex = useConvex();
   const createProject = useMutation(api.projects.create);
   const createClient = useMutation(api.clients.create);
   const updateProject = useMutation(api.projects.update);
@@ -722,6 +723,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
               return response.json();
             },
             generateUploadUrl,
+            getStorageUrl: (storageId) => convex.query(api.documents.getFileUrl, { storageId }),
           },
           {
             onProgress: (processed, total, currentFile) => {

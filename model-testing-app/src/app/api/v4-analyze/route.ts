@@ -35,13 +35,32 @@ export async function POST(request: NextRequest) {
       extractedText?: string;
     }> = [];
 
-    // Files sent as file_0, file_1, ...
+    // Files sent as file_0, file_1, ... (direct upload)
+    // or fileUrl_0 + fileName_0 (fetch from Convex storage — avoids 4.5MB Vercel body limit)
     let fileIndex = 0;
     while (true) {
       const file = formData.get(`file_${fileIndex}`) as File | null;
-      if (!file) break;
+      const fileUrl = formData.get(`fileUrl_${fileIndex}`) as string | null;
+      if (!file && !fileUrl) break;
+
       const extractedText = formData.get(`text_${fileIndex}`) as string | null;
-      files.push({ file, extractedText: extractedText || undefined });
+
+      if (file) {
+        files.push({ file, extractedText: extractedText || undefined });
+      } else if (fileUrl) {
+        // Fetch file from Convex storage URL (server-side, no body limit)
+        const fileName = formData.get(`fileName_${fileIndex}`) as string || 'document';
+        const fileType = formData.get(`fileType_${fileIndex}`) as string || 'application/pdf';
+        try {
+          const res = await fetch(fileUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const blob = await res.blob();
+          const fetchedFile = new File([blob], fileName, { type: fileType });
+          files.push({ file: fetchedFile, extractedText: extractedText || undefined });
+        } catch (err) {
+          console.error(`[V4 API] Failed to fetch file from URL for "${fileName}":`, (err as Error).message);
+        }
+      }
       fileIndex++;
     }
 
@@ -64,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     if (files.length === 0) {
       return NextResponse.json(
-        { error: 'No files provided. Send as file_0, file_1, ..., files[], or file' },
+        { error: 'No files provided. Send as file_0/fileUrl_0, files[], or file' },
         { status: 400 },
       );
     }
