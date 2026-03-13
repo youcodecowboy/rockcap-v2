@@ -572,7 +572,15 @@ export class BulkQueueProcessor {
       confidence: doc.confidence || 0,
       suggestedFolder: doc.suggestedFolder || "",
       typeAbbreviation: doc.typeAbbreviation || "",
-      suggestedChecklistItems: doc.checklistMatches || undefined,
+      suggestedChecklistItems: doc.checklistMatches?.filter(
+        (m: any) => m.itemId && typeof m.itemId === 'string' && m.itemId.length > 0
+      ).map((m: any) => ({
+        itemId: m.itemId as Id<"knowledgeChecklistItems">,
+        itemName: m.itemName || m.name || '',
+        category: m.category || '',
+        confidence: typeof m.confidence === 'number' ? m.confidence : 0,
+        reasoning: m.reasoning,
+      })) || undefined,
     };
     // Prefer dedicated intelligence extraction fields (from Stage 5.5),
     // fall back to classification's extractedData for backward compat.
@@ -684,21 +692,36 @@ export class BulkQueueProcessor {
       await this.callbacks.updateItemAnalysis(updateArgs);
       console.log(`[BulkQueueProcessor] Successfully saved to Convex`);
     } catch (convexError) {
-      console.error(`[BulkQueueProcessor] Convex updateItemAnalysis FAILED:`, convexError);
-      console.error(`[BulkQueueProcessor] Full args:`, JSON.stringify(updateArgs, null, 2));
-      // Clean up orphaned storage file — it was uploaded but the mutation failed,
-      // so it would otherwise remain in storage with no document referencing it.
-      if (storageId) {
+      const errMsg = (convexError as Error).message || '';
+      // If the error is a validation failure on checklist/project IDs, retry without those fields
+      // rather than losing the entire document classification.
+      if (errMsg.includes('ArgumentValidationError') || errMsg.includes('does not match validator')) {
+        console.warn(`[BulkQueueProcessor] Convex validation error, retrying without checklist/project fields:`, errMsg);
         try {
-          // Storage cleanup is best-effort — don't let it mask the original error
-          console.warn(`[BulkQueueProcessor] Cleaning up orphaned storage file: ${storageId}`);
-          // Note: Convex storage files are cleaned up by TTL or manual deletion via dashboard.
-          // We log the orphan here so it can be found and removed.
-        } catch (cleanupError) {
-          console.error(`[BulkQueueProcessor] Storage cleanup failed:`, cleanupError);
+          const fallbackArgs = { ...updateArgs };
+          delete fallbackArgs.suggestedChecklistItems;
+          delete fallbackArgs.suggestedProjectId;
+          delete fallbackArgs.duplicateOfDocumentId;
+          await this.callbacks.updateItemAnalysis(fallbackArgs);
+          console.log(`[BulkQueueProcessor] Successfully saved to Convex (without checklist items)`);
+        } catch (retryError) {
+          console.error(`[BulkQueueProcessor] Convex updateItemAnalysis retry also FAILED:`, retryError);
+          throw retryError;
         }
+      } else {
+        console.error(`[BulkQueueProcessor] Convex updateItemAnalysis FAILED:`, convexError);
+        console.error(`[BulkQueueProcessor] Full args:`, JSON.stringify(updateArgs, null, 2));
+        // Clean up orphaned storage file — it was uploaded but the mutation failed,
+        // so it would otherwise remain in storage with no document referencing it.
+        if (storageId) {
+          try {
+            console.warn(`[BulkQueueProcessor] Cleaning up orphaned storage file: ${storageId}`);
+          } catch (cleanupError) {
+            console.error(`[BulkQueueProcessor] Storage cleanup failed:`, cleanupError);
+          }
+        }
+        throw convexError;
       }
-      throw convexError;
     }
   }
 }
