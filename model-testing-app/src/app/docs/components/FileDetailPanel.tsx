@@ -20,6 +20,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import {
   FileText,
   FileSpreadsheet,
@@ -42,7 +43,12 @@ import {
   Loader2,
   Brain,
   CheckCircle,
+  CheckCircle2,
+  Circle,
   ClipboardCheck,
+  Link as LinkIcon,
+  Unlink,
+  Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -174,6 +180,22 @@ export default function FileDetailPanel({
     api.documents.getDocumentIntelligence,
     document?._id ? { documentId: document._id } : "skip"
   );
+
+  // Query all checklist items for this document's client (for checklist tab)
+  const allChecklistItems = useQuery(
+    api.knowledgeLibrary.getChecklistByClient,
+    document?.clientId ? { clientId: document.clientId } : "skip"
+  ) as any[] | undefined;
+
+  // Current user for linking
+  const currentUser = useQuery(api.users.getCurrent) as { _id: Id<"users"> } | null | undefined;
+
+  // Mutations for linking/unlinking
+  const linkDocToChecklist = useMutation(api.knowledgeLibrary.linkDocumentToRequirement);
+  const unlinkDocFromChecklist = useMutation(api.knowledgeLibrary.unlinkDocumentFromChecklistItem);
+
+  // Search state for checklist tab
+  const [checklistSearch, setChecklistSearch] = useState('');
 
   if (!document) return null;
 
@@ -354,6 +376,25 @@ export default function FileDetailPanel({
   const hasChecklist = checklistLinks && checklistLinks.length > 0;
   const hasIntelligence = intelligenceItems && intelligenceItems.length > 0;
 
+  // Derive set of checklist item IDs already linked to this document
+  const linkedChecklistItemIds = new Set(
+    (checklistLinks || []).map((link: any) => link.checklistItem?._id as string).filter(Boolean)
+  );
+
+  // Filter and group checklist items for display
+  const filteredChecklistItems = (allChecklistItems || []).filter((item: any) =>
+    !checklistSearch ||
+    item.name?.toLowerCase().includes(checklistSearch.toLowerCase()) ||
+    item.category?.toLowerCase().includes(checklistSearch.toLowerCase())
+  );
+
+  const checklistByCategory = filteredChecklistItems.reduce((acc: Record<string, any[]>, item: any) => {
+    const cat = item.category || 'Uncategorized';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {} as Record<string, any[]>);
+
   // Group intelligence items by category
   const intelligenceByCategory = intelligenceItems
     ? intelligenceItems.reduce((acc: Record<string, any[]>, item: any) => {
@@ -393,7 +434,7 @@ export default function FileDetailPanel({
                     <TabsTrigger value="intelligence" className="text-xs px-2 py-1.5">
                       Intelligence
                     </TabsTrigger>
-                    <TabsTrigger value="checklist" className="text-xs px-2 py-1.5" disabled={!hasChecklist}>
+                    <TabsTrigger value="checklist" className="text-xs px-2 py-1.5">
                       Checklist
                     </TabsTrigger>
                   </TabsList>
@@ -675,41 +716,148 @@ export default function FileDetailPanel({
 
                 {/* Checklist Tab */}
                 <TabsContent value="checklist" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
-                  {hasChecklist ? (
-                    <div className="space-y-3">
-                      <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">
-                        Fulfilled Requirements ({checklistLinks.length})
-                      </div>
-                      {checklistLinks.map((link: any) => (
-                        <div
-                          key={link._id}
-                          className="flex items-center gap-2.5 p-2.5 bg-green-50 rounded-lg border border-green-100"
-                        >
-                          <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900">
-                              {link.checklistItem?.name || 'Unknown requirement'}
-                            </div>
-                            {link.checklistItem?.category && (
-                              <div className="text-xs text-gray-500 mt-0.5">{link.checklistItem.category}</div>
-                            )}
-                          </div>
-                          {link.isPrimary && (
-                            <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-200">
-                              Primary
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
+                  {!document.clientId ? (
                     <div className="flex flex-col items-center justify-center py-8 text-center">
                       <ClipboardCheck className="w-8 h-8 text-gray-300 mb-2" />
-                      <p className="text-sm text-gray-500">No checklist items linked</p>
+                      <p className="text-sm text-gray-500">No client associated</p>
                       <p className="text-xs text-gray-400 mt-1">
-                        Upload with analysis enabled to match checklist requirements
+                        This document must be filed to a client to view checklist items
                       </p>
                     </div>
+                  ) : (
+                    <>
+                      {/* Search */}
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                        <Input
+                          placeholder="Search checklist items..."
+                          value={checklistSearch}
+                          onChange={(e) => setChecklistSearch(e.target.value)}
+                          className="pl-8 h-8 text-xs"
+                        />
+                      </div>
+
+                      {/* Linked Requirements */}
+                      {hasChecklist && (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                            Linked to this Document ({checklistLinks.length})
+                          </div>
+                          {checklistLinks.map((link: any) => (
+                            <div
+                              key={link._id}
+                              className="flex items-center gap-2.5 p-2.5 bg-green-50 rounded-lg border border-green-100 group"
+                            >
+                              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {link.checklistItem?.name || 'Unknown requirement'}
+                                </div>
+                                {link.checklistItem?.category && (
+                                  <div className="text-xs text-gray-500 mt-0.5">{link.checklistItem.category}</div>
+                                )}
+                              </div>
+                              {link.isPrimary && (
+                                <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-200">
+                                  Primary
+                                </Badge>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 flex-shrink-0"
+                                onClick={async () => {
+                                  await unlinkDocFromChecklist({
+                                    checklistItemId: link.checklistItem?._id,
+                                    documentId: document._id,
+                                  });
+                                }}
+                              >
+                                <Unlink className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* All Available Requirements */}
+                      {allChecklistItems === undefined ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                        </div>
+                      ) : Object.keys(checklistByCategory).length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-6 text-center">
+                          <ClipboardCheck className="w-8 h-8 text-gray-300 mb-2" />
+                          <p className="text-sm text-gray-500">
+                            {checklistSearch ? 'No matching requirements' : 'No checklist items for this client'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                            Available Requirements
+                          </div>
+                          {Object.entries(checklistByCategory).map(([category, items]) => (
+                            <div key={category}>
+                              <div className="text-xs font-medium text-gray-600 mb-1.5 px-1">{category}</div>
+                              <div className="space-y-1">
+                                {(items as any[]).map((item: any) => {
+                                  const isLinked = linkedChecklistItemIds.has(item._id as string);
+                                  return (
+                                    <div
+                                      key={item._id}
+                                      className={cn(
+                                        "flex items-center gap-2.5 p-2 rounded-lg border transition-colors",
+                                        isLinked
+                                          ? "bg-green-50 border-green-100"
+                                          : item.status === 'fulfilled'
+                                          ? "bg-gray-50 border-gray-100"
+                                          : "bg-white border-gray-200 hover:border-blue-200"
+                                      )}
+                                    >
+                                      {item.status === 'fulfilled' ? (
+                                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                      ) : item.status === 'pending_review' ? (
+                                        <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                      ) : (
+                                        <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-medium text-gray-900 truncate">
+                                          {item.name}
+                                        </div>
+                                      </div>
+                                      {isLinked ? (
+                                        <Badge variant="outline" className="text-[10px] h-4 bg-green-100 text-green-700 border-green-200 flex-shrink-0">
+                                          Linked
+                                        </Badge>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 px-2 text-xs text-gray-500 hover:text-blue-600 flex-shrink-0"
+                                          onClick={async () => {
+                                            if (!currentUser?._id) return;
+                                            await linkDocToChecklist({
+                                              checklistItemId: item._id,
+                                              documentId: document._id,
+                                              userId: currentUser._id,
+                                            });
+                                          }}
+                                        >
+                                          <LinkIcon className="w-3 h-3 mr-1" />
+                                          Link
+                                        </Button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </TabsContent>
               </div>

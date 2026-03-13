@@ -23,11 +23,13 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   CheckCircle2,
   Circle,
   Clock,
   FileText,
+  Folder,
   Link as LinkIcon,
   Unlink,
   ExternalLink,
@@ -40,6 +42,7 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Plus,
   Flag,
 } from 'lucide-react';
@@ -98,6 +101,9 @@ export default function KnowledgeChecklistPanel({
   const [linkingItemId, setLinkingItemId] = useState<Id<"knowledgeChecklistItems"> | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<Id<"knowledgeChecklistItems"> | null>(null);
   const [flaggingItem, setFlaggingItem] = useState<ChecklistItem | null>(null);
+  const [docSearchQuery, setDocSearchQuery] = useState('');
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<Id<"documents">>>(new Set());
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
 
   // Query for available documents to link
   // @ts-ignore - Known Convex TypeScript type instantiation depth issue
@@ -108,6 +114,15 @@ export default function KnowledgeChecklistPanel({
     api.knowledgeLibrary.getLinkedDocuments,
     expandedItemId ? { checklistItemId: expandedItemId } : "skip"
   ) as LinkedDocument[] | undefined;
+
+  // Query for already-linked documents when linking modal is open
+  const linkingLinkedDocs = useQuery(
+    api.knowledgeLibrary.getLinkedDocuments,
+    linkingItemId ? { checklistItemId: linkingItemId } : "skip"
+  ) as LinkedDocument[] | undefined;
+  const alreadyLinkedIds = new Set(
+    (linkingLinkedDocs || []).map((d) => d.documentId as string)
+  );
 
   // Get current user
   const user = useQuery(api.users.getCurrent) as { _id: Id<"users"> } | null | undefined;
@@ -190,6 +205,85 @@ export default function KnowledgeChecklistPanel({
       await deleteCustom({ checklistItemId: itemId });
     }
   };
+
+  // Handle batch link documents
+  const [isLinking, setIsLinking] = useState(false);
+  const handleBatchLinkDocuments = async () => {
+    if (!linkingItemId || !user?._id || selectedDocIds.size === 0) return;
+    setIsLinking(true);
+    try {
+      for (const docId of selectedDocIds) {
+        await linkDocument({
+          checklistItemId: linkingItemId,
+          documentId: docId,
+          userId: user._id,
+        });
+      }
+    } finally {
+      setIsLinking(false);
+      setSelectedDocIds(new Set());
+      setDocSearchQuery('');
+      setCollapsedFolders(new Set());
+      setLinkingItemId(null);
+    }
+  };
+
+  // Toggle doc selection for multi-select
+  const toggleDocSelection = (docId: Id<"documents">) => {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) {
+        next.delete(docId);
+      } else {
+        next.add(docId);
+      }
+      return next;
+    });
+  };
+
+  // Toggle folder collapse
+  const toggleFolder = (folderId: string) => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
+
+  // Format folder name for display
+  const formatFolderName = (folderId: string) => {
+    if (folderId === '_unfiled') return 'Unfiled Documents';
+    return folderId.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  // Group documents by folder for the linking modal
+  const groupedDocuments = (() => {
+    if (!documents) return [];
+    const filtered = documents.filter((doc: any) =>
+      !docSearchQuery || doc.fileName?.toLowerCase().includes(docSearchQuery.toLowerCase())
+    );
+    const groups: Record<string, any[]> = {};
+    for (const doc of filtered) {
+      const key = doc.folderId || '_unfiled';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(doc);
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => {
+        if (a === '_unfiled') return 1;
+        if (b === '_unfiled') return -1;
+        return a.localeCompare(b);
+      })
+      .map(([folderId, docs]) => ({
+        folderId,
+        displayName: formatFolderName(folderId),
+        docs: docs.sort((a: any, b: any) => (a.fileName || '').localeCompare(b.fileName || '')),
+      }));
+  })();
 
   // Get status icon
   const getStatusIcon = (status: string) => {
@@ -599,52 +693,148 @@ export default function KnowledgeChecklistPanel({
       </div>
 
       {/* Document Linking Dialog */}
-      <Dialog open={!!linkingItemId} onOpenChange={() => setLinkingItemId(null)}>
-        <DialogContent className="max-w-lg">
+      <Dialog
+        open={!!linkingItemId}
+        onOpenChange={() => {
+          setLinkingItemId(null);
+          setSelectedDocIds(new Set());
+          setDocSearchQuery('');
+          setCollapsedFolders(new Set());
+        }}
+      >
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Link Document</DialogTitle>
+            <DialogTitle>Link Documents</DialogTitle>
             <DialogDescription>
-              Select a document from the library to link to this requirement
+              Select one or more documents to link to this requirement
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="max-h-96 overflow-y-auto">
-            {documents?.length === 0 ? (
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search documents..."
+              value={docSearchQuery}
+              onChange={(e) => setDocSearchQuery(e.target.value)}
+              className="pl-8 h-9 text-sm"
+            />
+          </div>
+
+          <div className="max-h-[28rem] overflow-y-auto">
+            {groupedDocuments.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">No documents available</p>
+                <p className="text-sm">
+                  {docSearchQuery ? 'No documents match your search' : 'No documents available'}
+                </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Upload documents to the client's library first
+                  {docSearchQuery ? 'Try a different search term' : 'Upload documents to the client\'s library first'}
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {documents?.map((doc: any) => (
-                  <button
-                    key={doc._id}
-                    className="w-full p-3 text-left rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
-                    onClick={() => linkingItemId && handleLinkDocument(linkingItemId, doc._id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-5 h-5 text-gray-400" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {doc.fileName}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Badge variant="secondary" className="text-[10px] h-4">
-                            {doc.fileTypeDetected || doc.category}
-                          </Badge>
-                          <span className="text-[10px] text-gray-400">
-                            {new Date(doc.uploadedAt).toLocaleDateString()}
-                          </span>
+              <div className="space-y-1">
+                {groupedDocuments.map(({ folderId, displayName, docs }) => {
+                  const isCollapsed = collapsedFolders.has(folderId);
+                  return (
+                    <div key={folderId}>
+                      {/* Folder Header */}
+                      <button
+                        className="w-full flex items-center gap-2 px-2 py-2 text-left hover:bg-gray-50 rounded-md transition-colors"
+                        onClick={() => toggleFolder(folderId)}
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        )}
+                        <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700">{displayName}</span>
+                        <span className="text-xs text-gray-400 ml-auto">{docs.length}</span>
+                      </button>
+
+                      {/* Folder Contents */}
+                      {!isCollapsed && (
+                        <div className="ml-6 space-y-0.5 mb-2">
+                          {docs.map((doc: any) => {
+                            const isAlreadyLinked = alreadyLinkedIds.has(doc._id as string);
+                            const isSelected = selectedDocIds.has(doc._id);
+                            return (
+                              <label
+                                key={doc._id}
+                                className={cn(
+                                  "flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer transition-colors",
+                                  isAlreadyLinked
+                                    ? "bg-green-50 border border-green-100 cursor-default"
+                                    : isSelected
+                                    ? "bg-blue-50 border border-blue-200"
+                                    : "hover:bg-gray-50 border border-transparent"
+                                )}
+                              >
+                                <Checkbox
+                                  checked={isAlreadyLinked || isSelected}
+                                  disabled={isAlreadyLinked}
+                                  onCheckedChange={() => !isAlreadyLinked && toggleDocSelection(doc._id)}
+                                />
+                                <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-gray-900 truncate">
+                                    {doc.fileName}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <Badge variant="secondary" className="text-[10px] h-4">
+                                      {doc.fileTypeDetected || doc.category}
+                                    </Badge>
+                                    <span className="text-[10px] text-gray-400">
+                                      {new Date(doc.uploadedAt).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                </div>
+                                {isAlreadyLinked && (
+                                  <Badge variant="outline" className="text-[10px] h-4 bg-green-100 text-green-700 border-green-200 flex-shrink-0">
+                                    Linked
+                                  </Badge>
+                                )}
+                              </label>
+                            );
+                          })}
                         </div>
-                      </div>
+                      )}
                     </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <span className="text-xs text-gray-500">
+              {selectedDocIds.size > 0
+                ? `${selectedDocIds.size} document${selectedDocIds.size > 1 ? 's' : ''} selected`
+                : 'Select documents to link'}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setLinkingItemId(null);
+                  setSelectedDocIds(new Set());
+                  setDocSearchQuery('');
+                  setCollapsedFolders(new Set());
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={selectedDocIds.size === 0 || isLinking}
+                onClick={handleBatchLinkDocuments}
+              >
+                {isLinking ? 'Linking...' : `Link Selected (${selectedDocIds.size})`}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
