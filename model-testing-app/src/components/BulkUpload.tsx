@@ -1364,7 +1364,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 multiple
                 className="hidden"
                 onChange={handleFileInput}
-                accept=".pdf,.docx,.doc,.xls,.xlsx,.xlsm,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
+                accept=".pdf,.docx,.doc,.xls,.xlsx,.xlsm,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,application/vnd.ms-excel.sheet.macroEnabled.12"
                 disabled={isUploading}
               />
               {/* Folder input created dynamically on click — see openFolderPicker */}
