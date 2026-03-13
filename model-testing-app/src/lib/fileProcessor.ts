@@ -1,11 +1,10 @@
-import mammoth from 'mammoth';
-// Use pdf-parse for PDF parsing - it's simpler, more reliable, and works well in serverless environments
-// pdf-parse uses pdfjs-dist internally but handles worker setup automatically
-// Note: pdf-parse exports PDFParse as a named export
+// Lazy imports — pdf-parse v2 crashes on Vercel serverless (requires @napi-rs/canvas + DOMMatrix).
+// pdf-parse v1.1.1 is serverless-safe. Keep imports lazy to avoid cold-start failures.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { PDFParse } = require('pdf-parse');
+const pdfParse = require('pdf-parse');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const XLSX = require('xlsx');
+import mammoth from 'mammoth';
 
 export async function extractTextFromFile(file: File): Promise<string> {
   const fileType = file.type;
@@ -40,12 +39,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
       throw new Error('File does not appear to be a valid PDF');
     }
     
-    // PRIMARY: Use pdf-parse first - it's more reliable in serverless environments
-    // pdfjs-dist has worker issues in Vercel/serverless, so we use pdf-parse as primary
+    // pdf-parse v1.1.1 — serverless-safe, no canvas/DOM dependencies
     try {
-      console.log('Attempting PDF parsing with pdf-parse (primary parser)...');
-      const parser = new PDFParse({ data: buffer });
-      const pdfData = await parser.getText();
+      console.log('Attempting PDF parsing with pdf-parse v1...');
+      const pdfData = await pdfParse(buffer);
       const extractedText = pdfData.text || '';
       if (extractedText.trim().length > 0) {
         console.log('Successfully parsed PDF using pdf-parse');
@@ -57,10 +54,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
     } catch (pdfParseError) {
       const pdfParseErrorMessage = pdfParseError instanceof Error ? pdfParseError.message : String(pdfParseError);
       console.error('pdf-parse failed:', pdfParseError);
-      
-      // If pdf-parse fails, the PDF might be corrupted or in an unsupported format
-      // pdfjs-dist has persistent worker issues in serverless, so we don't use it as fallback
-      throw new Error(`PDF parsing failed: ${pdfParseErrorMessage}. The file may be corrupted, password-protected, or in an unsupported format. Please try converting the PDF to text format or use a different file type.`);
+      throw new Error(`PDF parsing failed: ${pdfParseErrorMessage}. The file may be corrupted, password-protected, or in an unsupported format.`);
     }
   }
 
