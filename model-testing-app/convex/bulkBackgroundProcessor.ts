@@ -78,7 +78,9 @@ export const retryItem = mutation({
   args: {
     itemId: v.id("bulkUploadItems"),
     batchId: v.id("bulkUploadBatches"),
-    baseUrl: v.optional(v.string()), // Fallback for batches created before baseUrl was persisted
+    baseUrl: v.optional(v.string()),
+    // When true, caller handles worker scheduling (used by retryBatchErrors for staggered warm-up)
+    skipScheduling: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -95,13 +97,11 @@ export const retryItem = mutation({
       throw new Error(`Item is not retryable (status: ${item.status})`);
     }
 
-    // Use batch.baseUrl if available, otherwise fall back to client-provided baseUrl
     const baseUrl = batch.baseUrl || args.baseUrl;
     if (!baseUrl) throw new Error("Batch has no baseUrl — cannot re-trigger processor");
 
     const now = new Date().toISOString();
 
-    // Reset item to pending, clear any previous error
     await ctx.db.patch(args.itemId, {
       status: "pending",
       error: undefined,
@@ -110,8 +110,6 @@ export const retryItem = mutation({
 
     console.log(`[retryItem] Retrying item ${args.itemId} (${item.fileName ?? 'unknown'}) in batch ${args.batchId}`);
 
-    // If the batch incorrectly moved to a terminal state due to this stuck item,
-    // reset it back to processing so the worker chain completes correctly.
     if (batch.status === "review" || batch.status === "partial") {
       await ctx.db.patch(args.batchId, {
         status: "processing",
@@ -119,14 +117,87 @@ export const retryItem = mutation({
       });
     }
 
-    // Schedule a new worker to pick up the newly-pending item
-    // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
+    // Skip scheduling if caller will handle it (batch retry with staggered warm-up)
+    if (!args.skipScheduling) {
+      // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
+      await ctx.scheduler.runAfter(0, internal.bulkBackgroundProcessor.processNextItem, {
+        batchId: args.batchId,
+        baseUrl,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+/**
+ * Retry all error/stuck items in a batch with cache-aware staggering.
+ * First worker runs alone (cache warm-up), then BACKGROUND_CONCURRENCY workers process the rest.
+ * Prevents N simultaneous cache-miss writes that each cost full input token price.
+ */
+export const retryBatchErrors = mutation({
+  args: {
+    batchId: v.id("bulkUploadBatches"),
+    baseUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db.get(args.batchId);
+    if (!batch) throw new Error("Batch not found");
+
+    const baseUrl = batch.baseUrl || args.baseUrl;
+    if (!baseUrl) throw new Error("Batch has no baseUrl — cannot re-trigger processor");
+
+    // Find all error/stuck items in this batch
+    const allItems = await ctx.db
+      .query("bulkUploadItems")
+      .withIndex("by_batch", (q) => q.eq("batchId", args.batchId))
+      .collect();
+
+    const retryableItems = allItems.filter(
+      (i) => i.status === "error" || i.status === "processing"
+    );
+
+    if (retryableItems.length === 0) {
+      return { success: true, retried: 0 };
+    }
+
+    const now = new Date().toISOString();
+
+    // Reset all items to pending
+    for (const item of retryableItems) {
+      await ctx.db.patch(item._id, {
+        status: "pending",
+        error: undefined,
+        updatedAt: now,
+      });
+    }
+
+    // Reset batch to processing
+    await ctx.db.patch(args.batchId, {
+      status: "processing",
+      updatedAt: now,
+    });
+
+    console.log(`[retryBatchErrors] Retrying ${retryableItems.length} items in batch ${args.batchId} with staggered workers`);
+
+    // Schedule 1 worker immediately for cache warm-up, then more after a delay
+    // @ts-ignore
     await ctx.scheduler.runAfter(0, internal.bulkBackgroundProcessor.processNextItem, {
       batchId: args.batchId,
       baseUrl,
     });
 
-    return { success: true };
+    // After 10s (enough for first file to warm the prompt cache), schedule remaining workers
+    const concurrency = Math.min(BACKGROUND_CONCURRENCY, retryableItems.length - 1);
+    for (let i = 0; i < concurrency; i++) {
+      // @ts-ignore
+      await ctx.scheduler.runAfter(10_000 + (i * 100), internal.bulkBackgroundProcessor.processNextItem, {
+        batchId: args.batchId,
+        baseUrl,
+      });
+    }
+
+    return { success: true, retried: retryableItems.length };
   },
 });
 

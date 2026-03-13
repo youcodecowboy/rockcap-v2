@@ -120,6 +120,7 @@ export default function BulkReviewPage() {
   const updateProject = useMutation(api.projects.update);
   const updateBatch = useMutation(api.bulkUpload.updateBatchStatus);
   const retryItem = useMutation(api.bulkBackgroundProcessor.retryItem);
+  const retryBatchErrors = useMutation(api.bulkBackgroundProcessor.retryBatchErrors);
   const createBulkUploadProjects = useMutation(api.bulkUpload.createBulkUploadProjects);
   const updateItemProject = useMutation(api.bulkUpload.updateItemProject);
   const discardBatch = useMutation(api.bulkUpload.discardBatch);
@@ -349,7 +350,8 @@ export default function BulkReviewPage() {
     }
   };
 
-  // Retry all stuck items handler
+  // Retry all stuck items handler — uses batch retry with cache warm-up staggering
+  // to avoid N simultaneous cache-miss writes (1 warm-up call, then concurrent workers)
   const handleRetryAllStuck = async () => {
     if (!items) return;
     const stuckItems = items.filter((i: any) => i.status === 'processing' || i.status === 'error');
@@ -357,11 +359,9 @@ export default function BulkReviewPage() {
 
     setIsRetryingAll(true);
     try {
-      for (const item of stuckItems) {
-        await retryItem({ itemId: item._id, batchId, baseUrl: window.location.origin });
-      }
+      await retryBatchErrors({ batchId, baseUrl: window.location.origin });
     } catch (e) {
-      console.error('Failed to retry all stuck items:', e);
+      console.error('Failed to retry stuck items:', e);
     } finally {
       setIsRetryingAll(false);
     }
