@@ -960,8 +960,11 @@ export default defineSchema({
     documentId: v.optional(v.id("documents")),
     // Knowledge Library checklist linking
     checklistItemIds: v.optional(v.array(v.id("knowledgeChecklistItems"))),
+    // AI-suggested checklist matches — itemId is v.string() not v.id() because
+    // the AI pipeline may return IDs that don't pass Convex table validation.
+    // The actual FK is checklistItemIds above.
     suggestedChecklistItems: v.optional(v.array(v.object({
-      itemId: v.id("knowledgeChecklistItems"),
+      itemId: v.string(),
       itemName: v.string(),
       category: v.optional(v.string()),
       confidence: v.number(),

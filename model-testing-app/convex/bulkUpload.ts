@@ -420,8 +420,10 @@ export const updateItemAnalysis = mutation({
     version: v.optional(v.string()),
     isDuplicate: v.optional(v.boolean()),
     duplicateOfDocumentId: v.optional(v.id("documents")),
+    // itemId uses v.any() because the AI pipeline may return null or non-Convex IDs;
+    // handler filters to valid entries before storing.
     suggestedChecklistItems: v.optional(v.array(v.object({
-      itemId: v.id("knowledgeChecklistItems"),
+      itemId: v.any(),
       itemName: v.string(),
       category: v.string(),
       confidence: v.number(),
@@ -511,21 +513,37 @@ export const updateItemAnalysis = mutation({
   handler: async (ctx, args) => {
     const { itemId, suggestedChecklistItems, extractedIntelligence, documentAnalysis, classificationReasoning, textContent, suggestedProjectId, suggestedProjectName, projectConfidence, projectReasoning, emailMetadata, ...updates } = args;
 
+    // Filter out checklist items with null/invalid itemIds (AI pipeline is unreliable)
+    const validChecklistItems = suggestedChecklistItems?.filter(
+      (item) => item.itemId != null && typeof item.itemId === 'string' && item.itemId.length > 0
+    );
+    const cleanedChecklistItems = validChecklistItems && validChecklistItems.length > 0
+      ? validChecklistItems as Array<{ itemId: string; itemName: string; category: string; confidence: number; reasoning?: string }>
+      : undefined;
+
     // If there are AI-suggested checklist items, pre-select ONLY the highest confidence one
     // Other suggestions are still shown but not auto-checked - user can manually select more
+    // Validate against DB since AI may return IDs that look valid but aren't real Convex IDs
     let checklistItemIds: Id<"knowledgeChecklistItems">[] | undefined;
-    if (suggestedChecklistItems && suggestedChecklistItems.length > 0) {
-      // Sort by confidence descending and take only the top item if it's >= 0.7
-      const sortedSuggestions = [...suggestedChecklistItems].sort((a, b) => b.confidence - a.confidence);
+    if (cleanedChecklistItems && cleanedChecklistItems.length > 0) {
+      const sortedSuggestions = [...cleanedChecklistItems].sort((a, b) => b.confidence - a.confidence);
       const topSuggestion = sortedSuggestions[0];
       if (topSuggestion && topSuggestion.confidence >= 0.7) {
-        checklistItemIds = [topSuggestion.itemId];
+        try {
+          const candidateId = topSuggestion.itemId as Id<"knowledgeChecklistItems">;
+          const exists = await ctx.db.get(candidateId);
+          if (exists) {
+            checklistItemIds = [candidateId];
+          }
+        } catch {
+          // Invalid ID format — skip auto-selection
+        }
       }
     }
 
     await ctx.db.patch(itemId, {
       ...updates,
-      suggestedChecklistItems,
+      suggestedChecklistItems: cleanedChecklistItems,
       checklistItemIds: checklistItemIds && checklistItemIds.length > 0 ? checklistItemIds : undefined,
       // Store extracted intelligence for filing later
       extractedIntelligence: extractedIntelligence,
