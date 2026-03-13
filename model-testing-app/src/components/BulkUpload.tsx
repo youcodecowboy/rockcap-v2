@@ -630,6 +630,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
         isInternal: uploadScope === 'internal' || isInternal,
         isMultiProject: folderHints.size > 0 && !selectedProjectId,
         instructions: instructions || undefined,
+        uploaderInitials,
         userId: currentUser._id,
         totalFiles: files.length,
         processingMode: isBackgroundMode ? 'background' : 'foreground',

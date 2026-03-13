@@ -70,6 +70,7 @@ export const createBatch = mutation({
     isInternal: v.boolean(),
     isMultiProject: v.optional(v.boolean()),
     instructions: v.optional(v.string()),
+    uploaderInitials: v.optional(v.string()),
     userId: v.id("users"),
     totalFiles: v.number(),
     // Background processing mode (for large batches >5 files)
@@ -105,6 +106,7 @@ export const createBatch = mutation({
       isInternal: args.isInternal,
       isMultiProject: args.isMultiProject,
       instructions: args.instructions,
+      uploaderInitials: args.uploaderInitials,
       processingMode: args.processingMode,
       userId: args.userId,
       createdAt: now,

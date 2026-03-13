@@ -852,6 +852,8 @@ export default defineSchema({
     baseUrl: v.optional(v.string()),
     // Multi-project mode (documents can target different projects within the client)
     isMultiProject: v.optional(v.boolean()),
+    // Uploader initials for document code generation (e.g. "KH")
+    uploaderInitials: v.optional(v.string()),
     // User tracking
     userId: v.id("users"),
     // Timestamps

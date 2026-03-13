@@ -541,6 +541,9 @@ export const processNextItem = internalAction({
       if (batch?.instructions) {
         metadata.instructions = batch.instructions;
       }
+      if (batch?.uploaderInitials) {
+        metadata.uploaderInitials = batch.uploaderInitials;
+      }
       formData.append("metadata", JSON.stringify(metadata));
 
       // Call the V4 analyze API with internal authentication
