@@ -623,7 +623,7 @@ export const processNextItem = internalAction({
         category: analysisData.result?.category || "Other",
         targetFolder: analysisData.result?.suggestedFolder,
         confidence: analysisData.result?.confidence || 0.5,
-        generatedDocumentCode: analysisData.result?.typeAbbreviation,
+        generatedDocumentCode: analysisData.result?.generatedDocumentCode || analysisData.result?.typeAbbreviation,
         version: "V1.0",
         isDuplicate,
         duplicateOfDocumentId,
