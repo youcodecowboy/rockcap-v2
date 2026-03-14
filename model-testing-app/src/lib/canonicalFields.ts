@@ -230,6 +230,88 @@ export const CLIENT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     type: 'string',
     aliases: ['locations', 'markets', 'regions', 'geographic area', 'area', 'geography', 'location focus']
   },
+
+  // === KYC / DUE DILIGENCE (8 fields) ===
+  'kyc.idVerificationStatus': {
+    label: 'ID Verification Status',
+    type: 'string',
+    description: 'Status of identity verification checks',
+    aliases: ['ID verified', 'identity check', 'ID status', 'identity verification', 'ID check', 'verification status']
+  },
+  'kyc.amlCheckDate': {
+    label: 'AML Check Date',
+    type: 'date',
+    description: 'Date of most recent anti-money laundering check',
+    aliases: ['AML date', 'anti-money laundering check', 'AML check', 'AML screening', 'money laundering check']
+  },
+  'kyc.pepScreening': {
+    label: 'PEP Screening Result',
+    type: 'string',
+    description: 'Politically Exposed Person screening result',
+    aliases: ['PEP check', 'politically exposed person', 'PEP status', 'PEP screening', 'PEP result']
+  },
+  'kyc.sourceOfFunds': {
+    label: 'Source of Funds',
+    type: 'text',
+    description: 'Explanation of where project/equity funds originate',
+    aliases: ['source of funds', 'SOF', 'funding source', 'fund origin', 'source of finance', 'equity source']
+  },
+  'kyc.sourceOfWealth': {
+    label: 'Source of Wealth',
+    type: 'text',
+    description: 'Explanation of how client accumulated their wealth',
+    aliases: ['source of wealth', 'SOW', 'wealth origin', 'wealth source', 'how wealth was acquired']
+  },
+  'kyc.riskRating': {
+    label: 'Risk Rating',
+    type: 'string',
+    description: 'Client risk assessment level',
+    aliases: ['risk level', 'risk score', 'risk assessment', 'client risk', 'risk category', 'risk profile']
+  },
+  'kyc.sanctionsCheck': {
+    label: 'Sanctions Screening',
+    type: 'string',
+    description: 'Result of sanctions list screening',
+    aliases: ['sanctions screening', 'sanctions status', 'sanctions check', 'OFAC check', 'sanctions list']
+  },
+  'kyc.enhancedDueDiligence': {
+    label: 'Enhanced Due Diligence Notes',
+    type: 'text',
+    description: 'Notes from enhanced due diligence process',
+    aliases: ['EDD', 'enhanced checks', 'EDD notes', 'enhanced due diligence', 'additional checks']
+  },
+
+  // === CLIENT LEGAL (5 fields) ===
+  'clientLegal.personalGuarantees': {
+    label: 'Personal Guarantees',
+    type: 'text',
+    description: 'Details of personal guarantees given by principals',
+    aliases: ['personal guarantee', 'PG', 'guarantor details', 'guarantee given', 'PG details']
+  },
+  'clientLegal.legalDisputes': {
+    label: 'Legal Disputes',
+    type: 'text',
+    description: 'Any ongoing or historical legal disputes',
+    aliases: ['disputes', 'litigation', 'legal proceedings', 'court cases', 'legal action', 'lawsuits']
+  },
+  'clientLegal.bankruptcyHistory': {
+    label: 'Bankruptcy History',
+    type: 'string',
+    description: 'Any bankruptcy or insolvency history',
+    aliases: ['bankruptcy', 'insolvency', 'IVA', 'individual voluntary arrangement', 'bankrupt']
+  },
+  'clientLegal.ccjs': {
+    label: 'County Court Judgements',
+    type: 'string',
+    description: 'Any CCJs registered against principals',
+    aliases: ['CCJ', 'county court judgement', 'court orders', 'CCJs', 'county court judgment']
+  },
+  'clientLegal.restrictions': {
+    label: 'Legal Restrictions',
+    type: 'text',
+    description: 'Any legal restrictions or caveats affecting the client',
+    aliases: ['restrictions', 'caveats', 'legal restrictions', 'legal caveats']
+  },
 };
 
 // =============================================================================
@@ -312,7 +394,7 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
   'financials.constructionCost': {
     label: 'Construction Cost',
     type: 'currency',
-    aliases: ['build cost', 'construction budget', 'hard costs', 'construction cost', 'building cost', 'works cost', 'build costs']
+    aliases: ['build cost', 'construction budget', 'hard costs', 'construction cost', 'building cost', 'works cost', 'build costs', 'construction budget', 'works cost']
   },
   'financials.gdv': {
     label: 'Gross Development Value',
@@ -322,12 +404,12 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
   'financials.loanAmount': {
     label: 'Loan Amount Requested',
     type: 'currency',
-    aliases: ['loan required', 'funding required', 'borrowing', 'debt amount', 'facility size', 'loan amount', 'loan', 'debt', 'facility', 'loan request', 'funding']
+    aliases: ['loan required', 'funding required', 'borrowing', 'debt amount', 'facility size', 'loan amount', 'loan', 'debt', 'facility', 'loan request', 'funding', 'facility amount', 'total facility', 'gross loan']
   },
   'financials.ltv': {
     label: 'Loan to Value',
     type: 'percentage',
-    aliases: ['ltv', 'loan to value', 'leverage', 'gearing']
+    aliases: ['ltv', 'loan to value', 'leverage', 'gearing', 'loan to value ratio', 'LTV ratio', 'LTV %']
   },
   'financials.ltc': {
     label: 'Loan to Cost',
@@ -439,13 +521,43 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     label: 'Policy Expiry Date',
     type: 'date',
     description: 'Insurance policy expiry/renewal date',
-    aliases: ['expiry date', 'renewal date', 'policy expiry', 'insurance expiry', 'expires', 'valid until']
+    aliases: ['expiry date', 'renewal date', 'policy expiry', 'insurance expiry', 'expires', 'valid until', 'insurance renewal']
   },
   'insurance.coverType': {
     label: 'Cover Type',
     type: 'string',
     description: 'Type of insurance cover (CAR, PI, public liability, etc.)',
-    aliases: ['cover type', 'type of cover', 'insurance type', 'car insurance', 'contractors all risks', 'public liability', 'professional indemnity']
+    aliases: ['cover type', 'type of cover', 'insurance type', 'car insurance', 'contractors all risks', 'public liability', 'professional indemnity', 'building works', 'CAR', 'PI', 'public liability cover']
+  },
+  'insurance.buildingWorksPolicy': {
+    label: 'Building Works Policy',
+    type: 'string',
+    description: 'Building works insurance policy details',
+    aliases: ['building works', 'building works policy', 'construction insurance']
+  },
+  'insurance.professionalIndemnity': {
+    label: 'Professional Indemnity',
+    type: 'string',
+    description: 'Professional indemnity insurance details',
+    aliases: ['PI insurance', 'professional indemnity', 'PI', 'PI cover']
+  },
+  'insurance.contractorsAllRisks': {
+    label: 'Contractors All Risks',
+    type: 'string',
+    description: 'Contractors all risks insurance policy',
+    aliases: ['contractors all risks', 'CAR', 'all risks', 'CAR insurance']
+  },
+  'insurance.publicLiability': {
+    label: 'Public Liability',
+    type: 'string',
+    description: 'Public liability insurance details',
+    aliases: ['public liability', 'PL insurance', 'PL', 'public liability cover']
+  },
+  'insurance.structuralWarranty': {
+    label: 'Structural Warranty',
+    type: 'string',
+    description: 'Structural/latent defects warranty details',
+    aliases: ['structural warranty', 'latent defects', 'building warranty', 'structural defects insurance']
   },
 
   // === PLANNING (6 fields) ===
@@ -453,7 +565,7 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     label: 'Planning Application Reference',
     type: 'string',
     description: 'Planning application reference number',
-    aliases: ['planning ref', 'application reference', 'planning number', 'application number', 'planning application', 'ref number']
+    aliases: ['planning ref', 'application reference', 'planning number', 'application number', 'planning application', 'ref number', 'planning reference', 'planning ref', 'planning number']
   },
   'planning.status': {
     label: 'Planning Status',
@@ -465,7 +577,7 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     label: 'Planning Conditions',
     type: 'text',
     description: 'Summary of planning conditions attached',
-    aliases: ['planning conditions', 'conditions attached', 'planning requirements', 'conditions of consent', 'condition details']
+    aliases: ['planning conditions', 'conditions attached', 'planning requirements', 'conditions of consent', 'condition details', 'pre-commencement conditions', 'discharge of conditions']
   },
   'planning.s106Details': {
     label: 'S106 Agreement Details',
@@ -485,19 +597,37 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     description: 'Permitted development rights status',
     aliases: ['permitted development', 'pd rights', 'permitted development rights', 'prior approval', 'class ma', 'class q']
   },
+  'planning.expiryDate': {
+    label: 'Planning Expiry Date',
+    type: 'date',
+    description: 'Date planning permission expires',
+    aliases: ['planning expiry', 'permission expiry', 'consent expiry', 'planning expiry date']
+  },
+  'planning.useClass': {
+    label: 'Use Class',
+    type: 'string',
+    description: 'Planning use class designation',
+    aliases: ['use class', 'planning use', 'C3', 'B1', 'E class', 'use class order']
+  },
+  'planning.conservationArea': {
+    label: 'Conservation Area',
+    type: 'string',
+    description: 'Whether site is in conservation area or has heritage designation',
+    aliases: ['conservation area', 'listed building', 'heritage', 'conservation', 'heritage designation']
+  },
 
   // === VALUATION (7 fields) ===
   'valuation.marketValue': {
     label: 'Market Value',
     type: 'currency',
     description: 'Current market value from valuation report',
-    aliases: ['market value', 'mv', 'current value', 'open market value', 'omv', 'as-is value', 'day one value']
+    aliases: ['market value', 'mv', 'current value', 'open market value', 'omv', 'as-is value', 'day one value', 'CMV', 'current market value']
   },
   'valuation.gdv': {
     label: 'GDV (Valuation)',
     type: 'currency',
     description: 'Gross Development Value from valuation report',
-    aliases: ['gdv', 'gross development value', 'completed value', 'end value', 'residual value']
+    aliases: ['gdv', 'gross development value', 'completed value', 'end value', 'residual value', 'completed value', 'end value']
   },
   'valuation.specialAssumptions': {
     label: 'Special Assumptions',
@@ -521,13 +651,25 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     label: 'Valuation Date',
     type: 'date',
     description: 'Date of valuation report',
-    aliases: ['valuation date', 'date of valuation', 'report date', 'inspection date', 'valued as at']
+    aliases: ['valuation date', 'date of valuation', 'report date', 'inspection date', 'valued as at', 'survey date']
   },
   'valuation.basisOfValue': {
     label: 'Basis of Value',
     type: 'string',
     description: 'Basis on which valuation was carried out',
     aliases: ['basis of value', 'valuation basis', 'market value basis', 'reinstatement', 'existing use value', 'euv', 'hope value']
+  },
+  'valuation.dayOneValue': {
+    label: 'Day One Value',
+    type: 'currency',
+    description: 'Value at day one / acquisition',
+    aliases: ['day one value', 'day 1 value', 'initial value', 'acquisition value']
+  },
+  'valuation.reinspectionDate': {
+    label: 'Reinspection Date',
+    type: 'date',
+    description: 'Date of next scheduled valuation reinspection',
+    aliases: ['reinspection', 'next inspection', 're-inspection date', 'reinspection date']
   },
 
   // === RISK (4 fields) ===
@@ -580,6 +722,194 @@ export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
     type: 'text',
     description: 'Waiver requests or granted waivers',
     aliases: ['waivers', 'waiver request', 'condition waiver', 'waived conditions', 'waiver granted']
+  },
+
+  // === LOAN TERMS (11 new fields — loanAmount/ltv/ltc already in financials.*) ===
+  'loanTerms.facilityAmount': {
+    label: 'Facility Amount',
+    type: 'currency',
+    description: 'Total facility/loan amount (may differ from net loan)',
+    aliases: ['facility amount', 'facility size', 'total facility', 'gross facility', 'facility']
+  },
+  'loanTerms.netLoan': {
+    label: 'Net Loan',
+    type: 'currency',
+    description: 'Net loan amount after fees/retentions',
+    aliases: ['net loan', 'net advance', 'net facility', 'net proceeds']
+  },
+  'loanTerms.ltgdv': {
+    label: 'Loan to GDV',
+    type: 'percentage',
+    description: 'Loan as percentage of Gross Development Value',
+    aliases: ['LTGDV', 'loan to GDV', 'loan to gross development value', 'LT GDV']
+  },
+  'loanTerms.interestRate': {
+    label: 'Interest Rate',
+    type: 'percentage',
+    description: 'Annual interest rate on the facility',
+    aliases: ['interest rate', 'rate', 'coupon', 'interest', 'annual rate', 'margin']
+  },
+  'loanTerms.arrangementFee': {
+    label: 'Arrangement Fee',
+    type: 'currency',
+    description: 'Upfront facility arrangement fee',
+    aliases: ['arrangement fee', 'facility fee', 'commitment fee', 'procuration fee', 'arrangement']
+  },
+  'loanTerms.exitFee': {
+    label: 'Exit Fee',
+    type: 'currency',
+    description: 'Fee payable on facility redemption',
+    aliases: ['exit fee', 'redemption fee', 'repayment fee', 'early repayment']
+  },
+  'loanTerms.termMonths': {
+    label: 'Facility Term',
+    type: 'number',
+    description: 'Loan term in months',
+    aliases: ['term', 'loan term', 'facility term', 'duration', 'term months', 'loan duration']
+  },
+  'loanTerms.facilityType': {
+    label: 'Facility Type',
+    type: 'string',
+    description: 'Type of lending facility',
+    aliases: ['facility type', 'loan type', 'senior', 'mezzanine', 'bridging', 'development finance', 'bridge loan']
+  },
+  'loanTerms.drawdownSchedule': {
+    label: 'Drawdown Schedule',
+    type: 'text',
+    description: 'Schedule of loan drawdowns/tranches',
+    aliases: ['drawdown', 'tranches', 'drawdown schedule', 'tranche schedule', 'staged drawdown']
+  },
+  'loanTerms.covenantsSummary': {
+    label: 'Covenants Summary',
+    type: 'text',
+    description: 'Summary of financial and operational loan covenants',
+    aliases: ['covenants', 'loan covenants', 'financial covenants', 'covenant requirements']
+  },
+  'loanTerms.redemptionDate': {
+    label: 'Redemption Date',
+    type: 'date',
+    description: 'Date facility must be redeemed/repaid',
+    aliases: ['redemption date', 'maturity date', 'repayment date', 'facility expiry', 'loan maturity']
+  },
+
+  // === CONSTRUCTION (8 new fields — cost/contractor/dates already exist elsewhere) ===
+  'construction.contractType': {
+    label: 'Contract Type',
+    type: 'string',
+    description: 'Type of building contract',
+    aliases: ['contract type', 'JCT', 'design and build', 'D&B', 'traditional contract', 'construction contract']
+  },
+  'construction.contractSum': {
+    label: 'Contract Sum',
+    type: 'currency',
+    description: 'Agreed construction contract value',
+    aliases: ['contract sum', 'contract value', 'build cost', 'construction cost', 'agreed sum']
+  },
+  'construction.programmeDuration': {
+    label: 'Programme Duration',
+    type: 'number',
+    description: 'Construction programme length in months',
+    aliases: ['programme', 'build programme', 'construction programme', 'programme duration', 'build duration']
+  },
+  'construction.currentProgress': {
+    label: 'Current Progress',
+    type: 'percentage',
+    description: 'Current construction completion percentage',
+    aliases: ['progress', 'completion percentage', '% complete', 'current progress', 'build progress']
+  },
+  'construction.defectsLiability': {
+    label: 'Defects Liability Period',
+    type: 'string',
+    description: 'Duration of defects liability period after practical completion',
+    aliases: ['defects period', 'DLP', 'defects liability', 'defects', 'rectification period']
+  },
+  'construction.buildWarrantyProvider': {
+    label: 'Build Warranty Provider',
+    type: 'string',
+    description: 'Provider of structural/build warranty',
+    aliases: ['build warranty', 'NHBC', 'Premier Guarantee', 'structural warranty', 'warranty provider', 'building warranty']
+  },
+  'construction.retentionPercent': {
+    label: 'Retention Percentage',
+    type: 'percentage',
+    description: 'Percentage of contract sum retained until defects rectified',
+    aliases: ['retention', 'retention percentage', 'retention %', 'contract retention']
+  },
+  'construction.clerkOfWorks': {
+    label: 'Clerk of Works',
+    type: 'string',
+    description: 'Site inspector/clerk of works',
+    aliases: ['clerk of works', 'site inspector', 'site supervision', 'clerk']
+  },
+
+  // === TITLE (4 new fields — titleNumber/charges/covenants/leaseTerms already exist elsewhere) ===
+  'title.tenure': {
+    label: 'Tenure',
+    type: 'string',
+    description: 'Freehold, leasehold, or other tenure type',
+    aliases: ['tenure', 'freehold', 'leasehold', 'tenure type', 'ownership type']
+  },
+  'title.leaseTermRemaining': {
+    label: 'Lease Term Remaining',
+    type: 'number',
+    description: 'Remaining years on leasehold (if applicable)',
+    aliases: ['lease term', 'unexpired term', 'years remaining', 'remaining lease', 'lease remaining']
+  },
+  'title.groundRent': {
+    label: 'Ground Rent',
+    type: 'currency',
+    description: 'Annual ground rent payable (leasehold)',
+    aliases: ['ground rent', 'peppercorn', 'annual rent', 'lease rent']
+  },
+  'title.reportOnTitleStatus': {
+    label: 'Report on Title Status',
+    type: 'string',
+    description: 'Status of solicitor report on title',
+    aliases: ['report on title', 'ROT', 'title report', 'ROT status', 'title report status']
+  },
+
+  // === SALES / EXIT (7 fields) ===
+  'exit.strategy': {
+    label: 'Exit Strategy',
+    type: 'string',
+    description: 'Planned exit/repayment strategy',
+    aliases: ['exit strategy', 'exit route', 'repayment strategy', 'exit plan', 'disposal strategy']
+  },
+  'exit.unitsReserved': {
+    label: 'Units Reserved',
+    type: 'number',
+    description: 'Number of units with reservations',
+    aliases: ['reserved', 'reservations', 'units reserved', 'reserved units']
+  },
+  'exit.unitsExchanged': {
+    label: 'Units Exchanged',
+    type: 'number',
+    description: 'Number of units with exchanged contracts',
+    aliases: ['exchanged', 'exchanges', 'units exchanged', 'exchanged units', 'contracts exchanged']
+  },
+  'exit.unitsCompleted': {
+    label: 'Units Completed',
+    type: 'number',
+    description: 'Number of units with completed sales',
+    aliases: ['completed sales', 'completions', 'units completed', 'sales completed']
+  },
+  'exit.averageSalesPrice': {
+    label: 'Average Sales Price',
+    type: 'currency',
+    description: 'Average achieved or projected sales price per unit',
+    aliases: ['average price', 'ASP', 'avg sales price', 'average selling price', 'mean price']
+  },
+  'exit.totalSalesRevenue': {
+    label: 'Total Sales Revenue',
+    type: 'currency',
+    description: 'Total achieved or projected sales revenue',
+    aliases: ['total revenue', 'sales revenue', 'total sales', 'gross sales', 'revenue']
+  },
+  'exit.salesAgent': {
+    label: 'Sales Agent',
+    type: 'string',
+    description: 'Estate agent or marketing agent handling sales',
+    aliases: ['sales agent', 'estate agent', 'marketing agent', 'selling agent', 'agent']
   },
 
   // === PARTIES (7 fields) ===
@@ -1007,6 +1337,19 @@ export const FIELD_NATURAL_SCOPE: Record<string, 'client' | 'project' | 'context
   'experience.totalGDV': 'client',
   'experience.specializations': 'client',
   'experience.geographicFocus': 'client',
+  'kyc.idVerificationStatus': 'client',
+  'kyc.amlCheckDate': 'client',
+  'kyc.pepScreening': 'client',
+  'kyc.sourceOfFunds': 'client',
+  'kyc.sourceOfWealth': 'client',
+  'kyc.riskRating': 'client',
+  'kyc.sanctionsCheck': 'client',
+  'kyc.enhancedDueDiligence': 'client',
+  'clientLegal.personalGuarantees': 'client',
+  'clientLegal.legalDisputes': 'client',
+  'clientLegal.bankruptcyHistory': 'client',
+  'clientLegal.ccjs': 'client',
+  'clientLegal.restrictions': 'client',
 
   // === ALWAYS PROJECT-LEVEL (deal-specific) ===
   'overview.projectName': 'project',
@@ -1088,6 +1431,60 @@ export const FIELD_NATURAL_SCOPE: Record<string, 'client' | 'project' | 'context
   'parties.monitoringSurveyor': 'project',
   'parties.broker': 'project',
   'parties.guarantor': 'project',
+
+  // === LOAN TERMS ===
+  'loanTerms.facilityAmount': 'project',
+  'loanTerms.netLoan': 'project',
+  'loanTerms.ltgdv': 'project',
+  'loanTerms.interestRate': 'project',
+  'loanTerms.arrangementFee': 'project',
+  'loanTerms.exitFee': 'project',
+  'loanTerms.termMonths': 'project',
+  'loanTerms.facilityType': 'project',
+  'loanTerms.drawdownSchedule': 'project',
+  'loanTerms.covenantsSummary': 'project',
+  'loanTerms.redemptionDate': 'project',
+
+  // === CONSTRUCTION ===
+  'construction.contractType': 'project',
+  'construction.contractSum': 'project',
+  'construction.programmeDuration': 'project',
+  'construction.currentProgress': 'project',
+  'construction.defectsLiability': 'project',
+  'construction.buildWarrantyProvider': 'project',
+  'construction.retentionPercent': 'project',
+  'construction.clerkOfWorks': 'project',
+
+  // === TITLE ===
+  'title.tenure': 'project',
+  'title.leaseTermRemaining': 'project',
+  'title.groundRent': 'project',
+  'title.reportOnTitleStatus': 'project',
+
+  // === SALES / EXIT ===
+  'exit.strategy': 'project',
+  'exit.unitsReserved': 'project',
+  'exit.unitsExchanged': 'project',
+  'exit.unitsCompleted': 'project',
+  'exit.averageSalesPrice': 'project',
+  'exit.totalSalesRevenue': 'project',
+  'exit.salesAgent': 'project',
+
+  // === VALUATION (new fields) ===
+  'valuation.dayOneValue': 'project',
+  'valuation.reinspectionDate': 'project',
+
+  // === PLANNING (new fields) ===
+  'planning.expiryDate': 'project',
+  'planning.useClass': 'project',
+  'planning.conservationArea': 'project',
+
+  // === INSURANCE (new fields) ===
+  'insurance.buildingWorksPolicy': 'project',
+  'insurance.professionalIndemnity': 'project',
+  'insurance.contractorsAllRisks': 'project',
+  'insurance.publicLiability': 'project',
+  'insurance.structuralWarranty': 'project',
 };
 
 /**
