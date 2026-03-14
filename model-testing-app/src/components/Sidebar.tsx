@@ -76,6 +76,7 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 className={`flex items-center justify-center w-12 h-10 rounded-md transition-colors ${
                   active
                     ? 'bg-gray-900'
@@ -113,6 +114,7 @@ export default function Sidebar() {
         <div className="border-t border-gray-800 py-2 px-3">
           <Link
             href="/settings"
+            prefetch={false}
             className={`flex items-center justify-center w-12 h-10 rounded-md transition-colors ${
               isActive('/settings')
                 ? 'bg-gray-900'
