@@ -332,10 +332,13 @@ export class BulkQueueProcessor {
       await this.runWorker(1, totalItems, true); // single-item warm-up
     }
 
-    // Spawn remaining workers — each pulls from the shared queue until empty.
-    // The prompt cache is now warm, so all calls get cache reads.
+    // Spawn workers with staggered start — avoids all workers hitting Vercel
+    // simultaneously and triggering cold starts that push large files over the timeout.
+    const workerStartId = cacheIsWarm ? 1 : 2;
     const workers = Array.from({ length: this.concurrency }, (_, i) =>
-      this.runWorker(i + (cacheIsWarm ? 1 : 2), totalItems)
+      new Promise(resolve => setTimeout(resolve, i * 500)).then(() =>
+        this.runWorker(i + workerStartId, totalItems)
+      )
     );
     await Promise.all(workers);
 
@@ -532,26 +535,40 @@ export class BulkQueueProcessor {
     let v4Data: any;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const analyzeResponse = await fetch("/api/v4-analyze", {
-        method: "POST",
-        body: buildFormData(),
-      });
+      try {
+        const analyzeResponse = await fetch("/api/v4-analyze", {
+          method: "POST",
+          body: buildFormData(),
+        });
 
-      if (analyzeResponse.ok) {
-        v4Data = await analyzeResponse.json();
-        lastV4ApiCallTimestamp = Date.now(); // Keep prompt cache TTL tracker fresh
-        break;
+        if (analyzeResponse.ok) {
+          v4Data = await analyzeResponse.json();
+          lastV4ApiCallTimestamp = Date.now(); // Keep prompt cache TTL tracker fresh
+          break;
+        }
+
+        if (attempt < MAX_RETRIES && RETRYABLE_STATUSES.includes(analyzeResponse.status)) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 500;
+          console.warn(`[BulkQueue] V4 analyze returned ${analyzeResponse.status} for "${item.file.name}", retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+
+        const errorData = await analyzeResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `Analysis failed (HTTP ${analyzeResponse.status})`);
+      } catch (fetchError) {
+        // Network errors (ECONNRESET, timeout, etc.) — retry with backoff
+        const isRetryable = fetchError instanceof TypeError ||
+          (fetchError instanceof Error && /ECONNRESET|network|abort|timeout|fetch failed/i.test(fetchError.message));
+
+        if (attempt < MAX_RETRIES && isRetryable) {
+          const delay = Math.min(2000 * Math.pow(2, attempt), 15000) + Math.random() * 1000;
+          console.warn(`[BulkQueue] Network error for "${item.file.name}": ${(fetchError as Error).message}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw fetchError;
       }
-
-      if (attempt < MAX_RETRIES && RETRYABLE_STATUSES.includes(analyzeResponse.status)) {
-        const delay = Math.min(1000 * Math.pow(2, attempt), 8000) + Math.random() * 500;
-        console.warn(`[BulkQueue] V4 analyze returned ${analyzeResponse.status} for "${item.file.name}", retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-
-      const errorData = await analyzeResponse.json().catch(() => ({}));
-      throw new Error(errorData.error || `Analysis failed (HTTP ${analyzeResponse.status})`);
     }
 
     if (!v4Data) {
