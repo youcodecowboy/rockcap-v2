@@ -98,6 +98,122 @@ export const projectDevelopmentFields: FieldDefinition[] = [
 ];
 
 // ============================================================================
+// CLIENT KYC FIELD DEFINITIONS
+// ============================================================================
+
+export const clientKycFields: FieldDefinition[] = [
+  { key: 'kyc.idVerificationStatus', label: 'ID Verification Status', priority: 'critical' },
+  { key: 'kyc.amlCheckDate', label: 'AML Check Date', priority: 'critical' },
+  { key: 'kyc.pepScreening', label: 'PEP Screening', priority: 'important' },
+  { key: 'kyc.sourceOfFunds', label: 'Source of Funds', multiline: true, priority: 'critical', expectedSource: 'Source of Funds Declaration' },
+  { key: 'kyc.sourceOfWealth', label: 'Source of Wealth', multiline: true, priority: 'important' },
+  { key: 'kyc.riskRating', label: 'Risk Rating', priority: 'important' },
+  { key: 'kyc.sanctionsCheck', label: 'Sanctions Screening', priority: 'important' },
+  { key: 'kyc.enhancedDueDiligence', label: 'Enhanced Due Diligence Notes', multiline: true, priority: 'optional' },
+];
+
+// ============================================================================
+// CLIENT LEGAL FIELD DEFINITIONS
+// ============================================================================
+
+export const clientLegalFields: FieldDefinition[] = [
+  { key: 'clientLegal.personalGuarantees', label: 'Personal Guarantees', multiline: true, priority: 'critical' },
+  { key: 'clientLegal.legalDisputes', label: 'Legal Disputes', multiline: true, priority: 'important' },
+  { key: 'clientLegal.bankruptcyHistory', label: 'Bankruptcy History', priority: 'critical' },
+  { key: 'clientLegal.ccjs', label: 'County Court Judgements', priority: 'critical' },
+  { key: 'clientLegal.restrictions', label: 'Legal Restrictions', multiline: true, priority: 'optional' },
+];
+
+// ============================================================================
+// PROJECT LOAN TERMS FIELD DEFINITIONS
+// ============================================================================
+
+export const projectLoanTermsFields: FieldDefinition[] = [
+  { key: 'loanTerms.facilityAmount', label: 'Facility Amount (£)', type: 'number', priority: 'critical', expectedSource: 'Facility Letter' },
+  { key: 'loanTerms.netLoan', label: 'Net Loan (£)', type: 'number', priority: 'important' },
+  { key: 'loanTerms.ltgdv', label: 'Loan to GDV (%)', type: 'number', priority: 'critical' },
+  { key: 'loanTerms.interestRate', label: 'Interest Rate (%)', type: 'number', priority: 'critical', expectedSource: 'Facility Letter' },
+  { key: 'loanTerms.arrangementFee', label: 'Arrangement Fee (£)', type: 'number', priority: 'important' },
+  { key: 'loanTerms.exitFee', label: 'Exit Fee (£)', type: 'number', priority: 'important' },
+  { key: 'loanTerms.termMonths', label: 'Facility Term (months)', type: 'number', priority: 'critical', expectedSource: 'Facility Letter' },
+  { key: 'loanTerms.facilityType', label: 'Facility Type', priority: 'critical' },
+  { key: 'loanTerms.drawdownSchedule', label: 'Drawdown Schedule', multiline: true, priority: 'important' },
+  { key: 'loanTerms.covenantsSummary', label: 'Covenants Summary', multiline: true, priority: 'important' },
+  { key: 'loanTerms.redemptionDate', label: 'Redemption Date', priority: 'important' },
+];
+
+// ============================================================================
+// PROJECT CONSTRUCTION FIELD DEFINITIONS
+// ============================================================================
+
+export const projectConstructionFields: FieldDefinition[] = [
+  { key: 'construction.contractType', label: 'Contract Type', priority: 'important' },
+  { key: 'construction.contractSum', label: 'Contract Sum (£)', type: 'number', priority: 'critical', expectedSource: 'Build Contract' },
+  { key: 'construction.programmeDuration', label: 'Programme Duration (months)', type: 'number', priority: 'important', expectedSource: 'Build Programme' },
+  { key: 'construction.currentProgress', label: 'Current Progress (%)', type: 'number', priority: 'important' },
+  { key: 'construction.defectsLiability', label: 'Defects Liability Period', priority: 'optional' },
+  { key: 'construction.buildWarrantyProvider', label: 'Build Warranty Provider', priority: 'important' },
+  { key: 'construction.retentionPercent', label: 'Retention (%)', type: 'number', priority: 'optional' },
+  { key: 'construction.clerkOfWorks', label: 'Clerk of Works', priority: 'optional' },
+];
+
+// ============================================================================
+// PROJECT TITLE FIELD DEFINITIONS
+// ============================================================================
+
+export const projectTitleFields: FieldDefinition[] = [
+  { key: 'title.tenure', label: 'Tenure', priority: 'critical', expectedSource: 'Report on Title' },
+  { key: 'title.leaseTermRemaining', label: 'Lease Term Remaining (years)', type: 'number', priority: 'important' },
+  { key: 'title.groundRent', label: 'Ground Rent (£)', type: 'number', priority: 'optional' },
+  { key: 'title.reportOnTitleStatus', label: 'Report on Title Status', priority: 'important' },
+];
+
+// ============================================================================
+// PROJECT EXIT/SALES FIELD DEFINITIONS
+// ============================================================================
+
+export const projectExitFields: FieldDefinition[] = [
+  { key: 'exit.strategy', label: 'Exit Strategy', priority: 'critical' },
+  { key: 'exit.unitsReserved', label: 'Units Reserved', type: 'number', priority: 'important' },
+  { key: 'exit.unitsExchanged', label: 'Units Exchanged', type: 'number', priority: 'important' },
+  { key: 'exit.unitsCompleted', label: 'Units Completed', type: 'number', priority: 'important' },
+  { key: 'exit.averageSalesPrice', label: 'Average Sales Price (£)', type: 'number', priority: 'important' },
+  { key: 'exit.totalSalesRevenue', label: 'Total Sales Revenue (£)', type: 'number', priority: 'important' },
+  { key: 'exit.salesAgent', label: 'Sales Agent', priority: 'optional' },
+];
+
+// ============================================================================
+// PROJECT VALUATION FIELD DEFINITIONS
+// ============================================================================
+
+export const projectValuationFields: FieldDefinition[] = [
+  { key: 'valuation.dayOneValue', label: 'Day One Value (£)', type: 'number', priority: 'important' },
+  { key: 'valuation.reinspectionDate', label: 'Reinspection Date', priority: 'important' },
+];
+
+// ============================================================================
+// PROJECT PLANNING FIELD DEFINITIONS
+// ============================================================================
+
+export const projectPlanningFields: FieldDefinition[] = [
+  { key: 'planning.expiryDate', label: 'Planning Expiry Date', priority: 'important' },
+  { key: 'planning.useClass', label: 'Use Class', priority: 'important' },
+  { key: 'planning.conservationArea', label: 'Conservation Area', priority: 'optional' },
+];
+
+// ============================================================================
+// PROJECT INSURANCE FIELD DEFINITIONS
+// ============================================================================
+
+export const projectInsuranceFields: FieldDefinition[] = [
+  { key: 'insurance.buildingWorksPolicy', label: 'Building Works Policy', priority: 'important' },
+  { key: 'insurance.professionalIndemnity', label: 'Professional Indemnity', priority: 'optional' },
+  { key: 'insurance.contractorsAllRisks', label: 'Contractors All Risks', priority: 'important' },
+  { key: 'insurance.publicLiability', label: 'Public Liability', priority: 'optional' },
+  { key: 'insurance.structuralWarranty', label: 'Structural Warranty', priority: 'important' },
+];
+
+// ============================================================================
 // KEY PARTIES FIELD DEFINITIONS
 // ============================================================================
 
@@ -156,6 +272,8 @@ export const getAllClientFields = (isLender: boolean): FieldDefinition[] => [
   ...clientBasicFields,
   ...clientFinancialFields,
   ...(isLender ? lenderProfileFields : borrowerProfileFields),
+  ...clientKycFields,
+  ...clientLegalFields,
 ];
 
 export const getAllProjectFields = (): FieldDefinition[] => [
@@ -164,4 +282,11 @@ export const getAllProjectFields = (): FieldDefinition[] => [
   ...projectFinancialsFields,
   ...projectTimelineFields,
   ...projectDevelopmentFields,
+  ...projectLoanTermsFields,
+  ...projectConstructionFields,
+  ...projectTitleFields,
+  ...projectExitFields,
+  ...projectValuationFields,
+  ...projectPlanningFields,
+  ...projectInsuranceFields,
 ];
