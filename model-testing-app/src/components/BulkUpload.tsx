@@ -675,8 +675,8 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
         // Calculate estimated time
         const estimatedMins = Math.ceil((files.length * ESTIMATED_SECONDS_PER_FILE) / 60);
 
-        // Start background processing
-        await startBackgroundProcessing({
+        // Start background processing (may queue if another batch is active)
+        const bgResult = await startBackgroundProcessing({
           batchId,
           baseUrl: window.location.origin,
         });
@@ -687,8 +687,11 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
         setFolderHints(new Map());
         setDetectedProjects([]);
 
-        toast.success('Files uploaded successfully', {
-          description: `${files.length} files are processing in the background (~${estimatedMins} min). You can queue another upload.`,
+        const isQueued = bgResult && 'queued' in bgResult && bgResult.queued;
+        toast.success(isQueued ? 'Files queued for processing' : 'Files uploaded successfully', {
+          description: isQueued
+            ? `${files.length} files queued (position ${bgResult.queuePosition}). Will start when the current batch completes.`
+            : `${files.length} files are processing in the background (~${estimatedMins} min). You can queue another upload.`,
           duration: 5000,
           action: {
             label: 'Watch Progress',

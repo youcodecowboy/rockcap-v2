@@ -42,7 +42,38 @@ export const startBackgroundProcessing = mutation({
     const estimatedMs = batch.totalFiles * ESTIMATED_SECONDS_PER_FILE * 1000;
     const estimatedCompletionTime = new Date(now.getTime() + estimatedMs);
 
-    // Update batch with background processing metadata
+    // Check if another batch is already processing — if so, queue this one
+    const allBatches = await ctx.db.query("bulkUploadBatches").collect();
+    const activeBatch = allBatches.find(
+      b => b._id !== args.batchId && b.status === "processing" && b.processingMode === "background"
+    );
+
+    if (activeBatch) {
+      // Queue this batch — it will start when the active one completes
+      const queuedBatches = allBatches.filter(b => b.status === "queued");
+      const nextPosition = queuedBatches.length + 1;
+
+      await ctx.db.patch(args.batchId, {
+        processingMode: "background",
+        status: "queued",
+        baseUrl: args.baseUrl,
+        queuePosition: nextPosition,
+        estimatedCompletionTime: estimatedCompletionTime.toISOString(),
+        updatedAt: now.toISOString(),
+      });
+
+      console.log(`[Background Processor] Batch ${args.batchId} queued at position ${nextPosition} (waiting for ${activeBatch._id})`);
+
+      return {
+        batchId: args.batchId,
+        queued: true,
+        queuePosition: nextPosition,
+        estimatedCompletionTime: estimatedCompletionTime.toISOString(),
+        estimatedMinutes: Math.ceil(estimatedMs / 60000),
+      };
+    }
+
+    // No active batch — start processing immediately
     await ctx.db.patch(args.batchId, {
       processingMode: "background",
       status: "processing",
@@ -56,7 +87,7 @@ export const startBackgroundProcessing = mutation({
     const concurrency = Math.min(BACKGROUND_CONCURRENCY, batch.totalFiles);
     for (let i = 0; i < concurrency; i++) {
       // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
-      await ctx.scheduler.runAfter(i * 100, internal.bulkBackgroundProcessor.processNextItem, {
+      await ctx.scheduler.runAfter(i * 500, internal.bulkBackgroundProcessor.processNextItem, {
         batchId: args.batchId,
         baseUrl: args.baseUrl,
       });
@@ -64,6 +95,7 @@ export const startBackgroundProcessing = mutation({
 
     return {
       batchId: args.batchId,
+      queued: false,
       estimatedCompletionTime: estimatedCompletionTime.toISOString(),
       estimatedMinutes: Math.ceil(estimatedMs / 60000),
     };
