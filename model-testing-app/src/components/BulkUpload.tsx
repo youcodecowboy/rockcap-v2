@@ -681,21 +681,20 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           baseUrl: window.location.origin,
         });
 
-        // Show toast and navigate to review page
+        // Reset form so user can queue another upload immediately
         setIsUploading(false);
         setFiles([]);
+        setFolderHints(new Map());
+        setDetectedProjects([]);
 
         toast.success('Files uploaded successfully', {
-          description: `${files.length} files are processing in the background (~${estimatedMins} min). You'll be notified when ready.`,
+          description: `${files.length} files are processing in the background (~${estimatedMins} min). You can queue another upload.`,
           duration: 5000,
           action: {
             label: 'Watch Progress',
             onClick: () => router.push(`/docs/bulk/${batchId}`),
           },
         });
-
-        // Navigate to review page to watch progress
-        router.push(`/docs/bulk/${batchId}`);
 
       } else {
         // FOREGROUND MODE: Use existing BulkQueueProcessor (unchanged)
@@ -807,12 +806,14 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           processor.addItem(itemId, file, folderHints.get(i));
         }
 
-        // Reset form and navigate immediately — processing continues in background
+        // Reset form so user can queue another upload immediately
         setIsUploading(false);
         setFiles([]);
+        setFolderHints(new Map());
+        setDetectedProjects([]);
 
         toast.success('Files uploaded successfully', {
-          description: `${files.length} files are processing. You'll be notified when ready.`,
+          description: `${files.length} files are processing. You can queue another upload.`,
           duration: 5000,
           action: {
             label: 'Watch Progress',
@@ -820,9 +821,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           },
         });
 
-        router.push(`/docs/bulk/${batchId}`);
-
-        // Start processing in background (don't await — page already navigated)
+        // Start processing in background
         processor.processQueue().catch(err => {
           console.error('[BulkUpload] Background processing error:', err);
         });
