@@ -471,7 +471,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     // Filter to supported file types only
     const supportedFiles = allFiles.filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls', 'eml'].includes(ext || '');
+      return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls', 'xlsm', 'eml', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'].includes(ext || '');
     });
 
     if (supportedFiles.length === 0) {
