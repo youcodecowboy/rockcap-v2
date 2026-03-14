@@ -514,17 +514,12 @@ export const processNextItem = internalAction({
         throw new Error("Could not get file URL from storage");
       }
 
-      // Fetch the file content
-      const fileResponse = await fetch(fileUrl);
-      if (!fileResponse.ok) {
-        throw new Error(`Failed to fetch file: ${fileResponse.status}`);
-      }
-
-      const fileBlob = await fileResponse.blob();
-
-      // Create FormData for the V4 API call
+      // Send file via URL reference instead of raw blob to avoid Vercel's 4.5MB body limit.
+      // The V4 API route fetches the file server-side from the storage URL.
       const formData = new FormData();
-      formData.append("file", fileBlob, item.fileName);
+      formData.append("fileUrl_0", fileUrl);
+      formData.append("fileName_0", item.fileName);
+      formData.append("fileType_0", item.fileType || 'application/octet-stream');
 
       // Pass rich metadata to V4 pipeline
       const metadata: Record<string, any> = {};
