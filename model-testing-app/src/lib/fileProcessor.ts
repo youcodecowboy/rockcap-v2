@@ -116,23 +116,31 @@ export async function extractTextFromFile(file: File): Promise<string> {
   ) {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      
-      // Extract text from sheets (cap at ~50K chars to avoid Vercel timeout on massive workbooks)
+      // Limit parsing: only read first 200 rows per sheet to avoid slow decompression
+      // of massive XLSM files (30+ tabs × 1000s rows). Classification only needs
+      // enough content to identify the document type.
+      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheetRows: 200 });
+
+      // Extract text from up to 10 sheets, capped at 50K chars
       const MAX_EXTRACT_LENGTH = 50_000;
+      const MAX_SHEETS = 10;
       let fullText = '';
-      const sheetNames = workbook.SheetNames;
+      const sheetNames = workbook.SheetNames.slice(0, MAX_SHEETS);
+
+      // Include a summary of all sheet names for classification context
+      if (workbook.SheetNames.length > MAX_SHEETS) {
+        fullText += `[Workbook has ${workbook.SheetNames.length} sheets: ${workbook.SheetNames.join(', ')}]\n`;
+        fullText += `[Showing first ${MAX_SHEETS} sheets]\n`;
+      }
 
       for (const sheetName of sheetNames) {
         if (fullText.length >= MAX_EXTRACT_LENGTH) break;
 
         const worksheet = workbook.Sheets[sheetName];
-        // Convert sheet to JSON for easier text extraction
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
 
         fullText += `\n=== Sheet: ${sheetName} ===\n`;
 
-        // Format each row
         for (let rowIndex = 0; rowIndex < jsonData.length; rowIndex++) {
           if (fullText.length >= MAX_EXTRACT_LENGTH) break;
 
