@@ -2064,3 +2064,80 @@ export const addDocumentToIntelligence = mutation({
     return { success: true, ...result };
   },
 });
+
+// Migration audit — reports which extractedAttributes would match new canonical fields
+// This is a READ-ONLY query for safety. Run this to verify before any actual migration.
+export const auditAttributeMigration = query({
+  args: {
+    scope: v.union(v.literal('client'), v.literal('project')),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+
+    if (args.scope === 'client') {
+      const records = await ctx.db.query('clientIntelligence').take(limit);
+      const results = [];
+
+      for (const record of records) {
+        const attrs = record.extractedAttributes ?? [];
+        const promotable = [];
+
+        for (const attr of attrs) {
+          const label = typeof attr === 'object' && attr !== null ? (attr as any).label || (attr as any).key || '' : '';
+          if (label) {
+            promotable.push({ label, value: (attr as any).value });
+          }
+        }
+
+        if (promotable.length > 0) {
+          results.push({
+            clientId: record.clientId,
+            totalAttributes: attrs.length,
+            promotableCount: promotable.length,
+            promotable,
+          });
+        }
+      }
+
+      return {
+        scope: 'client',
+        recordsScanned: records.length,
+        totalPromotable: results.reduce((sum, r) => sum + r.promotableCount, 0),
+        details: results,
+      };
+    }
+
+    // Similar logic for project scope
+    const records = await ctx.db.query('projectIntelligence').take(limit);
+    const results = [];
+
+    for (const record of records) {
+      const attrs = record.extractedAttributes ?? [];
+      const promotable = [];
+
+      for (const attr of attrs) {
+        const label = typeof attr === 'object' && attr !== null ? (attr as any).label || (attr as any).key || '' : '';
+        if (label) {
+          promotable.push({ label, value: (attr as any).value });
+        }
+      }
+
+      if (promotable.length > 0) {
+        results.push({
+          projectId: record.projectId,
+          totalAttributes: attrs.length,
+          promotableCount: promotable.length,
+          promotable,
+        });
+      }
+    }
+
+    return {
+      scope: 'project',
+      recordsScanned: records.length,
+      totalPromotable: results.reduce((sum, r) => sum + r.promotableCount, 0),
+      details: results,
+    };
+  },
+});
