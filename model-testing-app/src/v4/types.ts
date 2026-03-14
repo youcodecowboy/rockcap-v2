@@ -352,7 +352,7 @@ export const DEFAULT_V4_CONFIG: Omit<V4PipelineConfig, 'anthropicApiKey'> = {
   useMock: false,
   primaryModel: 'claude-haiku-4-5-20251001',
   criticModel: 'claude-sonnet-4-6',
-  maxTokens: 8192,
+  maxTokens: 16384,
   temperature: 0.1,
   useMultimodal: true,
   loadReferences: true,
