@@ -12,7 +12,7 @@ import { Id } from "./_generated/dataModel";
 // ============================================================================
 
 const ESTIMATED_SECONDS_PER_FILE = 20;
-const BACKGROUND_CONCURRENCY = 3; // Parallel workers per batch
+const BACKGROUND_CONCURRENCY = 5; // Parallel workers per batch
 
 // ============================================================================
 // PUBLIC MUTATIONS
