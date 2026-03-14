@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Building2, Building, User, FolderKanban, FileText, ChevronRight, Loader2 } from 'lucide-react';
+import { Building2, Building, User, FolderKanban, FileText, ChevronRight, ChevronDown, Folder, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type DocumentScope = 'client' | 'internal' | 'personal';
@@ -46,6 +46,7 @@ export default function MoveDocumentCrossScopeModal({
   );
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(currentFolderId || null);
   const [isMoving, setIsMoving] = useState(false);
+  const [expandedMoveTargets, setExpandedMoveTargets] = useState<Set<string>>(new Set());
 
   // Reset selections when scope changes
   useEffect(() => {
@@ -271,20 +272,67 @@ export default function MoveDocumentCrossScopeModal({
                     >
                       No specific folder
                     </button>
-                    {(selectedProjectId === 'base-documents' ? clientFolders : projectFolders).map((folder: any) => (
-                      <button
-                        key={folder._id}
-                        onClick={() => setSelectedFolderId(folder.folderType)}
-                        className={cn(
-                          "w-full text-left p-2 rounded-md text-sm transition-colors pl-4",
-                          selectedFolderId === folder.folderType
-                            ? "bg-blue-50 text-blue-700 border border-blue-200"
-                            : "hover:bg-gray-50 border border-transparent"
-                        )}
-                      >
-                        {folder.name}
-                      </button>
-                    ))}
+                    {(() => {
+                      const folders = selectedProjectId === 'base-documents' ? clientFolders : projectFolders;
+                      // Build tree: split into root and children by parentFolderId
+                      const root: any[] = [];
+                      const children: Record<string, any[]> = {};
+                      for (const f of folders as any[]) {
+                        if (f.parentFolderId) {
+                          const parentId = f.parentFolderId.toString();
+                          if (!children[parentId]) children[parentId] = [];
+                          children[parentId].push(f);
+                        } else {
+                          root.push(f);
+                        }
+                      }
+                      const renderFolder = (f: any, depth: number = 0): React.ReactNode => {
+                        const fId = f._id.toString();
+                        const childList = children[fId] || [];
+                        const hasChildren = childList.length > 0;
+                        const isExpanded = expandedMoveTargets.has(fId);
+                        return (
+                          <div key={f._id}>
+                            <button
+                              onClick={() => setSelectedFolderId(f.folderType)}
+                              className={cn(
+                                "w-full text-left p-2 rounded-md text-sm transition-colors flex items-center gap-2",
+                                selectedFolderId === f.folderType
+                                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                  : "hover:bg-gray-50 border border-transparent"
+                              )}
+                              style={{ paddingLeft: `${16 + depth * 16}px` }}
+                            >
+                              {hasChildren && (
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const next = new Set(expandedMoveTargets);
+                                    if (next.has(fId)) next.delete(fId); else next.add(fId);
+                                    setExpandedMoveTargets(next);
+                                  }}
+                                  className="flex-shrink-0 cursor-pointer"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                                  ) : (
+                                    <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                                  )}
+                                </span>
+                              )}
+                              <Folder className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                              <span className="truncate">{f.name}</span>
+                            </button>
+                            {hasChildren && isExpanded && (
+                              <div>
+                                {childList.map((child: any) => renderFolder(child, depth + 1))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      };
+                      return root.map((f) => renderFolder(f));
+                    })()}
                   </div>
                 </div>
               )}

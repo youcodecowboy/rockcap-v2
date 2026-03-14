@@ -1062,11 +1062,14 @@ export default defineSchema({
     folderType: v.string(), // Folder identifier (e.g., "background", "terms_comparison", or custom)
     name: v.string(), // Display name
     description: v.optional(v.string()), // Optional description for the folder
+    parentFolderId: v.optional(v.id("projectFolders")), // For nested subfolders
+    depth: v.optional(v.number()), // 0 = top-level, 1-4 = nested; 5 levels total (depth 0-4)
     isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
     createdAt: v.string(),
   })
     .index("by_project", ["projectId"])
-    .index("by_project_type", ["projectId", "folderType"]),
+    .index("by_project_type", ["projectId", "folderType"])
+    .index("by_parent", ["parentFolderId"]),
 
   // ============================================================================
   // FOLDER TEMPLATES - Configurable folder structures per client type

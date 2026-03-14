@@ -29,6 +29,30 @@ export const FOLDER_TOOLS: AtomicTool[] = [
     contextRelevance: ["folder", "document"],
   },
   {
+    name: "getProjectSubfolders",
+    domain: "folder",
+    action: "read",
+    description:
+      "Get immediate subfolders of a project folder, or top-level folders if no parent specified. Returns each folder's ID, name, folderType, depth, and whether it has children.",
+    parameters: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "The project ID to get folders for",
+        },
+        parentFolderId: {
+          type: "string",
+          description: "Parent folder ID to get children of. Omit for top-level folders.",
+        },
+      },
+      required: ["projectId"],
+    },
+    requiresConfirmation: false,
+    convexMapping: { type: "query", path: "projects.getProjectSubfolders" },
+    contextRelevance: ["folder", "project"],
+  },
+  {
     name: "getDocumentsByFolder",
     domain: "folder",
     action: "read",

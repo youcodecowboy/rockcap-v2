@@ -5,13 +5,7 @@ import { Id } from '../../../../../convex/_generated/dataModel';
 import FolderBrowser from '@/app/docs/components/FolderBrowser';
 import FileList from '@/app/docs/components/FileList';
 import FileDetailPanel from '@/app/docs/components/FileDetailPanel';
-
-interface FolderSelection {
-  type: 'client' | 'project' | 'internal' | 'personal';
-  folderId: string;
-  folderName: string;
-  projectId?: Id<"projects">;
-}
+import { FolderSelection } from '@/types/folders';
 
 interface Document {
   _id: Id<"documents">;

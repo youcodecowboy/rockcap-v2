@@ -553,6 +553,39 @@ export const getProjectFolders = query({
   },
 });
 
+// Query: Get immediate children of a project folder (or top-level folders if no parent specified)
+export const getProjectSubfolders = query({
+  args: {
+    projectId: v.id("projects"),
+    parentFolderId: v.optional(v.id("projectFolders")),
+  },
+  handler: async (ctx, args) => {
+    const allFolders = await ctx.db
+      .query("projectFolders")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+
+    // Filter to immediate children of the specified parent (or top-level if no parent)
+    const filtered = allFolders.filter(f =>
+      args.parentFolderId
+        ? f.parentFolderId === args.parentFolderId
+        : !f.parentFolderId
+    );
+
+    // Check which folders have children
+    const folderIds = new Set(allFolders.map(f => f._id.toString()));
+    const parentIds = new Set(allFolders.filter(f => f.parentFolderId).map(f => f.parentFolderId!.toString()));
+
+    return filtered.map(f => ({
+      _id: f._id.toString(),
+      name: f.name,
+      folderType: f.folderType,
+      depth: f.depth ?? 0,
+      hasChildren: parentIds.has(f._id.toString()),
+    }));
+  },
+});
+
 // Query: Get all project folders for projects under a client
 export const getAllProjectFoldersForClient = query({
   args: { clientId: v.id("clients") },
@@ -572,8 +605,10 @@ export const getAllProjectFoldersForClient = query({
       folderType: string;
       name: string;
       isCustom?: boolean;
+      parentFolderId?: string;
+      depth?: number;
     }>> = {};
-    
+
     for (const project of clientProjects) {
       const folders = allProjectFolders
         .filter(f => f.projectId === project._id)
@@ -582,6 +617,8 @@ export const getAllProjectFoldersForClient = query({
           folderType: f.folderType,
           name: f.name,
           isCustom: f.isCustom,
+          parentFolderId: f.parentFolderId?.toString(),
+          depth: f.depth,
         }));
       result[project._id] = folders;
     }
@@ -590,87 +627,137 @@ export const getAllProjectFoldersForClient = query({
   },
 });
 
-// Mutation: Add a custom folder to a project
+// Mutation: Add a custom folder to a project (supports nesting via parentFolderId)
 export const addCustomProjectFolder = mutation({
   args: {
     projectId: v.id("projects"),
     name: v.string(),
     description: v.optional(v.string()),
+    parentFolderId: v.optional(v.id("projectFolders")),
   },
   handler: async (ctx, args) => {
-    // Generate a folderType from the name (lowercase, underscore-separated)
-    const folderType = `custom_${args.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}`;
-    
+    let depth = 0;
+    const namePart = args.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+    // If creating a subfolder, validate parent and compute depth
+    if (args.parentFolderId) {
+      const parent = await ctx.db.get(args.parentFolderId);
+      if (!parent) {
+        throw new Error("Parent folder not found");
+      }
+      if (parent.projectId !== args.projectId) {
+        throw new Error("Parent folder belongs to a different project");
+      }
+
+      // Compute depth from parent (server-side, never trust client)
+      depth = (parent.depth ?? 0) + 1;
+      if (depth > 4) {
+        throw new Error("Maximum folder nesting depth (5 levels) reached");
+      }
+    }
+
+    // Generate folderType — include parent suffix for subfolders to avoid collisions
+    const folderType = args.parentFolderId
+      ? `custom_${namePart}_${args.parentFolderId.toString().slice(-8)}`
+      : `custom_${namePart}`;
+
     // Check if folder with same type already exists for this project
     const existing = await ctx.db
       .query("projectFolders")
-      .withIndex("by_project_type", (q: any) => 
+      .withIndex("by_project_type", (q: any) =>
         q.eq("projectId", args.projectId).eq("folderType", folderType)
       )
       .first();
-    
+
     if (existing) {
-      throw new Error(`A folder named "${args.name}" already exists for this project`);
+      throw new Error(`A folder named "${args.name}" already exists in this location`);
     }
-    
+
     return await ctx.db.insert("projectFolders", {
       projectId: args.projectId,
       folderType,
       name: args.name,
       description: args.description,
+      parentFolderId: args.parentFolderId,
+      depth,
       isCustom: true,
       createdAt: new Date().toISOString(),
     });
   },
 });
 
-// Mutation: Delete a custom folder from a project (only custom folders can be deleted)
+// Mutation: Delete a custom folder from a project (cascade: moves docs to parent)
 export const deleteCustomProjectFolder = mutation({
   args: {
     folderId: v.id("projectFolders"),
   },
   handler: async (ctx, args) => {
     const folder = await ctx.db.get(args.folderId);
-    
+
     if (!folder) {
       throw new Error("Folder not found");
     }
-    
+
     if (!folder.isCustom) {
       throw new Error("Cannot delete template folders. Only custom folders can be deleted.");
     }
-    
-    // Check if folder has documents
-    const documents = await ctx.db
+
+    // Determine the target folderType for orphaned documents
+    let targetFolderType = "miscellaneous";
+    if (folder.parentFolderId) {
+      const parent = await ctx.db.get(folder.parentFolderId);
+      if (parent) {
+        targetFolderType = parent.folderType;
+      }
+    }
+
+    // Recursively collect all descendant subfolder IDs via DFS
+    const descendantIds: Array<{ _id: typeof args.folderId; folderType: string }> = [];
+    const collectDescendants = async (parentId: typeof args.folderId) => {
+      const children = await ctx.db
+        .query("projectFolders")
+        .withIndex("by_parent", (q: any) => q.eq("parentFolderId", parentId))
+        .collect();
+      for (const child of children) {
+        await collectDescendants(child._id);
+        descendantIds.push({ _id: child._id, folderType: child.folderType });
+      }
+    };
+    await collectDescendants(args.folderId);
+
+    // Get all project documents once
+    const allDocs = await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", folder.projectId))
       .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
-    
-    const folderDocs = documents.filter(d => d.folderId === folder.folderType);
-    
-    if (folderDocs.length > 0) {
-      throw new Error(`Cannot delete folder "${folder.name}". It contains ${folderDocs.length} document(s). Move or delete them first.`);
+
+    // Build set of all folderTypes being deleted (target + descendants)
+    const deletedFolderTypes = new Set([
+      folder.folderType,
+      ...descendantIds.map(d => d.folderType),
+    ]);
+
+    // Move all docs from deleted folders to the parent folder
+    let movedCount = 0;
+    for (const doc of allDocs) {
+      if (doc.folderId && deletedFolderTypes.has(doc.folderId)) {
+        await ctx.db.patch(doc._id, {
+          folderId: targetFolderType,
+          folderType: "project",
+        });
+        movedCount++;
+      }
     }
 
-    // Defensive: Re-query and move any documents that might have been added
-    // between the check above and now (handles race conditions)
-    const finalDocs = await ctx.db
-      .query("documents")
-      .withIndex("by_project", (q: any) => q.eq("projectId", folder.projectId))
-      .filter((q: any) => q.neq(q.field("isDeleted"), true))
-      .collect();
-
-    const orphanedDocs = finalDocs.filter(d => d.folderId === folder.folderType);
-    for (const doc of orphanedDocs) {
-      await ctx.db.patch(doc._id, {
-        folderId: "miscellaneous",
-        folderType: "project",
-      });
+    // Delete all descendant folders (bottom-up order from DFS)
+    for (const desc of descendantIds) {
+      await ctx.db.delete(desc._id);
     }
 
+    // Delete the target folder
     await ctx.db.delete(args.folderId);
-    return { success: true, movedDocuments: orphanedDocs.length };
+    return { success: true, movedDocuments: movedCount };
   },
 });
 

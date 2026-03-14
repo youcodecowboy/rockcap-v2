@@ -33,7 +33,9 @@ import {
   FileText,
   ArrowUpDown,
   FolderInput,
+  FolderPlus,
   Trash2,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import FileCard from './FileCard';
@@ -42,13 +44,7 @@ import InternalUploadModal from './InternalUploadModal';
 import LinkAsVersionModal from './LinkAsVersionModal';
 import BulkMoveModal from './BulkMoveModal';
 import { cn } from '@/lib/utils';
-
-interface FolderSelection {
-  type: 'client' | 'project' | 'internal' | 'personal';
-  folderId: string;
-  folderName: string;
-  projectId?: Id<"projects">;
-}
+import { FolderSelection } from '@/types/folders';
 
 type DocumentScope = 'client' | 'internal' | 'personal';
 
@@ -84,6 +80,8 @@ interface FileListProps {
   selectedFolder: FolderSelection | null;
   isInbox?: boolean;
   onFileSelect: (document: Document) => void;
+  onFolderSelect?: (folder: FolderSelection) => void;
+  onCreateSubfolder?: () => void;
   projectFilter?: Id<"projects">;
   scope?: DocumentScope;
 }
@@ -97,6 +95,8 @@ export default function FileList({
   selectedFolder,
   isInbox = false,
   onFileSelect,
+  onFolderSelect,
+  onCreateSubfolder,
   scope = 'client',
 }: FileListProps) {
   const router = useRouter();
@@ -507,7 +507,30 @@ export default function FileList({
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 gap-2 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <FolderOpen className="w-5 h-5 text-amber-500 flex-shrink-0" />
-          <h2 className="font-semibold text-gray-900 truncate">{getTitle()}</h2>
+          {/* Breadcrumb navigation for subfolders */}
+          {selectedFolder?.parentPath && selectedFolder.parentPath.length > 0 && onFolderSelect ? (
+            <div className="flex items-center gap-1 min-w-0">
+              {selectedFolder.parentPath.map((ancestor, i) => (
+                <span key={i} className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => onFolderSelect({
+                      type: selectedFolder.type,
+                      folderId: ancestor.folderId,
+                      folderName: ancestor.folderName,
+                      projectId: selectedFolder.projectId,
+                    })}
+                    className="text-sm text-gray-500 hover:text-gray-900 hover:underline"
+                  >
+                    {ancestor.folderName}
+                  </button>
+                  <ChevronRight className="w-3 h-3 text-gray-400" />
+                </span>
+              ))}
+              <h2 className="font-semibold text-gray-900 truncate">{getTitle()}</h2>
+            </div>
+          ) : (
+            <h2 className="font-semibold text-gray-900 truncate">{getTitle()}</h2>
+          )}
           <span className="text-sm text-gray-500 flex-shrink-0">
             ({sortedDocuments.length} {sortedDocuments.length === 1 ? 'file' : 'files'})
           </span>
@@ -533,6 +556,15 @@ export default function FileList({
             <Trash2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Delete</span>
           </Button>
+
+          {/* New Folder — only for project folders */}
+          {selectedFolder?.type === 'project' && onCreateSubfolder && (
+            <Button size="sm" variant="outline" className="gap-1.5 h-8"
+              onClick={onCreateSubfolder}>
+              <FolderPlus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">New Folder</span>
+            </Button>
+          )}
 
           {/* Sort */}
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>

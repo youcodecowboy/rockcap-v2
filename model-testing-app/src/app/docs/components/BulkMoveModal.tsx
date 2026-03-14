@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Loader2, FolderInput, Building2, FolderKanban } from 'lucide-react';
+import { Loader2, FolderInput, Building2, FolderKanban, ChevronRight, ChevronDown, Folder } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -101,6 +101,23 @@ export default function BulkMoveModal({
   const bulkMove = useMutation(api.documents.bulkMove);
 
   const activeFolders = destinationType === 'client' ? clientFolders : projectFolders;
+  const [expandedMoveTargets, setExpandedMoveTargets] = useState<Set<string>>(new Set());
+
+  // Build tree structure for folder selector
+  const { rootFolders: moveRootFolders, childFolderMap: moveChildMap } = (() => {
+    const root: typeof activeFolders = [];
+    const children: Record<string, typeof activeFolders> = {};
+    for (const folder of activeFolders as any[]) {
+      if (folder.parentFolderId) {
+        const parentId = folder.parentFolderId.toString();
+        if (!children[parentId]) children[parentId] = [];
+        children[parentId].push(folder);
+      } else {
+        root.push(folder);
+      }
+    }
+    return { rootFolders: root, childFolderMap: children };
+  })();
 
   const canMove =
     !!selectedClientId &&
@@ -243,24 +260,55 @@ export default function BulkMoveModal({
               <div className="space-y-1.5">
                 <Label>Folder</Label>
                 <div className="max-h-44 overflow-y-auto space-y-1 rounded-md border border-gray-200 p-1">
-                  {activeFolders.map((folder: any) => (
-                    <button
-                      key={folder._id}
-                      type="button"
-                      onClick={() => setSelectedFolderId(folder.folderType)}
-                      className={cn(
-                        'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
-                        selectedFolderId === folder.folderType
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'hover:bg-gray-50 border border-transparent'
-                      )}
-                    >
-                      {folder.name}
-                      {folder.description && (
-                        <span className="ml-2 text-xs text-gray-400">{folder.description}</span>
-                      )}
-                    </button>
-                  ))}
+                  {moveRootFolders.map((folder: any) => {
+                    const renderMoveFolder = (f: any, depth: number = 0): React.ReactNode => {
+                      const fId = f._id.toString();
+                      const children = moveChildMap[fId] || [];
+                      const hasChildren = children.length > 0;
+                      const isExpanded = expandedMoveTargets.has(fId);
+                      return (
+                        <div key={f._id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFolderId(f.folderType)}
+                            className={cn(
+                              'w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2',
+                              selectedFolderId === f.folderType
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'hover:bg-gray-50 border border-transparent'
+                            )}
+                            style={{ paddingLeft: `${12 + depth * 16}px` }}
+                          >
+                            {hasChildren && (
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const next = new Set(expandedMoveTargets);
+                                  if (next.has(fId)) next.delete(fId); else next.add(fId);
+                                  setExpandedMoveTargets(next);
+                                }}
+                                className="flex-shrink-0 cursor-pointer"
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                                ) : (
+                                  <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                                )}
+                              </span>
+                            )}
+                            <Folder className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                            <span className="truncate">{f.name}</span>
+                          </button>
+                          {hasChildren && isExpanded && (
+                            <div>
+                              {children.map((child: any) => renderMoveFolder(child, depth + 1))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    };
+                    return renderMoveFolder(folder);
+                  })}
                 </div>
               </div>
             )}

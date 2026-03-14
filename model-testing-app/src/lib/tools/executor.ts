@@ -240,6 +240,12 @@ const handlers: Record<string, ToolHandler> = {
       hasProject: params.hasProject,
     }),
 
+  getProjectSubfolders: async (params, client) =>
+    client.query(api.projects.getProjectSubfolders, {
+      projectId: params.projectId as Id<"projects">,
+      parentFolderId: params.parentFolderId as Id<"projectFolders"> | undefined,
+    }),
+
   getDocumentsByFolder: async (params, client) =>
     client.query(api.documents.getByFolder, {
       clientId: params.clientId as Id<"clients">,

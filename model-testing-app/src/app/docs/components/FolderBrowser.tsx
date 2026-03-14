@@ -34,13 +34,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-
-interface FolderSelection {
-  type: 'client' | 'project' | 'internal' | 'personal';
-  folderId: string;
-  folderName: string;
-  projectId?: Id<"projects">;
-}
+import { FolderSelection } from '@/types/folders';
 
 interface FolderBrowserProps {
   clientId: Id<"clients">;
@@ -69,9 +63,9 @@ interface ProjectWithFolders {
   unfiledCount: number;
 }
 
-type AddFolderTarget = 
+type AddFolderTarget =
   | { type: 'client' }
-  | { type: 'project'; projectId: Id<"projects">; projectName: string }
+  | { type: 'project'; projectId: Id<"projects">; projectName: string; parentFolderId?: Id<"projectFolders">; parentFolderName?: string }
   | null;
 
 // Inline unfiled folder row — uses computed count (total - sum of folder counts)
@@ -164,6 +158,7 @@ export default function FolderBrowser({
   onFolderSelect,
 }: FolderBrowserProps) {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [expandedProjectFolders, setExpandedProjectFolders] = useState<Set<string>>(new Set());
   const [addFolderTarget, setAddFolderTarget] = useState<AddFolderTarget>(null);
   const [newFolderName, setNewFolderName] = useState('');
   const [isAddingFolder, setIsAddingFolder] = useState(false);
@@ -216,6 +211,7 @@ export default function FolderBrowser({
         await addProjectFolder({
           projectId: addFolderTarget.projectId,
           name: newFolderName.trim(),
+          parentFolderId: addFolderTarget.parentFolderId,
         });
       }
       setAddFolderTarget(null);
@@ -234,7 +230,7 @@ export default function FolderBrowser({
     folderName: string, 
     type: 'client' | 'project'
   ) => {
-    if (!confirm(`Delete folder "${folderName}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete folder "${folderName}"? Documents inside will be moved to the parent folder. This cannot be undone.`)) return;
     
     try {
       if (type === 'client') {
@@ -263,6 +259,7 @@ export default function FolderBrowser({
         _id: folder._id,
         folderType: folder.folderType,
         name: folder.name,
+        parentFolderId: folder.parentFolderId,
         documentCount: (projectData.folders?.[folder.folderType] as number) || 0,
         isCustom: folder.isCustom,
       }));
@@ -313,6 +310,168 @@ export default function FolderBrowser({
 
     return { rootFolders: root, childFolders: children };
   }, [clientFoldersWithCounts]);
+
+  // Build nested folder structure for project folders within a project
+  const buildProjectFolderTree = (folders: FolderWithCount[]) => {
+    const root: FolderWithCount[] = [];
+    const children: Record<string, FolderWithCount[]> = {};
+
+    for (const folder of folders) {
+      if (folder.parentFolderId) {
+        if (!children[folder.parentFolderId]) {
+          children[folder.parentFolderId] = [];
+        }
+        children[folder.parentFolderId].push(folder);
+      } else {
+        root.push(folder);
+      }
+    }
+
+    // Compute aggregated counts (bottom-up: include all descendant docs)
+    const aggregatedCounts: Record<string, number> = {};
+    const computeAggregated = (folderId: string, directCount: number): number => {
+      const childList = children[folderId] || [];
+      let total = directCount;
+      for (const child of childList) {
+        total += computeAggregated(child._id, child.documentCount);
+      }
+      aggregatedCounts[folderId] = total;
+      return total;
+    };
+    for (const folder of root) {
+      computeAggregated(folder._id, folder.documentCount);
+    }
+
+    return { root, children, aggregatedCounts };
+  };
+
+  // Build parent path for breadcrumbs when selecting a subfolder
+  const buildParentPath = (folderId: string, allFolders: FolderWithCount[]): Array<{ folderId: string; folderName: string }> => {
+    const folderMap = new Map(allFolders.map(f => [f._id, f]));
+    const path: Array<{ folderId: string; folderName: string }> = [];
+    let current = folderMap.get(folderId);
+    while (current?.parentFolderId) {
+      const parent = folderMap.get(current.parentFolderId);
+      if (parent) {
+        path.unshift({ folderId: parent.folderType, folderName: parent.name });
+        current = parent;
+      } else {
+        break;
+      }
+    }
+    return path;
+  };
+
+  const toggleProjectFolder = (folderId: string) => {
+    const newExpanded = new Set(expandedProjectFolders);
+    if (newExpanded.has(folderId)) {
+      newExpanded.delete(folderId);
+    } else {
+      newExpanded.add(folderId);
+    }
+    setExpandedProjectFolders(newExpanded);
+  };
+
+  const renderProjectFolder = (
+    folder: FolderWithCount,
+    projectId: Id<"projects">,
+    projectName: string,
+    allFolders: FolderWithCount[],
+    childMap: Record<string, FolderWithCount[]>,
+    aggregatedCounts: Record<string, number>,
+    depth: number = 0
+  ) => {
+    const children = childMap[folder._id] || [];
+    const hasChildren = children.length > 0;
+    const selected = isSelected(folder.folderType, 'project') &&
+      selectedFolder?.projectId === projectId;
+    const isExpanded = expandedProjectFolders.has(folder._id);
+    const displayCount = aggregatedCounts[folder._id] ?? folder.documentCount;
+
+    return (
+      <div key={folder._id} className="group/projfolder">
+        <button
+          onClick={() => onFolderSelect({
+            type: 'project',
+            folderId: folder.folderType,
+            folderName: folder.name,
+            projectId,
+            parentPath: buildParentPath(folder._id, allFolders),
+          })}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
+            selected
+              ? "bg-blue-100 text-blue-900"
+              : "hover:bg-gray-100 text-gray-700",
+            depth > 0 && "ml-4"
+          )}
+        >
+          {hasChildren && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleProjectFolder(folder._id);
+              }}
+              className="p-0 hover:bg-gray-200 rounded flex-shrink-0"
+            >
+              {isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+              )}
+            </button>
+          )}
+          {selected ? (
+            <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          ) : (
+            <Folder className={cn(
+              "w-4 h-4 flex-shrink-0",
+              folder.isCustom ? "text-purple-500" : "text-amber-500"
+            )} />
+          )}
+          <span className="flex-1 text-left truncate min-w-0">{folder.name}</span>
+          {folder.isCustom && (
+            <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
+          )}
+          <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">({displayCount})</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setAddFolderTarget({
+                type: 'project',
+                projectId,
+                projectName,
+                parentFolderId: folder._id as Id<"projectFolders">,
+                parentFolderName: folder.name,
+              });
+            }}
+            className="opacity-0 group-hover/projfolder:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity flex-shrink-0"
+            title="Add subfolder"
+          >
+            <Plus className="w-3 h-3 text-gray-500" />
+          </button>
+          {folder.isCustom && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteFolder(folder._id, folder.name, 'project');
+              }}
+              className="opacity-0 group-hover/projfolder:opacity-100 p-0.5 hover:bg-red-100 rounded transition-opacity flex-shrink-0"
+            >
+              <Trash2 className="w-3 h-3 text-red-500" />
+            </button>
+          )}
+        </button>
+        {hasChildren && isExpanded && (
+          <div className="ml-2 border-l border-gray-200">
+            {children.map(child => renderProjectFolder(
+              child, projectId, projectName, allFolders, childMap, aggregatedCounts, depth + 1
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderClientFolder = (folder: FolderWithCount, depth: number = 0) => {
     const children = childFolders[folder._id] || [];
@@ -476,78 +635,36 @@ export default function FolderBrowser({
                         </span>
                       </button>
 
-                      {/* Project Folders */}
-                      {isExpanded && (
-                        <div className="ml-6 space-y-0.5 pb-2">
-                          {project.folders.map((folder) => {
-                            const selected = isSelected(folder.folderType, 'project') && 
-                              selectedFolder?.projectId === project._id;
-                            
-                            return (
-                              <div key={folder._id} className="group">
-                                <button
-                                  onClick={() => onFolderSelect({
-                                    type: 'project',
-                                    folderId: folder.folderType,
-                                    folderName: folder.name,
-                                    projectId: project._id,
-                                  })}
-                                  className={cn(
-                                    "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
-                                    selected
-                                      ? "bg-blue-100 text-blue-900"
-                                      : "hover:bg-gray-100 text-gray-700"
-                                  )}
-                                >
-                                  {selected ? (
-                                    <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                                  ) : (
-                                    <Folder className={cn(
-                                      "w-4 h-4 flex-shrink-0",
-                                      folder.isCustom ? "text-purple-500" : "text-amber-500"
-                                    )} />
-                                  )}
-                                  <span className="flex-1 text-left truncate min-w-0">{folder.name}</span>
-                                  {folder.isCustom && (
-                                    <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
-                                  )}
-                                  <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">({folder.documentCount})</span>
-                                  {folder.isCustom && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteFolder(folder._id, folder.name, 'project');
-                                      }}
-                                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 rounded transition-opacity"
-                                    >
-                                      <Trash2 className="w-3 h-3 text-red-500" />
-                                    </button>
-                                  )}
-                                </button>
-                              </div>
-                            );
-                          })}
-                          {/* Unfiled Folder Row */}
-                          <UnfiledFolderRow
-                            projectId={project._id}
-                            count={project.unfiledCount}
-                            selectedFolder={selectedFolder}
-                            onFolderSelect={onFolderSelect}
-                          />
-                          {/* Add Custom Folder Button */}
-                          <button
-                            onClick={() => setAddFolderTarget({
-                              type: 'project', 
-                              projectId: project._id,
-                              projectName: project.name 
-                            })}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-                          >
-                            <FolderPlus className="w-4 h-4 flex-shrink-0" />
-                            <span className="text-xs">Add custom folder...</span>
-                          </button>
-                        </div>
-                      )}
+                      {/* Project Folders — Tree View */}
+                      {isExpanded && (() => {
+                        const { root, children: childMap, aggregatedCounts } = buildProjectFolderTree(project.folders);
+                        return (
+                          <div className="ml-6 space-y-0.5 pb-2">
+                            {root.map((folder) => renderProjectFolder(
+                              folder, project._id, project.name, project.folders, childMap, aggregatedCounts
+                            ))}
+                            {/* Unfiled Folder Row */}
+                            <UnfiledFolderRow
+                              projectId={project._id}
+                              count={project.unfiledCount}
+                              selectedFolder={selectedFolder}
+                              onFolderSelect={onFolderSelect}
+                            />
+                            {/* Add Custom Folder Button */}
+                            <button
+                              onClick={() => setAddFolderTarget({
+                                type: 'project',
+                                projectId: project._id,
+                                projectName: project.name
+                              })}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                            >
+                              <FolderPlus className="w-4 h-4 flex-shrink-0" />
+                              <span className="text-xs">Add custom folder...</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -575,10 +692,12 @@ export default function FolderBrowser({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="text-sm text-gray-500">
-              {addFolderTarget?.type === 'client' 
+              {addFolderTarget?.type === 'client'
                 ? `Add a custom folder to ${clientName}`
                 : addFolderTarget?.type === 'project'
-                  ? `Add a custom folder to project "${addFolderTarget.projectName}"`
+                  ? addFolderTarget.parentFolderName
+                    ? `Add a subfolder inside "${addFolderTarget.parentFolderName}"`
+                    : `Add a custom folder to project "${addFolderTarget.projectName}"`
                   : ''
               }
             </div>

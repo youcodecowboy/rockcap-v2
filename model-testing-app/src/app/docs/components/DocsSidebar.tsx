@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils';
 import InternalFolderList from './InternalFolderList';
 import PersonalFolderList from './PersonalFolderList';
+import { FolderSelection } from '@/types/folders';
 
 export type DocumentScope = 'client' | 'internal' | 'personal';
 
@@ -30,13 +31,6 @@ interface Client {
   name: string;
   type?: string;
   documentCount?: number;
-}
-
-interface FolderSelection {
-  type: 'client' | 'project' | 'internal' | 'personal';
-  folderId: string;
-  folderName: string;
-  projectId?: Id<"projects">;
 }
 
 interface DocsSidebarProps {

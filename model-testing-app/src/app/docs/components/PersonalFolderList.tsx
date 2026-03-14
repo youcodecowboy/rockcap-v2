@@ -23,12 +23,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-interface FolderSelection {
-  type: 'client' | 'project' | 'internal' | 'personal';
-  folderId: string;
-  folderName: string;
-}
+import { FolderSelection } from '@/types/folders';
 
 interface PersonalFolderListProps {
   selectedFolder: FolderSelection | null;

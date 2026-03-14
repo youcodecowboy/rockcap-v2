@@ -16,13 +16,7 @@ import FileList from './components/FileList';
 import FileDetailPanel from './components/FileDetailPanel';
 import BreadcrumbNav from './components/BreadcrumbNav';
 import MoveDocumentCrossScopeModal from '@/components/MoveDocumentCrossScopeModal';
-
-interface FolderSelection {
-  type: 'client' | 'project' | 'internal' | 'personal';
-  folderId: string;
-  folderName: string;
-  projectId?: Id<"projects">;
-}
+import { FolderSelection } from '@/types/folders';
 
 interface Document {
   _id: Id<"documents">;
@@ -337,6 +331,7 @@ function DocsPageContent() {
           selectedFolder={currentFolder}
           isInbox={isInboxSelected}
           onFileSelect={handleFileSelect}
+          onFolderSelect={handleFolderSelect}
           scope={activeScope}
         />
 
