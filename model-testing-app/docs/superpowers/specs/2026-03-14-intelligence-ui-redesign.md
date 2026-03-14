@@ -411,9 +411,13 @@ Intelligence data is available via the queryIntelligence tool. The summary above
 
 **Shared file note:** `convex/intelligence.ts` is modified in both Workstream 1 (migration mutation) and Workstream 3 (query function). If Workstreams 2 and 3 run in parallel, coordinate changes to this file to avoid merge conflicts.
 
+## Hard Constraints
+
+- **ZERO DATA LOSS:** Existing client intelligence entries (thousands of records) must never be deleted, overwritten, or corrupted. All taxonomy expansion and migration work is additive only — promoting an `extractedAttribute` to a canonical field copies it, it does not remove the original until verified. The migration must be reversible. UI component refactoring must not change the underlying data layer. This is the single most important constraint of the entire project.
+
 ## Risk Considerations
 
-- **Migration safety:** The attribute promotion migration should be run as a dry-run first to verify mappings before committing changes
+- **Migration safety:** The attribute promotion migration should be run as a dry-run first to verify mappings before committing changes. Migration must be additive — copy attributes to canonical fields, never delete originals until verified correct.
 - **Alias collisions:** New canonical field aliases must be tested against existing fields to avoid ambiguous matches
 - **Chat regression:** Switching from full context to summary + query could initially cause the model to miss information it previously had "for free" — monitor chat quality during rollout
 - **Component refactor size:** The IntelligenceTab.tsx decomposition touches a 95KB file — should be done carefully with existing tests as guardrails
