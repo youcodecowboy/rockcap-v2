@@ -1547,7 +1547,20 @@ export const getByFolder = query({
         .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
         .filter((q) => q.neq(q.field("isDeleted"), true))
         .collect();
-      
+
+      // For "unfiled", return client-level docs not matching any known client folder
+      if (args.folderType === "unfiled") {
+        const clientFolderRecords = await ctx.db
+          .query("clientFolders")
+          .filter((q) => q.eq(q.field("clientId"), args.clientId))
+          .collect();
+        const knownTypes = new Set(clientFolderRecords.map(f => f.folderType));
+        return docs.filter(doc =>
+          !doc.projectId &&
+          (!doc.folderId || !knownTypes.has(doc.folderId))
+        );
+      }
+
       // Filter for documents in this folder that are NOT in a project
       return docs.filter(doc =>
         doc.folderId === args.folderType &&
@@ -1708,7 +1721,8 @@ export const getFolderCounts = query({
 
     const clientFolders: Record<string, number> = {};
     const projectFolders: Record<string, Record<string, number>> = {};
-    
+    let clientTotal = 0;
+
     for (const doc of docs) {
       if (doc.projectId) {
         // Project-level document
@@ -1717,13 +1731,16 @@ export const getFolderCounts = query({
         }
         const folderKey = doc.folderId || 'uncategorized';
         projectFolders[doc.projectId][folderKey] = (projectFolders[doc.projectId][folderKey] || 0) + 1;
-      } else if (doc.folderId && doc.folderType === 'client') {
-        // Client-level document
-        clientFolders[doc.folderId] = (clientFolders[doc.folderId] || 0) + 1;
+      } else {
+        // Client-level document (no project)
+        clientTotal++;
+        if (doc.folderId && doc.folderType === 'client') {
+          clientFolders[doc.folderId] = (clientFolders[doc.folderId] || 0) + 1;
+        }
       }
     }
-    
-    return { clientFolders, projectFolders };
+
+    return { clientFolders, projectFolders, clientTotal };
   },
 });
 

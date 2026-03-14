@@ -117,6 +117,45 @@ function UnfiledFolderRow({
   );
 }
 
+// Client-level unfiled folder row
+function ClientUnfiledFolderRow({
+  count,
+  selectedFolder,
+  onFolderSelect,
+}: {
+  count: number;
+  selectedFolder: FolderSelection | null;
+  onFolderSelect: (folder: FolderSelection) => void;
+}) {
+  const selected =
+    selectedFolder?.type === 'client' &&
+    selectedFolder?.folderId === 'unfiled';
+
+  return (
+    <button
+      onClick={() => onFolderSelect({
+        type: 'client',
+        folderId: 'unfiled',
+        folderName: 'Unfiled',
+      })}
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
+        selected
+          ? "bg-orange-100 text-orange-900"
+          : "hover:bg-gray-100 text-orange-600/70"
+      )}
+    >
+      {selected ? (
+        <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
+      ) : (
+        <Folder className="w-4 h-4 text-orange-300 flex-shrink-0" />
+      )}
+      <span className="flex-1 text-left truncate min-w-0 italic">Unfiled</span>
+      <span className="text-xs text-orange-400 flex-shrink-0 ml-auto">({count})</span>
+    </button>
+  );
+}
+
 export default function FolderBrowser({
   clientId,
   clientName,
@@ -146,7 +185,7 @@ export default function FolderBrowser({
   const clientFoldersWithCounts = useMemo(() => {
     if (!clientFolders) return [];
     const counts = folderCounts?.clientFolders || {};
-    
+
     return clientFolders.map(folder => ({
       ...folder,
       _id: folder._id.toString(),
@@ -154,6 +193,13 @@ export default function FolderBrowser({
       isCustom: folder.isCustom,
     }));
   }, [clientFolders, folderCounts]);
+
+  // Compute client-level unfiled count
+  const clientUnfiledCount = useMemo(() => {
+    const total = folderCounts?.clientTotal || 0;
+    const filedCount = clientFoldersWithCounts.reduce((sum, f) => sum + f.documentCount, 0);
+    return total - filedCount;
+  }, [folderCounts, clientFoldersWithCounts]);
 
   // Handle adding a new folder
   const handleAddFolder = async () => {
@@ -384,6 +430,11 @@ export default function FolderBrowser({
             </div>
             <div className="space-y-0.5">
               {rootFolders.map(folder => renderClientFolder(folder))}
+              <ClientUnfiledFolderRow
+                count={clientUnfiledCount}
+                selectedFolder={selectedFolder}
+                onFolderSelect={onFolderSelect}
+              />
             </div>
           </div>
 
