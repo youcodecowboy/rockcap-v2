@@ -154,6 +154,11 @@ export async function extractTextFromFile(file: File): Promise<string> {
     }
   }
 
+  // Images: no text to extract — pipeline uses vision (base64 ImageBlock)
+  if (fileType.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?)$/i.test(fileName)) {
+    return '';
+  }
+
   // Default: try to read as text
   try {
     return await file.text();

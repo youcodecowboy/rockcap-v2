@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       } else if (fileUrl) {
         // Fetch file from Convex storage URL (server-side, no body limit)
         const fileName = formData.get(`fileName_${fileIndex}`) as string || 'document';
-        const fileType = formData.get(`fileType_${fileIndex}`) as string || 'application/pdf';
+        const fileType = formData.get(`fileType_${fileIndex}`) as string || 'application/octet-stream';
         try {
           const res = await fetch(fileUrl);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);

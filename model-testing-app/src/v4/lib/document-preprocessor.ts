@@ -110,7 +110,7 @@ export async function preprocessDocument(
 
   if (mediaType === 'application/pdf') {
     processedContent = await preprocessPdf(file, extractedText);
-  } else if (mediaType.startsWith('image/')) {
+  } else if (mediaType.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?)$/i.test(fileName)) {
     processedContent = await preprocessImage(file);
   } else if (isSpreadsheet(mediaType, fileName)) {
     processedContent = preprocessSpreadsheet(extractedText);
