@@ -118,19 +118,25 @@ export async function extractTextFromFile(file: File): Promise<string> {
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       
-      // Extract text from all sheets
+      // Extract text from sheets (cap at ~50K chars to avoid Vercel timeout on massive workbooks)
+      const MAX_EXTRACT_LENGTH = 50_000;
       let fullText = '';
       const sheetNames = workbook.SheetNames;
-      
+
       for (const sheetName of sheetNames) {
+        if (fullText.length >= MAX_EXTRACT_LENGTH) break;
+
         const worksheet = workbook.Sheets[sheetName];
         // Convert sheet to JSON for easier text extraction
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-        
+
         fullText += `\n=== Sheet: ${sheetName} ===\n`;
-        
+
         // Format each row
-        jsonData.forEach((row: any[], rowIndex: number) => {
+        for (let rowIndex = 0; rowIndex < jsonData.length; rowIndex++) {
+          if (fullText.length >= MAX_EXTRACT_LENGTH) break;
+
+          const row = jsonData[rowIndex] as any[];
           if (Array.isArray(row) && row.some(cell => cell !== '')) {
             const rowText = row
               .map(cell => {
@@ -139,12 +145,12 @@ export async function extractTextFromFile(file: File): Promise<string> {
               })
               .filter(cell => cell !== '')
               .join(' | ');
-            
+
             if (rowText) {
               fullText += `Row ${rowIndex + 1}: ${rowText}\n`;
             }
           }
-        });
+        }
       }
       
       return fullText.trim();
