@@ -702,6 +702,16 @@ const handlers: Record<string, ToolHandler> = {
       projectId: params.projectId as Id<"projects">,
     }),
 
+  queryIntelligence: async (params, client) =>
+    client.query(api.intelligence.queryIntelligence, {
+      scope: params.scope,
+      clientId: params.clientId as Id<"clients"> | undefined,
+      projectId: params.projectId as Id<"projects"> | undefined,
+      category: params.category,
+      fieldName: params.fieldName,
+      query: params.query,
+    }),
+
   searchLenders: async (params, client) =>
     client.query(api.intelligence.searchLenders, {
       dealSize: params.dealSize ? Number(params.dealSize) : undefined,

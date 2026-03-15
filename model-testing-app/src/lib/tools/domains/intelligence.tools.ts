@@ -260,6 +260,43 @@ export const INTELLIGENCE_TOOLS: AtomicTool[] = [
     contextRelevance: ["intelligence", "project"],
   },
   {
+    name: "queryIntelligence",
+    domain: "intelligence",
+    action: "read",
+    description:
+      "Query client or project intelligence for specific field values. Use this to look up data like interest rates, company details, valuations, etc. Always prefer this over loading full documents when the answer is likely in intelligence data.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          description: 'Either "client" or "project"',
+        },
+        category: {
+          type: "string",
+          description:
+            'Category to filter by, e.g. "Loan Terms", "Contact Info", "Valuation"',
+        },
+        fieldName: {
+          type: "string",
+          description: 'Field name to search for, e.g. "interest rate", "LTV"',
+        },
+        query: {
+          type: "string",
+          description:
+            "Free text search across field labels, values, and source documents",
+        },
+      },
+      required: ["scope"],
+    },
+    requiresConfirmation: false,
+    convexMapping: {
+      type: "query",
+      path: "intelligence.queryIntelligence",
+    },
+    contextRelevance: ["intelligence", "client", "project"],
+  },
+  {
     name: "addKnowledgeItem",
     domain: "intelligence",
     action: "write",

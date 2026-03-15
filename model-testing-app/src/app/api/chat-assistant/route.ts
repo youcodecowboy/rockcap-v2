@@ -729,6 +729,11 @@ function restrictToolAccess(toolName: string, params: any, clientId?: string, pr
       case 'getClientIntelligence':
         restricted.clientId = clientId;
         break;
+      case 'queryIntelligence':
+        if (params.scope === 'client' || !params.scope) {
+          restricted.clientId = clientId;
+        }
+        break;
       case 'getContacts':
       case 'searchContactsByClient':
         restricted.clientId = clientId;
@@ -796,6 +801,11 @@ function restrictToolAccess(toolName: string, params: any, clientId?: string, pr
       case 'getProjectFolders':
       case 'getProjectIntelligence':
         restricted.projectId = projectId;
+        break;
+      case 'queryIntelligence':
+        if (params.scope === 'project' || !params.scope) {
+          restricted.projectId = projectId;
+        }
         break;
       // Auto-link write tools to current project
       case 'createNote':
