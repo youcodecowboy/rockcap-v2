@@ -1,45 +1,23 @@
 // Intelligence UI Components
-// These components implement the "known vs unknown" pattern for displaying
-// client and project intelligence data with source attribution
+// New component architecture replacing the old "known vs unknown" pattern
 
-// Core intelligence section components
-export { CompletenessIndicator, CompletenessBar } from './CompletenessIndicator';
-export { KnownDataCard, KnownDataInline } from './KnownDataCard';
-export type { SourceInfo } from './KnownDataCard';
-export { MissingDataList, MissingDataCompact } from './MissingDataList';
-export type { MissingField } from './MissingDataList';
+// Core display components
+export { IntelligenceCard } from './IntelligenceCard';
+export { IntelligenceCardExpanded } from './IntelligenceCardExpanded';
+export { IntelligenceSidebar } from './IntelligenceSidebar';
+export type { CategorySummary } from './IntelligenceSidebar';
+export { IntelligenceCardList } from './IntelligenceCardList';
+export type { IntelligenceItem } from './IntelligenceCardList';
+export { IntelligenceMissingFields } from './IntelligenceMissingFields';
+
+// Utility functions
 export {
-  IntelligenceSection,
-  SectionSummary,
-  categorizeFields,
-} from './IntelligenceSection';
-export type { KnownField } from './IntelligenceSection';
-
-// Shared UI components
-export {
-  Field,
-  KeyPersonRow,
-  DocumentSummaryCard,
-  MeetingSummaryCard,
-  SidebarItem,
-  formatCurrency,
-} from './SharedComponents';
-
-// Type definitions
-export type {
-  SourceInfo as SourceInfoType,
-  KnownField as KnownFieldType,
-  MissingField as MissingFieldType,
-  FieldDefinition,
-  SectionCompleteness,
-} from './types';
-
-export {
-  getNestedValue,
-  setNestedValue,
-  categorizeFields as categorizeFieldsFromDefs,
-  calculateCompleteness,
-} from './types';
+  getCategoryForField,
+  getCategoryIcon,
+  getRelativeTimeString,
+  detectConflicts,
+} from './intelligenceUtils';
+export type { EvidenceEntry } from './intelligenceUtils';
 
 // Field definitions
 export {
@@ -58,3 +36,16 @@ export {
   getAllClientFields,
   getAllProjectFields,
 } from './fieldDefinitions';
+
+// Type definitions
+export type {
+  FieldDefinition,
+  SectionCompleteness,
+} from './types';
+
+export {
+  getNestedValue,
+  setNestedValue,
+  categorizeFields,
+  calculateCompleteness,
+} from './types';
