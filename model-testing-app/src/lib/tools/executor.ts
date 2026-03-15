@@ -1214,6 +1214,26 @@ const handlers: Record<string, ToolHandler> = {
 
     return documentId;
   },
+
+  // Deep reclassify — handled by dedicated module
+  reclassify: async (params, client) => {
+    const { handleReclassify } = await import('../chat/reclassify');
+    const result = await handleReclassify(params as any, client);
+    const lines: string[] = [];
+    if (result.found) {
+      lines.push(`Found: ${result.answer}`);
+      if (result.evidence?.quote) lines.push(`Source: "${result.evidence.quote}"`);
+    } else {
+      lines.push(`Did not find the specific answer in ${result.documentName}.`);
+    }
+    if (result.newFields.length > 0) {
+      lines.push(`\nExtracted ${result.newFields.length} new data points saved to intelligence:`);
+      for (const f of result.newFields) {
+        lines.push(`- ${f.label}: ${f.value} (${Math.round(f.confidence * 100)}% confidence)`);
+      }
+    }
+    return lines.join('\n');
+  },
 };
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, KeyboardEvent, useRef } from 'react';
+import { useState, useEffect, useCallback, KeyboardEvent, useRef } from 'react';
 import { Send, Loader2, Paperclip, X, FileText } from 'lucide-react';
+import MentionAutocomplete from './MentionAutocomplete';
 
 interface FileMetadata {
   fileName: string;
@@ -15,18 +16,32 @@ interface ChatInputProps {
   disabled?: boolean;
   placeholder?: string;
   onFileSelect?: (file: File) => Promise<{ storageId: string }>;
+  initialMessage?: string;
 }
 
 export default function ChatInput({
   onSend,
   disabled = false,
-  placeholder = 'Type your message...',
+  placeholder = 'Type your message... Use @ to mention clients/projects',
   onFileSelect,
+  initialMessage,
 }: ChatInputProps) {
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(initialMessage || '');
+
+  // Sync initialMessage prop changes (e.g. from briefing click-through)
+  useEffect(() => {
+    if (initialMessage) {
+      setMessage(initialMessage);
+      textareaRef.current?.focus();
+    }
+  }, [initialMessage]);
+
   const [isUploading, setIsUploading] = useState(false);
   const [pendingFile, setPendingFile] = useState<FileMetadata | null>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = () => {
     if ((message.trim() || pendingFile) && !disabled) {
@@ -34,6 +49,7 @@ export default function ChatInput({
       onSend(text, pendingFile || undefined);
       setMessage('');
       setPendingFile(null);
+      setMentionQuery(null);
     }
   };
 
@@ -44,14 +60,12 @@ export default function ChatInput({
     setIsUploading(true);
     try {
       const result = await onFileSelect(file);
-      // Stage the file — let user type their message before sending
       setPendingFile({
         fileName: file.name,
         fileStorageId: result.storageId,
         fileSize: file.size,
         fileType: file.type,
       });
-      // Pre-populate a suggestion (user can edit or clear)
       if (!message.trim()) {
         setMessage(`Please analyze and file ${file.name}.`);
       }
@@ -60,14 +74,56 @@ export default function ChatInput({
       alert('Failed to upload file. Please try again.');
     } finally {
       setIsUploading(false);
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     }
   };
 
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart;
+    setMessage(value);
+
+    // Detect @ mention
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@(\w*)$/);
+    if (atMatch) {
+      setMentionQuery(atMatch[1]);
+      setMentionPosition({ top: 40, left: 12 });
+    } else {
+      setMentionQuery(null);
+    }
+  }, []);
+
+  const handleMentionSelect = useCallback((mention: { type: 'client' | 'project'; name: string; id: string }) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = message.slice(0, cursorPos);
+    const textAfterCursor = message.slice(cursorPos);
+
+    // Replace @query with markup
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+    const before = textBeforeCursor.slice(0, atIndex);
+    const markup = `@[${mention.name}](${mention.type}:${mention.id})`;
+    const newText = before + markup + ' ' + textAfterCursor;
+
+    setMessage(newText);
+    setMentionQuery(null);
+
+    // Focus and set cursor after mention
+    setTimeout(() => {
+      textarea.focus();
+      const newPos = before.length + markup.length + 1;
+      textarea.setSelectionRange(newPos, newPos);
+    }, 0);
+  }, [message]);
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Don't send on Enter if mention autocomplete is open
+    if (mentionQuery !== null) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -75,7 +131,17 @@ export default function ChatInput({
   };
 
   return (
-    <div className="border-t border-gray-200 p-4 bg-white">
+    <div className="border-t border-gray-200 p-4 bg-white relative">
+      {/* Mention Autocomplete */}
+      {mentionQuery !== null && (
+        <MentionAutocomplete
+          query={mentionQuery}
+          onSelect={handleMentionSelect}
+          onClose={() => setMentionQuery(null)}
+          position={mentionPosition}
+        />
+      )}
+
       {/* Pending File Attachment */}
       {pendingFile && (
         <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -121,8 +187,9 @@ export default function ChatInput({
         )}
 
         <textarea
+          ref={textareaRef}
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={pendingFile ? 'Add instructions for this file...' : placeholder}
           disabled={disabled || isUploading}
@@ -154,7 +221,7 @@ export default function ChatInput({
       </div>
 
       <div className="text-xs text-gray-400 mt-2">
-        Press Enter to send, Shift + Enter for new line
+        Press Enter to send, Shift + Enter for new line, @ to mention
       </div>
     </div>
   );

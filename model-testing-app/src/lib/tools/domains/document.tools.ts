@@ -243,4 +243,36 @@ export const DOCUMENT_TOOLS: AtomicTool[] = [
     convexMapping: { type: "mutation", path: "documents.remove" },
     contextRelevance: ["document"],
   },
+  {
+    name: "reclassify",
+    domain: "document",
+    action: "read", // Read action because it returns data; writes happen internally
+    description:
+      "Deep-analyze a document to find specific information. Pulls raw document content and runs thorough extraction focused on your query. Automatically saves any new findings to intelligence. Use this when simpler methods (queryIntelligence, loadReference) cannot answer the question.",
+    parameters: {
+      type: "object",
+      properties: {
+        documentId: {
+          type: "string",
+          description: "The Convex document ID to deep-analyze",
+        },
+        focusQuery: {
+          type: "string",
+          description: "What specific information to look for in the document",
+        },
+        projectId: {
+          type: "string",
+          description: "Project ID to save intelligence findings to",
+        },
+        clientId: {
+          type: "string",
+          description: "Client ID to save intelligence findings to",
+        },
+      },
+      required: ["documentId", "focusQuery"],
+    },
+    requiresConfirmation: false,
+    convexMapping: { type: "query", path: "" }, // Custom handler in executor
+    contextRelevance: ["document", "intelligence"],
+  },
 ];
