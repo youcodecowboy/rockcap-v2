@@ -116,6 +116,8 @@ export interface EvidenceEntry {
   fieldPath: string;
   value: unknown;
   confidence: number;
+  sourceDocumentName?: string;
+  sourceDocumentId?: string;
   [key: string]: unknown;
 }
 

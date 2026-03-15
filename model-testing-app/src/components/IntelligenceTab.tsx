@@ -93,7 +93,7 @@ import { getNestedValue, type FieldDefinition } from './intelligence/types';
 // ============================================================================
 
 // UI representation of a knowledge item
-interface KnowledgeItemUI {
+export interface KnowledgeItemUI {
   _id: Id<"knowledgeItems">;
   fieldPath: string;
   isCanonical: boolean;
@@ -420,6 +420,7 @@ interface HistoryItem {
   value: unknown;
   valueType: string;
   sourceDocumentName?: string;
+  sourceDocumentId?: string;
   addedAt: string;
   status: string;
 }
@@ -1228,6 +1229,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
         value: item.value,
         valueType: item.valueType,
         sourceDocumentName: item.sourceDocumentName,
+        sourceDocumentId: item.sourceDocumentId ? String(item.sourceDocumentId) : undefined,
         addedAt: item.addedAt,
         status: item.status,
       });
@@ -1244,6 +1246,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
           value: item.value,
           valueType: item.valueType,
           sourceDocumentName: item.sourceDocumentName,
+          sourceDocumentId: item.sourceDocumentId ? String(item.sourceDocumentId) : undefined,
           addedAt: item.addedAt,
           status: item.status,
         });
@@ -1373,6 +1376,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
           value: item.value,
           confidence: 0.9,
           sourceDocumentName: item.sourceDocumentName,
+          sourceDocumentId: item.sourceDocumentId,
         });
       }
     }
@@ -1646,6 +1650,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
         value: item.value,
         valueType: item.valueType,
         sourceDocumentName: item.sourceDocumentName,
+        sourceDocumentId: item.sourceDocumentId ? String(item.sourceDocumentId) : undefined,
         addedAt: item.addedAt,
         status: item.status,
       });
@@ -1662,6 +1667,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
           value: item.value,
           valueType: item.valueType,
           sourceDocumentName: item.sourceDocumentName,
+          sourceDocumentId: item.sourceDocumentId ? String(item.sourceDocumentId) : undefined,
           addedAt: item.addedAt,
           status: item.status,
         });
@@ -1784,6 +1790,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
           value: item.value,
           confidence: 0.9,
           sourceDocumentName: item.sourceDocumentName,
+          sourceDocumentId: item.sourceDocumentId,
         });
       }
     }
