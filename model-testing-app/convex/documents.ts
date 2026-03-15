@@ -1883,7 +1883,6 @@ export const bulkMove = mutation({
         folderType: args.targetFolderType,
         scope: "client",
         documentCode: newCode,
-        updatedAt: new Date().toISOString(),
       };
 
       if (args.targetProjectId) {
