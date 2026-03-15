@@ -157,23 +157,36 @@ export async function POST(request: NextRequest) {
       messages.push({ role: 'user', content: userContent });
     }
 
-    // 7. Run the agentic loop
+    // 7. Derive effective context IDs: page context takes priority, then first mention
+    let effectiveClientId = clientId;
+    let effectiveProjectId = projectId;
+    if (!effectiveClientId && !effectiveProjectId && parsedMentions.length > 0) {
+      for (const mention of parsedMentions) {
+        if (mention.type === 'client' && !effectiveClientId) {
+          effectiveClientId = mention.id;
+        } else if (mention.type === 'project' && !effectiveProjectId) {
+          effectiveProjectId = mention.id;
+        }
+      }
+    }
+
+    // 8. Run the agentic loop
     const loopResult = await runAgenticLoop({
       sessionId,
-      clientId,
-      projectId,
+      clientId: effectiveClientId,
+      projectId: effectiveProjectId,
       systemBlocks,
       messages,
       convexClient,
     });
 
-    // 8. Generate title for first message
+    // 9. Generate title for first message
     if (conversationHistory?.length === 0 || !conversationHistory) {
       const anthropicClient = new Anthropic();
       generateChatTitle(anthropicClient, sessionId, cleanMessage, convexClient).catch(() => {});
     }
 
-    // 9. Return response
+    // 10. Return response
     return NextResponse.json({
       content: loopResult.content,
       toolCalls: loopResult.toolCalls,
