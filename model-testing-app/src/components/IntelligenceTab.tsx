@@ -74,7 +74,7 @@ import {
 import { IntelligenceSidebar, CategorySummary } from './intelligence/IntelligenceSidebar';
 import { IntelligenceCardList, IntelligenceItem } from './intelligence/IntelligenceCardList';
 import { IntelligenceMissingFields } from './intelligence/IntelligenceMissingFields';
-import { getCategoryForField, getCategoryIcon, detectConflicts, EvidenceEntry } from './intelligence/intelligenceUtils';
+import { getCategoryForField, detectConflicts, EvidenceEntry } from './intelligence/intelligenceUtils';
 import { categorizeAttribute } from '@/lib/intelligenceCategorizer';
 import {
   getAllClientFields,
@@ -1464,7 +1464,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
           <IntelligenceCardList
             items={filteredItems}
             categoryName={activeSidebarCategory}
-            categoryIcon={getCategoryIcon(activeSidebarCategory)}
+            categoryIcon=""
             filled={activeCategoryStats.filled}
             total={activeCategoryStats.total}
             clientId={String(clientId)}
@@ -1854,7 +1854,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
           <IntelligenceCardList
             items={filteredItems}
             categoryName={activeSidebarCategory}
-            categoryIcon={getCategoryIcon(activeSidebarCategory)}
+            categoryIcon=""
             filled={activeCategoryStats.filled}
             total={activeCategoryStats.total}
             clientId={String(projectId)}

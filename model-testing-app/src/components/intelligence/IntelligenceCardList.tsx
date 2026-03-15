@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowUpDown, Filter, Plus, AlertTriangle, Clock, Sparkles } from 'lucide-react';
 import { IntelligenceCard } from './IntelligenceCard';
-import { getCategoryIcon, getRelativeTimeString, type EvidenceEntry } from './intelligenceUtils';
+import { getCategoryLucideIcon, getRelativeTimeString, type EvidenceEntry } from './intelligenceUtils';
 
 export interface IntelligenceItem {
   fieldKey: string;
@@ -120,16 +120,14 @@ export function IntelligenceCardList({
     setFilterMode((prev) => (prev === chip ? 'all' : chip));
   }
 
-  const icon = categoryIcon || getCategoryIcon(categoryName);
+  const IconComponent = getCategoryLucideIcon(categoryName);
 
   return (
     <div className="flex flex-col gap-3">
       {/* Category header row */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Icon + name */}
-        <span className="text-lg leading-none" aria-hidden="true">
-          {icon}
-        </span>
+        <IconComponent className="w-5 h-5 text-gray-600 flex-shrink-0" aria-hidden="true" />
         <h3 className="text-sm font-semibold text-gray-900 flex-1 min-w-0 truncate">
           {categoryName}
         </h3>

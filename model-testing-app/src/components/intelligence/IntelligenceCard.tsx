@@ -27,6 +27,7 @@ import {
   getConfidenceColor,
   getConfidenceLabel,
   getRelativeTimeString,
+  formatFieldValue,
   CONFIDENCE_BORDER_COLORS,
   CONFIDENCE_BADGE_STYLES,
   type EvidenceEntry,
@@ -50,10 +51,9 @@ interface IntelligenceCardProps {
   projectId?: string;
 }
 
-function truncateValue(value: string | number, maxLength = 80): string {
-  const str = String(value);
-  if (str.length <= maxLength) return str;
-  return str.slice(0, maxLength) + '...';
+function truncateValue(value: string, maxLength = 80): string {
+  if (value.length <= maxLength) return value;
+  return value.slice(0, maxLength) + '...';
 }
 
 export function IntelligenceCard({
@@ -111,7 +111,7 @@ export function IntelligenceCard({
                     )}
                   </div>
                   <p className="mt-1 text-sm font-medium text-gray-900 break-words">
-                    {truncateValue(fieldValue)}
+                    {truncateValue(formatFieldValue(fieldValue, fieldKey))}
                   </p>
                 </div>
 

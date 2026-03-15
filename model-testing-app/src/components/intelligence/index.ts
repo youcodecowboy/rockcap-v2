@@ -13,9 +13,11 @@ export { IntelligenceMissingFields } from './IntelligenceMissingFields';
 // Utility functions
 export {
   getCategoryForField,
+  getCategoryLucideIcon,
   getCategoryIcon,
   getRelativeTimeString,
   detectConflicts,
+  formatFieldValue,
 } from './intelligenceUtils';
 export type { EvidenceEntry } from './intelligenceUtils';
 

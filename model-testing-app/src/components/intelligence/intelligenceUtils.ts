@@ -1,5 +1,29 @@
 // src/components/intelligence/intelligenceUtils.ts
 
+import {
+  User,
+  Building2,
+  PoundSterling,
+  ClipboardList,
+  Search,
+  Scale,
+  FileText,
+  Home,
+  Ruler,
+  Hammer,
+  ScrollText,
+  Shield,
+  TrendingUp,
+  Package,
+  LayoutDashboard,
+  MapPin,
+  Calendar,
+  Layers,
+  Users,
+  AlertTriangle,
+  type LucideIcon,
+} from 'lucide-react';
+
 export type ConfidenceLevel = 'green' | 'amber' | 'red';
 
 export function getConfidenceColor(confidence: number): ConfidenceLevel {
@@ -26,25 +50,36 @@ export function getRelativeTimeString(dateStr: string): string {
   return `${Math.floor(diffDays / 365)}y ago`;
 }
 
-const CATEGORY_ICONS: Record<string, string> = {
-  'Contact Info': '👤',
-  'Company': '🏢',
-  'Financial': '💰',
-  'Experience': '📋',
-  'KYC / Due Diligence': '🔍',
-  'Legal': '⚖️',
-  'Loan Terms': '📑',
-  'Valuation': '🏠',
-  'Planning': '📐',
-  'Construction': '🔨',
-  'Legal / Title': '📜',
-  'Insurance': '🛡️',
-  'Sales / Exit': '📈',
-  'Other': '📦',
+const CATEGORY_LUCIDE_ICONS: Record<string, LucideIcon> = {
+  'Contact Info': User,
+  'Company': Building2,
+  'Financial': PoundSterling,
+  'Experience': ClipboardList,
+  'KYC / Due Diligence': Search,
+  'Legal': Scale,
+  'Loan Terms': FileText,
+  'Valuation': Home,
+  'Planning': Ruler,
+  'Construction': Hammer,
+  'Legal / Title': ScrollText,
+  'Insurance': Shield,
+  'Sales / Exit': TrendingUp,
+  'Overview': LayoutDashboard,
+  'Location': MapPin,
+  'Timeline': Calendar,
+  'Development': Layers,
+  'Key Parties': Users,
+  'Risk': AlertTriangle,
+  'Other': Package,
 };
 
+export function getCategoryLucideIcon(category: string): LucideIcon {
+  return CATEGORY_LUCIDE_ICONS[category] ?? Package;
+}
+
+/** @deprecated Use getCategoryLucideIcon instead */
 export function getCategoryIcon(category: string): string {
-  return CATEGORY_ICONS[category] ?? '📦';
+  return category;
 }
 
 const FIELD_PREFIX_TO_CATEGORY: Record<string, string> = {
@@ -113,3 +148,50 @@ export const CONFIDENCE_BADGE_STYLES = {
   amber: 'bg-amber-100 text-amber-800',
   red: 'bg-red-100 text-red-800',
 } as const;
+
+// Re-export for consumers that need to render category icons
+export type { LucideIcon };
+
+// Field keys whose canonical type is 'currency'
+const CURRENCY_PREFIXES = new Set([
+  'loanAmount', 'netLoan', 'facilityAmount', 'arrangementFee', 'exitFee',
+  'contractSum', 'groundRent', 'averageSalesPrice', 'totalSalesRevenue',
+  'dayOneValue', 'marketValue', 'gdv', 'coverAmount', 'constructionCost',
+  'netWorth', 'portfolioValue', 'totalAssets', 'annualIncome',
+]);
+
+// Field keys whose canonical type is 'percentage'
+const PERCENTAGE_PREFIXES = new Set([
+  'ltv', 'ltc', 'ltgdv', 'interestRate', 'currentProgress', 'retentionPercent',
+]);
+
+/**
+ * Format a field value for display based on the field key.
+ * Adds £ and commas for currency, % for percentages, commas for numbers.
+ */
+export function formatFieldValue(value: string | number, fieldKey: string): string {
+  const fieldName = fieldKey.split('.').pop() ?? '';
+
+  // Check if this is a numeric value we can format
+  const numVal = typeof value === 'number' ? value : parseFloat(String(value));
+  const isNumeric = !isNaN(numVal) && String(value).trim() !== '';
+
+  if (isNumeric) {
+    // Currency fields: £1,234,567
+    if (CURRENCY_PREFIXES.has(fieldName) || fieldKey.includes('Amount') || fieldKey.includes('Cost') || fieldKey.includes('Price') || fieldKey.includes('Revenue') || fieldKey.includes('Value') || fieldKey.includes('Fee') || fieldKey.includes('Rent')) {
+      return `£${numVal.toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
+    }
+
+    // Percentage fields: 45.5%
+    if (PERCENTAGE_PREFIXES.has(fieldName) || fieldKey.includes('Rate') || fieldKey.includes('Percent') || fieldKey.includes('Progress')) {
+      return `${numVal}%`;
+    }
+
+    // Plain numbers: add commas
+    if (typeof value === 'number' || /^\d+$/.test(String(value).trim())) {
+      return numVal.toLocaleString('en-GB');
+    }
+  }
+
+  return String(value);
+}

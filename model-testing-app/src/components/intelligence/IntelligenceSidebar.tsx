@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { getCategoryIcon } from '@/components/intelligence/intelligenceUtils';
+import { getCategoryLucideIcon } from '@/components/intelligence/intelligenceUtils';
 
 export interface CategorySummary {
   name: string;
@@ -76,7 +76,7 @@ function CategoryRow({
   onSelect: () => void;
   indented?: boolean;
 }) {
-  const icon = category.icon ?? getCategoryIcon(category.name);
+  const IconComponent = getCategoryLucideIcon(category.name);
   const isOther = category.name === 'Other';
 
   return (
@@ -92,9 +92,7 @@ function CategoryRow({
         isOther && 'text-gray-500'
       )}
     >
-      <span className="text-base leading-none flex-shrink-0" aria-hidden="true">
-        {icon}
-      </span>
+      <IconComponent className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
       <span className="flex-1 min-w-0 text-sm font-medium truncate">
         {category.name}
       </span>

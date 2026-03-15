@@ -4,8 +4,9 @@ import {
   getConfidenceLabel,
   getRelativeTimeString,
   detectConflicts,
-  getCategoryIcon,
+  getCategoryLucideIcon,
   getCategoryForField,
+  formatFieldValue,
 } from '@/components/intelligence/intelligenceUtils';
 
 describe('getConfidenceColor', () => {
@@ -31,11 +32,27 @@ describe('getConfidenceLabel', () => {
   });
 });
 
-describe('getCategoryIcon', () => {
-  it('returns correct icons for known categories', () => {
-    expect(getCategoryIcon('Contact Info')).toBeTruthy();
-    expect(getCategoryIcon('Loan Terms')).toBeTruthy();
-    expect(getCategoryIcon('Other')).toBeTruthy();
+describe('getCategoryLucideIcon', () => {
+  it('returns Lucide icon components for known categories', () => {
+    expect(getCategoryLucideIcon('Contact Info')).toBeTruthy();
+    expect(getCategoryLucideIcon('Loan Terms')).toBeTruthy();
+    expect(getCategoryLucideIcon('Other')).toBeTruthy();
+  });
+});
+
+describe('formatFieldValue', () => {
+  it('formats currency values with £ and commas', () => {
+    expect(formatFieldValue(692489239, 'financials.loanAmount')).toBe('£692,489,239');
+    expect(formatFieldValue(1500000, 'loanTerms.facilityAmount')).toBe('£1,500,000');
+    expect(formatFieldValue(250000, 'exit.averageSalesPrice')).toBe('£250,000');
+  });
+  it('formats percentage values with %', () => {
+    expect(formatFieldValue(65, 'financials.ltv')).toBe('65%');
+    expect(formatFieldValue(5.5, 'loanTerms.interestRate')).toBe('5.5%');
+  });
+  it('passes through non-numeric strings', () => {
+    expect(formatFieldValue('John Smith', 'contact.primaryName')).toBe('John Smith');
+    expect(formatFieldValue('Freehold', 'title.tenure')).toBe('Freehold');
   });
 });
 
