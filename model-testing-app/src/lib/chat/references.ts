@@ -72,16 +72,30 @@ export function formatClientReference(
   const tradingAddress = kv('company.tradingAddress', addr.trading);
   if (tradingAddress) lines.push(`Trading Address: ${tradingAddress}`);
 
-  // Contact
+  // Contact — canonical paths: contact.primaryName, contact.email, contact.phone
   const contact = intel?.primaryContact || {};
   const contactName = kv('contact.primaryName', contact.name);
-  if (contactName) {
-    const contactParts = [contactName];
-    const contactEmail = kv('contact.primaryEmail', contact.email);
-    const contactPhone = kv('contact.primaryPhone', contact.phone);
+  const contactEmail = kv('contact.email', contact.email);
+  const contactPhone = kv('contact.phone', contact.phone);
+  const contactRole = kv('contact.role', contact.role);
+  if (contactName || contactEmail || contactPhone) {
+    const contactParts: string[] = [];
+    if (contactName) contactParts.push(contactName);
+    if (contactRole) contactParts.push(`(${contactRole})`);
     if (contactEmail) contactParts.push(contactEmail);
     if (contactPhone) contactParts.push(contactPhone);
     lines.push(`Primary Contact: ${contactParts.join(' | ')}`);
+  }
+  // Secondary contact
+  const secondaryName = kv('contact.secondaryName', null);
+  const secondaryEmail = kv('contact.secondaryEmail', null);
+  if (secondaryName || secondaryEmail) {
+    const secParts: string[] = [];
+    if (secondaryName) secParts.push(secondaryName);
+    if (secondaryEmail) secParts.push(secondaryEmail);
+    const secondaryPhone = kv('contact.secondaryPhone', null);
+    if (secondaryPhone) secParts.push(secondaryPhone);
+    lines.push(`Secondary Contact: ${secParts.join(' | ')}`);
   }
 
   // Key people
@@ -111,7 +125,8 @@ export function formatClientReference(
   const coveredPaths = new Set([
     'company.legalName', 'company.registrationNumber', 'company.vatNumber',
     'company.registeredAddress', 'company.tradingAddress',
-    'contact.primaryName', 'contact.primaryEmail', 'contact.primaryPhone',
+    'contact.primaryName', 'contact.email', 'contact.phone', 'contact.role',
+    'contact.secondaryName', 'contact.secondaryEmail', 'contact.secondaryPhone',
   ]);
   const extraItems: string[] = [];
   for (const [fieldPath, entry] of ki) {
