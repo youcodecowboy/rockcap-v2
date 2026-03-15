@@ -55,8 +55,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    // 3. Parse @ mentions from message
-    const parsedMentions = mentions || (message ? parseMentions(message) : []);
+    // 3. Parse @ mentions from message (markup format first, then bare @Name fallback)
+    let parsedMentions = mentions?.length ? mentions : (message ? parseMentions(message) : []);
+
+    // Fallback: resolve bare @Name mentions by searching clients/projects
+    if (parsedMentions.length === 0 && message) {
+      const bareMatches = message.match(/@(\w[\w\s]*\w|\w+)/g);
+      if (bareMatches) {
+        const allClients = await convexClient.query(api.clients.list, {});
+        const allProjects = await convexClient.query(api.projects.list, {});
+        for (const match of bareMatches) {
+          const name = match.slice(1).trim(); // remove @
+          const nameLC = name.toLowerCase();
+          const client = (allClients || []).find((c: any) => c.name?.toLowerCase() === nameLC);
+          if (client) {
+            parsedMentions.push({ type: 'client', name: client.name, id: client._id });
+            continue;
+          }
+          const project = (allProjects || []).find((p: any) => p.name?.toLowerCase() === nameLC);
+          if (project) {
+            parsedMentions.push({ type: 'project', name: project.name, id: project._id });
+          }
+        }
+      }
+    }
+
+    console.log('[chat-assistant] Message:', message?.slice(0, 100));
+    console.log('[chat-assistant] Mentions from frontend:', JSON.stringify(mentions));
+    console.log('[chat-assistant] Resolved mentions:', JSON.stringify(parsedMentions));
+
     const cleanMessage = message ? stripMentionMarkup(message) : '';
 
     // 4. Build references from mentions + page context
