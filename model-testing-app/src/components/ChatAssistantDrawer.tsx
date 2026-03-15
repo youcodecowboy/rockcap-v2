@@ -347,11 +347,18 @@ export default function ChatAssistantDrawer() {
       }
 
       // Add assistant response to database
+      // Transform toolCalls from agentic loop format {name, input, result}
+      // to Convex validator format {id, name, arguments}
+      const formattedToolCalls = data.toolCalls?.map((tc: any, i: number) => ({
+        id: `tool_${Date.now()}_${i}`,
+        name: tc.name,
+        arguments: JSON.stringify(tc.input || {}),
+      }));
       const assistantMessageId = await addMessage({
         sessionId: sessionIdToUse,
         role: 'assistant',
         content: data.content,
-        toolCalls: data.toolCalls,
+        toolCalls: formattedToolCalls,
         metadata: { tokensUsed: data.tokensUsed },
       });
 
