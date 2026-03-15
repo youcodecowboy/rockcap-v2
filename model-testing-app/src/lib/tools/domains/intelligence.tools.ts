@@ -342,3 +342,52 @@ export const INTELLIGENCE_TOOLS: AtomicTool[] = [
     contextRelevance: ["intelligence", "client", "project"],
   },
 ];
+
+// Core tools that are always loaded in the skills-based chat architecture.
+// These are NOT part of INTELLIGENCE_TOOLS — they are exported separately
+// and handled by the agentic loop, not the executor.
+export const CORE_CHAT_TOOLS: AtomicTool[] = [
+  {
+    name: 'searchSkills',
+    domain: 'intelligence',
+    action: 'read',
+    description: 'Search for available tool skills to load. Returns matching skill groups with their tools. Use this when you need capabilities beyond queryIntelligence and loadReference.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query — skill name, keyword, or description of what you need (e.g., "documents", "create note", "filing")',
+        },
+      },
+      required: ['query'],
+    },
+    requiresConfirmation: false,
+    convexMapping: { type: 'query', path: '' }, // Handled by agentic loop, not executor
+    contextRelevance: ['intelligence'],
+  },
+  {
+    name: 'loadReference',
+    domain: 'intelligence',
+    action: 'read',
+    description: 'Load additional context about a client, project, or their resources. Returns structured reference data.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['client_summary', 'project_summary', 'document_summary', 'document_list', 'contact_list', 'note_list', 'knowledge_bank'],
+          description: 'Type of reference to load',
+        },
+        entityId: {
+          type: 'string',
+          description: 'The Convex ID of the client, project, or document',
+        },
+      },
+      required: ['type', 'entityId'],
+    },
+    requiresConfirmation: false,
+    convexMapping: { type: 'query', path: '' }, // Handled by agentic loop, not executor
+    contextRelevance: ['intelligence'],
+  },
+];
