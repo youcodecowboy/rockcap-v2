@@ -29,7 +29,7 @@ export interface NormalizationResult {
 }
 
 // =============================================================================
-// CLIENT CANONICAL FIELDS (35 fields)
+// CLIENT CANONICAL FIELDS (48 fields)
 // =============================================================================
 
 export const CLIENT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
@@ -315,7 +315,7 @@ export const CLIENT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
 };
 
 // =============================================================================
-// PROJECT CANONICAL FIELDS (25 fields)
+// PROJECT CANONICAL FIELDS (105 fields)
 // =============================================================================
 
 export const PROJECT_CANONICAL_FIELDS: Record<string, CanonicalFieldConfig> = {
