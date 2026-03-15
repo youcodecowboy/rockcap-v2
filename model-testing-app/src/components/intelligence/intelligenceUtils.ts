@@ -77,7 +77,7 @@ export function getCategoryForField(fieldKey: string): string {
   return FIELD_PREFIX_TO_CATEGORY[prefix] ?? 'Other';
 }
 
-interface EvidenceEntry {
+export interface EvidenceEntry {
   fieldPath: string;
   value: unknown;
   confidence: number;
