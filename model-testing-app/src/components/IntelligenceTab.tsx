@@ -51,7 +51,6 @@ import {
   Shield,
   AlertTriangle,
   ListChecks,
-  Filter,
 } from 'lucide-react';
 import {
   Tabs,
@@ -1515,7 +1514,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
       <IntelligenceSidebar
         categories={isClientScope ? clientCategories : projectCategoriesForSidebar}
         projectCategories={!isClientScope ? projectCategoriesForSidebar : []}
-        activeCategory={activeSidebarCategory}
+        activeCategory={documentFilter ? '' : activeSidebarCategory}
         onSelectCategory={(name) => {
           setViewMode('intelligence');
           setActiveSidebarCategory(name);
@@ -2000,7 +1999,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
       <IntelligenceSidebar
         categories={[]}
         projectCategories={projectCategoriesComputed}
-        activeCategory={activeSidebarCategory}
+        activeCategory={documentFilter ? '' : activeSidebarCategory}
         onSelectCategory={(name) => {
           setViewMode('intelligence');
           setActiveSidebarCategory(name);
