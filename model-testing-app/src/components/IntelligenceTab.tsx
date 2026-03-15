@@ -75,6 +75,9 @@ import { IntelligenceSidebar, CategorySummary } from './intelligence/Intelligenc
 import { IntelligenceCardList, IntelligenceItem } from './intelligence/IntelligenceCardList';
 import { IntelligenceMissingFields } from './intelligence/IntelligenceMissingFields';
 import { getCategoryForField, detectConflicts, EvidenceEntry } from './intelligence/intelligenceUtils';
+import { DocumentFilterDropdown } from './intelligence/DocumentFilterDropdown';
+import { DocumentFilteredView, type DocumentFilterItem } from './intelligence/DocumentFilteredView';
+import { deriveContributingDocuments } from './intelligence/intelligenceUtils';
 import { categorizeAttribute } from '@/lib/intelligenceCategorizer';
 import {
   getAllClientFields,
@@ -1108,6 +1111,10 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
   // View mode: intelligence data or document summaries
   const [viewMode, setViewMode] = useState<'intelligence' | 'documents'>('intelligence');
   const [documentSearchQuery, setDocumentSearchQuery] = useState('');
+  const [documentFilter, setDocumentFilter] = useState<{
+    documentId: string;
+    documentName: string;
+  } | null>(null);
 
   // Document detail panel state
   const [selectedDocForPanel, setSelectedDocForPanel] = useState<DocumentWithAnalysis | null>(null);
@@ -1383,6 +1390,79 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
     return trail;
   }, [historyByFieldPath]);
 
+  // Derive contributing documents from knowledge items
+  const contributingDocuments = useMemo(() => {
+    return deriveContributingDocuments(knowledgeItems, supersededItemsRaw || []);
+  }, [knowledgeItems, supersededItemsRaw]);
+
+  const contributingDocsWithFolders = useMemo(() => {
+    if (!documents) return contributingDocuments.map(d => ({ ...d, folderName: undefined }));
+    const docFolderMap = new Map<string, string>();
+    // Use document category as the grouping label in the dropdown
+    for (const doc of documents) {
+      docFolderMap.set(String(doc._id), doc.category || 'Unfiled');
+    }
+    return contributingDocuments.map(d => ({
+      ...d,
+      folderName: docFolderMap.get(d.id) || 'Unfiled',
+    }));
+  }, [contributingDocuments, documents]);
+
+  // Items filtered by selected document
+  const documentFilteredItems: DocumentFilterItem[] = useMemo(() => {
+    if (!documentFilter) return [];
+
+    const items: DocumentFilterItem[] = [];
+    const activeFieldDefs = isClientScope
+      ? getAllClientFields(clientType === 'lender')
+      : getAllProjectFields();
+
+    const seenFieldPaths = new Set<string>();
+
+    for (const item of knowledgeItems) {
+      if (!item.sourceDocumentId || String(item.sourceDocumentId) !== documentFilter.documentId) continue;
+      if (seenFieldPaths.has(item.fieldPath)) continue;
+      seenFieldPaths.add(item.fieldPath);
+      const fieldDef = activeFieldDefs.find(f => f.key === item.fieldPath);
+      items.push({
+        fieldPath: item.fieldPath,
+        label: item.label || fieldDef?.label || item.fieldPath,
+        value: formatDisplayValue(item.value, item.valueType) as string,
+        confidence: item.normalizationConfidence ?? 0.9,
+        category: getCategoryForField(item.fieldPath),
+        status: 'active',
+      });
+    }
+
+    if (supersededItemsRaw) {
+      for (const item of supersededItemsRaw) {
+        if (!item.sourceDocumentId || String(item.sourceDocumentId) !== documentFilter.documentId) continue;
+        if (seenFieldPaths.has(item.fieldPath)) continue;
+        seenFieldPaths.add(item.fieldPath);
+
+        const activeItem = knowledgeItems.find(k => k.fieldPath === item.fieldPath);
+        const fieldDef = activeFieldDefs.find(f => f.key === item.fieldPath);
+
+        items.push({
+          fieldPath: item.fieldPath,
+          label: item.label || fieldDef?.label || item.fieldPath,
+          value: formatDisplayValue(item.value, item.valueType) as string,
+          confidence: item.normalizationConfidence ?? 0.9,
+          category: getCategoryForField(item.fieldPath),
+          status: 'superseded',
+          replacedBy: activeItem
+            ? {
+                value: formatDisplayValue(activeItem.value, activeItem.valueType) as string,
+                documentName: activeItem.sourceDocumentName || '',
+              }
+            : undefined,
+        });
+      }
+    }
+
+    return items;
+  }, [documentFilter, knowledgeItems, supersededItemsRaw, isClientScope, clientType]);
+
   // Compute category summaries for the sidebar
   const clientCategories = useMemo(() => {
     if (!isClientScope) return [];
@@ -1439,6 +1519,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
         onSelectCategory={(name) => {
           setViewMode('intelligence');
           setActiveSidebarCategory(name);
+          setDocumentFilter(null);
         }}
         clientName={clientName || 'Client'}
         clientType={clientType || 'borrower'}
@@ -1463,8 +1544,23 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
           onOpenDocument={handleOpenDocument}
           title={isClientScope ? 'Client Document Summaries' : `${(viewScope as { projectName: string }).projectName} Document Summaries`}
         />
+      ) : documentFilter ? (
+        <DocumentFilteredView
+          documentName={documentFilter.documentName}
+          items={documentFilteredItems}
+          onBack={() => setDocumentFilter(null)}
+        />
       ) : (
         <div className="flex-1 overflow-auto p-4">
+          {/* Document filter dropdown — top-level control */}
+          {contributingDocsWithFolders.length > 0 && (
+            <div className="flex items-center justify-end mb-3">
+              <DocumentFilterDropdown
+                documents={contributingDocsWithFolders}
+                onSelect={(doc) => setDocumentFilter(doc)}
+              />
+            </div>
+          )}
           <IntelligenceCardList
             items={filteredItems}
             categoryName={activeSidebarCategory}
@@ -1474,6 +1570,7 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
             clientId={String(clientId)}
             projectId={currentProjectId ? String(currentProjectId) : undefined}
             evidenceTrail={evidenceTrail}
+            onDocumentFilter={(doc) => setDocumentFilter(doc)}
           />
           <IntelligenceMissingFields
             missingFields={missingForCategory}
@@ -1537,6 +1634,10 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
   // View mode: intelligence data or document summaries
   const [viewMode, setViewMode] = useState<'intelligence' | 'documents'>('intelligence');
   const [documentSearchQuery, setDocumentSearchQuery] = useState('');
+  const [documentFilter, setDocumentFilter] = useState<{
+    documentId: string;
+    documentName: string;
+  } | null>(null);
 
   // Document detail panel state
   const [selectedDocForPanel, setSelectedDocForPanel] = useState<DocumentWithAnalysis | null>(null);
@@ -1797,6 +1898,69 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
     return trail;
   }, [historyByFieldPath]);
 
+  // Derive contributing documents from knowledge items
+  const contributingDocuments = useMemo(() => {
+    return deriveContributingDocuments(knowledgeItems, supersededItemsRaw || []);
+  }, [knowledgeItems, supersededItemsRaw]);
+
+  const contributingDocsWithFolders = useMemo(() => {
+    if (!projectDocuments) return contributingDocuments.map(d => ({ ...d, folderName: undefined }));
+    const docFolderMap = new Map<string, string>();
+    for (const doc of projectDocuments as DocumentWithAnalysis[]) {
+      docFolderMap.set(String(doc._id), doc.category || 'Unfiled');
+    }
+    return contributingDocuments.map(d => ({
+      ...d,
+      folderName: docFolderMap.get(d.id) || 'Unfiled',
+    }));
+  }, [contributingDocuments, projectDocuments]);
+
+  // Items filtered by selected document
+  const documentFilteredItems: DocumentFilterItem[] = useMemo(() => {
+    if (!documentFilter) return [];
+    const items: DocumentFilterItem[] = [];
+    const allFieldDefs = getAllProjectFields();
+    const seenFieldPaths = new Set<string>();
+
+    for (const item of knowledgeItems) {
+      if (!item.sourceDocumentId || String(item.sourceDocumentId) !== documentFilter.documentId) continue;
+      if (seenFieldPaths.has(item.fieldPath)) continue;
+      seenFieldPaths.add(item.fieldPath);
+      const fieldDef = allFieldDefs.find(f => f.key === item.fieldPath);
+      items.push({
+        fieldPath: item.fieldPath,
+        label: item.label || fieldDef?.label || item.fieldPath,
+        value: formatDisplayValue(item.value, item.valueType) as string,
+        confidence: item.normalizationConfidence ?? 0.9,
+        category: getCategoryForField(item.fieldPath),
+        status: 'active',
+      });
+    }
+
+    if (supersededItemsRaw) {
+      for (const item of supersededItemsRaw) {
+        if (!item.sourceDocumentId || String(item.sourceDocumentId) !== documentFilter.documentId) continue;
+        if (seenFieldPaths.has(item.fieldPath)) continue;
+        seenFieldPaths.add(item.fieldPath);
+        const activeItem = knowledgeItems.find(k => k.fieldPath === item.fieldPath);
+        const fieldDef = allFieldDefs.find(f => f.key === item.fieldPath);
+        items.push({
+          fieldPath: item.fieldPath,
+          label: item.label || fieldDef?.label || item.fieldPath,
+          value: formatDisplayValue(item.value, item.valueType) as string,
+          confidence: item.normalizationConfidence ?? 0.9,
+          category: getCategoryForField(item.fieldPath),
+          status: 'superseded',
+          replacedBy: activeItem
+            ? { value: formatDisplayValue(activeItem.value, activeItem.valueType) as string, documentName: activeItem.sourceDocumentName || '' }
+            : undefined,
+        });
+      }
+    }
+
+    return items;
+  }, [documentFilter, knowledgeItems, supersededItemsRaw]);
+
   // Compute category summaries for the sidebar
   const projectCategoriesComputed = useMemo(() => {
     return computeProjectCategories(knowledgeItems, evidenceTrail);
@@ -1840,6 +2004,7 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
         onSelectCategory={(name) => {
           setViewMode('intelligence');
           setActiveSidebarCategory(name);
+          setDocumentFilter(null);
         }}
         clientName="Project"
         clientType="project"
@@ -1856,8 +2021,22 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
           onOpenDocument={handleOpenDocument}
           title="Project Document Summaries"
         />
+      ) : documentFilter ? (
+        <DocumentFilteredView
+          documentName={documentFilter.documentName}
+          items={documentFilteredItems}
+          onBack={() => setDocumentFilter(null)}
+        />
       ) : (
         <div className="flex-1 overflow-auto p-4">
+          {contributingDocsWithFolders.length > 0 && (
+            <div className="flex items-center justify-end mb-3">
+              <DocumentFilterDropdown
+                documents={contributingDocsWithFolders}
+                onSelect={(doc) => setDocumentFilter(doc)}
+              />
+            </div>
+          )}
           <IntelligenceCardList
             items={filteredItems}
             categoryName={activeSidebarCategory}
@@ -1865,8 +2044,8 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
             filled={activeCategoryStats.filled}
             total={activeCategoryStats.total}
             clientId={String(projectId)}
-            projectId={String(projectId)}
             evidenceTrail={evidenceTrail}
+            onDocumentFilter={(doc) => setDocumentFilter(doc)}
           />
           <IntelligenceMissingFields
             missingFields={missingForCategory}
