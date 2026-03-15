@@ -15,6 +15,7 @@ import {
   formatDocumentListReference,
   formatContactListReference,
   formatNoteListReference,
+  KnowledgeItem,
 } from './references';
 import { CORE_CHAT_TOOLS } from '../tools/domains/intelligence.tools';
 import type { AtomicTool } from '../tools/types';
@@ -34,7 +35,7 @@ export interface AgenticLoopConfig {
 export interface AgenticLoopResult {
   content: string;
   toolCalls: Array<{ name: string; input: any; result: any }>;
-  pendingActions: Array<{ toolName: string; parameters: any; description: string }>;
+  pendingActions: Array<{ toolName: string; parameters: any; description: string; requiresConfirmation: boolean }>;
   activityLog: Array<{ activity: string; timestamp: string }>;
   tokensUsed: number;
   cacheMetrics: {
@@ -190,11 +191,12 @@ export async function runAgenticLoop(config: AgenticLoopConfig): Promise<Agentic
             });
           }
         } else if (confirmationTools.has(toolUse.name)) {
-          // Write tool — collect as pending action
+          // Write tool — collect as pending action for user confirmation
           result.pendingActions.push({
             toolName: toolUse.name,
             parameters: injectContextIds(input, clientId, projectId),
             description: `${toolUse.name}: ${JSON.stringify(input).slice(0, 200)}`,
+            requiresConfirmation: true,
           });
           toolResults.push({
             type: 'tool_result',
@@ -238,8 +240,18 @@ export async function runAgenticLoop(config: AgenticLoopConfig): Promise<Agentic
     // Add tool results to messages
     messages.push({ role: 'user', content: toolResults });
 
-    // Reset content for next iteration text (append across iterations)
-    result.content = '';
+    // Content is accumulated across iterations via += in the text extraction above
+  }
+
+  if (result.activityLog.length > 0) {
+    const lastIteration = result.activityLog.length;
+    if (lastIteration >= maxIterations) {
+      console.warn(`[agenticLoop] Hit maxIterations (${maxIterations}) — response may be incomplete`);
+      result.activityLog.push({
+        activity: `Loop reached max iterations (${maxIterations})`,
+        timestamp: new Date().toISOString(),
+      });
+    }
   }
 
   return result;
@@ -276,17 +288,21 @@ async function handleLoadReference(
     case 'client_summary': {
       const client = await convexClient.query(api.clients.get, { id: entityId as any });
       const intel = await convexClient.query(api.intelligence.getClientIntelligence, { clientId: entityId as any });
+      const knowledgeItems = await convexClient.query(api.knowledgeLibrary.getKnowledgeItemsByClient, { clientId: entityId as any }) as KnowledgeItem[];
       return formatClientReference(
         { name: client?.name || 'Unknown', status: client?.status || 'unknown', type: client?.type || 'unknown' },
-        intel
+        intel,
+        knowledgeItems
       );
     }
     case 'project_summary': {
       const project = await convexClient.query(api.projects.get, { id: entityId as any });
       const intel = await convexClient.query(api.intelligence.getProjectIntelligence, { projectId: entityId as any });
+      const knowledgeItems = await convexClient.query(api.knowledgeLibrary.getKnowledgeItemsByProject, { projectId: entityId as any }) as KnowledgeItem[];
       return formatProjectReference(
         { name: project?.name || 'Unknown', status: project?.status || 'unknown' },
-        intel
+        intel,
+        knowledgeItems
       );
     }
     case 'document_list': {

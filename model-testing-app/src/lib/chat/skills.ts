@@ -48,8 +48,8 @@ export const SKILL_CATALOG: Record<string, SkillDefinition> = {
   },
   search: {
     name: 'search',
-    description: 'Search across clients, projects, documents',
-    domains: ['client', 'project'],
+    description: 'Search across clients, projects, documents, contacts',
+    domains: ['client', 'project', 'document', 'contact'],
     keywords: ['search', 'find', 'lookup', 'list', 'browse'],
   },
   filing: {
