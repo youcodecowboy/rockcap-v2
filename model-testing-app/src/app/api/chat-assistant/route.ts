@@ -4,11 +4,112 @@ import { getToolRegistry, executeTool } from '@/lib/tools';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
+import { getAllClientFields, getAllProjectFields } from '@/components/intelligence/fieldDefinitions';
+import { getCategoryForField } from '@/components/intelligence/intelligenceUtils';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+// =============================================================================
+// INTELLIGENCE SUMMARY
+// =============================================================================
+
+/**
+ * Build a compact intelligence summary (~200-300 tokens) instead of dumping
+ * full intelligence records (10,000-25,000 tokens).
+ * Shows filled/total counts per category and flags missing critical fields.
+ */
+function buildIntelligenceSummary(
+  clientIntel: any | null,
+  projectIntel: any | null,
+  clientName: string,
+  clientType: string,
+  projectName?: string,
+): string {
+  const lines: string[] = [];
+
+  if (clientIntel) {
+    lines.push(`Client Intelligence Summary (${clientName}, ${clientType}):`);
+    const isLender = clientType === 'lender';
+    const allFields = getAllClientFields(isLender);
+
+    const categoryMap = new Map<string, { filled: number; total: number; criticalMissing: string[] }>();
+
+    for (const field of allFields) {
+      const category = getCategoryForField(field.key);
+      if (!categoryMap.has(category)) {
+        categoryMap.set(category, { filled: 0, total: 0, criticalMissing: [] });
+      }
+      const cat = categoryMap.get(category)!;
+      cat.total++;
+
+      const parts = field.key.split('.');
+      let value: any = clientIntel;
+      for (const part of parts) {
+        value = value?.[part];
+      }
+
+      if (value != null && value !== '') {
+        cat.filled++;
+      } else if (field.priority === 'critical') {
+        cat.criticalMissing.push(field.label);
+      }
+    }
+
+    for (const [category, stats] of categoryMap) {
+      let line = `- ${category}: ${stats.filled}/${stats.total} filled`;
+      if (stats.criticalMissing.length > 0) {
+        line += ` [missing critical: ${stats.criticalMissing.join(', ')}]`;
+      }
+      lines.push(line);
+    }
+  }
+
+  if (projectIntel && projectName) {
+    lines.push('');
+    lines.push(`Project Intelligence (${projectName}):`);
+    const allFields = getAllProjectFields();
+    const categoryMap = new Map<string, { filled: number; total: number; criticalMissing: string[] }>();
+
+    for (const field of allFields) {
+      const category = getCategoryForField(field.key);
+      if (!categoryMap.has(category)) {
+        categoryMap.set(category, { filled: 0, total: 0, criticalMissing: [] });
+      }
+      const cat = categoryMap.get(category)!;
+      cat.total++;
+
+      const parts = field.key.split('.');
+      let value: any = projectIntel;
+      for (const part of parts) {
+        value = value?.[part];
+      }
+
+      if (value != null && value !== '') {
+        cat.filled++;
+      } else if (field.priority === 'critical') {
+        cat.criticalMissing.push(field.label);
+      }
+    }
+
+    for (const [category, stats] of categoryMap) {
+      let line = `- ${category}: ${stats.filled}/${stats.total} filled`;
+      if (stats.criticalMissing.length > 0) {
+        line += ` [missing critical: ${stats.criticalMissing.join(', ')}]`;
+      }
+      lines.push(line);
+    }
+  }
+
+  if (lines.length > 0) {
+    lines.push('');
+    lines.push('Use queryIntelligence tool to look up specific values.');
+  }
+
+  return lines.join('\n');
+}
 
 // =============================================================================
 // CONTEXT GATHERING
@@ -92,98 +193,22 @@ async function gatherChatContext(
         if (clientData.lastContactDate) context += `Last Contact: ${clientData.lastContactDate}\n`;
       }
 
-      // Client Intelligence (structured data — replaces Knowledge Bank)
+      // Client Intelligence (lightweight summary — full data via queryIntelligence tool)
       try {
         const clientIntelligence = await client.query(api.intelligence.getClientIntelligence, {
           clientId: clientId as Id<"clients">,
         });
 
         if (clientIntelligence) {
-          context += `\n\n=== CLIENT INTELLIGENCE ===\n`;
-
-          if (clientIntelligence.identity) {
-            const id = clientIntelligence.identity;
-            if (id.legalName) context += `Legal Name: ${id.legalName}\n`;
-            if (id.tradingName) context += `Trading Name: ${id.tradingName}\n`;
-            if (id.companyNumber) context += `Company Number: ${id.companyNumber}\n`;
-            if (id.vatNumber) context += `VAT Number: ${id.vatNumber}\n`;
-          }
-
-          if (clientIntelligence.primaryContact) {
-            const pc = clientIntelligence.primaryContact;
-            context += `\nPrimary Contact:\n`;
-            if (pc.name) context += `  Name: ${pc.name}\n`;
-            if (pc.role) context += `  Role: ${pc.role}\n`;
-            if (pc.email) context += `  Email: ${pc.email}\n`;
-            if (pc.phone) context += `  Phone: ${pc.phone}\n`;
-          }
-
-          if (clientIntelligence.addresses) {
-            const addr = clientIntelligence.addresses;
-            if (addr.registered) context += `Registered Address: ${addr.registered}\n`;
-            if (addr.trading) context += `Trading Address: ${addr.trading}\n`;
-            if (addr.correspondence) context += `Correspondence Address: ${addr.correspondence}\n`;
-          }
-
-          if (clientIntelligence.banking) {
-            const bank = clientIntelligence.banking;
-            context += `\nBanking Details:\n`;
-            if (bank.bankName) context += `  Bank: ${bank.bankName}\n`;
-            if (bank.accountName) context += `  Account Name: ${bank.accountName}\n`;
-            if (bank.accountNumber) context += `  Account Number: ${bank.accountNumber}\n`;
-            if (bank.sortCode) context += `  Sort Code: ${bank.sortCode}\n`;
-          }
-
-          if (clientIntelligence.keyPeople && clientIntelligence.keyPeople.length > 0) {
-            context += `\nKey People:\n`;
-            clientIntelligence.keyPeople.forEach((person: any) => {
-              context += `  - ${person.name}`;
-              if (person.role) context += ` (${person.role})`;
-              if (person.isDecisionMaker) context += ` [Decision Maker]`;
-              if (person.email) context += ` - ${person.email}`;
-              context += `\n`;
-            });
-          }
-
-          if (clientIntelligence.lenderProfile) {
-            const lp = clientIntelligence.lenderProfile;
-            context += `\nLender Profile:\n`;
-            if (lp.dealSizeMin || lp.dealSizeMax) {
-              context += `  Deal Size: £${lp.dealSizeMin?.toLocaleString() || 'N/A'} - £${lp.dealSizeMax?.toLocaleString() || 'N/A'}\n`;
-            }
-            if (lp.propertyTypes?.length) context += `  Property Types: ${lp.propertyTypes.join(', ')}\n`;
-            if (lp.loanTypes?.length) context += `  Loan Types: ${lp.loanTypes.join(', ')}\n`;
-            if (lp.geographicRegions?.length) context += `  Regions: ${lp.geographicRegions.join(', ')}\n`;
-            if (lp.typicalLTV) context += `  Typical LTV: ${lp.typicalLTV}%\n`;
-            if (lp.decisionSpeed) context += `  Decision Speed: ${lp.decisionSpeed}\n`;
-            if (lp.relationshipNotes) context += `  Relationship Notes: ${lp.relationshipNotes}\n`;
-          }
-
-          if (clientIntelligence.borrowerProfile) {
-            const bp = clientIntelligence.borrowerProfile;
-            context += `\nBorrower Profile:\n`;
-            if (bp.experienceLevel) context += `  Experience: ${bp.experienceLevel}\n`;
-            if (bp.completedProjects) context += `  Completed Projects: ${bp.completedProjects}\n`;
-            if (bp.totalDevelopmentValue) context += `  Total GDV: £${bp.totalDevelopmentValue.toLocaleString()}\n`;
-            if (bp.netWorth) context += `  Net Worth: £${bp.netWorth.toLocaleString()}\n`;
-            if (bp.liquidAssets) context += `  Liquid Assets: £${bp.liquidAssets.toLocaleString()}\n`;
-          }
-
-          if (clientIntelligence.aiSummary?.executiveSummary) {
-            context += `\nExecutive Summary: ${clientIntelligence.aiSummary.executiveSummary}\n`;
-          }
-          if (clientIntelligence.aiSummary?.keyFacts?.length) {
-            context += `Key Facts: ${clientIntelligence.aiSummary.keyFacts.join('; ')}\n`;
-          }
-
-          if (clientIntelligence.projectSummaries?.length) {
-            context += `\nLinked Projects:\n`;
-            clientIntelligence.projectSummaries.forEach((proj: any) => {
-              context += `  - ${proj.projectName} (${proj.role})`;
-              if (proj.status) context += ` - ${proj.status}`;
-              if (proj.loanAmount) context += ` - £${proj.loanAmount.toLocaleString()}`;
-              context += `\n`;
-            });
+          const summary = buildIntelligenceSummary(
+            clientIntelligence,
+            null,
+            clientData?.name || 'Unknown',
+            clientData?.type || 'borrower',
+          );
+          if (summary) {
+            context += `\n\n=== CLIENT INTELLIGENCE ===\n`;
+            context += summary;
           }
 
           metadata.knowledgeBankCount = 1;
@@ -408,96 +433,23 @@ async function gatherChatContext(
         }
       }
 
-      // Project Intelligence (structured data)
+      // Project Intelligence (lightweight summary — full data via queryIntelligence tool)
       try {
         const projectIntelligence = await client.query(api.intelligence.getProjectIntelligence, {
           projectId: projectId as Id<"projects">,
         });
 
         if (projectIntelligence) {
-          context += `\n\n=== PROJECT INTELLIGENCE ===\n`;
-
-          if (projectIntelligence.overview) {
-            const ov = projectIntelligence.overview;
-            if (ov.projectType) context += `Project Type: ${ov.projectType}\n`;
-            if (ov.assetClass) context += `Asset Class: ${ov.assetClass}\n`;
-            if (ov.currentPhase) context += `Current Phase: ${ov.currentPhase}\n`;
-            if (ov.description) context += `Description: ${ov.description}\n`;
-          }
-
-          if (projectIntelligence.location) {
-            const loc = projectIntelligence.location;
-            if (loc.siteAddress) context += `Site Address: ${loc.siteAddress}\n`;
-            if (loc.postcode) context += `Postcode: ${loc.postcode}\n`;
-            if (loc.region) context += `Region: ${loc.region}\n`;
-            if (loc.localAuthority) context += `Local Authority: ${loc.localAuthority}\n`;
-          }
-
-          if (projectIntelligence.financials) {
-            const fin = projectIntelligence.financials;
-            context += `\nFinancials:\n`;
-            if (fin.purchasePrice) context += `  Purchase Price: £${fin.purchasePrice.toLocaleString()}\n`;
-            if (fin.totalDevelopmentCost) context += `  Total Development Cost: £${fin.totalDevelopmentCost.toLocaleString()}\n`;
-            if (fin.grossDevelopmentValue) context += `  GDV: £${fin.grossDevelopmentValue.toLocaleString()}\n`;
-            if (fin.profit) context += `  Profit: £${fin.profit.toLocaleString()}\n`;
-            if (fin.profitMargin) context += `  Profit Margin: ${fin.profitMargin}%\n`;
-            if (fin.loanAmount) context += `  Loan Amount: £${fin.loanAmount.toLocaleString()}\n`;
-            if (fin.ltv) context += `  LTV: ${fin.ltv}%\n`;
-            if (fin.ltgdv) context += `  LTGDV: ${fin.ltgdv}%\n`;
-            if (fin.interestRate) context += `  Interest Rate: ${fin.interestRate}%\n`;
-          }
-
-          if (projectIntelligence.timeline) {
-            const tl = projectIntelligence.timeline;
-            context += `\nTimeline:\n`;
-            if (tl.acquisitionDate) context += `  Acquisition: ${tl.acquisitionDate}\n`;
-            if (tl.planningApprovalDate) context += `  Planning Approval: ${tl.planningApprovalDate}\n`;
-            if (tl.constructionStartDate) context += `  Construction Start: ${tl.constructionStartDate}\n`;
-            if (tl.practicalCompletionDate) context += `  Practical Completion: ${tl.practicalCompletionDate}\n`;
-            if (tl.loanMaturityDate) context += `  Loan Maturity: ${tl.loanMaturityDate}\n`;
-          }
-
-          if (projectIntelligence.development) {
-            const dev = projectIntelligence.development;
-            context += `\nDevelopment:\n`;
-            if (dev.totalUnits) context += `  Total Units: ${dev.totalUnits}\n`;
-            if (dev.totalSqFt) context += `  Total Sq Ft: ${dev.totalSqFt.toLocaleString()}\n`;
-            if (dev.planningReference) context += `  Planning Ref: ${dev.planningReference}\n`;
-            if (dev.planningStatus) context += `  Planning Status: ${dev.planningStatus}\n`;
-          }
-
-          if (projectIntelligence.keyParties) {
-            const kp = projectIntelligence.keyParties;
-            context += `\nKey Parties:\n`;
-            if (kp.borrower?.name) context += `  Borrower: ${kp.borrower.name}${kp.borrower.contactName ? ` (${kp.borrower.contactName})` : ''}\n`;
-            if (kp.lender?.name) context += `  Lender: ${kp.lender.name}${kp.lender.contactName ? ` (${kp.lender.contactName})` : ''}\n`;
-            if (kp.solicitor?.firm) context += `  Solicitor: ${kp.solicitor.firm}${kp.solicitor.contactName ? ` (${kp.solicitor.contactName})` : ''}\n`;
-            if (kp.valuer?.firm) context += `  Valuer: ${kp.valuer.firm}\n`;
-            if (kp.contractor?.firm) context += `  Contractor: ${kp.contractor.firm}${kp.contractor.contractValue ? ` - £${kp.contractor.contractValue.toLocaleString()}` : ''}\n`;
-            if (kp.monitoringSurveyor?.firm) context += `  Monitoring Surveyor: ${kp.monitoringSurveyor.firm}\n`;
-          }
-
-          if (projectIntelligence.dataLibrarySummary) {
-            const dls = projectIntelligence.dataLibrarySummary;
-            context += `\nData Library Summary:\n`;
-            if (dls.totalDevelopmentCost) context += `  Total Dev Cost: £${dls.totalDevelopmentCost.toLocaleString()}\n`;
-            if (dls.landCost) context += `  Land Cost: £${dls.landCost.toLocaleString()}\n`;
-            if (dls.constructionCost) context += `  Construction Cost: £${dls.constructionCost.toLocaleString()}\n`;
-            if (dls.professionalFees) context += `  Professional Fees: £${dls.professionalFees.toLocaleString()}\n`;
-            if (dls.contingency) context += `  Contingency: £${dls.contingency.toLocaleString()}\n`;
-            if (dls.financeCosts) context += `  Finance Costs: £${dls.financeCosts.toLocaleString()}\n`;
-            if (dls.totalItemCount) context += `  Items: ${dls.totalItemCount}\n`;
-            if (dls.sourceDocumentCount) context += `  Source Documents: ${dls.sourceDocumentCount}\n`;
-          }
-
-          if (projectIntelligence.aiSummary?.executiveSummary) {
-            context += `\nExecutive Summary: ${projectIntelligence.aiSummary.executiveSummary}\n`;
-          }
-          if (projectIntelligence.aiSummary?.keyFacts?.length) {
-            context += `Key Facts: ${projectIntelligence.aiSummary.keyFacts.join('; ')}\n`;
-          }
-          if (projectIntelligence.aiSummary?.risks?.length) {
-            context += `Risks: ${projectIntelligence.aiSummary.risks.join('; ')}\n`;
+          const summary = buildIntelligenceSummary(
+            null,
+            projectIntelligence,
+            '',
+            '',
+            projectData?.name || 'Unknown',
+          );
+          if (summary) {
+            context += `\n\n=== PROJECT INTELLIGENCE ===\n`;
+            context += summary;
           }
 
           metadata.knowledgeBankCount = 1;
@@ -1031,7 +983,8 @@ RULES:
 7. When creating notes, use plain text formatting (no markdown symbols in the note content itself).
 8. If a user mentions a client or project by name, use the search tools first to find their ID before performing operations.
 9. Present data in a user-friendly way — format dates, currency amounts (£), and percentages nicely.
-10. When enriching client or project intelligence, use the specific intelligence update tools. Extract concrete data points and store them using the appropriate fields.`;
+10. When enriching client or project intelligence, use the specific intelligence update tools. Extract concrete data points and store them using the appropriate fields.
+11. Intelligence data is available via the queryIntelligence tool. The summary above shows what categories have data and what's missing. For questions about specific values (e.g., "what's the interest rate?", "who is the contractor?"), call queryIntelligence with the relevant category or field name rather than searching through documents.`;
 
   // -- Block 2: Session-specific context (client/project data, date, files) --
   let context = '';
