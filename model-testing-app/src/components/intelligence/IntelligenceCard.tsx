@@ -22,6 +22,7 @@ import {
   Clock,
   AlertTriangle,
   History,
+  Filter,
 } from 'lucide-react';
 import {
   getConfidenceColor,
@@ -49,6 +50,7 @@ interface IntelligenceCardProps {
   evidenceTrail: EvidenceEntry[];
   clientId: string;
   projectId?: string;
+  onDocumentFilter?: (doc: { documentId: string; documentName: string }) => void;
 }
 
 function truncateValue(value: string, maxLength = 80): string {
@@ -71,6 +73,7 @@ export function IntelligenceCard({
   evidenceTrail,
   clientId,
   projectId,
+  onDocumentFilter,
 }: IntelligenceCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -191,21 +194,39 @@ export function IntelligenceCard({
               {/* Source doc + timestamp footer */}
               <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
                 {sourceDocumentId ? (
-                  <span
-                    className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.location.href = `/docs/${sourceDocumentId}/`;
-                    }}
-                    role="link"
-                    tabIndex={-1}
-                  >
-                    <FileText className="w-3 h-3" />
-                    <span className="truncate max-w-[180px]">
-                      {sourceDocumentName || 'Source document'}
+                  <>
+                    <span
+                      className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.location.href = `/docs/${sourceDocumentId}/`;
+                      }}
+                      role="link"
+                      tabIndex={-1}
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span className="truncate max-w-[180px]">
+                        {sourceDocumentName || 'Source document'}
+                      </span>
+                      <ExternalLink className="w-2.5 h-2.5 opacity-60" />
                     </span>
-                    <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-                  </span>
+                    {onDocumentFilter && (
+                      <button
+                        type="button"
+                        className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDocumentFilter({
+                            documentId: sourceDocumentId,
+                            documentName: sourceDocumentName || 'Source document',
+                          });
+                        }}
+                        title="View all intelligence from this document"
+                      >
+                        <Filter className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+                      </button>
+                    )}
+                  </>
                 ) : sourceDocumentName ? (
                   <span className="flex items-center gap-1">
                     <FileText className="w-3 h-3" />
