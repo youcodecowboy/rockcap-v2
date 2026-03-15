@@ -2141,3 +2141,210 @@ export const auditAttributeMigration = query({
     };
   },
 });
+
+// ============================================================================
+// QUERY INTELLIGENCE - Targeted field lookup for chat tools
+// ============================================================================
+
+// Category mapping for field prefixes — duplicated from src/ because
+// Convex backend cannot import from src/
+const FIELD_PREFIX_TO_CATEGORY: Record<string, string> = {
+  'contact': 'Contact Info',
+  'company': 'Company',
+  'financial': 'Financial',
+  'financials': 'Financial',
+  'experience': 'Experience',
+  'kyc': 'KYC / Due Diligence',
+  'clientLegal': 'Legal',
+  'legal': 'Legal / Title',
+  'loanTerms': 'Loan Terms',
+  'valuation': 'Valuation',
+  'planning': 'Planning',
+  'construction': 'Construction',
+  'title': 'Legal / Title',
+  'insurance': 'Insurance',
+  'exit': 'Sales / Exit',
+  'overview': 'Overview',
+  'location': 'Location',
+  'timeline': 'Timeline',
+  'development': 'Development',
+  'parties': 'Key Parties',
+  'conditions': 'Loan Terms',
+  'risk': 'Risk',
+};
+
+function getCategoryForFieldPath(fieldPath: string): string {
+  const prefix = fieldPath.split('.')[0];
+  return FIELD_PREFIX_TO_CATEGORY[prefix] ?? 'Other';
+}
+
+// Auto-categorize extracted attribute labels
+const CATEGORY_PATTERNS: [RegExp, string][] = [
+  [/\b(loan|interest\s*rate|ltv|ltgdv|facility|covenant|drawdown)\b/i, 'Loan Terms'],
+  [/\b(planning|permitted\s*dev|s106|cil|use\s*class)\b/i, 'Planning'],
+  [/\b(valuation|gdv|comparable|market\s*value)\b/i, 'Valuation'],
+  [/\b(contract\s*(sum|type|value)|build\s*(cost|programme)|construct)\b/i, 'Construction'],
+  [/\b(title|tenure|freehold|leasehold|solicitor|report\s*on\s*title)\b/i, 'Legal / Title'],
+  [/\b(insurance|indemnity|warranty|liability|policy)\b/i, 'Insurance'],
+  [/\b(exit|sales?\s*(agent|revenue|price)|reserved|exchanged)\b/i, 'Sales / Exit'],
+  [/\b(kyc|aml|pep|sanction|due\s*diligence|source\s*of\s*(funds|wealth))\b/i, 'KYC / Due Diligence'],
+  [/\b(contact|email|phone|address|name)\b/i, 'Contact Info'],
+  [/\b(company|director|shareholder|registration|vat)\b/i, 'Company'],
+  [/\b(income|net\s*worth|assets?|debt|credit|bank)\b/i, 'Financial'],
+];
+
+function categorizeLabel(label: string): string {
+  for (const [pattern, category] of CATEGORY_PATTERNS) {
+    if (pattern.test(label)) return category;
+  }
+  return 'Other';
+}
+
+interface FlattenedField {
+  fieldPath: string;
+  label: string;
+  value: unknown;
+  confidence: number;
+  category: string;
+  sourceDocumentName?: string;
+  sourceDocumentId?: string;
+  extractedAt?: string;
+  hasConflict: boolean;
+  conflictingValues?: Array<{ value: unknown; confidence: number; source?: string }>;
+}
+
+function flattenIntelligenceRecord(record: any): FlattenedField[] {
+  const results: FlattenedField[] = [];
+  const evidenceTrail: any[] = record.evidenceTrail ?? [];
+
+  const SKIP_KEYS = new Set([
+    '_id', '_creationTime', 'clientId', 'projectId', 'clientType',
+    'extractedAttributes', 'evidenceTrail', 'customFields',
+    'lastUpdated', 'lastUpdatedBy', 'version',
+    'dataLibraryAggregate', 'dataLibrarySummary', 'projectSummaries',
+  ]);
+
+  for (const section of Object.keys(record)) {
+    if (SKIP_KEYS.has(section)) continue;
+    const data = record[section];
+    if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
+
+    for (const [key, value] of Object.entries(data)) {
+      if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) continue;
+
+      const fieldPath = `${section}.${key}`;
+      const evidence = evidenceTrail.filter((e: any) => e.fieldPath === fieldPath);
+      const topEvidence = evidence.sort((a: any, b: any) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+      const conflicts = evidence
+        .filter((e: any) => String(e.value).toLowerCase() !== String(value).toLowerCase())
+        .map((e: any) => ({ value: e.value, confidence: e.confidence, source: e.sourceDocumentName }));
+
+      results.push({
+        fieldPath,
+        label: key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim(),
+        value,
+        confidence: topEvidence?.confidence ?? 0.5,
+        category: getCategoryForFieldPath(fieldPath),
+        sourceDocumentName: topEvidence?.sourceDocumentName,
+        sourceDocumentId: topEvidence?.sourceDocumentId,
+        extractedAt: topEvidence?.extractedAt,
+        hasConflict: conflicts.length > 0,
+        conflictingValues: conflicts.length > 0 ? conflicts : undefined,
+      });
+    }
+  }
+
+  // Walk extractedAttributes
+  const attrs: any[] = record.extractedAttributes ?? [];
+  for (const attr of attrs) {
+    if (!attr || typeof attr !== 'object') continue;
+    const label = attr.label || attr.key || '';
+    if (!label) continue;
+
+    results.push({
+      fieldPath: `custom.${label}`,
+      label,
+      value: attr.value,
+      confidence: attr.confidence ?? 0.5,
+      category: categorizeLabel(label),
+      sourceDocumentName: attr.sourceDocumentName,
+      sourceDocumentId: attr.sourceDocumentId,
+      extractedAt: attr.extractedAt,
+      hasConflict: false,
+    });
+  }
+
+  return results;
+}
+
+export const queryIntelligence = query({
+  args: {
+    scope: v.union(v.literal('client'), v.literal('project')),
+    clientId: v.optional(v.id('clients')),
+    projectId: v.optional(v.id('projects')),
+    category: v.optional(v.string()),
+    fieldName: v.optional(v.string()),
+    query: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let record;
+    if (args.scope === 'client' && args.clientId) {
+      record = await ctx.db
+        .query('clientIntelligence')
+        .withIndex('by_client', q => q.eq('clientId', args.clientId!))
+        .first();
+    } else if (args.scope === 'project' && args.projectId) {
+      record = await ctx.db
+        .query('projectIntelligence')
+        .withIndex('by_project', q => q.eq('projectId', args.projectId!))
+        .first();
+    }
+
+    if (!record) return { results: [], totalMatches: 0 };
+
+    const fields = flattenIntelligenceRecord(record);
+
+    let filtered = fields;
+
+    if (args.category) {
+      filtered = filtered.filter(f => f.category === args.category);
+    }
+
+    if (args.fieldName) {
+      const search = args.fieldName.toLowerCase();
+      filtered = filtered.filter(f =>
+        f.label.toLowerCase().includes(search) ||
+        f.fieldPath.toLowerCase().includes(search)
+      );
+    }
+
+    if (args.query) {
+      const search = args.query.toLowerCase();
+      filtered = filtered.filter(f =>
+        f.label.toLowerCase().includes(search) ||
+        String(f.value).toLowerCase().includes(search) ||
+        (f.sourceDocumentName ?? '').toLowerCase().includes(search)
+      );
+    }
+
+    filtered.sort((a, b) => {
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+      return (b.extractedAt ?? '').localeCompare(a.extractedAt ?? '');
+    });
+
+    return {
+      results: filtered.map(f => ({
+        field: f.fieldPath,
+        label: f.label,
+        value: f.value,
+        confidence: f.confidence,
+        source: f.sourceDocumentName,
+        sourceDate: f.extractedAt,
+        category: f.category,
+        hasConflict: f.hasConflict,
+        conflictingValues: f.conflictingValues,
+      })),
+      totalMatches: filtered.length,
+    };
+  },
+});
