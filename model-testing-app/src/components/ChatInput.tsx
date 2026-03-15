@@ -26,10 +26,7 @@ export default function ChatInput({
   onFileSelect,
   initialMessage,
 }: ChatInputProps) {
-  // Display text shown in textarea (e.g. "What about @Acme?")
   const [message, setMessage] = useState(initialMessage || '');
-  // Map from "@Name" to {type, id} for reconstructing markup on send
-  const mentionMapRef = useRef<Map<string, { type: 'client' | 'project'; id: string }>>(new Map());
 
   // Sync initialMessage prop changes (e.g. from briefing click-through)
   useEffect(() => {
@@ -46,25 +43,13 @@ export default function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Reconstruct full markup from display text + mention map
-  const buildMarkupMessage = (displayText: string): string => {
-    let result = displayText;
-    mentionMapRef.current.forEach(({ type, id }, atName) => {
-      const name = atName.slice(1); // remove leading @
-      result = result.replace(atName, `@[${name}](${type}:${id})`);
-    });
-    return result;
-  };
-
   const handleSend = () => {
     if ((message.trim() || pendingFile) && !disabled) {
-      const displayText = message.trim() || (pendingFile ? `Please analyze and file ${pendingFile.fileName}.` : '');
-      const fullText = buildMarkupMessage(displayText);
-      onSend(fullText, pendingFile || undefined);
+      const text = message.trim() || (pendingFile ? `Please analyze and file ${pendingFile.fileName}.` : '');
+      onSend(text, pendingFile || undefined);
       setMessage('');
       setPendingFile(null);
       setMentionQuery(null);
-      mentionMapRef.current.clear();
     }
   };
 
@@ -100,7 +85,7 @@ export default function ChatInput({
     const cursorPos = e.target.selectionStart;
     setMessage(value);
 
-    // Detect @ mention
+    // Detect @ mention — only trigger on bare @ not inside existing markup
     const textBeforeCursor = value.slice(0, cursorPos);
     const atMatch = textBeforeCursor.match(/@(\w*)$/);
     if (atMatch) {
@@ -119,14 +104,11 @@ export default function ChatInput({
     const textBeforeCursor = message.slice(0, cursorPos);
     const textAfterCursor = message.slice(cursorPos);
 
-    // Replace @query with just @Name (hide the ID from user)
+    // Replace @query with full markup directly
     const atIndex = textBeforeCursor.lastIndexOf('@');
     const before = textBeforeCursor.slice(0, atIndex);
-    const displayMention = `@${mention.name}`;
-    const newText = before + displayMention + ' ' + textAfterCursor;
-
-    // Store the mention mapping for reconstruction on send
-    mentionMapRef.current.set(displayMention, { type: mention.type, id: mention.id });
+    const markup = `@[${mention.name}](${mention.type}:${mention.id})`;
+    const newText = before + markup + ' ' + textAfterCursor;
 
     setMessage(newText);
     setMentionQuery(null);
@@ -134,7 +116,7 @@ export default function ChatInput({
     // Focus and set cursor after mention
     setTimeout(() => {
       textarea.focus();
-      const newPos = before.length + displayMention.length + 1;
+      const newPos = before.length + markup.length + 1;
       textarea.setSelectionRange(newPos, newPos);
     }, 0);
   }, [message]);
