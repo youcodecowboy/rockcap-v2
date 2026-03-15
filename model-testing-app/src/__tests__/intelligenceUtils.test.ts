@@ -7,6 +7,7 @@ import {
   getCategoryLucideIcon,
   getCategoryForField,
   formatFieldValue,
+  deriveContributingDocuments,
 } from '@/components/intelligence/intelligenceUtils';
 
 describe('getConfidenceColor', () => {
@@ -80,5 +81,46 @@ describe('detectConflicts', () => {
     const conflicts = detectConflicts(trail, 'contact.email');
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].value).toBe('x@y.com');
+  });
+});
+
+describe('deriveContributingDocuments', () => {
+  it('returns empty array when no items have sourceDocumentId', () => {
+    const items = [
+      { fieldPath: 'contact.email', value: 'a@b.com', sourceDocumentName: 'doc.pdf' },
+    ];
+    expect(deriveContributingDocuments(items as any, [])).toEqual([]);
+  });
+
+  it('aggregates field counts per document', () => {
+    const items = [
+      { sourceDocumentId: 'doc1', sourceDocumentName: 'Valuation.pdf', fieldPath: 'a' },
+      { sourceDocumentId: 'doc1', sourceDocumentName: 'Valuation.pdf', fieldPath: 'b' },
+      { sourceDocumentId: 'doc2', sourceDocumentName: 'Lender Note.docx', fieldPath: 'c' },
+    ];
+    const result = deriveContributingDocuments(items as any, []);
+    expect(result).toHaveLength(2);
+    expect(result.find(d => d.id === 'doc1')?.fieldCount).toBe(2);
+    expect(result.find(d => d.id === 'doc2')?.fieldCount).toBe(1);
+  });
+
+  it('combines active and superseded items', () => {
+    const active = [
+      { sourceDocumentId: 'doc1', sourceDocumentName: 'A.pdf', fieldPath: 'x' },
+    ];
+    const superseded = [
+      { sourceDocumentId: 'doc1', sourceDocumentName: 'A.pdf', fieldPath: 'y' },
+      { sourceDocumentId: 'doc2', sourceDocumentName: 'B.pdf', fieldPath: 'z' },
+    ];
+    const result = deriveContributingDocuments(active as any, superseded as any);
+    expect(result).toHaveLength(2);
+    expect(result.find(d => d.id === 'doc1')?.fieldCount).toBe(2);
+    expect(result.find(d => d.id === 'doc2')?.fieldCount).toBe(1);
+  });
+
+  it('uses "Unknown" for missing document names', () => {
+    const items = [{ sourceDocumentId: 'doc1', fieldPath: 'a' }];
+    const result = deriveContributingDocuments(items as any, []);
+    expect(result[0].name).toBe('Unknown');
   });
 });

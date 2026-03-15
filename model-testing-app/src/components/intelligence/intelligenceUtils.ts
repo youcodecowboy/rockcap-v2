@@ -167,6 +167,37 @@ const PERCENTAGE_PREFIXES = new Set([
   'ltv', 'ltc', 'ltgdv', 'interestRate', 'currentProgress', 'retentionPercent',
 ]);
 
+export interface ContributingDocument {
+  id: string;
+  name: string;
+  fieldCount: number;
+}
+
+export function deriveContributingDocuments(
+  activeItems: Array<{ sourceDocumentId?: unknown; sourceDocumentName?: string; fieldPath: string }>,
+  supersededItems: Array<{ sourceDocumentId?: unknown; sourceDocumentName?: string; fieldPath: string }>,
+): ContributingDocument[] {
+  const docMap = new Map<string, ContributingDocument>();
+  const allItems = [...activeItems, ...supersededItems];
+
+  for (const item of allItems) {
+    if (!item.sourceDocumentId) continue;
+    const docId = String(item.sourceDocumentId);
+    const existing = docMap.get(docId);
+    if (existing) {
+      existing.fieldCount++;
+    } else {
+      docMap.set(docId, {
+        id: docId,
+        name: item.sourceDocumentName || 'Unknown',
+        fieldCount: 1,
+      });
+    }
+  }
+
+  return Array.from(docMap.values());
+}
+
 /**
  * Format a field value for display based on the field key.
  * Adds £ and commas for currency, % for percentages, commas for numbers.
