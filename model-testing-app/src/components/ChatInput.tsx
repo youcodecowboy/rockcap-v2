@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, KeyboardEvent, useRef } from 'react';
+import { useState, useEffect, useCallback, KeyboardEvent, useRef } from 'react';
 import { Send, Loader2, Paperclip, X, FileText } from 'lucide-react';
 import MentionAutocomplete from './MentionAutocomplete';
 
@@ -27,6 +27,15 @@ export default function ChatInput({
   initialMessage,
 }: ChatInputProps) {
   const [message, setMessage] = useState(initialMessage || '');
+
+  // Sync initialMessage prop changes (e.g. from briefing click-through)
+  useEffect(() => {
+    if (initialMessage) {
+      setMessage(initialMessage);
+      textareaRef.current?.focus();
+    }
+  }, [initialMessage]);
+
   const [isUploading, setIsUploading] = useState(false);
   const [pendingFile, setPendingFile] = useState<FileMetadata | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);

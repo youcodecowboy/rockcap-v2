@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Settings2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
@@ -12,6 +12,8 @@ import ChatInput from './ChatInput';
 import ContextSelector from './ContextSelector';
 import ActionConfirmationModal from './ActionConfirmationModal';
 import BulkActionConfirmationModal from './BulkActionConfirmationModal';
+import ChatBriefing, { generateBriefingItems } from './ChatBriefing';
+import { parseMentions } from '@/lib/chat/mentionParser';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
 
 // Context Badge Component
@@ -88,6 +90,29 @@ export default function ChatAssistantDrawer() {
   const createAction = useMutation(api.chatActions.create);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const deleteSession = useMutation(api.chatSessions.remove);
+
+  // Intelligence queries for proactive briefing
+  const clientIntel = useQuery(
+    api.intelligence.getClientIntelligence,
+    contextClientId ? { clientId: contextClientId } : 'skip'
+  );
+  const projectIntel = useQuery(
+    api.intelligence.getProjectIntelligence,
+    contextProjectId ? { projectId: contextProjectId } : 'skip'
+  );
+
+  // Briefing items derived from intelligence
+  const briefingItems = useMemo(() => {
+    const intel = projectIntel || clientIntel;
+    return generateBriefingItems(intel);
+  }, [clientIntel, projectIntel]);
+
+  // Entity names for briefing display
+  const contextClient = useQuery(api.clients.get, contextClientId ? { id: contextClientId } : 'skip');
+  const contextProject = useQuery(api.projects.get, contextProjectId ? { id: contextProjectId } : 'skip');
+
+  // State for briefing click-through
+  const [initialMessage, setInitialMessage] = useState<string>('');
 
   // Get sessions to find the most recent one
   const sessions = useQuery(api.chatSessions.list, {
@@ -279,6 +304,7 @@ export default function ChatAssistantDrawer() {
           projectId: contextProjectId,
           conversationHistory,
           fileMetadata, // Include file metadata if present
+          mentions: parseMentions(content),
         }),
       });
 
@@ -746,16 +772,27 @@ export default function ChatAssistantDrawer() {
               ) : (
                 <div className="flex flex-col h-full">
                   {!isLoading && (
-                    <div className="flex items-center justify-center flex-1">
-                      <div className="text-center">
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">
-                          Welcome to AI Assistant
-                        </h3>
-                        <p className="text-sm text-gray-500 max-w-md">
-                          I can help you manage clients, projects, documents, and more. Just ask me anything!
-                        </p>
+                    <>
+                      {/* Proactive Briefing */}
+                      {briefingItems.length > 0 && (contextClient || contextProject) && (
+                        <ChatBriefing
+                          items={briefingItems}
+                          entityName={contextProject?.name || contextClient?.name || 'Unknown'}
+                          entityType={contextProjectId ? 'project' : 'client'}
+                          onAskAbout={(text) => setInitialMessage(text)}
+                        />
+                      )}
+                      <div className="flex items-center justify-center flex-1">
+                        <div className="text-center">
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">
+                            Welcome to AI Assistant
+                          </h3>
+                          <p className="text-sm text-gray-500 max-w-md">
+                            I can help you manage clients, projects, documents, and more. Just ask me anything!
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    </>
                   )}
                   {isLoading && (
                     <div className="pt-4">
@@ -768,12 +805,16 @@ export default function ChatAssistantDrawer() {
 
             {/* Input */}
             <ChatInput
-              onSend={handleSendMessage}
+              onSend={(msg, file) => {
+                setInitialMessage('');
+                handleSendMessage(msg, file);
+              }}
               onFileSelect={handleFileUpload}
               disabled={isLoading}
+              initialMessage={initialMessage}
               placeholder={
-                isLoading 
-                  ? 'AI is thinking...' 
+                isLoading
+                  ? 'AI is thinking...'
                   : isGatheringContext
                   ? 'Preparing context... (you can still type)'
                   : 'Ask me anything...'
