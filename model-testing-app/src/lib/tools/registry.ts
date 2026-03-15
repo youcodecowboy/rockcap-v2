@@ -142,6 +142,24 @@ export class ToolRegistry {
     return this.getAllTools().filter((t) => t.domain === domain);
   }
 
+  /**
+   * Get tools from multiple domains at once.
+   * Used by the skills system to load tool groups.
+   */
+  getToolsByDomains(domains: ToolDomain[]): AtomicTool[] {
+    const tools: AtomicTool[] = [];
+    const seen = new Set<string>();
+    for (const domain of domains) {
+      for (const tool of this.getToolsByDomain(domain)) {
+        if (!seen.has(tool.name)) {
+          tools.push(tool);
+          seen.add(tool.name);
+        }
+      }
+    }
+    return tools;
+  }
+
   /** Get tools by action type */
   getToolsByAction(action: ToolAction): AtomicTool[] {
     return this.getAllTools().filter((t) => t.action === action);
