@@ -71,6 +71,22 @@ import {
   getFieldsByCategory,
   CanonicalFieldConfig,
 } from '@/lib/canonicalFields';
+import { IntelligenceSidebar, CategorySummary } from './intelligence/IntelligenceSidebar';
+import { IntelligenceCardList, IntelligenceItem } from './intelligence/IntelligenceCardList';
+import { IntelligenceMissingFields } from './intelligence/IntelligenceMissingFields';
+import { getCategoryForField, getCategoryIcon, detectConflicts, EvidenceEntry } from './intelligence/intelligenceUtils';
+import { categorizeAttribute } from '@/lib/intelligenceCategorizer';
+import {
+  getAllClientFields,
+  getAllProjectFields,
+  clientKycFields,
+  clientLegalFields,
+  projectLoanTermsFields,
+  projectConstructionFields,
+  projectTitleFields,
+  projectExitFields,
+} from './intelligence/fieldDefinitions';
+import { getNestedValue, type FieldDefinition } from './intelligence/types';
 
 // ============================================================================
 // TYPES
@@ -151,6 +167,216 @@ const PROJECT_CATEGORIES: CategoryConfig[] = [
 ];
 
 // ============================================================================
+// CATEGORY COMPUTATION HELPERS
+// ============================================================================
+
+/**
+ * Given an intelligence record (knowledge items) and field definitions,
+ * compute CategorySummary[] for the sidebar.
+ */
+function computeClientCategories(
+  knowledgeItems: KnowledgeItemUI[],
+  isLender: boolean,
+  evidenceTrail: EvidenceEntry[],
+): CategorySummary[] {
+  const allFields = getAllClientFields(isLender);
+  return computeCategoriesFromFields(allFields, knowledgeItems, evidenceTrail);
+}
+
+function computeProjectCategories(
+  knowledgeItems: KnowledgeItemUI[],
+  evidenceTrail: EvidenceEntry[],
+): CategorySummary[] {
+  const allFields = getAllProjectFields();
+  return computeCategoriesFromFields(allFields, knowledgeItems, evidenceTrail);
+}
+
+function computeCategoriesFromFields(
+  fieldDefs: FieldDefinition[],
+  knowledgeItems: KnowledgeItemUI[],
+  evidenceTrail: EvidenceEntry[],
+): CategorySummary[] {
+  const categoryMap = new Map<string, {
+    filled: number;
+    total: number;
+    hasCriticalMissing: boolean;
+    hasConflicts: boolean;
+    recentlyUpdated: boolean;
+  }>();
+
+  const now = Date.now();
+  const oneDayAgo = now - 24 * 60 * 60 * 1000;
+
+  // Build a set of filled field paths from knowledge items
+  const filledPaths = new Set(knowledgeItems.map(item => item.fieldPath));
+
+  // Walk all field definitions and group by category
+  for (const field of fieldDefs) {
+    const category = getCategoryForField(field.key);
+    if (!categoryMap.has(category)) {
+      categoryMap.set(category, {
+        filled: 0,
+        total: 0,
+        hasCriticalMissing: false,
+        hasConflicts: false,
+        recentlyUpdated: false,
+      });
+    }
+    const cat = categoryMap.get(category)!;
+    cat.total++;
+
+    if (filledPaths.has(field.key)) {
+      cat.filled++;
+      // Check if recently updated
+      const item = knowledgeItems.find(ki => ki.fieldPath === field.key);
+      if (item?.addedAt) {
+        const addedTime = new Date(item.addedAt).getTime();
+        if (addedTime > oneDayAgo) {
+          cat.recentlyUpdated = true;
+        }
+      }
+      // Check for conflicts
+      const conflicts = detectConflicts(evidenceTrail, field.key);
+      if (conflicts.length > 0) {
+        cat.hasConflicts = true;
+      }
+    } else {
+      // Check if missing field is critical
+      if (field.priority === 'critical') {
+        cat.hasCriticalMissing = true;
+      }
+    }
+  }
+
+  // Also account for knowledge items that don't match any field definition
+  // (custom/extracted items categorized by their stored category key)
+  for (const item of knowledgeItems) {
+    const matchesFieldDef = fieldDefs.some(f => f.key === item.fieldPath);
+    if (!matchesFieldDef) {
+      const category = getCategoryForField(item.fieldPath) !== 'Other'
+        ? getCategoryForField(item.fieldPath)
+        : categorizeAttribute(item.label);
+      if (!categoryMap.has(category)) {
+        categoryMap.set(category, {
+          filled: 0,
+          total: 0,
+          hasCriticalMissing: false,
+          hasConflicts: false,
+          recentlyUpdated: false,
+        });
+      }
+      const cat = categoryMap.get(category)!;
+      cat.filled++;
+      cat.total++;
+
+      if (item.addedAt) {
+        const addedTime = new Date(item.addedAt).getTime();
+        if (addedTime > oneDayAgo) {
+          cat.recentlyUpdated = true;
+        }
+      }
+    }
+  }
+
+  // Convert to sorted array
+  const result: CategorySummary[] = [];
+  for (const [name, data] of categoryMap.entries()) {
+    result.push({
+      name,
+      filled: data.filled,
+      total: data.total,
+      hasCriticalMissing: data.hasCriticalMissing,
+      hasConflicts: data.hasConflicts,
+      recentlyUpdated: data.recentlyUpdated,
+    });
+  }
+
+  // Sort: categories with items first, then alphabetical
+  result.sort((a, b) => {
+    if (a.name === 'Other') return 1;
+    if (b.name === 'Other') return -1;
+    if (a.filled > 0 && b.filled === 0) return -1;
+    if (a.filled === 0 && b.filled > 0) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return result;
+}
+
+/**
+ * Transform knowledge items for a given category into IntelligenceItem[]
+ * for the IntelligenceCardList component.
+ */
+function buildIntelligenceItems(
+  knowledgeItems: KnowledgeItemUI[],
+  fieldDefs: FieldDefinition[],
+  categoryName: string,
+  evidenceTrail: EvidenceEntry[],
+): IntelligenceItem[] {
+  const now = Date.now();
+  const oneDayAgo = now - 24 * 60 * 60 * 1000;
+
+  // Filter knowledge items to those belonging to this category
+  const itemsInCategory = knowledgeItems.filter(item => {
+    const fieldCategory = getCategoryForField(item.fieldPath);
+    if (fieldCategory !== 'Other') return fieldCategory === categoryName;
+    // Fallback to label-based categorization
+    return categorizeAttribute(item.label) === categoryName;
+  });
+
+  return itemsInCategory.map(item => {
+    const conflicts = detectConflicts(evidenceTrail, item.fieldPath);
+    const allEntries = evidenceTrail.filter(e => e.fieldPath === item.fieldPath);
+    const priorValues = allEntries.length > 1
+      ? allEntries.filter(e =>
+          String(e.value).toLowerCase() === String(item.value).toLowerCase()
+        ).length - 1
+      : 0;
+
+    const isCore = item.isCanonical || fieldDefs.some(f => f.key === item.fieldPath);
+    const isRecentlyUpdated = item.addedAt
+      ? new Date(item.addedAt).getTime() > oneDayAgo
+      : false;
+
+    return {
+      fieldKey: item.fieldPath,
+      fieldLabel: item.label,
+      fieldValue: formatDisplayValue(item.value, item.valueType) as string,
+      confidence: item.normalizationConfidence ?? 0.9,
+      sourceDocumentName: item.sourceDocumentName,
+      sourceDocumentId: item.sourceDocumentId ? String(item.sourceDocumentId) : undefined,
+      extractedAt: item.addedAt,
+      isCore,
+      conflictCount: conflicts.length,
+      priorValueCount: Math.max(0, priorValues),
+      isRecentlyUpdated,
+    };
+  });
+}
+
+/**
+ * Build the list of missing fields for a given category.
+ */
+function buildMissingFields(
+  knowledgeItems: KnowledgeItemUI[],
+  fieldDefs: FieldDefinition[],
+  categoryName: string,
+): { key: string; label: string; priority: 'critical' | 'important' | 'optional' }[] {
+  const filledPaths = new Set(knowledgeItems.map(item => item.fieldPath));
+
+  return fieldDefs
+    .filter(field => {
+      const fieldCategory = getCategoryForField(field.key);
+      return fieldCategory === categoryName && !filledPaths.has(field.key);
+    })
+    .map(field => ({
+      key: field.key,
+      label: field.label,
+      priority: (field.priority ?? 'optional') as 'critical' | 'important' | 'optional',
+    }));
+}
+
+// ============================================================================
 // HELPER COMPONENTS
 // ============================================================================
 
@@ -196,188 +422,6 @@ interface HistoryItem {
   sourceDocumentName?: string;
   addedAt: string;
   status: string;
-}
-
-function KnowledgeItemCard({
-  item,
-  onEdit,
-  onDelete,
-  historyItems,
-  onShowHistory,
-}: {
-  item: KnowledgeItemUI;
-  onEdit: (item: KnowledgeItemUI) => void;
-  onDelete: (id: Id<"knowledgeItems">) => void;
-  historyItems?: HistoryItem[];
-  onShowHistory?: () => void;
-}) {
-  const [showHistory, setShowHistory] = useState(false);
-  const hasHistory = historyItems && historyItems.length > 1;
-  const supersededCount = hasHistory ? historyItems.filter(h => h.status === 'superseded').length : 0;
-
-  const sourceLabel = item.sourceType === 'ai_extraction' ? 'AI'
-    : item.sourceType === 'document' ? 'Doc'
-    : item.sourceType === 'manual' ? 'Manual'
-    : item.sourceType === 'data_library' ? 'Library'
-    : item.sourceType;
-
-  return (
-    <div className="p-4 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors group">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-sm font-medium text-gray-900">{item.label}</span>
-            {item.isCanonical && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-200 bg-blue-50">
-                <Star className="w-2.5 h-2.5 mr-0.5 fill-blue-500" />
-                Core
-              </Badge>
-            )}
-            {!item.isCanonical && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-purple-600 border-purple-200 bg-purple-50">
-                <Tag className="w-2.5 h-2.5 mr-0.5" />
-                Custom
-              </Badge>
-            )}
-            {sourceLabel && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-gray-500">
-                {sourceLabel}
-              </Badge>
-            )}
-            {item.normalizationConfidence && item.normalizationConfidence < 0.8 && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600">
-                {Math.round(item.normalizationConfidence * 100)}%
-              </Badge>
-            )}
-            {item.tags && item.tags.filter(t => t !== 'general').length > 0 && (
-              <>
-                {item.tags.filter(t => t !== 'general').slice(0, 3).map(tag => (
-                  <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-200 bg-emerald-50">
-                    {tag.replace(/_/g, ' ')}
-                  </Badge>
-                ))}
-                {item.tags.filter(t => t !== 'general').length > 3 && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-gray-400">
-                    +{item.tags.filter(t => t !== 'general').length - 3}
-                  </Badge>
-                )}
-              </>
-            )}
-            {supersededCount > 0 && (
-              <Badge
-                variant="outline"
-                className="text-[10px] px-1.5 py-0 text-orange-600 border-orange-200 bg-orange-50 cursor-pointer hover:bg-orange-100"
-                onClick={() => setShowHistory(!showHistory)}
-              >
-                <Clock className="w-2.5 h-2.5 mr-0.5" />
-                {supersededCount} prior
-              </Badge>
-            )}
-          </div>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">
-            {formatDisplayValue(item.value, item.valueType)}
-          </p>
-          <div className="flex items-center gap-2 mt-2">
-            {item.addedAt && (
-              <span className="text-xs text-gray-400">
-                {new Date(item.addedAt).toLocaleDateString()}
-              </span>
-            )}
-            {item.addedBy && item.addedBy !== 'manual' && (
-              <span className="text-xs text-gray-400">• {item.addedBy}</span>
-            )}
-            {item.sourceDocumentName && (
-              <span className="text-xs text-blue-500 truncate max-w-[150px]" title={item.sourceDocumentName}>
-                • {item.sourceDocumentName}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onEdit(item)}>
-            <Pencil className="w-3 h-3 text-gray-400" />
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onDelete(item._id)}>
-            <Trash2 className="w-3 h-3 text-red-400" />
-          </Button>
-        </div>
-      </div>
-
-      {/* History section - shows superseded values */}
-      {showHistory && historyItems && historyItems.length > 1 && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <div className="flex items-center gap-2 mb-2">
-            <Clock className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs font-medium text-gray-600">Value History</span>
-          </div>
-          <div className="space-y-2 pl-5">
-            {historyItems
-              .filter(h => h.status === 'superseded')
-              .map((historyItem) => (
-                <div
-                  key={historyItem._id}
-                  className="text-xs p-2 bg-gray-50 rounded border border-gray-100"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-gray-500 line-through">
-                      {formatDisplayValue(historyItem.value, historyItem.valueType)}
-                    </span>
-                    <span className="text-gray-400 shrink-0">
-                      {historyItem.addedAt ? new Date(historyItem.addedAt).toLocaleDateString() : ''}
-                    </span>
-                  </div>
-                  {historyItem.sourceDocumentName && (
-                    <span className="text-gray-400 text-[10px]">
-                      From: {historyItem.sourceDocumentName}
-                    </span>
-                  )}
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Component for unfilled canonical field placeholder
-function UnfilledFieldCard({
-  field,
-  onFill,
-}: {
-  field: UnfilledCanonicalField;
-  onFill: (field: UnfilledCanonicalField) => void;
-}) {
-  return (
-    <div
-      className="p-4 bg-gray-50 border border-dashed border-gray-300 rounded-lg hover:border-blue-300 hover:bg-blue-50/30 transition-colors group cursor-pointer"
-      onClick={() => onFill(field)}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <CircleDashed className="w-3.5 h-3.5 text-gray-400" />
-            <span className="text-sm font-medium text-gray-500">{field.label}</span>
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-gray-400 border-gray-300">
-              <Star className="w-2.5 h-2.5 mr-0.5" />
-              Core Field
-            </Badge>
-          </div>
-          {field.description && (
-            <p className="text-xs text-gray-400 italic">{field.description}</p>
-          )}
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-2 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          <Plus className="w-3.5 h-3.5 mr-1" />
-          Add
-        </Button>
-      </div>
-    </div>
-  );
 }
 
 // Type for add/edit item data
@@ -574,58 +618,6 @@ function AddItemModal({
   );
 }
 
-function SidebarCategory({
-  category,
-  count,
-  isActive,
-  onClick,
-  isMinimized,
-}: {
-  category: CategoryConfig;
-  count: number;
-  isActive: boolean;
-  onClick: () => void;
-  isMinimized: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
-        isActive
-          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-          : count > 0
-          ? 'hover:bg-gray-100 text-gray-700'
-          : 'hover:bg-gray-50 text-gray-400'
-      }`}
-      title={isMinimized ? `${category.label} (${count})` : undefined}
-    >
-      <span className={isActive ? 'text-blue-600' : count > 0 ? 'text-gray-500' : 'text-gray-300'}>
-        {category.icon}
-      </span>
-      {!isMinimized && (
-        <>
-          <span className="flex-1 text-sm font-medium truncate">{category.label}</span>
-          {count > 0 && (
-            <Badge
-              variant={isActive ? 'default' : 'secondary'}
-              className={`text-xs ${isActive ? 'bg-blue-600' : ''}`}
-            >
-              {count}
-            </Badge>
-          )}
-        </>
-      )}
-      {isMinimized && count > 0 && (
-        <Badge
-          variant={isActive ? 'default' : 'secondary'}
-          className={`text-xs absolute -right-1 -top-1 ${isActive ? 'bg-blue-600' : ''}`}
-        >
-          {count}
-        </Badge>
-      )}
-    </button>
-  );
-}
 
 // ============================================================================
 // DOCUMENT SUMMARY VIEW
@@ -1355,164 +1347,108 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
     }
   };
 
+  // Handle adding a field from the MissingFields component
+  const handleAddField = (fieldKey: string) => {
+    const allFields = isClientScope
+      ? getAllClientFields(clientType === 'lender')
+      : getAllProjectFields();
+    const fieldDef = allFields.find(f => f.key === fieldKey);
+    if (fieldDef) {
+      handleFillCanonicalField({
+        fieldPath: fieldDef.key,
+        label: fieldDef.label,
+        type: fieldDef.type || 'text',
+        category: getCategoryForField(fieldDef.key),
+      });
+    }
+  };
+
+  // Build evidence trail from history data for the new components
+  const evidenceTrail: EvidenceEntry[] = useMemo(() => {
+    const trail: EvidenceEntry[] = [];
+    for (const [fieldPath, items] of Object.entries(historyByFieldPath)) {
+      for (const item of items) {
+        trail.push({
+          fieldPath,
+          value: item.value,
+          confidence: 0.9,
+          sourceDocumentName: item.sourceDocumentName,
+        });
+      }
+    }
+    return trail;
+  }, [historyByFieldPath]);
+
+  // Compute category summaries for the sidebar
+  const clientCategories = useMemo(() => {
+    if (!isClientScope) return [];
+    return computeClientCategories(knowledgeItems, clientType === 'lender', evidenceTrail);
+  }, [isClientScope, knowledgeItems, clientType, evidenceTrail]);
+
+  const projectCategoriesForSidebar = useMemo(() => {
+    if (isClientScope) return [];
+    return computeProjectCategories(knowledgeItems, evidenceTrail);
+  }, [isClientScope, knowledgeItems, evidenceTrail]);
+
+  // Use a name-based active category for the new sidebar
+  const [activeSidebarCategory, setActiveSidebarCategory] = useState('Contact Info');
+
+  // Compute the active category's field definitions
+  const activeFieldDefs = useMemo(() => {
+    return isClientScope
+      ? getAllClientFields(clientType === 'lender')
+      : getAllProjectFields();
+  }, [isClientScope, clientType]);
+
+  // Build intelligence items for the active sidebar category
+  const filteredItems = useMemo(() => {
+    return buildIntelligenceItems(knowledgeItems, activeFieldDefs, activeSidebarCategory, evidenceTrail);
+  }, [knowledgeItems, activeFieldDefs, activeSidebarCategory, evidenceTrail]);
+
+  // Build missing fields for the active sidebar category
+  const missingForCategory = useMemo(() => {
+    return buildMissingFields(knowledgeItems, activeFieldDefs, activeSidebarCategory);
+  }, [knowledgeItems, activeFieldDefs, activeSidebarCategory]);
+
+  // Get active category stats
+  const activeCategoryStats = useMemo(() => {
+    const allCats = isClientScope ? clientCategories : projectCategoriesForSidebar;
+    const found = allCats.find(c => c.name === activeSidebarCategory);
+    return found || { filled: 0, total: 0 };
+  }, [isClientScope, clientCategories, projectCategoriesForSidebar, activeSidebarCategory]);
+
+  // Overall completeness
+  const overallCompleteness = useMemo(() => {
+    const allCats = isClientScope ? clientCategories : projectCategoriesForSidebar;
+    const totalFilled = allCats.reduce((sum, c) => sum + c.filled, 0);
+    const totalFields = allCats.reduce((sum, c) => sum + c.total, 0);
+    return totalFields > 0 ? (totalFilled / totalFields) * 100 : 0;
+  }, [isClientScope, clientCategories, projectCategoriesForSidebar]);
+
   return (
     <div className="h-full flex">
-      {/* Sidebar */}
-      <div className={`flex-shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col transition-all duration-200 ${
-        sidebarMinimized ? 'w-16' : 'w-64'
-      }`}>
-        {/* Sidebar Header */}
-        <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-          {!sidebarMinimized && (
-            <div className="flex items-center gap-2">
-              <Brain className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-gray-700">Intelligence</span>
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={() => setSidebarMinimized(!sidebarMinimized)}
-          >
-            {sidebarMinimized ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </Button>
-        </div>
-
-        {/* Scope Selection: Client + Projects */}
-        {!sidebarMinimized && (
-          <div className="border-b border-gray-200">
-            {/* Client Entry */}
-            <button
-              onClick={() => setViewScope('client')}
-              className={`w-full px-3 py-2.5 flex items-center gap-3 text-left transition-colors ${
-                isClientScope
-                  ? 'bg-blue-50 border-l-2 border-blue-600'
-                  : 'hover:bg-gray-100 border-l-2 border-transparent'
-              }`}
-            >
-              <Building2 className={`w-4 h-4 ${isClientScope ? 'text-blue-600' : 'text-gray-500'}`} />
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium truncate ${isClientScope ? 'text-blue-700' : 'text-gray-700'}`}>
-                  {clientName || 'Client'}
-                </p>
-                <p className="text-xs text-gray-500">Client-level data</p>
-              </div>
-              {clientStats && (
-                <Badge variant="secondary" className="text-[10px]">
-                  {clientStats.total}
-                </Badge>
-              )}
-            </button>
-
-            {/* Projects Section */}
-            {projects.length > 0 && (
-              <div className="py-2">
-                <div className="px-3 py-1">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projects</span>
-                </div>
-                {projects.map((project) => {
-                  const isSelected = !isClientScope && viewScope.projectId === project._id;
-                  return (
-                    <button
-                      key={project._id}
-                      onClick={() => setViewScope({ projectId: project._id, projectName: project.name })}
-                      className={`w-full px-3 py-2 flex items-center gap-3 text-left transition-colors ${
-                        isSelected
-                          ? 'bg-purple-50 border-l-2 border-purple-600'
-                          : 'hover:bg-gray-100 border-l-2 border-transparent'
-                      }`}
-                    >
-                      <FolderKanban className={`w-4 h-4 ${isSelected ? 'text-purple-600' : 'text-gray-500'}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${isSelected ? 'text-purple-700' : 'text-gray-700'}`}>
-                          {project.name}
-                        </p>
-                        {project.dealPhase && (
-                          <p className="text-xs text-gray-400">{project.dealPhase.replace('_', ' ')}</p>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Categories Header */}
-        {!sidebarMinimized && (
-          <div className="px-3 py-2 border-b border-gray-100">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Categories</span>
-            {stats && (
-              <span className="ml-2 text-xs text-gray-400">
-                {stats.canonical} core / {stats.custom} custom
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Categories */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {categories.map((category) => (
-            <SidebarCategory
-              key={category.key}
-              category={category}
-              count={countsByCategory[category.key] || 0}
-              isActive={viewMode === 'intelligence' && activeCategory === category.key}
-              onClick={() => {
-                setViewMode('intelligence');
-                setActiveCategory(category.key);
-              }}
-              isMinimized={sidebarMinimized}
-            />
-          ))}
-        </div>
-
-        {/* Document Summaries Section */}
-        {!sidebarMinimized && (
-          <div className="px-3 py-2 border-t border-gray-100">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Views</span>
-          </div>
-        )}
-        <div className="p-2">
-          <button
-            onClick={() => setViewMode('documents')}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors relative ${
-              sidebarMinimized ? 'justify-center' : ''
-            } ${
-              viewMode === 'documents'
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                : 'hover:bg-gray-100 text-gray-700'
-            }`}
-            title={sidebarMinimized ? `Document Summaries (${documents?.length || 0})` : undefined}
-          >
-            <FileStack className={`w-4 h-4 ${viewMode === 'documents' ? 'text-emerald-600' : 'text-gray-500'}`} />
-            {!sidebarMinimized && (
-              <>
-                <span className="flex-1 text-sm font-medium truncate">Document Summaries</span>
-                {documents && documents.length > 0 && (
-                  <Badge
-                    variant={viewMode === 'documents' ? 'default' : 'secondary'}
-                    className={`text-xs ${viewMode === 'documents' ? 'bg-emerald-600' : ''}`}
-                  >
-                    {documents.length}
-                  </Badge>
-                )}
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Sidebar Footer */}
-        {!sidebarMinimized && (
-          <div className="p-3 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center">
-              {totalItems} total item{totalItems !== 1 ? 's' : ''}
-            </p>
-          </div>
-        )}
-      </div>
+      {/* New sidebar with category summaries */}
+      <IntelligenceSidebar
+        categories={isClientScope ? clientCategories : projectCategoriesForSidebar}
+        projectCategories={!isClientScope ? projectCategoriesForSidebar : []}
+        activeCategory={activeSidebarCategory}
+        onSelectCategory={(name) => {
+          setViewMode('intelligence');
+          setActiveSidebarCategory(name);
+        }}
+        clientName={clientName || 'Client'}
+        clientType={clientType || 'borrower'}
+        projectCount={projects.length}
+        overallCompleteness={overallCompleteness}
+        projects={projects.map(p => ({ id: String(p._id), name: p.name }))}
+        activeProjectId={currentProjectId ? String(currentProjectId) : undefined}
+        onSelectProject={(id) => {
+          const project = projects.find(p => String(p._id) === id);
+          if (project) {
+            setViewScope({ projectId: project._id, projectName: project.name });
+          }
+        }}
+      />
 
       {/* Main Content - Conditional based on viewMode */}
       {viewMode === 'documents' ? (
@@ -1524,74 +1460,22 @@ export function ClientIntelligenceTab({ clientId, clientName, clientType, projec
           title={isClientScope ? 'Client Document Summaries' : `${(viewScope as { projectName: string }).projectName} Document Summaries`}
         />
       ) : (
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
-            <div>
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                {activeCategoryConfig?.icon}
-                {activeCategoryConfig?.label}
-                {totalInCategory > 0 && (
-                  <Badge variant="outline" className="text-xs font-normal">
-                    {filledInCategory}/{totalInCategory} filled
-                  </Badge>
-                )}
-              </h2>
-              <p className="text-sm text-gray-500">{activeCategoryConfig?.description}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-48"
-                />
-              </div>
-              <Button variant="outline" size="sm" onClick={handleAddItem} className="gap-1">
-                <Plus className="w-4 h-4" />
-                Add Custom
-              </Button>
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {displayItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <div className="text-gray-300 mb-4">{activeCategoryConfig?.icon}</div>
-                <p className="text-gray-500 mb-2">No {activeCategoryConfig?.label?.toLowerCase()} fields available</p>
-                <p className="text-sm text-gray-400 mb-4">
-                  Upload and analyze documents to automatically extract intelligence
-                </p>
-                <Button variant="outline" size="sm" onClick={handleAddItem}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Custom
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {displayItems.map((displayItem) =>
-                  displayItem.type === 'filled' ? (
-                    <KnowledgeItemCard
-                      key={displayItem.item._id}
-                      item={displayItem.item}
-                      onEdit={handleEditItem}
-                      onDelete={handleDeleteItem}
-                      historyItems={historyByFieldPath[displayItem.item.fieldPath]}
-                    />
-                  ) : (
-                    <UnfilledFieldCard
-                      key={displayItem.field.fieldPath}
-                      field={displayItem.field}
-                      onFill={handleFillCanonicalField}
-                    />
-                  )
-                )}
-              </div>
-            )}
-          </div>
+        <div className="flex-1 overflow-auto p-4">
+          <IntelligenceCardList
+            items={filteredItems}
+            categoryName={activeSidebarCategory}
+            categoryIcon={getCategoryIcon(activeSidebarCategory)}
+            filled={activeCategoryStats.filled}
+            total={activeCategoryStats.total}
+            clientId={String(clientId)}
+            projectId={currentProjectId ? String(currentProjectId) : undefined}
+            evidenceTrail={evidenceTrail}
+          />
+          <IntelligenceMissingFields
+            missingFields={missingForCategory}
+            onAddField={handleAddField}
+            className="mt-4"
+          />
         </div>
       )}
 
@@ -1876,93 +1760,85 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
     }
   };
 
+  // Handle adding a field from the MissingFields component
+  const handleAddField = (fieldKey: string) => {
+    const allFields = getAllProjectFields();
+    const fieldDef = allFields.find(f => f.key === fieldKey);
+    if (fieldDef) {
+      handleFillCanonicalField({
+        fieldPath: fieldDef.key,
+        label: fieldDef.label,
+        type: fieldDef.type || 'text',
+        category: getCategoryForField(fieldDef.key),
+      });
+    }
+  };
+
+  // Build evidence trail from history data for the new components
+  const evidenceTrail: EvidenceEntry[] = useMemo(() => {
+    const trail: EvidenceEntry[] = [];
+    for (const [fieldPath, items] of Object.entries(historyByFieldPath)) {
+      for (const item of items) {
+        trail.push({
+          fieldPath,
+          value: item.value,
+          confidence: 0.9,
+          sourceDocumentName: item.sourceDocumentName,
+        });
+      }
+    }
+    return trail;
+  }, [historyByFieldPath]);
+
+  // Compute category summaries for the sidebar
+  const projectCategoriesComputed = useMemo(() => {
+    return computeProjectCategories(knowledgeItems, evidenceTrail);
+  }, [knowledgeItems, evidenceTrail]);
+
+  // Use a name-based active category for the new sidebar
+  const [activeSidebarCategory, setActiveSidebarCategory] = useState('Loan Terms');
+
+  // Build intelligence items for the active sidebar category
+  const projectFieldDefs = useMemo(() => getAllProjectFields(), []);
+
+  const filteredItems = useMemo(() => {
+    return buildIntelligenceItems(knowledgeItems, projectFieldDefs, activeSidebarCategory, evidenceTrail);
+  }, [knowledgeItems, projectFieldDefs, activeSidebarCategory, evidenceTrail]);
+
+  // Build missing fields for the active sidebar category
+  const missingForCategory = useMemo(() => {
+    return buildMissingFields(knowledgeItems, projectFieldDefs, activeSidebarCategory);
+  }, [knowledgeItems, projectFieldDefs, activeSidebarCategory]);
+
+  // Get active category stats
+  const activeCategoryStats = useMemo(() => {
+    const found = projectCategoriesComputed.find(c => c.name === activeSidebarCategory);
+    return found || { filled: 0, total: 0 };
+  }, [projectCategoriesComputed, activeSidebarCategory]);
+
+  // Overall completeness
+  const overallCompleteness = useMemo(() => {
+    const totalFilled = projectCategoriesComputed.reduce((sum, c) => sum + c.filled, 0);
+    const totalFields = projectCategoriesComputed.reduce((sum, c) => sum + c.total, 0);
+    return totalFields > 0 ? (totalFilled / totalFields) * 100 : 0;
+  }, [projectCategoriesComputed]);
+
   return (
     <div className="h-full flex">
-      {/* Sidebar */}
-      <div className={`flex-shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col transition-all duration-200 ${
-        sidebarMinimized ? 'w-16' : 'w-56'
-      }`}>
-        <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-          {!sidebarMinimized && (
-            <div className="flex items-center gap-2">
-              <Brain className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-gray-700">Knowledge</span>
-              {stats && (
-                <Badge variant="secondary" className="text-xs">
-                  {stats.canonical} core / {stats.custom} custom
-                </Badge>
-              )}
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={() => setSidebarMinimized(!sidebarMinimized)}
-          >
-            {sidebarMinimized ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </Button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {PROJECT_CATEGORIES.map((category) => (
-            <SidebarCategory
-              key={category.key}
-              category={category}
-              count={countsByCategory[category.key] || 0}
-              isActive={viewMode === 'intelligence' && activeCategory === category.key}
-              onClick={() => {
-                setViewMode('intelligence');
-                setActiveCategory(category.key);
-              }}
-              isMinimized={sidebarMinimized}
-            />
-          ))}
-        </div>
-
-        {/* Document Summaries Section */}
-        {!sidebarMinimized && (
-          <div className="px-3 py-2 border-t border-gray-100">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Views</span>
-          </div>
-        )}
-        <div className="p-2">
-          <button
-            onClick={() => setViewMode('documents')}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors relative ${
-              sidebarMinimized ? 'justify-center' : ''
-            } ${
-              viewMode === 'documents'
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                : 'hover:bg-gray-100 text-gray-700'
-            }`}
-            title={sidebarMinimized ? `Document Summaries (${projectDocuments?.length || 0})` : undefined}
-          >
-            <FileStack className={`w-4 h-4 ${viewMode === 'documents' ? 'text-emerald-600' : 'text-gray-500'}`} />
-            {!sidebarMinimized && (
-              <>
-                <span className="flex-1 text-sm font-medium truncate">Document Summaries</span>
-                {projectDocuments && projectDocuments.length > 0 && (
-                  <Badge
-                    variant={viewMode === 'documents' ? 'default' : 'secondary'}
-                    className={`text-xs ${viewMode === 'documents' ? 'bg-emerald-600' : ''}`}
-                  >
-                    {projectDocuments.length}
-                  </Badge>
-                )}
-              </>
-            )}
-          </button>
-        </div>
-
-        {!sidebarMinimized && (
-          <div className="p-3 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center">
-              {totalItems} total item{totalItems !== 1 ? 's' : ''}
-            </p>
-          </div>
-        )}
-      </div>
+      {/* New sidebar with category summaries */}
+      <IntelligenceSidebar
+        categories={[]}
+        projectCategories={projectCategoriesComputed}
+        activeCategory={activeSidebarCategory}
+        onSelectCategory={(name) => {
+          setViewMode('intelligence');
+          setActiveSidebarCategory(name);
+        }}
+        clientName="Project"
+        clientType="project"
+        projectCount={0}
+        overallCompleteness={overallCompleteness}
+      />
 
       {/* Main Content - Conditional based on viewMode */}
       {viewMode === 'documents' ? (
@@ -1974,91 +1850,23 @@ export function ProjectIntelligenceTab({ projectId }: ProjectIntelligenceTabProp
           title="Project Document Summaries"
         />
       ) : (
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
-            <div>
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                {activeCategoryConfig?.icon}
-                {activeCategoryConfig?.label}
-                {totalInCategory > 0 && (
-                  <Badge variant="outline" className="text-xs font-normal">
-                    {filledInCategory}/{totalInCategory} filled
-                  </Badge>
-                )}
-              </h2>
-              <p className="text-sm text-gray-500">{activeCategoryConfig?.description}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-48"
-                />
-              </div>
-              <Select value={selectedTagFilter} onValueChange={setSelectedTagFilter}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <Filter className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
-                  <SelectValue placeholder="Filter by tag" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All tags</SelectItem>
-                  <SelectItem value="lenders_note">Lender&apos;s Note</SelectItem>
-                  <SelectItem value="credit_submission">Credit Submission</SelectItem>
-                  <SelectItem value="proposal">Proposal</SelectItem>
-                  <SelectItem value="deal_summary">Deal Summary</SelectItem>
-                  <SelectItem value="due_diligence">Due Diligence</SelectItem>
-                  <SelectItem value="risk_assessment">Risk Assessment</SelectItem>
-                  <SelectItem value="valuation_summary">Valuation Summary</SelectItem>
-                  <SelectItem value="legal_summary">Legal Summary</SelectItem>
-                  <SelectItem value="monitoring">Monitoring</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="sm" onClick={handleAddItem} className="gap-1">
-                <Plus className="w-4 h-4" />
-                Add Custom
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4">
-            {displayItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <div className="text-gray-300 mb-4">{activeCategoryConfig?.icon}</div>
-                <p className="text-gray-500 mb-2">No {activeCategoryConfig?.label?.toLowerCase()} fields available</p>
-                <p className="text-sm text-gray-400 mb-4">
-                  Upload and analyze documents to automatically extract intelligence
-                </p>
-                <Button variant="outline" size="sm" onClick={handleAddItem}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Custom
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {displayItems.map((displayItem) =>
-                  displayItem.type === 'filled' ? (
-                    <KnowledgeItemCard
-                      key={displayItem.item._id}
-                      item={displayItem.item}
-                      onEdit={handleEditItem}
-                      onDelete={handleDeleteItem}
-                      historyItems={historyByFieldPath[displayItem.item.fieldPath]}
-                    />
-                  ) : (
-                    <UnfilledFieldCard
-                      key={displayItem.field.fieldPath}
-                      field={displayItem.field}
-                    onFill={handleFillCanonicalField}
-                  />
-                )
-              )}
-            </div>
-          )}
+        <div className="flex-1 overflow-auto p-4">
+          <IntelligenceCardList
+            items={filteredItems}
+            categoryName={activeSidebarCategory}
+            categoryIcon={getCategoryIcon(activeSidebarCategory)}
+            filled={activeCategoryStats.filled}
+            total={activeCategoryStats.total}
+            clientId={String(projectId)}
+            projectId={String(projectId)}
+            evidenceTrail={evidenceTrail}
+          />
+          <IntelligenceMissingFields
+            missingFields={missingForCategory}
+            onAddField={handleAddField}
+            className="mt-4"
+          />
         </div>
-      </div>
       )}
 
       {/* Modals */}
