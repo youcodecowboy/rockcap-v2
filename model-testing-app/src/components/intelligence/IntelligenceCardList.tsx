@@ -35,6 +35,7 @@ interface IntelligenceCardListProps {
   clientId: string;
   projectId?: string;
   evidenceTrail: EvidenceEntry[];
+  onDocumentFilter?: (doc: { documentId: string; documentName: string }) => void;
 }
 
 const SORT_LABELS: Record<SortMode, string> = {
@@ -55,6 +56,7 @@ export function IntelligenceCardList({
   clientId,
   projectId,
   evidenceTrail,
+  onDocumentFilter,
 }: IntelligenceCardListProps) {
   const [sortMode, setSortMode] = useState<SortMode>('recent');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -253,6 +255,7 @@ export function IntelligenceCardList({
               evidenceTrail={evidenceTrail}
               clientId={clientId}
               projectId={projectId}
+              onDocumentFilter={onDocumentFilter}
             />
           ))
         ) : (
