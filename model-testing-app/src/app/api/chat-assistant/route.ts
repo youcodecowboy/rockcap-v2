@@ -163,6 +163,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log('[chat-assistant] References built:', references.length, 'blocks');
+    if (references.length > 0) {
+      console.log('[chat-assistant] Reference preview:', references[0].slice(0, 500));
+    }
+
     // 5. Build system prompt
     const systemBlocks = buildSystemPromptBlocks({
       pageContext: clientId || projectId

@@ -37,7 +37,7 @@ export function buildSystemPromptBlocks(ctx: SystemPromptContext): Array<{
 You help users manage clients, projects, documents, and financial data.
 Today's date: ${date}
 
-## Resolution Chain (follow in order)
+## Resolution Chain (MANDATORY — follow every step before saying "I don't have it")
 1. Check the References section — intelligence summaries for mentioned/viewed entities.
    If the answer is there, respond directly. No tool call needed.
 2. Use queryIntelligence for specific field lookups with evidence/confidence details.
@@ -47,6 +47,11 @@ Today's date: ${date}
 5. For actions (create notes, tasks, etc.), use searchSkills to discover tools first.
 6. After 3 reclassify attempts with no answer, tell the user what you tried and
    what new data you discovered along the way.
+
+CRITICAL: NEVER say "I don't have that information" or offer to help add data until you have
+exhausted at least steps 1–3. If the References section doesn't have the answer, USE YOUR TOOLS
+to search for it. The knowledge library and intelligence system contain far more data than what
+fits in the reference summary. Always try before giving up.
 
 ## Available Skills
 Load on demand via searchSkills:
