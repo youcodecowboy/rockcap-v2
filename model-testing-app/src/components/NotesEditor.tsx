@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useMutation } from 'convex/react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { Note } from '@/types';
@@ -20,6 +20,7 @@ import Underline from '@tiptap/extension-underline';
 import Strike from '@tiptap/extension-strike';
 import { TextStyle } from '@tiptap/extension-text-style';
 import Highlight from '@tiptap/extension-highlight';
+import Mention from '@tiptap/extension-mention';
 import { Extension } from '@tiptap/core';
 import Suggestion from '@tiptap/suggestion';
 import NoteHeader from './NoteHeader';
@@ -27,6 +28,8 @@ import BlockMenu from './BlockMenu';
 import LinkInputModal from './LinkInputModal';
 import { AIAssistantBlock } from './AIAssistantBlock';
 import getSuggestion from './suggestion';
+import { getMentionSuggestion } from './mentionSuggestion';
+import { type MentionItem } from './NoteMentionList';
 import { NoteContext } from '@/contexts/NoteContext';
 import 'tippy.js/dist/tippy.css';
 
@@ -62,6 +65,23 @@ const Commands = Extension.create({
   },
 });
 
+/** Extract mentionedUserIds from TipTap JSON content */
+function extractMentionedUserIds(content: any): string[] {
+  const userIds: string[] = [];
+  function walk(node: any) {
+    if (node.type === 'mention' && node.attrs?.type === 'user' && node.attrs?.id) {
+      userIds.push(node.attrs.id);
+    }
+    if (node.content) {
+      node.content.forEach(walk);
+    }
+  }
+  if (content?.content) {
+    content.content.forEach(walk);
+  }
+  return [...new Set(userIds)];
+}
+
 export default function NotesEditor({ noteId, note }: NotesEditorProps) {
   const updateNote = useMutation(api.notes.update);
   const [title, setTitle] = useState(note.title);
@@ -69,6 +89,7 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
   const [tags, setTags] = useState(note.tags || []);
   const [currentClientId, setCurrentClientId] = useState<Id<"clients"> | null>(note.clientId ? (note.clientId as Id<"clients">) : null);
   const [currentProjectId, setCurrentProjectId] = useState<Id<"projects"> | null>(note.projectId ? (note.projectId as Id<"projects">) : null);
+  const [linkedDocumentIds, setLinkedDocumentIds] = useState<Id<"documents">[]>((note as any).linkedDocumentIds || []);
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'unsaved' | 'error'>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>(note.lastSavedAt);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -76,6 +97,27 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
   const [pendingLinkCommand, setPendingLinkCommand] = useState<(() => void) | null>(null);
   const [pendingImageCommand, setPendingImageCommand] = useState<(() => void) | null>(null);
   
+  // Data for @mention suggestions
+  const users = useQuery(api.users.getAll);
+  const clients = useQuery(api.clients.list, {});
+  const projects = useQuery(api.projects.list, {});
+
+  // Build mention items from loaded data
+  const mentionItemsRef = useRef<MentionItem[]>([]);
+  useMemo(() => {
+    const items: MentionItem[] = [];
+    if (users) {
+      items.push(...users.map((u: any) => ({ id: u._id, label: u.name || u.email, type: 'user' as const })));
+    }
+    if (clients) {
+      items.push(...clients.map((c: any) => ({ id: c._id, label: c.name, type: 'client' as const })));
+    }
+    if (projects) {
+      items.push(...projects.map((p: any) => ({ id: p._id, label: p.name, type: 'project' as const })));
+    }
+    mentionItemsRef.current = items;
+  }, [users, clients, projects]);
+
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasUnsavedChanges = useRef(false);
   const saveQueueRef = useRef<Array<() => Promise<void>>>([]);
@@ -146,6 +188,39 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
       }),
       Commands.configure({
         suggestion: getSuggestion(),
+      }),
+      Mention.configure({
+        HTMLAttributes: {
+          class: 'mention',
+        },
+        suggestion: getMentionSuggestion(() => mentionItemsRef.current),
+        renderHTML({ options, node }) {
+          const mentionType = node.attrs.type || 'user';
+          const label = node.attrs.label || node.attrs.id;
+
+          if (mentionType === 'client') {
+            return ['a', {
+              class: 'mention mention-client',
+              href: `/clients/${node.attrs.id}`,
+              'data-type': 'client',
+              'data-id': node.attrs.id,
+            }, `@${label}`];
+          }
+          if (mentionType === 'project') {
+            return ['a', {
+              class: 'mention mention-project',
+              href: `/clients/${node.attrs.clientId || ''}/projects/${node.attrs.id}`,
+              'data-type': 'project',
+              'data-id': node.attrs.id,
+            }, `@${label}`];
+          }
+          // Default: user mention
+          return ['span', {
+            class: 'mention mention-user',
+            'data-type': 'user',
+            'data-id': node.attrs.id,
+          }, `@${label}`];
+        },
       }),
       AIAssistantBlock.configure({
         onTitleUpdate: (suggestedTitle: string) => {
@@ -264,6 +339,9 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
       const editorContent = content || editor.getJSON();
       const wordCount = calculateWordCount(editorContent);
       
+      // Extract @mentioned user IDs from editor content
+      const mentionedUserIds = extractMentionedUserIds(editorContent);
+
       await updateNote({
         id: noteId,
         title: title !== note.title ? title : undefined,
@@ -272,6 +350,8 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
         tags: JSON.stringify(tags) !== JSON.stringify(note.tags) ? tags : undefined,
         clientId: currentClientId !== (note.clientId || null) ? currentClientId : undefined,
         projectId: currentProjectId !== (note.projectId || null) ? currentProjectId : undefined,
+        linkedDocumentIds: linkedDocumentIds.length > 0 ? linkedDocumentIds : undefined,
+        mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
         wordCount: wordCount > 0 ? wordCount : undefined,
       });
       
@@ -295,7 +375,7 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
         retryCountRef.current = 0;
       }
     }
-  }, [editor, noteId, title, note.title, emoji, note.emoji, tags, note.tags, currentClientId, note.clientId, currentProjectId, note.projectId, updateNote, calculateWordCount]);
+  }, [editor, noteId, title, note.title, emoji, note.emoji, tags, note.tags, currentClientId, note.clientId, currentProjectId, note.projectId, linkedDocumentIds, updateNote, calculateWordCount]);
 
   // Online/offline detection
   useEffect(() => {
@@ -378,11 +458,12 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
   useEffect(() => {
     if (!editor || isSavingRef.current) return;
     
-    const isInitialMount = title === note.title && 
-                          emoji === (note.emoji || '') && 
+    const isInitialMount = title === note.title &&
+                          emoji === (note.emoji || '') &&
                           JSON.stringify(tags) === JSON.stringify(note.tags || []) &&
                           currentClientId === (note.clientId || null) &&
-                          currentProjectId === (note.projectId || null);
+                          currentProjectId === (note.projectId || null) &&
+                          JSON.stringify(linkedDocumentIds) === JSON.stringify((note as any).linkedDocumentIds || []);
     
     if (isInitialMount) return;
     
@@ -408,7 +489,7 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
         }, remainingTime);
       }
     }, debounceDelay);
-  }, [title, emoji, tags, currentClientId, currentProjectId, editor, note.title, note.emoji, note.tags, note.clientId, note.projectId]);
+  }, [title, emoji, tags, currentClientId, currentProjectId, linkedDocumentIds, editor, note.title, note.emoji, note.tags, note.clientId, note.projectId]);
 
   const handleLinkSubmit = useCallback((url: string) => {
     if (editor) {
@@ -447,6 +528,7 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
           tags={tags}
           clientId={currentClientId}
           projectId={currentProjectId}
+          linkedDocumentIds={linkedDocumentIds}
           createdAt={note.createdAt}
           updatedAt={note.updatedAt}
           saveStatus={saveStatus}
@@ -456,6 +538,7 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
           onTagsChange={setTags}
           onClientChange={setCurrentClientId}
           onProjectChange={setCurrentProjectId}
+          onLinkedDocumentsChange={setLinkedDocumentIds}
         />
 
         <div className="flex-1 overflow-y-auto relative">

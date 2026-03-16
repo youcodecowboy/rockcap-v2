@@ -27,6 +27,18 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+/**
+ * Helper to safely execute a TipTap editor command chain.
+ * Catches and logs errors so slash commands don't silently fail.
+ */
+function safeCommand(name: string, fn: () => void) {
+  try {
+    fn();
+  } catch (error) {
+    console.error(`[SlashCommand] "${name}" failed:`, error);
+  }
+}
+
 export default function getSuggestion() {
   return {
     items: ({ query }: { query: string }) => {
@@ -40,26 +52,24 @@ export default function getSuggestion() {
           searchTerms: ['ai', 'assistant', 'help', 'generate', 'create'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
             const { from, to } = range;
-            
-            console.log('AI Assistant command triggered', { from, to, editor });
-            
-            editor
-              .chain()
-              .focus()
-              .deleteRange({ from, to })
-              .insertContent([
-                {
-                  type: 'aiAssistantBlock',
-                  attrs: {
-                    prompt: '',
-                    state: 'pending',
-                    errorMessage: null,
+
+            safeCommand('AI Assistant', () => {
+              editor
+                .chain()
+                .focus()
+                .deleteRange({ from, to })
+                .insertContent([
+                  {
+                    type: 'aiAssistantBlock',
+                    attrs: {
+                      prompt: '',
+                      state: 'pending',
+                      errorMessage: null,
+                    },
                   },
-                },
-              ])
-              .run();
-            
-            console.log('AI Assistant command executed');
+                ])
+                .run();
+            });
           },
         },
         // Text Formatting
@@ -70,14 +80,10 @@ export default function getSuggestion() {
           category: 'formatting',
           searchTerms: ['bold', 'strong', 'b'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .insertContent('Bold text')
-              .setTextSelection({ from: editor.state.selection.from - 9, to: editor.state.selection.from })
-              .toggleBold()
-              .run();
+            const { from, to } = range;
+            safeCommand('Bold', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleBold().run();
+            });
           },
         },
         {
@@ -87,14 +93,10 @@ export default function getSuggestion() {
           category: 'formatting',
           searchTerms: ['italic', 'emphasis', 'i'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .insertContent('Italic text')
-              .setTextSelection({ from: editor.state.selection.from - 11, to: editor.state.selection.from })
-              .toggleItalic()
-              .run();
+            const { from, to } = range;
+            safeCommand('Italic', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleItalic().run();
+            });
           },
         },
         {
@@ -104,14 +106,10 @@ export default function getSuggestion() {
           category: 'formatting',
           searchTerms: ['underline', 'u'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .insertContent('Underlined text')
-              .setTextSelection({ from: editor.state.selection.from - 15, to: editor.state.selection.from })
-              .toggleUnderline()
-              .run();
+            const { from, to } = range;
+            safeCommand('Underline', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleUnderline().run();
+            });
           },
         },
         {
@@ -121,14 +119,10 @@ export default function getSuggestion() {
           category: 'formatting',
           searchTerms: ['strike', 'strikethrough', 'delete'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .insertContent('Strikethrough text')
-              .setTextSelection({ from: editor.state.selection.from - 17, to: editor.state.selection.from })
-              .toggleStrike()
-              .run();
+            const { from, to } = range;
+            safeCommand('Strikethrough', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleStrike().run();
+            });
           },
         },
         {
@@ -138,14 +132,10 @@ export default function getSuggestion() {
           category: 'formatting',
           searchTerms: ['highlight', 'mark', 'yellow'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .insertContent('Highlighted text')
-              .setTextSelection({ from: editor.state.selection.from - 15, to: editor.state.selection.from })
-              .toggleHighlight()
-              .run();
+            const { from, to } = range;
+            safeCommand('Highlight', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleHighlight().run();
+            });
           },
         },
         {
@@ -155,18 +145,28 @@ export default function getSuggestion() {
           category: 'formatting',
           searchTerms: ['link', 'url', 'href'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            // Insert placeholder text that user can replace
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .insertContent('Link text')
-              .setTextSelection({ from: editor.state.selection.from - 9, to: editor.state.selection.from })
-              .setLink({ href: 'https://example.com' })
-              .run();
+            const { from, to } = range;
+            safeCommand('Link', () => {
+              const url = window.prompt('Enter URL:', 'https://');
+              if (url) {
+                editor
+                  .chain()
+                  .focus()
+                  .deleteRange({ from, to })
+                  .insertContent({
+                    type: 'text',
+                    text: url,
+                    marks: [{ type: 'link', attrs: { href: url } }],
+                  })
+                  .run();
+              } else {
+                // User cancelled — just delete the slash command
+                editor.chain().focus().deleteRange({ from, to }).run();
+              }
+            });
           },
         },
-        
+
         // Headings
         {
           title: 'Heading 1',
@@ -175,12 +175,10 @@ export default function getSuggestion() {
           category: 'headings',
           searchTerms: ['h1', 'heading', 'title', 'big'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .setNode('heading', { level: 1 })
-              .run();
+            const { from, to } = range;
+            safeCommand('Heading 1', () => {
+              editor.chain().focus().deleteRange({ from, to }).setNode('heading', { level: 1 }).run();
+            });
           },
         },
         {
@@ -190,12 +188,10 @@ export default function getSuggestion() {
           category: 'headings',
           searchTerms: ['h2', 'heading', 'subtitle', 'medium'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .setNode('heading', { level: 2 })
-              .run();
+            const { from, to } = range;
+            safeCommand('Heading 2', () => {
+              editor.chain().focus().deleteRange({ from, to }).setNode('heading', { level: 2 }).run();
+            });
           },
         },
         {
@@ -205,15 +201,13 @@ export default function getSuggestion() {
           category: 'headings',
           searchTerms: ['h3', 'heading', 'small'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .setNode('heading', { level: 3 })
-              .run();
+            const { from, to } = range;
+            safeCommand('Heading 3', () => {
+              editor.chain().focus().deleteRange({ from, to }).setNode('heading', { level: 3 }).run();
+            });
           },
         },
-        
+
         // Lists
         {
           title: 'Bullet List',
@@ -222,12 +216,10 @@ export default function getSuggestion() {
           category: 'lists',
           searchTerms: ['bullet', 'ul', 'list', 'unordered'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .toggleBulletList()
-              .run();
+            const { from, to } = range;
+            safeCommand('Bullet List', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleBulletList().run();
+            });
           },
         },
         {
@@ -237,12 +229,10 @@ export default function getSuggestion() {
           category: 'lists',
           searchTerms: ['number', 'ol', 'list', 'ordered'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .toggleOrderedList()
-              .run();
+            const { from, to } = range;
+            safeCommand('Numbered List', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleOrderedList().run();
+            });
           },
         },
         {
@@ -252,15 +242,13 @@ export default function getSuggestion() {
           category: 'lists',
           searchTerms: ['todo', 'task', 'checkbox', 'checklist'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .toggleTaskList()
-              .run();
+            const { from, to } = range;
+            safeCommand('Todo List', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleTaskList().run();
+            });
           },
         },
-        
+
         // Blocks
         {
           title: 'Quote',
@@ -269,12 +257,10 @@ export default function getSuggestion() {
           category: 'blocks',
           searchTerms: ['blockquote', 'quote', 'citation'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .toggleBlockquote()
-              .run();
+            const { from, to } = range;
+            safeCommand('Quote', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleBlockquote().run();
+            });
           },
         },
         {
@@ -284,12 +270,10 @@ export default function getSuggestion() {
           category: 'blocks',
           searchTerms: ['code', 'codeblock', 'pre'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .toggleCodeBlock()
-              .run();
+            const { from, to } = range;
+            safeCommand('Code Block', () => {
+              editor.chain().focus().deleteRange({ from, to }).toggleCodeBlock().run();
+            });
           },
         },
         {
@@ -299,12 +283,10 @@ export default function getSuggestion() {
           category: 'blocks',
           searchTerms: ['hr', 'horizontal', 'rule', 'divider', 'line'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .setHorizontalRule()
-              .run();
+            const { from, to } = range;
+            safeCommand('Divider', () => {
+              editor.chain().focus().deleteRange({ from, to }).setHorizontalRule().run();
+            });
           },
         },
         {
@@ -314,16 +296,13 @@ export default function getSuggestion() {
           category: 'blocks',
           searchTerms: ['image', 'img', 'picture', 'photo'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            // Insert placeholder image
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .setImage({ src: 'https://via.placeholder.com/400' })
-              .run();
+            const { from, to } = range;
+            safeCommand('Image', () => {
+              editor.chain().focus().deleteRange({ from, to }).setImage({ src: 'https://via.placeholder.com/400' }).run();
+            });
           },
         },
-        
+
         // Tables
         {
           title: 'Table',
@@ -332,12 +311,10 @@ export default function getSuggestion() {
           category: 'tables',
           searchTerms: ['table', 'grid', 'spreadsheet'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-              .run();
+            const { from, to } = range;
+            safeCommand('Table', () => {
+              editor.chain().focus().deleteRange({ from, to }).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+            });
           },
         },
         {
@@ -347,12 +324,10 @@ export default function getSuggestion() {
           category: 'tables',
           searchTerms: ['add', 'column', 'table'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .addColumnAfter()
-              .run();
+            const { from, to } = range;
+            safeCommand('Add Column', () => {
+              editor.chain().focus().deleteRange({ from, to }).addColumnAfter().run();
+            });
           },
         },
         {
@@ -362,12 +337,10 @@ export default function getSuggestion() {
           category: 'tables',
           searchTerms: ['delete', 'remove', 'column', 'table'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .deleteColumn()
-              .run();
+            const { from, to } = range;
+            safeCommand('Delete Column', () => {
+              editor.chain().focus().deleteRange({ from, to }).deleteColumn().run();
+            });
           },
         },
         {
@@ -377,12 +350,10 @@ export default function getSuggestion() {
           category: 'tables',
           searchTerms: ['add', 'row', 'table'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .addRowAfter()
-              .run();
+            const { from, to } = range;
+            safeCommand('Add Row', () => {
+              editor.chain().focus().deleteRange({ from, to }).addRowAfter().run();
+            });
           },
         },
         {
@@ -392,15 +363,13 @@ export default function getSuggestion() {
           category: 'tables',
           searchTerms: ['delete', 'remove', 'row', 'table'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .deleteRow()
-              .run();
+            const { from, to } = range;
+            safeCommand('Delete Row', () => {
+              editor.chain().focus().deleteRange({ from, to }).deleteRow().run();
+            });
           },
         },
-        
+
         // Actions
         {
           title: 'Delete Block',
@@ -409,34 +378,37 @@ export default function getSuggestion() {
           category: 'actions',
           searchTerms: ['delete', 'remove', 'block', 'clear'],
           command: ({ editor, range }: { editor: Editor; range: any }) => {
-            const { state } = editor;
-            const { selection } = state;
-            const { $from } = selection;
-            
-            // Check if we're in a table
-            if (editor.isActive('table')) {
-              editor.chain().focus().deleteTable().run();
-              return;
-            }
-            
-            // Find the current node
-            let depth = $from.depth;
-            let node = $from.node(depth);
-            let pos = $from.before(depth);
-            
-            // If we're in a list item, delete the whole list item
-            if (node.type.name === 'listItem') {
-              editor.chain().focus().deleteRange(range).deleteRange({ from: pos, to: pos + node.nodeSize }).run();
-              return;
-            }
-            
-            // Otherwise delete the current block
-            editor
-              .chain()
-              .focus()
-              .deleteRange(range)
-              .deleteRange({ from: pos, to: pos + node.nodeSize })
-              .run();
+            const { from, to } = range;
+            safeCommand('Delete Block', () => {
+              const { state } = editor;
+              const { selection } = state;
+              const { $from } = selection;
+
+              // Check if we're in a table
+              if (editor.isActive('table')) {
+                editor.chain().focus().deleteTable().run();
+                return;
+              }
+
+              // Find the current node
+              const depth = $from.depth;
+              const node = $from.node(depth);
+              const pos = $from.before(depth);
+
+              // If we're in a list item, delete the whole list item
+              if (node.type.name === 'listItem') {
+                editor.chain().focus().deleteRange({ from, to }).deleteRange({ from: pos, to: pos + node.nodeSize }).run();
+                return;
+              }
+
+              // Otherwise delete the current block
+              editor
+                .chain()
+                .focus()
+                .deleteRange({ from, to })
+                .deleteRange({ from: pos, to: pos + node.nodeSize })
+                .run();
+            });
           },
         },
       ];

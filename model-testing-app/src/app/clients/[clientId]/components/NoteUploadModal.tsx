@@ -33,6 +33,7 @@ import {
   CheckCircle,
   AlertCircle,
 } from 'lucide-react';
+import { markdownToTiptap } from '@/lib/notes/markdownToTiptap';
 
 interface NoteUploadModalProps {
   isOpen: boolean;
@@ -237,34 +238,7 @@ export default function NoteUploadModal({
   };
 
   const convertTextToTipTapContent = (text: string) => {
-    // Convert plain text to TipTap JSON format
-    const lines = text.split('\n');
-    const content: any[] = [];
-    
-    for (const line of lines) {
-      if (line.trim() === '') {
-        // Empty paragraph
-        content.push({
-          type: 'paragraph',
-        });
-      } else {
-        // Paragraph with text
-        content.push({
-          type: 'paragraph',
-          content: [
-            {
-              type: 'text',
-              text: line,
-            },
-          ],
-        });
-      }
-    }
-    
-    return {
-      type: 'doc',
-      content,
-    };
+    return markdownToTiptap(text);
   };
 
   const handleUpload = async () => {

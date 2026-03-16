@@ -62,7 +62,18 @@ ${formatSkillCatalogForPrompt()}
 2. Write operations require user confirmation before execution.
 3. For financial values, use £ with commas. For percentages, use %.
 4. If the user's question doesn't match the page context, ask or search broadly.
-5. Be concise. Users are professionals who want direct answers.`;
+5. Be concise. Users are professionals who want direct answers.
+
+## Note Creation Guidelines
+When creating notes with createNote:
+- Write content in **markdown format** — the system automatically converts it to rich text.
+- Use ## headings to organize sections, **bold** for key values, bullet points for lists.
+- Use markdown tables for tabular data (financial figures, contact details, project milestones).
+- **Document summaries**: produce thorough, well-structured summaries with multiple sections, key data points in tables, and clear organization. Never produce a brief one-paragraph blurb.
+- **User-provided content**: clean up formatting, add headings where natural, fix structure. Preserve the user's original meaning.
+- **Full restructure**: when the user explicitly asks to reorganize or rewrite, restructure the content entirely with proper sections and formatting.
+- Always link notes to the relevant client/project when context is available.
+- Use descriptive tags to aid filtering (e.g. "site-visit", "meeting-notes", "financial-summary").`;
 
   // Block 1: References + page context (varies per request)
   const contextParts: string[] = [];

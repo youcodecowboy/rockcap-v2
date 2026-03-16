@@ -396,7 +396,7 @@ function AIAssistantBlockComponent({
             <div className="text-xs text-gray-600 mb-3">
               {updateMode 
                 ? 'Update the existing note content based on your prompt. The AI will revise and enhance the current note.'
-                : "Describe what you'd like help with. The AI will search your knowledge bank and create a formatted note."}
+                : "Describe what you'd like help with. The AI will search your intelligence library and create a formatted note."}
             </div>
             <div className="flex items-center gap-2 mb-3">
               <input
