@@ -87,6 +87,8 @@ import {
   Unlink,
   Flag,
   Mail,
+  Layers,
+  AlertCircle,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { toast } from 'sonner';
@@ -167,6 +169,7 @@ interface BulkUploadItem {
   confidence?: number;
   isInternal?: boolean;
   extractionEnabled?: boolean;
+  deepExtractionStatus?: "processing" | "complete" | "error";
   extractedData?: {
     costs?: Array<any>;
     projectInfo?: any;
@@ -730,6 +733,8 @@ export default function BulkReviewTable({
     const duplicates = items.filter(i => i.isDuplicate).length;
     const unresolvedDuplicates = items.filter(i => i.isDuplicate && !i.versionType).length;
     const extractionEnabled = items.filter(i => i.extractionEnabled).length;
+    const deepExtractionComplete = items.filter(i => i.deepExtractionStatus === 'complete').length;
+    const deepExtractionProcessing = items.filter(i => i.deepExtractionStatus === 'processing').length;
 
     return {
       total,
@@ -741,6 +746,8 @@ export default function BulkReviewTable({
       duplicates,
       unresolvedDuplicates,
       extractionEnabled,
+      deepExtractionComplete,
+      deepExtractionProcessing,
     };
   }, [items]);
 
@@ -844,6 +851,40 @@ export default function BulkReviewTable({
       onRefresh?.();
     } catch (error) {
       console.error('Failed to toggle extraction:', error);
+    }
+  };
+
+  // Deep extraction state and handlers
+  const [deepExtractConfirm, setDeepExtractConfirm] = useState<{
+    itemId: Id<"bulkUploadItems">;
+    fileName: string;
+    hasUserEdits: boolean;
+  } | null>(null);
+
+  const handleDeepExtraction = async (itemId: Id<"bulkUploadItems">) => {
+    try {
+      const batchId = items[0]?.batchId;
+      if (!batchId) return;
+      const response = await fetch('/api/v4-deep-extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId, batchId }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Deep extraction failed:', error);
+        toast.error(error.error || 'Deep extraction failed');
+      }
+    } catch (error) {
+      console.error('Deep extraction request failed:', error);
+      toast.error('Deep extraction request failed');
+    }
+  };
+
+  const handleBulkDeepExtraction = async (itemIds: Id<"bulkUploadItems">[]) => {
+    toast.info(`Starting deep extraction for ${itemIds.length} items...`);
+    for (const id of itemIds) {
+      await handleDeepExtraction(id);
     }
   };
 
@@ -961,6 +1002,14 @@ export default function BulkReviewTable({
               </TooltipContent>
             </Tooltip>
           )}
+          {(stats.deepExtractionComplete > 0 || stats.deepExtractionProcessing > 0) && (
+            <Badge variant="outline" className="border-emerald-500 text-emerald-700 text-[10px] h-5">
+              <Layers className="w-2.5 h-2.5 mr-0.5" />
+              {stats.deepExtractionProcessing > 0
+                ? `${stats.deepExtractionProcessing} extracting...`
+                : `${stats.deepExtractionComplete} deep extracted`}
+            </Badge>
+          )}
           
           <div className="flex-1" />
 
@@ -1057,6 +1106,25 @@ export default function BulkReviewTable({
                   />
                 </PopoverContent>
               </Popover>
+
+              {/* Bulk Deep Extract */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] gap-1"
+                onClick={() => {
+                  const eligibleIds = items
+                    .filter(i => selectedItems.has(i._id) && i.status === 'ready_for_review' && !i.deepExtractionStatus)
+                    .map(i => i._id);
+                  if (eligibleIds.length > 0) {
+                    handleBulkDeepExtraction(eligibleIds);
+                  }
+                }}
+                disabled={!items.some(i => selectedItems.has(i._id) && i.status === 'ready_for_review' && !i.deepExtractionStatus)}
+              >
+                <Layers className="w-3 h-3" />
+                Deep Extract
+              </Button>
 
               {/* Bulk Delete */}
               <AlertDialog>
@@ -1198,7 +1266,7 @@ export default function BulkReviewTable({
                   <TableHead className={isMultiProject ? "" : "w-[80px] hidden lg:table-cell"}>Checklist</TableHead>
                 )}
                 <TableHead className="w-10 text-center px-1">Ver</TableHead>
-                <TableHead className="w-10 text-center px-1 hidden lg:table-cell">Ext</TableHead>
+                <TableHead className="w-10 text-center px-1 hidden lg:table-cell">Deep</TableHead>
                 <TableHead className="w-14 px-2">Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -1632,35 +1700,48 @@ export default function BulkReviewTable({
                       )}
                     </TableCell>
                     <TableCell className="text-center px-1 py-2 hidden lg:table-cell">
-                      {item.status === 'ready_for_review' && item.fileName.match(/\.(xlsx?|csv)$/i) ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <Switch
-                                checked={item.extractionEnabled ?? false}
-                                onCheckedChange={(checked) => handleToggleExtraction(item._id, checked)}
-                                className="scale-75"
-                              />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p className="text-xs">
-                              {item.extractionEnabled 
-                                ? 'Data extraction queued - will run after filing' 
-                                : 'Enable to extract data after filing'}
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : item.extractionEnabled ? (
+                      {item.deepExtractionStatus === 'processing' ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Badge variant="secondary" className="text-[9px] h-5 px-1 bg-blue-100 text-blue-700">
-                              <Database className="w-2.5 h-2.5" />
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">Deep extraction in progress...</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : item.deepExtractionStatus === 'complete' ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Badge variant="secondary" className="text-[9px] h-5 px-1 bg-emerald-100 text-emerald-700">
+                              Deep
                             </Badge>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p className="text-xs">Extraction queued</p>
+                            <p className="text-xs">Deep extraction complete — enriched intelligence</p>
                           </TooltipContent>
+                        </Tooltip>
+                      ) : item.deepExtractionStatus === 'error' ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                              onClick={() => setDeepExtractConfirm({ itemId: item._id, fileName: item.fileName, hasUserEdits: false })}>
+                              <AlertCircle className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p className="text-xs">Deep extraction failed — click to retry</p></TooltipContent>
+                        </Tooltip>
+                      ) : item.status === 'ready_for_review' ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => setDeepExtractConfirm({
+                                itemId: item._id, fileName: item.fileName,
+                                hasUserEdits: !!(item.userEdits?.fileTypeDetected || item.userEdits?.category || item.userEdits?.targetFolder),
+                              })}>
+                              <Layers className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p className="text-xs">Run deep extraction for richer intelligence</p></TooltipContent>
                         </Tooltip>
                       ) : (
                         <span className="text-[10px] text-muted-foreground">-</span>
@@ -2028,37 +2109,70 @@ export default function BulkReviewTable({
                             )}
                           </Tabs>
                           
-                          {/* Extraction Status Section */}
-                          {item.fileName.match(/\.(xlsx?|csv)$/i) && item.status === 'ready_for_review' && (
-                            <div className={`p-3 rounded border ${item.extractionEnabled ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                          {/* Deep Extraction Section */}
+                          {item.status === 'ready_for_review' && (
+                            <div className={`p-3 rounded border ${
+                              item.deepExtractionStatus === 'complete' ? 'bg-emerald-50 border-emerald-200' :
+                              item.deepExtractionStatus === 'processing' ? 'bg-blue-50 border-blue-200' :
+                              item.deepExtractionStatus === 'error' ? 'bg-red-50 border-red-200' :
+                              'bg-gray-50 border-gray-200'
+                            }`}>
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <span className={`text-sm font-medium ${item.extractionEnabled ? 'text-blue-800' : 'text-gray-700'}`}>
-                                    Data Extraction {item.extractionEnabled ? 'Enabled' : 'Available'}
+                                  <span className={`text-sm font-medium ${
+                                    item.deepExtractionStatus === 'complete' ? 'text-emerald-800' :
+                                    item.deepExtractionStatus === 'processing' ? 'text-blue-800' :
+                                    item.deepExtractionStatus === 'error' ? 'text-red-800' :
+                                    'text-gray-700'
+                                  }`}>
+                                    {item.deepExtractionStatus === 'complete' ? 'Deep Extraction Complete' :
+                                     item.deepExtractionStatus === 'processing' ? 'Deep Extraction Running...' :
+                                     item.deepExtractionStatus === 'error' ? 'Deep Extraction Failed' :
+                                     'Deep Extraction Available'}
                                   </span>
-                                  <p className={`text-xs mt-0.5 ${item.extractionEnabled ? 'text-blue-600' : 'text-gray-500'}`}>
-                                    {item.extractionEnabled 
-                                      ? 'Extraction will run automatically after you file this document. You can leave the page.'
-                                      : 'Enable extraction to automatically process this spreadsheet after filing.'}
+                                  <p className="text-xs mt-0.5 text-gray-500">
+                                    {item.deepExtractionStatus === 'complete'
+                                      ? 'Document re-analyzed with full text for richer intelligence and summaries.'
+                                      : item.deepExtractionStatus === 'processing'
+                                      ? 'Re-analyzing document with full uncapped text...'
+                                      : item.deepExtractionStatus === 'error'
+                                      ? 'Re-analysis failed. Click retry to try again.'
+                                      : 'Re-analyze with full document text for richer intelligence and summaries.'}
                                   </p>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-500">Extract</span>
-                                  <Switch
-                                    checked={item.extractionEnabled ?? false}
-                                    onCheckedChange={(checked) => handleToggleExtraction(item._id, checked)}
-                                  />
-                                </div>
+                                {!item.deepExtractionStatus && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setDeepExtractConfirm({
+                                      itemId: item._id,
+                                      fileName: item.fileName,
+                                      hasUserEdits: !!(item.userEdits?.fileTypeDetected || item.userEdits?.category || item.userEdits?.targetFolder),
+                                    })}
+                                  >
+                                    <Layers className="w-3 h-3 mr-1" />
+                                    Run Deep Extraction
+                                  </Button>
+                                )}
+                                {item.deepExtractionStatus === 'error' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-red-600 border-red-200 hover:bg-red-50"
+                                    onClick={() => setDeepExtractConfirm({
+                                      itemId: item._id,
+                                      fileName: item.fileName,
+                                      hasUserEdits: false,
+                                    })}
+                                  >
+                                    <RefreshCw className="w-3 h-3 mr-1" />
+                                    Retry
+                                  </Button>
+                                )}
+                                {item.deepExtractionStatus === 'processing' && (
+                                  <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                                )}
                               </div>
-                              {item.extractionEnabled && (
-                                <div className="mt-2 pt-2 border-t border-blue-200">
-                                  <p className="text-xs text-blue-700">
-                                    <Sparkles className="w-3 h-3 inline mr-1" />
-                                    After filing, extracted data will appear in the Data Library. 
-                                    Go to Modeling to confirm the codified values.
-                                  </p>
-                                </div>
-                              )}
                             </div>
                           )}
 
@@ -2181,6 +2295,30 @@ export default function BulkReviewTable({
             </TableBody>
           </Table>
         </div>
+
+        {/* Deep Extraction Confirmation Dialog */}
+        {deepExtractConfirm && (
+          <Dialog open={!!deepExtractConfirm} onOpenChange={() => setDeepExtractConfirm(null)}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Run Deep Extraction</DialogTitle>
+                <DialogDescription>
+                  {deepExtractConfirm.hasUserEdits ? (
+                    <><span className="text-amber-600 font-medium">Warning:</span> This document has manual corrections that will be overwritten by deep extraction results.</>
+                  ) : (
+                    <>Re-analyze <span className="font-medium">{deepExtractConfirm.fileName}</span> with the full document text for richer intelligence and summaries.</>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setDeepExtractConfirm(null)}>Cancel</Button>
+                <Button onClick={() => { handleDeepExtraction(deepExtractConfirm.itemId); setDeepExtractConfirm(null); }}>
+                  {deepExtractConfirm.hasUserEdits ? 'Override & Extract' : 'Run Deep Extraction'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* Version Selection Dialog */}
         <Dialog open={!!versionDialogItem} onOpenChange={() => setVersionDialogItem(null)}>
