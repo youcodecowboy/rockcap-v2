@@ -245,6 +245,310 @@ export const getInboxItems = query({
   },
 });
 
+// Get flags for a specific client
+export const getByClient = query({
+  args: {
+    clientId: v.id("clients"),
+    status: v.optional(v.union(v.literal("open"), v.literal("resolved"))),
+  },
+  handler: async (ctx, args) => {
+    let flags = await ctx.db
+      .query("flags")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+
+    if (args.status) {
+      flags = flags.filter((f) => f.status === args.status);
+    }
+
+    // Sort by createdAt descending
+    flags.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return flags;
+  },
+});
+
+// Get flags for a specific project
+export const getByProject = query({
+  args: {
+    projectId: v.id("projects"),
+    status: v.optional(v.union(v.literal("open"), v.literal("resolved"))),
+  },
+  handler: async (ctx, args) => {
+    let flags = await ctx.db
+      .query("flags")
+      .withIndex("by_project", (q: any) =>
+        q.eq("projectId", args.projectId)
+      )
+      .collect();
+
+    if (args.status) {
+      flags = flags.filter((f) => f.status === args.status);
+    }
+
+    // Sort by createdAt descending
+    flags.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return flags;
+  },
+});
+
+// Get count of open flags for a client
+export const getOpenCountByClient = query({
+  args: {
+    clientId: v.id("clients"),
+  },
+  handler: async (ctx, args) => {
+    const flags = await ctx.db
+      .query("flags")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+
+    return flags.filter((f) => f.status === "open").length;
+  },
+});
+
+// Get count of open flags for a project
+export const getOpenCountByProject = query({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const flags = await ctx.db
+      .query("flags")
+      .withIndex("by_project", (q: any) =>
+        q.eq("projectId", args.projectId)
+      )
+      .collect();
+
+    return flags.filter((f) => f.status === "open").length;
+  },
+});
+
+// Resolve entity context for display (name, subtitle, badges, summary)
+export const getEntityContext = query({
+  args: {
+    entityType: v.union(
+      v.literal("document"),
+      v.literal("meeting"),
+      v.literal("task"),
+      v.literal("project"),
+      v.literal("client"),
+      v.literal("checklist_item")
+    ),
+    entityId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const entity = await ctx.db.get(args.entityId as any);
+      if (!entity) {
+        return { name: "Unknown", subtitle: undefined, badges: [] as string[], summary: undefined };
+      }
+
+      switch (args.entityType) {
+        case "document": {
+          const doc = entity as any;
+          const subtitle =
+            [doc.clientName, doc.projectName].filter(Boolean).join(" / ") ||
+            undefined;
+          return {
+            name: doc.fileName,
+            subtitle,
+            badges: [doc.fileTypeDetected, doc.category].filter(Boolean),
+            summary: doc.summary || undefined,
+          };
+        }
+        case "client": {
+          const client = entity as any;
+          return {
+            name: client.name,
+            subtitle: undefined,
+            badges: [client.type].filter(Boolean),
+            summary: undefined,
+          };
+        }
+        case "project": {
+          const project = entity as any;
+          // Resolve first client name from clientRoles
+          let clientName: string | undefined;
+          if (project.clientRoles?.length > 0) {
+            const firstClient = await ctx.db.get(
+              project.clientRoles[0].clientId
+            );
+            if (firstClient) {
+              clientName = (firstClient as any).name;
+            }
+          }
+          return {
+            name: project.name,
+            subtitle: clientName,
+            badges: [project.status].filter(Boolean),
+            summary: undefined,
+          };
+        }
+        case "task": {
+          const task = entity as any;
+          return {
+            name: task.title,
+            subtitle: undefined,
+            badges: [task.status].filter(Boolean),
+            summary: undefined,
+          };
+        }
+        case "meeting": {
+          const meeting = entity as any;
+          return {
+            name: meeting.title,
+            subtitle: meeting.meetingDate,
+            badges: [] as string[],
+            summary: undefined,
+          };
+        }
+        case "checklist_item": {
+          const item = entity as any;
+          return {
+            name: item.name,
+            subtitle: item.category,
+            badges: [item.status].filter(Boolean),
+            summary: undefined,
+          };
+        }
+        default:
+          return { name: "Unknown", subtitle: undefined, badges: [] as string[], summary: undefined };
+      }
+    } catch {
+      return { name: "Unknown", subtitle: undefined, badges: [] as string[], summary: undefined };
+    }
+  },
+});
+
+// Enriched inbox items — same as getInboxItems but with entity name/context resolved
+export const getInboxItemsEnriched = query({
+  args: {
+    filter: v.optional(
+      v.union(
+        v.literal("all"),
+        v.literal("flags"),
+        v.literal("notifications"),
+        v.literal("mentions"),
+        v.literal("resolved")
+      )
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    const filter = args.filter || "all";
+    const limit = args.limit || 50;
+
+    const items: Array<{
+      kind: "flag" | "notification";
+      id: string;
+      createdAt: string;
+      data: any;
+      entityName?: string;
+      entityContext?: string;
+    }> = [];
+
+    // Fetch flags if needed
+    if (filter === "all" || filter === "flags" || filter === "resolved") {
+      let flags;
+      if (filter === "resolved") {
+        flags = await ctx.db
+          .query("flags")
+          .withIndex("by_assignedTo_status", (q: any) =>
+            q.eq("assignedTo", user._id).eq("status", "resolved")
+          )
+          .collect();
+      } else {
+        flags = await ctx.db
+          .query("flags")
+          .withIndex("by_assignedTo", (q: any) =>
+            q.eq("assignedTo", user._id)
+          )
+          .collect();
+
+        // For "flags" filter, only show open
+        if (filter === "flags") {
+          flags = flags.filter((f) => f.status === "open");
+        }
+      }
+
+      for (const flag of flags) {
+        // Resolve entity name and context
+        let entityName: string | undefined;
+        let entityContext: string | undefined;
+        try {
+          const entity = await ctx.db.get(flag.entityId as any);
+          if (entity) {
+            const e = entity as any;
+            entityName = e.fileName || e.name || e.title || undefined;
+            // For documents, build client/project context
+            if (flag.entityType === "document") {
+              entityContext =
+                [e.clientName, e.projectName].filter(Boolean).join(" / ") ||
+                undefined;
+            }
+          }
+        } catch {
+          // Entity may have been deleted
+        }
+
+        items.push({
+          kind: "flag",
+          id: flag._id,
+          createdAt: flag.createdAt,
+          data: flag,
+          entityName,
+          entityContext,
+        });
+      }
+    }
+
+    // Fetch notifications if needed
+    if (
+      filter === "all" ||
+      filter === "notifications" ||
+      filter === "mentions"
+    ) {
+      let notifications = await ctx.db
+        .query("notifications")
+        .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+        .collect();
+
+      // For "mentions" filter, show flag-type and mention-type notifications
+      if (filter === "mentions") {
+        notifications = notifications.filter(
+          (n) => n.type === "flag" || n.type === "mention"
+        );
+      }
+
+      for (const notif of notifications) {
+        items.push({
+          kind: "notification",
+          id: notif._id,
+          createdAt: notif.createdAt,
+          data: notif,
+        });
+      }
+    }
+
+    // Sort by createdAt descending
+    items.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return items.slice(0, limit);
+  },
+});
+
 // ============================================================================
 // Mutations
 // ============================================================================
