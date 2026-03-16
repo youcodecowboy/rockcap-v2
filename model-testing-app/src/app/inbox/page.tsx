@@ -23,11 +23,11 @@ function InboxPageContent() {
   const selectedId = searchParams.get('selected') || searchParams.get('flag') || null;
 
   // Query all filter counts in parallel
-  const allItems = useQuery(api.flags.getInboxItems, { filter: 'all' });
-  const flagItems = useQuery(api.flags.getInboxItems, { filter: 'flags' });
-  const notifItems = useQuery(api.flags.getInboxItems, { filter: 'notifications' });
-  const mentionItems = useQuery(api.flags.getInboxItems, { filter: 'mentions' });
-  const resolvedItems = useQuery(api.flags.getInboxItems, { filter: 'resolved' });
+  const allItems = useQuery(api.flags.getInboxItemsEnriched, { filter: 'all' });
+  const flagItems = useQuery(api.flags.getInboxItemsEnriched, { filter: 'flags' });
+  const notifItems = useQuery(api.flags.getInboxItemsEnriched, { filter: 'notifications' });
+  const mentionItems = useQuery(api.flags.getInboxItemsEnriched, { filter: 'mentions' });
+  const resolvedItems = useQuery(api.flags.getInboxItemsEnriched, { filter: 'resolved' });
 
   // Current filter items
   const currentItems: InboxItem[] = useMemo(() => {

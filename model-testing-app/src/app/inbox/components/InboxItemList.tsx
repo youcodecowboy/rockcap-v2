@@ -1,25 +1,7 @@
 'use client';
 
 import { Flag, Bell, AtSign } from 'lucide-react';
-
-// Relative time helper
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHr / 24);
-
-  if (diffSec < 60) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay === 1) return 'yesterday';
-  if (diffDay < 7) return `${diffDay}d ago`;
-  if (diffDay < 30) return `${Math.floor(diffDay / 7)}w ago`;
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
+import { relativeTime, ENTITY_TYPE_SHORT } from '@/components/threads/utils';
 
 export interface InboxItem {
   kind: 'flag' | 'notification';
@@ -35,6 +17,8 @@ export interface InboxItem {
     entityType?: string;
     isRead?: boolean;
   };
+  entityName?: string;
+  entityContext?: string;
 }
 
 interface InboxItemListProps {
@@ -55,6 +39,9 @@ function getIcon(item: InboxItem) {
 
 function getTitle(item: InboxItem): string {
   if (item.kind === 'flag') {
+    if (item.entityName) {
+      return item.entityName;
+    }
     const entity = item.data.entityType
       ? item.data.entityType.charAt(0).toUpperCase() + item.data.entityType.slice(1)
       : 'Item';
@@ -106,18 +93,28 @@ export default function InboxItemList({ items, selectedId, onSelect }: InboxItem
               <div className="mt-0.5">{getIcon(item)}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={`text-sm truncate ${
-                      unread ? 'font-semibold text-gray-900' : 'font-normal text-gray-700'
-                    }`}
-                  >
-                    {getTitle(item)}
-                  </span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {item.kind === 'flag' && item.data.entityType && (
+                      <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-gray-100 text-gray-500 uppercase tracking-wide flex-shrink-0">
+                        {ENTITY_TYPE_SHORT[item.data.entityType] || item.data.entityType}
+                      </span>
+                    )}
+                    <span
+                      className={`text-sm truncate ${
+                        unread ? 'font-semibold text-gray-900' : 'font-normal text-gray-700'
+                      }`}
+                    >
+                      {getTitle(item)}
+                    </span>
+                  </div>
                   <span className="text-[11px] text-gray-400 whitespace-nowrap flex-shrink-0">
                     {relativeTime(item.createdAt)}
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5 truncate">{getPreview(item)}</p>
+                {item.entityContext && (
+                  <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.entityContext}</p>
+                )}
               </div>
             </div>
           </button>
