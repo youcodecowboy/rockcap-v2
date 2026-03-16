@@ -67,11 +67,12 @@ import ClientKnowledgeTab from './components/ClientKnowledgeTab';
 import ClientContactsTab from './components/ClientContactsTab';
 import ClientMeetingsTab from './components/ClientMeetingsTab';
 import ClientTasksTab from './components/ClientTasksTab';
+import ClientThreadsTab from './components/ClientThreadsTab';
 import { ClientIntelligenceTab } from '@/components/IntelligenceTab';
 import ClientSettingsPanel from '@/components/ClientSettingsPanel';
 import { Brain, CheckSquare, Contact, Video, ListTodo } from 'lucide-react';
 
-type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks';
+type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads';
 
 function ClientProfileContent() {
   const params = useParams();
@@ -96,6 +97,7 @@ function ClientProfileContent() {
   const contacts = useContactsByClient(clientId) || [];
   const meetingsCount = useQuery(api.meetings.getCountByClient, { clientId }) || 0;
   const activeTasksCount = useQuery(api.tasks.getActiveCountByClient, { clientId }) || 0;
+  const openFlagCount = useQuery(api.flags.getOpenCountByClient, { clientId }) || 0;
 
   // Mutations
   const updateClientMutation = useUpdateClient();
@@ -210,6 +212,7 @@ function ClientProfileContent() {
     { id: 'projects', label: 'Projects', icon: FolderKanban, count: projects.length },
     { id: 'contacts', label: 'Contacts', icon: Contact, count: contacts.length },
     { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
+    { id: 'threads', label: 'Threads', icon: Flag, count: openFlagCount > 0 ? openFlagCount : undefined },
     { id: 'communications', label: 'Communications', icon: MessageSquare, count: communications.length },
     { id: 'meetings', label: 'Meetings', icon: Video, count: meetingsCount },
     { id: 'data', label: 'Data', icon: Database },
@@ -465,8 +468,12 @@ function ClientProfileContent() {
             />
           </TabsContent>
 
+          <TabsContent value="threads" className="mt-0 flex-1 overflow-hidden">
+            <ClientThreadsTab clientId={clientId} />
+          </TabsContent>
+
           {/* Contained Tabs - With Max Width Container */}
-          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data'].includes(activeTab) ? 'hidden' : ''}`}>
+          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data', 'threads'].includes(activeTab) ? 'hidden' : ''}`}>
             <div className="max-w-7xl mx-auto px-6 py-6">
 
               <TabsContent value="projects" className="mt-0">
