@@ -49,11 +49,12 @@ import ProjectNotesTab from './components/ProjectNotesTab';
 import ProjectKnowledgeTab from './components/ProjectKnowledgeTab';
 import ProjectDataTab from './components/ProjectDataTab';
 import ProjectTasksTab from './components/ProjectTasksTab';
+import ProjectThreadsTab from './components/ProjectThreadsTab';
 import { ProjectIntelligenceTab } from '@/components/IntelligenceTab';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 import { Brain, CheckSquare, ListTodo } from 'lucide-react';
 
-type TabType = 'overview' | 'documents' | 'intelligence' | 'checklist' | 'communications' | 'data' | 'notes' | 'tasks';
+type TabType = 'overview' | 'documents' | 'intelligence' | 'checklist' | 'threads' | 'data' | 'notes' | 'tasks';
 
 function ProjectDetailContent() {
   const params = useParams();
@@ -75,6 +76,7 @@ function ProjectDetailContent() {
   const project = useQuery(api.projects.get, { id: projectId });
   const documents = useQuery(api.documents.getByProject, { projectId }) || [];
   const activeTasksCount = useQuery(api.tasks.getActiveCountByProject, { projectId }) || 0;
+  const openFlagCount = useQuery(api.flags.getOpenCountByProject, { projectId }) || 0;
 
   // Get client roles with full client data
   const clientRoles = useMemo(() => {
@@ -184,7 +186,7 @@ function ProjectDetailContent() {
     { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
     { id: 'intelligence', label: 'Intelligence', icon: Brain },
     { id: 'checklist', label: 'Checklist', icon: CheckSquare },
-    { id: 'communications', label: 'Communications', icon: MessageSquare },
+    { id: 'threads', label: 'Threads', icon: Flag, count: openFlagCount > 0 ? openFlagCount : undefined },
     { id: 'data', label: 'Data', icon: Database },
     { id: 'notes', label: 'Notes', icon: StickyNote },
   ];
@@ -394,8 +396,15 @@ function ProjectDetailContent() {
             />
           </TabsContent>
 
+          <TabsContent value="threads" className="mt-0 flex-1 overflow-hidden">
+            <ProjectThreadsTab
+              projectId={projectId}
+              clientId={clientId}
+            />
+          </TabsContent>
+
           {/* Contained Tabs - With Max Width Container */}
-          <div className={`flex-1 overflow-auto ${['intelligence', 'documents', 'checklist', 'notes', 'tasks'].includes(activeTab) ? 'hidden' : ''}`}>
+          <div className={`flex-1 overflow-auto ${['intelligence', 'documents', 'checklist', 'notes', 'tasks', 'threads'].includes(activeTab) ? 'hidden' : ''}`}>
             <div className="max-w-7xl mx-auto px-6 py-6">
               <TabsContent value="overview" className="mt-0">
                 <ProjectOverviewTab
@@ -410,16 +419,6 @@ function ProjectDetailContent() {
                     setShowSettingsPanel(true);
                   }}
                 />
-              </TabsContent>
-
-              <TabsContent value="communications" className="mt-0">
-                <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                  <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Communications</h3>
-                  <p className="text-gray-500 max-w-md mx-auto">
-                    Communication timeline for this project will appear here.
-                  </p>
-                </div>
               </TabsContent>
 
               <TabsContent value="data" className="mt-0">
