@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { useRouter } from 'next/navigation';
 import {
   Flag,
   CheckCircle2,
@@ -12,73 +11,16 @@ import {
   Trash2,
   Send,
   Loader2,
-  ExternalLink,
 } from 'lucide-react';
 import ThreadEntry from './ThreadEntry';
+import EntityContextHeader from '@/components/threads/EntityContextHeader';
+import { relativeTime, getInitial } from '@/components/threads/utils';
 
 interface FlagDetailPanelProps {
   flagId: string;
 }
 
-// Relative time helper
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHr / 24);
-
-  if (diffSec < 60) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay === 1) return 'yesterday';
-  if (diffDay < 7) return `${diffDay}d ago`;
-  if (diffDay < 30) return `${Math.floor(diffDay / 7)}w ago`;
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-function getInitial(name: string | null | undefined): string {
-  if (!name) return '?';
-  return name.charAt(0).toUpperCase();
-}
-
-const ENTITY_TYPE_LABELS: Record<string, string> = {
-  document: 'Document',
-  meeting: 'Meeting',
-  task: 'Task',
-  project: 'Project',
-  client: 'Client',
-  checklist_item: 'Checklist',
-};
-
-function buildEntityLink(
-  entityType: string,
-  entityId: string,
-  clientId?: string,
-  projectId?: string
-): string {
-  switch (entityType) {
-    case 'document':
-      return `/docs/reader/${entityId}`;
-    case 'meeting':
-      return clientId ? `/clients/${clientId}` : '/inbox';
-    case 'task':
-      return '/tasks';
-    case 'project':
-      return clientId ? `/clients/${clientId}/projects/${entityId}` : '/inbox';
-    case 'client':
-      return `/clients/${entityId}`;
-    case 'checklist_item':
-      return clientId ? `/clients/${clientId}` : '/inbox';
-    default:
-      return '/inbox';
-  }
-}
-
 export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
-  const router = useRouter();
   const typedFlagId = flagId as Id<'flags'>;
 
   // Queries
@@ -221,41 +163,30 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
   }
 
   const isOpen = flag.status === 'open';
-  const entityLabel = ENTITY_TYPE_LABELS[flag.entityType] || flag.entityType;
-  const entityLink = buildEntityLink(
-    flag.entityType,
-    flag.entityId,
-    flag.clientId,
-    flag.projectId
-  );
   const creatorName = userMap.get(flag.createdBy) || null;
   const assigneeName = userMap.get(flag.assignedTo) || null;
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-600 uppercase tracking-wide">
-            {entityLabel}
-          </span>
-          <button
-            onClick={() => router.push(entityLink)}
-            className="text-sm font-medium text-gray-900 hover:text-blue-600 transition-colors truncate flex items-center gap-1.5"
-          >
-            {entityLabel} {flag.entityId.slice(-6)}
-            <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-50" />
-          </button>
-          <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${
-              isOpen
-                ? 'bg-orange-50 text-orange-600'
-                : 'bg-green-50 text-green-600'
-            }`}
-          >
-            {flag.status}
-          </span>
-        </div>
+      {/* Entity context header */}
+      <EntityContextHeader
+        entityType={flag.entityType}
+        entityId={flag.entityId}
+        clientId={flag.clientId}
+        projectId={flag.projectId}
+      />
+
+      {/* Action bar */}
+      <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100">
+        <span
+          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${
+            isOpen
+              ? 'bg-orange-50 text-orange-600'
+              : 'bg-green-50 text-green-600'
+          }`}
+        >
+          {flag.status}
+        </span>
         <div className="flex items-center gap-2 flex-shrink-0">
           {isOpen ? (
             <button
@@ -362,7 +293,7 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
       </div>
 
       {/* Reply bar */}
-      <div className="border-t border-gray-200 px-5 py-3 bg-white">
+      <div className="border-t border-gray-200 pl-5 pr-20 py-3 bg-white">
         <div className="flex items-end gap-3">
           <textarea
             ref={textareaRef}
