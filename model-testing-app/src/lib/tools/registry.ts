@@ -27,6 +27,7 @@ import { FILE_QUEUE_TOOLS } from "./domains/fileQueue.tools";
 import { ANALYSIS_TOOLS } from "./domains/analysis.tools";
 import { MEETING_TOOLS } from "./domains/meeting.tools";
 import { FLAG_TOOLS } from "./domains/flag.tools";
+import { FINANCIAL_TOOLS } from "./domains/financial.tools";
 
 /**
  * Core write tools always available in global context
@@ -66,6 +67,7 @@ const CLIENT_CONTEXT_DOMAINS: ToolDomain[] = [
   "internalDocument",
   "meeting",
   "flag",
+  "financial",
 ];
 
 const PROJECT_CONTEXT_DOMAINS: ToolDomain[] = [
@@ -82,6 +84,7 @@ const PROJECT_CONTEXT_DOMAINS: ToolDomain[] = [
   "fileQueue",
   "meeting",
   "flag",
+  "financial",
 ];
 
 export class ToolRegistry {
@@ -106,6 +109,7 @@ export class ToolRegistry {
       ...ANALYSIS_TOOLS,
       ...MEETING_TOOLS,
       ...FLAG_TOOLS,
+      ...FINANCIAL_TOOLS,
     ]);
   }
 

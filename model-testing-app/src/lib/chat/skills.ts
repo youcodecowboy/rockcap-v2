@@ -66,10 +66,9 @@ export const SKILL_CATALOG: Record<string, SkillDefinition> = {
   },
   financial: {
     name: 'financial',
-    description: 'Financial analysis, loan calculations, scenarios',
-    // Analysis tools use domain "document" in the registry
-    domains: ['document'],
-    keywords: ['finance', 'financial', 'loan', 'ltv', 'gdv', 'cost', 'profit', 'calculation'],
+    description: 'Financial summary, deal metrics assessment, cross-document value comparison, plus document access for appraisals and loan terms',
+    domains: ['financial', 'document'],
+    keywords: ['finance', 'financial', 'loan', 'ltv', 'gdv', 'cost', 'profit', 'calculation', 'appraisal', 'valuation', 'margin', 'interest', 'rate'],
   },
   flags: {
     name: 'flags',
@@ -157,8 +156,28 @@ export function formatSkillCatalogForPrompt(): string {
 }
 
 /**
+ * Skill-specific context blocks injected when a skill is loaded.
+ * Gives the model domain knowledge to interpret tool results.
+ */
+const SKILL_CONTEXT: Record<string, string> = {
+  financial: `
+UK Development Finance — Key Concepts:
+• LTV (Loan-to-Value): Senior debt typically 55-70% of current/day-one market value
+• LTGDV (Loan-to-GDV): Usually 50-65% for senior facilities
+• LTC (Loan-to-Cost): Typically 65-80%; above 85% is high leverage
+• Profit margin: 15-25% on cost for residential, 15-20% on GDV
+• Interest: Typically SONIA + 5-9% margin, rolled up monthly
+• RedBook valuation provides independent CMV + GDV; always compare against appraisal figures
+• Facility agreement values may differ from valuation — cross-reference with compareDocumentValues
+• Construction costs: £150-250/sqft typical for residential; monitor QS reports for variance
+• Start with getFinancialSummary to see what data exists, then assessDealMetrics for analysis
+• Use compareDocumentValues when figures across documents don't match`,
+};
+
+/**
  * Format the result of a skill search for the model.
  * Lists matched skills with their tool names.
+ * Includes domain context blocks for skills that have them.
  */
 export function formatSkillSearchResult(skillNames: string[]): string {
   if (skillNames.length === 0) {
@@ -173,6 +192,12 @@ export function formatSkillSearchResult(skillNames: string[]): string {
     const toolNames = tools.map((t) => t.name).join(', ');
     lines.push(`\n${skill.name}: ${skill.description}`);
     lines.push(`  Tools: ${toolNames}`);
+
+    // Include domain context if available
+    const context = SKILL_CONTEXT[name];
+    if (context) {
+      lines.push(`\n${context.trim()}`);
+    }
   }
   return lines.join('\n');
 }

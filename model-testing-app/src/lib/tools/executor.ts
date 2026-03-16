@@ -1234,6 +1234,395 @@ const handlers: Record<string, ToolHandler> = {
     }
     return lines.join('\n');
   },
+
+  // ==========================================================================
+  // FINANCIAL (analysis tools — compose existing Convex queries)
+  // ==========================================================================
+
+  getFinancialSummary: async (params, client) => {
+    const items = await client.query(
+      api.knowledgeLibrary.getKnowledgeItemsByProject,
+      { projectId: params.projectId as Id<"projects"> }
+    );
+
+    // Financial field path prefixes
+    const sections: Record<string, { label: string; prefixes: string[] }> = {
+      dealEconomics: {
+        label: 'Deal Economics',
+        prefixes: ['financials.'],
+      },
+      loanTerms: {
+        label: 'Loan Terms',
+        prefixes: ['loanTerms.', 'loan.'],
+      },
+      valuation: {
+        label: 'Valuation',
+        prefixes: ['valuation.'],
+      },
+      construction: {
+        label: 'Construction',
+        prefixes: ['construction.'],
+      },
+      exit: {
+        label: 'Exit / Sales',
+        prefixes: ['exit.'],
+      },
+    };
+
+    const lines: string[] = ['# Financial Summary\n'];
+
+    for (const [, section] of Object.entries(sections)) {
+      const sectionItems = items.filter((item: any) =>
+        item.status === 'active' &&
+        section.prefixes.some((p: string) => item.fieldPath.startsWith(p))
+      );
+
+      lines.push(`## ${section.label}`);
+      if (sectionItems.length === 0) {
+        lines.push('No data yet.\n');
+        continue;
+      }
+
+      for (const item of sectionItems) {
+        const conf = item.normalizationConfidence
+          ? ` (${Math.round(item.normalizationConfidence * 100)}% confidence)`
+          : '';
+        const displayValue = typeof item.value === 'object'
+          ? JSON.stringify(item.value)
+          : String(item.value);
+        lines.push(`- ${item.label}: ${displayValue}${conf}`);
+      }
+      lines.push('');
+    }
+
+    // Count totals
+    const financialItems = items.filter((item: any) =>
+      item.status === 'active' &&
+      Object.values(sections).some(s =>
+        s.prefixes.some(p => item.fieldPath.startsWith(p))
+      )
+    );
+    lines.push(`---\n${financialItems.length} financial data points across ${Object.keys(sections).length} sections.`);
+
+    return lines.join('\n');
+  },
+
+  assessDealMetrics: async (params, client) => {
+    const items = await client.query(
+      api.knowledgeLibrary.getKnowledgeItemsByProject,
+      { projectId: params.projectId as Id<"projects"> }
+    );
+
+    // Build lookup: fieldPath → numeric value
+    const lookup = new Map<string, number>();
+    for (const item of items) {
+      if ((item as any).status !== 'active') continue;
+      const val = parseFloat(String((item as any).value));
+      if (!isNaN(val)) {
+        lookup.set((item as any).fieldPath, val);
+      }
+    }
+
+    // Helper to find a value by checking multiple possible field paths
+    const find = (...paths: string[]): number | null => {
+      for (const p of paths) {
+        const val = lookup.get(p);
+        if (val !== undefined) return val;
+      }
+      return null;
+    };
+
+    const loanAmount = find('financials.loanAmount', 'loanTerms.facilityAmount', 'loan.amount');
+    const marketValue = find('valuation.marketValue', 'financials.currentValue', 'valuation.dayOneValue');
+    const gdv = find('financials.gdv', 'valuation.gdv', 'project.gdv');
+    const tdc = find('financials.totalDevelopmentCost', 'project.totalDevelopmentCost');
+    const constructionCost = find('financials.constructionCost', 'construction.contractSum');
+    const totalSqFt = find('development.totalSqFt');
+    const interestRate = find('loanTerms.interestRate', 'loan.interestRate');
+    const termMonths = find('loanTerms.termMonths');
+
+    interface Metric {
+      name: string;
+      value: string;
+      status: 'ok' | 'warning' | 'missing';
+      note: string;
+    }
+
+    const metrics: Metric[] = [];
+
+    // LTV
+    if (loanAmount !== null && marketValue !== null && marketValue > 0) {
+      const ltv = (loanAmount / marketValue) * 100;
+      metrics.push({
+        name: 'LTV (Loan-to-Value)',
+        value: `${ltv.toFixed(1)}%`,
+        status: ltv > 70 ? 'warning' : 'ok',
+        note: ltv > 70
+          ? `Above typical 65-70% senior threshold — may require mezzanine or additional equity`
+          : `Within normal senior debt range (55-70%)`,
+      });
+    } else {
+      metrics.push({
+        name: 'LTV (Loan-to-Value)',
+        value: 'N/A',
+        status: 'missing',
+        note: `Need: ${!loanAmount ? 'loan amount' : ''}${!loanAmount && !marketValue ? ' + ' : ''}${!marketValue ? 'market value/day-one value' : ''}`,
+      });
+    }
+
+    // LTGDV
+    if (loanAmount !== null && gdv !== null && gdv > 0) {
+      const ltgdv = (loanAmount / gdv) * 100;
+      metrics.push({
+        name: 'LTGDV (Loan-to-GDV)',
+        value: `${ltgdv.toFixed(1)}%`,
+        status: ltgdv > 65 ? 'warning' : 'ok',
+        note: ltgdv > 65
+          ? `Above typical 50-65% senior range — higher risk exposure`
+          : `Within normal range (50-65%)`,
+      });
+    } else {
+      metrics.push({
+        name: 'LTGDV (Loan-to-GDV)',
+        value: 'N/A',
+        status: 'missing',
+        note: `Need: ${!loanAmount ? 'loan amount' : ''}${!loanAmount && !gdv ? ' + ' : ''}${!gdv ? 'GDV' : ''}`,
+      });
+    }
+
+    // LTC
+    if (loanAmount !== null && tdc !== null && tdc > 0) {
+      const ltc = (loanAmount / tdc) * 100;
+      metrics.push({
+        name: 'LTC (Loan-to-Cost)',
+        value: `${ltc.toFixed(1)}%`,
+        status: ltc > 85 ? 'warning' : 'ok',
+        note: ltc > 85
+          ? `High leverage — typical range is 65-80%`
+          : `Within normal range (65-80%)`,
+      });
+    } else {
+      metrics.push({
+        name: 'LTC (Loan-to-Cost)',
+        value: 'N/A',
+        status: 'missing',
+        note: `Need: ${!loanAmount ? 'loan amount' : ''}${!loanAmount && !tdc ? ' + ' : ''}${!tdc ? 'total development cost' : ''}`,
+      });
+    }
+
+    // Profit on Cost
+    if (gdv !== null && tdc !== null && tdc > 0) {
+      const poc = ((gdv - tdc) / tdc) * 100;
+      metrics.push({
+        name: 'Profit on Cost',
+        value: `${poc.toFixed(1)}%`,
+        status: poc < 15 ? 'warning' : 'ok',
+        note: poc < 15
+          ? `Below typical 15-25% for residential development — thin margin`
+          : `Within normal range (15-25% residential)`,
+      });
+    } else {
+      metrics.push({
+        name: 'Profit on Cost',
+        value: 'N/A',
+        status: 'missing',
+        note: `Need: ${!gdv ? 'GDV' : ''}${!gdv && !tdc ? ' + ' : ''}${!tdc ? 'total development cost' : ''}`,
+      });
+    }
+
+    // Profit on GDV
+    if (gdv !== null && tdc !== null && gdv > 0) {
+      const pog = ((gdv - tdc) / gdv) * 100;
+      metrics.push({
+        name: 'Profit on GDV',
+        value: `${pog.toFixed(1)}%`,
+        status: pog < 12 ? 'warning' : 'ok',
+        note: pog < 12
+          ? `Below typical 15-20% — limited buffer for cost overruns`
+          : `Within normal range (15-20%)`,
+      });
+    } else {
+      metrics.push({
+        name: 'Profit on GDV',
+        value: 'N/A',
+        status: 'missing',
+        note: `Need: GDV + total development cost`,
+      });
+    }
+
+    // Build cost per sq ft
+    if (constructionCost !== null && totalSqFt !== null && totalSqFt > 0) {
+      const costPerSqFt = constructionCost / totalSqFt;
+      metrics.push({
+        name: 'Build Cost per sq ft',
+        value: `£${Math.round(costPerSqFt).toLocaleString('en-GB')}`,
+        status: costPerSqFt > 300 || costPerSqFt < 100 ? 'warning' : 'ok',
+        note: costPerSqFt > 300
+          ? `Above typical £150-250/sqft for residential — verify scope`
+          : costPerSqFt < 100
+            ? `Below typical range — may indicate incomplete cost data`
+            : `Within typical residential range (£150-250/sqft)`,
+      });
+    } else {
+      metrics.push({
+        name: 'Build Cost per sq ft',
+        value: 'N/A',
+        status: 'missing',
+        note: `Need: ${!constructionCost ? 'construction cost' : ''}${!constructionCost && !totalSqFt ? ' + ' : ''}${!totalSqFt ? 'total sq ft' : ''}`,
+      });
+    }
+
+    // Annualized interest cost
+    if (loanAmount !== null && interestRate !== null) {
+      const annualInterest = loanAmount * (interestRate / 100);
+      const totalInterest = termMonths
+        ? annualInterest * (termMonths / 12)
+        : annualInterest;
+      const termLabel = termMonths ? `over ${termMonths} months` : 'per annum';
+      metrics.push({
+        name: 'Interest Cost',
+        value: `£${Math.round(totalInterest).toLocaleString('en-GB')} ${termLabel}`,
+        status: interestRate > 15 ? 'warning' : 'ok',
+        note: `Rate: ${interestRate}%${interestRate > 12 ? ' — above typical SONIA + 5-9% range' : ''}`,
+      });
+    }
+
+    // Format output
+    const lines: string[] = ['# Deal Metrics Assessment\n'];
+    const warnings = metrics.filter(m => m.status === 'warning');
+    const ok = metrics.filter(m => m.status === 'ok');
+    const missing = metrics.filter(m => m.status === 'missing');
+
+    if (warnings.length > 0) {
+      lines.push(`⚠ ${warnings.length} metric(s) flagged:\n`);
+      for (const m of warnings) {
+        lines.push(`**${m.name}: ${m.value}**`);
+        lines.push(`  ${m.note}\n`);
+      }
+    }
+
+    if (ok.length > 0) {
+      lines.push(`✓ ${ok.length} metric(s) within normal range:\n`);
+      for (const m of ok) {
+        lines.push(`${m.name}: ${m.value}`);
+        lines.push(`  ${m.note}\n`);
+      }
+    }
+
+    if (missing.length > 0) {
+      lines.push(`○ ${missing.length} metric(s) cannot be calculated:\n`);
+      for (const m of missing) {
+        lines.push(`${m.name}: ${m.note}\n`);
+      }
+    }
+
+    return lines.join('\n');
+  },
+
+  compareDocumentValues: async (params, client) => {
+    // Get ALL knowledge items for the project (including superseded for history)
+    const activeItems = await client.query(
+      api.knowledgeLibrary.getKnowledgeItemsByProject,
+      { projectId: params.projectId as Id<"projects"> }
+    );
+    const supersededItems = await client.query(
+      api.knowledgeLibrary.getKnowledgeItemsByProject,
+      { projectId: params.projectId as Id<"projects">, status: 'superseded' as any }
+    );
+    const allItems = [...activeItems, ...supersededItems];
+
+    // Find matching items by fieldPath or fuzzy fieldName
+    let matches = allItems.filter((item: any) =>
+      params.fieldPath && item.fieldPath === params.fieldPath
+    );
+
+    // Fallback to fuzzy match on label/fieldPath if no exact matches
+    if (matches.length === 0 && params.fieldName) {
+      const search = params.fieldName.toLowerCase();
+      matches = allItems.filter((item: any) =>
+        item.label?.toLowerCase().includes(search) ||
+        item.fieldPath?.toLowerCase().includes(search)
+      );
+    }
+
+    if (matches.length === 0) {
+      return `No data found for ${params.fieldPath || params.fieldName}. Use getFinancialSummary to see available fields.`;
+    }
+
+    // Group by source document
+    const bySource = new Map<string, any[]>();
+    for (const item of matches) {
+      const docId = (item as any).sourceDocumentId || 'unknown';
+      if (!bySource.has(docId)) bySource.set(docId, []);
+      bySource.get(docId)!.push(item);
+    }
+
+    // Get document names for each source
+    const docNames = new Map<string, string>();
+    for (const docId of bySource.keys()) {
+      if (docId === 'unknown') {
+        docNames.set(docId, 'Unknown source');
+        continue;
+      }
+      try {
+        const doc = await client.query(api.documents.get, { id: docId as any });
+        docNames.set(docId, doc?.fileName || doc?.fileTypeDetected || 'Unknown');
+      } catch {
+        docNames.set(docId, docId);
+      }
+    }
+
+    const fieldLabel = matches[0]?.label || params.fieldPath || params.fieldName;
+    const lines: string[] = [`# ${fieldLabel} — Cross-Document Comparison\n`];
+
+    // Collect numeric values for variance calculation
+    const numericValues: { value: number; source: string }[] = [];
+
+    for (const [docId, docItems] of bySource) {
+      const docName = docNames.get(docId) || docId;
+      // Pick the most recent/highest confidence item per source
+      const best = docItems.sort((a: any, b: any) =>
+        (b.normalizationConfidence || 0) - (a.normalizationConfidence || 0)
+      )[0];
+
+      const conf = best.normalizationConfidence
+        ? ` [confidence: ${(best.normalizationConfidence * 100).toFixed(0)}%]`
+        : '';
+      const status = best.status !== 'active' ? ` (${best.status})` : '';
+      const displayValue = typeof best.value === 'object'
+        ? JSON.stringify(best.value)
+        : String(best.value);
+
+      lines.push(`- **${docName}**: ${displayValue}${conf}${status}`);
+
+      const numVal = parseFloat(String(best.value));
+      if (!isNaN(numVal)) {
+        numericValues.push({ value: numVal, source: docName });
+      }
+    }
+
+    // Calculate variance if we have multiple numeric values
+    if (numericValues.length >= 2) {
+      const values = numericValues.map(v => v.value);
+      const max = Math.max(...values);
+      const min = Math.min(...values);
+      const variance = max - min;
+      const variancePct = min > 0 ? (variance / min) * 100 : 0;
+
+      lines.push('');
+      if (variancePct > 5) {
+        const maxSource = numericValues.find(v => v.value === max)!.source;
+        const minSource = numericValues.find(v => v.value === min)!.source;
+        lines.push(`⚠ **Variance: £${variance.toLocaleString('en-GB')} (${variancePct.toFixed(1)}%)**`);
+        lines.push(`  Highest: ${maxSource} — Lowest: ${minSource}`);
+        lines.push(`  Discrepancy exceeds 5% threshold — recommend investigation.`);
+      } else {
+        lines.push(`✓ Values are consistent (variance: ${variancePct.toFixed(1)}%).`);
+      }
+    }
+
+    return lines.join('\n');
+  },
 };
 
 // ---------------------------------------------------------------------------
