@@ -905,6 +905,14 @@ export default defineSchema({
     isInternal: v.optional(v.boolean()),
     // Manual extraction toggle (default false for bulk uploads)
     extractionEnabled: v.optional(v.boolean()),
+    // Deep extraction status: undefined = never run, "processing" | "complete" | "error"
+    deepExtractionStatus: v.optional(
+      v.union(
+        v.literal("processing"),
+        v.literal("complete"),
+        v.literal("error")
+      )
+    ),
     extractedData: v.optional(v.any()), // Only populated if extraction enabled
     // Full parsed text content for re-analysis without re-uploading
     textContent: v.optional(v.string()),
