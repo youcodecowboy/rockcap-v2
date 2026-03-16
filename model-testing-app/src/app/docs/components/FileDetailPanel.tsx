@@ -49,8 +49,10 @@ import {
   Link as LinkIcon,
   Unlink,
   Search,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ThreadPanel } from '@/components/threads';
 
 interface DocumentAnalysis {
   documentDescription: string;
@@ -186,6 +188,12 @@ export default function FileDetailPanel({
     api.knowledgeLibrary.getChecklistByClient,
     document?.clientId ? { clientId: document.clientId } : "skip"
   ) as any[] | undefined;
+
+  // Query open flag count for this document
+  const openFlagCount = useQuery(
+    api.flags.getOpenCountByEntity,
+    document?._id ? { entityType: "document" as const, entityId: document._id } : "skip"
+  );
 
   // Current user for linking
   const currentUser = useQuery(api.users.getCurrent) as { _id: Id<"users"> } | null | undefined;
@@ -424,7 +432,7 @@ export default function FileDetailPanel({
               {/* Tab Header */}
               <div className="px-4 pt-4 pb-2 border-b border-gray-100 flex-shrink-0">
                 <div className="flex items-center justify-between mb-3">
-                  <TabsList className="grid grid-cols-4 h-auto p-1">
+                  <TabsList className="grid grid-cols-5 h-auto p-1">
                     <TabsTrigger value="details" className="text-xs px-2 py-1.5">
                       Details
                     </TabsTrigger>
@@ -436,6 +444,14 @@ export default function FileDetailPanel({
                     </TabsTrigger>
                     <TabsTrigger value="checklist" className="text-xs px-2 py-1.5">
                       Checklist
+                    </TabsTrigger>
+                    <TabsTrigger value="threads" className="text-xs px-2 py-1.5 relative">
+                      Threads
+                      {openFlagCount !== undefined && openFlagCount > 0 && (
+                        <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 rounded-full bg-orange-100 text-orange-600 text-[10px] font-semibold px-1">
+                          {openFlagCount}
+                        </span>
+                      )}
                     </TabsTrigger>
                   </TabsList>
                 </div>
@@ -859,6 +875,20 @@ export default function FileDetailPanel({
                       )}
                     </>
                   )}
+                </TabsContent>
+
+                {/* Threads Tab */}
+                <TabsContent value="threads" className="mt-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+                  <div className="h-full">
+                    <ThreadPanel
+                      entityType="document"
+                      entityId={document._id}
+                      clientId={document.clientId}
+                      projectId={document.projectId}
+                      compact
+                      showCreateButton
+                    />
+                  </div>
                 </TabsContent>
               </div>
             </Tabs>
