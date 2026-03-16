@@ -18,7 +18,7 @@ An opt-in "Deep Extraction" feature that re-analyzes a document using its full e
 
 - **Additive, not modified**: The existing V4 pipeline is completely untouched. Deep extraction is a separate API route that reuses the same internals.
 - **Same schema**: Output is identical `DocumentClassification` — no new fields for data. Results overwrite the standard analysis in place.
-- **Same system prompt**: Reuses the exact cached system prompt (skill instructions + references) from the initial upload, getting prompt cache hits at 10% cost.
+- **Same system prompt**: Reuses the exact cached system prompt (skill instructions + references) from the initial upload, getting prompt cache hits at 10% cost when within the 1-hour cache TTL window. Cold calls pay full price for the system prompt (~18K tokens).
 - **Single new schema field**: `deepExtractionStatus` on `bulkUploadItems` tracks the state.
 
 ## Architecture
@@ -34,29 +34,47 @@ An opt-in "Deep Extraction" feature that re-analyzes a document using its full e
 ```
 
 **Flow:**
-1. Fetch `bulkUploadItem` from Convex → get `fileStorageId`, `fileName`, `fileSize`, `mediaType`
+1. Fetch `bulkUploadItem` from Convex → get `fileStorageId`, `fileName`, `fileSize`, `mediaType`, `textContent`
 2. Fetch batch context from Convex → get `clientId`, `projectId`, folders, checklist items, corrections
-3. Re-extract full text from stored file (same server-side extraction as V4 route — PDF parsing via `pdf-parse`, etc.)
+3. **Get full text**: Use stored `textContent` from the item if available (this is the full pre-truncation text from the initial upload). Only re-extract from `fileStorageId` as fallback if `textContent` is empty/missing.
 4. Apply 400K char hard cap (safety valve for massive spreadsheets). If text exceeds 400K, use 75/25 head/tail truncation — same strategy as standard, just 8x the limit.
-5. Build system prompt via `buildSystemPrompt()` — identical to standard V4, hits existing prompt cache
-6. Build user message via `buildBatchUserMessage()` for a single document, with the full/uncapped text
-7. Call `callAnthropicBatch()` with same config (Haiku 4.5, temp 0.1, 16K max output tokens)
-8. Parse response via existing `parseClassificationResponse()`
-9. Write enriched results back to Convex via existing `updateItemAnalysis` mutation
-10. Set `deepExtractionStatus: 'complete'` on the item
+5. **Construct a `BatchDocument` manually** — bypass `preprocessDocument()` entirely (which applies the 50K cap). Build the object directly:
+   ```typescript
+   const batchDoc: BatchDocument = {
+     index: 0,
+     fileName: item.fileName,
+     fileSize: item.fileSize,
+     mediaType: item.mediaType || 'application/pdf',
+     processedContent: { type: 'text', text: fullText },
+     hints: analyzeFilename(item.fileName, fullText),
+   };
+   ```
+   This is the core mechanism that differentiates deep extraction — same `BatchDocument` shape, but with uncapped text in `processedContent`.
+6. Build system prompt via `buildSystemPrompt()` — identical to standard V4, hits existing prompt cache
+7. Build user message via `buildBatchUserMessage()` for the single document
+8. Call `callAnthropicBatch()` with same config (Haiku 4.5, temp 0.1, 16K max output tokens)
+9. Parse response via existing `parseClassificationResponse()`
+10. Apply placement rules via `resolvePlacement()` to ensure folder/category consistency
+11. Map results to Convex shape via the same field mapping used by the V4 route
+12. Write enriched results back to Convex via existing `updateItemAnalysis` mutation
+13. Set `deepExtractionStatus: 'complete'` on the item
 
 **Error handling:**
-- No `fileStorageId` → return error "No document content available for deep extraction"
-- API failure → 3 retries (429/5xx), then set `deepExtractionStatus: 'error'`
+- No `fileStorageId` AND no `textContent` → return 400 "No document content available for deep extraction"
+- Item has `userEdits` with truthy flags → return 400 "Document has user corrections. Deep extraction would overwrite them. Clear edits first or confirm override." (Frontend shows this in the confirmation modal.)
+- API failure → 3 retries (429/5xx), then set `deepExtractionStatus: 'error'` and return 500
 - Timeout → reuse existing 120s `maxDuration`
 
 **Reused V4 internals (no changes to these):**
 - `buildSystemPrompt()` from `src/v4/lib/anthropic-client.ts`
 - `buildBatchUserMessage()` from `src/v4/lib/anthropic-client.ts`
 - `callAnthropicBatch()` from `src/v4/lib/anthropic-client.ts`
-- `loadSkillInstructions()` from `src/v4/lib/pipeline.ts`
+- `analyzeFilename()` from `src/v4/lib/document-preprocessor.ts`
+- `loadSkill('document-classify')` from `src/v4/lib/skill-loader.ts`
 - `loadReferences()` / `selectRelevantReferences()` from `src/v4/lib/reference-library.ts`
-- Server-side text extraction logic from `src/app/api/v4-analyze/route.ts`
+- `resolvePlacement()` from `src/v4/lib/pipeline.ts` (Stage 6 placement rules)
+- Server-side text extraction logic from `src/app/api/v4-analyze/route.ts` (fallback only)
+- Field mapping from `DocumentClassification` → Convex mutation args (same pattern as V4 route)
 
 ### 2. Convex Schema Change
 
@@ -64,14 +82,15 @@ An opt-in "Deep Extraction" feature that re-analyzes a document using its full e
 ```typescript
 deepExtractionStatus: v.optional(
   v.union(
-    v.literal("none"),
     v.literal("processing"),
     v.literal("complete"),
     v.literal("error")
   )
 )
-// Defaults to undefined (treated as "none" by the UI)
+// undefined = never run (default for all existing items)
 ```
+
+`undefined` means deep extraction has never been triggered. No `"none"` literal — simpler queries with just `deepExtractionStatus !== undefined`.
 
 **No new tables. No changes to existing fields.** The enriched results overwrite the same fields the standard V4 populates: `summary`, `fileTypeDetected`, `category`, `confidence`, `extractedIntelligence`, `documentAnalysis`, `classificationReasoning`.
 
@@ -87,22 +106,24 @@ deepExtractionStatus: v.optional(
 
 | `deepExtractionStatus` | UI |
 |---|---|
-| `undefined` / `"none"` | Small icon button (magnifying glass or layers) — clickable |
+| `undefined` | Small icon button (magnifying glass or layers) — clickable |
 | `"processing"` | Spinner replacing the button |
 | `"complete"` | "Deep" pill/badge indicator |
 | `"error"` | Red indicator, clickable to retry |
 
 **Click flow:**
 1. User clicks deep extraction button on a row
-2. Confirmation modal appears: "Run deep extraction on [filename]? This will re-analyze the full document for richer intelligence and summaries."
-3. User confirms → frontend calls `/api/v4-deep-extract` with `itemId` and `batchId`
-4. Item shows spinner during processing
-5. On completion, enriched data appears in existing Summary/Analysis/Intelligence tabs
+2. If item has `userEdits` with truthy flags, modal warns: "This document has manual corrections that will be overwritten. Continue?"
+3. Otherwise, confirmation modal: "Run deep extraction on [filename]? This will re-analyze the full document for richer intelligence and summaries."
+4. User confirms → frontend fires a fetch to `/api/v4-deep-extract` (fire-and-forget pattern)
+5. Status tracked via reactive Convex subscription on the `bulkUploadItem` — UI updates automatically as `deepExtractionStatus` changes from `processing` → `complete`/`error`
+6. On completion, enriched data appears in existing Summary/Analysis/Intelligence tabs
 
 **Multi-select support:**
 - Select multiple items via checkboxes → bulk action "Deep Extract Selected"
-- Items are processed sequentially (one API call at a time), matching existing bulk processing pattern
-- Each item's status updates independently as it completes
+- Frontend fires one fetch per item sequentially (fire-and-forget, each returns quickly after setting status to `processing`)
+- Each item's status updates independently via Convex subscriptions as it completes
+- No browser timeout risk — the long-running work happens server-side
 
 **No new tabs or views** — enriched data overwrites the existing data in the same UI panels.
 
@@ -110,7 +131,7 @@ deepExtractionStatus: v.optional(
 
 | Parameter | Value | Rationale |
 |---|---|---|
-| Text cap | 400,000 chars | ~100K tokens, well within Haiku 4.5's 200K context window with ~8K cached system prompt overhead |
+| Text cap | 400,000 chars | ~100K tokens. With ~18K system prompt + ~16K max output = ~134K total, within Haiku 4.5's 200K context window |
 | Truncation strategy | 75% head / 25% tail (only if >400K) | Same pattern as standard, just higher cap |
 | Max output tokens | 16,384 | Same as standard — sufficient for single-doc rich output |
 | Max duration | 120 seconds | Same as standard — Haiku is fast even at 100K input tokens |
@@ -126,7 +147,7 @@ deepExtractionStatus: v.optional(
 | 200K chars | ~50K | ~$0.005 | ~$0.04 |
 | 400K chars (max) | ~100K | ~$0.01 | ~$0.08 |
 
-Plus output tokens (~2-4K at $4/MTok = ~$0.01-0.02). Total per deep extraction: **~$0.01-0.10** depending on document size and cache state.
+Plus output tokens (~2-4K at $4/MTok = ~$0.01-0.02). Total per deep extraction: **~$0.01-0.10** depending on document size and cache state. Cache hits are only guaranteed within the 1-hour TTL window of a previous V4 call for the same client/project context.
 
 ## What This Does NOT Change
 
