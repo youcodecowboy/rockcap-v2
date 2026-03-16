@@ -52,11 +52,19 @@ export const NOTE_TOOLS: AtomicTool[] = [
       type: "object",
       properties: {
         title: { type: "string", description: "Note title (required)" },
-        content: { type: "string", description: "Note content (required)" },
+        content: {
+          type: "string",
+          description:
+            "Note content in markdown format. Write detailed, well-structured content: use ## headings to organize sections, markdown tables for tabular data (e.g. financial figures, contact details), bullet points for lists, and **bold** for key values. Produce comprehensive summaries — not brief blurbs. The system automatically converts markdown to rich text formatting.",
+        },
         clientId: { type: "string", description: "Link to a client" },
         projectId: { type: "string", description: "Link to a project" },
         tags: { type: "string", description: "Comma-separated tags" },
         emoji: { type: "string", description: "Emoji icon for the note" },
+        documentIds: {
+          type: "string",
+          description: "Comma-separated document IDs to link to this note",
+        },
       },
       required: ["title", "content"],
     },

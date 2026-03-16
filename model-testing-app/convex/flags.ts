@@ -220,9 +220,9 @@ export const getInboxItems = query({
         .withIndex("by_user", (q: any) => q.eq("userId", user._id))
         .collect();
 
-      // For "mentions" filter, only show flag-type notifications
+      // For "mentions" filter, show flag-type and mention-type notifications
       if (filter === "mentions") {
-        notifications = notifications.filter((n) => n.type === "flag");
+        notifications = notifications.filter((n) => n.type === "flag" || n.type === "mention");
       }
 
       for (const notif of notifications) {

@@ -17,7 +17,7 @@ export default function TemplatesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Note Templates</h1>
-          <p className="text-gray-600 mt-1">Create and manage templates for generating notes from knowledge bank entries</p>
+          <p className="text-gray-600 mt-1">Create and manage templates for generating notes from intelligence entries</p>
         </div>
         <button
           onClick={() => setIsCreating(true)}

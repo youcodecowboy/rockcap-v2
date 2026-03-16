@@ -13,6 +13,7 @@ import {
   parseAndValidateReminderParams,
   parseAndValidateTaskParams,
 } from "./validators";
+import { ensureTipTapContent } from "../notes/markdownToTiptap";
 
 // ---------------------------------------------------------------------------
 // Handler type
@@ -475,10 +476,15 @@ const handlers: Record<string, ToolHandler> = {
   createNote: async (params, client) =>
     client.mutation(api.notes.create, {
       title: params.title,
-      content: params.content,
+      content: ensureTipTapContent(params.content),
       clientId: params.clientId as Id<"clients"> | undefined,
       projectId: params.projectId as Id<"projects"> | undefined,
       tags: params.tags ? (typeof params.tags === "string" ? params.tags.split(",").map((t: string) => t.trim()) : params.tags) : [],
+      linkedDocumentIds: params.documentIds
+        ? (typeof params.documentIds === "string"
+            ? params.documentIds.split(",").map((id: string) => id.trim()) as Id<"documents">[]
+            : params.documentIds as Id<"documents">[])
+        : undefined,
       knowledgeBankEntryIds: [],
     }),
 

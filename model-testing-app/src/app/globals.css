@@ -522,3 +522,53 @@ aside[class*="fixed"][class*="left-0"] {
   color: #0066cc !important;
   font-style: italic !important;
 }
+
+/* TipTap mention styles */
+.mention {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 0.875em;
+  text-decoration: none;
+  cursor: default;
+}
+
+.mention-user {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.mention-client {
+  background-color: #fef3c7;
+  color: #b45309;
+  cursor: pointer;
+}
+
+.mention-project {
+  background-color: #ede9fe;
+  color: #6d28d9;
+  cursor: pointer;
+}
+
+.mention-client:hover {
+  background-color: #fde68a;
+}
+
+.mention-project:hover {
+  background-color: #ddd6fe;
+}
+
+:is(.dark *) .mention-user {
+  background-color: #1e3a5f;
+  color: #93c5fd;
+}
+
+:is(.dark *) .mention-client {
+  background-color: #451a03;
+  color: #fcd34d;
+}
+
+:is(.dark *) .mention-project {
+  background-color: #2e1065;
+  color: #c4b5fd;
+}

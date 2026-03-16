@@ -1160,7 +1160,8 @@ export default defineSchema({
     templateId: v.optional(v.id("noteTemplates")),
     knowledgeBankEntryIds: v.array(v.id("knowledgeBankEntries")),
     tags: v.array(v.string()),
-    mentionedUserIds: v.optional(v.array(v.string())), // Array of user IDs mentioned (future-ready)
+    mentionedUserIds: v.optional(v.array(v.string())), // Array of user IDs mentioned in note body
+    linkedDocumentIds: v.optional(v.array(v.id("documents"))), // Documents linked to this note
     lastSavedAt: v.optional(v.string()), // Timestamp of last save
     wordCount: v.optional(v.number()), // Word count for the note
     isDraft: v.optional(v.boolean()), // Draft state
@@ -1665,7 +1666,8 @@ export default defineSchema({
       v.literal("reminder"),
       v.literal("task"),
       v.literal("changelog"),
-      v.literal("flag")
+      v.literal("flag"),
+      v.literal("mention")
     ),
     title: v.string(),
     message: v.string(),

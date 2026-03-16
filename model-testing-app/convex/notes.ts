@@ -14,6 +14,7 @@ export const create = mutation({
     knowledgeBankEntryIds: v.optional(v.array(v.id("knowledgeBankEntries"))),
     tags: v.optional(v.array(v.string())),
     mentionedUserIds: v.optional(v.array(v.string())),
+    linkedDocumentIds: v.optional(v.array(v.id("documents"))),
     wordCount: v.optional(v.number()),
     isDraft: v.optional(v.boolean()),
   },
@@ -51,6 +52,7 @@ export const create = mutation({
       knowledgeBankEntryIds: args.knowledgeBankEntryIds || [],
       tags: args.tags || [],
       mentionedUserIds: args.mentionedUserIds || [],
+      linkedDocumentIds: args.linkedDocumentIds,
       wordCount: args.wordCount,
       isDraft: args.isDraft ?? false,
       createdAt: now,
@@ -90,6 +92,7 @@ export const update = mutation({
     knowledgeBankEntryIds: v.optional(v.array(v.id("knowledgeBankEntries"))),
     tags: v.optional(v.array(v.string())),
     mentionedUserIds: v.optional(v.array(v.string())),
+    linkedDocumentIds: v.optional(v.array(v.id("documents"))),
     wordCount: v.optional(v.number()),
     isDraft: v.optional(v.boolean()),
   },
@@ -105,7 +108,7 @@ export const update = mutation({
       .query("users")
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
-    
+
     if (!user) {
       throw new Error("User not found");
     }
@@ -144,8 +147,33 @@ export const update = mutation({
     if (patchData.projectId === null) patchData.projectId = undefined;
     if (patchData.templateId === null) patchData.templateId = undefined;
     if (patchData.userId === null) patchData.userId = undefined;
-    
+
     await ctx.db.patch(id, patchData);
+
+    // --- Mention notification diffing ---
+    if (updates.mentionedUserIds) {
+      const previousMentions = new Set(existing.mentionedUserIds || []);
+      const newMentions = updates.mentionedUserIds.filter(
+        (uid: string) => !previousMentions.has(uid) && uid !== user._id.toString()
+      );
+
+      // Create notification for each newly mentioned user
+      for (const mentionedUserId of newMentions) {
+        // Look up the mentioned user to verify they exist
+        const mentionedUser = await ctx.db.get(mentionedUserId as any);
+        if (mentionedUser) {
+          await ctx.db.insert("notifications", {
+            userId: mentionedUserId as any,
+            type: "mention",
+            title: `${user.name || "Someone"} mentioned you in a note`,
+            message: (existing.title || "Untitled note").slice(0, 100),
+            relatedId: id,
+            isRead: false,
+            createdAt: now,
+          });
+        }
+      }
+    }
 
     // Invalidate context cache for client if changed
     const finalClientId = patchData.clientId !== undefined ? patchData.clientId : existing.clientId;
