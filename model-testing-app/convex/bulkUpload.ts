@@ -210,8 +210,26 @@ export const checkAndStartNextQueued = action({
     });
 
     // Check if any batch is currently processing
-    const isProcessing = allBatches.some((b: any) => b.status === "processing");
-    if (isProcessing) return null;
+    const processingBatch = allBatches.find((b: any) => b.status === "processing");
+    if (processingBatch) {
+      // Check if the processing batch is stuck (no items still pending/processing)
+      const items: any[] = await ctx.runQuery(api.bulkUpload.getBatchItems, {
+        batchId: processingBatch._id,
+      });
+      const activeItems = items.filter(
+        (i: any) => i.status === "pending" || i.status === "processing"
+      );
+      if (activeItems.length > 0) {
+        // Batch is genuinely still processing — don't interrupt
+        return null;
+      }
+      // All items finished but batch never completed — force-complete it
+      console.log(`[checkAndStartNextQueued] Batch ${processingBatch._id} stuck in processing with 0 active items — force-completing`);
+      await ctx.runMutation(internal.bulkBackgroundProcessor.tryCompleteBatch, {
+        batchId: processingBatch._id,
+        baseUrl: args.baseUrl,
+      });
+    }
 
     // Find the next queued batch (lowest queue position)
     const queued = allBatches
@@ -807,6 +825,33 @@ export const toggleExtraction = mutation({
   handler: async (ctx, args) => {
     await ctx.db.patch(args.itemId, {
       extractionEnabled: args.enabled,
+      updatedAt: new Date().toISOString(),
+    });
+    return args.itemId;
+  },
+});
+
+// Query: Get a single bulkUploadItem by ID (used by deep extraction API route)
+export const getItem = query({
+  args: { itemId: v.id("bulkUploadItems") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.itemId);
+  },
+});
+
+// Mutation: Set deep extraction status on an item
+export const setDeepExtractionStatus = mutation({
+  args: {
+    itemId: v.id("bulkUploadItems"),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("complete"),
+      v.literal("error")
+    ),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.itemId, {
+      deepExtractionStatus: args.status,
       updatedAt: new Date().toISOString(),
     });
     return args.itemId;
