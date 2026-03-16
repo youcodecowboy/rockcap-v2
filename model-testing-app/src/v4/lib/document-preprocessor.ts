@@ -293,19 +293,25 @@ function preprocessSpreadsheet(extractedText?: string): DocumentContent {
 
 /**
  * Smart text truncation for large documents.
- * Strategy: Keep first ~3000 chars + last ~1000 chars to capture
- * document header/intro and conclusion/signatures.
+ * Strategy: Keep first 75% + last 25% to capture document header/intro
+ * and conclusion/signatures.
+ *
+ * Post-migration cap: 50K chars ≈ 12.5K tokens. With single-doc API calls
+ * (~45K total input tokens including cached system/references), this is well
+ * within Haiku 4.5's 200K context window. The cap is a safety valve for
+ * outlier documents (massive spreadsheet extractions) — most documents
+ * (even 20-30 page PDFs) will pass through untruncated.
  */
 function preprocessText(text: string, fileName: string): DocumentContent {
-  const MAX_TEXT_LENGTH = 4000;
+  const MAX_TEXT_LENGTH = 50_000;
 
   if (text.length <= MAX_TEXT_LENGTH) {
     return { type: 'text', text };
   }
 
   // Smart truncation: beginning + end
-  const headLength = Math.floor(MAX_TEXT_LENGTH * 0.75); // 3000 chars
-  const tailLength = MAX_TEXT_LENGTH - headLength;         // 1000 chars
+  const headLength = Math.floor(MAX_TEXT_LENGTH * 0.75); // 37500 chars
+  const tailLength = MAX_TEXT_LENGTH - headLength;         // 12500 chars
 
   const head = text.slice(0, headLength);
   const tail = text.slice(-tailLength);

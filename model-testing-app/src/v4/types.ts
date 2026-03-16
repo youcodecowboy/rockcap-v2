@@ -66,11 +66,11 @@ export interface BatchDocument {
   /** Convex storage ID */
   fileStorageId?: string;
   /**
-   * Pre-processed content for Claude (NOT the full document).
-   * For PDFs: first 2-3 pages + last page as images, OR extracted text summary.
+   * Pre-processed content for Claude (may be truncated for very large documents).
+   * For PDFs: raw PDF via Anthropic document support, OR extracted text.
    * For Excel: extracted sheet names + first 50 rows of key sheets.
    * For images: the image itself.
-   * For text: first ~4000 chars + filename.
+   * For text: up to ~50K chars (most docs pass through untruncated).
    */
   processedContent: DocumentContent;
   /** Hints from lightweight pre-processing (filename analysis, basic text scan) */
@@ -124,9 +124,9 @@ export const BATCH_LIMITS = {
   /** Max documents per single API call */
   MAX_DOCS_PER_CALL: 8,
   /** Max total tokens estimate per call (leave room for response) */
-  MAX_INPUT_TOKENS_PER_CALL: 80_000,
-  /** Approximate tokens per truncated document */
-  APPROX_TOKENS_PER_DOC: 3_000,
+  MAX_INPUT_TOKENS_PER_CALL: 128_000,
+  /** Approximate tokens per document (post-migration: up to ~12.5K for large docs) */
+  APPROX_TOKENS_PER_DOC: 5_000,
   /** Approximate tokens for reference library context */
   APPROX_TOKENS_FOR_REFERENCES: 5_000,
   /** Approximate tokens for system prompt + skill instructions */
@@ -137,8 +137,8 @@ export const BATCH_LIMITS = {
   BACKGROUND_THRESHOLD: 5,
   /** Intelligence extraction: max documents per call */
   INTEL_MAX_DOCS_PER_CALL: 5,
-  /** Intelligence extraction: max text chars per document (truncated for batching) */
-  INTEL_MAX_TEXT_PER_DOC: 8_000,
+  /** Intelligence extraction: max text chars per document (matches preprocessor cap) */
+  INTEL_MAX_TEXT_PER_DOC: 50_000,
   /** Intelligence extraction: max output tokens per call */
   INTEL_MAX_OUTPUT_TOKENS: 16_384,
 } as const;

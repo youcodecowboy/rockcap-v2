@@ -267,8 +267,8 @@ export function buildBatchUserMessage(
       "alternativeTypes": [{"fileType": "Appraisal", "category": "Appraisals", "confidence": 0.7}]
     },
     "summary": {
-      "executiveSummary": "...",
-      "documentPurpose": "...",
+      "executiveSummary": "Comprehensive summary covering the document's key findings, terms, conditions, and implications. For financial documents: include all material amounts, rates, and conditions. For legal documents: cover key obligations, covenants, and party responsibilities. For valuations: include methodology, assumptions, comparables, and conclusions. Aim for 3-5 sentences that capture the full substance — a reader should understand the document's material content without opening it.",
+      "documentPurpose": "Why this document exists and what role it serves in the transaction or project lifecycle",
       "keyEntities": {"people": [], "companies": [], "locations": [], "projects": []},
       "keyTerms": ["RICS", "market value"],
       "keyDates": ["2024-01-15"],
