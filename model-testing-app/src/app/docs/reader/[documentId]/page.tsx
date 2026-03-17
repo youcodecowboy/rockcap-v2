@@ -28,10 +28,12 @@ export default function DocumentReaderPage() {
     }
   }, [docId, markAsOpened]);
 
-  // Deterministic back navigation — go to client doc library if available, otherwise /docs
+  // Navigate back to the appropriate document library context
   const handleBack = () => {
-    if (document?.clientId) {
-      router.push(`/docs/client/${document.clientId}`);
+    if (document?.projectId && document?.clientId) {
+      router.push(`/clients/${document.clientId}/projects/${document.projectId}?tab=documents`);
+    } else if (document?.clientId) {
+      router.push(`/clients/${document.clientId}?tab=documents`);
     } else {
       router.push('/docs');
     }

@@ -27,6 +27,28 @@ import { cn } from '@/lib/utils';
 import DocumentNoteForm from './DocumentNoteForm';
 import DocumentNoteCard from './DocumentNoteCard';
 
+const CONFIDENCE_COLORS: Record<string, string> = {
+  high: 'bg-green-100 text-green-700 border-green-200',
+  medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  low: 'bg-red-100 text-red-700 border-red-200',
+};
+
+function getConfidenceLevel(confidence: number): string {
+  if (confidence >= 0.8) return 'high';
+  if (confidence >= 0.6) return 'medium';
+  return 'low';
+}
+
+const CATEGORY_ICONS: Record<string, string> = {
+  financials: 'text-green-600',
+  overview: 'text-blue-600',
+  timeline: 'text-amber-600',
+  parties: 'text-purple-600',
+  property: 'text-teal-600',
+  legal: 'text-red-600',
+  general: 'text-gray-600',
+};
+
 interface Document {
   _id: Id<"documents">;
   fileName: string;
@@ -60,6 +82,20 @@ export default function ReaderSidebar({ document, documentId }: ReaderSidebarPro
 
   // Query document notes
   const notes = useQuery(api.documentNotes.getByDocument, { documentId });
+
+  // Query intelligence items
+  const intelligenceItems = useQuery(api.documents.getDocumentIntelligence, { documentId });
+  const hasIntelligence = intelligenceItems && intelligenceItems.length > 0;
+
+  // Group intelligence items by category
+  const intelligenceByCategory = intelligenceItems
+    ? intelligenceItems.reduce((acc: Record<string, any[]>, item: any) => {
+        const cat = item.category || 'general';
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(item);
+        return acc;
+      }, {} as Record<string, any[]>)
+    : {};
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -224,58 +260,67 @@ export default function ReaderSidebar({ document, documentId }: ReaderSidebarPro
           </>
         )}
 
-        {/* Analyze Section */}
+        {/* Intelligence Section */}
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
             <Brain className="w-4 h-4" />
             Intelligence
-          </h3>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full text-xs"
-            disabled={analyzing}
-            onClick={async () => {
-              setAnalyzing(true);
-              setAnalyzeResult(null);
-              try {
-                const res = await fetch('/api/intelligence-extract', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    documentId,
-                    clientId: document.clientId,
-                    projectId: document.projectId,
-                  }),
-                });
-                if (!res.ok) throw new Error('Analysis failed');
-                setAnalyzeResult('success');
-              } catch {
-                setAnalyzeResult('error');
-              } finally {
-                setAnalyzing(false);
-              }
-            }}
-          >
-            {analyzing ? (
-              <>
-                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                Analyzing...
-              </>
-            ) : analyzeResult === 'success' ? (
-              <>
-                <CheckCircle2 className="w-3 h-3 mr-1 text-green-600" />
-                Analysis Complete
-              </>
-            ) : (
-              <>
-                <Brain className="w-3 h-3 mr-1" />
-                Analyze Document
-              </>
+            {hasIntelligence && (
+              <Badge variant="secondary" className="text-xs ml-auto">
+                {intelligenceItems.length}
+              </Badge>
             )}
-          </Button>
-          {analyzeResult === 'error' && (
-            <p className="text-xs text-red-500 mt-1">Analysis failed. Please try again.</p>
+          </h3>
+
+          {hasIntelligence ? (
+            <div className="space-y-3">
+              {Object.entries(intelligenceByCategory).map(([category, items]) => (
+                <div key={category} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Brain className={cn("w-3.5 h-3.5", CATEGORY_ICONS[category] || 'text-gray-500')} />
+                    <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+                      {category.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
+                    </span>
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                      {(items as any[]).length}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1 pl-5">
+                    {(items as any[]).map((item: any) => {
+                      const level = getConfidenceLevel(item.normalizationConfidence ?? item.confidence ?? 0);
+                      return (
+                        <div
+                          key={item._id}
+                          className="p-1.5 rounded bg-gray-50 border border-gray-100"
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] font-medium text-gray-700">
+                                {item.label || item.fieldPath}
+                              </div>
+                              <div className="text-xs text-gray-900 mt-0.5 break-words">
+                                {typeof item.value === 'object' ? JSON.stringify(item.value) : String(item.value)}
+                              </div>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={cn("text-[9px] px-1 py-0 flex-shrink-0", CONFIDENCE_COLORS[level])}
+                            >
+                              {Math.round((item.normalizationConfidence ?? item.confidence ?? 0) * 100)}%
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4">
+              <Brain className="w-6 h-6 text-gray-300 mx-auto mb-1.5" />
+              <p className="text-xs text-gray-400">No intelligence extracted yet</p>
+            </div>
           )}
         </div>
 
