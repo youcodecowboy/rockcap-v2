@@ -57,6 +57,20 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const BACKGROUND_THRESHOLD = 5; // Files > this threshold trigger background processing
 const ESTIMATED_SECONDS_PER_FILE = 20;
 
+/** Supported file extensions (lowercase, without dot) shared across all upload paths */
+const SUPPORTED_EXTENSIONS = new Set([
+  'pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls', 'xlsm', 'eml',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif',
+]);
+
+/**
+ * accept attribute for file inputs.
+ * Uses only file extensions (no MIME types) for consistent cross-platform
+ * behavior — Windows Chrome can grey-out valid files when MIME types are mixed
+ * with extensions in the accept string.
+ */
+const FILE_INPUT_ACCEPT = Array.from(SUPPORTED_EXTENSIONS).map(e => `.${e}`).join(',');
+
 /**
  * Recursively traverse a FileSystemEntry tree and collect all files.
  * Used for drag-and-drop folder support.
@@ -383,6 +397,14 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     const errors: string[] = [];
 
     for (const file of newFiles) {
+      // Validate extension — the accept attribute handles this in most
+      // browsers, but on Windows the OS file picker can let unsupported
+      // files through when MIME type mappings differ from Mac.
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (!ext || !SUPPORTED_EXTENSIONS.has(ext)) {
+        errors.push(`${file.name}: Unsupported file type`);
+        continue;
+      }
       if (file.size > MAX_FILE_SIZE) {
         errors.push(`${file.name}: File too large (max 100MB)`);
         continue;
@@ -471,7 +493,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
     // Filter to supported file types only
     const supportedFiles = allFiles.filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'xls', 'xlsm', 'eml', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'].includes(ext || '');
+      return ext ? SUPPORTED_EXTENSIONS.has(ext) : false;
     });
 
     if (supportedFiles.length === 0) {
@@ -1367,7 +1389,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 multiple
                 className="hidden"
                 onChange={handleFileInput}
-                accept=".pdf,.docx,.doc,.xls,.xlsx,.xlsm,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,application/vnd.ms-excel.sheet.macroEnabled.12"
+                accept={FILE_INPUT_ACCEPT}
                 disabled={isUploading}
               />
               {/* Folder input created dynamically on click — see openFolderPicker */}

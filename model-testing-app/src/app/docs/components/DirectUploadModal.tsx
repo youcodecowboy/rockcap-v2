@@ -536,7 +536,7 @@ export default function DirectUploadModal({
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
+                  accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.xlsm,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
                   onChange={handleFileSelect}
                   className="hidden"
                   disabled={isProcessing}
