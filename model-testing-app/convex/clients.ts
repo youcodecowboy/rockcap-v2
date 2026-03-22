@@ -748,3 +748,73 @@ export const recordAccess = mutation({
     });
   },
 });
+
+export const restore = mutation({
+  args: { id: v.id("clients") },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.id);
+    if (!client || !client.isDeleted) {
+      throw new Error("Client is not in trash");
+    }
+
+    // Restore the client
+    await ctx.db.patch(args.id, {
+      isDeleted: undefined,
+      deletedAt: undefined,
+      deletedBy: undefined,
+      deletedReason: undefined,
+    });
+
+    // Restore cascade-trashed projects
+    const allProjects = await ctx.db.query("projects").collect();
+    const cascadeProjects = allProjects.filter((p) =>
+      p.isDeleted &&
+      p.deletedReason === "parent_client_deleted" &&
+      p.clientRoles?.some((cr: any) => cr.clientId === args.id)
+    );
+
+    for (const project of cascadeProjects) {
+      await ctx.db.patch(project._id, {
+        isDeleted: undefined,
+        deletedAt: undefined,
+        deletedBy: undefined,
+        deletedReason: undefined,
+      });
+
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: project._id,
+      });
+    }
+
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "client",
+      contextId: args.id,
+    });
+  },
+});
+
+export const listDeleted = query({
+  args: {},
+  handler: async (ctx) => {
+    const deleted = await ctx.db
+      .query("clients")
+      .filter((q) => q.eq(q.field("isDeleted"), true))
+      .collect();
+
+    return deleted.sort((a, b) =>
+      (b.deletedAt || "").localeCompare(a.deletedAt || "")
+    );
+  },
+});
+
+export const deletedCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const deleted = await ctx.db
+      .query("clients")
+      .filter((q) => q.eq(q.field("isDeleted"), true))
+      .collect();
+    return deleted.length;
+  },
+});
