@@ -349,10 +349,22 @@ export const remove = mutation({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.id);
+
+    const identity = await ctx.auth.getUserIdentity();
+    let userId: Id<"users"> | undefined;
+    if (identity) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+        .first();
+      userId = user?._id;
+    }
+
     await ctx.db.patch(args.id, {
       isDeleted: true,
       deletedAt: new Date().toISOString(),
       deletedReason: "user_deleted",
+      deletedBy: userId,
     });
 
     // Invalidate context cache for this project
