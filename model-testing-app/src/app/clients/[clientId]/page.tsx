@@ -11,7 +11,6 @@ import {
   useProjectsByClient,
   useUpdateClient,
   useContactsByClient,
-  useDeleteClient,
 } from '@/lib/clientStorage';
 import { useDocumentsByClient } from '@/lib/documentStorage';
 import { Button } from '@/components/ui/button';
@@ -39,7 +38,6 @@ import {
   ChevronRight,
   Calendar,
   Archive,
-  Trash2,
   Plus,
   Mail,
   StickyNote,
@@ -85,7 +83,6 @@ function ClientProfileContent() {
   const initialTab = (searchParams.get('tab') as TabType) || 'overview';
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [flagModalOpen, setFlagModalOpen] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
@@ -101,7 +98,6 @@ function ClientProfileContent() {
 
   // Mutations
   const updateClientMutation = useUpdateClient();
-  const deleteClientMutation = useDeleteClient();
 
   // Computed values
   const activeProjects = projects.filter((p: any) => p.status === 'active');
@@ -142,18 +138,6 @@ function ClientProfileContent() {
     } catch (error) {
       console.error('Error archiving client:', error);
       alert('Failed to archive client. Please try again.');
-    }
-  };
-
-  const handleDeleteClient = async () => {
-    if (!client) return;
-    try {
-      await deleteClientMutation({ id: clientId });
-      setShowDeleteDialog(false);
-      router.push('/clients');
-    } catch (error) {
-      console.error('Error deleting client:', error);
-      alert('Failed to delete client. Please try again.');
     }
   };
 
@@ -297,15 +281,6 @@ function ClientProfileContent() {
             >
               <Archive className="w-3.5 h-3.5 mr-1" />
               Archive
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 text-xs px-2"
-              onClick={() => setShowDeleteDialog(true)}
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1" />
-              Delete
             </Button>
           </div>
         </div>
@@ -523,33 +498,13 @@ function ClientProfileContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Client?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the client and all associated data. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteClient}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Settings Panel */}
       <ClientSettingsPanel
         isOpen={showSettingsPanel}
         onClose={() => setShowSettingsPanel(false)}
         clientId={clientId}
         defaultTab={settingsDefaultTab}
+        onTrash={() => router.push('/clients')}
       />
 
       {/* Flag Modal */}

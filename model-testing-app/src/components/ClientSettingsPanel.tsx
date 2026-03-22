@@ -2,8 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { Settings, User, FileText, Database, FolderOpen } from 'lucide-react';
+import { useMutation } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { useUpdateClient, useClient } from '@/lib/clientStorage';
+import { useUpdateClient, useClient, useProjectsByClient } from '@/lib/clientStorage';
+import { toast } from 'sonner';
+import DangerZone from './DangerZone';
 import {
   Sheet,
   SheetContent,
@@ -25,6 +29,7 @@ interface ClientSettingsPanelProps {
   onClose: () => void;
   clientId: Id<"clients">;
   defaultTab?: 'general' | 'naming' | 'fields' | 'folders';
+  onTrash?: () => void;
 }
 
 export default function ClientSettingsPanel({
@@ -32,11 +37,17 @@ export default function ClientSettingsPanel({
   onClose,
   clientId,
   defaultTab = 'general',
+  onTrash,
 }: ClientSettingsPanelProps) {
   const client = useClient(clientId);
   const updateClient = useUpdateClient();
+  const projects = useProjectsByClient(clientId) || [];
+  const deleteClientMutation = useMutation(api.clients.remove);
+  const restoreClientMutation = useMutation(api.clients.restore);
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [isSaving, setIsSaving] = useState(false);
+
+  const activeProjectCount = projects.filter((p: any) => p.status === 'active').length;
 
   // General settings form state
   const [formData, setFormData] = useState({
@@ -306,6 +317,27 @@ export default function ClientSettingsPanel({
                 {isSaving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
+
+            <DangerZone
+              entityType="client"
+              entityName={client?.name || formData.name || 'this client'}
+              cascadeCount={activeProjectCount}
+              onConfirmTrash={async () => {
+                await deleteClientMutation({ id: clientId });
+                toast(`${client?.name || 'Client'} moved to trash`, {
+                  duration: 8000,
+                  action: {
+                    label: 'Undo',
+                    onClick: () => {
+                      restoreClientMutation({ id: clientId });
+                      toast.success(`${client?.name || 'Client'} restored`);
+                    },
+                  },
+                });
+                onClose();
+                onTrash?.();
+              }}
+            />
           </TabsContent>
 
           {/* Document Naming Tab */}

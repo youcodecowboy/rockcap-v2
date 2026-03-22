@@ -27,6 +27,8 @@ import {
 import DocumentNamingSettings from '@/components/settings/DocumentNamingSettings';
 import CanonicalFieldPreferences from '@/components/settings/CanonicalFieldPreferences';
 import FolderManagement from '@/components/settings/FolderManagement';
+import DangerZone from './DangerZone';
+import { toast } from 'sonner';
 
 interface ProjectSettingsPanelProps {
   isOpen: boolean;
@@ -34,6 +36,7 @@ interface ProjectSettingsPanelProps {
   projectId: Id<"projects">;
   clientId: Id<"clients">;
   defaultTab?: 'general' | 'naming' | 'fields' | 'folders';
+  onTrash?: () => void;
 }
 
 export default function ProjectSettingsPanel({
@@ -42,9 +45,12 @@ export default function ProjectSettingsPanel({
   projectId,
   clientId,
   defaultTab = 'general',
+  onTrash,
 }: ProjectSettingsPanelProps) {
   const project = useQuery(api.projects.get, { id: projectId });
   const updateProject = useMutation(api.projects.update);
+  const deleteProjectMutation = useMutation(api.projects.remove);
+  const restoreProjectMutation = useMutation(api.projects.restore);
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -412,6 +418,26 @@ export default function ProjectSettingsPanel({
                 {isSaving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
+
+            <DangerZone
+              entityType="project"
+              entityName={project?.name || formData.name || 'this project'}
+              onConfirmTrash={async () => {
+                await deleteProjectMutation({ id: projectId });
+                toast(`${project?.name || 'Project'} moved to trash`, {
+                  duration: 8000,
+                  action: {
+                    label: 'Undo',
+                    onClick: () => {
+                      restoreProjectMutation({ id: projectId });
+                      toast.success(`${project?.name || 'Project'} restored`);
+                    },
+                  },
+                });
+                onClose();
+                onTrash?.();
+              }}
+            />
           </TabsContent>
 
           {/* Document Naming Tab */}

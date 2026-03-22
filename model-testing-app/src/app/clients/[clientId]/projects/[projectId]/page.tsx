@@ -27,7 +27,6 @@ import {
   Building2,
   Calendar,
   Archive,
-  Trash2,
   StickyNote,
   Database,
   LayoutGrid,
@@ -66,7 +65,6 @@ function ProjectDetailContent() {
   const initialTab = (searchParams.get('tab') as TabType) || 'overview';
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
   const [flagModalOpen, setFlagModalOpen] = useState(false);
@@ -86,7 +84,6 @@ function ProjectDetailContent() {
 
   // Mutations
   const updateProject = useMutation(api.projects.update);
-  const deleteProject = useMutation(api.projects.remove);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab as TabType);
@@ -106,18 +103,6 @@ function ProjectDetailContent() {
     } catch (error) {
       console.error('Error archiving project:', error);
       alert('Failed to archive project. Please try again.');
-    }
-  };
-
-  const handleDeleteProject = async () => {
-    if (!project) return;
-    try {
-      await deleteProject({ id: projectId });
-      setShowDeleteDialog(false);
-      router.push(`/clients/${clientId}?tab=projects`);
-    } catch (error) {
-      console.error('Error deleting project:', error);
-      alert('Failed to delete project. Please try again.');
     }
   };
 
@@ -257,15 +242,6 @@ function ProjectDetailContent() {
             >
               <Archive className="w-3.5 h-3.5 mr-1" />
               Archive
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 text-xs px-2"
-              onClick={() => setShowDeleteDialog(true)}
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1" />
-              Delete
             </Button>
           </div>
         </div>
@@ -451,27 +427,6 @@ function ProjectDetailContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Project?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the project and all associated data. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteProject}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Settings Panel */}
       <ProjectSettingsPanel
         isOpen={showSettingsPanel}
@@ -479,6 +434,7 @@ function ProjectDetailContent() {
         projectId={projectId}
         clientId={clientId}
         defaultTab={settingsDefaultTab}
+        onTrash={() => router.push(`/clients/${clientId}?tab=projects`)}
       />
 
       {/* Flag Modal */}
