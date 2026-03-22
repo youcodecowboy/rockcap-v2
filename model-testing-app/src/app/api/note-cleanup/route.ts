@@ -30,18 +30,9 @@ What you MUST NOT do:
 - Add new information or commentary
 - Change the tone or formality level
 
-FORMAT RULES:
-- Return clean HTML suitable for a rich text editor
-- Use <ul><li> for bullet lists (if the user wrote items one per line, wrap them in <ul><li>Item</li></ul>)
-- Use <ol><li> for numbered lists
-- Use <h2> for section headings (if the user used # or wrote a heading-like line)
-- Use <strong> for bold/emphasis on key terms like dates, names, important labels
-- Use <p> for regular paragraphs
-- Use <br> within a paragraph only if needed
-- Do NOT use markdown syntax — only HTML tags
-- Keep paragraph breaks between separate topics
-
-Return only the cleaned HTML. No explanations. No wrapping <html> or <body> tags. The output must contain ALL the same information as the input.`;
+Return only the cleaned plain text. No HTML tags. No markdown formatting. No explanations. No code fences.
+If the input contains "---BLOCK---" separators, clean each block independently and preserve the separators in your output.
+The output must contain ALL the same information as the input.`;
 
 export async function POST(request: NextRequest) {
   try {

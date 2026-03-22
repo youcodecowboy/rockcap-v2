@@ -524,35 +524,51 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
   const handleCleanupFullNote = useCallback(async () => {
     if (!editor) return;
 
-    // Extract text with line breaks preserved (not textContent which flattens)
-    const { doc } = editor.state;
-    const lines: string[] = [];
-    doc.descendants((node) => {
-      if (node.isTextblock) {
-        lines.push(node.textContent);
-      } else if (node.type.name === 'listItem' || node.type.name === 'taskItem') {
-        lines.push(`- ${node.textContent}`);
+    // Process each text block individually — safer than replacing entire document.
+    // This preserves the existing TipTap structure (headings, lists, etc.)
+    // and only cleans up the text content within each block.
+    const { doc, tr } = editor.state;
+    const originalContent = editor.getJSON();
+    const textBlocks: { from: number; to: number; text: string }[] = [];
+
+    doc.descendants((node, pos) => {
+      if (node.isTextblock && node.textContent.trim().length >= 5) {
+        textBlocks.push({
+          from: pos + 1, // +1 to get inside the node
+          to: pos + 1 + node.content.size,
+          text: node.textContent,
+        });
       }
     });
-    const fullText = lines.join('\n');
-    if (fullText.trim().length < 5) return;
+
+    if (textBlocks.length === 0) return;
 
     setIsCleaningFullNote(true);
     try {
+      // Send all text blocks in one request
+      const allText = textBlocks.map(b => b.text).join('\n---BLOCK---\n');
       const res = await fetch('/api/note-cleanup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: fullText, mode: 'full' }),
+        body: JSON.stringify({ text: allText, mode: 'full' }),
       });
       if (!res.ok) throw new Error('Cleanup failed');
       const { cleaned } = await res.json();
 
-      // Store original for undo (full TipTap JSON)
-      const originalContent = editor.getJSON();
+      // Split response back into blocks and apply in reverse order
+      // (reverse so position offsets don't shift as we edit)
+      const cleanedBlocks = cleaned.split('\n---BLOCK---\n');
 
-      // AI returns HTML directly — TipTap's setContent parses HTML natively
-      // using its registered parseHTML rules (ul→bulletList, li→listItem, etc.)
-      editor.commands.setContent(cleaned);
+      editor.chain().focus().command(({ tr: transaction }) => {
+        for (let i = textBlocks.length - 1; i >= 0; i--) {
+          const block = textBlocks[i];
+          const cleanedText = (cleanedBlocks[i] || block.text).trim();
+          if (cleanedText !== block.text) {
+            transaction.insertText(cleanedText, block.from, block.to);
+          }
+        }
+        return true;
+      }).run();
 
       const { showUndoToast } = await import('@/components/UndoToast');
       showUndoToast({
