@@ -1031,6 +1031,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
       'This is a Certificate of Incorporation, NOT a company search or Companies House extract — the certificate is the original document issued by the Registrar at the time of incorporation, whereas a company search is a subsequent information report pulled from the register showing current directors, filings, etc.',
       'This is a Certificate of Incorporation, NOT an annual confirmation statement (CS01) — the confirmation statement is a periodic filing to Companies House updating company details, not the original registration certificate.',
       'This is a Certificate of Incorporation, NOT articles of association or a memorandum of association — those are the company\'s constitutional documents governing its rules and objectives, not the registration certificate.',
+      'Documents describing property specifications, unit layouts, construction programmes, or development schemes are NOT KYC documents even if they contain company names, registration numbers, or corporate letterhead. These are Project Documents or Professional Reports.',
     ],
     terminology: {
       'Companies House': 'The UK government registrar of companies, responsible for incorporating and dissolving limited companies and maintaining the public register',

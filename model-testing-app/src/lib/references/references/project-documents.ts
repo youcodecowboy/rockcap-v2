@@ -65,6 +65,7 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
       'This is an Accommodation Schedule, NOT a Development Appraisal — while both reference GDV, the accommodation schedule is a unit-level table of sizes and prices, not a full cost-and-revenue financial model.',
       'This is an Accommodation Schedule, NOT a Sales/Reservation Schedule — a sales schedule tracks buyer reservations, exchange dates, and completion status, whereas the accommodation schedule defines the planned unit mix and target pricing.',
       'This is an Accommodation Schedule, NOT a Specification — the schedule describes what units exist and their sizes/values, not the materials or finishes used in construction.',
+      'This is an Accommodation Schedule, NOT a KYC document — it describes property units, sizes, and values within a development scheme. It is not an identity, address, or corporate verification document, even if it contains company names or registration numbers.',
     ],
 
     terminology: {
@@ -233,6 +234,7 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
       'This is a Build Programme, NOT an Interim Monitoring Report — the programme is the planned timeline, whereas a monitoring report assesses actual progress against that plan.',
       'This is a Build Programme, NOT a Specification — the programme defines when activities happen, not how they are carried out or what materials are used.',
       'This is a Build Programme, NOT a Tender — the tender is a contractor\'s bid with pricing and methodology, whereas the programme is purely the time schedule for works.',
+      'This is a Build Programme, NOT a KYC document — it describes construction timelines, task durations, and project phasing. It is not an identity or corporate verification document, even if it references a company or contractor.',
     ],
 
     terminology: {
