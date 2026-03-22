@@ -818,3 +818,100 @@ export const deletedCount = query({
     return deleted.length;
   },
 });
+
+export const permanentDelete = mutation({
+  args: { id: v.id("clients") },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.id);
+    if (!client || !client.isDeleted) {
+      throw new Error("Can only permanently delete clients that are in trash");
+    }
+
+    // Find all projects linked to this client
+    const allProjects = await ctx.db.query("projects").collect();
+    const linkedProjects = allProjects.filter((p) =>
+      p.clientRoles?.some((cr: any) => cr.clientId === args.id)
+    );
+
+    for (const project of linkedProjects) {
+      const otherClients = (project.clientRoles || []).filter(
+        (cr: any) => cr.clientId !== args.id
+      );
+
+      if (otherClients.length === 0) {
+        // Sole owner — hard-delete project and all related data
+        await deleteProjectRelatedData(ctx, project._id);
+        await ctx.db.delete(project._id);
+      } else {
+        // Shared project — only remove this client's role
+        await ctx.db.patch(project._id, {
+          clientRoles: otherClients,
+        });
+      }
+    }
+
+    // Delete client-level related data
+    await deleteByField(ctx, "contacts", "clientId", args.id);
+    await deleteByField(ctx, "documents", "clientId", args.id);
+    await deleteByField(ctx, "tasks", "clientId", args.id);
+    await deleteByField(ctx, "flags", "clientId", args.id);
+    await deleteByField(ctx, "notes", "clientId", args.id);
+    await deleteByField(ctx, "meetings", "clientId", args.id);
+    await deleteByField(ctx, "chatSessions", "clientId", args.id);
+    await deleteByField(ctx, "enrichmentSuggestions", "clientId", args.id);
+    await deleteByField(ctx, "reminders", "clientId", args.id);
+    await deleteByField(ctx, "events", "clientId", args.id);
+
+    // Clean up flag thread entries for client-level flags
+    const clientFlags = await ctx.db.query("flags").collect();
+    const matchingFlags = clientFlags.filter((f: any) => f.clientId === args.id);
+    for (const flag of matchingFlags) {
+      await deleteByField(ctx, "flagThreadEntries", "flagId", flag._id);
+    }
+
+    // Delete the client
+    await ctx.db.delete(args.id);
+  },
+});
+
+// Helper: delete all records in a table matching a field value
+async function deleteByField(
+  ctx: any,
+  table: string,
+  field: string,
+  value: any
+) {
+  const records = await ctx.db.query(table).collect();
+  const matches = records.filter((r: any) => r[field] === value);
+  for (const record of matches) {
+    await ctx.db.delete(record._id);
+  }
+}
+
+// Helper: delete all data related to a project
+async function deleteProjectRelatedData(ctx: any, projectId: Id<"projects">) {
+  const tables = [
+    "documents",
+    "tasks",
+    "flags",
+    "notes",
+    "meetings",
+    "projectFolders",
+    "scenarios",
+    "chatSessions",
+    "knowledgeBankEntries",
+    "knowledgeItems",
+    "codifiedExtractions",
+  ];
+
+  for (const table of tables) {
+    await deleteByField(ctx, table, "projectId", projectId);
+  }
+
+  // Also clean up flag thread entries for deleted flags
+  const flags = await ctx.db.query("flags").collect();
+  const projectFlags = flags.filter((f: any) => f.projectId === projectId);
+  for (const flag of projectFlags) {
+    await deleteByField(ctx, "flagThreadEntries", "flagId", flag._id);
+  }
+}
