@@ -201,7 +201,7 @@ export default function FolderBrowser({
   const deleteClientFolder = useMutation(api.clients.deleteCustomFolder);
   const addProjectFolder = useMutation(api.projects.addCustomProjectFolder);
   const deleteProjectFolder = useMutation(api.projects.deleteCustomProjectFolder);
-  const moveDocument = useMutation(api.documents.moveDocument);
+
   const bulkMove = useMutation(api.documents.bulkMove);
 
   // Drop target state
@@ -240,24 +240,16 @@ export default function FolderBrowser({
     const count = docIds.length;
 
     try {
-      if (count === 1) {
-        await moveDocument({
-          documentId: docIds[0] as Id<"documents">,
-          targetClientId: targetFolder.clientId as Id<"clients">,
-          targetProjectId: targetFolder.projectId as Id<"projects"> | undefined,
-          targetProjectName: undefined,
-          isBaseDocument: targetFolder.type === "client" && !targetFolder.projectId,
-        });
-      } else {
-        await bulkMove({
-          documentIds: docIds as Id<"documents">[],
-          targetScope: "client",
-          targetClientId: targetFolder.clientId as Id<"clients">,
-          targetProjectId: targetFolder.projectId as Id<"projects"> | undefined,
-          targetFolderId: targetFolder.folderId,
-          targetFolderType: targetFolder.type,
-        });
-      }
+      // Always use bulkMove — it correctly sets folderId/folderType.
+      // moveDocument only updates projectId/isBaseDocument, not the folder.
+      await bulkMove({
+        documentIds: docIds as Id<"documents">[],
+        targetScope: "client",
+        targetClientId: targetFolder.clientId as Id<"clients">,
+        targetProjectId: targetFolder.projectId as Id<"projects"> | undefined,
+        targetFolderId: targetFolder.folderId,
+        targetFolderType: targetFolder.type,
+      });
 
       showUndoToast({
         message: `Moved ${count} file${count !== 1 ? "s" : ""} to ${targetFolder.folderName}`,
@@ -268,7 +260,7 @@ export default function FolderBrowser({
     } catch (error) {
       toast.error(`Failed to move file${count !== 1 ? "s" : ""}`);
     }
-  }, [moveDocument, bulkMove]);
+  }, [bulkMove]);
 
   // Build client folders with counts
   const clientFoldersWithCounts = useMemo(() => {
