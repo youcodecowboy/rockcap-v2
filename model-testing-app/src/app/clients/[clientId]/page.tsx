@@ -53,6 +53,7 @@ import {
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
+import RestorationBanner from '@/components/RestorationBanner';
 
 // Import tab components
 import ClientDocumentLibrary from './components/ClientDocumentLibrary';
@@ -285,6 +286,17 @@ function ClientProfileContent() {
           </div>
         </div>
       </header>
+
+      {client.isDeleted && (
+        <RestorationBanner
+          entityType="client"
+          entityName={client.name}
+          entityId={clientId}
+          deletedAt={client.deletedAt}
+          onRestored={() => {}}
+          onPermanentlyDeleted={() => router.push('/clients')}
+        />
+      )}
 
       {/* Tabs at the top - like Document Queue */}
       <Tabs 

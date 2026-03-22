@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
+import RestorationBanner from '@/components/RestorationBanner';
 
 // Import project-specific components
 import ProjectOverviewTab from './components/ProjectOverviewTab';
@@ -246,6 +247,17 @@ function ProjectDetailContent() {
           </div>
         </div>
       </header>
+
+      {project.isDeleted && (
+        <RestorationBanner
+          entityType="project"
+          entityName={project.name}
+          entityId={projectId}
+          deletedAt={project.deletedAt}
+          onRestored={() => {}}
+          onPermanentlyDeleted={() => router.push(`/clients/${clientId}?tab=projects`)}
+        />
+      )}
 
       {/* Tabs at the top */}
       <Tabs 
