@@ -16,6 +16,8 @@ import {
   ChevronRight,
   FolderKanban,
   FileText,
+  Trash2,
+  ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -48,12 +50,18 @@ export default function ClientsSidebar({
 }: ClientsSidebarProps) {
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [showDeleted, setShowDeleted] = useState(false);
   const recordAccess = useMutation(api.clients.recordAccess);
 
   // Queries
   const clients = useQuery(api.clients.list, {});
   const documentCounts = useQuery(api.documents.getClientDocumentCounts);
   const projects = useQuery(api.projects.list, {});
+  const deletedClientsCount = useQuery(api.clients.deletedCount);
+  const deletedClients = useQuery(
+    api.clients.listDeleted,
+    showDeleted ? {} : "skip"
+  );
 
   // Build client list with document and project counts
   const clientsWithCounts = useMemo(() => {
@@ -119,6 +127,8 @@ export default function ClientsSidebar({
     });
   }, [clientsWithCounts, filterType, statusFilter, searchQuery]);
 
+  const displayClients = showDeleted ? (deletedClients || []) as Client[] : filteredClients;
+
   const getTypeIcon = (type?: string) => {
     if (type?.toLowerCase() === 'lender') {
       return <Building2 className="w-4 h-4 text-blue-500" />;
@@ -142,7 +152,7 @@ export default function ClientsSidebar({
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <h2 className="text-lg font-semibold text-gray-900">Clients</h2>
-        <p className="text-xs text-gray-500 mt-0.5">{filteredClients.length} clients</p>
+        <p className="text-xs text-gray-500 mt-0.5">{displayClients.length} {showDeleted ? 'deleted' : ''} clients</p>
       </div>
 
       {/* Search */}
@@ -200,27 +210,52 @@ export default function ClientsSidebar({
 
       {/* Client List - Virtualized for performance */}
       <ClientList
-        clients={filteredClients}
+        clients={displayClients}
         selectedClientId={selectedClientId}
         onClientSelect={onClientSelect}
         recordAccess={recordAccess}
         searchQuery={searchQuery}
         getTypeIcon={getTypeIcon}
         getTypeBadge={getTypeBadge}
+        showDeleted={showDeleted}
       />
 
+      {/* Show deleted toggle */}
+      {(deletedClientsCount ?? 0) > 0 && (
+        <div className="px-3 py-2 border-t border-gray-200">
+          <button
+            onClick={() => setShowDeleted(!showDeleted)}
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors w-full"
+          >
+            {showDeleted ? (
+              <>
+                <ArrowLeft className="w-3 h-3" />
+                Back to active clients
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-3 h-3" />
+                Show deleted ({deletedClientsCount})
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Add Client Button */}
-      <div className="p-3 border-t border-gray-200">
-        <Button 
-          variant="default" 
-          size="sm" 
-          className="w-full gap-2 bg-black hover:bg-gray-800"
-          onClick={onAddClient}
-        >
-          <Plus className="w-4 h-4" />
-          New Client
-        </Button>
-      </div>
+      {!showDeleted && (
+        <div className="p-3 border-t border-gray-200">
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full gap-2 bg-black hover:bg-gray-800"
+            onClick={onAddClient}
+          >
+            <Plus className="w-4 h-4" />
+            New Client
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -234,6 +269,7 @@ interface ClientListProps {
   searchQuery: string;
   getTypeIcon: (type?: string) => React.ReactNode;
   getTypeBadge: (type?: string) => React.ReactNode;
+  showDeleted?: boolean;
 }
 
 function ClientList({
@@ -244,6 +280,7 @@ function ClientList({
   searchQuery,
   getTypeIcon,
   getTypeBadge,
+  showDeleted,
 }: ClientListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -302,7 +339,8 @@ function ClientList({
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left",
                   isSelected
                     ? "bg-blue-600 text-white shadow-md"
-                    : "hover:bg-white hover:shadow-sm text-gray-700 border border-transparent hover:border-gray-200"
+                    : "hover:bg-white hover:shadow-sm text-gray-700 border border-transparent hover:border-gray-200",
+                  showDeleted && "opacity-60"
                 )}
               >
                 <div className={cn(
