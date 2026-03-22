@@ -29,6 +29,7 @@ import {
   ChevronRight,
   MessageSquareText,
   Flag,
+  Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -48,6 +49,8 @@ export interface Document {
   uploadedAt: string;
   clientName?: string;
   projectName?: string;
+  displayName?: string;
+  customFieldValues?: Record<string, string>;
   hasNotes?: boolean;
   noteCount?: number;
   version?: string;
@@ -64,6 +67,7 @@ interface FileCardProps {
   onView: () => void;
   onDownload: () => void;
   onMove?: () => void;
+  onRename?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
   onDragStart?: (e: React.DragEvent) => void;
@@ -86,6 +90,7 @@ export default function FileCard({
   onView,
   onDownload,
   onMove,
+  onRename,
   onDuplicate,
   onDelete,
   onDragStart,
@@ -177,6 +182,12 @@ export default function FileCard({
         <Eye className="w-4 h-4 mr-2" />
         View Details
       </DropdownMenuItem>
+      {onRename && (
+        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onRename)}>
+          <Pencil className="w-4 h-4 mr-2" />
+          Rename
+        </DropdownMenuItem>
+      )}
       {onOpenReader && (
         <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onOpenReader)}>
           <BookOpen className="w-4 h-4 mr-2" />
@@ -238,7 +249,7 @@ export default function FileCard({
       onClose={() => setFlagModalOpen(false)}
       entityType="document"
       entityId={document._id}
-      entityName={document.documentCode || document.fileName}
+      entityName={document.displayName || document.documentCode || document.fileName}
       entityContext={[document.clientName, document.projectName].filter(Boolean).join(' / ') || undefined}
     />
   );
@@ -290,7 +301,7 @@ export default function FileCard({
         <div className="flex-1 min-w-0 pl-2 pr-4">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[13px] font-medium text-gray-900 truncate">
-              {document.documentCode || document.fileName}
+              {document.displayName || document.documentCode || document.fileName}
             </span>
             {document.version && (
               <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">
@@ -400,7 +411,7 @@ export default function FileCard({
       {/* Document Name */}
       <div className="mb-2">
         <div className="flex items-center gap-1 font-medium text-gray-900 text-sm">
-          <span className="truncate">{document.documentCode || document.fileName}</span>
+          <span className="truncate">{document.displayName || document.documentCode || document.fileName}</span>
           <FlagIndicator entityType="document" entityId={document._id} />
         </div>
         {document.documentCode && (
