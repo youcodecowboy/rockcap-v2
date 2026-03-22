@@ -126,18 +126,28 @@ export default function EditableClientTypeBadge({
       >
         <SelectTrigger
           className={cn(
-            "h-auto border rounded-md cursor-pointer hover:opacity-80 transition-opacity shadow-none",
-            compact ? "py-0 px-1.5" : "py-0.5 px-2",
-            config.className,
-            "data-[state=open]:ring-2 data-[state=open]:ring-blue-500 data-[state=open]:ring-offset-1",
-            "focus:ring-0 focus-visible:ring-0",
+            "h-auto cursor-pointer transition-all shadow-none",
             "[&>svg]:hidden",
+            "focus:ring-0 focus-visible:ring-0",
+            compact
+              ? "py-0 px-1 border-transparent bg-transparent hover:border-gray-200 rounded text-[9px]"
+              : "py-0.5 px-2 border rounded-md hover:opacity-80",
+            compact
+              ? "text-gray-500 hover:text-gray-700"
+              : config.className,
+            !compact && "data-[state=open]:ring-2 data-[state=open]:ring-blue-500 data-[state=open]:ring-offset-1",
             className
           )}
         >
-          <div className="flex items-center gap-1">
-            <span className={cn("font-medium", compact ? "text-[9px]" : "text-xs")}>{config.label}</span>
-            <ChevronDown className={cn("opacity-60", compact ? "w-2.5 h-2.5" : "w-3 h-3")} />
+          <div className="flex items-center gap-0.5">
+            {compact ? (
+              <span className="font-medium text-[9px] leading-tight">{config.label}</span>
+            ) : (
+              <>
+                <span className="font-medium text-xs">{config.label}</span>
+                <ChevronDown className="w-3 h-3 opacity-60" />
+              </>
+            )}
           </div>
         </SelectTrigger>
         <SelectContent>
