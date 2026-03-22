@@ -53,6 +53,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThreadPanel } from '@/components/threads';
+import DocumentNotes from '@/components/DocumentNotes';
 
 interface DocumentAnalysis {
   documentDescription: string;
@@ -415,7 +416,7 @@ export default function FileDetailPanel({
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-[1080px] sm:max-w-[1080px] p-0 flex flex-col">
+      <SheetContent className="w-[1460px] sm:max-w-[1460px] p-0 flex flex-col">
         <SheetHeader className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center justify-between">
             <SheetTitle className="text-xl font-semibold truncate pr-4">
@@ -432,7 +433,7 @@ export default function FileDetailPanel({
               {/* Tab Header */}
               <div className="px-4 pt-4 pb-2 border-b border-gray-100 flex-shrink-0">
                 <div className="flex items-center justify-between mb-3">
-                  <TabsList className="grid grid-cols-5 h-auto p-1">
+                  <TabsList className="grid grid-cols-6 h-auto p-1">
                     <TabsTrigger value="details" className="text-xs px-2 py-1.5">
                       Details
                     </TabsTrigger>
@@ -440,10 +441,13 @@ export default function FileDetailPanel({
                       Summary
                     </TabsTrigger>
                     <TabsTrigger value="intelligence" className="text-xs px-2 py-1.5">
-                      Intelligence
+                      Intel
                     </TabsTrigger>
                     <TabsTrigger value="checklist" className="text-xs px-2 py-1.5">
                       Checklist
+                    </TabsTrigger>
+                    <TabsTrigger value="notes" className="text-xs px-2 py-1.5">
+                      Notes
                     </TabsTrigger>
                     <TabsTrigger value="threads" className="text-xs px-2 py-1.5 relative">
                       Threads
@@ -875,6 +879,15 @@ export default function FileDetailPanel({
                       )}
                     </>
                   )}
+                </TabsContent>
+
+                {/* Notes Tab */}
+                <TabsContent value="notes" className="mt-0 p-5 flex-1 data-[state=inactive]:hidden">
+                  <DocumentNotes
+                    documentId={document._id}
+                    clientId={document.clientId}
+                    projectId={document.projectId}
+                  />
                 </TabsContent>
 
                 {/* Threads Tab */}
