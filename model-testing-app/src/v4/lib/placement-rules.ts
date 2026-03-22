@@ -70,10 +70,12 @@ const CATEGORY_PLACEMENT: Record<string, { folderKey: string; targetLevel: 'clie
   'Legal Documents':      { folderKey: 'terms_comparison', targetLevel: 'project' },
   'Loan Terms':           { folderKey: 'terms_comparison', targetLevel: 'project' },
   'Inspections':          { folderKey: 'post_completion', targetLevel: 'project' },
-  'Professional Reports': { folderKey: 'appraisals', targetLevel: 'project' },
-  'Plans':                { folderKey: 'appraisals', targetLevel: 'project' },
+  'Professional Reports': { folderKey: 'background', targetLevel: 'project' },
+  'Plans':                { folderKey: 'background', targetLevel: 'project' },
   'Insurance':            { folderKey: 'post_completion', targetLevel: 'project' },
-  'Photographs':          { folderKey: 'appraisals', targetLevel: 'project' },
+  'Photographs':          { folderKey: 'background', targetLevel: 'project' },
+  'Project Documents':    { folderKey: 'background', targetLevel: 'project' },
+  'Warranties':           { folderKey: 'background', targetLevel: 'project' },
 
   // Client-level categories
   'KYC':                  { folderKey: 'kyc', targetLevel: 'client' },
@@ -118,6 +120,10 @@ const FILE_TYPE_OVERRIDES: Record<string, { folderKey: string; targetLevel: 'cli
 
   // Invoices go to operational model if project-level
   'Invoice':                   { folderKey: 'operational_model', targetLevel: 'project' },
+
+  // Project Documents — safety-net overrides (these should never land in appraisals or kyc)
+  'Accommodation Schedule':    { folderKey: 'background', targetLevel: 'project' },
+  'Build Programme':           { folderKey: 'background', targetLevel: 'project' },
 };
 
 // =============================================================================
