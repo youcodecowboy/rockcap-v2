@@ -225,6 +225,9 @@ export default defineSchema({
     uploaderInitials: v.optional(v.string()), // e.g., "JS", "AB"
     previousVersionId: v.optional(v.id("documents")), // Link to previous version
     versionNote: v.optional(v.string()), // Note explaining change from previous version
+    // Display & naming
+    displayName: v.optional(v.string()),
+    customFieldValues: v.optional(v.record(v.string(), v.string())),
     // Extracted data (stored as JSON)
     extractedData: v.optional(v.any()),
     // Pre-extracted intelligence fields from V4 pipeline Stage 5.5
