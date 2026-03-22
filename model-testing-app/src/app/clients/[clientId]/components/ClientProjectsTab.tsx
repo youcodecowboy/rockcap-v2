@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ import {
   Briefcase,
   FileText,
   Building2,
+  Trash2,
+  ArrowLeft,
 } from 'lucide-react';
 import { useDocumentsByProject } from '@/lib/documentStorage';
 
@@ -46,8 +48,14 @@ export default function ClientProjectsTab({
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectShortcode, setNewProjectShortcode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const createProject = useMutation(api.projects.create);
+  const deletedProjectsCount = useQuery(api.projects.deletedCountByClient, { clientId });
+  const deletedProjects = useQuery(
+    api.projects.listDeletedByClient,
+    showDeleted ? { clientId } : "skip"
+  );
 
   // Filter projects
   const filteredProjects = projects.filter((project: any) => {
@@ -106,12 +114,12 @@ export default function ClientProjectsTab({
     }
   };
 
-  const ProjectCard = ({ project }: { project: any }) => {
+  const ProjectCard = ({ project, isDeleted }: { project: any; isDeleted?: boolean }) => {
     const documents = useDocumentsByProject(project._id) || [];
-    
+
     return (
-      <Card 
-        className="hover:shadow-md transition-shadow cursor-pointer"
+      <Card
+        className={`hover:shadow-md transition-shadow cursor-pointer ${isDeleted ? 'opacity-60' : ''}`}
         onClick={() => router.push(`/clients/${clientId}/projects/${project._id}`)}
       >
         <CardContent className="p-4">
@@ -177,7 +185,27 @@ export default function ClientProjectsTab({
       </div>
 
       {/* Projects */}
-      {filteredProjects.length === 0 ? (
+      {showDeleted ? (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              Deleted Projects ({deletedProjects?.length ?? 0})
+            </h3>
+            {deletedProjects && deletedProjects.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {deletedProjects.map((project: any) => (
+                  <ProjectCard key={project._id} project={project} isDeleted />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                <Trash2 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No deleted projects</h3>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : filteredProjects.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
           <FolderKanban className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -224,6 +252,28 @@ export default function ClientProjectsTab({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Show Deleted Toggle */}
+      {(deletedProjectsCount ?? 0) > 0 && (
+        <div className="mt-4">
+          <button
+            onClick={() => setShowDeleted(!showDeleted)}
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            {showDeleted ? (
+              <>
+                <ArrowLeft className="w-3 h-3" />
+                Back to active projects
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-3 h-3" />
+                Show deleted ({deletedProjectsCount})
+              </>
+            )}
+          </button>
         </div>
       )}
 
