@@ -90,6 +90,7 @@ function ClientProfileContent() {
 
   // Convex hooks
   const client = useClient(clientId);
+  const allClients = useQuery(api.clients.list, {});
   const projects = useProjectsByClient(clientId) || [];
   const documents = useDocumentsByClient(clientId) || [];
   const contacts = useContactsByClient(clientId) || [];
@@ -102,6 +103,11 @@ function ClientProfileContent() {
 
   // Computed values
   const activeProjects = projects.filter((p: any) => p.status === 'active');
+  const customTypes = useMemo(() => {
+    const types = new Set<string>();
+    allClients?.forEach((c: any) => { if (c.type) types.add(c.type.toLowerCase()); });
+    return Array.from(types);
+  }, [allClients]);
   const communications = useMemo(() => {
     return documents.map(doc => ({
       id: doc._id as string,
@@ -240,6 +246,8 @@ function ClientProfileContent() {
               <EditableClientTypeBadge
                 type={client.type}
                 onTypeChange={handleTypeChange}
+                customTypes={customTypes}
+                onAddCustomType={() => {}}
               />
             </div>
           </div>

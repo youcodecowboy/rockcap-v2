@@ -37,6 +37,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { FolderSelection } from '@/types/folders';
+import EditableClientTypeBadge from '@/components/EditableClientTypeBadge';
 
 interface FolderBrowserProps {
   clientId: Id<"clients">;
@@ -45,6 +46,7 @@ interface FolderBrowserProps {
   selectedFolder: FolderSelection | null;
   onFolderSelect: (folder: FolderSelection | null) => void;
   projectFilter?: Id<"projects">;
+  onClientTypeChange?: (newType: string) => void;
 }
 
 interface FolderWithCount {
@@ -182,6 +184,7 @@ export default function FolderBrowser({
   clientType,
   selectedFolder,
   onFolderSelect,
+  onClientTypeChange,
 }: FolderBrowserProps) {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [expandedProjectFolders, setExpandedProjectFolders] = useState<Set<string>>(new Set());
@@ -655,7 +658,16 @@ export default function FolderBrowser({
             </Tooltip>
           </TooltipProvider>
         </div>
-        {clientType && (
+        {clientType && onClientTypeChange && (
+          <div className="mt-1">
+            <EditableClientTypeBadge
+              type={clientType}
+              onTypeChange={onClientTypeChange}
+              compact
+            />
+          </div>
+        )}
+        {clientType && !onClientTypeChange && (
           <Badge
             variant="outline"
             className={cn(

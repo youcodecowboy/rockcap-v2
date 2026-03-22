@@ -93,6 +93,7 @@ function DocsPageContent() {
 
   // Mutations
   const deleteDocument = useMutation(api.documents.remove);
+  const updateClient = useMutation(api.clients.update);
 
   // Handlers - Scope change
   const handleScopeChange = useCallback((scope: DocumentScope) => {
@@ -320,6 +321,7 @@ function DocsPageContent() {
             clientType={selectedClient.type}
             selectedFolder={selectedFolder}
             onFolderSelect={handleFolderSelect}
+            onClientTypeChange={(newType) => updateClient({ id: selectedClientId, type: newType })}
           />
         )}
 

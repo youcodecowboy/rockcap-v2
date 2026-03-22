@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useMutation } from 'convex/react';
+import { api } from '../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../convex/_generated/dataModel';
 import FolderBrowser from '@/app/docs/components/FolderBrowser';
 import FileList from '@/app/docs/components/FileList';
@@ -39,6 +41,7 @@ export default function ProjectDocumentsTab({
   clientName,
   clientType,
 }: ProjectDocumentsTabProps) {
+  const updateClient = useMutation(api.clients.update);
   const [selectedFolder, setSelectedFolder] = useState<FolderSelection | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(false);
@@ -68,6 +71,7 @@ export default function ProjectDocumentsTab({
         selectedFolder={selectedFolder}
         onFolderSelect={handleFolderSelect}
         projectFilter={projectId}
+        onClientTypeChange={(newType) => updateClient({ id: clientId, type: newType })}
       />
 
       {/* File List */}
