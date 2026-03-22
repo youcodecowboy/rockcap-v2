@@ -32,7 +32,7 @@ displayName: v.optional(v.string())
 Human-friendly name, freely editable. Falls back to `documentCode`, then `fileName` for display. This is what shows in the UI as the file's name.
 
 ```
-customFieldValues: v.optional(v.any())
+customFieldValues: v.optional(v.record(v.string(), v.string()))
 ```
 A `Record<string, string>` storing per-document values for custom naming tokens. Example:
 ```json
@@ -156,12 +156,16 @@ Key locations:
 
 ## Auto-Code Generation on Upload
 
-Extend `generateDocumentCode()` in `documentCodeUtils.ts`:
+Extend the document code generation functions:
 
-- Currently hardcoded as `{CLIENT}-{TYPE}-{PROJECT}-{DATE}`
-- Change to read the active naming pattern from project/client metadata
-- Accept a `namingConfig` parameter with the pattern, separator, and token values
-- For custom tokens with no value yet (new uploads), assemble what's available — leave gaps as empty and mark the document as needing naming fields
+**Note:** The codebase has two code generation paths:
+- `src/lib/documentCodeUtils.ts` — `generateDocumentCode()` used by settings preview and manual code assignment
+- `src/lib/documentNaming.ts` — `generateDocumentName()` used by the actual upload/filing pipeline in `bulkQueueProcessor.ts`
+
+**Both** need updating to accept a `namingConfig` parameter and assemble codes from the token-based pattern instead of hardcoded format. The `documentNaming.ts` function is the primary target since it handles the upload flow. The `documentCodeUtils.ts` function is used for preview and bulk-apply in settings.
+
+- Accept a `namingConfig` parameter with the pattern, separator, token values, and custom field values
+- For custom tokens with no value yet (new uploads), assemble what's available — omit tokens with no value and their separators
 - If all required tokens have values, assemble the complete code automatically
 
 A new utility `src/lib/namingConfig.ts` resolves the active naming config:
@@ -200,7 +204,8 @@ The naming config is resolved client-side from already-loaded project/client dat
 | Add `displayName`, `customFieldValues` to documents schema | `convex/schema.ts` |
 | Add `documents.rename` mutation | `convex/documents.ts` |
 | Add `displayName`, `customFieldValues` to `documents.update` | `convex/documents.ts` |
-| Extend `generateDocumentCode()` for pattern config | `src/lib/documentCodeUtils.ts` |
+| Extend code generation for pattern config | `src/lib/documentCodeUtils.ts` |
+| Extend code generation for upload pipeline | `src/lib/documentNaming.ts` |
 | New: naming config resolver utility | `src/lib/namingConfig.ts` |
 | New: naming pattern builder component | `src/components/settings/NamingPatternBuilder.tsx` |
 | Rewrite DocumentNamingSettings to use pattern builder | `src/components/settings/DocumentNamingSettings.tsx` |
@@ -211,6 +216,45 @@ The naming config is resolved client-side from already-loaded project/client dat
 | Display name fallback rendering | `src/app/docs/components/FileDetailPanel.tsx` |
 | Display name fallback rendering | `src/app/docs/reader/[documentId]/page.tsx` |
 | Update download filename | `src/app/api/convex-file/route.ts` |
+
+## Edge Cases & Migration
+
+### Duplicate document codes
+
+The existing `updateDocumentCode` mutation enforces uniqueness by scanning documents. When the Rename dialog or auto-generation produces a duplicate code, auto-append a numeric suffix (`-1`, `-2`, etc.) — the same pattern already used by the bulk-apply code in `DocumentNamingSettings.tsx`. The Rename dialog should show the final code (with suffix if needed) before saving.
+
+### Migration: string-format pattern to array
+
+Existing clients/projects may have `metadata.documentNaming.pattern` stored as a string (e.g., `"{client}-{type}-{date}"`). The `namingConfig.ts` resolver must handle both formats:
+- If `pattern` is a `string[]` → use as-is (new format)
+- If `pattern` is a `string` → parse it into tokens by splitting on separator and mapping to uppercase token names
+- If `pattern` is `undefined` → fall back to default `["CLIENT", "TYPE", "PROJECT", "DATE"]`
+
+No Convex migration needed — the resolver handles both formats at read time. New saves always write the array format.
+
+### `inheritFromClient` storage location
+
+The `inheritFromClient` flag is stored inside `metadata.documentNaming.inheritFromClient: boolean` on the project. When `true` (or when `documentNaming` is absent from project metadata), the naming config resolver reads from the client's `metadata.documentNaming` instead. The project settings Naming tab reads this flag to show the "Inheriting from [Client Name]" banner.
+
+**Inheritance is atomic** — the entire `DocumentNamingConfig` (pattern, separator, customTokens) is inherited or overridden as a unit. A project that overrides gets its own complete copy of the config. This avoids complexity of mixing client-level tokens with project-level patterns. When a project clicks "Override," the UI pre-populates with the client's current config as a starting point.
+
+Keys in `customFieldValues` on documents correspond to the `id` field of `CustomToken` (e.g., `{ "loan_ref": "LN-2026-042" }` maps to a `CustomToken` with `id: "loan_ref"`).
+
+### Server-side naming config during upload
+
+The upload/filing pipeline in `bulkQueueProcessor.ts` calls `generateDocumentCode()`. This runs client-side in the browser. The processor already has access to the selected client and project objects (passed as context). The extended `generateDocumentCode()` accepts an optional `namingConfig` parameter. The caller reads `project.metadata?.documentNaming` (falling back to `client.metadata?.documentNaming`) and passes it in. No new Convex query needed — the data is already loaded.
+
+### `PROJECT` token for client-level documents
+
+Documents at client level (`isBaseDocument: true`, no `projectId`) skip the `PROJECT` token when assembling the code — the token is omitted and its separator is removed. This matches the existing behavior in `generateDocumentCode()`.
+
+### Custom token ID validation
+
+Custom token IDs are validated against reserved built-in names: `CLIENT`, `TYPE`, `PROJECT`, `DATE`. If collision detected, the UI appends `_custom` to the ID (e.g., `date_custom`). Maximum 8 custom tokens per client/project.
+
+### Internal documents
+
+Internal documents (`ROCK-INT-{TOPIC}-{DATE}`) do not participate in the custom naming system. They retain their hardcoded pattern via `generateInternalDocumentCode()`.
 
 ## Out of Scope
 
