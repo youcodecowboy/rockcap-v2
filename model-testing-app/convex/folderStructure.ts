@@ -51,7 +51,22 @@ export const CATEGORY_TO_FOLDER_MAP: Record<string, {
   
   "background": { level: "project", folderType: "background" },
   "project background": { level: "project", folderType: "background" },
-  
+  "professional report": { level: "project", folderType: "background" },
+  "professional reports": { level: "project", folderType: "background" },
+  "plans": { level: "project", folderType: "background" },
+  "floor plan": { level: "project", folderType: "background" },
+  "site plan": { level: "project", folderType: "background" },
+  "photographs": { level: "project", folderType: "background" },
+  "site photographs": { level: "project", folderType: "background" },
+  "project documents": { level: "project", folderType: "background" },
+  "accommodation schedule": { level: "project", folderType: "background" },
+  "build programme": { level: "project", folderType: "background" },
+  "specification": { level: "project", folderType: "background" },
+  "tender": { level: "project", folderType: "background" },
+  "cgi": { level: "project", folderType: "background" },
+  "renders": { level: "project", folderType: "background" },
+  "warranties": { level: "project", folderType: "background" },
+
   // Client-level folders
   "kyc": { level: "client", folderType: "kyc" },
   "kyc document": { level: "client", folderType: "kyc" },

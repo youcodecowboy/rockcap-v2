@@ -195,13 +195,15 @@ function resolveFolder(category: string): string {
     'KYC': 'kyc',
     'Legal Documents': 'terms_comparison',
     'Loan Terms': 'terms_comparison',
-    'Inspections': 'operational_model',
-    'Professional Reports': 'appraisals',
-    'Plans': 'appraisals',
+    'Inspections': 'post_completion',
+    'Professional Reports': 'background',
+    'Plans': 'background',
     'Insurance': 'post_completion',
     'Financial Documents': 'background',
     'Communications': 'notes',
-    'Photographs': 'appraisals',
+    'Photographs': 'background',
+    'Project Documents': 'background',
+    'Warranties': 'background',
     'Other': 'miscellaneous',
   };
   return CATEGORY_TO_FOLDER[category] || 'miscellaneous';
@@ -211,7 +213,7 @@ function resolveFolder(category: string): string {
 function resolveTargetLevel(category: string): 'client' | 'project' {
   const CLIENT_LEVEL_CATEGORIES = new Set([
     'KYC',
-    'Communications',
+    'Financial Documents',
   ]);
   return CLIENT_LEVEL_CATEGORIES.has(category) ? 'client' : 'project';
 }
