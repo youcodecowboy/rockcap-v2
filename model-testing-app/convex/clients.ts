@@ -33,15 +33,11 @@ export const list = query({
   },
 });
 
-// Query: Get client by ID
+// Query: Get client by ID (returns deleted clients too — UI shows restoration banner)
 export const get = query({
   args: { id: v.id("clients") },
   handler: async (ctx, args) => {
-    const client = await ctx.db.get(args.id);
-    if (!client || client.isDeleted) {
-      return null;
-    }
-    return client;
+    return await ctx.db.get(args.id);
   },
 });
 

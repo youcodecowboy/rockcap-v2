@@ -220,42 +220,45 @@ export default function ClientsSidebar({
         showDeleted={showDeleted}
       />
 
-      {/* Show deleted toggle */}
-      {(deletedClientsCount ?? 0) > 0 && (
-        <div className="px-3 py-2 border-t border-gray-200">
-          <button
-            onClick={() => setShowDeleted(!showDeleted)}
-            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors w-full"
-          >
-            {showDeleted ? (
-              <>
-                <ArrowLeft className="w-3 h-3" />
-                Back to active clients
-              </>
-            ) : (
-              <>
-                <Trash2 className="w-3 h-3" />
-                Show deleted ({deletedClientsCount})
-              </>
-            )}
-          </button>
-        </div>
-      )}
+      {/* Sticky footer — always visible */}
+      <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50">
+        {/* Show deleted toggle */}
+        {(deletedClientsCount ?? 0) > 0 && (
+          <div className="px-3 py-2.5">
+            <button
+              onClick={() => setShowDeleted(!showDeleted)}
+              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors w-full py-1"
+            >
+              {showDeleted ? (
+                <>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back to active clients
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Show deleted ({deletedClientsCount})
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
-      {/* Add Client Button */}
-      {!showDeleted && (
-        <div className="p-3 border-t border-gray-200">
-          <Button
-            variant="default"
-            size="sm"
-            className="w-full gap-2 bg-black hover:bg-gray-800"
-            onClick={onAddClient}
-          >
-            <Plus className="w-4 h-4" />
-            New Client
-          </Button>
-        </div>
-      )}
+        {/* Add Client Button */}
+        {!showDeleted && (
+          <div className="px-3 pb-3 pt-1">
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full gap-2 bg-black hover:bg-gray-800"
+              onClick={onAddClient}
+            >
+              <Plus className="w-4 h-4" />
+              New Client
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

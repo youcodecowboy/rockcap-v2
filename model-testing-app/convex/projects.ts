@@ -34,15 +34,11 @@ export const list = query({
   },
 });
 
-// Query: Get project by ID
+// Query: Get project by ID (returns deleted projects too — UI shows restoration banner)
 export const get = query({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
-    const project = await ctx.db.get(args.id);
-    if (!project || project.isDeleted) {
-      return null;
-    }
-    return project;
+    return await ctx.db.get(args.id);
   },
 });
 
