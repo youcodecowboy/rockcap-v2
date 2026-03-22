@@ -861,3 +861,59 @@ export const deletedCountByClient = query({
   },
 });
 
+export const permanentDelete = mutation({
+  args: { id: v.id("projects") },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.id);
+    if (!project || !project.isDeleted) {
+      throw new Error("Can only permanently delete projects that are in trash");
+    }
+
+    // Delete all project-related data
+    const tables = [
+      "documents",
+      "tasks",
+      "flags",
+      "notes",
+      "meetings",
+      "projectFolders",
+      "scenarios",
+      "chatSessions",
+      "knowledgeBankEntries",
+      "knowledgeItems",
+      "codifiedExtractions",
+    ];
+
+    for (const table of tables) {
+      const records = await ctx.db.query(table).collect();
+      const matches = records.filter((r: any) => r.projectId === args.id);
+      for (const record of matches) {
+        await ctx.db.delete(record._id);
+      }
+    }
+
+    // Clean up flag thread entries for project flags
+    const flags = await ctx.db.query("flags").collect();
+    const projectFlags = flags.filter((f: any) => f.projectId === args.id);
+    for (const flag of projectFlags) {
+      const entries = await ctx.db.query("flagThreadEntries").collect();
+      const flagEntries = entries.filter((e: any) => e.flagId === flag._id);
+      for (const entry of flagEntries) {
+        await ctx.db.delete(entry._id);
+      }
+    }
+
+    // Invalidate related client caches before deletion
+    if (project.clientRoles) {
+      for (const cr of project.clientRoles) {
+        await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+          contextType: "client",
+          contextId: cr.clientId,
+        });
+      }
+    }
+
+    // Delete the project
+    await ctx.db.delete(args.id);
+  },
+});
