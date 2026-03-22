@@ -221,22 +221,22 @@ export default function ClientsSidebar({
       />
 
       {/* Sticky footer — always visible */}
-      <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50">
+      <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50 shadow-[0_-2px_4px_rgba(0,0,0,0.04)]">
         {/* Show deleted toggle */}
         {(deletedClientsCount ?? 0) > 0 && (
-          <div className="px-3 py-2.5">
+          <div className="px-3 py-3">
             <button
               onClick={() => setShowDeleted(!showDeleted)}
-              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors w-full py-1"
+              className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors w-full py-1.5 px-2 rounded-md hover:bg-gray-100"
             >
               {showDeleted ? (
                 <>
-                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <ArrowLeft className="w-4 h-4" />
                   Back to active clients
                 </>
               ) : (
                 <>
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                   Show deleted ({deletedClientsCount})
                 </>
               )}
@@ -307,7 +307,7 @@ function ClientList({
   return (
     <div
       ref={parentRef}
-      className="flex-1 overflow-auto"
+      className="flex-1 overflow-auto min-h-0"
     >
       <div
         style={{
