@@ -550,51 +550,79 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
       // Store original for undo (full TipTap JSON)
       const originalContent = editor.getJSON();
 
-      // Convert markdown-formatted response back to HTML for TipTap
+      // Convert markdown to TipTap JSON content directly (more reliable than HTML parsing)
       const lines = cleaned.split('\n');
-      const htmlParts: string[] = [];
-      let inList = false;
+      const content: any[] = [];
+      let bulletItems: any[] = [];
+
+      const flushBulletList = () => {
+        if (bulletItems.length > 0) {
+          content.push({
+            type: 'bulletList',
+            content: bulletItems.map(text => ({
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+            })),
+          });
+          bulletItems = [];
+        }
+      };
 
       for (const line of lines) {
         const trimmed = line.trim();
 
-        // Skip empty lines but close any open list
         if (trimmed.length === 0) {
-          if (inList) {
-            htmlParts.push('</ul>');
-            inList = false;
-          }
+          flushBulletList();
           continue;
         }
 
         // Detect bullet lines: "- item", "* item", "• item"
         const bulletMatch = trimmed.match(/^[\-\*•]\s+(.*)/);
         if (bulletMatch) {
-          if (!inList) {
-            htmlParts.push('<ul>');
-            inList = true;
-          }
-          htmlParts.push(`<li><p>${bulletMatch[1]}</p></li>`);
+          bulletItems.push(bulletMatch[1]);
           continue;
         }
 
-        // Non-bullet line: close any open list first
-        if (inList) {
-          htmlParts.push('</ul>');
-          inList = false;
+        // Non-bullet line: flush any pending bullets
+        flushBulletList();
+
+        // Detect heading: "# Heading" or "## Heading"
+        const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)/);
+        if (headingMatch) {
+          const level = headingMatch[1].length;
+          content.push({
+            type: 'heading',
+            attrs: { level },
+            content: [{ type: 'text', text: headingMatch[2] }],
+          });
+          continue;
         }
 
-        // Convert markdown bold **text** to <strong>
-        const withBold = trimmed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        htmlParts.push(`<p>${withBold}</p>`);
+        // Parse inline markdown bold **text** into TipTap marks
+        const textContent: any[] = [];
+        const boldRegex = /\*\*(.*?)\*\*/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = boldRegex.exec(trimmed)) !== null) {
+          if (match.index > lastIndex) {
+            textContent.push({ type: 'text', text: trimmed.slice(lastIndex, match.index) });
+          }
+          textContent.push({ type: 'text', marks: [{ type: 'bold' }], text: match[1] });
+          lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < trimmed.length) {
+          textContent.push({ type: 'text', text: trimmed.slice(lastIndex) });
+        }
+
+        content.push({
+          type: 'paragraph',
+          content: textContent.length > 0 ? textContent : [{ type: 'text', text: trimmed }],
+        });
       }
 
-      // Close any trailing open list
-      if (inList) {
-        htmlParts.push('</ul>');
-      }
+      flushBulletList();
 
-      editor.commands.setContent(htmlParts.join(''));
+      editor.commands.setContent({ type: 'doc', content });
 
       const { showUndoToast } = await import('@/components/UndoToast');
       showUndoToast({
