@@ -31,12 +31,17 @@ What you MUST NOT do:
 - Change the tone or formality level
 
 FORMAT RULES:
-- Use markdown formatting: use "- " prefix for bullet list items, use "**text**" for bold headings
-- If the user wrote a list of items (one per line), format them as a markdown bullet list with "- " prefix
+- Return clean HTML suitable for a rich text editor
+- Use <ul><li> for bullet lists (if the user wrote items one per line, wrap them in <ul><li>Item</li></ul>)
+- Use <ol><li> for numbered lists
+- Use <h2> for section headings (if the user used # or wrote a heading-like line)
+- Use <strong> for bold/emphasis on key terms like dates, names, important labels
+- Use <p> for regular paragraphs
+- Use <br> within a paragraph only if needed
+- Do NOT use markdown syntax — only HTML tags
 - Keep paragraph breaks between separate topics
-- Use blank lines between paragraphs
 
-Return only the cleaned text in markdown. No explanations. The output must contain ALL the same information as the input.`;
+Return only the cleaned HTML. No explanations. No wrapping <html> or <body> tags. The output must contain ALL the same information as the input.`;
 
 export async function POST(request: NextRequest) {
   try {

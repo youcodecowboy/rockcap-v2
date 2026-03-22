@@ -550,79 +550,9 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
       // Store original for undo (full TipTap JSON)
       const originalContent = editor.getJSON();
 
-      // Convert markdown to TipTap JSON content directly (more reliable than HTML parsing)
-      const lines = cleaned.split('\n');
-      const content: any[] = [];
-      let bulletItems: any[] = [];
-
-      const flushBulletList = () => {
-        if (bulletItems.length > 0) {
-          content.push({
-            type: 'bulletList',
-            content: bulletItems.map(text => ({
-              type: 'listItem',
-              content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
-            })),
-          });
-          bulletItems = [];
-        }
-      };
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-
-        if (trimmed.length === 0) {
-          flushBulletList();
-          continue;
-        }
-
-        // Detect bullet lines: "- item", "* item", "• item"
-        const bulletMatch = trimmed.match(/^[\-\*•]\s+(.*)/);
-        if (bulletMatch) {
-          bulletItems.push(bulletMatch[1]);
-          continue;
-        }
-
-        // Non-bullet line: flush any pending bullets
-        flushBulletList();
-
-        // Detect heading: "# Heading" or "## Heading"
-        const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)/);
-        if (headingMatch) {
-          const level = headingMatch[1].length;
-          content.push({
-            type: 'heading',
-            attrs: { level },
-            content: [{ type: 'text', text: headingMatch[2] }],
-          });
-          continue;
-        }
-
-        // Parse inline markdown bold **text** into TipTap marks
-        const textContent: any[] = [];
-        const boldRegex = /\*\*(.*?)\*\*/g;
-        let lastIndex = 0;
-        let match;
-        while ((match = boldRegex.exec(trimmed)) !== null) {
-          if (match.index > lastIndex) {
-            textContent.push({ type: 'text', text: trimmed.slice(lastIndex, match.index) });
-          }
-          textContent.push({ type: 'text', marks: [{ type: 'bold' }], text: match[1] });
-          lastIndex = match.index + match[0].length;
-        }
-        if (lastIndex < trimmed.length) {
-          textContent.push({ type: 'text', text: trimmed.slice(lastIndex) });
-        }
-
-        content.push({
-          type: 'paragraph',
-          content: textContent.length > 0 ? textContent : [{ type: 'text', text: trimmed }],
-        });
-      }
-
-      flushBulletList();
-
-      editor.commands.setContent({ type: 'doc', content });
+      // AI returns HTML directly — TipTap's setContent parses HTML natively
+      // using its registered parseHTML rules (ul→bulletList, li→listItem, etc.)
+      editor.commands.setContent(cleaned);
 
       const { showUndoToast } = await import('@/components/UndoToast');
       showUndoToast({
