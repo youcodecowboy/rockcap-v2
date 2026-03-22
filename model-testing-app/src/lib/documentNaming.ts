@@ -1,11 +1,13 @@
 /**
  * Document Naming Utilities
- * 
+ *
  * Implements the standardized document naming convention:
  * <ProjectShortcode>-<Type>-<Internal/External>-<Initials>-<Version>-<Date>
- * 
+ *
  * Example: WIMBPARK28-APPRAISAL-EXT-JS-V1.0-2026-01-12
  */
+
+import { assembleDocumentCode, getBuiltInTokenValues, type DocumentNamingConfig } from './namingConfig';
 
 // Type abbreviations for document naming
 export const TYPE_ABBREVIATIONS: Record<string, string> = {
@@ -135,7 +137,23 @@ export function generateDocumentName(options: {
   uploaderInitials: string;
   version?: string;
   date?: Date;
+  namingConfig?: DocumentNamingConfig;
+  customFieldValues?: Record<string, string>;
 }): string {
+  // New path: if namingConfig provided with custom pattern, use it (skip for internal docs)
+  if (options.namingConfig && options.namingConfig.pattern.length > 0 && !options.isInternal) {
+    const builtIn = getBuiltInTokenValues(
+      options.namingConfig.code || options.projectShortcode,
+      options.category,
+      options.projectShortcode,
+      options.date
+    );
+    const allValues = { ...builtIn, ...(options.customFieldValues || {}) };
+    const code = assembleDocumentCode(options.namingConfig, allValues);
+    if (code) return code;
+  }
+
+  // Existing fallback (unchanged) — handles internal docs and legacy behavior
   const {
     projectShortcode,
     category,
@@ -144,7 +162,7 @@ export function generateDocumentName(options: {
     version = "V1.0",
     date = new Date(),
   } = options;
-  
+
   const typeAbbrev = getTypeAbbreviation(category);
   const internalExternal = isInternal ? "INT" : "EXT";
   const initials = uploaderInitials.toUpperCase().slice(0, 3);

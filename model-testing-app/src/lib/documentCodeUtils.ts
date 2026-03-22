@@ -1,10 +1,12 @@
 /**
  * Document Code Generation Utilities
- * 
+ *
  * Generates standardized document codes in the format:
  * - Client docs: [CLIENT]-[TYPE]-[PROJECT]-[DDMMYY]
  * - Internal docs: ROCK-INT-[TOPIC]-[DDMMYY]
  */
+
+import { assembleDocumentCode, getBuiltInTokenValues, type DocumentNamingConfig } from './namingConfig';
 
 /**
  * Abbreviates text by removing spaces, special characters, and optionally vowels
@@ -101,8 +103,24 @@ export function generateDocumentCode(
   clientName: string,
   category: string,
   projectName: string | undefined,
-  uploadedAt: string | Date
+  uploadedAt: string | Date,
+  namingConfig?: DocumentNamingConfig,
+  customFieldValues?: Record<string, string>
 ): string {
+  // New path: use pattern config if provided
+  if (namingConfig && namingConfig.pattern.length > 0) {
+    const builtIn = getBuiltInTokenValues(
+      namingConfig.code || abbreviateText(clientName, 8),
+      category,
+      projectName ? abbreviateText(projectName, 10) : undefined,
+      uploadedAt
+    );
+    const allValues = { ...builtIn, ...(customFieldValues || {}) };
+    const code = assembleDocumentCode(namingConfig, allValues);
+    if (code) return code;
+  }
+
+  // Existing fallback (unchanged)
   const clientCode = abbreviateText(clientName, 8);
   const typeCode = abbreviateCategory(category);
   const projectCode = projectName ? abbreviateText(projectName, 10) : '';
