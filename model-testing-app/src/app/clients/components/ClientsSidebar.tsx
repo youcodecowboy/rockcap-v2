@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -48,6 +48,7 @@ export default function ClientsSidebar({
 }: ClientsSidebarProps) {
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const recordAccess = useMutation(api.clients.recordAccess);
 
   // Queries
   const clients = useQuery(api.clients.list, {});
@@ -107,8 +108,15 @@ export default function ClientsSidebar({
       );
     }
 
-    // Sort by name
-    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+    // Sort by most recently accessed, then alphabetically
+    return filtered.sort((a, b) => {
+      const aTime = (a as any).lastAccessedAt;
+      const bTime = (b as any).lastAccessedAt;
+      if (aTime && bTime) return bTime.localeCompare(aTime);
+      if (aTime) return -1;
+      if (bTime) return 1;
+      return a.name.localeCompare(b.name);
+    });
   }, [clientsWithCounts, filterType, statusFilter, searchQuery]);
 
   const getTypeIcon = (type?: string) => {
@@ -195,6 +203,7 @@ export default function ClientsSidebar({
         clients={filteredClients}
         selectedClientId={selectedClientId}
         onClientSelect={onClientSelect}
+        recordAccess={recordAccess}
         searchQuery={searchQuery}
         getTypeIcon={getTypeIcon}
         getTypeBadge={getTypeBadge}
@@ -221,6 +230,7 @@ interface ClientListProps {
   clients: Client[];
   selectedClientId: Id<"clients"> | null;
   onClientSelect: (clientId: Id<"clients">) => void;
+  recordAccess: (args: { clientId: Id<"clients"> }) => Promise<unknown>;
   searchQuery: string;
   getTypeIcon: (type?: string) => React.ReactNode;
   getTypeBadge: (type?: string) => React.ReactNode;
@@ -230,6 +240,7 @@ function ClientList({
   clients,
   selectedClientId,
   onClientSelect,
+  recordAccess,
   searchQuery,
   getTypeIcon,
   getTypeBadge,
@@ -283,7 +294,10 @@ function ClientList({
               className="px-2 py-1"
             >
               <button
-                onClick={() => onClientSelect(client._id)}
+                onClick={() => {
+                  recordAccess({ clientId: client._id });
+                  onClientSelect(client._id);
+                }}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left",
                   isSelected
