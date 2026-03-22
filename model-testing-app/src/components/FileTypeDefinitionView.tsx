@@ -29,16 +29,12 @@ export default function FileTypeDefinitionView({
   );
 
   const handleDownloadExample = () => {
-    if (!fileUrl || !definition?.exampleFileName) return;
-
-    // Open file URL in new tab for download
-    const a = document.createElement('a');
-    a.href = fileUrl;
-    a.download = definition.exampleFileName;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    if (!definition?.exampleFileStorageId || !definition?.exampleFileName) return;
+    const params = new URLSearchParams({
+      storageId: definition.exampleFileStorageId,
+      filename: definition.exampleFileName,
+    });
+    window.open(`/api/convex-file?${params.toString()}`, '_blank');
   };
 
   if (!definition) {

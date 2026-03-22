@@ -65,12 +65,12 @@ export default function DocumentReaderPage() {
     /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName);
 
   const handleDownload = () => {
-    if (fileUrl) {
-      const link = window.document.createElement('a');
-      link.href = fileUrl;
-      link.download = document.fileName;
-      link.click();
-    }
+    if (!document.fileStorageId) return;
+    const params = new URLSearchParams({
+      storageId: document.fileStorageId,
+      filename: document.fileName,
+    });
+    window.open(`/api/convex-file?${params.toString()}`, '_blank');
   };
 
   const handleOpenInNewTab = () => {

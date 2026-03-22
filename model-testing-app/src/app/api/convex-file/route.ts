@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
     }
 
     const storageId = request.nextUrl.searchParams.get('storageId');
-    
+    const filename = request.nextUrl.searchParams.get('filename');
+
     if (!storageId) {
       return ErrorResponses.badRequest('No storageId provided');
     }
@@ -35,21 +36,26 @@ export async function GET(request: NextRequest) {
       return ErrorResponses.notFound('File not found in storage');
     }
 
-    // Fetch the file from the URL
+    // Fetch the file from Convex storage
     const response = await fetch(fileUrl);
-    
+
     if (!response.ok) {
       return ErrorResponses.internalError('Failed to fetch file from storage URL');
     }
 
-    // Return the file as a blob
-    const blob = await response.blob();
-    
-    return new NextResponse(blob, {
-      headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
-      },
-    });
+    const headers: Record<string, string> = {
+      'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+    };
+
+    // Set Content-Disposition for downloads with proper filename
+    if (filename) {
+      // Sanitize filename for Content-Disposition header
+      const sanitized = filename.replace(/["\\\r\n]/g, '_');
+      headers['Content-Disposition'] = `attachment; filename="${sanitized}"`;
+    }
+
+    // Stream the response body through instead of buffering
+    return new NextResponse(response.body, { headers });
 
   } catch (error) {
     console.error('[Convex File] Error:', error);
