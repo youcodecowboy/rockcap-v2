@@ -68,13 +68,13 @@ export default function MentionAutocomplete({
   return (
     <div
       ref={listRef}
-      className="absolute z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg max-h-60 overflow-y-auto w-64"
+      className="absolute z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg max-h-60 overflow-y-auto w-64 text-gray-900 dark:text-zinc-100"
       style={{ bottom: position.top, left: position.left }}
     >
       {items.map((item, i) => (
         <button
           key={`${item.type}-${item.id}`}
-          className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+          className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm text-gray-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
             i === selectedIndex ? 'bg-zinc-100 dark:bg-zinc-800' : ''
           }`}
           onClick={() => onSelect(item)}
