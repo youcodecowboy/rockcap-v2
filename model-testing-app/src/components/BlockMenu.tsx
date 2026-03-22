@@ -229,15 +229,6 @@ export default function BlockMenu({ editor, onOpenSlashMenu }: BlockMenuProps) {
         <Plus className="w-4 h-4 text-gray-600" />
       </button>
       
-      {currentBlock && (
-        <button
-          onClick={handleDeleteBlock}
-          className="p-1.5 rounded hover:bg-red-100 transition-colors bg-white shadow-sm border border-gray-200"
-          title="Delete block"
-        >
-          <Trash2 className="w-4 h-4 text-red-600" />
-        </button>
-      )}
 
       {(isTable || (currentBlock && currentBlock.tagName === 'TABLE')) && showMenu && (
         <div

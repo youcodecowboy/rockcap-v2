@@ -550,28 +550,51 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
       // Store original for undo (full TipTap JSON)
       const originalContent = editor.getJSON();
 
-      // Convert cleaned text back to structured HTML for TipTap
-      // Split on line breaks and wrap each line as a paragraph
-      const html = cleaned
-        .split('\n')
-        .filter((line: string) => line.trim().length > 0)
-        .map((line: string) => {
-          // Detect bullet lines and convert to list items
-          const bulletMatch = line.match(/^[\-\*•]\s+(.*)/);
-          if (bulletMatch) {
-            return `<li><p>${bulletMatch[1]}</p></li>`;
+      // Convert markdown-formatted response back to HTML for TipTap
+      const lines = cleaned.split('\n');
+      const htmlParts: string[] = [];
+      let inList = false;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Skip empty lines but close any open list
+        if (trimmed.length === 0) {
+          if (inList) {
+            htmlParts.push('</ul>');
+            inList = false;
           }
-          return `<p>${line}</p>`;
-        })
-        .join('');
+          continue;
+        }
 
-      // Wrap consecutive <li> tags in <ul>
-      const htmlWithLists = html.replace(
-        /(<li><p>.*?<\/p><\/li>)+/g,
-        (match) => `<ul>${match}</ul>`
-      );
+        // Detect bullet lines: "- item", "* item", "• item"
+        const bulletMatch = trimmed.match(/^[\-\*•]\s+(.*)/);
+        if (bulletMatch) {
+          if (!inList) {
+            htmlParts.push('<ul>');
+            inList = true;
+          }
+          htmlParts.push(`<li><p>${bulletMatch[1]}</p></li>`);
+          continue;
+        }
 
-      editor.commands.setContent(htmlWithLists);
+        // Non-bullet line: close any open list first
+        if (inList) {
+          htmlParts.push('</ul>');
+          inList = false;
+        }
+
+        // Convert markdown bold **text** to <strong>
+        const withBold = trimmed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        htmlParts.push(`<p>${withBold}</p>`);
+      }
+
+      // Close any trailing open list
+      if (inList) {
+        htmlParts.push('</ul>');
+      }
+
+      editor.commands.setContent(htmlParts.join(''));
 
       const { showUndoToast } = await import('@/components/UndoToast');
       showUndoToast({

@@ -30,7 +30,13 @@ What you MUST NOT do:
 - Add new information or commentary
 - Change the tone or formality level
 
-Return only the cleaned text. No explanations. The output must contain ALL the same information as the input.`;
+FORMAT RULES:
+- Use markdown formatting: use "- " prefix for bullet list items, use "**text**" for bold headings
+- If the user wrote a list of items (one per line), format them as a markdown bullet list with "- " prefix
+- Keep paragraph breaks between separate topics
+- Use blank lines between paragraphs
+
+Return only the cleaned text in markdown. No explanations. The output must contain ALL the same information as the input.`;
 
 export async function POST(request: NextRequest) {
   try {
