@@ -120,7 +120,7 @@ function ClientProfileContent() {
     });
   };
 
-  const handleTypeChange = async (newType: 'lender' | 'developer' | 'broker' | 'borrower') => {
+  const handleTypeChange = async (newType: string) => {
     await updateClientMutation({
       id: clientId,
       type: newType,

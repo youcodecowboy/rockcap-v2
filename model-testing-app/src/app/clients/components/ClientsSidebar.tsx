@@ -7,7 +7,6 @@ import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Search,
   Building2,
@@ -20,6 +19,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import EditableClientTypeBadge from '@/components/EditableClientTypeBadge';
 
 interface Client {
   _id: Id<"clients">;
@@ -38,7 +38,6 @@ interface ClientsSidebarProps {
   onAddClient: () => void;
 }
 
-type FilterType = 'all' | 'borrower' | 'lender';
 type StatusFilter = 'all' | 'active' | 'prospect' | 'archived';
 
 export default function ClientsSidebar({
@@ -48,10 +47,11 @@ export default function ClientsSidebar({
   onSearchChange,
   onAddClient,
 }: ClientsSidebarProps) {
-  const [filterType, setFilterType] = useState<FilterType>('all');
+  const [filterType, setFilterType] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [showDeleted, setShowDeleted] = useState(false);
   const recordAccess = useMutation(api.clients.recordAccess);
+  const updateClient = useMutation(api.clients.update);
 
   // Queries
   const clients = useQuery(api.clients.list, {});
@@ -86,6 +86,15 @@ export default function ClientsSidebar({
       projectCount: projectCounts[client._id] || 0,
     }));
   }, [clients, documentCounts, projects]);
+
+  // Derive unique client types for dynamic filter buttons
+  const uniqueTypes = useMemo(() => {
+    const types = new Set<string>();
+    clientsWithCounts.forEach((c) => {
+      if (c.type) types.add(c.type.toLowerCase());
+    });
+    return Array.from(types).sort();
+  }, [clientsWithCounts]);
 
   // Filter clients
   const filteredClients = useMemo(() => {
@@ -136,17 +145,6 @@ export default function ClientsSidebar({
     return <Briefcase className="w-4 h-4 text-green-500" />;
   };
 
-  const getTypeBadge = (type?: string) => {
-    const t = type?.toLowerCase();
-    if (t === 'lender') {
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">Lender</Badge>;
-    }
-    if (t === 'borrower') {
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 border-green-200">Borrower</Badge>;
-    }
-    return null;
-  };
-
   return (
     <div className="w-[280px] min-w-[280px] border-r border-gray-200 bg-gray-50 flex flex-col h-full">
       {/* Header */}
@@ -168,21 +166,32 @@ export default function ClientsSidebar({
         </div>
       </div>
 
-      {/* Type Filter Tabs */}
+      {/* Type Filter Tabs — dynamic from all client types */}
       <div className="px-3 py-2 border-b border-gray-200">
-        <div className="flex gap-1 bg-gray-200 rounded-md p-0.5">
-          {(['all', 'borrower', 'lender'] as FilterType[]).map((type) => (
+        <div className="flex gap-1 flex-wrap">
+          <button
+            onClick={() => setFilterType('all')}
+            className={cn(
+              "px-2 py-1 text-xs font-medium rounded transition-colors",
+              filterType === 'all'
+                ? "bg-gray-900 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            )}
+          >
+            All
+          </button>
+          {uniqueTypes.map((type) => (
             <button
               key={type}
               onClick={() => setFilterType(type)}
               className={cn(
-                "flex-1 px-2 py-1 text-xs font-medium rounded transition-colors capitalize",
+                "px-2 py-1 text-xs font-medium rounded transition-colors capitalize",
                 filterType === type
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
+                  ? "bg-gray-900 text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               )}
             >
-              {type === 'all' ? 'All' : type}
+              {type}
             </button>
           ))}
         </div>
@@ -216,7 +225,8 @@ export default function ClientsSidebar({
         recordAccess={recordAccess}
         searchQuery={searchQuery}
         getTypeIcon={getTypeIcon}
-        getTypeBadge={getTypeBadge}
+        onTypeChange={(clientId, newType) => updateClient({ id: clientId, type: newType })}
+        customTypes={uniqueTypes}
         showDeleted={showDeleted}
       />
 
@@ -271,7 +281,8 @@ interface ClientListProps {
   recordAccess: (args: { clientId: Id<"clients"> }) => Promise<unknown>;
   searchQuery: string;
   getTypeIcon: (type?: string) => React.ReactNode;
-  getTypeBadge: (type?: string) => React.ReactNode;
+  onTypeChange: (clientId: Id<"clients">, newType: string) => void;
+  customTypes: string[];
   showDeleted?: boolean;
 }
 
@@ -282,7 +293,8 @@ function ClientList({
   recordAccess,
   searchQuery,
   getTypeIcon,
-  getTypeBadge,
+  onTypeChange,
+  customTypes,
   showDeleted,
 }: ClientListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -378,7 +390,16 @@ function ClientList({
                       <FileText className="w-3 h-3" />
                       {client.documentCount}
                     </span>
-                    {!isSelected && getTypeBadge(client.type)}
+                    {!isSelected && client.type && (
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <EditableClientTypeBadge
+                          type={client.type}
+                          onTypeChange={(newType) => onTypeChange(client._id, newType)}
+                          customTypes={customTypes}
+                          compact
+                        />
+                      </span>
+                    )}
                   </div>
                 </div>
                 <ChevronRight className={cn(
