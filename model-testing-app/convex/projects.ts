@@ -800,3 +800,64 @@ export const renameCustomProjectFolder = mutation({
   },
 });
 
+export const restore = mutation({
+  args: { id: v.id("projects") },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.id);
+    if (!project || !project.isDeleted) {
+      throw new Error("Project is not in trash");
+    }
+
+    await ctx.db.patch(args.id, {
+      isDeleted: undefined,
+      deletedAt: undefined,
+      deletedBy: undefined,
+      deletedReason: undefined,
+    });
+
+    // Invalidate project cache
+    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+      contextType: "project",
+      contextId: args.id,
+    });
+
+    // Invalidate related client caches
+    if (project.clientRoles) {
+      for (const cr of project.clientRoles) {
+        await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+          contextType: "client",
+          contextId: cr.clientId,
+        });
+      }
+    }
+  },
+});
+
+export const listDeletedByClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const allDeleted = await ctx.db
+      .query("projects")
+      .filter((q) => q.eq(q.field("isDeleted"), true))
+      .collect();
+
+    return allDeleted
+      .filter((p) => p.clientRoles?.some((cr: any) => cr.clientId === args.clientId))
+      .sort((a, b) => (b.deletedAt || "").localeCompare(a.deletedAt || ""));
+  },
+});
+
+export const deletedCountByClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const allDeleted = await ctx.db
+      .query("projects")
+      .filter((q) => q.eq(q.field("isDeleted"), true))
+      .collect();
+
+    return allDeleted.filter((p) =>
+      p.clientRoles?.some((cr: any) => cr.clientId === args.clientId)
+    ).length;
+  },
+});
+
