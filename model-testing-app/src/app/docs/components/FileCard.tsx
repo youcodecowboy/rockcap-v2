@@ -66,6 +66,8 @@ interface FileCardProps {
   onMove?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  isDragging?: boolean;
   onOpenReader?: () => void;
   onLinkAsVersion?: () => void;
   onUnlinkVersion?: () => void;
@@ -86,6 +88,8 @@ export default function FileCard({
   onMove,
   onDuplicate,
   onDelete,
+  onDragStart,
+  isDragging,
   onOpenReader,
   onLinkAsVersion,
   onUnlinkVersion,
@@ -246,10 +250,14 @@ export default function FileCard({
       <>
       <div
         onClick={onClick}
+        draggable={!!onDragStart}
+        onDragStart={onDragStart}
         className={cn(
           "flex items-center px-3 border-b border-gray-100 cursor-pointer group transition-colors",
           hasSubline ? "py-1.5" : "py-2",
           isSelected ? "bg-blue-50/50" : "hover:bg-gray-50/60",
+          isDragging && "opacity-35",
+          onDragStart && "cursor-grab",
         )}
       >
         {/* Expand chevron — fixed width for alignment */}
@@ -359,7 +367,13 @@ export default function FileCard({
     <>
     <div
       onClick={onClick}
-      className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group"
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      className={cn(
+        "bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group",
+        isDragging && "opacity-35",
+        onDragStart && "cursor-grab",
+      )}
     >
       {/* Header with Icon and Actions */}
       <div className="flex items-start justify-between mb-3">

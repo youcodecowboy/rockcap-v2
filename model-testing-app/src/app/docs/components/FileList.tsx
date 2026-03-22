@@ -107,6 +107,7 @@ export default function FileList({
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [draggingDocIds, setDraggingDocIds] = useState<Set<string>>(new Set());
   const [linkVersionDoc, setLinkVersionDoc] = useState<Document | null>(null);
   const [showLinkVersionModal, setShowLinkVersionModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -324,6 +325,25 @@ export default function FileList({
     });
   }, []);
 
+  const handleFileDragStart = useCallback((e: React.DragEvent, docId: string) => {
+    // If the dragged doc is in the selection, drag all selected; otherwise just this one
+    const idsToMove = selectedDocIds.has(docId)
+      ? Array.from(selectedDocIds)
+      : [docId];
+
+    e.dataTransfer.setData("application/x-document-ids", JSON.stringify(idsToMove));
+    e.dataTransfer.effectAllowed = "move";
+
+    setDraggingDocIds(new Set(idsToMove));
+
+    // Clean up on drag end
+    const handleDragEnd = () => {
+      setDraggingDocIds(new Set());
+      document.removeEventListener("dragend", handleDragEnd);
+    };
+    document.addEventListener("dragend", handleDragEnd);
+  }, [selectedDocIds]);
+
   const handleDownload = async (doc: Document) => {
     if (!doc.fileStorageId) {
       alert('File not available for download');
@@ -420,6 +440,8 @@ export default function FileList({
     onOpenReader: () => handleOpenReader(doc),
     onLinkAsVersion: () => handleLinkAsVersion(doc),
     onUnlinkVersion: () => handleUnlinkVersion(doc),
+    onDragStart: (e: React.DragEvent) => handleFileDragStart(e, doc._id),
+    isDragging: draggingDocIds.has(doc._id),
   });
 
   // Empty state
