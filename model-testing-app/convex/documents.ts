@@ -708,6 +708,9 @@ export const update = mutation({
     folderType: v.optional(v.union(v.literal("client"), v.literal("project"), v.null())),
     // Full parsed text content for re-analysis
     textContent: v.optional(v.string()),
+    // Display name and custom field values for document library
+    displayName: v.optional(v.string()),
+    customFieldValues: v.optional(v.record(v.string(), v.string())),
     // Intelligence flag
     addedToIntelligence: v.optional(v.boolean()),
     // Document analysis from AI pipeline
@@ -798,6 +801,9 @@ export const update = mutation({
       }
     });
     
+    if (args.displayName !== undefined) cleanUpdates.displayName = args.displayName;
+    if (args.customFieldValues !== undefined) cleanUpdates.customFieldValues = args.customFieldValues;
+
     await ctx.db.patch(id, cleanUpdates);
 
     // Invalidate context cache for client if changed
@@ -2336,5 +2342,62 @@ export const getVersionChain = query({
     }
 
     return chain; // Oldest to newest
+  },
+});
+
+// Mutation: Rename document (display name, custom fields, document code)
+export const rename = mutation({
+  args: {
+    id: v.id("documents"),
+    displayName: v.optional(v.string()),
+    customFieldValues: v.optional(v.record(v.string(), v.string())),
+    documentCode: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc) throw new Error("Document not found");
+
+    const updates: any = {};
+
+    if (args.displayName !== undefined) {
+      updates.displayName = args.displayName;
+    }
+
+    if (args.customFieldValues !== undefined) {
+      updates.customFieldValues = args.customFieldValues;
+    }
+
+    if (args.documentCode !== undefined) {
+      if (args.documentCode) {
+        // Check for duplicate codes
+        const existing = await ctx.db
+          .query("documents")
+          .filter((q) => q.neq(q.field("isDeleted"), true))
+          .collect();
+        const duplicate = existing.find(
+          (d) => d.documentCode === args.documentCode && d._id !== args.id
+        );
+        if (duplicate) {
+          // Auto-suffix to avoid duplicate
+          let suffix = 1;
+          let candidateCode = `${args.documentCode}-${suffix}`;
+          while (existing.some((d) => d.documentCode === candidateCode && d._id !== args.id)) {
+            suffix++;
+            candidateCode = `${args.documentCode}-${suffix}`;
+          }
+          updates.documentCode = candidateCode;
+        } else {
+          updates.documentCode = args.documentCode;
+        }
+      } else {
+        updates.documentCode = args.documentCode;
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await ctx.db.patch(args.id, updates);
+    }
+
+    return updates.documentCode || doc.documentCode;
   },
 });
