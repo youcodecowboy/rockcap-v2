@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { api } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 // Query: Get all clients
 export const list = query({
@@ -488,13 +489,51 @@ export const migrateInvalidFields = internalMutation({
 export const remove = mutation({
   args: { id: v.id("clients") },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    let userId: Id<"users"> | undefined;
+    if (identity) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+        .first();
+      userId = user?._id;
+    }
+
+    const now = new Date().toISOString();
+
+    // Soft-delete the client
     await ctx.db.patch(args.id, {
       isDeleted: true,
-      deletedAt: new Date().toISOString(),
+      deletedAt: now,
+      deletedBy: userId,
       deletedReason: "user_deleted",
     });
 
-    // Invalidate context cache for this client
+    // Cascade: soft-delete all non-deleted projects belonging to this client
+    const allProjects = await ctx.db.query("projects")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+
+    const clientProjects = allProjects.filter((p) =>
+      p.clientRoles?.some((cr: any) => cr.clientId === args.id)
+    );
+
+    for (const project of clientProjects) {
+      await ctx.db.patch(project._id, {
+        isDeleted: true,
+        deletedAt: now,
+        deletedBy: userId,
+        deletedReason: "parent_client_deleted",
+      });
+
+      // Invalidate project cache
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: project._id,
+      });
+    }
+
+    // Invalidate client cache
     await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
       contextType: "client",
       contextId: args.id,
