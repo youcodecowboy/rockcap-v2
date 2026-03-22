@@ -494,7 +494,6 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
 
   // AI note cleanup
   const [isCleaningUp, setIsCleaningUp] = useState(false);
-  const [isCleaningFullNote, setIsCleaningFullNote] = useState(false);
 
   const handleCleanupSelection = useCallback(async () => {
     if (!editor) return;
@@ -521,69 +520,7 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
     }
   }, [editor]);
 
-  const handleCleanupFullNote = useCallback(async () => {
-    if (!editor) return;
 
-    // Process each text block individually — safer than replacing entire document.
-    // This preserves the existing TipTap structure (headings, lists, etc.)
-    // and only cleans up the text content within each block.
-    const { doc, tr } = editor.state;
-    const originalContent = editor.getJSON();
-    const textBlocks: { from: number; to: number; text: string }[] = [];
-
-    doc.descendants((node, pos) => {
-      if (node.isTextblock && node.textContent.trim().length >= 5) {
-        textBlocks.push({
-          from: pos + 1, // +1 to get inside the node
-          to: pos + 1 + node.content.size,
-          text: node.textContent,
-        });
-      }
-    });
-
-    if (textBlocks.length === 0) return;
-
-    setIsCleaningFullNote(true);
-    try {
-      // Send all text blocks in one request
-      const allText = textBlocks.map(b => b.text).join('\n---BLOCK---\n');
-      const res = await fetch('/api/note-cleanup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: allText, mode: 'full' }),
-      });
-      if (!res.ok) throw new Error('Cleanup failed');
-      const { cleaned } = await res.json();
-
-      // Split response back into blocks and apply in reverse order
-      // (reverse so position offsets don't shift as we edit)
-      const cleanedBlocks = cleaned.split('\n---BLOCK---\n');
-
-      editor.chain().focus().command(({ tr: transaction }) => {
-        for (let i = textBlocks.length - 1; i >= 0; i--) {
-          const block = textBlocks[i];
-          const cleanedText = (cleanedBlocks[i] || block.text).trim();
-          if (cleanedText !== block.text) {
-            transaction.insertText(cleanedText, block.from, block.to);
-          }
-        }
-        return true;
-      }).run();
-
-      const { showUndoToast } = await import('@/components/UndoToast');
-      showUndoToast({
-        message: 'Note cleaned up',
-        onUndo: () => {
-          editor.commands.setContent(originalContent);
-        },
-      });
-    } catch {
-      const { toast } = await import('sonner');
-      toast.error('Failed to clean up note');
-    } finally {
-      setIsCleaningFullNote(false);
-    }
-  }, [editor]);
 
   const handleLinkSubmit = useCallback((url: string) => {
     if (editor) {
@@ -662,24 +599,6 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
             </BubbleMenu>
           )}
           <EditorContent editor={editor} />
-          {/* Full-note cleanup button */}
-          {editor && (
-            <div className="absolute top-2 right-4 z-10">
-              <button
-                onClick={handleCleanupFullNote}
-                disabled={isCleaningFullNote}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 bg-white/80 backdrop-blur border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50"
-                title="Clean up entire note with AI"
-              >
-                {isCleaningFullNote ? (
-                  <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor" className="opacity-75"/></svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
-                )}
-                Clean up note
-              </button>
-            </div>
-          )}
         </div>
 
         <LinkInputModal
