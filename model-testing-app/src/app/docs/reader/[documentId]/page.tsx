@@ -68,7 +68,7 @@ export default function DocumentReaderPage() {
     if (!document.fileStorageId) return;
     const params = new URLSearchParams({
       storageId: document.fileStorageId,
-      filename: document.fileName,
+      filename: document.displayName || document.documentCode || document.fileName,
     });
     window.open(`/api/convex-file?${params.toString()}`, '_blank');
   };
@@ -101,7 +101,7 @@ export default function DocumentReaderPage() {
           </Button>
           <div className="h-6 w-px bg-gray-200" />
           <h1 className="text-sm font-medium text-gray-900 truncate max-w-md">
-            {document.documentCode || document.fileName}
+            {document.displayName || document.documentCode || document.fileName}
           </h1>
         </div>
         <div className="flex items-center gap-2">

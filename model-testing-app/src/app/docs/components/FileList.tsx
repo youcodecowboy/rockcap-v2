@@ -43,6 +43,7 @@ import DirectUploadModal from './DirectUploadModal';
 import InternalUploadModal from './InternalUploadModal';
 import LinkAsVersionModal from './LinkAsVersionModal';
 import BulkMoveModal from './BulkMoveModal';
+import RenameDocumentDialog from '@/components/RenameDocumentDialog';
 import { cn } from '@/lib/utils';
 import { FolderSelection } from '@/types/folders';
 
@@ -51,7 +52,9 @@ type DocumentScope = 'client' | 'internal' | 'personal';
 interface Document {
   _id: Id<"documents">;
   fileName: string;
+  displayName?: string;
   documentCode?: string;
+  customFieldValues?: Record<string, string>;
   summary: string;
   category: string;
   fileTypeDetected?: string;
@@ -59,6 +62,8 @@ interface Document {
   fileSize: number;
   uploadedAt: string;
   fileStorageId?: Id<"_storage">;
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
   clientName?: string;
   projectName?: string;
   hasNotes?: boolean;
@@ -113,10 +118,17 @@ export default function FileList({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBulkMoveModal, setShowBulkMoveModal] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [renamingDoc, setRenamingDoc] = useState<Document | null>(null);
   const bulkDeleteMutation = useMutation(api.documents.bulkDelete);
 
   // Convex client for on-demand queries
   const convex = useConvex();
+
+  // Get client data for rename dialog metadata
+  const client = useQuery(
+    api.clients.get,
+    clientId ? { id: clientId } : "skip"
+  );
 
   // Get project name if we have a project folder selected
   const project = useQuery(
@@ -207,9 +219,9 @@ export default function FileList({
       case 'date-asc':
         return docs.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
       case 'name-asc':
-        return docs.sort((a, b) => (a.documentCode || a.fileName).localeCompare(b.documentCode || b.fileName));
+        return docs.sort((a, b) => (a.displayName || a.documentCode || a.fileName).localeCompare(b.displayName || b.documentCode || b.fileName));
       case 'name-desc':
-        return docs.sort((a, b) => (b.documentCode || b.fileName).localeCompare(a.documentCode || a.fileName));
+        return docs.sort((a, b) => (b.displayName || b.documentCode || b.fileName).localeCompare(a.displayName || a.documentCode || a.fileName));
       case 'size-desc':
         return docs.sort((a, b) => b.fileSize - a.fileSize);
       case 'size-asc':
@@ -366,7 +378,7 @@ export default function FileList({
       const url = window.URL.createObjectURL(blob);
       const link = window.document.createElement('a');
       link.href = url;
-      link.download = doc.fileName;
+      link.download = doc.displayName || doc.documentCode || doc.fileName;
       window.document.body.appendChild(link);
       link.click();
       window.document.body.removeChild(link);
@@ -436,6 +448,7 @@ export default function FileList({
     onView: () => handleView(doc),
     onDownload: () => handleDownload(doc),
     onDelete: () => handleDelete(doc),
+    onRename: () => setRenamingDoc(doc),
     onDuplicate: () => handleDuplicate(doc._id, doc.fileName),
     onOpenReader: () => handleOpenReader(doc),
     onLinkAsVersion: () => handleLinkAsVersion(doc),
@@ -782,6 +795,19 @@ export default function FileList({
         currentProjectId={selectedFolder?.projectId}
         onMoveComplete={() => setSelectedDocIds(new Set())}
       />
+
+      {/* Rename Document Dialog */}
+      {renamingDoc && (
+        <RenameDocumentDialog
+          isOpen={!!renamingDoc}
+          onClose={() => setRenamingDoc(null)}
+          document={renamingDoc}
+          clientMetadata={client?.metadata}
+          projectMetadata={project?.metadata}
+          clientCode={client?.metadata?.documentNaming?.code || ""}
+          projectCode={project?.projectShortcode || ""}
+        />
+      )}
     </div>
   );
 }

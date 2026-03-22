@@ -360,7 +360,7 @@ export default function FileDetailPanel({
       const url = window.URL.createObjectURL(blob);
       const link = window.document.createElement('a');
       link.href = url;
-      link.download = document.fileName;
+      link.download = document.displayName || document.documentCode || document.fileName;
       window.document.body.appendChild(link);
       link.click();
       window.document.body.removeChild(link);
@@ -420,7 +420,7 @@ export default function FileDetailPanel({
         <SheetHeader className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center justify-between">
             <SheetTitle className="text-xl font-semibold truncate pr-4">
-              {document.documentCode || document.fileName}
+              {document.displayName || document.documentCode || document.fileName}
             </SheetTitle>
           </div>
         </SheetHeader>

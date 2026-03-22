@@ -540,7 +540,7 @@ export default function ClientOverviewTab({
                           <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">
-                              {doc.documentCode || doc.fileName}
+                              {doc.displayName || doc.documentCode || doc.fileName}
                             </p>
                           </div>
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">

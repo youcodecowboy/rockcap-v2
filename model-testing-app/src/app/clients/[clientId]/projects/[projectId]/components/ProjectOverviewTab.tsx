@@ -381,7 +381,7 @@ export default function ProjectOverviewTab({
                   <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">
-                      {doc.documentCode || doc.fileName}
+                      {doc.displayName || doc.documentCode || doc.fileName}
                     </p>
                     <p className="text-xs text-gray-500 truncate">{doc.summary}</p>
                     <div className="flex items-center gap-2 mt-1">
