@@ -688,3 +688,24 @@ export const renameCustomFolder = mutation({
   },
 });
 
+// Mutation: Record client access for recency tracking
+export const recordAccess = mutation({
+  args: {
+    clientId: v.id("clients"),
+  },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return;
+
+    // Debounce: skip if accessed less than 30 seconds ago
+    if (client.lastAccessedAt) {
+      const lastAccess = new Date(client.lastAccessedAt).getTime();
+      const now = Date.now();
+      if (now - lastAccess < 30_000) return;
+    }
+
+    await ctx.db.patch(args.clientId, {
+      lastAccessedAt: new Date().toISOString(),
+    });
+  },
+});

@@ -50,6 +50,7 @@ export default defineSchema({
     // Internal stage tracking
     stageNote: v.optional(v.string()), // Quick note about current stage/status of client relationship
     stageNoteUpdatedAt: v.optional(v.string()), // When the stage note was last updated
+    lastAccessedAt: v.optional(v.string()),
     // HubSpot integration fields
     hubspotCompanyId: v.optional(v.string()),
     hubspotUrl: v.optional(v.string()),
@@ -65,7 +66,8 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_type", ["type"])
     .index("by_name", ["name"])
-    .index("by_hubspot_id", ["hubspotCompanyId"]),
+    .index("by_hubspot_id", ["hubspotCompanyId"])
+    .index("by_last_accessed", ["lastAccessedAt"]),
 
   // Companies table - HubSpot companies (prospects, separate from clients)
   // Companies can be promoted to clients when they become active
