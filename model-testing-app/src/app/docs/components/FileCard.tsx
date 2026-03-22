@@ -24,6 +24,7 @@ import {
   BookOpen,
   Layers,
   Unlink,
+  Copy,
   ChevronDown,
   ChevronRight,
   MessageSquareText,
@@ -63,6 +64,7 @@ interface FileCardProps {
   onView: () => void;
   onDownload: () => void;
   onMove?: () => void;
+  onDuplicate?: () => void;
   onDelete?: () => void;
   onOpenReader?: () => void;
   onLinkAsVersion?: () => void;
@@ -82,6 +84,7 @@ export default function FileCard({
   onView,
   onDownload,
   onMove,
+  onDuplicate,
   onDelete,
   onOpenReader,
   onLinkAsVersion,
@@ -197,6 +200,12 @@ export default function FileCard({
         <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onMove)}>
           <FolderInput className="w-4 h-4 mr-2" />
           Move to Folder
+        </DropdownMenuItem>
+      )}
+      {onDuplicate && (
+        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDuplicate)}>
+          <Copy className="w-4 h-4 mr-2" />
+          Duplicate
         </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />

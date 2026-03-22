@@ -124,6 +124,7 @@ export default function FileList({
   );
 
   const unlinkVersion = useMutation(api.documents.unlinkVersion);
+  const duplicateDocument = useMutation(api.documents.duplicateDocument);
 
   // Drag handlers for the empty folder drop zone
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -382,6 +383,15 @@ export default function FileList({
     setShowLinkVersionModal(true);
   };
 
+  const handleDuplicate = useCallback(async (documentId: Id<"documents">, fileName: string) => {
+    try {
+      await duplicateDocument({ documentId });
+      toast.success(`Duplicated "${fileName}"`);
+    } catch (error) {
+      toast.error("Failed to duplicate document");
+    }
+  }, [duplicateDocument]);
+
   const handleUnlinkVersion = async (doc: Document) => {
     if (!confirm(`Unlink "${doc.documentCode || doc.fileName}" from its version chain?`)) return;
     try {
@@ -406,6 +416,7 @@ export default function FileList({
     onView: () => handleView(doc),
     onDownload: () => handleDownload(doc),
     onDelete: () => handleDelete(doc),
+    onDuplicate: () => handleDuplicate(doc._id, doc.fileName),
     onOpenReader: () => handleOpenReader(doc),
     onLinkAsVersion: () => handleLinkAsVersion(doc),
     onUnlinkVersion: () => handleUnlinkVersion(doc),
