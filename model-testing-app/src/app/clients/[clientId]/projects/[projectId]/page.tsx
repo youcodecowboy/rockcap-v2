@@ -418,6 +418,7 @@ function ProjectDetailContent() {
                     setSettingsDefaultTab('general');
                     setShowSettingsPanel(true);
                   }}
+                  onTabChange={handleTabChange}
                 />
               </TabsContent>
 

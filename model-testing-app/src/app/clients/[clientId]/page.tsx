@@ -410,6 +410,7 @@ function ClientProfileContent() {
                   setSettingsDefaultTab('general');
                   setShowSettingsPanel(true);
                 }}
+                onTabChange={handleTabChange}
               />
             </div>
           </TabsContent>

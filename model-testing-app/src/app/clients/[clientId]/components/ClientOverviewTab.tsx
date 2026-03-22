@@ -62,6 +62,7 @@ interface ClientOverviewTabProps {
   projects: any[];
   contacts: any[];
   onOpenSettings?: () => void;
+  onTabChange?: (tab: string) => void;
 }
 
 // Helper to format currency
@@ -81,6 +82,7 @@ export default function ClientOverviewTab({
   projects,
   contacts,
   onOpenSettings,
+  onTabChange,
 }: ClientOverviewTabProps) {
   const router = useRouter();
   const [isEditingStageNote, setIsEditingStageNote] = useState(false);
@@ -520,7 +522,7 @@ export default function ClientOverviewTab({
                       variant="ghost"
                       size="sm"
                       className="text-xs h-6 px-2"
-                      onClick={() => router.push(`/clients/${clientId}?tab=documents`)}
+                      onClick={() => onTabChange?.('documents')}
                     >
                       View All <ChevronRight className="w-3 h-3 ml-1" />
                     </Button>
@@ -563,7 +565,7 @@ export default function ClientOverviewTab({
                       variant="ghost"
                       size="sm"
                       className="text-xs h-6 px-2"
-                      onClick={() => router.push(`/clients/${clientId}?tab=projects`)}
+                      onClick={() => onTabChange?.('projects')}
                     >
                       View All <ChevronRight className="w-3 h-3 ml-1" />
                     </Button>
@@ -629,7 +631,7 @@ export default function ClientOverviewTab({
                 variant="ghost"
                 size="sm"
                 className="text-xs h-6 px-2"
-                onClick={() => router.push(`/clients/${clientId}?tab=tasks`)}
+                onClick={() => onTabChange?.('tasks')}
               >
                 View All
               </Button>

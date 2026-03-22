@@ -32,6 +32,7 @@ interface ProjectOverviewTabProps {
   documents: any[];
   clientRoles: any[];
   onOpenSettings?: () => void;
+  onTabChange?: (tab: string) => void;
 }
 
 export default function ProjectOverviewTab({
@@ -42,6 +43,7 @@ export default function ProjectOverviewTab({
   documents,
   clientRoles,
   onOpenSettings,
+  onTabChange,
 }: ProjectOverviewTabProps) {
   const router = useRouter();
 
@@ -216,7 +218,7 @@ export default function ProjectOverviewTab({
             variant="ghost" 
             size="sm"
             className="text-xs"
-            onClick={() => router.push(`/clients/${clientId}/projects/${projectId}?tab=checklist`)}
+            onClick={() => onTabChange?.('checklist')}
           >
             View All
           </Button>
@@ -361,7 +363,7 @@ export default function ProjectOverviewTab({
             variant="ghost" 
             size="sm"
             className="text-xs"
-            onClick={() => router.push(`/clients/${clientId}/projects/${projectId}?tab=documents`)}
+            onClick={() => onTabChange?.('documents')}
           >
             View All
           </Button>
