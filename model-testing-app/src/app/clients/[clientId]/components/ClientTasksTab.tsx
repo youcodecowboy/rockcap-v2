@@ -799,14 +799,14 @@ function TaskListItem({
   task,
   isSelected,
   onSelect,
-  onDelete,
+  onDelete: _onDelete,
   onStatusChange,
   getStatusIcon,
   getPriorityColor,
   isOverdue,
 }: TaskListItemProps) {
   return (
-    <div className="group relative">
+    <div className="relative">
       <div
         onClick={onSelect}
         role="button"
@@ -855,16 +855,6 @@ function TaskListItem({
           </div>
         </div>
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        className="absolute right-2 top-2 z-10 p-1 opacity-0 group-hover:opacity-100 bg-white rounded shadow hover:bg-red-50 transition-all border border-gray-200"
-        title="Delete task"
-      >
-        <Trash2 className="w-3 h-3 text-red-600" />
-      </button>
     </div>
   );
 }
