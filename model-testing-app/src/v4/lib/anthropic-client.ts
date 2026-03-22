@@ -188,6 +188,14 @@ export function buildBatchUserMessage(
           : ''),
     });
 
+    // For email-delivered files, add classification guidance annotation
+    if (/\.(eml|msg)$/i.test(doc.fileName)) {
+      blocks.push({
+        type: 'text',
+        text: '⚠ EMAIL CONTAINER: This content was delivered inside an email (.eml). Classify based on the document content below, not the email delivery format. If the email contains or forwards a substantive document (valuation, legal terms, report, schedule, etc.), classify as that document type — not as Email/Correspondence.',
+      });
+    }
+
     // Document content (multimodal or text)
     switch (doc.processedContent.type) {
       case 'text':

@@ -102,8 +102,12 @@ export async function preprocessDocument(
   const fileSize = file.size;
   const mediaType = file.type || 'application/octet-stream';
 
+  // Strip .eml/.msg extensions before hint analysis so email container format
+  // doesn't bias classification. Original filename preserved for display.
+  const filenameForHints = fileName.replace(/\.(eml|msg)$/i, '');
+
   // Generate hints from filename
-  const hints = analyzeFilename(fileName, extractedText);
+  const hints = analyzeFilename(filenameForHints, extractedText);
 
   // Process content based on type
   let processedContent: DocumentContent;

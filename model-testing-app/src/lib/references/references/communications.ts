@@ -90,7 +90,7 @@ export const COMMUNICATION_REFERENCES: DocumentReference[] = [
     ],
 
     filenamePatterns: [
-      'email', 'correspondence', 'letter', 'eml$', 'msg$',
+      'email', 'correspondence', 'letter',
       'fwd', 'fw[_\\-\\s]', 're[_\\-\\s]',
       'broker[_\\-]?intro',
     ],
@@ -119,12 +119,6 @@ export const COMMUNICATION_REFERENCES: DocumentReference[] = [
         signals: ['conversational-tone', 'deal-reference', 'no-report-structure'],
         priority: 7,
         action: 'include',
-      },
-      {
-        condition: 'File extension is .eml or .msg indicating native email format',
-        signals: ['eml-extension', 'msg-extension'],
-        priority: 3,
-        action: 'boost',
       },
     ],
 
