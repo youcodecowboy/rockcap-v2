@@ -523,8 +523,19 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
 
   const handleCleanupFullNote = useCallback(async () => {
     if (!editor) return;
-    const fullText = editor.state.doc.textContent;
-    if (fullText.length < 5) return;
+
+    // Extract text with line breaks preserved (not textContent which flattens)
+    const { doc } = editor.state;
+    const lines: string[] = [];
+    doc.descendants((node) => {
+      if (node.isTextblock) {
+        lines.push(node.textContent);
+      } else if (node.type.name === 'listItem' || node.type.name === 'taskItem') {
+        lines.push(`- ${node.textContent}`);
+      }
+    });
+    const fullText = lines.join('\n');
+    if (fullText.trim().length < 5) return;
 
     setIsCleaningFullNote(true);
     try {
@@ -536,9 +547,31 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
       if (!res.ok) throw new Error('Cleanup failed');
       const { cleaned } = await res.json();
 
-      // Store original for undo
+      // Store original for undo (full TipTap JSON)
       const originalContent = editor.getJSON();
-      editor.commands.setContent(cleaned);
+
+      // Convert cleaned text back to structured HTML for TipTap
+      // Split on line breaks and wrap each line as a paragraph
+      const html = cleaned
+        .split('\n')
+        .filter((line: string) => line.trim().length > 0)
+        .map((line: string) => {
+          // Detect bullet lines and convert to list items
+          const bulletMatch = line.match(/^[\-\*•]\s+(.*)/);
+          if (bulletMatch) {
+            return `<li><p>${bulletMatch[1]}</p></li>`;
+          }
+          return `<p>${line}</p>`;
+        })
+        .join('');
+
+      // Wrap consecutive <li> tags in <ul>
+      const htmlWithLists = html.replace(
+        /(<li><p>.*?<\/p><\/li>)+/g,
+        (match) => `<ul>${match}</ul>`
+      );
+
+      editor.commands.setContent(htmlWithLists);
 
       const { showUndoToast } = await import('@/components/UndoToast');
       showUndoToast({
