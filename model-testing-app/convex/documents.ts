@@ -1154,36 +1154,22 @@ export const duplicateDocument = mutation({
       throw new Error("Document not found");
     }
 
-    // Generate the "(Copy)" display name
+    // Keep original fileName, append "(Copy)" only to the duplicate
     const copyName = doc.fileName
       ? `${doc.fileName} (Copy)`
       : "Document (Copy)";
 
-    // Look up client name for code generation
-    let clientName = doc.clientName || "Unknown";
-    if (clientName === "Unknown" && doc.clientId) {
-      const client = await ctx.db.get(doc.clientId);
-      if (client) clientName = client.name;
-    }
-
-    // Generate new document code
+    // Keep original document code, append "-COPY" suffix (preserves project/client naming)
     const now = new Date().toISOString();
-    const scope = doc.scope || "client";
-    const projectNameForCode = doc.isBaseDocument ? undefined : doc.projectName;
-    let newDocumentCode = generateDocumentCode(
-      scope === "client" ? clientName : "",
-      doc.category || "Uncategorized",
-      projectNameForCode || undefined,
-      now,
-      { scope: scope as "client" | "internal" | "personal", uploaderInitials: doc.uploaderInitials },
-    );
+    const baseCode = doc.documentCode || doc._id;
+    let newDocumentCode = `${baseCode}-COPY`;
 
-    // Ensure uniqueness
+    // Ensure uniqueness by adding counter if needed
     const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
     let finalCode = newDocumentCode;
-    let counter = 1;
+    let counter = 2;
     while (existingDocs.some((d) => d.documentCode === finalCode)) {
-      finalCode = `${newDocumentCode}-${counter}`;
+      finalCode = `${baseCode}-COPY-${counter}`;
       counter++;
     }
     newDocumentCode = finalCode;
