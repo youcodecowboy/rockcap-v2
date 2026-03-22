@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { showUndoToast } from '@/components/UndoToast';
 import {
   Dialog,
   DialogContent,
@@ -74,11 +76,19 @@ function UnfiledFolderRow({
   count,
   selectedFolder,
   onFolderSelect,
+  isDropTarget,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: {
   projectId: Id<"projects">;
   count: number;
   selectedFolder: FolderSelection | null;
   onFolderSelect: (folder: FolderSelection) => void;
+  isDropTarget?: boolean;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
 }) {
   const selected =
     selectedFolder?.type === 'project' &&
@@ -93,11 +103,15 @@ function UnfiledFolderRow({
         folderName: 'Unfiled',
         projectId,
       })}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       className={cn(
         "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
         selected
           ? "bg-orange-100 text-orange-900"
-          : "hover:bg-gray-100 text-orange-600/70"
+          : "hover:bg-gray-100 text-orange-600/70",
+        isDropTarget && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
       )}
     >
       {selected ? (
@@ -116,10 +130,18 @@ function ClientUnfiledFolderRow({
   count,
   selectedFolder,
   onFolderSelect,
+  isDropTarget,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: {
   count: number;
   selectedFolder: FolderSelection | null;
   onFolderSelect: (folder: FolderSelection) => void;
+  isDropTarget?: boolean;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
 }) {
   const selected =
     selectedFolder?.type === 'client' &&
@@ -132,11 +154,15 @@ function ClientUnfiledFolderRow({
         folderId: 'unfiled',
         folderName: 'Unfiled',
       })}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       className={cn(
         "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
         selected
           ? "bg-orange-100 text-orange-900"
-          : "hover:bg-gray-100 text-orange-600/70"
+          : "hover:bg-gray-100 text-orange-600/70",
+        isDropTarget && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
       )}
     >
       {selected ? (
@@ -175,6 +201,74 @@ export default function FolderBrowser({
   const deleteClientFolder = useMutation(api.clients.deleteCustomFolder);
   const addProjectFolder = useMutation(api.projects.addCustomProjectFolder);
   const deleteProjectFolder = useMutation(api.projects.deleteCustomProjectFolder);
+  const moveDocument = useMutation(api.documents.moveDocument);
+  const bulkMove = useMutation(api.documents.bulkMove);
+
+  // Drop target state
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  const handleFolderDragOver = useCallback((e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropTargetId(folderId);
+  }, []);
+
+  const handleFolderDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDropTargetId(null);
+  }, []);
+
+  const handleFolderDrop = useCallback(async (
+    e: React.DragEvent,
+    targetFolder: {
+      type: "client" | "project";
+      folderId: string;
+      folderName: string;
+      projectId?: string;
+      clientId: string;
+    }
+  ) => {
+    e.preventDefault();
+    setDropTargetId(null);
+
+    const data = e.dataTransfer.getData("application/x-document-ids");
+    if (!data) return;
+
+    const docIds: string[] = JSON.parse(data);
+    if (docIds.length === 0) return;
+
+    const count = docIds.length;
+
+    try {
+      if (count === 1) {
+        await moveDocument({
+          documentId: docIds[0] as Id<"documents">,
+          targetClientId: targetFolder.clientId as Id<"clients">,
+          targetProjectId: targetFolder.projectId as Id<"projects"> | undefined,
+          targetProjectName: undefined,
+          isBaseDocument: targetFolder.type === "client" && !targetFolder.projectId,
+        });
+      } else {
+        await bulkMove({
+          documentIds: docIds as Id<"documents">[],
+          targetScope: "client",
+          targetClientId: targetFolder.clientId as Id<"clients">,
+          targetProjectId: targetFolder.projectId as Id<"projects"> | undefined,
+          targetFolderId: targetFolder.folderId,
+          targetFolderType: targetFolder.type,
+        });
+      }
+
+      showUndoToast({
+        message: `Moved ${count} file${count !== 1 ? "s" : ""} to ${targetFolder.folderName}`,
+        onUndo: async () => {
+          toast.info("Use the Move option to move files back to their original folder");
+        },
+      });
+    } catch (error) {
+      toast.error(`Failed to move file${count !== 1 ? "s" : ""}`);
+    }
+  }, [moveDocument, bulkMove]);
 
   // Build client folders with counts
   const clientFoldersWithCounts = useMemo(() => {
@@ -398,12 +492,22 @@ export default function FolderBrowser({
             projectId,
             parentPath: buildParentPath(folder._id, allFolders),
           })}
+          onDragOver={(e) => handleFolderDragOver(e, folder._id)}
+          onDragLeave={handleFolderDragLeave}
+          onDrop={(e) => handleFolderDrop(e, {
+            type: "project",
+            folderId: folder.folderType,
+            folderName: folder.name,
+            projectId,
+            clientId: clientId,
+          })}
           className={cn(
             "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
             selected
               ? "bg-blue-100 text-blue-900"
               : "hover:bg-gray-100 text-gray-700",
-            depth > 0 && "ml-4"
+            depth > 0 && "ml-4",
+            dropTargetId === folder._id && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
           )}
         >
           {hasChildren && (
@@ -486,12 +590,21 @@ export default function FolderBrowser({
             folderId: folder.folderType,
             folderName: folder.name,
           })}
+          onDragOver={(e) => handleFolderDragOver(e, folder._id)}
+          onDragLeave={handleFolderDragLeave}
+          onDrop={(e) => handleFolderDrop(e, {
+            type: "client",
+            folderId: folder.folderType,
+            folderName: folder.name,
+            clientId: clientId,
+          })}
           className={cn(
             "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
             selected
               ? "bg-blue-100 text-blue-900"
               : "hover:bg-gray-100 text-gray-700",
-            depth > 0 && "ml-4"
+            depth > 0 && "ml-4",
+            dropTargetId === folder._id && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
           )}
         >
           {selected ? (
@@ -593,6 +706,15 @@ export default function FolderBrowser({
                 count={clientUnfiledCount}
                 selectedFolder={selectedFolder}
                 onFolderSelect={onFolderSelect}
+                isDropTarget={dropTargetId === 'client-unfiled'}
+                onDragOver={(e) => handleFolderDragOver(e, 'client-unfiled')}
+                onDragLeave={handleFolderDragLeave}
+                onDrop={(e) => handleFolderDrop(e, {
+                  type: "client",
+                  folderId: "unfiled",
+                  folderName: "Unfiled",
+                  clientId: clientId,
+                })}
               />
             </div>
           </div>
@@ -649,6 +771,16 @@ export default function FolderBrowser({
                               count={project.unfiledCount}
                               selectedFolder={selectedFolder}
                               onFolderSelect={onFolderSelect}
+                              isDropTarget={dropTargetId === `project-unfiled-${project._id}`}
+                              onDragOver={(e) => handleFolderDragOver(e, `project-unfiled-${project._id}`)}
+                              onDragLeave={handleFolderDragLeave}
+                              onDrop={(e) => handleFolderDrop(e, {
+                                type: "project",
+                                folderId: "unfiled",
+                                folderName: "Unfiled",
+                                projectId: project._id,
+                                clientId: clientId,
+                              })}
                             />
                             {/* Add Custom Folder Button */}
                             <button
