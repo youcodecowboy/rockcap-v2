@@ -561,7 +561,7 @@ function NotesPageContent() {
                 ) : (
                   <div className="divide-y divide-gray-200">
                     {filteredNotes.map((note) => (
-                      <div key={note._id} className="group relative overflow-visible">
+                      <div key={note._id} className="relative overflow-visible">
                         <button
                           onClick={() => setSelectedNoteId(note._id)}
                           className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
@@ -613,16 +613,6 @@ function NotesPageContent() {
                               )}
                             </div>
                           )}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteNote(note._id);
-                          }}
-                          className="absolute right-2 top-2 z-50 p-1 opacity-0 group-hover:opacity-100 bg-white rounded shadow-lg hover:bg-red-50 transition-all border border-gray-200"
-                          title="Delete note"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-600" />
                         </button>
                       </div>
                     ))}
