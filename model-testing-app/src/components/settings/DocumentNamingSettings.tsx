@@ -1,15 +1,26 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import { abbreviateText, abbreviateCategory, generateDocumentCode } from '@/lib/documentCodeUtils';
+import { abbreviateText, generateDocumentCode } from '@/lib/documentCodeUtils';
+import {
+  resolveNamingConfig,
+  type DocumentNamingConfig,
+  type CustomToken,
+  labelToTokenId,
+  MAX_CUSTOM_TOKENS,
+  DEFAULT_PATTERN,
+  DEFAULT_SEPARATOR,
+} from '@/lib/namingConfig';
+import NamingPatternBuilder from './NamingPatternBuilder';
 
 interface DocumentNamingSettingsProps {
   entityType: 'client' | 'project';
@@ -17,16 +28,10 @@ interface DocumentNamingSettingsProps {
   clientName?: string;
   projectId?: Id<"projects">;
   projectName?: string;
-  projectShortcode?: string; // Actual existing shortcode from project
+  projectShortcode?: string;
   metadata?: any;
-  onSave?: (namingSettings: NamingSettings) => void;
-  onShortcodeChange?: (shortcode: string) => void; // For editing the actual shortcode
-}
-
-interface NamingSettings {
-  code: string;
-  pattern?: string;
-  inheritFromClient?: boolean;
+  onSave?: (namingSettings: DocumentNamingConfig) => void;
+  onShortcodeChange?: (shortcode: string) => void;
 }
 
 export default function DocumentNamingSettings({
@@ -40,11 +45,67 @@ export default function DocumentNamingSettings({
   onSave,
   onShortcodeChange,
 }: DocumentNamingSettingsProps) {
-  const [code, setCode] = useState('');
+  // Query client data for inheritance (project level)
+  const client = useQuery(
+    api.clients.get,
+    entityType === 'project' && clientId ? { id: clientId } : 'skip'
+  );
+  const resolvedClientName = clientName || (client as any)?.name || '';
+  const clientMetadata = (client as any)?.metadata;
+
+  // Resolve initial config from metadata
+  const initialConfig = useMemo(() => {
+    if (entityType === 'project') {
+      return resolveNamingConfig(metadata, clientMetadata);
+    }
+    return resolveNamingConfig(undefined, metadata);
+  }, [metadata, clientMetadata, entityType]);
+
+  const [config, setConfig] = useState<DocumentNamingConfig>({
+    code: '',
+    pattern: DEFAULT_PATTERN,
+    separator: DEFAULT_SEPARATOR,
+    customTokens: [],
+  });
+  const [inheriting, setInheriting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
 
-  // Get documents to show stats
+  // Custom token creation
+  const [newTokenLabel, setNewTokenLabel] = useState('');
+  const [newTokenRequired, setNewTokenRequired] = useState(false);
+  const [showTokenForm, setShowTokenForm] = useState(false);
+
+  // Sync config from resolved metadata
+  useEffect(() => {
+    const projectNaming = metadata?.documentNaming;
+    const isInheriting = entityType === 'project' && (!projectNaming || projectNaming.inheritFromClient === true);
+    setInheriting(isInheriting);
+
+    setConfig((prev) => ({
+      ...initialConfig,
+      // For code: use projectShortcode if available, or the resolved config code
+      code: entityType === 'project' && projectShortcode
+        ? projectShortcode
+        : initialConfig.code || prev.code,
+    }));
+  }, [initialConfig, projectShortcode, entityType, metadata]);
+
+  // Set default code from names if no saved code
+  useEffect(() => {
+    setConfig((prev) => {
+      if (prev.code) return prev;
+      if (entityType === 'client' && clientName) {
+        return { ...prev, code: abbreviateText(clientName, 8) };
+      }
+      if (entityType === 'project' && projectName) {
+        return { ...prev, code: abbreviateText(projectName, 10) };
+      }
+      return prev;
+    });
+  }, [clientName, projectName, entityType]);
+
+  // Get documents for stats
   const clientDocuments = useQuery(
     api.documents.getByClient,
     clientId ? { clientId } : 'skip'
@@ -59,23 +120,6 @@ export default function DocumentNamingSettings({
 
   const updateDocumentCode = useMutation(api.documents.updateDocumentCode);
 
-  // Initialize from actual shortcode, saved metadata, or generate default
-  useEffect(() => {
-    // For projects, use the actual projectShortcode first
-    if (entityType === 'project' && projectShortcode) {
-      setCode(projectShortcode);
-    } else {
-      const savedCode = metadata?.documentNaming?.code;
-      if (savedCode) {
-        setCode(savedCode);
-      } else if (entityType === 'client' && clientName) {
-        setCode(abbreviateText(clientName, 8));
-      } else if (entityType === 'project' && projectName) {
-        setCode(abbreviateText(projectName, 10));
-      }
-    }
-  }, [metadata, clientName, projectName, projectShortcode, entityType]);
-
   // Calculate stats
   const stats = useMemo(() => {
     const missingCodes = documents.filter((doc: any) => !doc.documentCode || doc.documentCode.trim() === '');
@@ -87,24 +131,76 @@ export default function DocumentNamingSettings({
     };
   }, [documents]);
 
+  // Resolve the client config for inheritance display
+  const clientConfig = useMemo(() => {
+    if (entityType !== 'project' || !clientMetadata) return null;
+    return resolveNamingConfig(undefined, clientMetadata);
+  }, [entityType, clientMetadata]);
+
+  const handleToggleInheritance = (checked: boolean) => {
+    setInheriting(checked);
+    if (!checked && clientConfig) {
+      // Override: copy client config as starting point
+      setConfig((prev) => ({
+        ...clientConfig,
+        code: prev.code, // keep project's own code
+      }));
+    }
+  };
+
+  const handleConfigChange = (updated: DocumentNamingConfig) => {
+    setConfig(updated);
+  };
+
+  const handleAddCustomToken = () => {
+    if (!newTokenLabel.trim()) return;
+    const id = labelToTokenId(newTokenLabel);
+    if (config.customTokens.some((t) => t.id === id)) return;
+
+    const token: CustomToken = {
+      id,
+      label: newTokenLabel.trim(),
+      type: 'text',
+      required: newTokenRequired,
+    };
+
+    setConfig((prev) => ({
+      ...prev,
+      customTokens: [...prev.customTokens, token],
+    }));
+    setNewTokenLabel('');
+    setNewTokenRequired(false);
+    setShowTokenForm(false);
+  };
+
+  const handleRemoveCustomToken = (tokenId: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      customTokens: prev.customTokens.filter((t) => t.id !== tokenId),
+      // Also remove from pattern if present
+      pattern: prev.pattern.filter((p) => p.toLowerCase() !== tokenId.toLowerCase()),
+    }));
+  };
+
   const handleSave = async () => {
-    if (!code.trim()) return;
+    if (!config.code.trim()) return;
 
     setIsSaving(true);
     try {
       // For projects, update the actual projectShortcode field
       if (entityType === 'project' && onShortcodeChange) {
-        await onShortcodeChange(code.toUpperCase());
+        await onShortcodeChange(config.code.toUpperCase());
       }
 
-      // Also save to metadata for pattern storage
       if (onSave) {
-        onSave({
-          code: code.toUpperCase(),
-          pattern: entityType === 'client'
-            ? `{client}-{type}-{date}`
-            : `{client}-{type}-{project}-{date}`,
-        });
+        const savePayload: DocumentNamingConfig = {
+          code: config.code.toUpperCase(),
+          pattern: inheriting ? [] : config.pattern,
+          separator: inheriting ? DEFAULT_SEPARATOR : config.separator,
+          customTokens: inheriting ? [] : config.customTokens,
+          inheritFromClient: entityType === 'project' ? inheriting : undefined,
+        };
+        onSave(savePayload);
       }
     } finally {
       setIsSaving(false);
@@ -112,7 +208,7 @@ export default function DocumentNamingSettings({
   };
 
   const handleApplyToDocuments = async () => {
-    if (!code.trim()) return;
+    if (!config.code.trim()) return;
     if (documents.length === 0) return;
 
     setIsApplying(true);
@@ -131,7 +227,7 @@ export default function DocumentNamingSettings({
       for (const doc of docsToUpdate) {
         try {
           const generatedCode = generateDocumentCode(
-            clientName || '',
+            resolvedClientName || '',
             doc.category,
             projectName,
             doc.uploadedAt
@@ -161,20 +257,8 @@ export default function DocumentNamingSettings({
     }
   };
 
-  // Generate preview code
-  const previewCode = () => {
-    if (!code.trim()) return '';
-    const dateCode = new Date().toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-    }).replace(/\//g, '');
-
-    if (entityType === 'project' && projectName) {
-      return `${code.toUpperCase()}-DOC-${abbreviateText(projectName, 10).toUpperCase()}-${dateCode}`;
-    }
-    return `${code.toUpperCase()}-DOC-${dateCode}`;
-  };
+  // The active config to display (inherited or local)
+  const displayConfig = inheriting && clientConfig ? { ...clientConfig, code: config.code } : config;
 
   const maxLength = entityType === 'client' ? 8 : 10;
 
@@ -204,7 +288,35 @@ export default function DocumentNamingSettings({
         </div>
       )}
 
-      {/* Code Configuration */}
+      {/* Inheritance Banner (project level only) */}
+      {entityType === 'project' && (
+        <div className={`rounded-lg border p-4 ${inheriting ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-900">
+                {inheriting
+                  ? `Inheriting naming pattern from ${resolvedClientName || 'client'}.`
+                  : 'Using project-level naming pattern.'}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {inheriting
+                  ? 'Toggle off to override with a project-specific pattern.'
+                  : 'Toggle on to inherit from the client settings.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="inherit-toggle" className="text-xs text-gray-600">Inherit</Label>
+              <Switch
+                id="inherit-toggle"
+                checked={inheriting}
+                onCheckedChange={handleToggleInheritance}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Abbreviation / Code Input */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-gray-900">
@@ -223,8 +335,8 @@ export default function DocumentNamingSettings({
           </Label>
           <Input
             id="code"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+            value={config.code}
+            onChange={(e) => setConfig((prev) => ({ ...prev, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
             placeholder={entityType === 'client' ? 'e.g., FIRESIDE' : 'e.g., WIMBPARK28'}
             className="font-mono"
             maxLength={maxLength}
@@ -238,43 +350,114 @@ export default function DocumentNamingSettings({
             )}
           </p>
         </div>
-
-        {/* Preview */}
-        {previewCode() && (
-          <div className="space-y-2">
-            <Label>Preview</Label>
-            <div className="px-3 py-2 bg-blue-50 rounded-md border border-blue-200">
-              <span className="text-sm font-mono text-blue-900">{previewCode()}</span>
-            </div>
-            <p className="text-xs text-gray-500">
-              Example document code with today's date
-            </p>
-          </div>
-        )}
-
-        {/* Pattern Explanation */}
-        <div className="space-y-2">
-          <Label>Naming Pattern</Label>
-          <div className="px-3 py-2 bg-gray-50 rounded-md border border-gray-200">
-            <span className="text-sm font-mono text-gray-700">
-              {entityType === 'client'
-                ? `{CLIENT}-{TYPE}-{DDMMYY}`
-                : `{CLIENT}-{TYPE}-{PROJECT}-{DDMMYY}`
-              }
-            </span>
-          </div>
-          <p className="text-xs text-gray-500">
-            TYPE is auto-detected from document category (e.g., VAL, OPR, DOC)
-          </p>
-        </div>
       </div>
+
+      {/* Naming Pattern Builder */}
+      <NamingPatternBuilder
+        config={displayConfig}
+        onChange={handleConfigChange}
+        sampleClientCode={config.code || 'ACME'}
+        sampleProjectCode={entityType === 'project' ? (projectShortcode || config.code || 'PARK28') : undefined}
+        sampleCategory="Appraisals"
+        disabled={inheriting}
+      />
+
+      {/* Custom Tokens Section */}
+      {!inheriting && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Custom Tokens</Label>
+            {config.customTokens.length < MAX_CUSTOM_TOKENS && !showTokenForm && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() => setShowTokenForm(true)}
+              >
+                <Plus className="w-3 h-3" />
+                Add Custom Token
+              </Button>
+            )}
+          </div>
+
+          {/* New token form */}
+          {showTokenForm && (
+            <div className="flex items-end gap-2 p-3 bg-gray-50 rounded-lg border">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="token-label" className="text-xs">Token Label</Label>
+                <Input
+                  id="token-label"
+                  value={newTokenLabel}
+                  onChange={(e) => setNewTokenLabel(e.target.value)}
+                  placeholder="e.g., Phase, Block"
+                  className="h-8 text-sm"
+                />
+                {newTokenLabel.trim() && (
+                  <p className="text-xs text-gray-400 font-mono">
+                    ID: {labelToTokenId(newTokenLabel)}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Switch
+                    id="token-required"
+                    checked={newTokenRequired}
+                    onCheckedChange={setNewTokenRequired}
+                  />
+                  <Label htmlFor="token-required" className="text-xs">Required</Label>
+                </div>
+                <Button size="sm" className="h-8" onClick={handleAddCustomToken} disabled={!newTokenLabel.trim()}>
+                  Add
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowTokenForm(false); setNewTokenLabel(''); setNewTokenRequired(false); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Existing custom tokens */}
+          {config.customTokens.length > 0 && (
+            <div className="space-y-1.5">
+              {config.customTokens.map((token) => (
+                <div
+                  key={token.id}
+                  className="flex items-center justify-between px-3 py-2 bg-purple-50 rounded-md border border-purple-200"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-purple-800">{token.label}</span>
+                    <span className="text-xs font-mono text-purple-500">{token.id}</span>
+                    {token.required && (
+                      <Badge variant="outline" className="text-[10px] h-4 bg-purple-100 text-purple-600 border-purple-300">
+                        required
+                      </Badge>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-purple-400 hover:text-red-600"
+                    onClick={() => handleRemoveCustomToken(token.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+              <p className="text-xs text-gray-400">
+                {config.customTokens.length}/{MAX_CUSTOM_TOKENS} custom tokens used
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="space-y-3 pt-4 border-t">
         {stats.missingCodes > 0 && (
           <Button
             onClick={handleApplyToDocuments}
-            disabled={isApplying || !code.trim()}
+            disabled={isApplying || !config.code.trim()}
             className="w-full gap-2"
             variant="outline"
           >
@@ -285,7 +468,7 @@ export default function DocumentNamingSettings({
 
         <Button
           onClick={handleSave}
-          disabled={isSaving || !code.trim()}
+          disabled={isSaving || !config.code.trim()}
           className="w-full"
         >
           {isSaving ? 'Saving...' : 'Save Naming Settings'}
