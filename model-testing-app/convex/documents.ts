@@ -1143,6 +1143,105 @@ export const moveDocument = mutation({
   },
 });
 
+// Mutation: Duplicate a document (references same storage blob, new metadata)
+export const duplicateDocument = mutation({
+  args: {
+    documentId: v.id("documents"),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc || doc.isDeleted) {
+      throw new Error("Document not found");
+    }
+
+    // Generate the "(Copy)" display name
+    const copyName = doc.fileName
+      ? `${doc.fileName} (Copy)`
+      : "Document (Copy)";
+
+    // Look up client name for code generation
+    let clientName = doc.clientName || "Unknown";
+    if (clientName === "Unknown" && doc.clientId) {
+      const client = await ctx.db.get(doc.clientId);
+      if (client) clientName = client.name;
+    }
+
+    // Generate new document code
+    const now = new Date().toISOString();
+    const scope = doc.scope || "client";
+    const projectNameForCode = doc.isBaseDocument ? undefined : doc.projectName;
+    let newDocumentCode = generateDocumentCode(
+      scope === "client" ? clientName : "",
+      doc.category || "Uncategorized",
+      projectNameForCode || undefined,
+      now,
+      { scope: scope as "client" | "internal" | "personal", uploaderInitials: doc.uploaderInitials },
+    );
+
+    // Ensure uniqueness
+    const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
+    let finalCode = newDocumentCode;
+    let counter = 1;
+    while (existingDocs.some((d) => d.documentCode === finalCode)) {
+      finalCode = `${newDocumentCode}-${counter}`;
+      counter++;
+    }
+    newDocumentCode = finalCode;
+
+    // Clone the document record — reference the same storage blob
+    const newDocId = await ctx.db.insert("documents", {
+      // File storage reference (same blob, no duplication)
+      fileStorageId: doc.fileStorageId,
+      // File metadata
+      fileName: copyName,
+      fileSize: doc.fileSize,
+      fileType: doc.fileType,
+      uploadedAt: now,
+      // Analysis results (carried over from original)
+      summary: doc.summary,
+      fileTypeDetected: doc.fileTypeDetected,
+      category: doc.category,
+      reasoning: doc.reasoning,
+      confidence: doc.confidence,
+      tokensUsed: doc.tokensUsed,
+      // Links to clients/projects (same as original)
+      clientId: doc.clientId,
+      clientName: doc.clientName,
+      projectId: doc.projectId,
+      projectName: doc.projectName,
+      suggestedClientName: doc.suggestedClientName,
+      suggestedProjectName: doc.suggestedProjectName,
+      // Document code
+      documentCode: newDocumentCode,
+      // Flags and organization (same as original)
+      isBaseDocument: doc.isBaseDocument,
+      folderId: doc.folderId,
+      folderType: doc.folderType,
+      isInternal: doc.isInternal,
+      scope: doc.scope,
+      ownerId: doc.ownerId,
+      // Version control — start fresh for the copy
+      version: "V1.0",
+      uploaderInitials: doc.uploaderInitials,
+      // Carried-over analysis data
+      extractedData: doc.extractedData,
+      extractedIntelligence: doc.extractedIntelligence,
+      textContent: doc.textContent,
+      documentAnalysis: doc.documentAnalysis,
+      classificationReasoning: doc.classificationReasoning,
+      // Status
+      status: doc.status,
+      // Timestamps
+      savedAt: now,
+      uploadedBy: doc.uploadedBy,
+      // Version note to flag as duplicate
+      versionNote: `Duplicated from ${doc.documentCode || doc._id}`,
+    });
+
+    return newDocId;
+  },
+});
+
 // Mutation: Move document between scopes (client/internal/personal)
 export const moveDocumentCrossScope = mutation({
   args: {
