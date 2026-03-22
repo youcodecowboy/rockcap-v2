@@ -61,7 +61,8 @@ export default function RenameDocumentDialog({
     [projectMetadata, clientMetadata]
   );
 
-  const [displayName, setDisplayName] = useState(document.displayName || document.fileName || "");
+  // displayName starts empty unless the user previously set one — it's an OPTIONAL custom override
+  const [displayName, setDisplayName] = useState(document.displayName || "");
   const [customizeCode, setCustomizeCode] = useState(false);
   const [manualCode, setManualCode] = useState(document.documentCode || "");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>(
@@ -71,7 +72,7 @@ export default function RenameDocumentDialog({
 
   // Reset state when document changes
   useEffect(() => {
-    setDisplayName(document.displayName || document.fileName || "");
+    setDisplayName(document.displayName || "");
     setCustomizeCode(false);
     setManualCode(document.documentCode || "");
     setFieldValues(document.customFieldValues || {});
@@ -95,14 +96,35 @@ export default function RenameDocumentDialog({
 
   const handleSave = async () => {
     setIsSaving(true);
+    // Capture previous values for undo
+    const previousValues = {
+      displayName: document.displayName,
+      documentCode: document.documentCode,
+      customFieldValues: document.customFieldValues,
+    };
     try {
+      const newDisplayName = displayName.trim() || undefined;
       await renameMutation({
         id: document._id,
-        displayName: displayName.trim() || undefined,
+        displayName: newDisplayName,
         customFieldValues: Object.keys(fieldValues).length > 0 ? fieldValues : undefined,
         documentCode: effectiveCode || undefined,
       });
-      toast.success("Document renamed");
+      toast("Document renamed", {
+        duration: 8000,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            renameMutation({
+              id: document._id,
+              displayName: previousValues.displayName,
+              documentCode: previousValues.documentCode,
+              customFieldValues: previousValues.customFieldValues,
+            });
+            toast.success("Rename undone");
+          },
+        },
+      });
       onClose();
     } catch (error) {
       console.error("Rename failed:", error);
@@ -134,15 +156,15 @@ export default function RenameDocumentDialog({
         </DialogHeader>
 
         <div className="space-y-5 py-2">
-          {/* Section 1: Display Name */}
+          {/* Section 1: Custom Display Name (optional) */}
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Display Name</Label>
+            <Label className="text-sm font-medium">Custom Display Name <span className="text-gray-400 font-normal">(optional)</span></Label>
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder={document.fileName}
+              placeholder="Leave empty to use document code"
             />
-            <p className="text-xs text-gray-500">The name shown in the document library.</p>
+            <p className="text-xs text-gray-500">Overrides the document code as the displayed name. Original file: <span className="font-mono">{document.fileName}</span></p>
           </div>
 
           {/* Section 2: Document Code */}
