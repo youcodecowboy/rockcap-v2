@@ -1,13 +1,14 @@
 'use client';
 
-import { useQuery } from 'convex/react';
+import { useState } from 'react';
+import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, Clock, CheckCircle2, AlertCircle, ArrowRight, FileText, ListOrdered } from 'lucide-react';
+import { Loader2, Clock, CheckCircle2, AlertCircle, ArrowRight, FileText, ListOrdered, RefreshCw } from 'lucide-react';
 
 type BatchStatus = 'queued' | 'uploading' | 'processing' | 'review' | 'completed' | 'partial';
 
@@ -40,6 +41,8 @@ function relativeDate(isoString: string) {
 
 export default function BulkUploadHistory() {
   const router = useRouter();
+  const [retryingQueue, setRetryingQueue] = useState(false);
+  const retryQueue = useAction(api.bulkUpload.checkAndStartNextQueued);
 
   const currentUser = useQuery(api.users.getCurrent, {});
 
@@ -120,14 +123,40 @@ export default function BulkUploadHistory() {
             </div>
 
             {/* Action */}
-            {(batch.status === 'review' || batch.status === 'processing' || batch.status === 'partial') && (
+            {batch.status === 'queued' && currentUser?._id && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0"
+                disabled={retryingQueue}
+                onClick={async () => {
+                  setRetryingQueue(true);
+                  try {
+                    await retryQueue({
+                      userId: currentUser._id,
+                      baseUrl: window.location.origin,
+                    });
+                  } finally {
+                    setRetryingQueue(false);
+                  }
+                }}
+              >
+                {retryingQueue ? (
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                )}
+                Retry
+              </Button>
+            )}
+            {(batch.status === 'review' || batch.status === 'processing' || batch.status === 'partial' || batch.status === 'completed') && (
               <Button
                 variant="outline"
                 size="sm"
                 className="flex-shrink-0"
                 onClick={() => router.push(`/docs/bulk/${batch._id}`)}
               >
-                Review
+                {batch.status === 'completed' ? 'View' : 'Review'}
                 <ArrowRight className="w-3 h-3 ml-1" />
               </Button>
             )}

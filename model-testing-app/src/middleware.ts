@@ -9,11 +9,6 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-feedback-loop(.*)', // Test endpoint for feedback loop verification
   '/api/process-meeting-queue(.*)', // Meeting extraction queue processor
   '/api/process-intelligence-queue(.*)', // Intelligence extraction queue processor
-  '/api/v4-analyze(.*)', // V4 document classification pipeline (called client-side)
-  '/api/bulk-analyze(.*)', // Legacy bulk analysis endpoint
-  '/api/chat-assistant(.*)', // Chat assistant endpoint
-  '/api/analyze-file(.*)', // Single file analysis
-  '/api/convex-file(.*)', // Convex file proxy
 ])
 
 export default clerkMiddleware(async (auth, request) => {
