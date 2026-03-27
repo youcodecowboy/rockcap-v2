@@ -479,7 +479,9 @@ export default function FolderBrowser({
 
     return (
       <div key={folder._id} className="group/projfolder">
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => onFolderSelect({
             type: 'project',
             folderId: folder.folderType,
@@ -487,6 +489,18 @@ export default function FolderBrowser({
             projectId,
             parentPath: buildParentPath(folder._id, allFolders),
           })}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onFolderSelect({
+                type: 'project',
+                folderId: folder.folderType,
+                folderName: folder.name,
+                projectId,
+                parentPath: buildParentPath(folder._id, allFolders),
+              });
+            }
+          }}
           onDragOver={(e) => handleFolderDragOver(e, folder._id)}
           onDragLeave={handleFolderDragLeave}
           onDrop={(e) => handleFolderDrop(e, {
@@ -497,7 +511,7 @@ export default function FolderBrowser({
             clientId: clientId,
           })}
           className={cn(
-            "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
+            "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md cursor-pointer",
             selected
               ? "bg-blue-100 text-blue-900"
               : "hover:bg-gray-100 text-gray-700",
@@ -560,7 +574,7 @@ export default function FolderBrowser({
               <Trash2 className="w-3 h-3 text-red-500" />
             </button>
           )}
-        </button>
+        </div>
         {hasChildren && isExpanded && (
           <div className="ml-2 border-l border-gray-200">
             {children.map(child => renderProjectFolder(
@@ -579,12 +593,24 @@ export default function FolderBrowser({
 
     return (
       <div key={folder._id} className="group">
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => onFolderSelect({
             type: 'client',
             folderId: folder.folderType,
             folderName: folder.name,
           })}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onFolderSelect({
+                type: 'client',
+                folderId: folder.folderType,
+                folderName: folder.name,
+              });
+            }
+          }}
           onDragOver={(e) => handleFolderDragOver(e, folder._id)}
           onDragLeave={handleFolderDragLeave}
           onDrop={(e) => handleFolderDrop(e, {
@@ -594,7 +620,7 @@ export default function FolderBrowser({
             clientId: clientId,
           })}
           className={cn(
-            "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
+            "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md cursor-pointer",
             selected
               ? "bg-blue-100 text-blue-900"
               : "hover:bg-gray-100 text-gray-700",
@@ -626,7 +652,7 @@ export default function FolderBrowser({
               <Trash2 className="w-3 h-3 text-red-500" />
             </button>
           )}
-        </button>
+        </div>
         {hasChildren && (
           <div className="ml-2 border-l border-gray-200">
             {children.map(child => renderClientFolder(child, depth + 1))}
