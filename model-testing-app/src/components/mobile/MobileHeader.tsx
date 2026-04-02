@@ -19,7 +19,7 @@ export default function MobileHeader() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <span className="text-base font-semibold text-gray-900">RockCap</span>
+          <span className="text-xl font-normal text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>RockCap</span>
         </div>
 
         <div className="flex items-center gap-3">

@@ -60,7 +60,7 @@ export default function MobileNavDrawer({ isOpen, onClose }: MobileNavDrawerProp
 
       <nav className="absolute left-0 top-0 bottom-0 w-72 bg-white border-r border-gray-200 flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <span className="text-lg font-semibold text-gray-900">RockCap</span>
+          <span className="text-xl font-normal text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>RockCap</span>
           <button onClick={onClose} className="p-1 text-gray-400">
             <X className="w-5 h-5" />
           </button>
