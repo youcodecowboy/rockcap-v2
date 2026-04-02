@@ -572,3 +572,11 @@ aside[class*="fixed"][class*="left-0"] {
   background-color: #2e1065;
   color: #c4b5fd;
 }
+/* Mobile tab bar — hide scrollbar on horizontal scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
