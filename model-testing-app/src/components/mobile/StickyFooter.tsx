@@ -9,17 +9,17 @@ interface StickyFooterProps {
 }
 
 const navItems = [
-  { href: '/', label: 'Home', icon: LayoutDashboard },
-  { href: '/clients', label: 'Clients', icon: Building },
-  { href: '/docs', label: 'Docs', icon: File },
-  { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/m-dashboard', label: 'Home', icon: LayoutDashboard },
+  { href: '/m-clients', label: 'Clients', icon: Building },
+  { href: '/m-docs', label: 'Docs', icon: File },
+  { href: '/m-tasks', label: 'Tasks', icon: CheckSquare },
 ];
 
 export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    if (href === '/') return pathname === '/';
+    if (href === '/m-dashboard') return pathname === '/m-dashboard';
     return pathname.startsWith(href);
   };
 

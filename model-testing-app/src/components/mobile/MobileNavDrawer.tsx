@@ -11,8 +11,6 @@ import {
   CheckSquare,
   FileText,
   ContactRound,
-  UserSearch,
-  Archive,
 } from 'lucide-react';
 
 interface MobileNavDrawerProps {
@@ -21,14 +19,12 @@ interface MobileNavDrawerProps {
 }
 
 const navItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/clients', label: 'Clients', icon: Building },
-  { href: '/docs', label: 'Documents', icon: File },
-  { href: '/tasks', label: 'Tasks', icon: CheckSquare },
-  { href: '/notes', label: 'Notes', icon: FileText },
-  { href: '/contacts', label: 'Contacts', icon: ContactRound },
-  { href: '/prospects', label: 'Prospects', icon: UserSearch },
-  { href: '/filing', label: 'Upload', icon: Archive },
+  { href: '/m-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/m-clients', label: 'Clients', icon: Building },
+  { href: '/m-docs', label: 'Documents', icon: File },
+  { href: '/m-tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/m-notes', label: 'Notes', icon: FileText },
+  { href: '/m-contacts', label: 'Contacts', icon: ContactRound },
 ];
 
 export default function MobileNavDrawer({ isOpen, onClose }: MobileNavDrawerProps) {
@@ -69,7 +65,7 @@ export default function MobileNavDrawer({ isOpen, onClose }: MobileNavDrawerProp
         <div className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
           {navItems.map(item => {
             const Icon = item.icon;
-            const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+            const active = pathname === item.href || (item.href !== '/m-dashboard' && pathname.startsWith(item.href));
             return (
               <Link
                 key={item.href}
