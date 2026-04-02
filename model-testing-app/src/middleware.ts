@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
@@ -6,23 +7,66 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
   '/login(.*)',
   '/signup(.*)',
-  '/api/test-feedback-loop(.*)', // Test endpoint for feedback loop verification
-  '/api/process-meeting-queue(.*)', // Meeting extraction queue processor
-  '/api/process-intelligence-queue(.*)', // Intelligence extraction queue processor
+  '/api/test-feedback-loop(.*)',
+  '/api/process-meeting-queue(.*)',
+  '/api/process-intelligence-queue(.*)',
 ])
 
+// Mobile route mapping: URL path → (mobile) route group path
+const mobileRouteMap: Record<string, string> = {
+  '/': '/m-dashboard',
+  '/clients': '/m-clients',
+  '/docs': '/m-docs',
+  '/tasks': '/m-tasks',
+  '/notes': '/m-notes',
+  '/contacts': '/m-contacts',
+}
+
+function isMobileRequest(request: Request): boolean {
+  const url = new URL(request.url)
+
+  // Dev override: ?mobile=true
+  if (url.searchParams.get('mobile') === 'true') return true
+
+  // Subdomain detection
+  const hostname = request.headers.get('host') || ''
+  if (hostname.startsWith('m.')) return true
+
+  return false
+}
+
 export default clerkMiddleware(async (auth, request) => {
+  // Auth check first — applies to both desktop and mobile
   if (!isPublicRoute(request)) {
     await auth.protect()
+  }
+
+  // Mobile routing: rewrite to (mobile) route group
+  if (isMobileRequest(request)) {
+    const url = new URL(request.url)
+    const pathname = url.pathname
+
+    // Don't rewrite API routes or static assets
+    if (pathname.startsWith('/api/') || pathname.startsWith('/_next/')) {
+      return NextResponse.next()
+    }
+
+    // Find matching mobile route
+    const mobilePath = mobileRouteMap[pathname]
+    if (mobilePath) {
+      url.pathname = mobilePath
+      return NextResponse.rewrite(url)
+    }
+
+    // For unmatched mobile paths, fall through to mobile dashboard
+    url.pathname = '/m-dashboard'
+    return NextResponse.rewrite(url)
   }
 })
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
     '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-    // Always run for API routes
     '/(api|trpc)(.*)',
   ],
 }
-
