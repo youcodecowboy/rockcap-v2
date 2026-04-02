@@ -24,7 +24,7 @@ export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-zinc-800 z-30 pb-[env(safe-area-inset-bottom)]">
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-16 px-4">
         {navItems.slice(0, 2).map(item => {
           const Icon = item.icon;
@@ -35,8 +35,8 @@ export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
               href={item.href}
               className="flex flex-col items-center gap-0.5 min-w-[48px]"
             >
-              <Icon className={`w-5 h-5 ${active ? 'text-blue-500' : 'text-zinc-500'}`} />
-              <span className={`text-[10px] ${active ? 'text-blue-500' : 'text-zinc-500'}`}>
+              <Icon className={`w-5 h-5 ${active ? 'text-blue-600' : 'text-gray-400'}`} />
+              <span className={`text-[10px] ${active ? 'text-blue-600' : 'text-gray-400'}`}>
                 {item.label}
               </span>
             </Link>
@@ -60,8 +60,8 @@ export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
               href={item.href}
               className="flex flex-col items-center gap-0.5 min-w-[48px]"
             >
-              <Icon className={`w-5 h-5 ${active ? 'text-blue-500' : 'text-zinc-500'}`} />
-              <span className={`text-[10px] ${active ? 'text-blue-500' : 'text-zinc-500'}`}>
+              <Icon className={`w-5 h-5 ${active ? 'text-blue-600' : 'text-gray-400'}`} />
+              <span className={`text-[10px] ${active ? 'text-blue-600' : 'text-gray-400'}`}>
                 {item.label}
               </span>
             </Link>

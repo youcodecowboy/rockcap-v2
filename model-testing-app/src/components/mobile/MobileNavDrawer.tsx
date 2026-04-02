@@ -58,10 +58,10 @@ export default function MobileNavDrawer({ isOpen, onClose }: MobileNavDrawerProp
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-      <nav className="absolute left-0 top-0 bottom-0 w-72 bg-zinc-950 border-r border-zinc-800 flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-          <span className="text-lg font-semibold text-white">RockCap</span>
-          <button onClick={onClose} className="p-1 text-zinc-400">
+      <nav className="absolute left-0 top-0 bottom-0 w-72 bg-white border-r border-gray-200 flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <span className="text-lg font-semibold text-gray-900">RockCap</span>
+          <button onClick={onClose} className="p-1 text-gray-400">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -75,7 +75,7 @@ export default function MobileNavDrawer({ isOpen, onClose }: MobileNavDrawerProp
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  active ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  active ? 'bg-gray-100 text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 <Icon className="w-4.5 h-4.5" />

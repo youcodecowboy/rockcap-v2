@@ -10,7 +10,7 @@ export default function MobileShell({ children }: { children: React.ReactNode })
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       <MobileHeader />
       <div className="pt-14">
         <TabManager />

@@ -18,7 +18,7 @@ export default function TabManager() {
   if (tabs.length <= 1) return null;
 
   return (
-    <div className="flex items-center bg-zinc-900 border-b border-zinc-800 px-2 h-10">
+    <div className="flex items-center bg-gray-50 border-b border-gray-200 px-2 h-10">
       <div
         ref={scrollRef}
         className="flex items-center gap-1.5 flex-1 overflow-x-auto scrollbar-hide py-1.5"
@@ -30,7 +30,7 @@ export default function TabManager() {
             className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs whitespace-nowrap flex-shrink-0 transition-colors ${
               tab.id === activeTabId
                 ? 'bg-blue-600 text-white font-medium'
-                : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                : 'bg-white text-gray-500 border border-gray-200 hover:text-gray-700'
             }`}
           >
             <span className="max-w-[120px] truncate">{tab.title}</span>
@@ -40,7 +40,7 @@ export default function TabManager() {
                   e.stopPropagation();
                   closeTab(tab.id);
                 }}
-                className="ml-0.5 p-0.5 rounded hover:bg-white/20"
+                className="ml-0.5 p-0.5 rounded hover:bg-black/10"
               >
                 <X className="w-3 h-3" />
               </span>
@@ -53,13 +53,13 @@ export default function TabManager() {
         <div className="flex gap-1 pl-2 flex-shrink-0">
           <button
             onClick={() => scrollBy('left')}
-            className="w-7 h-7 flex items-center justify-center bg-zinc-800 rounded-md text-zinc-400 hover:text-white"
+            className="w-7 h-7 flex items-center justify-center bg-white border border-gray-200 rounded-md text-gray-400 hover:text-gray-700"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => scrollBy('right')}
-            className="w-7 h-7 flex items-center justify-center bg-zinc-800 rounded-md text-zinc-400 hover:text-white"
+            className="w-7 h-7 flex items-center justify-center bg-white border border-gray-200 rounded-md text-gray-400 hover:text-gray-700"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
