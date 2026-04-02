@@ -63,7 +63,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import FileDetailPanel from '@/app/docs/components/FileDetailPanel';
+import FileDetailPanel from '@/app/(desktop)/docs/components/FileDetailPanel';
 import {
   CLIENT_CANONICAL_FIELDS,
   PROJECT_CANONICAL_FIELDS,

@@ -4,8 +4,8 @@ import { useRef, useCallback } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import DocumentNoteForm from "@/app/docs/reader/[documentId]/components/DocumentNoteForm";
-import DocumentNoteCard from "@/app/docs/reader/[documentId]/components/DocumentNoteCard";
+import DocumentNoteForm from "@/app/(desktop)/docs/reader/[documentId]/components/DocumentNoteForm";
+import DocumentNoteCard from "@/app/(desktop)/docs/reader/[documentId]/components/DocumentNoteCard";
 import NoteCleanupBubble from "@/components/NoteCleanupBubble";
 import { showUndoToast } from "@/components/UndoToast";
 

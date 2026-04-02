@@ -3,9 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConvexProvider } from "@/components/ConvexProvider";
 import { UserSync } from "@/components/UserSync";
-import NavigationBar from "@/components/NavigationBar";
-import Sidebar from "@/components/Sidebar";
-import ChatAssistantButton from "@/components/ChatAssistantButton";
 import { ChatDrawerProvider } from "@/contexts/ChatDrawerContext";
 import { GlobalSearchProvider } from "@/contexts/GlobalSearchContext";
 import { Toaster } from "sonner";
@@ -39,12 +36,7 @@ export default function RootLayout({
           <ChatDrawerProvider>
             <GlobalSearchProvider>
               <UserSync />
-              <Sidebar />
-              <NavigationBar />
-              <main className="ml-20 pt-16 min-h-screen">
-                {children}
-              </main>
-              <ChatAssistantButton />
+              {children}
               <Toaster position="top-right" richColors />
             </GlobalSearchProvider>
           </ChatDrawerProvider>
