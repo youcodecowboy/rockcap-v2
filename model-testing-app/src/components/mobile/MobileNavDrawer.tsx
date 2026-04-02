@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -33,9 +33,14 @@ const navItems = [
 
 export default function MobileNavDrawer({ isOpen, onClose }: MobileNavDrawerProps) {
   const pathname = usePathname();
+  const prevPathname = useRef(pathname);
 
+  // Close drawer only when pathname actually changes (not on mount)
   useEffect(() => {
-    onClose();
+    if (prevPathname.current !== pathname) {
+      prevPathname.current = pathname;
+      onClose();
+    }
   }, [pathname, onClose]);
 
   useEffect(() => {
