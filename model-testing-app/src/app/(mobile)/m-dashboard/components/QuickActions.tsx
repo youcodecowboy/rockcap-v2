@@ -16,12 +16,12 @@ export default function QuickActions() {
         <Link
           key={href}
           href={href}
-          className="flex items-center gap-2.5 px-3 py-2.5 bg-black rounded-lg active:opacity-80"
+          className="flex items-center gap-2 px-2.5 py-2 bg-black rounded-md active:opacity-80"
         >
-          <div className="w-7 h-7 rounded-[7px] bg-white/15 flex items-center justify-center flex-shrink-0">
-            <Icon className="w-3.5 h-3.5 text-white" />
+          <div className="w-6 h-6 rounded-[5px] bg-white/15 flex items-center justify-center flex-shrink-0">
+            <Icon className="w-3 h-3 text-white" />
           </div>
-          <span className="text-[13px] font-medium text-white">{label}</span>
+          <span className="text-[12px] font-medium text-white">{label}</span>
         </Link>
       ))}
     </div>
