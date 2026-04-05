@@ -49,7 +49,7 @@ export default function NotificationsSection({ notifications, unreadCount }: Not
             </span>
           )}
         </div>
-        <button className="text-[10px] text-[var(--m-accent-indicator)]">View all →</button>
+        <span className="text-[10px] text-[var(--m-accent-indicator)]">View all →</span>
       </div>
 
       {/* Items or empty state */}

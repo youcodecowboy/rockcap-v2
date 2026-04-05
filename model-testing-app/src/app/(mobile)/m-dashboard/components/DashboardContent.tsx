@@ -14,7 +14,6 @@ export default function DashboardContent() {
   const firstName = user?.firstName || 'there';
 
   // All queries fire in parallel
-  const taskMetrics = useQuery(api.tasks.getMetrics, {});
   const tasks = useQuery(api.tasks.getByUser, {});
   const nextReminder = useQuery(api.reminders.getUpcoming, { limit: 1 });
   const nextEvent = useQuery(api.events.getNextEvent, {});
