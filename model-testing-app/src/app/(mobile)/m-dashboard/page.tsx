@@ -1,11 +1,5 @@
-import MobilePlaceholder from '../MobilePlaceholder';
+import DashboardContent from './components/DashboardContent';
 
 export default function MobileDashboard() {
-  return (
-    <MobilePlaceholder
-      title="Dashboard"
-      description="Recent clients, projects, tasks, and notes — coming soon"
-      icon="🏠"
-    />
-  );
+  return <DashboardContent />;
 }
