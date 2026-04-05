@@ -6,6 +6,7 @@ import { api } from '../../../../../convex/_generated/api';
 import DashboardGreeting from './DashboardGreeting';
 import QuickActions from './QuickActions';
 import UpNextCard, { type UpNextItem } from './UpNextCard';
+import NotificationsSection from './NotificationsSection';
 
 export default function DashboardContent() {
   const { user } = useUser();
@@ -104,6 +105,7 @@ export default function DashboardContent() {
       />
       <QuickActions />
       <UpNextCard item={upNextItem} />
+      <NotificationsSection notifications={notifications} unreadCount={unreadCount} />
     </div>
   );
 }
