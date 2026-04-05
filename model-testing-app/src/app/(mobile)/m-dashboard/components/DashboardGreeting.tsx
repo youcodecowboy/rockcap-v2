@@ -17,10 +17,10 @@ export default function DashboardGreeting({ firstName, overdueCount, unreadCount
 
   return (
     <div className="px-[var(--m-page-px)] pt-5 pb-1.5">
-      <h1 className="text-[17px] font-medium text-[var(--m-text-primary)] tracking-[-0.01em]">
+      <h1 className="text-[22px] font-semibold text-[var(--m-text-primary)] tracking-[-0.02em]">
         Hello, {firstName}
       </h1>
-      <p className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5">
+      <p className="text-[13px] text-[var(--m-text-tertiary)] mt-0.5">
         {subtitle}
       </p>
     </div>

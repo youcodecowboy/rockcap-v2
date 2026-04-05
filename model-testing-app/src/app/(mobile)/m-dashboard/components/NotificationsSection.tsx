@@ -40,22 +40,22 @@ export default function NotificationsSection({ notifications, unreadCount }: Not
       {/* Header */}
       <div className="flex items-center justify-between px-[var(--m-page-px)] py-2 bg-[var(--m-bg-subtle)]">
         <div className="flex items-center gap-1.5">
-          <span className="text-[9px] uppercase tracking-[0.5px] font-medium text-[var(--m-text-tertiary)]">
+          <span className="text-[10px] uppercase tracking-[0.5px] font-medium text-[var(--m-text-tertiary)]">
             Notifications
           </span>
           {count > 0 && (
-            <span className="bg-[var(--m-error)] text-white text-[9px] font-semibold px-1.5 py-px rounded-full leading-none">
+            <span className="bg-[var(--m-error)] text-white text-[10px] font-semibold px-1.5 py-px rounded-full leading-none">
               {count}
             </span>
           )}
         </div>
-        <span className="text-[10px] text-[var(--m-accent-indicator)]">View all →</span>
+        <span className="text-[11px] text-[var(--m-accent-indicator)]">View all →</span>
       </div>
 
       {/* Items or empty state */}
       {!notifications || notifications.length === 0 ? (
         <div className="px-[var(--m-page-px)] py-4 text-center">
-          <span className="text-[11px] text-[var(--m-text-tertiary)]">No new notifications</span>
+          <span className="text-[12px] text-[var(--m-text-tertiary)]">No new notifications</span>
         </div>
       ) : (
         notifications.map((n) => (
@@ -69,8 +69,8 @@ export default function NotificationsSection({ notifications, unreadCount }: Not
               }`}
             />
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] text-[var(--m-text-primary)] leading-snug">{n.title}</div>
-              <div className="text-[10px] text-[var(--m-text-tertiary)] mt-0.5">
+              <div className="text-[13px] text-[var(--m-text-primary)] leading-snug">{n.title}</div>
+              <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5">
                 {formatTimestamp(n.createdAt)}
               </div>
             </div>

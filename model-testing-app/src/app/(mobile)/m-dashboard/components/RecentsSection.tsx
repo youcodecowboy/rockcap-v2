@@ -64,8 +64,8 @@ function RecentRow({ title, subtitle, href }: { title: string; subtitle: string;
       className="flex items-center justify-between px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border-subtle)] active:bg-[var(--m-bg-subtle)]"
     >
       <div className="flex-1 min-w-0">
-        <div className="text-[12px] font-medium text-[var(--m-text-primary)] truncate">{title}</div>
-        <div className="text-[10px] text-[var(--m-text-tertiary)] mt-0.5 truncate">{subtitle}</div>
+        <div className="text-[14px] font-medium text-[var(--m-text-primary)] truncate">{title}</div>
+        <div className="text-[12px] text-[var(--m-text-tertiary)] mt-0.5 truncate">{subtitle}</div>
       </div>
       <ChevronRight className="w-3.5 h-3.5 text-[var(--m-text-placeholder)] flex-shrink-0 ml-2" />
     </Link>
@@ -100,7 +100,7 @@ export default function RecentsSection({
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 text-center py-2.5 text-[11px] transition-colors ${
+            className={`flex-1 text-center py-2.5 text-[12px] transition-colors ${
               activeTab === tab.key
                 ? 'text-[var(--m-text-primary)] font-medium border-b-2 border-[var(--m-accent-indicator)]'
                 : 'text-[var(--m-text-tertiary)] border-b-2 border-transparent'
@@ -116,7 +116,7 @@ export default function RecentsSection({
         {activeTab === 'projects' && (
           <>
             {recentProjects.length === 0 ? (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[11px] text-[var(--m-text-tertiary)]">
+              <div className="px-[var(--m-page-px)] py-6 text-center text-[12px] text-[var(--m-text-tertiary)]">
                 No projects yet
               </div>
             ) : (
@@ -141,7 +141,7 @@ export default function RecentsSection({
         {activeTab === 'clients' && (
           <>
             {recentClients.length === 0 ? (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[11px] text-[var(--m-text-tertiary)]">
+              <div className="px-[var(--m-page-px)] py-6 text-center text-[12px] text-[var(--m-text-tertiary)]">
                 No clients yet
               </div>
             ) : (
@@ -166,7 +166,7 @@ export default function RecentsSection({
         {activeTab === 'docs' && (
           <>
             {recentDocs.length === 0 ? (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[11px] text-[var(--m-text-tertiary)]">
+              <div className="px-[var(--m-page-px)] py-6 text-center text-[12px] text-[var(--m-text-tertiary)]">
                 No documents yet
               </div>
             ) : (
@@ -191,7 +191,7 @@ export default function RecentsSection({
         <div className="py-2.5 text-center">
           <Link
             href={viewAllLinks[activeTab].href}
-            className="text-[11px] font-medium text-[var(--m-accent-indicator)]"
+            className="text-[12px] font-medium text-[var(--m-accent-indicator)]"
           >
             {viewAllLinks[activeTab].label} →
           </Link>

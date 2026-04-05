@@ -78,17 +78,17 @@ export default function UpNextCard({ item }: UpNextCardProps) {
       <div className={`px-3.5 py-3 rounded-lg ${style.card}`}>
         <div className="flex justify-between items-start">
           <div className="flex-1 min-w-0">
-            <div className={`text-[9px] uppercase tracking-[0.5px] font-semibold mb-1 ${style.label}`}>
+            <div className={`text-[10px] uppercase tracking-[0.5px] font-semibold mb-1 ${style.label}`}>
               Up Next
             </div>
-            <div className="text-[12px] font-medium text-[var(--m-text-primary)] truncate">
+            <div className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">
               {item.title}
             </div>
-            <div className={`text-[10px] mt-0.5 ${style.subtitle}`}>
+            <div className={`text-[11px] mt-0.5 ${style.subtitle}`}>
               {item.context} · {relativeTime}
             </div>
           </div>
-          <div className={`text-[9px] font-semibold px-2 py-0.5 rounded flex-shrink-0 ml-3 mt-3 ${style.badge}`}>
+          <div className={`text-[10px] font-semibold px-2 py-0.5 rounded flex-shrink-0 ml-3 mt-3 ${style.badge}`}>
             {style.badgeText}
           </div>
         </div>

@@ -572,6 +572,52 @@ aside[class*="fixed"][class*="left-0"] {
   background-color: #2e1065;
   color: #c4b5fd;
 }
+/* ============================================
+   Mobile Design Tokens
+   Scoped CSS custom properties for the mobile
+   companion app. Utilitarian, information-dense,
+   light-base financial services aesthetic.
+   ============================================ */
+
+:root {
+  /* Mobile — Surface & Background */
+  --m-bg: #ffffff;
+  --m-bg-subtle: #f8fafc;        /* slate-50 — section backgrounds */
+  --m-bg-inset: #f1f5f9;         /* slate-100 — inset/recessed areas */
+
+  /* Mobile — Text Hierarchy (weight-driven, not color-driven) */
+  --m-text-primary: #0f172a;     /* slate-900 — headings, active nav */
+  --m-text-secondary: #475569;   /* slate-600 — body text */
+  --m-text-tertiary: #94a3b8;    /* slate-400 — metadata, timestamps */
+  --m-text-placeholder: #cbd5e1; /* slate-300 — placeholder text */
+
+  /* Mobile — Borders & Dividers */
+  --m-border: #e2e8f0;           /* slate-200 — standard borders */
+  --m-border-subtle: #f1f5f9;    /* slate-100 — very subtle dividers */
+
+  /* Mobile — Interactive / Accent (used sparingly) */
+  --m-accent: #1e40af;           /* blue-800 — primary CTAs only */
+  --m-accent-hover: #1e3a8a;     /* blue-900 — CTA hover */
+  --m-accent-subtle: #eff6ff;    /* blue-50 — subtle active backgrounds */
+  --m-accent-indicator: #3b82f6; /* blue-500 — active tab indicator */
+
+  /* Mobile — Status (functional only) */
+  --m-success: #059669;
+  --m-warning: #d97706;
+  --m-error: #dc2626;
+
+  /* Mobile — Layout Heights */
+  --m-header-h: 3rem;            /* 48px — compact header */
+  --m-tab-bar-h: 2.25rem;       /* 36px — slim tab bar */
+  --m-footer-h: 3.875rem;       /* 62px — bottom nav bar */
+
+  /* Mobile — Spacing Scale */
+  --m-page-px: 1rem;             /* 16px — page horizontal padding */
+  --m-section-gap: 1.25rem;      /* 20px — between sections */
+  --m-card-p: 0.875rem;          /* 14px — card padding */
+  --m-item-gap: 0.5rem;          /* 8px — between list items */
+}
+
 /* Mobile tab bar — hide scrollbar on horizontal scroll */
 .scrollbar-hide {
   -ms-overflow-style: none;
