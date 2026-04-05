@@ -7,6 +7,7 @@ import DashboardGreeting from './DashboardGreeting';
 import QuickActions from './QuickActions';
 import UpNextCard, { type UpNextItem } from './UpNextCard';
 import NotificationsSection from './NotificationsSection';
+import RecentsSection from './RecentsSection';
 
 export default function DashboardContent() {
   const { user } = useUser();
@@ -34,6 +35,24 @@ export default function DashboardContent() {
 
   // Build client lookup map (shared by UpNext and RecentsSection later)
   const clientMap = new Map(clients?.map(c => [c._id, c.name]) ?? []);
+
+  const taskCountByProject = new Map<string, number>();
+  if (tasks) {
+    for (const t of tasks) {
+      if (t.projectId && t.status !== 'completed' && t.status !== 'cancelled') {
+        taskCountByProject.set(t.projectId, (taskCountByProject.get(t.projectId) ?? 0) + 1);
+      }
+    }
+  }
+
+  const projectCountByClient = new Map<string, number>();
+  if (projects) {
+    for (const p of projects) {
+      for (const role of p.clientRoles) {
+        projectCountByClient.set(role.clientId, (projectCountByClient.get(role.clientId) ?? 0) + 1);
+      }
+    }
+  }
 
   // Resolve the single most urgent "up next" item
   const resolveUpNext = (): UpNextItem | null => {
@@ -106,6 +125,14 @@ export default function DashboardContent() {
       <QuickActions />
       <UpNextCard item={upNextItem} />
       <NotificationsSection notifications={notifications} unreadCount={unreadCount} />
+      <RecentsSection
+        projects={projects}
+        clients={clients}
+        documents={recentDocs}
+        clientMap={clientMap}
+        taskCountByProject={taskCountByProject}
+        projectCountByClient={projectCountByClient}
+      />
     </div>
   );
 }
