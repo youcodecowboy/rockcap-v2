@@ -4,6 +4,7 @@ import { useUser } from '@clerk/nextjs';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import DashboardGreeting from './DashboardGreeting';
+import QuickActions from './QuickActions';
 
 export default function DashboardContent() {
   const { user } = useUser();
@@ -36,6 +37,7 @@ export default function DashboardContent() {
         overdueCount={overdueCount}
         unreadCount={unreadCount ?? undefined}
       />
+      <QuickActions />
     </div>
   );
 }

@@ -1,0 +1,29 @@
+import Link from 'next/link';
+import { Pencil, CheckSquare, Upload, UserPlus } from 'lucide-react';
+import { type LucideIcon } from 'lucide-react';
+
+const actions: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/m-notes', label: 'New Note', icon: Pencil },
+  { href: '/m-tasks', label: 'New Task', icon: CheckSquare },
+  { href: '/m-docs', label: 'Upload', icon: Upload },
+  { href: '/m-contacts', label: 'New Contact', icon: UserPlus },
+];
+
+export default function QuickActions() {
+  return (
+    <div className="grid grid-cols-2 gap-2 px-[var(--m-page-px)] pb-4">
+      {actions.map(({ href, label, icon: Icon }) => (
+        <Link
+          key={href}
+          href={href}
+          className="flex items-center gap-2.5 px-3 py-2.5 bg-[var(--m-bg-subtle)] border border-[var(--m-border-subtle)] rounded-lg active:bg-[var(--m-bg-inset)]"
+        >
+          <div className="w-7 h-7 rounded-[7px] bg-[var(--m-bg-inset)] flex items-center justify-center flex-shrink-0">
+            <Icon className="w-3.5 h-3.5 text-[var(--m-text-secondary)]" />
+          </div>
+          <span className="text-[12px] font-medium text-[var(--m-text-primary)]">{label}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
