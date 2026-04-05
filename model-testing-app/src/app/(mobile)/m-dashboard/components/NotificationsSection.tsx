@@ -40,7 +40,7 @@ export default function NotificationsSection({ notifications, unreadCount }: Not
       {/* Header */}
       <div className="flex items-center justify-between px-[var(--m-page-px)] py-2 bg-[var(--m-bg-subtle)]">
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-[0.5px] font-medium text-[var(--m-text-tertiary)]">
+          <span className="text-[14px] font-semibold text-[var(--m-text-primary)]">
             Notifications
           </span>
           {count > 0 && (
