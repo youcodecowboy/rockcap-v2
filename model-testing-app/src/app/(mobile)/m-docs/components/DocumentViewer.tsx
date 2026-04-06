@@ -5,6 +5,8 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { X } from 'lucide-react';
+import PreviewTab from './DocumentViewerTabs/PreviewTab';
+import DetailsTab from './DocumentViewerTabs/DetailsTab';
 
 type ViewerTab = 'preview' | 'summary' | 'classification' | 'details' | 'intelligence' | 'notes';
 
@@ -107,9 +109,12 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
         ) : (
           <>
             {activeTab === 'preview' && (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
-                Preview — coming in Task 7
-              </div>
+              <PreviewTab
+                fileUrl={fileUrl}
+                fileType={doc.fileType}
+                fileName={doc.fileName}
+                fileSize={doc.fileSize}
+              />
             )}
             {activeTab === 'summary' && (
               <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
@@ -122,9 +127,7 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
               </div>
             )}
             {activeTab === 'details' && (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
-                Details — coming in Task 9
-              </div>
+              <DetailsTab doc={doc} />
             )}
             {activeTab === 'intelligence' && (
               <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
