@@ -7,6 +7,8 @@ import { Id } from '../../../../../convex/_generated/dataModel';
 import { X } from 'lucide-react';
 import PreviewTab from './DocumentViewerTabs/PreviewTab';
 import DetailsTab from './DocumentViewerTabs/DetailsTab';
+import SummaryTab from './DocumentViewerTabs/SummaryTab';
+import ClassificationTab from './DocumentViewerTabs/ClassificationTab';
 
 type ViewerTab = 'preview' | 'summary' | 'classification' | 'details' | 'intelligence' | 'notes';
 
@@ -116,16 +118,8 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
                 fileSize={doc.fileSize}
               />
             )}
-            {activeTab === 'summary' && (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
-                Summary — coming in Task 8
-              </div>
-            )}
-            {activeTab === 'classification' && (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
-                Classification — coming in Task 8
-              </div>
-            )}
+            {activeTab === 'summary' && <SummaryTab doc={doc} />}
+            {activeTab === 'classification' && <ClassificationTab doc={doc} />}
             {activeTab === 'details' && (
               <DetailsTab doc={doc} />
             )}
