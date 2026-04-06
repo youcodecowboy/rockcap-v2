@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import DocsList from './DocsList';
 import ClientDocDetail from './ClientDocDetail';
 import ProjectFolderList from './ProjectFolderList';
+import FolderContents from './FolderContents';
 
 export type NavScreen =
   | { screen: 'list' }
@@ -75,9 +76,21 @@ export default function DocsContent() {
         />
       )}
       {baseScreen.screen === 'folder' && (
-        <div className="px-[var(--m-page-px)] py-6 text-center text-[var(--m-text-tertiary)] text-[13px]">
-          FolderContents placeholder — Task 5
-        </div>
+        <FolderContents
+          clientId={baseScreen.clientId}
+          clientName={baseScreen.clientName}
+          projectId={baseScreen.projectId}
+          projectName={baseScreen.projectName}
+          folderRecordId={baseScreen.folderRecordId}
+          folderTypeKey={baseScreen.folderTypeKey}
+          folderName={baseScreen.folderName}
+          folderLevel={baseScreen.folderLevel}
+          onBack={pop}
+          onOpenSubfolder={(folderRecordId, folderTypeKey, folderName) =>
+            push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId: baseScreen.projectId, projectName: baseScreen.projectName, folderRecordId, folderTypeKey, folderName, folderLevel: baseScreen.folderLevel })
+          }
+          onOpenViewer={openViewer}
+        />
       )}
 
       {/* Viewer overlay */}
