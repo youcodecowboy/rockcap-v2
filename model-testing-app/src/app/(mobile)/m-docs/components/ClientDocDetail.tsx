@@ -22,9 +22,13 @@ export default function ClientDocDetail({ clientId, clientName, onBack, onSelect
   const clientFolders = foldersData?.clientFolders?.filter(f => !f.parentFolderId) ?? [];
   const projectGroups = foldersData?.projectFolders ?? [];
 
-  // getFolderCounts keys clientFolders by doc.folderId (which is the folderType string, e.g. "background")
+  // Only count docs as "filed" if their folderId matches an actual folder record.
+  // Docs with folderId values that don't correspond to real folders are effectively unfiled.
   const clientFolderCounts = folderCounts?.clientFolders ?? {};
-  const filedCount = Object.values(clientFolderCounts).reduce((sum: number, n: number) => sum + n, 0);
+  const knownFolderTypes = new Set(clientFolders.map(f => f.folderType));
+  const filedCount = Object.entries(clientFolderCounts)
+    .filter(([key]) => knownFolderTypes.has(key))
+    .reduce((sum, [, n]) => sum + (n as number), 0);
   const unfiledCount = (folderCounts?.clientTotal ?? 0) - filedCount;
 
   if (isLoading) {
