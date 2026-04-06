@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
@@ -13,12 +13,11 @@ import ClassificationTab from './DocumentViewerTabs/ClassificationTab';
 import IntelligenceTab from './DocumentViewerTabs/IntelligenceTab';
 import NotesTab from './DocumentViewerTabs/NotesTab';
 
-type ViewerTab = 'preview' | 'summary' | 'classification' | 'details' | 'intelligence' | 'notes';
+type ViewerTab = 'preview' | 'summary' | 'details' | 'intelligence' | 'notes';
 
 const TABS: { key: ViewerTab; label: string }[] = [
   { key: 'preview', label: 'Preview' },
   { key: 'summary', label: 'Summary' },
-  { key: 'classification', label: 'Classification' },
   { key: 'details', label: 'Details' },
   { key: 'intelligence', label: 'Intelligence' },
   { key: 'notes', label: 'Notes' },
@@ -32,6 +31,7 @@ interface DocumentViewerProps {
 export default function DocumentViewer({ documentId, onClose }: DocumentViewerProps) {
   const [activeTab, setActiveTab] = useState<ViewerTab>('preview');
   const { openTab } = useTabs();
+  const [toastVisible, setToastVisible] = useState(false);
 
   const doc = useQuery(api.documents.get, { id: documentId as Id<'documents'> });
   const fileUrl = useQuery(
@@ -39,6 +39,13 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
     doc?.fileStorageId ? { storageId: doc.fileStorageId as Id<'_storage'> } : 'skip'
   );
   const markAsOpened = useMutation(api.documents.markAsOpened);
+
+  // Fire-and-forget markAsOpened when doc loads
+  const markedRef = useState<string | null>(null);
+  if (doc && markedRef[0] !== documentId) {
+    markedRef[1](documentId);
+    markAsOpened({ documentId: documentId as Id<'documents'> }).catch(() => {});
+  }
 
   const handleAddToTabs = useCallback(() => {
     if (!doc) return;
@@ -53,34 +60,21 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
     setTimeout(() => setToastVisible(false), 2000);
   }, [doc, documentId, openTab]);
 
-  const [toastVisible, setToastVisible] = useState(false);
-
-  // Fire-and-forget markAsOpened when doc loads
-  useEffect(() => {
-    if (doc) {
-      markAsOpened({ documentId: documentId as Id<'documents'> }).catch(() => {});
-    }
-  }, [doc, documentId, markAsOpened]);
-
   const title = doc?.documentCode || doc?.displayName || doc?.fileName || 'Document';
-  const subtitleParts = [
-    doc?.category,
-    doc?.clientName,
-    doc?.projectName,
-  ].filter(Boolean);
+  const subtitleParts = [doc?.category, doc?.clientName, doc?.projectName].filter(Boolean);
   const subtitle = subtitleParts.join(' · ');
 
   return (
-    <div className="flex flex-col bg-[var(--m-bg)]">
-      {/* Toast notification */}
+    <>
+      {/* Toast */}
       {toastVisible && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 bg-black/80 text-white text-[12px] font-medium rounded-full shadow-lg animate-in fade-in">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 bg-black/80 text-white text-[12px] font-medium rounded-full shadow-lg">
           Added to tabs
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-start gap-3 px-[var(--m-page-px)] pt-3 pb-2.5 border-b border-[var(--m-border)] shrink-0">
+      <div className="flex items-start gap-3 px-[var(--m-page-px)] pt-3 pb-2.5 border-b border-[var(--m-border)] bg-[var(--m-bg)]">
         <div className="flex-1 min-w-0">
           <h1 className="text-[15px] font-semibold text-[var(--m-text-primary)] leading-tight truncate">
             {doc === undefined ? 'Loading…' : title}
@@ -98,8 +92,8 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
         </button>
       </div>
 
-      {/* Tab bar — horizontal scroll */}
-      <div className="flex overflow-x-auto scrollbar-none border-b border-[var(--m-border)] bg-[var(--m-bg-subtle)] shrink-0">
+      {/* Tab bar */}
+      <div className="flex overflow-x-auto scrollbar-none border-b border-[var(--m-border)] bg-[var(--m-bg-subtle)]">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
@@ -116,8 +110,8 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
         ))}
       </div>
 
-      {/* Tab content area */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Tab content — extra bottom padding for the two fixed bars below */}
+      <div style={{ paddingBottom: 'calc(3.5rem + var(--m-footer-h) + env(safe-area-inset-bottom, 0px))' }}>
         {doc === undefined ? (
           <div className="px-[var(--m-page-px)] py-10 text-center text-[13px] text-[var(--m-text-tertiary)]">
             Loading document…
@@ -129,25 +123,29 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
         ) : (
           <>
             {activeTab === 'preview' && (
-              <PreviewTab
-                fileUrl={fileUrl}
-                fileType={doc.fileType}
-                fileName={doc.fileName}
-                fileSize={doc.fileSize}
-              />
+              <PreviewTab fileUrl={fileUrl} fileType={doc.fileType} fileName={doc.fileName} fileSize={doc.fileSize} />
             )}
             {activeTab === 'summary' && <SummaryTab doc={doc} />}
-            {activeTab === 'classification' && <ClassificationTab doc={doc} />}
-            {activeTab === 'details' && <DetailsTab doc={doc} />}
+            {activeTab === 'details' && (
+              <div>
+                <ClassificationTab doc={doc} />
+                <div className="border-t border-[var(--m-border)] mt-1">
+                  <DetailsTab doc={doc} />
+                </div>
+              </div>
+            )}
             {activeTab === 'intelligence' && <IntelligenceTab documentId={documentId} />}
             {activeTab === 'notes' && <NotesTab documentId={documentId} />}
           </>
         )}
       </div>
 
-      {/* Fixed action footer — pinned above the shell's bottom nav */}
+      {/* Fixed action footer — always visible above bottom nav */}
       {doc && (
-        <div className="fixed left-0 right-0 z-[35] border-t border-[var(--m-border)] bg-[var(--m-bg)] px-[var(--m-page-px)] py-2.5" style={{ bottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))' }}>
+        <div
+          className="fixed left-0 right-0 z-[35] border-t border-[var(--m-border)] bg-[var(--m-bg)] px-[var(--m-page-px)] py-2.5"
+          style={{ bottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="flex gap-2">
             {fileUrl && (
               <a
@@ -180,6 +178,6 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
