@@ -61,7 +61,7 @@ export default function NotesTab({ documentId }: NotesTabProps) {
             onChange={e => setNewNote(e.target.value)}
             placeholder="Add a note..."
             rows={2}
-            className="flex-1 bg-[var(--m-bg-inset)] rounded-lg px-3 py-2 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none resize-none"
+            className="flex-1 bg-[var(--m-bg-inset)] rounded-lg px-3 py-2 text-[16px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none resize-none"
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
