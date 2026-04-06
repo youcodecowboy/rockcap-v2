@@ -38,12 +38,12 @@ export default function ClientDocDetail({ clientId, clientName, onBack, onSelect
   return (
     <div>
       {/* Header */}
-      <div className="px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border)]">
-        <button onClick={onBack} className="flex items-center gap-1 mb-1">
+      <div className="flex items-center justify-between px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border)]">
+        <button onClick={onBack} className="flex items-center gap-1">
           <ChevronLeft className="w-3.5 h-3.5 text-[var(--m-accent-indicator)]" />
           <span className="text-[12px] text-[var(--m-accent-indicator)]">Back</span>
         </button>
-        <div className="text-[16px] font-semibold text-[var(--m-text-primary)]">{clientName}</div>
+        <div className="text-[14px] font-semibold text-[var(--m-text-primary)] truncate ml-2">{clientName}</div>
       </div>
 
       {/* Client-level folders */}
