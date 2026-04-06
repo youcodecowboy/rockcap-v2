@@ -1,11 +1,5 @@
-import MobilePlaceholder from '../MobilePlaceholder';
+import DocsContent from './components/DocsContent';
 
 export default function MobileDocs() {
-  return (
-    <MobilePlaceholder
-      title="Documents"
-      description="View and upload documents — coming soon"
-      icon="📄"
-    />
-  );
+  return <DocsContent />;
 }
