@@ -201,6 +201,7 @@ export default function FolderContents({
               uploadedAt={doc.uploadedAt}
               onTap={() => onOpenViewer(doc._id)}
               onDuplicate={() => handleDuplicate(doc._id)}
+              onFlag={() => {/* TODO: wire to flags.create */}}
               onDelete={() => handleDelete(doc._id)}
             />
           ))}

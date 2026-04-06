@@ -259,6 +259,7 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 uploadedAt={doc.uploadedAt}
                 onTap={() => onOpenViewer(doc._id)}
                 onDuplicate={() => handleDuplicate(doc._id)}
+                onFlag={() => {/* TODO: wire to flags.create */}}
                 onDelete={() => handleDelete(doc._id)}
               />
             ))
@@ -315,6 +316,7 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 uploadedAt={doc.uploadedAt}
                 onTap={() => onOpenViewer(doc._id)}
                 onDuplicate={() => handleDuplicate(doc._id)}
+                onFlag={() => {/* TODO: wire to flags.create */}}
                 onDelete={() => handleDelete(doc._id)}
               />
             ))
