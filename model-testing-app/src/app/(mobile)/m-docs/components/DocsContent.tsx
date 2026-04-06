@@ -42,14 +42,17 @@ export default function DocsContent() {
   // Viewer from nav stack
   const viewerScreen = navStack.find(s => s.screen === 'viewer') as Extract<NavScreen, { screen: 'viewer' }> | undefined;
   const closeViewer = useCallback(() => {
-    // If opened via tab, dismiss immediately then close the tab
+    // If opened via tab, just dismiss the viewer — keep the tab alive
+    // (tab only closes when user taps X on the tab pill in TabManager)
     if (tabDocumentId && activeTabId) {
       setDismissedTabId(activeTabId);
-      closeTab(activeTabId);
+      // Switch to dashboard tab so the viewer hides
+      const dashTab = tabs.find(t => t.id === 'dashboard');
+      if (dashTab) switchTab(dashTab.id);
     }
     // Clear from nav stack
     setNavStack(prev => prev.filter(s => s.screen !== 'viewer'));
-  }, [tabDocumentId, activeTabId, closeTab]);
+  }, [tabDocumentId, activeTabId, tabs, switchTab]);
 
   const openViewer = useCallback((documentId: string) => {
     push({ screen: 'viewer', documentId });
