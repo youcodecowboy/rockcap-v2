@@ -1,7 +1,21 @@
 'use client';
 
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import FileTypeBadge from '../shared/FileTypeBadge';
+
+// Dynamically import react-pdf (uses canvas APIs not available in SSR)
+const ReactPdfDocument = dynamic(
+  () => import('react-pdf').then(mod => {
+    mod.pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${mod.pdfjs.version}/build/pdf.worker.min.mjs`;
+    return mod.Document;
+  }),
+  { ssr: false }
+);
+const ReactPdfPage = dynamic(
+  () => import('react-pdf').then(mod => mod.Page),
+  { ssr: false }
+);
 
 interface PreviewTabProps {
   fileUrl: string | null | undefined;
@@ -11,9 +25,7 @@ interface PreviewTabProps {
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
@@ -26,6 +38,7 @@ function isPdf(fileType: string): boolean {
   return fileType.toLowerCase().includes('pdf');
 }
 
+// ─── Zoomable wrapper ───────────────────────────────────────────────
 function ZoomablePreview({ children }: { children: React.ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -56,24 +69,24 @@ function ZoomablePreview({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleDoubleTap = useCallback(() => {
-    setScale(prev => prev > 1 ? 1 : 2.5);
+    setScale(prev => (prev > 1 ? 1 : 2.5));
   }, []);
 
-  // Simple double-tap detection
   const lastTap = useRef(0);
-  const handleTap = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    const now = Date.now();
-    if (now - lastTap.current < 300) {
-      handleDoubleTap();
-    }
-    lastTap.current = now;
-  }, [handleDoubleTap]);
+  const handleTap = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const now = Date.now();
+      if (now - lastTap.current < 300) handleDoubleTap();
+      lastTap.current = now;
+    },
+    [handleDoubleTap],
+  );
 
   return (
     <div
       ref={containerRef}
-      className="w-full aspect-[0.707] bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg overflow-auto"
+      className="relative w-full bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg overflow-auto"
       onTouchStart={(e) => { handleTap(e); handleTouchStart(e); }}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -84,25 +97,80 @@ function ZoomablePreview({ children }: { children: React.ReactNode }) {
           transform: `scale(${scale})`,
           transformOrigin: 'top left',
           width: scale > 1 ? `${100 * scale}%` : '100%',
-          height: scale > 1 ? `${100 * scale}%` : '100%',
           transition: lastDistance.current ? 'none' : 'transform 0.2s ease-out',
         }}
-        className="flex items-center justify-center min-h-full"
       >
         {children}
       </div>
       {scale > 1 && (
         <button
           onClick={() => setScale(1)}
-          className="absolute top-2 right-2 px-2 py-1 bg-black/60 text-white text-[10px] rounded-md"
+          className="sticky bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/70 text-white text-[11px] rounded-full z-10"
         >
-          Reset
+          Reset zoom
         </button>
       )}
     </div>
   );
 }
 
+// ─── PDF page rendered to canvas ────────────────────────────────────
+function PdfPreview({ fileUrl }: { fileUrl: string }) {
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [error, setError] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  const onDocumentLoad = useCallback(({ numPages: n }: { numPages: number }) => {
+    setNumPages(n);
+  }, []);
+
+  // Measure container width for responsive page rendering
+  const measureRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      setContainerWidth(node.getBoundingClientRect().width);
+      containerRef.current = node;
+    }
+  }, []);
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 gap-2">
+        <FileTypeBadge fileType="application/pdf" />
+        <p className="text-[13px] text-[var(--m-text-tertiary)]">Could not render PDF</p>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={measureRef}>
+      <ReactPdfDocument
+        file={fileUrl}
+        onLoadSuccess={onDocumentLoad}
+        onLoadError={() => setError(true)}
+        loading={
+          <div className="flex items-center justify-center py-16">
+            <span className="text-[13px] text-[var(--m-text-tertiary)]">Rendering PDF…</span>
+          </div>
+        }
+      >
+        <ReactPdfPage
+          pageNumber={1}
+          width={containerWidth || undefined}
+          renderTextLayer={false}
+          renderAnnotationLayer={false}
+        />
+      </ReactPdfDocument>
+      {numPages && numPages > 1 && (
+        <div className="text-center py-2 text-[10px] text-[var(--m-text-placeholder)]">
+          Page 1 of {numPages}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ─────────────────────────────────────────────────
 export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: PreviewTabProps) {
   if (!fileUrl) {
     return (
@@ -116,19 +184,16 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
     <div className="px-[var(--m-page-px)] py-4 flex flex-col gap-4">
       {/* Preview area */}
       {isPdf(fileType) ? (
-        <div className="relative">
+        <div>
           <ZoomablePreview>
-            <iframe
-              src={`${fileUrl}#view=FitH&toolbar=0`}
-              title={fileName}
-              className="w-full border-none pointer-events-none"
-              style={{ height: '141.4vw', maxHeight: '80vh' }}
-            />
+            <PdfPreview fileUrl={fileUrl} />
           </ZoomablePreview>
-          <p className="text-[10px] text-[var(--m-text-placeholder)] text-center mt-1">Pinch to zoom · Double-tap to toggle</p>
+          <p className="text-[10px] text-[var(--m-text-placeholder)] text-center mt-1">
+            Pinch to zoom · Double-tap to toggle
+          </p>
         </div>
       ) : isImage(fileType) ? (
-        <div className="relative">
+        <div>
           <ZoomablePreview>
             <img
               src={fileUrl}
@@ -137,7 +202,9 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
               draggable={false}
             />
           </ZoomablePreview>
-          <p className="text-[10px] text-[var(--m-text-placeholder)] text-center mt-1">Pinch to zoom · Double-tap to toggle</p>
+          <p className="text-[10px] text-[var(--m-text-placeholder)] text-center mt-1">
+            Pinch to zoom · Double-tap to toggle
+          </p>
         </div>
       ) : (
         <div className="w-full aspect-[0.707] bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg overflow-hidden flex items-center justify-center">
