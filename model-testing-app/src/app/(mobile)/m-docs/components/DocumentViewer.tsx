@@ -9,6 +9,8 @@ import PreviewTab from './DocumentViewerTabs/PreviewTab';
 import DetailsTab from './DocumentViewerTabs/DetailsTab';
 import SummaryTab from './DocumentViewerTabs/SummaryTab';
 import ClassificationTab from './DocumentViewerTabs/ClassificationTab';
+import IntelligenceTab from './DocumentViewerTabs/IntelligenceTab';
+import NotesTab from './DocumentViewerTabs/NotesTab';
 
 type ViewerTab = 'preview' | 'summary' | 'classification' | 'details' | 'intelligence' | 'notes';
 
@@ -123,16 +125,8 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
             {activeTab === 'details' && (
               <DetailsTab doc={doc} />
             )}
-            {activeTab === 'intelligence' && (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
-                Intelligence — coming in Task 9
-              </div>
-            )}
-            {activeTab === 'notes' && (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
-                Notes — coming in Task 9
-              </div>
-            )}
+            {activeTab === 'intelligence' && <IntelligenceTab documentId={documentId} />}
+            {activeTab === 'notes' && <NotesTab documentId={documentId} />}
           </>
         )}
       </div>
