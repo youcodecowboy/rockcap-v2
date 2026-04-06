@@ -46,6 +46,7 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
   // Always call all hooks — use 'skip' when not needed
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
+  const clientDocCounts = useQuery(api.documents.getClientDocumentCounts, {});
   const internalDocs = useQuery(
     api.documents.getByScope,
     scope === 'internal' ? { scope: 'internal' } : 'skip'
@@ -189,7 +190,11 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
           ) : (
             filteredClients.map(client => {
               const projCount = projectCountByClient.get(client._id) ?? 0;
-              const meta = projCount === 1 ? '1 project' : `${projCount} projects`;
+              const docCount = clientDocCounts?.[client._id] ?? 0;
+              const metaParts = [
+                `${projCount} project${projCount !== 1 ? 's' : ''}`,
+                `${docCount} doc${docCount !== 1 ? 's' : ''}`,
+              ];
               return (
                 <button
                   key={client._id}
@@ -197,10 +202,15 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                   className="flex items-center gap-2.5 w-full text-left px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)] active:bg-[var(--m-bg-subtle)]"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">
-                      {client.name}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">{client.name}</span>
+                      {client.type && (
+                        <span className="text-[9px] font-medium px-1.5 py-px rounded bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)] flex-shrink-0 uppercase tracking-wide">
+                          {client.type}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5">{meta}</div>
+                    <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5">{metaParts.join(' · ')}</div>
                   </div>
                   <ChevronRight size={16} className="text-[var(--m-text-tertiary)] shrink-0" />
                 </button>
