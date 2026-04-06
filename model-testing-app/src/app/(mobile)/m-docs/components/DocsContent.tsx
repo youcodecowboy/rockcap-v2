@@ -17,11 +17,17 @@ export type NavScreen =
 
 export default function DocsContent() {
   const [navStack, setNavStack] = useState<NavScreen[]>([{ screen: 'list' }]);
+  const [dismissedTabId, setDismissedTabId] = useState<string | null>(null);
   const { tabs, activeTabId, closeTab, switchTab, updateTab } = useTabs();
 
   // Check if active tab wants to show a specific document
   const activeTab = tabs.find(t => t.id === activeTabId);
-  const tabDocumentId = activeTab?.params?.documentId;
+  // Clear dismissed state when active tab changes
+  if (dismissedTabId && activeTabId !== dismissedTabId) {
+    setDismissedTabId(null);
+  }
+  // Ignore dismissed tab (prevents flash before React processes closeTab)
+  const tabDocumentId = (activeTabId !== dismissedTabId) ? activeTab?.params?.documentId : undefined;
 
   const currentScreen = navStack[navStack.length - 1];
 
@@ -36,16 +42,14 @@ export default function DocsContent() {
   // Viewer from nav stack
   const viewerScreen = navStack.find(s => s.screen === 'viewer') as Extract<NavScreen, { screen: 'viewer' }> | undefined;
   const closeViewer = useCallback(() => {
-    // If opened via tab, close that tab and switch back to a non-doc tab
+    // If opened via tab, dismiss immediately then close the tab
     if (tabDocumentId && activeTabId) {
+      setDismissedTabId(activeTabId);
       closeTab(activeTabId);
-      // Find a non-document tab to switch to (dashboard or the docs list tab)
-      const fallbackTab = tabs.find(t => t.id !== activeTabId && !t.params?.documentId);
-      if (fallbackTab) switchTab(fallbackTab.id);
     }
-    // Also clear from nav stack
+    // Clear from nav stack
     setNavStack(prev => prev.filter(s => s.screen !== 'viewer'));
-  }, [tabDocumentId, activeTabId, closeTab, switchTab, tabs]);
+  }, [tabDocumentId, activeTabId, closeTab]);
 
   const openViewer = useCallback((documentId: string) => {
     push({ screen: 'viewer', documentId });
