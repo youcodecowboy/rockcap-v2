@@ -26,7 +26,14 @@ export default function ProjectFolderList({ clientId, clientName, projectId, pro
   const projectFolders = projectGroup?.folders?.filter(f => !f.parentFolderId) ?? [];
 
   // getFolderCounts keys projectFolders by projectId, then by doc.folderId (folderType string)
+  // Docs without a folderId are keyed as 'uncategorized'
   const projectFolderCounts = folderCounts?.projectFolders?.[projectId] ?? {};
+
+  // Compute unfiled count: 'uncategorized' key holds docs not in any known folder
+  const knownFolderTypes = new Set(projectFolders.map(f => f.folderType));
+  const unfiledCount = Object.entries(projectFolderCounts)
+    .filter(([key]) => !knownFolderTypes.has(key))
+    .reduce((sum, [, n]) => sum + (n as number), 0);
 
   if (isLoading) {
     return <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">Loading...</div>;
@@ -49,21 +56,31 @@ export default function ProjectFolderList({ clientId, clientName, projectId, pro
       </div>
 
       {/* Folder list */}
-      {projectFolders.length === 0 ? (
-        <div className="px-[var(--m-page-px)] py-4 text-center text-[12px] text-[var(--m-text-tertiary)]">No folders</div>
+      {projectFolders.length === 0 && unfiledCount === 0 ? (
+        <div className="px-[var(--m-page-px)] py-4 text-center text-[12px] text-[var(--m-text-tertiary)]">No documents</div>
       ) : (
-        projectFolders.map(folder => {
-          const count = projectFolderCounts[folder.folderType] ?? 0;
-          return (
+        <>
+          {projectFolders.map(folder => {
+            const count = projectFolderCounts[folder.folderType] ?? 0;
+            return (
+              <FolderRow
+                key={folder._id}
+                name={folder.name}
+                docCount={count}
+                variant="project"
+                onTap={() => onSelectFolder(folder._id, folder.folderType, folder.name)}
+              />
+            );
+          })}
+          {unfiledCount > 0 && (
             <FolderRow
-              key={folder._id}
-              name={folder.name}
-              docCount={count}
+              name="Unfiled"
+              docCount={unfiledCount}
               variant="project"
-              onTap={() => onSelectFolder(folder._id, folder.folderType, folder.name)}
+              onTap={() => onSelectFolder('unfiled', 'unfiled', 'Unfiled')}
             />
-          );
-        })
+          )}
+        </>
       )}
     </div>
   );
