@@ -116,12 +116,16 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
     <div className="px-[var(--m-page-px)] py-4 flex flex-col gap-4">
       {/* Preview area */}
       {isPdf(fileType) ? (
-        <div className="w-full aspect-[0.707] bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg overflow-hidden">
-          <iframe
-            src={fileUrl}
-            title={fileName}
-            className="w-full h-full border-none"
-          />
+        <div className="relative">
+          <ZoomablePreview>
+            <iframe
+              src={`${fileUrl}#view=FitH&toolbar=0`}
+              title={fileName}
+              className="w-full border-none pointer-events-none"
+              style={{ height: '141.4vw', maxHeight: '80vh' }}
+            />
+          </ZoomablePreview>
+          <p className="text-[10px] text-[var(--m-text-placeholder)] text-center mt-1">Pinch to zoom · Double-tap to toggle</p>
         </div>
       ) : isImage(fileType) ? (
         <div className="relative">
