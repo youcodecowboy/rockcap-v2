@@ -108,14 +108,7 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
         </div>
       )}
 
-      <div className="flex gap-3">
-        <a href={fileUrl} download={fileName} className="flex-1 py-2.5 rounded-lg bg-black text-white text-[13px] font-medium text-center">
-          Download
-        </a>
-        <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1 py-2.5 rounded-lg bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] text-[13px] font-medium text-center">
-          Open in browser
-        </a>
-      </div>
+      {/* Download/Open buttons moved to DocumentViewer sticky footer */}
     </div>
   );
 }

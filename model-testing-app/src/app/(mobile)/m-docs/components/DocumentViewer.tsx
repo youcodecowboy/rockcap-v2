@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { X } from 'lucide-react';
+import { X, Download, ExternalLink, PanelTop } from 'lucide-react';
+import { useTabs } from '@/contexts/TabContext';
 import PreviewTab from './DocumentViewerTabs/PreviewTab';
 import DetailsTab from './DocumentViewerTabs/DetailsTab';
 import SummaryTab from './DocumentViewerTabs/SummaryTab';
@@ -30,6 +31,7 @@ interface DocumentViewerProps {
 
 export default function DocumentViewer({ documentId, onClose }: DocumentViewerProps) {
   const [activeTab, setActiveTab] = useState<ViewerTab>('preview');
+  const { openTab } = useTabs();
 
   const doc = useQuery(api.documents.get, { id: documentId as Id<'documents'> });
   const fileUrl = useQuery(
@@ -37,6 +39,17 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
     doc?.fileStorageId ? { storageId: doc.fileStorageId as Id<'_storage'> } : 'skip'
   );
   const markAsOpened = useMutation(api.documents.markAsOpened);
+
+  const handleAddToTabs = useCallback(() => {
+    if (!doc) return;
+    const tabTitle = doc.documentCode || doc.displayName || doc.fileName;
+    openTab({
+      type: 'docs',
+      title: tabTitle,
+      route: '/m-docs',
+      params: { documentId },
+    });
+  }, [doc, documentId, openTab]);
 
   // Lock body scroll on mount, restore on unmount
   useEffect(() => {
@@ -122,14 +135,48 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
             )}
             {activeTab === 'summary' && <SummaryTab doc={doc} />}
             {activeTab === 'classification' && <ClassificationTab doc={doc} />}
-            {activeTab === 'details' && (
-              <DetailsTab doc={doc} />
-            )}
+            {activeTab === 'details' && <DetailsTab doc={doc} />}
             {activeTab === 'intelligence' && <IntelligenceTab documentId={documentId} />}
             {activeTab === 'notes' && <NotesTab documentId={documentId} />}
           </>
         )}
       </div>
+
+      {/* Sticky action footer — visible on all tabs */}
+      {doc && (
+        <div className="shrink-0 border-t border-[var(--m-border)] bg-[var(--m-bg)] px-[var(--m-page-px)] py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+          <div className="flex gap-2">
+            {fileUrl && (
+              <a
+                href={fileUrl}
+                download={doc.fileName}
+                className="flex items-center justify-center gap-1.5 flex-1 py-2 rounded-md bg-black text-white text-[12px] font-medium"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download
+              </a>
+            )}
+            {fileUrl && (
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 flex-1 py-2 rounded-md bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] text-[12px] font-medium"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open
+              </a>
+            )}
+            <button
+              onClick={handleAddToTabs}
+              className="flex items-center justify-center gap-1.5 flex-1 py-2 rounded-md bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] text-[12px] font-medium"
+            >
+              <PanelTop className="w-3.5 h-3.5" />
+              Add to tabs
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
