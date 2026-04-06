@@ -127,13 +127,15 @@ export default function FolderContents({
   return (
     <div>
       {/* Header */}
-      <div className="px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border)]">
-        <button onClick={onBack} className="flex items-center gap-1 mb-1">
+      <div className="flex items-center justify-between px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border)]">
+        <button onClick={onBack} className="flex items-center gap-1">
           <ChevronLeft className="w-3.5 h-3.5 text-[var(--m-accent-indicator)]" />
           <span className="text-[12px] text-[var(--m-accent-indicator)]">{backLabel}</span>
         </button>
-        <div className="text-[16px] font-semibold text-[var(--m-text-primary)]">{folderName}</div>
-        <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5">{contextLine}</div>
+        <div className="text-right min-w-0">
+          <div className="text-[14px] font-semibold text-[var(--m-text-primary)] truncate">{folderName}</div>
+          <div className="text-[10px] text-[var(--m-text-tertiary)]">{contextLine}</div>
+        </div>
       </div>
 
       {/* Sort bar */}
@@ -199,6 +201,7 @@ export default function FolderContents({
               category={doc.category}
               fileSize={doc.fileSize ?? 0}
               uploadedAt={doc.uploadedAt}
+              lastOpenedAt={doc.lastOpenedAt}
               onTap={() => onOpenViewer(doc._id)}
               onDuplicate={() => handleDuplicate(doc._id)}
               onFlag={() => {/* TODO: wire to flags.create */}}

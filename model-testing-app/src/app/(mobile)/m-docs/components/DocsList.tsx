@@ -257,6 +257,7 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 category={doc.category}
                 fileSize={doc.fileSize ?? 0}
                 uploadedAt={doc.uploadedAt}
+                lastOpenedAt={doc.lastOpenedAt}
                 onTap={() => onOpenViewer(doc._id)}
                 onDuplicate={() => handleDuplicate(doc._id)}
                 onFlag={() => {/* TODO: wire to flags.create */}}
@@ -314,6 +315,7 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 category={doc.category}
                 fileSize={doc.fileSize ?? 0}
                 uploadedAt={doc.uploadedAt}
+                lastOpenedAt={doc.lastOpenedAt}
                 onTap={() => onOpenViewer(doc._id)}
                 onDuplicate={() => handleDuplicate(doc._id)}
                 onFlag={() => {/* TODO: wire to flags.create */}}

@@ -12,6 +12,7 @@ interface FileRowProps {
   category?: string;
   fileSize: number;
   uploadedAt: string;
+  lastOpenedAt?: string;
   fileUrl?: string | null;
   onTap: () => void;
   onRename?: () => void;
@@ -85,10 +86,11 @@ function ActionSheet({ onClose, onViewDetails, onRename, onDownload, onDuplicate
   );
 }
 
-export default function FileRow({ fileName, displayName, documentCode, fileType, category, fileSize, uploadedAt, fileUrl, onTap, onRename, onDuplicate, onFlag, onDelete }: FileRowProps) {
+export default function FileRow({ fileName, displayName, documentCode, fileType, category, fileSize, uploadedAt, lastOpenedAt, fileUrl, onTap, onRename, onDuplicate, onFlag, onDelete }: FileRowProps) {
   const [showActions, setShowActions] = useState(false);
   const name = documentCode || displayName || fileName;
-  const parts = [category, formatFileSize(fileSize), formatDate(uploadedAt)].filter(Boolean);
+  const originalName = documentCode ? (displayName || fileName) : (displayName && displayName !== fileName ? fileName : null);
+  const parts = [originalName, category, formatFileSize(fileSize), formatDate(uploadedAt)].filter(Boolean);
 
   return (
     <>
@@ -97,7 +99,12 @@ export default function FileRow({ fileName, displayName, documentCode, fileType,
           onClick={onTap}
           className="flex items-center gap-2.5 flex-1 min-w-0 text-left px-[var(--m-page-px)] py-2.5 active:bg-[var(--m-bg-subtle)]"
         >
-          <FileTypeBadge fileType={fileType} />
+          <div className="relative flex-shrink-0">
+            <FileTypeBadge fileType={fileType} />
+            {lastOpenedAt && (
+              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--m-accent-indicator)]" />
+            )}
+          </div>
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">{name}</div>
             <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5 truncate">{parts.join(' · ')}</div>
