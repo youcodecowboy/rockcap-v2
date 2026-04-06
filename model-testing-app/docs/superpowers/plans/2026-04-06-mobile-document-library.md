@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a 4-screen drill-down document browser for mobile: scope/client list → client detail → folder contents → full-screen document viewer with 6 tabs.
+**Goal:** Build a 5-state drill-down document browser for mobile: scope/client list → client detail → (optional) project folders → folder contents → full-screen document viewer with 6 tabs.
 
 **Architecture:** Single `DocsContent` client component manages a navigation stack (push/pop array of screen states). Each screen is a standalone component that receives nav callbacks. The DocumentViewer renders as a full-screen overlay. All data from Convex `useQuery` hooks. Shared FileRow/FolderRow/FileTypeBadge components used across screens.
 
@@ -153,8 +153,11 @@ export type NavScreen =
   | { screen: 'list' }
   | { screen: 'client'; clientId: string; clientName: string }
   | { screen: 'projectFolders'; clientId: string; clientName: string; projectId: string; projectName: string }
-  | { screen: 'folder'; clientId: string; clientName: string; projectId?: string; projectName?: string; folderId: string; folderName: string; folderType: 'client' | 'project' }
+  | { screen: 'folder'; clientId: string; clientName: string; projectId?: string; projectName?: string; folderRecordId: string; folderTypeKey: string; folderName: string; folderLevel: 'client' | 'project' }
   | { screen: 'viewer'; documentId: string };
+
+// folderRecordId = the _id of the clientFolders/projectFolders record (for resolving children via parentFolderId)
+// folderTypeKey = the folderType string key (for querying documents via documents.getByFolder)
 
 export default function DocsContent() {
   const [navStack, setNavStack] = useState<NavScreen[]>([{ screen: 'list' }]);
@@ -368,7 +371,9 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
             </div>
           </div>
 
-          {filteredClients.length === 0 ? (
+          {clients === undefined ? (
+            <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">Loading...</div>
+          ) : filteredClients.length === 0 ? (
             <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">
               {search ? 'No matching clients' : 'No clients yet'}
             </div>
@@ -399,15 +404,23 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
       {/* Internal scope */}
       {scope === 'internal' && (
         <>
+          <div className="px-[var(--m-page-px)] py-2.5">
+            <div className="flex items-center gap-2 bg-[var(--m-bg-inset)] rounded-md px-3 py-2">
+              <Search className="w-3.5 h-3.5 text-[var(--m-text-tertiary)] flex-shrink-0" />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files..." className="flex-1 bg-transparent text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none" />
+            </div>
+          </div>
           <div className="px-[var(--m-page-px)] py-1.5 bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)] flex justify-between items-center">
             <button onClick={cycleSortMode} className="text-[11px] text-[var(--m-text-tertiary)]">
               Sort: {sortLabels[sortMode]}
             </button>
           </div>
-          {!internalDocs || internalDocs.length === 0 ? (
-            <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">No internal documents</div>
+          {internalDocs === undefined ? (
+            <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">Loading...</div>
+          ) : sortDocs(internalDocs.filter(d => !d.isDeleted && (!search || (d.displayName || d.fileName).toLowerCase().includes(search.toLowerCase())))).length === 0 ? (
+            <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">{search ? 'No matching documents' : 'No internal documents'}</div>
           ) : (
-            sortDocs(internalDocs.filter(d => !d.isDeleted)).map(doc => (
+            sortDocs(internalDocs.filter(d => !d.isDeleted && (!search || (d.displayName || d.fileName).toLowerCase().includes(search.toLowerCase())))).map(doc => (
               <FileRow
                 key={doc._id}
                 fileName={doc.fileName}
@@ -426,13 +439,21 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
       {/* Personal scope */}
       {scope === 'personal' && (
         <>
+          <div className="px-[var(--m-page-px)] py-2.5">
+            <div className="flex items-center gap-2 bg-[var(--m-bg-inset)] rounded-md px-3 py-2">
+              <Search className="w-3.5 h-3.5 text-[var(--m-text-tertiary)] flex-shrink-0" />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files..." className="flex-1 bg-transparent text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none" />
+            </div>
+          </div>
           <div className="px-[var(--m-page-px)] py-1.5 bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)] flex justify-between items-center">
             <button onClick={cycleSortMode} className="text-[11px] text-[var(--m-text-tertiary)]">
               Sort: {sortLabels[sortMode]}
             </button>
           </div>
-          {!personalDocs || personalDocs.length === 0 ? (
-            <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">No personal documents</div>
+          {personalDocs === undefined ? (
+            <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">Loading...</div>
+          ) : sortDocs(personalDocs.filter(d => !d.isDeleted && (!search || (d.displayName || d.fileName).toLowerCase().includes(search.toLowerCase())))).length === 0 ? (
+            <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">{search ? 'No matching documents' : 'No personal documents'}</div>
           ) : (
             sortDocs(personalDocs.filter(d => !d.isDeleted)).map(doc => (
               <FileRow
@@ -513,7 +534,7 @@ interface ClientDocDetailProps {
   clientId: string;
   clientName: string;
   onBack: () => void;
-  onSelectFolder: (folderId: string, folderName: string, folderType: 'client' | 'project', projectId?: string, projectName?: string) => void;
+  onSelectFolder: (folderRecordId: string, folderTypeKey: string, folderName: string, folderLevel: 'client' | 'project', projectId?: string, projectName?: string) => void;
   onSelectProject: (projectId: string, projectName: string) => void;
 }
 
@@ -521,8 +542,18 @@ export default function ClientDocDetail({ clientId, clientName, onBack, onSelect
   const foldersData = useQuery(api.folderStructure.getAllFoldersForClient, { clientId: clientId as Id<'clients'> });
   const folderCounts = useQuery(api.documents.getFolderCounts, { clientId: clientId as Id<'clients'> });
 
+  const isLoading = foldersData === undefined || folderCounts === undefined;
   const clientFolders = foldersData?.clientFolders?.filter(f => !f.parentFolderId) ?? [];
   const projectGroups = foldersData?.projectFolders ?? [];
+
+  // Compute unfiled count: clientTotal - sum of all client folder counts
+  const clientFolderCounts = folderCounts?.clientFolders ?? {};
+  const filedCount = Object.values(clientFolderCounts).reduce((sum: number, n: number) => sum + n, 0);
+  const unfiledCount = (folderCounts?.clientTotal ?? 0) - filedCount;
+
+  if (isLoading) {
+    return <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">Loading...</div>;
+  }
 
   return (
     <div>
@@ -539,21 +570,31 @@ export default function ClientDocDetail({ clientId, clientName, onBack, onSelect
       <div className="py-2 px-[var(--m-page-px)] bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)]">
         <span className="text-[14px] font-semibold text-[var(--m-text-primary)]">Client Documents</span>
       </div>
-      {clientFolders.length === 0 ? (
-        <div className="px-[var(--m-page-px)] py-4 text-center text-[12px] text-[var(--m-text-tertiary)]">No client folders</div>
+      {clientFolders.length === 0 && unfiledCount === 0 ? (
+        <div className="px-[var(--m-page-px)] py-4 text-center text-[12px] text-[var(--m-text-tertiary)]">No client documents</div>
       ) : (
-        clientFolders.map(folder => {
-          const count = folderCounts?.clientFolders?.[folder.folderType] ?? 0;
-          return (
+        <>
+          {clientFolders.map(folder => {
+            const count = clientFolderCounts[folder.folderType] ?? 0;
+            return (
+              <FolderRow
+                key={folder._id}
+                name={folder.name}
+                docCount={count}
+                variant="client"
+                onTap={() => onSelectFolder(folder._id, folder.folderType, folder.name, 'client')}
+              />
+            );
+          })}
+          {unfiledCount > 0 && (
             <FolderRow
-              key={folder._id}
-              name={folder.name}
-              docCount={count}
+              name="Unfiled"
+              docCount={unfiledCount}
               variant="client"
-              onTap={() => onSelectFolder(folder.folderType, folder.name, 'client')}
+              onTap={() => onSelectFolder('unfiled', 'unfiled', 'Unfiled', 'client')}
             />
-          );
-        })
+          )}
+        </>
       )}
 
       {/* Projects section */}
@@ -604,8 +645,8 @@ import ClientDocDetail from './ClientDocDetail';
     clientId={baseScreen.clientId}
     clientName={baseScreen.clientName}
     onBack={pop}
-    onSelectFolder={(folderId, folderName, folderType, projectId, projectName) =>
-      push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId, projectName, folderId, folderName, folderType })
+    onSelectFolder={(folderRecordId, folderTypeKey, folderName, folderLevel, projectId, projectName) =>
+      push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId, projectName, folderRecordId, folderTypeKey, folderName, folderLevel })
     }
     onSelectProject={(projectId, projectName) =>
       push({ screen: 'projectFolders', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId, projectName })
@@ -654,16 +695,21 @@ interface ProjectFolderListProps {
   projectId: string;
   projectName: string;
   onBack: () => void;
-  onSelectFolder: (folderId: string, folderName: string) => void;
+  onSelectFolder: (folderRecordId: string, folderTypeKey: string, folderName: string) => void;
 }
 
 export default function ProjectFolderList({ clientId, clientName, projectId, projectName, onBack, onSelectFolder }: ProjectFolderListProps) {
   const foldersData = useQuery(api.folderStructure.getAllFoldersForClient, { clientId: clientId as Id<'clients'> });
   const folderCounts = useQuery(api.documents.getFolderCounts, { clientId: clientId as Id<'clients'> });
 
+  const isLoading = foldersData === undefined;
   const projectGroup = foldersData?.projectFolders?.find(g => g.project._id === projectId);
   const folders = projectGroup?.folders?.filter(f => !f.parentFolderId) ?? [];
   const projectCounts = folderCounts?.projectFolders?.[projectId] ?? {};
+
+  if (isLoading) {
+    return <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">Loading...</div>;
+  }
 
   return (
     <div>
@@ -688,7 +734,7 @@ export default function ProjectFolderList({ clientId, clientName, projectId, pro
               name={folder.name}
               docCount={count}
               variant="project"
-              onTap={() => onSelectFolder(folder.folderType, folder.name)}
+              onTap={() => onSelectFolder(folder._id, folder.folderType, folder.name)}
             />
           );
         })
@@ -714,8 +760,8 @@ import ProjectFolderList from './ProjectFolderList';
     projectId={baseScreen.projectId}
     projectName={baseScreen.projectName}
     onBack={pop}
-    onSelectFolder={(folderId, folderName) =>
-      push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId: baseScreen.projectId, projectName: baseScreen.projectName, folderId, folderName, folderType: 'project' })
+    onSelectFolder={(folderRecordId, folderTypeKey, folderName) =>
+      push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId: baseScreen.projectId, projectName: baseScreen.projectName, folderRecordId, folderTypeKey, folderName, folderLevel: 'project' })
     }
   />
 )}
@@ -757,11 +803,12 @@ interface FolderContentsProps {
   clientName: string;
   projectId?: string;
   projectName?: string;
-  folderId: string;
+  folderRecordId: string;
+  folderTypeKey: string;
   folderName: string;
-  folderType: 'client' | 'project';
+  folderLevel: 'client' | 'project';
   onBack: () => void;
-  onOpenSubfolder: (folderId: string, folderName: string) => void;
+  onOpenSubfolder: (folderRecordId: string, folderTypeKey: string, folderName: string) => void;
   onOpenViewer: (documentId: string) => void;
 }
 
@@ -769,28 +816,31 @@ type SortMode = 'newest' | 'oldest' | 'az' | 'za' | 'largest';
 const sortLabels: Record<SortMode, string> = { newest: 'Newest first', oldest: 'Oldest first', az: 'A → Z', za: 'Z → A', largest: 'Largest first' };
 const sortKeys: SortMode[] = ['newest', 'oldest', 'az', 'za', 'largest'];
 
-export default function FolderContents({ clientId, clientName, projectId, projectName, folderId, folderName, folderType, onBack, onOpenSubfolder, onOpenViewer }: FolderContentsProps) {
+export default function FolderContents({ clientId, clientName, projectId, projectName, folderRecordId, folderTypeKey, folderName, folderLevel, onBack, onOpenSubfolder, onOpenViewer }: FolderContentsProps) {
   const [sortMode, setSortMode] = useState<SortMode>('newest');
 
+  // Query documents using folderTypeKey (the string key the backend expects)
   const docs = useQuery(api.documents.getByFolder, {
     clientId: clientId as Id<'clients'>,
-    folderType: folderId,
-    level: folderType,
+    folderType: folderTypeKey,
+    level: folderLevel,
     ...(projectId ? { projectId: projectId as Id<'projects'> } : {}),
   });
 
-  // Get subfolders from the folder structure
+  // Get subfolders using folderRecordId (the actual _id for parentFolderId matching)
   const foldersData = useQuery(api.folderStructure.getAllFoldersForClient, { clientId: clientId as Id<'clients'> });
 
   const subfolders = useMemo(() => {
     if (!foldersData) return [];
-    if (folderType === 'client') {
-      return foldersData.clientFolders?.filter(f => f.parentFolderId && f.folderType.startsWith(folderId)) ?? [];
+    if (folderLevel === 'client') {
+      return foldersData.clientFolders?.filter(f => f.parentFolderId === folderRecordId) ?? [];
     } else {
       const projectGroup = foldersData.projectFolders?.find(g => g.project._id === projectId);
-      return projectGroup?.folders?.filter(f => f.parentFolderId) ?? [];
+      return projectGroup?.folders?.filter(f => f.parentFolderId === folderRecordId) ?? [];
     }
-  }, [foldersData, folderId, folderType, projectId]);
+  }, [foldersData, folderRecordId, folderLevel, projectId]);
+
+  const isLoading = docs === undefined;
 
   const sortedDocs = useMemo(() => {
     if (!docs) return [];
@@ -838,7 +888,7 @@ export default function FolderContents({ clientId, clientName, projectId, projec
           name={sf.name}
           docCount={0}
           variant={folderType}
-          onTap={() => onOpenSubfolder(sf.folderType, sf.name)}
+          onTap={() => onOpenSubfolder(sf._id, sf.folderType, sf.name)}
         />
       ))}
 
@@ -879,12 +929,13 @@ import FolderContents from './FolderContents';
     clientName={baseScreen.clientName}
     projectId={baseScreen.projectId}
     projectName={baseScreen.projectName}
-    folderId={baseScreen.folderId}
+    folderRecordId={baseScreen.folderRecordId}
+    folderTypeKey={baseScreen.folderTypeKey}
     folderName={baseScreen.folderName}
-    folderType={baseScreen.folderType}
+    folderLevel={baseScreen.folderLevel}
     onBack={pop}
-    onOpenSubfolder={(folderId, folderName) =>
-      push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId: baseScreen.projectId, projectName: baseScreen.projectName, folderId, folderName, folderType: baseScreen.folderType })
+    onOpenSubfolder={(folderRecordId, folderTypeKey, folderName) =>
+      push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId: baseScreen.projectId, projectName: baseScreen.projectName, folderRecordId, folderTypeKey, folderName, folderLevel: baseScreen.folderLevel })
     }
     onOpenViewer={openViewer}
   />
@@ -915,7 +966,7 @@ Create `src/app/(mobile)/m-docs/components/DocumentViewer.tsx`:
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { X } from 'lucide-react';
 import { Id } from '../../../../../convex/_generated/dataModel';
@@ -941,11 +992,14 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
 
   const doc = useQuery(api.documents.get, { id: documentId as Id<'documents'> });
   const fileUrl = useQuery(api.documents.getFileUrl, doc?.fileStorageId ? { storageId: doc.fileStorageId } : 'skip');
+  const markAsOpened = useMutation(api.documents.markAsOpened);
 
+  // Mark document as opened when viewer mounts
   useEffect(() => {
     document.body.style.overflow = 'hidden';
+    markAsOpened({ documentId: documentId as Id<'documents'> }).catch(() => {});
     return () => { document.body.style.overflow = ''; };
-  }, []);
+  }, [documentId, markAsOpened]);
 
   if (!doc) {
     return (
@@ -1489,7 +1543,16 @@ export default function IntelligenceTab({ documentId }: IntelligenceTabProps) {
           </div>
           {categoryItems.map(item => (
             <div key={item._id} className="px-[var(--m-page-px)] py-2 border-b border-[var(--m-border-subtle)]">
-              <div className="text-[12px] text-[var(--m-text-tertiary)]">{item.label}</div>
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] text-[var(--m-text-tertiary)]">{item.label}</span>
+                {item.normalizationConfidence != null && (
+                  <span className={`text-[9px] font-medium px-1.5 py-px rounded ${
+                    item.normalizationConfidence >= 0.8 ? 'bg-[#f0fdf4] text-[#166534]' :
+                    item.normalizationConfidence >= 0.6 ? 'bg-[#fefce8] text-[#a16207]' :
+                    'bg-[#fef2f2] text-[#991b1b]'
+                  }`}>{Math.round(item.normalizationConfidence * 100)}%</span>
+                )}
+              </div>
               <div className="text-[13px] text-[var(--m-text-primary)] mt-0.5">
                 {typeof item.value === 'object' ? JSON.stringify(item.value) : String(item.value)}
               </div>
