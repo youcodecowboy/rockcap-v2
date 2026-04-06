@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useState, useCallback } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import FileTypeBadge from '../shared/FileTypeBadge';
 
 const PdfPreview = dynamic(() => import('./PdfPreview'), { ssr: false });
@@ -27,116 +28,44 @@ function isPdf(fileType: string): boolean {
   return fileType.toLowerCase().includes('pdf');
 }
 
-// ─── Zoomable wrapper ───────────────────────────────────────────────
-// Uses real width/height scaling (not CSS transform) so overflow scroll
-// works naturally for panning in all directions.
+// ─── Zoom controls + scrollable container ───────────────────────────
+// No custom touch handlers. Zoom via buttons, pan via native scroll.
 function ZoomablePreview({ children }: { children: React.ReactNode }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-  const lastDistance = useRef<number | null>(null);
-  const pinchCenter = useRef<{ x: number; y: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
 
-  const getDistance = (touches: TouchList) => {
-    return Math.hypot(
-      touches[0].clientX - touches[1].clientX,
-      touches[0].clientY - touches[1].clientY,
-    );
-  };
+  const zoomIn = () => setZoom(prev => Math.min(4, prev + 0.5));
+  const zoomOut = () => setZoom(prev => Math.max(0.5, prev - 0.5));
+  const resetZoom = () => setZoom(1);
 
-  const getMidpoint = (touches: TouchList) => ({
-    x: (touches[0].clientX + touches[1].clientX) / 2,
-    y: (touches[0].clientY + touches[1].clientY) / 2,
-  });
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      lastDistance.current = getDistance(e.touches);
-      pinchCenter.current = getMidpoint(e.touches);
-    }
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && lastDistance.current !== null) {
-      e.preventDefault(); // prevent browser zoom
-      const dist = getDistance(e.touches);
-      const delta = dist / lastDistance.current;
-      setScale(prev => {
-        const next = Math.min(6, Math.max(1, prev * delta));
-
-        // Adjust scroll to keep pinch center stable
-        const container = containerRef.current;
-        const mid = getMidpoint(e.touches);
-        if (container && pinchCenter.current) {
-          const rect = container.getBoundingClientRect();
-          const relX = (mid.x - rect.left + container.scrollLeft) / prev;
-          const relY = (mid.y - rect.top + container.scrollTop) / prev;
-          requestAnimationFrame(() => {
-            container.scrollLeft = relX * next - (mid.x - rect.left);
-            container.scrollTop = relY * next - (mid.y - rect.top);
-          });
-        }
-
-        return next;
-      });
-      lastDistance.current = dist;
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    lastDistance.current = null;
-    pinchCenter.current = null;
-  }, []);
-
-  // Double-tap detection
-  const lastTap = useRef(0);
-  const handleTap = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    const now = Date.now();
-    if (now - lastTap.current < 300) {
-      setScale(prev => {
-        if (prev > 1) return 1;
-        // Zoom to tap point
-        const container = containerRef.current;
-        if (container) {
-          const rect = container.getBoundingClientRect();
-          const tapX = e.touches[0].clientX - rect.left;
-          const tapY = e.touches[0].clientY - rect.top;
-          requestAnimationFrame(() => {
-            container.scrollLeft = tapX * 3 - rect.width / 2;
-            container.scrollTop = tapY * 3 - rect.height / 2;
-          });
-        }
-        return 3;
-      });
-    }
-    lastTap.current = now;
-  }, []);
+  const zoomLabel = `${Math.round(zoom * 100)}%`;
 
   return (
     <div className="relative">
+      {/* Zoom toolbar */}
+      <div className="flex items-center justify-center gap-1 mb-2">
+        <button onClick={zoomOut} className="p-2 rounded-md bg-[var(--m-bg-inset)] active:bg-[var(--m-border)]" aria-label="Zoom out">
+          <ZoomOut className="w-4 h-4 text-[var(--m-text-secondary)]" />
+        </button>
+        <span className="text-[11px] text-[var(--m-text-tertiary)] w-10 text-center font-medium">{zoomLabel}</span>
+        <button onClick={zoomIn} className="p-2 rounded-md bg-[var(--m-bg-inset)] active:bg-[var(--m-border)]" aria-label="Zoom in">
+          <ZoomIn className="w-4 h-4 text-[var(--m-text-secondary)]" />
+        </button>
+        {zoom !== 1 && (
+          <button onClick={resetZoom} className="p-2 rounded-md bg-[var(--m-bg-inset)] active:bg-[var(--m-border)] ml-1" aria-label="Reset zoom">
+            <RotateCcw className="w-3.5 h-3.5 text-[var(--m-text-secondary)]" />
+          </button>
+        )}
+      </div>
+
+      {/* Scrollable container — native scroll for panning */}
       <div
-        ref={containerRef}
         className="w-full bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg overflow-auto"
-        style={{
-          height: '70vh',
-          touchAction: scale > 1 ? 'none' : 'pan-y',
-        }}
-        onTouchStart={(e) => { handleTap(e); handleTouchStart(e); }}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        style={{ height: '65vh' }}
       >
-        <div style={{ width: `${100 * scale}%` }}>
+        <div style={{ width: `${100 * zoom}%` }}>
           {children}
         </div>
       </div>
-      {scale > 1 && (
-        <button
-          onClick={() => setScale(1)}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/70 text-white text-[11px] rounded-full z-10"
-        >
-          Reset zoom
-        </button>
-      )}
     </div>
   );
 }
@@ -152,32 +81,17 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
   }
 
   return (
-    <div className="px-[var(--m-page-px)] py-4 flex flex-col gap-4">
+    <div className="px-[var(--m-page-px)] py-4 flex flex-col gap-3">
       {isPdf(fileType) ? (
-        <div>
-          <ZoomablePreview>
-            <PdfPreview fileUrl={fileUrl} />
-          </ZoomablePreview>
-          <p className="text-[10px] text-[var(--m-text-placeholder)] text-center mt-1">
-            Pinch to zoom · Double-tap to toggle
-          </p>
-        </div>
+        <ZoomablePreview>
+          <PdfPreview fileUrl={fileUrl} />
+        </ZoomablePreview>
       ) : isImage(fileType) ? (
-        <div>
-          <ZoomablePreview>
-            <img
-              src={fileUrl}
-              alt={fileName}
-              className="w-full h-auto object-contain"
-              draggable={false}
-            />
-          </ZoomablePreview>
-          <p className="text-[10px] text-[var(--m-text-placeholder)] text-center mt-1">
-            Pinch to zoom · Double-tap to toggle
-          </p>
-        </div>
+        <ZoomablePreview>
+          <img src={fileUrl} alt={fileName} className="w-full h-auto" draggable={false} />
+        </ZoomablePreview>
       ) : (
-        <div className="w-full bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg overflow-hidden flex items-center justify-center" style={{ height: '70vh' }}>
+        <div className="w-full bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg overflow-hidden flex items-center justify-center" style={{ height: '65vh' }}>
           <div className="flex flex-col items-center gap-3 px-6 text-center">
             <FileTypeBadge fileType={fileType} />
             <p className="text-[13px] text-[var(--m-text-tertiary)]">Preview not available</p>
@@ -187,19 +101,10 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
       )}
 
       <div className="flex gap-3">
-        <a
-          href={fileUrl}
-          download={fileName}
-          className="flex-1 py-2.5 rounded-lg bg-black text-white text-[13px] font-medium text-center"
-        >
+        <a href={fileUrl} download={fileName} className="flex-1 py-2.5 rounded-lg bg-black text-white text-[13px] font-medium text-center">
           Download
         </a>
-        <a
-          href={fileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 py-2.5 rounded-lg bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] text-[13px] font-medium text-center"
-        >
+        <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1 py-2.5 rounded-lg bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] text-[13px] font-medium text-center">
           Open in browser
         </a>
       </div>
