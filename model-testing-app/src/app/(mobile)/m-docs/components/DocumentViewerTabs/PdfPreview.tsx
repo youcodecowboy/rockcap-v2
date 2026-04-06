@@ -43,7 +43,8 @@ export default function PdfPreview({ fileUrl }: PdfPreviewProps) {
         const containerWidth = container.getBoundingClientRect().width;
         const unscaledViewport = page.getViewport({ scale: 1 });
         const scale = containerWidth / unscaledViewport.width;
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        // Render at 3x for crisp zoom — canvas pixels are cheap, quality matters
+      const dpr = 3;
         const viewport = page.getViewport({ scale: scale * dpr });
 
         canvas.width = viewport.width;
