@@ -145,9 +145,9 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
         )}
       </div>
 
-      {/* Sticky action footer — sits above the shell's bottom nav */}
+      {/* Fixed action footer — pinned above the shell's bottom nav */}
       {doc && (
-        <div className="shrink-0 border-t border-[var(--m-border)] bg-[var(--m-bg)] px-[var(--m-page-px)] py-2.5" style={{ marginBottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))' }}>
+        <div className="fixed left-0 right-0 z-[35] border-t border-[var(--m-border)] bg-[var(--m-bg)] px-[var(--m-page-px)] py-2.5" style={{ bottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))' }}>
           <div className="flex gap-2">
             {fileUrl && (
               <a
