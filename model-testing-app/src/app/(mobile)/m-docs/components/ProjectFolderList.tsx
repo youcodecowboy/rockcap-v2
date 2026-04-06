@@ -25,7 +25,7 @@ export default function ProjectFolderList({ clientId, clientName, projectId, pro
   const projectGroup = foldersData?.projectFolders?.find(g => g.project._id === projectId);
   const projectFolders = projectGroup?.folders?.filter(f => !f.parentFolderId) ?? [];
 
-  // getFolderCounts keys projectFolders by projectId, then by folderId (_id)
+  // getFolderCounts keys projectFolders by projectId, then by doc.folderId (folderType string)
   const projectFolderCounts = folderCounts?.projectFolders?.[projectId] ?? {};
 
   if (isLoading) {
@@ -53,7 +53,7 @@ export default function ProjectFolderList({ clientId, clientName, projectId, pro
         <div className="px-[var(--m-page-px)] py-4 text-center text-[12px] text-[var(--m-text-tertiary)]">No folders</div>
       ) : (
         projectFolders.map(folder => {
-          const count = projectFolderCounts[folder._id] ?? 0;
+          const count = projectFolderCounts[folder.folderType] ?? 0;
           return (
             <FolderRow
               key={folder._id}

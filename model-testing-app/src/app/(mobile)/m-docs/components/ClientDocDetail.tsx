@@ -22,7 +22,7 @@ export default function ClientDocDetail({ clientId, clientName, onBack, onSelect
   const clientFolders = foldersData?.clientFolders?.filter(f => !f.parentFolderId) ?? [];
   const projectGroups = foldersData?.projectFolders ?? [];
 
-  // getFolderCounts keys clientFolders by folderId (_id of the folder record)
+  // getFolderCounts keys clientFolders by doc.folderId (which is the folderType string, e.g. "background")
   const clientFolderCounts = folderCounts?.clientFolders ?? {};
   const filedCount = Object.values(clientFolderCounts).reduce((sum: number, n: number) => sum + n, 0);
   const unfiledCount = (folderCounts?.clientTotal ?? 0) - filedCount;
@@ -51,8 +51,7 @@ export default function ClientDocDetail({ clientId, clientName, onBack, onSelect
       ) : (
         <>
           {clientFolders.map(folder => {
-            // getFolderCounts keys by folderId (_id), not folderType
-            const count = clientFolderCounts[folder._id] ?? 0;
+            const count = clientFolderCounts[folder.folderType] ?? 0;
             return (
               <FolderRow
                 key={folder._id}
