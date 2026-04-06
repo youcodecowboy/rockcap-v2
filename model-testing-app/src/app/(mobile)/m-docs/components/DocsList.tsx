@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useQuery } from 'convex/react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
+import { Id } from '../../../../../convex/_generated/dataModel';
 import { ChevronRight } from 'lucide-react';
 import FileRow from './shared/FileRow';
 
@@ -28,6 +29,19 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
   const [scope, setScope] = useState<Scope>('clients');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('newest');
+
+  const removeMutation = useMutation(api.documents.remove);
+  const duplicateMutation = useMutation(api.documents.duplicateDocument);
+
+  const handleDelete = useCallback((docId: string) => {
+    if (confirm('Delete this document?')) {
+      removeMutation({ id: docId as Id<'documents'> }).catch(() => {});
+    }
+  }, [removeMutation]);
+
+  const handleDuplicate = useCallback((docId: string) => {
+    duplicateMutation({ documentId: docId as Id<'documents'> }).catch(() => {});
+  }, [duplicateMutation]);
 
   // Always call all hooks — use 'skip' when not needed
   const clients = useQuery(api.clients.list, {});
@@ -244,6 +258,8 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 fileSize={doc.fileSize ?? 0}
                 uploadedAt={doc.uploadedAt}
                 onTap={() => onOpenViewer(doc._id)}
+                onDuplicate={() => handleDuplicate(doc._id)}
+                onDelete={() => handleDelete(doc._id)}
               />
             ))
           )}
@@ -298,6 +314,8 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 fileSize={doc.fileSize ?? 0}
                 uploadedAt={doc.uploadedAt}
                 onTap={() => onOpenViewer(doc._id)}
+                onDuplicate={() => handleDuplicate(doc._id)}
+                onDelete={() => handleDelete(doc._id)}
               />
             ))
           )}

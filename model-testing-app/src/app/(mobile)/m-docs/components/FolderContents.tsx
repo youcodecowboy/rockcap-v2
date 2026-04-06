@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useQuery } from 'convex/react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { ChevronLeft } from 'lucide-react';
@@ -48,6 +48,19 @@ export default function FolderContents({
   onOpenViewer,
 }: FolderContentsProps) {
   const [sort, setSort] = useState<SortMode>('newest');
+
+  const removeMutation = useMutation(api.documents.remove);
+  const duplicateMutation = useMutation(api.documents.duplicateDocument);
+
+  const handleDelete = useCallback((docId: string) => {
+    if (confirm('Delete this document?')) {
+      removeMutation({ id: docId as Id<'documents'> }).catch(() => {});
+    }
+  }, [removeMutation]);
+
+  const handleDuplicate = useCallback((docId: string) => {
+    duplicateMutation({ documentId: docId as Id<'documents'> }).catch(() => {});
+  }, [duplicateMutation]);
 
   const foldersData = useQuery(api.folderStructure.getAllFoldersForClient, {
     clientId: clientId as Id<'clients'>,
@@ -187,6 +200,8 @@ export default function FolderContents({
               fileSize={doc.fileSize ?? 0}
               uploadedAt={doc.uploadedAt}
               onTap={() => onOpenViewer(doc._id)}
+              onDuplicate={() => handleDuplicate(doc._id)}
+              onDelete={() => handleDelete(doc._id)}
             />
           ))}
         </div>
