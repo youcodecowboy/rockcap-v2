@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import DocsList from './DocsList';
+import ClientDocDetail from './ClientDocDetail';
 
 export type NavScreen =
   | { screen: 'list' }
@@ -48,9 +49,17 @@ export default function DocsContent() {
         />
       )}
       {baseScreen.screen === 'client' && (
-        <div className="px-[var(--m-page-px)] py-6 text-center text-[var(--m-text-tertiary)] text-[13px]">
-          ClientDocDetail placeholder — Task 3
-        </div>
+        <ClientDocDetail
+          clientId={baseScreen.clientId}
+          clientName={baseScreen.clientName}
+          onBack={pop}
+          onSelectFolder={(folderRecordId, folderTypeKey, folderName, folderLevel, projectId, projectName) =>
+            push({ screen: 'folder', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId, projectName, folderRecordId, folderTypeKey, folderName, folderLevel })
+          }
+          onSelectProject={(projectId, projectName) =>
+            push({ screen: 'projectFolders', clientId: baseScreen.clientId, clientName: baseScreen.clientName, projectId, projectName })
+          }
+        />
       )}
       {baseScreen.screen === 'projectFolders' && (
         <div className="px-[var(--m-page-px)] py-6 text-center text-[var(--m-text-tertiary)] text-[13px]">
