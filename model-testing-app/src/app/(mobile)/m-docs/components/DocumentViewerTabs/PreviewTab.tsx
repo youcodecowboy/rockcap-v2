@@ -4,18 +4,8 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import FileTypeBadge from '../shared/FileTypeBadge';
 
-// Dynamically import react-pdf (uses canvas APIs not available in SSR)
-const ReactPdfDocument = dynamic(
-  () => import('react-pdf').then(mod => {
-    mod.pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${mod.pdfjs.version}/build/pdf.worker.min.mjs`;
-    return mod.Document;
-  }),
-  { ssr: false }
-);
-const ReactPdfPage = dynamic(
-  () => import('react-pdf').then(mod => mod.Page),
-  { ssr: false }
-);
+// Lazy-load the entire PDF preview (canvas APIs not available in SSR)
+const PdfPreview = dynamic(() => import('./PdfPreview'), { ssr: false });
 
 interface PreviewTabProps {
   fileUrl: string | null | undefined;
@@ -109,62 +99,6 @@ function ZoomablePreview({ children }: { children: React.ReactNode }) {
         >
           Reset zoom
         </button>
-      )}
-    </div>
-  );
-}
-
-// ─── PDF page rendered to canvas ────────────────────────────────────
-function PdfPreview({ fileUrl }: { fileUrl: string }) {
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [error, setError] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-
-  const onDocumentLoad = useCallback(({ numPages: n }: { numPages: number }) => {
-    setNumPages(n);
-  }, []);
-
-  // Measure container width for responsive page rendering
-  const measureRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      setContainerWidth(node.getBoundingClientRect().width);
-      containerRef.current = node;
-    }
-  }, []);
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 gap-2">
-        <FileTypeBadge fileType="application/pdf" />
-        <p className="text-[13px] text-[var(--m-text-tertiary)]">Could not render PDF</p>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={measureRef}>
-      <ReactPdfDocument
-        file={fileUrl}
-        onLoadSuccess={onDocumentLoad}
-        onLoadError={() => setError(true)}
-        loading={
-          <div className="flex items-center justify-center py-16">
-            <span className="text-[13px] text-[var(--m-text-tertiary)]">Rendering PDF…</span>
-          </div>
-        }
-      >
-        <ReactPdfPage
-          pageNumber={1}
-          width={containerWidth || undefined}
-          renderTextLayer={false}
-          renderAnnotationLayer={false}
-        />
-      </ReactPdfDocument>
-      {numPages && numPages > 1 && (
-        <div className="text-center py-2 text-[10px] text-[var(--m-text-placeholder)]">
-          Page 1 of {numPages}
-        </div>
       )}
     </div>
   );
