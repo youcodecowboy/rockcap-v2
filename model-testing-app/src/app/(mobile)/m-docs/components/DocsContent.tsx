@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useTabs } from '@/contexts/TabContext';
 import DocsList from './DocsList';
 import ClientDocDetail from './ClientDocDetail';
 import ProjectFolderList from './ProjectFolderList';
@@ -14,11 +15,13 @@ export type NavScreen =
   | { screen: 'folder'; clientId: string; clientName: string; projectId?: string; projectName?: string; folderRecordId: string; folderTypeKey: string; folderName: string; folderLevel: 'client' | 'project' }
   | { screen: 'viewer'; documentId: string };
 
-// folderRecordId = the _id of the clientFolders/projectFolders record (for resolving children via parentFolderId)
-// folderTypeKey = the folderType string key (for querying documents via documents.getByFolder)
-
 export default function DocsContent() {
   const [navStack, setNavStack] = useState<NavScreen[]>([{ screen: 'list' }]);
+  const { tabs, activeTabId } = useTabs();
+
+  // Check if active tab wants to show a specific document
+  const activeTab = tabs.find(t => t.id === activeTabId);
+  const tabDocumentId = activeTab?.params?.documentId;
 
   const currentScreen = navStack[navStack.length - 1];
 
@@ -30,7 +33,7 @@ export default function DocsContent() {
     setNavStack(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
   }, []);
 
-  // Viewer is an overlay — check if it's anywhere in the stack
+  // Viewer from nav stack
   const viewerScreen = navStack.find(s => s.screen === 'viewer') as Extract<NavScreen, { screen: 'viewer' }> | undefined;
   const closeViewer = useCallback(() => {
     setNavStack(prev => prev.filter(s => s.screen !== 'viewer'));
@@ -40,8 +43,23 @@ export default function DocsContent() {
     push({ screen: 'viewer', documentId });
   }, [push]);
 
-  // Render based on current screen (excluding viewer overlay)
-  const baseScreen = viewerScreen ? navStack[navStack.length - 2] || navStack[0] : currentScreen;
+  // Determine which document to show: tab param takes priority, then nav stack
+  const activeDocumentId = tabDocumentId || viewerScreen?.documentId;
+  const isViewerOpen = !!activeDocumentId;
+
+  // When viewer is open, show ONLY the viewer (not as overlay — replaces content)
+  // Header + TabManager stay visible via MobileShell
+  if (isViewerOpen) {
+    return (
+      <DocumentViewer
+        documentId={activeDocumentId!}
+        onClose={closeViewer}
+      />
+    );
+  }
+
+  // Base screen from nav stack (no viewer)
+  const baseScreen = currentScreen;
 
   return (
     <div className="min-h-[60vh]">
@@ -92,11 +110,6 @@ export default function DocsContent() {
           }
           onOpenViewer={openViewer}
         />
-      )}
-
-      {/* Viewer overlay */}
-      {viewerScreen && (
-        <DocumentViewer documentId={viewerScreen.documentId} onClose={closeViewer} />
       )}
     </div>
   );

@@ -49,15 +49,11 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
       route: '/m-docs',
       params: { documentId },
     });
+    setToastVisible(true);
+    setTimeout(() => setToastVisible(false), 2000);
   }, [doc, documentId, openTab]);
 
-  // Lock body scroll on mount, restore on unmount
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
+  const [toastVisible, setToastVisible] = useState(false);
 
   // Fire-and-forget markAsOpened when doc loads
   useEffect(() => {
@@ -75,9 +71,16 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
   const subtitle = subtitleParts.join(' · ');
 
   return (
-    <div className="fixed inset-0 z-50 bg-[var(--m-bg)] flex flex-col">
+    <div className="flex flex-col bg-[var(--m-bg)]" style={{ minHeight: 'calc(100vh - var(--m-header-h) - var(--m-footer-h) - env(safe-area-inset-bottom, 0px))' }}>
+      {/* Toast notification */}
+      {toastVisible && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 bg-black/80 text-white text-[12px] font-medium rounded-full shadow-lg animate-in fade-in">
+          Added to tabs
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-start gap-3 px-[var(--m-page-px)] pt-4 pb-3 border-b border-[var(--m-border)] shrink-0">
+      <div className="flex items-start gap-3 px-[var(--m-page-px)] pt-3 pb-2.5 border-b border-[var(--m-border)] shrink-0">
         <div className="flex-1 min-w-0">
           <h1 className="text-[15px] font-semibold text-[var(--m-text-primary)] leading-tight truncate">
             {doc === undefined ? 'Loading…' : title}

@@ -1,12 +1,14 @@
 'use client';
 
 import { useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useTabs } from '@/contexts/TabContext';
 
 export default function TabManager() {
   const { tabs, activeTabId, switchTab, closeTab } = useTabs();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   if (tabs.length <= 1) return null;
 
@@ -21,7 +23,7 @@ export default function TabManager() {
           return (
             <button
               key={tab.id}
-              onClick={() => switchTab(tab.id)}
+              onClick={() => { switchTab(tab.id); router.push(tab.route); }}
               className={`relative flex items-center gap-1 px-2.5 py-1 text-[11px] whitespace-nowrap flex-shrink-0 transition-colors rounded-sm ${
                 isActive
                   ? 'text-[var(--m-text-primary)] font-medium'
