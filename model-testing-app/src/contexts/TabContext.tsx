@@ -27,7 +27,7 @@ const defaultTab: Tab = {
   id: 'dashboard',
   type: 'dashboard',
   title: 'Dashboard',
-  route: '/',
+  route: '/m-dashboard',
 };
 
 export function TabProvider({ children }: { children: ReactNode }) {

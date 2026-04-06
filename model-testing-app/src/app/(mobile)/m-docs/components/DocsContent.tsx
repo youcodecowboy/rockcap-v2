@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useTabs } from '@/contexts/TabContext';
 import DocsList from './DocsList';
 import ClientDocDetail from './ClientDocDetail';
@@ -17,7 +17,7 @@ export type NavScreen =
 
 export default function DocsContent() {
   const [navStack, setNavStack] = useState<NavScreen[]>([{ screen: 'list' }]);
-  const { tabs, activeTabId } = useTabs();
+  const { tabs, activeTabId, closeTab, switchTab, updateTab } = useTabs();
 
   // Check if active tab wants to show a specific document
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -36,8 +36,16 @@ export default function DocsContent() {
   // Viewer from nav stack
   const viewerScreen = navStack.find(s => s.screen === 'viewer') as Extract<NavScreen, { screen: 'viewer' }> | undefined;
   const closeViewer = useCallback(() => {
+    // If opened via tab, close that tab and switch back to a non-doc tab
+    if (tabDocumentId && activeTabId) {
+      closeTab(activeTabId);
+      // Find a non-document tab to switch to (dashboard or the docs list tab)
+      const fallbackTab = tabs.find(t => t.id !== activeTabId && !t.params?.documentId);
+      if (fallbackTab) switchTab(fallbackTab.id);
+    }
+    // Also clear from nav stack
     setNavStack(prev => prev.filter(s => s.screen !== 'viewer'));
-  }, []);
+  }, [tabDocumentId, activeTabId, closeTab, switchTab, tabs]);
 
   const openViewer = useCallback((documentId: string) => {
     push({ screen: 'viewer', documentId });
