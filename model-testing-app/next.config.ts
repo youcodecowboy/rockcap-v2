@@ -15,7 +15,11 @@ const nextConfig: NextConfig = {
   },
   // Next.js 16 uses Turbopack by default
   turbopack: {},
-  webpack: (config) => config,
+  webpack: (config) => {
+    // pdfjs-dist optionally requires 'canvas' (node-canvas) which we don't need
+    config.resolve.alias.canvas = false;
+    return config;
+  },
 };
 
 export default nextConfig;

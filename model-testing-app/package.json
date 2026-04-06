@@ -68,6 +68,7 @@
     "moment": "^2.30.1",
     "next": "^16.0.7",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^3.11.174",
     "react": "19.2.0",
     "react-big-calendar": "^1.19.4",
     "react-day-picker": "^9.11.1",
