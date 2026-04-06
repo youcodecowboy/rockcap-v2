@@ -238,6 +238,7 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 key={doc._id}
                 fileName={doc.fileName}
                 displayName={doc.displayName}
+                documentCode={doc.documentCode}
                 fileType={doc.fileType ?? ''}
                 category={doc.category}
                 fileSize={doc.fileSize ?? 0}
@@ -291,6 +292,7 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 key={doc._id}
                 fileName={doc.fileName}
                 displayName={doc.displayName}
+                documentCode={doc.documentCode}
                 fileType={doc.fileType ?? ''}
                 category={doc.category}
                 fileSize={doc.fileSize ?? 0}

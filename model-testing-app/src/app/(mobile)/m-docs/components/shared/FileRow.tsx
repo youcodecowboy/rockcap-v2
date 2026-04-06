@@ -3,6 +3,7 @@ import FileTypeBadge from './FileTypeBadge';
 interface FileRowProps {
   fileName: string;
   displayName?: string;
+  documentCode?: string;
   fileType: string;
   category?: string;
   fileSize: number;
@@ -21,8 +22,8 @@ function formatDate(dateString: string): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export default function FileRow({ fileName, displayName, fileType, category, fileSize, uploadedAt, onTap }: FileRowProps) {
-  const name = displayName || fileName;
+export default function FileRow({ fileName, displayName, documentCode, fileType, category, fileSize, uploadedAt, onTap }: FileRowProps) {
+  const name = documentCode || displayName || fileName;
   const parts = [category, formatFileSize(fileSize), formatDate(uploadedAt)].filter(Boolean);
 
   return (

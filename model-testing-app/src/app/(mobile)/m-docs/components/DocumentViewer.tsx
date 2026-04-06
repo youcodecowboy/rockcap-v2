@@ -53,7 +53,7 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
     }
   }, [doc, documentId, markAsOpened]);
 
-  const title = doc?.displayName || doc?.fileName || 'Document';
+  const title = doc?.documentCode || doc?.displayName || doc?.fileName || 'Document';
   const subtitleParts = [
     doc?.category,
     doc?.clientName,
