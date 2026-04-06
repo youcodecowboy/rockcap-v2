@@ -5,9 +5,12 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
+// Module-level cache: fileUrl+zoom → { dataUrl, width, height, numPages }
+const renderCache = new Map<string, { dataUrl: string; width: number; height: number; numPages: number }>();
+
 interface PdfPreviewProps {
   fileUrl: string;
-  zoom?: number; // 1 = fit to container width
+  zoom?: number;
 }
 
 export default function PdfPreview({ fileUrl, zoom = 1 }: PdfPreviewProps) {
@@ -16,31 +19,45 @@ export default function PdfPreview({ fileUrl, zoom = 1 }: PdfPreviewProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [status, setStatus] = useState<'loading' | 'rendered' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
+  const [cachedImage, setCachedImage] = useState<{ dataUrl: string; width: number; height: number } | null>(null);
   const renderTaskRef = useRef<any>(null);
   const pdfPageRef = useRef<any>(null);
   const baseWidthRef = useRef<number>(0);
 
-  // Load PDF once
+  // Load PDF once (check cache first)
   useEffect(() => {
     let cancelled = false;
 
+    // Check cache before doing any work
+    const cacheKey = `${fileUrl}::${zoom}`;
+    const cached = renderCache.get(cacheKey);
+    if (cached) {
+      setCachedImage({ dataUrl: cached.dataUrl, width: cached.width, height: cached.height });
+      setNumPages(cached.numPages);
+      setStatus('rendered');
+      return;
+    }
+
+    // Clear cached image when re-rendering (zoom change)
+    setCachedImage(null);
+
     async function loadPdf() {
       try {
-        const pdf = await pdfjsLib.getDocument(fileUrl).promise;
-        if (cancelled) return;
-        setNumPages(pdf.numPages);
+        // Reuse cached page object if same URL
+        if (!pdfPageRef.current) {
+          const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+          if (cancelled) return;
+          setNumPages(pdf.numPages);
+          const page = await pdf.getPage(1);
+          if (cancelled) return;
+          pdfPageRef.current = page;
+        }
 
-        const page = await pdf.getPage(1);
-        if (cancelled) return;
-        pdfPageRef.current = page;
-
-        // Capture base container width on first load
-        if (containerRef.current) {
+        if (containerRef.current && baseWidthRef.current === 0) {
           baseWidthRef.current = containerRef.current.getBoundingClientRect().width;
         }
 
-        // Trigger initial render
-        renderPage(page, zoom);
+        renderPage(pdfPageRef.current, zoom);
       } catch (err: any) {
         if (cancelled) return;
         console.error('[PdfPreview] load failed:', err);
@@ -94,7 +111,16 @@ export default function PdfPreview({ fileUrl, zoom = 1 }: PdfPreviewProps) {
     renderTaskRef.current = task;
 
     task.promise
-      .then(() => setStatus('rendered'))
+      .then(() => {
+        // Cache the rendered canvas as a data URL for instant re-display
+        if (canvas) {
+          const dataUrl = canvas.toDataURL('image/png');
+          const entry = { dataUrl, width: displayWidth, height: displayHeight, numPages: numPages ?? 1 };
+          renderCache.set(`${fileUrl}::${zoomLevel}`, entry);
+          setCachedImage({ dataUrl, width: displayWidth, height: displayHeight });
+        }
+        setStatus('rendered');
+      })
       .catch((err: any) => {
         if (err?.name === 'RenderingCancelledException') return;
         console.error('[PdfPreview] render failed:', err);
@@ -122,10 +148,19 @@ export default function PdfPreview({ fileUrl, zoom = 1 }: PdfPreviewProps) {
           <span className="text-[13px] text-[var(--m-text-tertiary)]">Rendering PDF…</span>
         </div>
       )}
-      <canvas
-        ref={canvasRef}
-        className={status === 'loading' ? 'hidden' : 'block'}
-      />
+      {/* Show cached image (instant) or live canvas */}
+      {cachedImage ? (
+        <img
+          src={cachedImage.dataUrl}
+          style={{ width: `${cachedImage.width}px`, height: `${cachedImage.height}px` }}
+          alt="PDF preview"
+        />
+      ) : (
+        <canvas
+          ref={canvasRef}
+          className={status === 'loading' ? 'hidden' : 'block'}
+        />
+      )}
       {numPages && numPages > 1 && status === 'rendered' && (
         <div className="text-center py-2 text-[10px] text-[var(--m-text-placeholder)]">
           Page 1 of {numPages}
