@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import DocsList from './DocsList';
 
 export type NavScreen =
   | { screen: 'list' }
@@ -41,9 +42,10 @@ export default function DocsContent() {
   return (
     <div className="min-h-[60vh]">
       {baseScreen.screen === 'list' && (
-        <div className="px-[var(--m-page-px)] py-6 text-center text-[var(--m-text-tertiary)] text-[13px]">
-          DocsList placeholder — Task 2
-        </div>
+        <DocsList
+          onSelectClient={(clientId, clientName) => push({ screen: 'client', clientId, clientName })}
+          onOpenViewer={openViewer}
+        />
       )}
       {baseScreen.screen === 'client' && (
         <div className="px-[var(--m-page-px)] py-6 text-center text-[var(--m-text-tertiary)] text-[13px]">
