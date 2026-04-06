@@ -71,7 +71,7 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
   const subtitle = subtitleParts.join(' · ');
 
   return (
-    <div className="flex flex-col bg-[var(--m-bg)]" style={{ minHeight: 'calc(100vh - var(--m-header-h) - var(--m-footer-h) - env(safe-area-inset-bottom, 0px))' }}>
+    <div className="flex flex-col bg-[var(--m-bg)]">
       {/* Toast notification */}
       {toastVisible && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 bg-black/80 text-white text-[12px] font-medium rounded-full shadow-lg animate-in fade-in">
@@ -145,9 +145,9 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
         )}
       </div>
 
-      {/* Sticky action footer — visible on all tabs */}
+      {/* Sticky action footer — sits above the shell's bottom nav */}
       {doc && (
-        <div className="shrink-0 border-t border-[var(--m-border)] bg-[var(--m-bg)] px-[var(--m-page-px)] py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+        <div className="shrink-0 border-t border-[var(--m-border)] bg-[var(--m-bg)] px-[var(--m-page-px)] py-2.5" style={{ marginBottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))' }}>
           <div className="flex gap-2">
             {fileUrl && (
               <a
