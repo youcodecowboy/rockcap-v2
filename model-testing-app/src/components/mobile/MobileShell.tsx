@@ -10,11 +10,11 @@ export default function MobileShell({ children }: { children: React.ReactNode })
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-[var(--m-bg)] text-[var(--m-text-primary)]">
       <MobileHeader />
-      <div className="pt-14">
+      <div style={{ paddingTop: 'var(--m-header-h)' }}>
         <TabManager />
-        <main className="pb-20">
+        <main style={{ paddingBottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom) + 0.5rem)' }}>
           {children}
         </main>
       </div>

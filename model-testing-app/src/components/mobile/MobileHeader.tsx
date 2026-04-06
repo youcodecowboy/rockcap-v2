@@ -10,27 +10,31 @@ export default function MobileHeader() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 h-14 bg-white border-b border-gray-200 shadow-sm z-40 flex items-center justify-between px-4">
-        <div className="flex items-center gap-3">
+      <header className="fixed top-0 left-0 right-0 h-[var(--m-header-h)] bg-[var(--m-bg)] border-b border-[var(--m-border)] z-40 flex items-center justify-between px-3">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => setIsDrawerOpen(true)}
-            className="p-1.5 -ml-1.5 text-gray-700"
+            className="p-1.5 -ml-1 text-[var(--m-text-secondary)] active:text-[var(--m-text-primary)]"
             aria-label="Open navigation menu"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-[18px] h-[18px]" />
           </button>
-          <span className="text-xl font-normal text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>RockCap</span>
+          <span
+            className="text-[1.125rem] font-normal tracking-[-0.01em] text-[var(--m-text-primary)]"
+            style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}
+          >
+            RockCap
+          </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
-            className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5 text-sm text-gray-400"
+            className="p-1.5 text-[var(--m-text-tertiary)] active:text-[var(--m-text-secondary)]"
             aria-label="Search"
           >
-            <Search className="w-4 h-4" />
-            <span className="hidden sm:inline">Search...</span>
+            <Search className="w-[18px] h-[18px]" />
           </button>
-          <div className="w-7 h-7">
+          <div className="w-6 h-6">
             <UserButton afterSignOutUrl="/" />
           </div>
         </div>

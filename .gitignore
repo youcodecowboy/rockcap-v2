@@ -57,3 +57,6 @@ convex-dev.log
 # OS
 Thumbs.db
 
+# Git worktrees
+.worktrees/
+

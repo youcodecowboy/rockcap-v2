@@ -1,15 +1,19 @@
+import { type LucideIcon } from 'lucide-react';
+
 interface MobilePlaceholderProps {
   title: string;
   description: string;
-  icon: string;
+  icon: LucideIcon;
 }
 
-export default function MobilePlaceholder({ title, description, icon }: MobilePlaceholderProps) {
+export default function MobilePlaceholder({ title, description, icon: Icon }: MobilePlaceholderProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
-      <div className="text-4xl mb-4">{icon}</div>
-      <h1 className="text-xl font-semibold text-gray-900 mb-2">{title}</h1>
-      <p className="text-sm text-gray-400 max-w-xs">{description}</p>
+    <div className="flex flex-col items-center justify-center min-h-[60vh] px-[var(--m-page-px)]">
+      <div className="w-10 h-10 rounded-lg bg-[var(--m-bg-inset)] flex items-center justify-center mb-3">
+        <Icon className="w-5 h-5 text-[var(--m-text-tertiary)]" />
+      </div>
+      <h1 className="text-[15px] font-medium text-[var(--m-text-primary)] mb-1">{title}</h1>
+      <p className="text-[12px] text-[var(--m-text-tertiary)] max-w-[240px] text-center leading-relaxed">{description}</p>
     </div>
   );
 }

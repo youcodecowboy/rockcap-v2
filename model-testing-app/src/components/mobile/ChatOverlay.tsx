@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { X, Paperclip, ArrowUp } from 'lucide-react';
+import { X, Paperclip, ArrowUp, BotMessageSquare } from 'lucide-react';
 import { useTabs } from '@/contexts/TabContext';
 
 interface ChatOverlayProps {
@@ -26,47 +26,51 @@ export default function ChatOverlay({ isOpen, onClose }: ChatOverlayProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
-      <div className="relative mt-auto h-[85vh] bg-white rounded-t-2xl flex flex-col z-10 shadow-2xl">
+      <div className="relative mt-auto h-[85vh] bg-[var(--m-bg)] rounded-t-xl flex flex-col z-10 shadow-2xl">
+        {/* Drag handle */}
         <div className="flex justify-center pt-2 pb-1">
-          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+          <div className="w-8 h-[3px] bg-[var(--m-border)] rounded-full" />
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm text-white">
-              🤖
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--m-border)]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-[var(--m-accent)] rounded-md flex items-center justify-center">
+              <BotMessageSquare className="w-3.5 h-3.5 text-white" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-gray-900">RockCap Assistant</div>
+              <div className="text-[13px] font-medium text-[var(--m-text-primary)]">Assistant</div>
               {activeTab && activeTab.type !== 'dashboard' && (
-                <div className="text-xs text-gray-400">Context: {activeTab.title}</div>
+                <div className="text-[11px] text-[var(--m-text-tertiary)]">{activeTab.title}</div>
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700">
-            <X className="w-5 h-5" />
+          <button onClick={onClose} className="p-1.5 text-[var(--m-text-tertiary)] active:text-[var(--m-text-secondary)]">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
+        {/* Message area */}
         <div className="flex-1 overflow-y-auto px-4 py-6 flex items-center justify-center">
           <div className="text-center">
-            <div className="text-gray-400 text-sm">Chat assistant</div>
-            <div className="text-gray-300 text-xs mt-1">Coming soon — API integration in a later phase</div>
+            <div className="text-[var(--m-text-tertiary)] text-[13px]">Chat assistant</div>
+            <div className="text-[var(--m-text-placeholder)] text-[11px] mt-1">API integration in a later phase</div>
           </div>
         </div>
 
-        <div className="px-4 py-3 border-t border-gray-200 pb-[env(safe-area-inset-bottom)]">
+        {/* Input area */}
+        <div className="px-3 py-2.5 border-t border-[var(--m-border)] pb-[max(0.625rem,env(safe-area-inset-bottom))]">
           <div className="flex items-center gap-2">
-            <button className="w-9 h-9 flex items-center justify-center bg-gray-100 rounded-full text-gray-400 flex-shrink-0">
+            <button className="w-8 h-8 flex items-center justify-center text-[var(--m-text-tertiary)] flex-shrink-0">
               <Paperclip className="w-4 h-4" />
             </button>
-            <div className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm text-gray-400">
-              Ask anything...
+            <div className="flex-1 bg-[var(--m-bg-inset)] rounded-lg px-3 py-2 text-[13px] text-[var(--m-text-placeholder)]">
+              Ask anything…
             </div>
-            <button className="w-9 h-9 flex items-center justify-center bg-blue-600 rounded-full text-white flex-shrink-0">
-              <ArrowUp className="w-4 h-4" />
+            <button className="w-8 h-8 flex items-center justify-center bg-[var(--m-accent)] rounded-lg text-white flex-shrink-0">
+              <ArrowUp className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
