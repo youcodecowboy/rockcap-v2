@@ -5,6 +5,7 @@ import DocsList from './DocsList';
 import ClientDocDetail from './ClientDocDetail';
 import ProjectFolderList from './ProjectFolderList';
 import FolderContents from './FolderContents';
+import DocumentViewer from './DocumentViewer';
 
 export type NavScreen =
   | { screen: 'list' }
@@ -95,12 +96,7 @@ export default function DocsContent() {
 
       {/* Viewer overlay */}
       {viewerScreen && (
-        <div className="fixed inset-0 z-50 bg-[var(--m-bg)]">
-          <div className="px-[var(--m-page-px)] py-6 text-center text-[var(--m-text-tertiary)] text-[13px]">
-            DocumentViewer placeholder — Task 6
-            <button onClick={closeViewer} className="block mx-auto mt-2 text-[var(--m-accent-indicator)]">Close</button>
-          </div>
-        </div>
+        <DocumentViewer documentId={viewerScreen.documentId} onClose={closeViewer} />
       )}
     </div>
   );
