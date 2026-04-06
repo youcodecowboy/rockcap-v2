@@ -2,35 +2,28 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 
-const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155';
+const PDFJS_VERSION = '4.4.168';
+const PDFJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}`;
 
 interface PdfPreviewProps {
   fileUrl: string;
 }
 
-// Load pdfjs-dist from CDN (avoids all bundler compatibility issues)
 function loadPdfJs(): Promise<any> {
-  if ((window as any).__pdfjs) return Promise.resolve((window as any).__pdfjs);
+  const w = window as any;
+  if (w.pdfjsLib) return Promise.resolve(w.pdfjsLib);
 
   return new Promise((resolve, reject) => {
-    // Load worker
-    const workerScript = document.createElement('script');
-    workerScript.src = `${PDFJS_CDN}/pdf.worker.min.mjs`;
-    workerScript.type = 'module';
-
-    // Load main library
-    const mainScript = document.createElement('script');
-    mainScript.src = `${PDFJS_CDN}/pdf.min.mjs`;
-    mainScript.type = 'module';
-
-    // Use dynamic import instead of script tags for ESM
-    import(/* webpackIgnore: true */ `${PDFJS_CDN}/pdf.min.mjs`)
-      .then((pdfjsLib) => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.mjs`;
-        (window as any).__pdfjs = pdfjsLib;
-        resolve(pdfjsLib);
-      })
-      .catch(reject);
+    const script = document.createElement('script');
+    script.src = `${PDFJS_CDN}/pdf.min.js`;
+    script.onload = () => {
+      const lib = w.pdfjsLib;
+      if (!lib) { reject(new Error('pdfjsLib not found')); return; }
+      lib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.js`;
+      resolve(lib);
+    };
+    script.onerror = () => reject(new Error('Failed to load PDF.js'));
+    document.head.appendChild(script);
   });
 }
 
@@ -43,8 +36,7 @@ export default function PdfPreview({ fileUrl }: PdfPreviewProps) {
   const render = useCallback(async () => {
     try {
       const pdfjsLib = await loadPdfJs();
-      const loadingTask = pdfjsLib.getDocument(fileUrl);
-      const pdf = await loadingTask.promise;
+      const pdf = await pdfjsLib.getDocument(fileUrl).promise;
       setNumPages(pdf.numPages);
 
       const page = await pdf.getPage(1);
@@ -52,7 +44,6 @@ export default function PdfPreview({ fileUrl }: PdfPreviewProps) {
       const container = containerRef.current;
       if (!canvas || !container) return;
 
-      // Render at container width with 2x DPR for sharpness
       const containerWidth = container.getBoundingClientRect().width;
       const unscaledViewport = page.getViewport({ scale: 1 });
       const scale = containerWidth / unscaledViewport.width;
@@ -67,7 +58,8 @@ export default function PdfPreview({ fileUrl }: PdfPreviewProps) {
       const ctx = canvas.getContext('2d');
       await page.render({ canvasContext: ctx, viewport }).promise;
       setStatus('rendered');
-    } catch {
+    } catch (err) {
+      console.error('[PdfPreview] render failed:', err);
       setStatus('error');
     }
   }, [fileUrl]);
