@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -142,8 +142,12 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
       setDims(cached);
       return;
     }
-    const table = contentRef.current.querySelector('table');
-    const el = (table as HTMLElement) ?? contentRef.current;
+    // Prefer measuring the .mxlsx-canvas wrapper because it has explicit
+    // dimensions that include any absolutely-positioned images. Fall back to
+    // the table itself, then the content div.
+    const canvas = contentRef.current.querySelector('.mxlsx-canvas') as HTMLElement | null;
+    const table = contentRef.current.querySelector('table') as HTMLElement | null;
+    const el = canvas ?? table ?? contentRef.current;
     const rect = el.getBoundingClientRect();
     const width = Math.max(rect.width, contentRef.current.scrollWidth);
     const height = Math.max(rect.height, contentRef.current.scrollHeight);
@@ -225,7 +229,15 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
 
       {/* Base scoped styles — ExcelJS renderer emits inline styles that override these */}
       <style jsx>{`
+        .mxlsx-scope :global(.mxlsx-canvas) {
+          position: relative;
+          display: inline-block;
+        }
         .mxlsx-scope :global(.mxlsx-content table) {
+          /* table-layout: fixed makes <col width> authoritative.
+             Without this, the browser auto-sizes columns based on content
+             and ignores our specified widths. */
+          table-layout: fixed;
           border-collapse: collapse;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           font-size: 11px;
@@ -235,14 +247,22 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
         .mxlsx-scope :global(.mxlsx-content td),
         .mxlsx-scope :global(.mxlsx-content th) {
           border: 1px solid #e2e8f0;
-          padding: 4px 8px;
+          padding: 3px 6px;
           white-space: nowrap;
           vertical-align: top;
           text-align: left;
+          /* Allow text to spill into adjacent empty cells, the way Excel does.
+             For wrapped text we explicitly set white-space: normal inline. */
+          overflow: visible;
         }
         .mxlsx-scope :global(.mxlsx-content td[data-t="n"]) {
           text-align: right;
           font-variant-numeric: tabular-nums;
+        }
+        .mxlsx-scope :global(.mxlsx-content img.mxlsx-img) {
+          position: absolute;
+          pointer-events: none;
+          user-select: none;
         }
       `}</style>
     </div>
@@ -257,6 +277,22 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
 type ExcelJSWorkbook = {
   worksheets: ExcelJSWorksheet[];
   getWorksheet: (name: string) => ExcelJSWorksheet | undefined;
+  // Returns the binary image referenced by ID. Buffer is a Uint8Array (or
+  // Node Buffer in non-browser contexts). Extension is "png" / "jpeg" / etc.
+  getImage?: (imageId: number | string) => { buffer: Uint8Array | ArrayBuffer; extension?: string } | undefined;
+  model?: { media?: Array<{ name?: string; type?: string; extension?: string; buffer?: Uint8Array }> };
+};
+type ExcelJSImageAnchor = {
+  col: number;
+  row: number;
+  nativeCol?: number;
+  nativeRow?: number;
+  nativeColOff?: number;
+  nativeRowOff?: number;
+};
+type ExcelJSImage = {
+  imageId: number;
+  range: { tl: ExcelJSImageAnchor; br?: ExcelJSImageAnchor; ext?: { width: number; height: number } };
 };
 type ExcelJSWorksheet = {
   name: string;
@@ -279,6 +315,7 @@ type ExcelJSWorksheet = {
   getRow: (rowNum: number) => ExcelJSRow;
   getColumn: (col: number) => ExcelJSColumn;
   getCell: (row: number, col: number) => ExcelJSCell;
+  getImages?: () => ExcelJSImage[];
 };
 type ExcelJSColumn = {
   width?: number;
@@ -420,6 +457,31 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// Convert an image binary buffer (Uint8Array or ArrayBuffer) to a data URL.
+// Chunked encoding avoids "argument too long" errors on String.fromCharCode
+// for buffers larger than ~64KB.
+function bufferToDataUrl(buf: Uint8Array | ArrayBuffer, ext = 'png'): string | null {
+  try {
+    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    let binary = '';
+    const chunk = 0x8000; // 32KB
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+    }
+    const base64 = btoa(binary);
+    const mime =
+      ext === 'png' ? 'image/png' :
+      ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
+      ext === 'gif' ? 'image/gif' :
+      ext === 'svg' ? 'image/svg+xml' :
+      'image/png';
+    return `data:${mime};base64,${base64}`;
+  } catch (err) {
+    console.warn('[XlsxPreview] image encode failed:', err);
+    return null;
+  }
+}
+
 function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
   const ws = wb.getWorksheet(sheetName);
   if (!ws) throw new Error(`Sheet not found: ${sheetName}`);
@@ -464,6 +526,17 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
     });
   }
 
+  // Cumulative pixel positions in the RENDERED grid (post-hide).
+  // renderedColX[c] = pixel offset of left edge of column c (1-indexed).
+  // renderedColX[totalCols+1] = total width.
+  const renderedColX: number[] = [0, 0];
+  let xCum = 0;
+  for (let c = 1; c <= totalCols; c++) {
+    if (!hiddenCols.has(c)) xCum += colMeta[c - 1].widthPx;
+    renderedColX[c + 1] = xCum;
+  }
+  const totalTableWidth = xCum;
+
   // Also count hidden rows for the diagnostic
   let hiddenRowCount = 0;
   for (let r = 1; r <= totalRows; r++) {
@@ -502,17 +575,26 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
   }
   colgroup += '</colgroup>';
 
+  // renderedRowY[r] = pixel offset of top of row r (1-indexed).
+  // Built incrementally during the row loop so we can use it for image positioning.
+  const renderedRowY: number[] = [0, 0];
+  let yCum = 0;
+
   let body = '<tbody>';
   let renderedRowCount = 0;
   for (let r = 1; r <= totalRows; r++) {
     if (renderedRowCount >= ROW_CAP) break;
     const row = ws.getRow(r);
-    if (row?.hidden) continue; // Skip rows the author hid
+    if (row?.hidden) {
+      renderedRowY[r + 1] = yCum; // hidden row has 0 height
+      continue;
+    }
     renderedRowCount++;
 
-    const rowHeightPx = row.height ? Math.round(row.height * 1.333) : '';
-    const rowStyle = rowHeightPx ? ` style="height:${rowHeightPx}px"` : '';
-    body += `<tr${rowStyle}>`;
+    const rowHeightPx = row.height ? Math.round(row.height * 1.333) : 20;
+    yCum += rowHeightPx;
+    renderedRowY[r + 1] = yCum;
+    body += `<tr style="height:${rowHeightPx}px">`;
 
     for (let c = 1; c <= totalCols; c++) {
       if (hiddenCols.has(c)) continue;
@@ -577,59 +659,75 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
   }
   body += '</tbody>';
 
-  const html = `<table>${colgroup}${body}</table>`;
+  const totalTableHeight = yCum;
+
+  // ─── Image extraction ──────────────────────────────────────────────
+  // Excel embeds images via xl/media/imageN.png with anchors pointing at
+  // fractional cell coordinates. We extract them via ExcelJS and render
+  // each as an absolutely-positioned <img> over the table.
+  const imageElements: string[] = [];
+  try {
+    const images = typeof ws.getImages === 'function' ? (ws.getImages() ?? []) : [];
+    for (const img of images) {
+      const imgData = wb.getImage?.(img.imageId);
+      if (!imgData?.buffer) continue;
+      const dataUrl = bufferToDataUrl(imgData.buffer, imgData.extension);
+      if (!dataUrl) continue;
+
+      // ExcelJS uses 0-based col/row in image anchors.
+      // tl.col=1, tl.row=2 means top-left at column B, row 3.
+      const tl = img.range.tl;
+      const br = img.range.br;
+      const tlCol = Math.floor(tl.col) + 1; // → 1-based for renderedColX lookup
+      const tlRow = Math.floor(tl.row) + 1;
+      const left = renderedColX[tlCol] ?? 0;
+      const top = renderedRowY[tlRow] ?? 0;
+
+      let width = 0;
+      let height = 0;
+      if (br) {
+        const brCol = Math.ceil(br.col) + 1;
+        const brRow = Math.ceil(br.row) + 1;
+        const right = renderedColX[brCol] ?? renderedColX[renderedColX.length - 1];
+        const bottom = renderedRowY[brRow] ?? renderedRowY[renderedRowY.length - 1];
+        width = Math.max(0, right - left);
+        height = Math.max(0, bottom - top);
+      } else if (img.range.ext) {
+        // OneCell anchor with explicit pixel size (rare but possible)
+        width = img.range.ext.width;
+        height = img.range.ext.height;
+      }
+      if (width <= 0 || height <= 0) continue;
+
+      imageElements.push(
+        `<img class="mxlsx-img" src="${dataUrl}" style="left:${left}px;top:${top}px;width:${width}px;height:${height}px" alt="">`
+      );
+    }
+  } catch (err) {
+    console.warn('[XlsxPreview] image extraction failed:', err);
+  }
+
+  // Wrap the table in a positioned canvas so images can layer over it.
+  // The wrapper has explicit dimensions because table-layout:fixed needs an
+  // explicit table width to honor <col> widths exactly.
+  const tableHtml = `<table style="width:${totalTableWidth}px">${colgroup}${body}</table>`;
+  const html = `<div class="mxlsx-canvas" style="width:${totalTableWidth}px;height:${Math.max(totalTableHeight, 1)}px">${tableHtml}${imageElements.join('')}</div>`;
+
   const capped = totalRows > ROW_CAP ? { shown: renderedRowCount, total: totalRows } : null;
 
-  // Comprehensive diagnostic — emitted once per render so we can see exactly what
-  // ExcelJS parsed AND what HTML we're producing in response.
+  // Compact summary diagnostic — much smaller now that the renderer is healthy.
   if (typeof window !== 'undefined') {
-    const hiddenInDataRange: number[] = [];
-    for (let c = 1; c <= totalCols; c++) {
-      if (hiddenCols.has(c)) hiddenInDataRange.push(c);
-    }
-    const relevantModelCols = (ws.model.cols ?? []).filter(c => c.min <= totalCols);
-
-    // Dump row heights + hidden flags for the first 12 rows
-    const earlyRows: Array<{ row: number; hidden: boolean; height?: number }> = [];
-    for (let r = 1; r <= Math.min(12, totalRows); r++) {
-      const row = ws.getRow(r);
-      earlyRows.push({ row: r, hidden: !!row?.hidden, height: row?.height });
-    }
-
-    // Sample cells across the dark-header band the user described
-    const sampleCells: Record<string, unknown> = {};
-    for (const [label, r, c] of [
-      ['A1', 1, 1], ['B2', 2, 2], ['C3', 3, 3], ['B5', 5, 2],
-      ['A8', 8, 1], ['B8', 8, 2], ['C8', 8, 3], ['E8', 8, 5],
-    ] as const) {
-      const cell = ws.getCell(r, c);
-      sampleCells[label] = { text: cell?.text, fill: cell?.fill, font: cell?.font };
-    }
-
-    // Slice of generated HTML — first 2000 chars so we can see the actual output
-    const htmlSlice = html.slice(0, 2000);
-
-    // List the first 8 merges (if any)
-    const mergeList = (ws.model.merges ?? []).slice(0, 8);
-
-    console.log('[XlsxPreview] diagnostic v5:\n' + JSON.stringify({
+    console.log('[XlsxPreview] v7:', {
       sheet: sheetName,
       totalRows,
       totalCols,
-      hiddenColsInDataRange: hiddenInDataRange,
-      hiddenRowCount,
-      rawDefaultColWidth: rawDefault,
-      defaultColChars,
-      renderedRowCount,
-      mergesTotal: ws.model.merges?.length ?? 0,
-      mergeList,
-      earlyRows,
-      relevantModelCols,
-      colWidthsRendered: colMeta.map((m, i) => ({ col: i + 1, hidden: hiddenCols.has(i + 1), widthPx: m.widthPx })),
-      sampleCells,
+      renderedRows: renderedRowCount,
+      hiddenRows: hiddenRowCount,
+      hiddenColsInRange: Array.from(hiddenCols).filter(c => c <= totalCols).length,
+      images: imageElements.length,
+      tableSize: `${totalTableWidth}×${totalTableHeight}px`,
       htmlBytes: html.length,
-      htmlSlice,
-    }, null, 2));
+    });
   }
 
   return { html, capped };
