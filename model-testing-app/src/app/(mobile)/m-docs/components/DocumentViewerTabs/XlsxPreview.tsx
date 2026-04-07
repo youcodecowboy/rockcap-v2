@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v9';
+const CACHE_VERSION = 'v10';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -820,9 +820,50 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
 
   const capped = totalRows > ROW_CAP ? { shown: renderedRowCount, total: totalRows } : null;
 
-  // Compact summary diagnostic + a single numeric-cell sample so we can verify
-  // whether numFmt is being surfaced correctly for this file.
+  // Sharpened diagnostic — surfaces the cells we're FAILING to extract,
+  // plus column-level numFmt info so we can verify the v9 fallback chain.
   if (typeof window !== 'undefined') {
+    // Count extraction failures: cells with non-null value but empty display
+    const missing: Array<{ ref: string; valueType: string; sample: string }> = [];
+    let missingCount = 0;
+    let totalNonEmpty = 0;
+    const scanRows = Math.min(120, totalRows);
+    for (let r = 1; r <= scanRows; r++) {
+      const rr = ws.getRow(r);
+      if (rr?.hidden) continue;
+      for (let c = 1; c <= totalCols; c++) {
+        if (hiddenCols.has(c)) continue;
+        const cell = ws.getCell(r, c);
+        const v = cell?.value;
+        if (v == null || v === '') continue;
+        totalNonEmpty++;
+        const display = getCellText(cell, colMeta[c - 1]?.numFmt);
+        if (!display) {
+          missingCount++;
+          if (missing.length < 5) {
+            const valueType =
+              typeof v === 'number' ? 'number' :
+              v instanceof Date ? 'date' :
+              typeof v === 'object' && v !== null && 'result' in v ? 'formula' :
+              typeof v === 'object' && v !== null && 'richText' in v ? 'richText' :
+              typeof v;
+            missing.push({
+              ref: `R${r}C${c}`,
+              valueType,
+              sample: JSON.stringify(v).slice(0, 120),
+            });
+          }
+        }
+      }
+    }
+
+    // Dump numFmt for first ~10 visible columns
+    const colNumFmts = colMeta
+      .map((m, i) => ({ col: i + 1, hidden: hiddenCols.has(i + 1), numFmt: m.numFmt }))
+      .filter(m => !m.hidden)
+      .slice(0, 10);
+
+    // Sample a numeric cell so we can see exactly what cell-level formatting looks like
     let sampleNumeric: Record<string, unknown> | null = null;
     outer: for (let r = 1; r <= Math.min(60, totalRows); r++) {
       const rr = ws.getRow(r);
@@ -838,17 +879,18 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
           sampleNumeric = {
             addr: `R${r}C${c}`,
             valueType: typeof v === 'object' ? 'formula' : 'number',
-            value: v,
             numFmt: cell.numFmt,
             styleNumFmt: cell.style?.numFmt,
+            colNumFmt: colMeta[c - 1]?.numFmt,
             cellText: cell.text,
-            extracted: getCellText(cell),
+            extracted: getCellText(cell, colMeta[c - 1]?.numFmt),
           };
           break outer;
         }
       }
     }
-    console.log('[XlsxPreview] v8:', {
+
+    console.log('[XlsxPreview] v10:', {
       sheet: sheetName,
       totalRows,
       totalCols,
@@ -858,6 +900,10 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       images: imageElements.length,
       tableSize: `${totalTableWidth}×${totalTableHeight}px`,
       htmlBytes: html.length,
+      // The new fields:
+      scanned: { rows: scanRows, totalNonEmpty, missingCount },
+      missingExtraction: missing,
+      colNumFmts,
       sampleNumeric,
     });
   }
