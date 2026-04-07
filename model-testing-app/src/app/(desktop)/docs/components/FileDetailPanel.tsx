@@ -960,12 +960,12 @@ export default function FileDetailPanel({
                         )}
                       </div>
                       {/* Scrollable canvas — fills remaining height; XlsxPreview
-                          owns its own internal scroll area. */}
-                      <div className="flex-1 min-h-0 rounded-lg overflow-hidden">
+                          owns its own internal scroll area via fillParent. */}
+                      <div className="flex-1 min-h-0 rounded-lg overflow-hidden flex flex-col">
                         <XlsxPreview
                           fileUrl={fileUrl}
                           zoom={xlsxZoom}
-                          containerHeight="100%"
+                          fillParent
                           forceVisibleScrollbars
                         />
                       </div>

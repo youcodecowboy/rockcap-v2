@@ -183,13 +183,14 @@ export default function DocumentReaderPage() {
                   </Button>
                 )}
               </div>
-              {/* Scrollable canvas — XlsxPreview manages its own scroll area;
-                  we just provide the box for it to fill. */}
-              <div className="flex-1 min-h-0 rounded-lg overflow-hidden">
+              {/* Scrollable canvas — XlsxPreview manages its own scroll area
+                  via fillParent. We just provide a flex item that has a real
+                  height (flex-1 min-h-0 inside the flex column). */}
+              <div className="flex-1 min-h-0 rounded-lg overflow-hidden flex flex-col">
                 <XlsxPreview
                   fileUrl={fileUrl}
                   zoom={xlsxZoom}
-                  containerHeight="100%"
+                  fillParent
                   forceVisibleScrollbars
                 />
               </div>

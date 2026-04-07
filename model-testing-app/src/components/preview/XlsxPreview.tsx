@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v17';
+const CACHE_VERSION = 'v18';
 // We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
 // (fonts, fills, borders, themes, images), SheetJS as a value-recovery
 // fallback for cells where ExcelJS loses the cached <v> tag during parse.
@@ -25,11 +25,16 @@ interface XlsxPreviewProps {
   fileUrl: string;
   zoom?: number;
   /**
-   * CSS height for the scrollable canvas. Defaults to '55vh' for mobile.
-   * Desktop callers typically want '100%' so the preview fills the available
-   * vertical space in their parent container.
+   * If true, the component grows to fill its parent's height using a flex
+   * layout (h-full + flex-1 on the scroll area). Required for desktop usage
+   * inside flex containers. When false (mobile default), the scroll area
+   * uses a fixed 55vh height.
+   *
+   * IMPORTANT: When fillParent is true, the parent must have a defined
+   * height (via flex-1, h-screen, h-full chain, or explicit pixel value).
+   * Otherwise the component collapses to zero height.
    */
-  containerHeight?: string;
+  fillParent?: boolean;
   /**
    * If true, the scrollable canvas always shows visible scrollbars (with
    * custom webkit styling). Useful on desktop where users don't have touch
@@ -42,7 +47,7 @@ interface XlsxPreviewProps {
 export default function XlsxPreview({
   fileUrl,
   zoom = 1,
-  containerHeight = '55vh',
+  fillParent = false,
   forceVisibleScrollbars = false,
 }: XlsxPreviewProps) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -144,44 +149,53 @@ export default function XlsxPreview({
     return () => { cancelled = true; };
   }, [fileUrl]);
 
-  // ─── Render active sheet into DOM ────────────────────────────────────
-  useEffect(() => {
+  // ─── Render active sheet into DOM + measure in one synchronous pass ──
+  // Combined into a single useLayoutEffect because the previous split (inject
+  // in useEffect, measure in useLayoutEffect) had a race: useLayoutEffect runs
+  // BEFORE useEffect in React's commit phase, so the measurement saw an empty
+  // contentRef on first load and dims got stuck at {0, 0}, leaving the canvas
+  // invisible. By doing inject → measure → setDims in the same pass we
+  // guarantee the measurement reflects the just-injected content.
+  useLayoutEffect(() => {
     if (!engine || !activeSheet || !workbookRef.current || !contentRef.current) return;
     const cacheKey = `${CACHE_VERSION}::${fileUrl}::${engine}::${activeSheet}`;
-    const cached = htmlCache.get(cacheKey);
-    if (cached) {
-      contentRef.current.innerHTML = cached.html;
-      setCappedInfo(cached.capped);
-      return;
-    }
 
-    let result: { html: string; capped: { shown: number; total: number } | null };
-    try {
-      if (engine === 'exceljs') {
-        const sjsSheet = sheetJsWbRef.current?.Sheets?.[activeSheet];
-        result = renderExcelJSSheet(workbookRef.current as ExcelJSWorkbook, activeSheet, sjsSheet);
-      } else {
-        result = renderSheetJSSheet(workbookRef.current as XLSX.WorkBook, activeSheet);
+    // 1) Resolve HTML — from cache if available, else render fresh
+    let html: string;
+    let capped: { shown: number; total: number } | null;
+    const cachedHtml = htmlCache.get(cacheKey);
+    if (cachedHtml) {
+      html = cachedHtml.html;
+      capped = cachedHtml.capped;
+    } else {
+      try {
+        const result =
+          engine === 'exceljs'
+            ? renderExcelJSSheet(
+                workbookRef.current as ExcelJSWorkbook,
+                activeSheet,
+                sheetJsWbRef.current?.Sheets?.[activeSheet],
+              )
+            : renderSheetJSSheet(workbookRef.current as XLSX.WorkBook, activeSheet);
+        htmlCache.set(cacheKey, result);
+        html = result.html;
+        capped = result.capped;
+      } catch (err) {
+        console.error('[XlsxPreview] render failed:', err);
+        setErrorMsg(err instanceof Error ? err.message : 'Render failed');
+        setStatus('error');
+        return;
       }
-    } catch (err) {
-      console.error('[XlsxPreview] render failed:', err);
-      setErrorMsg(err instanceof Error ? err.message : 'Render failed');
-      setStatus('error');
-      return;
     }
 
-    htmlCache.set(cacheKey, result);
-    contentRef.current.innerHTML = result.html;
-    setCappedInfo(result.capped);
-  }, [engine, activeSheet, fileUrl]);
+    // 2) Inject the HTML into the DOM
+    contentRef.current.innerHTML = html;
+    setCappedInfo(capped);
 
-  // ─── Measure rendered content so the zoom wrapper can size itself ────
-  useLayoutEffect(() => {
-    if (status !== 'rendered' || !contentRef.current || !activeSheet || !engine) return;
-    const key = `${CACHE_VERSION}::${fileUrl}::${engine}::${activeSheet}`;
-    const cached = sizeCache.get(key);
-    if (cached) {
-      setDims(cached);
+    // 3) Measure the just-injected content (cached if we've seen this sheet before)
+    const cachedSize = sizeCache.get(cacheKey);
+    if (cachedSize) {
+      setDims(cachedSize);
       return;
     }
     // Prefer measuring the .mxlsx-canvas wrapper because it has explicit
@@ -194,9 +208,9 @@ export default function XlsxPreview({
     const width = Math.max(rect.width, contentRef.current.scrollWidth);
     const height = Math.max(rect.height, contentRef.current.scrollHeight);
     const next = { width, height };
-    sizeCache.set(key, next);
+    sizeCache.set(cacheKey, next);
     setDims(next);
-  }, [status, activeSheet, engine, fileUrl]);
+  }, [engine, activeSheet, fileUrl]);
 
   if (status === 'error') {
     return (
@@ -213,7 +227,7 @@ export default function XlsxPreview({
   const showSheetPicker = sheetNames.length > 1;
 
   return (
-    <div className="flex flex-col">
+    <div className={`flex flex-col ${fillParent ? 'h-full min-h-0' : ''}`}>
       {status === 'loading' && (
         <div className="flex items-center justify-center py-16">
           <span className="text-[13px] text-[var(--m-text-tertiary)]">Rendering spreadsheet…</span>
@@ -221,7 +235,7 @@ export default function XlsxPreview({
       )}
 
       {status === 'rendered' && showSheetPicker && (
-        <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-0.5 px-0.5 scrollbar-none">
+        <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-0.5 px-0.5 scrollbar-none flex-shrink-0">
           {sheetNames.map(name => {
             const active = name === activeSheet;
             return (
@@ -242,7 +256,7 @@ export default function XlsxPreview({
       )}
 
       {status === 'rendered' && cappedInfo && (
-        <div className="mb-1.5 px-2.5 py-1.5 rounded-md bg-[#fefce8] border border-[#fde68a] text-[10px] text-[#854d0e]">
+        <div className="mb-1.5 px-2.5 py-1.5 rounded-md bg-[#fefce8] border border-[#fde68a] text-[10px] text-[#854d0e] flex-shrink-0">
           Showing first {cappedInfo.shown.toLocaleString()} of {cappedInfo.total.toLocaleString()} rows — download for full file
         </div>
       )}
@@ -250,8 +264,8 @@ export default function XlsxPreview({
       <div
         className={`w-full bg-white border border-[var(--m-border)] rounded-md mxlsx-scope ${
           forceVisibleScrollbars ? 'mxlsx-force-scroll' : 'overflow-auto'
-        }`}
-        style={{ height: containerHeight }}
+        } ${fillParent ? 'flex-1 min-h-0' : ''}`}
+        style={fillParent ? undefined : { height: '55vh' }}
       >
         <div
           style={{
