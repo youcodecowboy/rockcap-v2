@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v15';
+const CACHE_VERSION = 'v16';
 // We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
 // (fonts, fills, borders, themes, images), SheetJS as a value-recovery
 // fallback for cells where ExcelJS loses the cached <v> tag during parse.
@@ -877,6 +877,34 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string, sjsSheet?: X
       // Default right-align for numeric values without explicit alignment
       const isNumeric = typeof cell.value === 'number';
       if (!a?.horizontal && isNumeric) styles.push('text-align:right');
+
+      // Excel-style overflow control: allow content to spill into the NEXT
+      // visible cell ONLY if that cell is empty. Otherwise clip with ellipsis
+      // to prevent visual collisions in dense data tables.
+      // (Cells with wrapText already have white-space:normal so they wrap
+      // inside the cell box and don't need this treatment.)
+      if (!a?.wrapText) {
+        let nextC = c + 1;
+        while (nextC <= totalCols && hiddenCols.has(nextC)) nextC++;
+        let nextHasContent = false;
+        if (nextC <= totalCols) {
+          const nextCell = row.getCell(nextC);
+          const nextV = nextCell?.value;
+          if (nextV != null && nextV !== '') {
+            // Treat formula cells whose result is "" as effectively empty
+            const isFormulaEmpty =
+              typeof nextV === 'object' &&
+              nextV !== null &&
+              'result' in nextV &&
+              (nextV as { result?: unknown }).result === '';
+            if (!isFormulaEmpty) nextHasContent = true;
+          }
+        }
+        if (nextHasContent) {
+          styles.push('overflow:hidden');
+          styles.push('text-overflow:ellipsis');
+        }
+      }
 
       const attrs: string[] = [];
       if (styles.length) attrs.push(`style="${styles.join(';')}"`);
