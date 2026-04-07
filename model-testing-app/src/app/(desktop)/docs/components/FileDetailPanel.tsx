@@ -56,6 +56,9 @@ import {
   Unlink,
   Search,
   MessageSquare,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThreadPanel } from '@/components/threads';
@@ -160,6 +163,11 @@ export default function FileDetailPanel({
   const router = useRouter();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  // Zoom state for xlsx preview (1.0 = 100%, range 0.5 → 4.0 in 0.25 steps)
+  const [xlsxZoom, setXlsxZoom] = useState(1);
+  const xlsxZoomIn = () => setXlsxZoom(z => Math.min(4, +(z + 0.25).toFixed(2)));
+  const xlsxZoomOut = () => setXlsxZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)));
+  const xlsxZoomReset = () => setXlsxZoom(1);
   const updateDocument = useMutation(api.documents.update);
   const saveDocumentIntelligence = useMutation(api.documents.saveDocumentIntelligence);
 
@@ -933,8 +941,34 @@ export default function FileDetailPanel({
                       title="PDF Preview"
                     />
                   ) : isXlsx ? (
-                    <div className="w-full h-full rounded-lg border border-gray-200 bg-white overflow-auto" style={{ minHeight: '600px' }}>
-                      <XlsxPreview fileUrl={fileUrl} zoom={1} />
+                    <div className="w-full h-full flex flex-col">
+                      {/* Zoom toolbar */}
+                      <div className="flex items-center justify-center gap-1 mb-2 flex-shrink-0">
+                        <Button variant="outline" size="sm" onClick={xlsxZoomOut} className="h-8 w-8 p-0" aria-label="Zoom out">
+                          <ZoomOut className="w-4 h-4" />
+                        </Button>
+                        <span className="text-xs text-gray-600 w-12 text-center font-medium tabular-nums">
+                          {Math.round(xlsxZoom * 100)}%
+                        </span>
+                        <Button variant="outline" size="sm" onClick={xlsxZoomIn} className="h-8 w-8 p-0" aria-label="Zoom in">
+                          <ZoomIn className="w-4 h-4" />
+                        </Button>
+                        {xlsxZoom !== 1 && (
+                          <Button variant="outline" size="sm" onClick={xlsxZoomReset} className="h-8 w-8 p-0 ml-1" aria-label="Reset zoom">
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      {/* Scrollable canvas — fills remaining height; XlsxPreview
+                          owns its own internal scroll area. */}
+                      <div className="flex-1 min-h-0 rounded-lg overflow-hidden">
+                        <XlsxPreview
+                          fileUrl={fileUrl}
+                          zoom={xlsxZoom}
+                          containerHeight="100%"
+                          forceVisibleScrollbars
+                        />
+                      </div>
                     </div>
                   ) : (
                     <div className="flex items-center justify-center h-full">

@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v16';
+const CACHE_VERSION = 'v17';
 // We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
 // (fonts, fills, borders, themes, images), SheetJS as a value-recovery
 // fallback for cells where ExcelJS loses the cached <v> tag during parse.
@@ -24,9 +24,27 @@ type Status = 'loading' | 'rendered' | 'error';
 interface XlsxPreviewProps {
   fileUrl: string;
   zoom?: number;
+  /**
+   * CSS height for the scrollable canvas. Defaults to '55vh' for mobile.
+   * Desktop callers typically want '100%' so the preview fills the available
+   * vertical space in their parent container.
+   */
+  containerHeight?: string;
+  /**
+   * If true, the scrollable canvas always shows visible scrollbars (with
+   * custom webkit styling). Useful on desktop where users don't have touch
+   * scrolling and need a clear visual cue that horizontal scroll exists.
+   * Defaults to false (auto / touch-friendly).
+   */
+  forceVisibleScrollbars?: boolean;
 }
 
-export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
+export default function XlsxPreview({
+  fileUrl,
+  zoom = 1,
+  containerHeight = '55vh',
+  forceVisibleScrollbars = false,
+}: XlsxPreviewProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [errorMsg, setErrorMsg] = useState('');
@@ -230,8 +248,10 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
       )}
 
       <div
-        className="w-full bg-white border border-[var(--m-border)] rounded-md overflow-auto mxlsx-scope"
-        style={{ height: '55vh' }}
+        className={`w-full bg-white border border-[var(--m-border)] rounded-md mxlsx-scope ${
+          forceVisibleScrollbars ? 'mxlsx-force-scroll' : 'overflow-auto'
+        }`}
+        style={{ height: containerHeight }}
       >
         <div
           style={{
@@ -287,6 +307,36 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
           position: absolute;
           pointer-events: none;
           user-select: none;
+        }
+        /* Always-visible scrollbars for desktop usage. macOS hides scrollbars
+           by default unless the user has 'Show scroll bars' set to Always —
+           we need them visible so users know horizontal scroll exists. */
+        :global(.mxlsx-force-scroll) {
+          overflow: scroll !important;
+          scrollbar-width: auto;
+          scrollbar-color: #94a3b8 #f1f5f9;
+        }
+        :global(.mxlsx-force-scroll::-webkit-scrollbar) {
+          width: 14px;
+          height: 14px;
+          background: #f1f5f9;
+        }
+        :global(.mxlsx-force-scroll::-webkit-scrollbar-track) {
+          background: #f1f5f9;
+          border-radius: 0;
+        }
+        :global(.mxlsx-force-scroll::-webkit-scrollbar-thumb) {
+          background: #94a3b8;
+          border-radius: 7px;
+          border: 3px solid #f1f5f9;
+          min-height: 40px;
+          min-width: 40px;
+        }
+        :global(.mxlsx-force-scroll::-webkit-scrollbar-thumb:hover) {
+          background: #64748b;
+        }
+        :global(.mxlsx-force-scroll::-webkit-scrollbar-corner) {
+          background: #f1f5f9;
         }
       `}</style>
     </div>

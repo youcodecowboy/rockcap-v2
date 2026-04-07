@@ -183,9 +183,15 @@ export default function DocumentReaderPage() {
                   </Button>
                 )}
               </div>
-              {/* Scrollable canvas */}
-              <div className="flex-1 min-h-0 bg-white rounded-lg shadow-sm border border-gray-300 overflow-auto">
-                <XlsxPreview fileUrl={fileUrl} zoom={xlsxZoom} />
+              {/* Scrollable canvas — XlsxPreview manages its own scroll area;
+                  we just provide the box for it to fill. */}
+              <div className="flex-1 min-h-0 rounded-lg overflow-hidden">
+                <XlsxPreview
+                  fileUrl={fileUrl}
+                  zoom={xlsxZoom}
+                  containerHeight="100%"
+                  forceVisibleScrollbars
+                />
               </div>
             </div>
           ) : isImage ? (
