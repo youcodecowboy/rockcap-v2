@@ -1,8 +1,13 @@
 # Unified Inbox & Messaging System Design
 
 **Date:** 2026-04-06  
-**Status:** Draft — awaiting review  
-**Scope:** Mobile inbox, user-to-user messaging, desktop enhancements, notification improvements
+**Status:** Draft v2 — revised after review  
+**Scope:** Dual-mode chat overlay (AI + Messenger), user-to-user messaging with named threads, mobile inbox for flags/notifications, document-to-message shortcut
+
+## Revision History
+
+- **v2 (2026-04-06):** Repurposed chat overlay as dual-mode panel (Assistant | Messenger) instead of adding a messages tab to mobile inbox. Removed 1:1 conversation deduplication to support multiple named threads between the same users. Added document viewer "send" icon. Inbox page now focused on flags + notifications only.
+- **v1 (2026-04-06):** Initial design with separate mobile inbox page containing messages tab.
 
 ---
 
@@ -21,11 +26,12 @@ Users need a way to communicate directly about documents and projects without le
 
 ## 2. Goals
 
-1. **Mobile Inbox** — full-featured inbox with flags, notifications, and messages on mobile
-2. **User-to-User Messaging** — direct messaging between users with document/project references
-3. **Desktop Messaging** — add messaging tab to existing desktop inbox
+1. **Dual-Mode Chat Overlay** — repurpose existing chat FAB to toggle between AI Assistant and Messenger modes on mobile AND desktop
+2. **Named Multi-Thread Messaging** — users can create multiple named conversations with the same person(s) (e.g., one per project or topic)
+3. **Mobile Inbox for Flags & Notifications** — full inbox page showing flagged items and notification history (no messages tab — messages live in chat overlay)
 4. **Notification Bell on Mobile** — quick-access notification indicator in mobile header
-5. **Document References in Messages** — attach documents, projects, and clients to messages (like @ mentions in notes)
+5. **Document References in Messages** — attach documents, projects, and clients to messages via a picker (hierarchy: clients → projects → documents)
+6. **Document Viewer "Send" Shortcut** — icon in document header to start a new message with the document pre-attached
 
 ---
 
@@ -44,8 +50,12 @@ conversations: defineTable({
   // Participants
   participantIds: v.array(v.id("users")),
   
-  // Optional metadata
-  title: v.optional(v.string()),           // For named group chats, null for 1:1
+  // REQUIRED: conversations are named — supports multiple threads between same users
+  title: v.string(),                       // User-provided name (e.g., "Wimbledon Park - Valuation")
+  
+  // Optional entity context — ties thread to a project/client for organization
+  clientId: v.optional(v.id("clients")),
+  projectId: v.optional(v.id("projects")),
   
   // Denormalized for list rendering
   lastMessageAt: v.optional(v.string()),   // ISO timestamp of last message
@@ -58,11 +68,14 @@ conversations: defineTable({
   createdAt: v.string(),
   createdBy: v.id("users"),
 })
-  .index("by_participant", ["participantIds"])   // Can't index arrays — see note below
   .index("by_lastMessage", ["lastMessageAt"])
+  .index("by_client", ["clientId"])
+  .index("by_project", ["projectId"])
 ```
 
 > **Index note:** Convex doesn't support array element indexing, so we'll query by `lastMessageAt` descending and filter by participant client-side. For a handful of users (<20), this is efficient. If scale matters later, add a `conversationMembers` junction table.
+
+> **No 1:1 deduplication:** Unlike v1, users can create multiple conversations with the same person(s). A user might have "Project X discussion" and "Project Y discussion" both with the same colleague. The `title` field makes each thread distinct and scannable.
 
 **`directMessages` table:**
 ```typescript
@@ -102,35 +115,72 @@ This is an internal messaging tool for a small team, not a document editor. Plai
 **Why structured `references` array instead of inline @ mentions?**  
 Notes use TipTap with inline mentions because they're long-form documents where inline references make sense. Messages are short — a structured references array renders as clickable chips below the message text, is easier to parse, and doesn't require a rich text editor. This keeps message composition fast (important on mobile).
 
-### 3.2 Mobile Inbox Architecture
+### 3.2 Dual-Mode Chat Overlay (NEW — replaces messages in inbox)
 
-**Decision:** New mobile page at `/m-inbox` with 3 tabs: Messages, Flags, Notifications.
+**Decision:** The existing chat overlay (mobile `ChatOverlay`, desktop `ChatAssistantButton` panel) becomes a dual-mode panel with a top toggle switching between **Assistant** and **Messenger** modes.
+
+**Why repurpose the chat overlay instead of a dedicated page?**
+- The chat FAB is already the "conversation" affordance in the app — users already expect it to contain conversations
+- Avoids cluttering mobile with another full page
+- Chat state persists across pages — you can navigate while a conversation is open
+- Works consistently on desktop and mobile with the same mental model
+
+**Mode toggle:**
+```
+┌─────────────────────────┐
+│  [Assistant] [Messages] │  ← segmented control at top
+├─────────────────────────┤
+│                         │
+│   (mode content)        │
+│                         │
+└─────────────────────────┘
+```
+
+**Assistant mode:** Existing AI chat behavior — unchanged.
+
+**Messenger mode — conversation library view:**
+- List of conversations sorted by `lastMessageAt` descending
+- Each row: participant avatar(s), thread title, last message preview, time, unread badge
+- "New Conversation" button at the top
+- Optional project/client chip shown if thread has entity context
+- Tap conversation → enters thread view (within overlay)
+
+**Messenger mode — thread view:**
+- Header: back arrow + thread title + participants
+- Message bubbles (scrollable, newest at bottom)
+- Composer with "+" entity picker and send button
+- Back arrow returns to conversation library
+
+**State persistence:** The overlay remembers which mode was active and which conversation was open between open/close cycles within a session.
+
+### 3.3 Mobile Inbox Page (Flags + Notifications only)
+
+**Decision:** Mobile inbox page at `/m-inbox` with 2 tabs: **Flags** and **Notifications**. Messages live in the chat overlay instead.
 
 **Tab structure:**
 | Tab | Content | Badge |
 |-----|---------|-------|
-| **Messages** | Conversation list → tap for message thread | Unread message count |
 | **Flags** | Open flags assigned to user → tap for flag detail + thread | Open flag count |
-| **Notifications** | All notifications (reminders, mentions, uploads, changelog) | Unread notification count |
+| **Notifications** | All notifications (reminders, mentions, uploads, changelog, new messages) | Unread notification count |
 
-**Why 3 tabs instead of the desktop's 5?**  
-Desktop has All / Flags / Notifications / Mentions / Resolved. On mobile, screen real estate is limited and the mental model should be simpler. "Messages" is the new primary tab. Flags and Notifications cover the rest. "Mentions" is a subset of Notifications (filter within tab). "Resolved" is accessible via a toggle within the Flags tab (show resolved / show open).
+**Why keep the inbox page at all?** 
+- Users need a historical view of notifications they've received
+- Flags have threading/resolution workflows that need dedicated space
+- The chat overlay is optimized for real-time conversation, not browsing historical triage items
 
 **Navigation flow:**
 ```
-Bottom nav → Inbox → [Messages | Flags | Notifications]
-                       ↓          ↓           ↓
-              Conversation    Flag Detail   Notification
-              (message list)  (w/ thread)   Detail/Navigate
+Bell icon / bottom nav → Inbox → [Flags | Notifications]
+                                    ↓           ↓
+                              Flag Detail  Notification
+                              (w/ thread)  Detail/Navigate
 ```
 
-### 3.3 Desktop Inbox Enhancement
+### 3.4 Desktop Inbox (no changes to tabs)
 
-**Decision:** Add a "Messages" tab to the existing desktop `/inbox` page alongside existing tabs.
+**Decision:** Desktop `/inbox` page keeps its existing 5 tabs (All, Flags, Notifications, Mentions, Resolved). No Messages tab. Messaging happens via the desktop chat panel's new Messenger mode.
 
-**Updated tabs:** All | Messages | Flags | Notifications | Mentions | Resolved
-
-The "Messages" tab shows conversation list in the left sidebar and message thread in the right detail panel — same two-panel pattern as flags. The "All" tab now includes recent messages alongside flags and notifications, sorted by `createdAt`.
+**Why no Messages tab?** Consistency with mobile — messages are a chat-overlay concern, not an inbox-page concern. The "All" tab still merges flags and notifications. Message-related notifications (type: `"message"`) still appear in the Notifications tab.
 
 ### 3.4 Mobile Notification Bell
 
@@ -146,9 +196,9 @@ The desktop uses a dropdown because there's room. On mobile, a dropdown would co
 
 ### 3.5 Desktop Notification Bell Enhancement
 
-**Decision:** The existing `NotificationDropdown` stays as-is for now, but add an unread messages indicator.
+**Decision:** The existing `NotificationDropdown` stays as-is, but add an unread messages section that opens the chat panel in Messenger mode.
 
-The bell already shows notifications and upload progress. We'll add a "Messages" section to the dropdown showing the 3 most recent unread messages with a "View all in Inbox" link. This gives quick visibility without rebuilding the dropdown.
+The bell already shows notifications and upload progress. We'll add a "Messages" section to the dropdown showing the 3 most recent unread messages. Clicking a message opens the desktop chat panel (not the inbox page) in Messenger mode with that conversation selected.
 
 ### 3.6 Mobile Bottom Nav Change
 
@@ -158,21 +208,51 @@ The bell already shows notifications and upload progress. We'll add a "Messages"
 
 **Why replace Tasks?**  
 - Tasks is also accessible via the navigation drawer (hamburger menu)
-- Inbox is a higher-frequency destination — users check messages/flags multiple times per day
-- The chat FAB (AI assistant) stays as the center floating button
+- Inbox is a higher-frequency destination — users check flags/notifications multiple times per day
+- The chat FAB (now dual-mode: Assistant + Messenger) stays as the center floating button — messaging is reachable from any page
 - Tasks remains accessible via dashboard and nav drawer
 
-### 3.7 Entity Reference Picker in Messages
+**Important:** The Inbox button goes to `/m-inbox` (flags + notifications). The chat FAB above it handles messaging. These are two separate affordances:
+- **Inbox page** (bottom nav) = historical triage (flags, notifications)  
+- **Chat FAB** (center button) = active conversation (AI or messenger)
 
-**Decision:** "+" button in message composer that opens a searchable entity picker.
+### 3.7 Entity Reference Picker in Messages (Hierarchical)
+
+**Decision:** "+" button in message composer opens a hierarchical picker that mirrors the real entity structure: **Clients → Projects → Documents**.
+
+**Flow (mobile bottom sheet):**
+1. User taps "+" button in composer
+2. Bottom sheet opens showing: tabs for **Clients**, **Projects**, **Documents**, plus a "Browse by Client" hierarchical view
+3. User can either:
+   - **Flat search:** Tap a tab and search by name across all entities of that type
+   - **Hierarchical browse:** Start from Clients → tap a client → see their projects → tap a project → see documents in that project
+4. At any level, tap an entity to attach it as a reference
+5. Multiple references allowed per message (max 5)
+
+**Why hierarchical?**  
+Users think in terms of "the Wimbledon Park valuation report" — they navigate mentally from client to project to document. A flat search works for known item names, but the hierarchy helps when users are exploring or aren't sure of the exact filename. Supporting both covers both use cases.
+
+### 3.8 Document Viewer "Send to Message" Shortcut (NEW)
+
+**Decision:** Add a small "send" icon to the document viewer header (same line as the document title) that initiates a new message with the document pre-attached as a reference.
 
 **Flow:**
-1. User taps "+" button next to message input
-2. Bottom sheet (mobile) or popover (desktop) opens with 3 tabs: Documents, Projects, Clients
-3. User searches by name — results come from existing Convex queries
-4. User taps entity → it's added as a reference chip below the message input
-5. Multiple references allowed per message
-6. References render as clickable chips in the message thread
+1. User views a document (desktop or mobile document viewer)
+2. User taps the send icon next to the document title
+3. Chat overlay opens in Messenger mode
+4. A "New Conversation" flow appears with:
+   - The document already attached as a reference chip
+   - Participant picker to choose recipient(s)
+   - Title input (can auto-suggest based on document name, e.g., "Re: Valuation Report.pdf")
+5. User fills in recipients + title, writes initial message, sends
+6. The new conversation opens in the chat overlay
+
+**Why this entry point?**  
+The most common collaboration question is "Hey, have you looked at this document?" The current flow requires navigating away from the document, opening chat, starting a conversation, then searching for the same document to attach. This shortcut collapses that to one tap while the user is already looking at the document.
+
+**Icon placement:**
+- **Desktop document viewer:** In the header action bar next to existing actions (download, etc.)
+- **Mobile document viewer:** In the tab header area near the document title, using the existing action footer pattern from recent mobile work
 
 **Why not @ mentions like notes?**  
 @ mention requires a rich text editor to detect the trigger character and show inline suggestions. A dedicated picker button is more discoverable on mobile (no hidden trigger), works with a plain text input, and makes it clear what you're attaching. The UX is closer to how iMessage/WhatsApp handle attachments.
@@ -220,18 +300,21 @@ The bell already shows notifications and upload progress. We'll add a "Messages"
 ### 4.2 Mobile Components
 
 **New page: `src/app/(mobile)/m-inbox/page.tsx`**
-- Tab bar: Messages | Flags | Notifications
-- Uses URL params for active tab
+- Tab bar: Flags | Notifications (NO messages tab)
+- Uses local state for active tab
 
-**Message components:**
+**Chat overlay (dual-mode) components:**
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `ConversationList` | `m-inbox/components/` | List of conversations with avatar, name, preview, time, unread badge |
-| `ConversationView` | `m-inbox/components/` | Full message thread for a conversation |
-| `MessageBubble` | `m-inbox/components/` | Individual message with sender, time, content, reference chips |
-| `MessageComposer` | `m-inbox/components/` | Text input + "+" reference picker + send button |
-| `EntityPicker` | `m-inbox/components/` | Bottom sheet with tabs for Documents/Projects/Clients search |
-| `ReferenceChip` | `m-inbox/components/` | Clickable entity reference (icon + name) |
+| `ChatOverlay.tsx` (modified) | `src/components/mobile/` | Add mode toggle (Assistant ↔ Messenger) at top |
+| `ChatModeToggle` | `src/components/mobile/chat/` | Segmented control for Assistant/Messages mode |
+| `MessengerPanel` | `src/components/mobile/chat/` | Root of messenger mode — routes to library or thread view |
+| `ConversationLibrary` | `src/components/mobile/chat/` | List of conversations with avatar, title, preview, time, unread badge |
+| `ConversationThread` | `src/components/mobile/chat/` | Full message thread for one conversation |
+| `MessageBubble` | `src/components/mobile/chat/` | Individual message with sender, time, content, reference chips |
+| `MessageComposer` | `src/components/mobile/chat/` | Text input + "+" reference picker + send button |
+| `EntityPicker` | `src/components/mobile/chat/` | Hierarchical bottom sheet (Clients→Projects→Documents) |
+| `NewConversationForm` | `src/components/mobile/chat/` | Form to create a new thread: title + participants + optional client/project |
 
 **Flag components (mobile port):**
 | Component | Location | Purpose |
@@ -243,6 +326,11 @@ The bell already shows notifications and upload progress. We'll add a "Messages"
 | Component | Location | Purpose |
 |-----------|----------|---------|
 | `MobileNotificationList` | `m-inbox/components/` | Full notification list with type icons and actions |
+
+**Document viewer update:**
+| Component | Change |
+|-----------|--------|
+| `DocumentViewer.tsx` (mobile) | Add "send to message" icon in header area — opens chat overlay in Messenger mode with new conversation form pre-populated |
 
 **Header update:**
 | Component | Change |
@@ -257,25 +345,32 @@ The bell already shows notifications and upload progress. We'll add a "Messages"
 
 ### 4.3 Desktop Components
 
-**Inbox page updates:**
+**Desktop chat panel (dual-mode):**
 | Component | Change |
 |-----------|--------|
-| `inbox/page.tsx` | Add "messages" filter, query conversations |
-| `InboxSidebar.tsx` | Add Messages tab with count badge |
-| `InboxItemList.tsx` | Handle `kind: "conversation"` items |
+| `ChatAssistantButton.tsx` | Add mode toggle — Assistant ↔ Messenger |
 
-**New desktop components:**
+**New desktop chat components (shared with mobile where possible):**
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `ConversationDetailPanel` | `inbox/components/` | Message thread view for right panel |
-| `DesktopMessageComposer` | `inbox/components/` | Message input with entity reference popover |
-| `EntityReferencePopover` | `inbox/components/` | Desktop version of entity picker (popover, not sheet) |
-| `NewConversationDialog` | `inbox/components/` | Dialog to start a new conversation (pick user(s)) |
+| `DesktopMessengerPanel` | `src/components/chat/` | Desktop messenger mode root |
+| `DesktopConversationLibrary` | `src/components/chat/` | Conversation list for desktop |
+| `DesktopConversationThread` | `src/components/chat/` | Message thread view for desktop |
+| `DesktopMessageComposer` | `src/components/chat/` | Message input + entity reference popover |
+| `DesktopEntityPicker` | `src/components/chat/` | Hierarchical entity picker popover (not a sheet) |
+| `DesktopNewConversationForm` | `src/components/chat/` | Desktop form for new thread |
+
+**Inbox page:** **NO changes** — still has 5 tabs (All, Flags, Notifications, Mentions, Resolved), no messaging tab.
+
+**Document viewer update:**
+| Component | Change |
+|-----------|--------|
+| `docs/reader/[documentId]/page.tsx` (desktop) | Add "send to message" icon in header bar — opens chat panel in Messenger mode with new conversation form |
 
 **NotificationDropdown update:**
 | Component | Change |
 |-----------|--------|
-| `NotificationDropdown.tsx` | Add "Messages" section showing 3 most recent unread messages |
+| `NotificationDropdown.tsx` | Add "Messages" section showing 3 most recent unread messages; clicking opens chat panel in Messenger mode |
 
 ### 4.4 Shared Components
 
@@ -515,45 +610,46 @@ When creating a conversation between two users, check if one already exists with
 
 ```
 convex/
-  conversations.ts          # New: conversation CRUD + queries
-  directMessages.ts         # New: message CRUD + queries
-
-src/app/(mobile)/
-  m-inbox/
-    page.tsx                # New: mobile inbox with 3 tabs
-    components/
-      ConversationList.tsx  # New: conversation list
-      ConversationView.tsx  # New: message thread
-      MessageBubble.tsx     # New: individual message
-      MessageComposer.tsx   # New: message input + reference picker
-      EntityPicker.tsx      # New: bottom sheet entity search
-      MobileFlagList.tsx    # New: mobile flag list
-      MobileFlagDetail.tsx  # New: mobile flag detail + thread
-      MobileNotificationList.tsx  # New: full notification list
-      InboxTabs.tsx         # New: tab bar component
-
-src/app/(desktop)/inbox/
-  components/
-    ConversationDetailPanel.tsx  # New: desktop message thread
-    DesktopMessageComposer.tsx   # New: desktop message input
-    NewConversationDialog.tsx    # New: start conversation dialog
+  conversations.ts                       # New: conversation CRUD + queries (NO 1:1 dedup)
+  directMessages.ts                      # New: message CRUD + queries
 
 src/components/messages/
-  ReferenceChip.tsx         # New: shared entity reference display
-  ConversationAvatar.tsx    # New: shared avatar component
-  EntityReferencePopover.tsx # New: desktop entity picker popover
+  ReferenceChip.tsx                      # New: shared entity reference pill
+
+src/components/chat/                     # NEW: shared messenger components
+  MessengerMode.tsx                      # New: dual-mode messenger root (works mobile + desktop)
+  ConversationLibrary.tsx                # New: conversation list
+  ConversationThread.tsx                 # New: message thread view
+  MessageBubble.tsx                      # New: individual message
+  MessageComposer.tsx                    # New: input + "+" picker + send
+  EntityPicker.tsx                       # New: hierarchical picker (sheet on mobile, popover on desktop)
+  NewConversationForm.tsx                # New: form with title, participants, optional client/project
+
+src/app/(mobile)/m-inbox/                # Inbox page (flags + notifications only)
+  page.tsx                               # New: mobile inbox with 2 tabs
+  components/
+    InboxTabs.tsx                        # New: tab bar (Flags, Notifications)
+    MobileFlagList.tsx                   # New: mobile flag list
+    MobileFlagDetail.tsx                 # New: mobile flag detail + thread
+    MobileNotificationList.tsx           # New: full notification list
 ```
 
 **Modified files:**
 ```
-convex/schema.ts                 # Add conversations, directMessages tables; add "message" type
-src/components/mobile/MobileHeader.tsx      # Add bell icon
-src/components/mobile/StickyFooter.tsx      # Replace Tasks with Inbox
-src/components/mobile/MobileNavDrawer.tsx   # Add Inbox nav item
-src/components/NotificationDropdown.tsx     # Add messages section
-src/app/(desktop)/inbox/page.tsx            # Add messages filter + query
-src/app/(desktop)/inbox/components/InboxSidebar.tsx  # Add Messages tab
-src/app/(desktop)/inbox/components/InboxItemList.tsx  # Handle conversation items
-src/app/(desktop)/inbox/components/InboxDetailPanel.tsx  # Route to ConversationDetailPanel
-convex/flags.ts                  # Extend getInboxItemsEnriched for conversations
+convex/schema.ts                                # Add conversations, directMessages tables; add "message" notification type
+convex/flags.ts                                  # (unchanged in v2 — no messages in inbox query)
+src/components/mobile/MobileHeader.tsx           # Add bell icon with badge
+src/components/mobile/StickyFooter.tsx           # Replace Tasks with Inbox
+src/components/mobile/MobileNavDrawer.tsx        # Add Inbox nav item
+src/components/mobile/ChatOverlay.tsx            # Make dual-mode (Assistant + Messenger)
+src/components/ChatAssistantButton.tsx           # Make dual-mode on desktop
+src/components/NotificationDropdown.tsx          # Add messages section (opens chat panel)
+src/app/(mobile)/m-docs/components/DocumentViewer.tsx  # Add "send to message" icon
+src/app/(desktop)/docs/reader/[documentId]/...   # Add "send to message" icon to desktop doc viewer
 ```
+
+**Files NOT modified (unlike v1):**
+- `src/app/(desktop)/inbox/page.tsx` — no Messages tab
+- `src/app/(desktop)/inbox/components/InboxSidebar.tsx` — no Messages tab
+- `src/app/(desktop)/inbox/components/InboxItemList.tsx` — no conversation items
+- `src/app/(desktop)/inbox/components/InboxDetailPanel.tsx` — no conversation detail panel
