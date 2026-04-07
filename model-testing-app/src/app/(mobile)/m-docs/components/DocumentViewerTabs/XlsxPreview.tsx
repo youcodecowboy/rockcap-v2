@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v7';
+const CACHE_VERSION = 'v8';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -333,6 +333,9 @@ type ExcelJSAlignment = { horizontal?: string; vertical?: string; wrapText?: boo
 type ExcelJSCell = {
   text: string;
   value: unknown;
+  numFmt?: string;
+  type?: number;
+  style?: { numFmt?: string };
   font?: { bold?: boolean; italic?: boolean; size?: number; name?: string; color?: ExcelJSColor };
   fill?: { type?: string; pattern?: string; fgColor?: ExcelJSColor; bgColor?: ExcelJSColor };
   border?: {
@@ -447,6 +450,62 @@ function parseAddr(addr: string, prefix: 's' | 'e'): { [k: string]: number } {
     col = col * 26 + (letters.charCodeAt(i) - 64);
   }
   return { [`${prefix}r`]: row, [`${prefix}c`]: col };
+}
+
+// Robust cell display extractor.
+//
+// ExcelJS quirk: cell.text correctly applies numFmt for direct number cells,
+// but for FORMULA cells (Type.Formula) it just stringifies the cached result
+// without applying numFmt — so a formula returning 1447839.81 with format
+// "£#,##0" comes out as "1447839.80871352" instead of "£1,447,840".
+//
+// This helper:
+//   1. Extracts a numeric value from either a direct number or a formula result
+//   2. Formats it via SheetJS SSF (Excel's format mini-language) when numFmt exists
+//   3. Falls back to a sensible locale-formatted display so we never show raw
+//      15-decimal floats even when no format is available
+function getCellText(cell: ExcelJSCell): string {
+  const v = cell.value;
+  if (v == null || v === '') return '';
+
+  // Pull out a numeric value (direct or formula result)
+  let num: number | null = null;
+  if (typeof v === 'number') {
+    num = v;
+  } else if (typeof v === 'object' && v !== null && 'result' in v) {
+    const r = (v as { result?: unknown }).result;
+    if (typeof r === 'number') num = r;
+    else if (r == null) {
+      // Formula with no cached result — fall through to cell.text
+      return cell.text || '';
+    }
+  }
+
+  if (num !== null && Number.isFinite(num)) {
+    // Try every place ExcelJS might surface a numFmt
+    const fmt = cell.numFmt || cell.style?.numFmt;
+    if (fmt && fmt !== 'General' && fmt !== '@') {
+      try {
+        return XLSX.SSF.format(fmt, num);
+      } catch {
+        // SSF can throw on exotic formats — fall through to locale fallback
+      }
+    }
+    // Sensible fallback so we never display raw 15-decimal floats
+    if (Number.isInteger(num)) {
+      return num.toLocaleString('en-GB');
+    }
+    const abs = Math.abs(num);
+    if (abs >= 1) {
+      return num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+    return num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+  }
+
+  // Non-numeric values: trust ExcelJS's text rendering (handles strings, dates,
+  // rich text, errors). Avoid stringifying objects to "[object Object]".
+  if (typeof v === 'string') return v;
+  return cell.text || '';
 }
 
 function escapeHtml(s: string): string {
@@ -652,7 +711,8 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       if (merge?.rowspan && merge.rowspan > 1) attrs.push(`rowspan="${merge.rowspan}"`);
       if (isNumeric) attrs.push('data-t="n"');
 
-      const text = cell.text ? escapeHtml(String(cell.text)) : '';
+      const display = getCellText(cell);
+      const text = display ? escapeHtml(display) : '';
       body += `<td ${attrs.join(' ')}>${text}</td>`;
     }
     body += '</tr>';
@@ -715,9 +775,35 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
 
   const capped = totalRows > ROW_CAP ? { shown: renderedRowCount, total: totalRows } : null;
 
-  // Compact summary diagnostic — much smaller now that the renderer is healthy.
+  // Compact summary diagnostic + a single numeric-cell sample so we can verify
+  // whether numFmt is being surfaced correctly for this file.
   if (typeof window !== 'undefined') {
-    console.log('[XlsxPreview] v7:', {
+    let sampleNumeric: Record<string, unknown> | null = null;
+    outer: for (let r = 1; r <= Math.min(60, totalRows); r++) {
+      const rr = ws.getRow(r);
+      if (rr?.hidden) continue;
+      for (let c = 1; c <= totalCols; c++) {
+        if (hiddenCols.has(c)) continue;
+        const cell = ws.getCell(r, c);
+        const v = cell?.value;
+        const isNumber =
+          typeof v === 'number' ||
+          (typeof v === 'object' && v !== null && 'result' in v && typeof (v as { result?: unknown }).result === 'number');
+        if (isNumber) {
+          sampleNumeric = {
+            addr: `R${r}C${c}`,
+            valueType: typeof v === 'object' ? 'formula' : 'number',
+            value: v,
+            numFmt: cell.numFmt,
+            styleNumFmt: cell.style?.numFmt,
+            cellText: cell.text,
+            extracted: getCellText(cell),
+          };
+          break outer;
+        }
+      }
+    }
+    console.log('[XlsxPreview] v8:', {
       sheet: sheetName,
       totalRows,
       totalCols,
@@ -727,6 +813,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       images: imageElements.length,
       tableSize: `${totalTableWidth}×${totalTableHeight}px`,
       htmlBytes: html.length,
+      sampleNumeric,
     });
   }
 
