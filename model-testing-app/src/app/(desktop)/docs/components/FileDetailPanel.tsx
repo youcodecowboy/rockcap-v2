@@ -932,7 +932,7 @@ export default function FileDetailPanel({
           <div className="flex-1 flex flex-col bg-gray-50 min-w-0">
             <div className="flex-1 p-4 flex flex-col">
               {canPreview && fileUrl ? (
-                <div className="w-full flex-1 min-h-0">
+                <div className="w-full flex-1 min-h-0 relative">
                   {document.fileType.toLowerCase().includes('pdf') ? (
                     <iframe
                       src={`${fileUrl}#toolbar=0`}
@@ -941,7 +941,12 @@ export default function FileDetailPanel({
                       title="PDF Preview"
                     />
                   ) : isXlsx ? (
-                    <div className="w-full h-full flex flex-col">
+                    /* Absolute inset-0 escapes the deeply-nested flex/percentage
+                       height chain. The parent canPreview wrapper has 'relative'
+                       so this fills the parent's content rect with a definite
+                       size — flex-1 inside resolves cleanly without depending on
+                       CSS percentage height resolution at this nesting depth. */
+                    <div className="absolute inset-0 flex flex-col">
                       {/* Zoom toolbar */}
                       <div className="flex items-center justify-center gap-1 mb-2 flex-shrink-0">
                         <Button variant="outline" size="sm" onClick={xlsxZoomOut} className="h-8 w-8 p-0" aria-label="Zoom out">
