@@ -3,11 +3,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
-// Module-level caches: parsed workbook + rendered HTML dimensions
-// Kept as `unknown` since two different engines may produce different workbook shapes.
+// Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v13';
-const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
+const CACHE_VERSION = 'v14';
+// We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
+// (fonts, fills, borders, themes, images), SheetJS as a value-recovery
+// fallback for cells where ExcelJS loses the cached <v> tag during parse.
+type CacheEntry =
+  | { engine: 'exceljs'; workbook: ExcelJSWorkbook; sheetJs?: XLSX.WorkBook }
+  | { engine: 'sheetjs'; workbook: XLSX.WorkBook; sheetJs?: undefined };
+const workbookCache = new Map<string, CacheEntry>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
 
@@ -31,6 +36,9 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
   const [cappedInfo, setCappedInfo] = useState<{ shown: number; total: number } | null>(null);
   const workbookRef = useRef<unknown>(null);
+  // SheetJS workbook held alongside the primary ExcelJS workbook for value
+  // recovery (cells where ExcelJS loses the cached value during parse).
+  const sheetJsWbRef = useRef<XLSX.WorkBook | null>(null);
 
   // ─── Load + parse workbook (ExcelJS primary, SheetJS fallback) ───────
   useEffect(() => {
@@ -42,10 +50,12 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
     setDims(null);
     setCappedInfo(null);
     workbookRef.current = null;
+    sheetJsWbRef.current = null;
 
     const cached = workbookCache.get(fileUrl);
     if (cached) {
       workbookRef.current = cached.workbook;
+      sheetJsWbRef.current = cached.sheetJs ?? null;
       setEngine(cached.engine);
       const names =
         cached.engine === 'exceljs'
@@ -71,8 +81,21 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
           const wb = new ExcelJSMod.Workbook();
           await wb.xlsx.load(buf);
           if (cancelled) return;
-          workbookCache.set(fileUrl, { engine: 'exceljs', workbook: wb });
+
+          // Also parse with SheetJS for value recovery on cells where ExcelJS
+          // loses the cached <v> tag (some formula cell sub-types). cellFormula:
+          // false skips formula text parsing — we only want the cached values.
+          let sheetJsWb: XLSX.WorkBook | undefined;
+          try {
+            sheetJsWb = XLSX.read(buf, { type: 'array', cellFormula: false, cellHTML: false });
+          } catch (sjsErr) {
+            console.warn('[XlsxPreview] SheetJS parallel parse failed (non-fatal):', sjsErr);
+          }
+          if (cancelled) return;
+
+          workbookCache.set(fileUrl, { engine: 'exceljs', workbook: wb, sheetJs: sheetJsWb });
           workbookRef.current = wb;
+          sheetJsWbRef.current = sheetJsWb ?? null;
           setEngine('exceljs');
           const names = wb.worksheets.map(ws => ws.name);
           setSheetNames(names);
@@ -83,7 +106,7 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
           console.warn('[XlsxPreview] ExcelJS failed, falling back to SheetJS:', excelJsErr);
         }
 
-        // Fallback: SheetJS
+        // Fallback: SheetJS only
         const wb = XLSX.read(buf, { type: 'array' });
         if (cancelled) return;
         workbookCache.set(fileUrl, { engine: 'sheetjs', workbook: wb });
@@ -117,7 +140,8 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
     let result: { html: string; capped: { shown: number; total: number } | null };
     try {
       if (engine === 'exceljs') {
-        result = renderExcelJSSheet(workbookRef.current as ExcelJSWorkbook, activeSheet);
+        const sjsSheet = sheetJsWbRef.current?.Sheets?.[activeSheet];
+        result = renderExcelJSSheet(workbookRef.current as ExcelJSWorkbook, activeSheet, sjsSheet);
       } else {
         result = renderSheetJSSheet(workbookRef.current as XLSX.WorkBook, activeSheet);
       }
@@ -530,9 +554,36 @@ function localeNumber(num: number): string {
   return num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
 }
 
+// SheetJS cell shape (the bits we care about):
+//   v = raw value (number, string, Date, boolean)
+//   w = formatted text (already-formatted display string)
+type SheetJSCell = { v?: unknown; w?: string; t?: string };
+
+// Render a SheetJS-only value through the same format pipeline.
+function sheetJsValueToText(sjs: SheetJSCell, fmt?: string): string {
+  const v = sjs.v;
+  if (v == null) return '';
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    const formatted = tryFormat(v, fmt);
+    if (formatted) return formatted;
+    return localeNumber(v);
+  }
+  if (v instanceof Date) {
+    return formatDate(v, fmt);
+  }
+  if (typeof v === 'string') return v;
+  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+  // Last resort: use SheetJS's pre-formatted display string
+  return sjs.w ?? String(v);
+}
+
 // Robust cell display extractor. Handles:
 //   - Direct numbers (with optional numFmt)
 //   - Formula cells where cell.value = { formula, result } or { sharedFormula, result }
+//   - Formula cells with NO inline result — uses sheetJsCell as value recovery
+//     (ExcelJS loses the cached <v> tag for some formula sub-types and silently
+//     returns 0 from cell.result. SheetJS reads the <v> via a different code
+//     path and surfaces the right value.)
 //   - Date cells (direct or as formula results) — converts to Excel serial + SSF
 //   - String / rich text / hyperlink cells
 //
@@ -541,9 +592,16 @@ function localeNumber(num: number): string {
 // then falls back to a locale-formatted display so we never show raw
 // 15-decimal floats or JS Date.toString() output (both of which destroy
 // the visual layout via overflow into adjacent cells).
-function getCellText(cell: ExcelJSCell, columnNumFmt?: string): string {
+function getCellText(cell: ExcelJSCell, columnNumFmt?: string, sheetJsCell?: SheetJSCell): string {
   const v = cell.value;
-  if (v == null || v === '') return '';
+  if (v == null || v === '') {
+    // Even if ExcelJS sees nothing, SheetJS might have a value here.
+    // (Rare but possible — happens when ExcelJS skips a cell entirely.)
+    if (sheetJsCell?.v != null) {
+      return sheetJsValueToText(sheetJsCell, cell.numFmt || cell.style?.numFmt || columnNumFmt);
+    }
+    return '';
+  }
 
   // Direct Date value
   if (v instanceof Date) {
@@ -570,7 +628,24 @@ function getCellText(cell: ExcelJSCell, columnNumFmt?: string): string {
     // the cached result. Critical for shared-formula dependents which omit
     // result from cell.value entirely in some ExcelJS versions.
     const r = getFormulaResult(cell);
-    if (typeof r === 'number') {
+
+    // The ExcelJS bug we hunt: when v has shape `{ formula }` (no inline
+    // result key), cell.result returns the *default* 0 — even though the
+    // cached value in the file is something else. Detect that case and
+    // prefer the SheetJS value if available.
+    const valueIsResultLess = !('result' in v);
+    if (valueIsResultLess && r === 0 && sheetJsCell?.v != null) {
+      const sjsV = sheetJsCell.v;
+      if (typeof sjsV === 'number' && Number.isFinite(sjsV)) {
+        num = sjsV;
+      } else if (sjsV instanceof Date) {
+        formulaResultDate = sjsV;
+      } else if (typeof sjsV === 'string') {
+        return sjsV;
+      } else if (typeof sjsV === 'boolean') {
+        return sjsV ? 'TRUE' : 'FALSE';
+      }
+    } else if (typeof r === 'number') {
       num = r;
     } else if (r instanceof Date) {
       formulaResultDate = r;
@@ -579,7 +654,10 @@ function getCellText(cell: ExcelJSCell, columnNumFmt?: string): string {
     } else if (typeof r === 'boolean') {
       return r ? 'TRUE' : 'FALSE';
     } else if (r == null) {
-      // Genuinely no cached result anywhere — fall through to cell.text
+      // ExcelJS has no cached result. Last-ditch: try SheetJS.
+      if (sheetJsCell?.v != null) {
+        return sheetJsValueToText(sheetJsCell, cell.numFmt || cell.style?.numFmt || columnNumFmt);
+      }
       return cell.text || '';
     }
   }
@@ -635,7 +713,7 @@ function bufferToDataUrl(buf: Uint8Array | ArrayBuffer, ext = 'png'): string | n
   }
 }
 
-function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
+function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string, sjsSheet?: XLSX.WorkSheet) {
   const ws = wb.getWorksheet(sheetName);
   if (!ws) throw new Error(`Sheet not found: ${sheetName}`);
 
@@ -806,7 +884,11 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       if (merge?.rowspan && merge.rowspan > 1) attrs.push(`rowspan="${merge.rowspan}"`);
       if (isNumeric) attrs.push('data-t="n"');
 
-      const display = getCellText(cell, colMeta[c - 1]?.numFmt);
+      // SheetJS uses A1 notation; ExcelJS uses 1-based row/col.
+      // Convert (r, c) → "H10" via XLSX.utils.encode_cell with 0-based indices.
+      const sjsKey = sjsSheet ? XLSX.utils.encode_cell({ r: r - 1, c: c - 1 }) : null;
+      const sjsCell = sjsKey ? (sjsSheet as Record<string, SheetJSCell> | undefined)?.[sjsKey] : undefined;
+      const display = getCellText(cell, colMeta[c - 1]?.numFmt, sjsCell);
       const text = display ? escapeHtml(display) : '';
       body += `<td ${attrs.join(' ')}>${text}</td>`;
     }
@@ -956,6 +1038,9 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
         const cell = ws.getCell(dataRow, c) as ExcelJSCell;
         const v = cell?.value;
         const result = getFormulaResult(cell);
+        // Pull the matching SheetJS cell for the recovery comparison
+        const sjsKey = sjsSheet ? XLSX.utils.encode_cell({ r: dataRow - 1, c: c - 1 }) : null;
+        const sjsCell = sjsKey ? (sjsSheet as Record<string, SheetJSCell> | undefined)?.[sjsKey] : undefined;
         cells.push({
           c,
           shape:
@@ -963,8 +1048,10 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
             typeof v === 'object' ? `obj{${Object.keys(v as object).join(',')}}` :
             typeof v,
           rawText: cell?.text?.slice(0, 20),
-          result: typeof result === 'object' && result !== null ? String(result).slice(0, 30) : result,
-          extracted: getCellText(cell, colMeta[c - 1]?.numFmt),
+          exResult: typeof result === 'object' && result !== null ? String(result).slice(0, 30) : result,
+          sjsV: sjsCell?.v,
+          sjsW: sjsCell?.w,
+          extracted: getCellText(cell, colMeta[c - 1]?.numFmt, sjsCell),
         });
       }
       siteProbes[`${name}_anchor=R${anchor}_dataRow=R${dataRow}`] = cells;
@@ -991,7 +1078,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       }
     }
 
-    console.log('[XlsxPreview] v13:', {
+    console.log('[XlsxPreview] v14:', {
       sheet: sheetName,
       totalRows,
       totalCols,
@@ -1009,7 +1096,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
     // Log siteProbes separately as a flat JSON string so the nested cell
     // arrays are visible without console click-through.
     if (Object.keys(siteProbes).length > 0) {
-      console.log('[XlsxPreview] v13 siteProbes:\n' + JSON.stringify(siteProbes, null, 2));
+      console.log('[XlsxPreview] v14 siteProbes:\n' + JSON.stringify(siteProbes, null, 2));
     }
   }
 
