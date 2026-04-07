@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -470,47 +470,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
     if (ws.getRow(r)?.hidden) hiddenRowCount++;
   }
 
-  // One-shot diagnostic — helps us see what ExcelJS actually parsed for this file.
-  // Use JSON.stringify so the user gets fully expanded objects in the console
-  // without having to click through nested chevrons.
-  if (typeof window !== 'undefined') {
-    // Filter hiddenCols to only the visible data range so the count is meaningful
-    const hiddenInDataRange: number[] = [];
-    for (let c = 1; c <= totalCols; c++) {
-      if (hiddenCols.has(c)) hiddenInDataRange.push(c);
-    }
-    // Dump every model.cols entry that overlaps with the visible data range
-    const relevantModelCols = (ws.model.cols ?? []).filter(c => c.min <= totalCols);
-    // Sample a few cells the user can compare against the original file
-    const sampleCells: Record<string, unknown> = {};
-    for (const [label, r, c] of [
-      ['A1', 1, 1],
-      ['B2', 2, 2],
-      ['C2', 2, 3],
-      ['D2', 2, 4],
-      ['A8', 8, 1],
-      ['D8', 8, 4],
-    ] as const) {
-      const cell = ws.getCell(r, c);
-      sampleCells[label] = {
-        text: cell?.text,
-        fill: cell?.fill,
-        font: cell?.font,
-      };
-    }
-    console.log('[XlsxPreview] sheet diagnostic v4:\n' + JSON.stringify({
-      sheet: sheetName,
-      totalRows,
-      totalCols,
-      hiddenColsInDataRange: hiddenInDataRange,
-      hiddenRowCount,
-      rawDefaultColWidth: rawDefault,
-      defaultColChars,
-      relevantModelCols,
-      colWidthsRendered: colMeta.map((m, i) => ({ col: i + 1, hidden: hiddenCols.has(i + 1), widthPx: m.widthPx })),
-      sampleCells,
-    }, null, 2));
-  }
+  // (diagnostic moved to bottom of function so it can include the rendered HTML)
 
   // Build merge lookup. When a merge spans hidden columns, we count only the
   // visible ones for colspan so the rendered grid stays consistent.
@@ -613,6 +573,59 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
 
   const html = `<table>${colgroup}${body}</table>`;
   const capped = totalRows > ROW_CAP ? { shown: renderedRowCount, total: totalRows } : null;
+
+  // Comprehensive diagnostic — emitted once per render so we can see exactly what
+  // ExcelJS parsed AND what HTML we're producing in response.
+  if (typeof window !== 'undefined') {
+    const hiddenInDataRange: number[] = [];
+    for (let c = 1; c <= totalCols; c++) {
+      if (hiddenCols.has(c)) hiddenInDataRange.push(c);
+    }
+    const relevantModelCols = (ws.model.cols ?? []).filter(c => c.min <= totalCols);
+
+    // Dump row heights + hidden flags for the first 12 rows
+    const earlyRows: Array<{ row: number; hidden: boolean; height?: number }> = [];
+    for (let r = 1; r <= Math.min(12, totalRows); r++) {
+      const row = ws.getRow(r);
+      earlyRows.push({ row: r, hidden: !!row?.hidden, height: row?.height });
+    }
+
+    // Sample cells across the dark-header band the user described
+    const sampleCells: Record<string, unknown> = {};
+    for (const [label, r, c] of [
+      ['A1', 1, 1], ['B2', 2, 2], ['C3', 3, 3], ['B5', 5, 2],
+      ['A8', 8, 1], ['B8', 8, 2], ['C8', 8, 3], ['E8', 8, 5],
+    ] as const) {
+      const cell = ws.getCell(r, c);
+      sampleCells[label] = { text: cell?.text, fill: cell?.fill, font: cell?.font };
+    }
+
+    // Slice of generated HTML — first 2000 chars so we can see the actual output
+    const htmlSlice = html.slice(0, 2000);
+
+    // List the first 8 merges (if any)
+    const mergeList = (ws.model.merges ?? []).slice(0, 8);
+
+    console.log('[XlsxPreview] diagnostic v5:\n' + JSON.stringify({
+      sheet: sheetName,
+      totalRows,
+      totalCols,
+      hiddenColsInDataRange: hiddenInDataRange,
+      hiddenRowCount,
+      rawDefaultColWidth: rawDefault,
+      defaultColChars,
+      renderedRowCount,
+      mergesTotal: ws.model.merges?.length ?? 0,
+      mergeList,
+      earlyRows,
+      relevantModelCols,
+      colWidthsRendered: colMeta.map((m, i) => ({ col: i + 1, hidden: hiddenCols.has(i + 1), widthPx: m.widthPx })),
+      sampleCells,
+      htmlBytes: html.length,
+      htmlSlice,
+    }, null, 2));
+  }
+
   return { html, capped };
 }
 
