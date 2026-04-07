@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -913,8 +913,57 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       .filter(m => !m.hidden)
       .slice(0, 10);
 
-    // Find the first shared-formula cell and dump every accessor we know.
-    // This tells us which path actually works for this ExcelJS version.
+    // Find rows containing "Site 2" / "Site 3" labels and dump the FIRST data
+    // sub-row of each. This tells us EXACTLY what ExcelJS sees for the cells
+    // the user reports as missing — letting us distinguish "ExcelJS reads 0"
+    // from "ExcelJS reads the right value but we drop it" from "the cached
+    // value is genuinely 0 in the file".
+    const labelRows: Record<string, number | undefined> = {};
+    for (let r = 1; r <= totalRows; r++) {
+      const row = ws.getRow(r);
+      if (row?.hidden) continue;
+      for (let c = 1; c <= 5; c++) {
+        if (hiddenCols.has(c)) continue;
+        const t = ws.getCell(r, c)?.text;
+        if (typeof t === 'string') {
+          const trimmed = t.trim();
+          if (trimmed === 'Site 2' && !labelRows.site2) labelRows.site2 = r;
+          if (trimmed === 'Site 3' && !labelRows.site3) labelRows.site3 = r;
+          if (trimmed === 'Site 1' && !labelRows.site1) labelRows.site1 = r;
+        }
+      }
+      if (labelRows.site1 && labelRows.site2 && labelRows.site3) break;
+    }
+
+    const siteProbes: Record<string, unknown> = {};
+    for (const [name, anchor] of Object.entries(labelRows)) {
+      if (!anchor) continue;
+      // The "Net Drawn Loan To Date" sub-row is typically the row right after
+      // the site label. Probe its first 12 visible data cells.
+      const dataRow = anchor + 1;
+      const cells: Array<Record<string, unknown>> = [];
+      let visibleCount = 0;
+      for (let c = 1; c <= totalCols && visibleCount < 12; c++) {
+        if (hiddenCols.has(c)) continue;
+        visibleCount++;
+        const cell = ws.getCell(dataRow, c) as ExcelJSCell;
+        const v = cell?.value;
+        const result = getFormulaResult(cell);
+        cells.push({
+          c,
+          shape:
+            v == null ? 'null' :
+            typeof v === 'object' ? `obj{${Object.keys(v as object).join(',')}}` :
+            typeof v,
+          rawText: cell?.text?.slice(0, 20),
+          result: typeof result === 'object' && result !== null ? String(result).slice(0, 30) : result,
+          extracted: getCellText(cell, colMeta[c - 1]?.numFmt),
+        });
+      }
+      siteProbes[`${name}_anchor=R${anchor}_dataRow=R${dataRow}`] = cells;
+    }
+
+    // Also keep one shared-formula sample for the version-detection sanity check
     let sharedFormulaProbe: Record<string, unknown> | null = null;
     outer2: for (let r = 1; r <= Math.min(60, totalRows); r++) {
       const rr = ws.getRow(r);
@@ -923,15 +972,11 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
         if (hiddenCols.has(c)) continue;
         const cell = ws.getCell(r, c);
         const v = cell?.value as Record<string, unknown> | null;
-        if (v && typeof v === 'object' && ('formula' in v || 'sharedFormula' in v)) {
-          const internal = (cell as ExcelJSCell)._value;
+        if (v && typeof v === 'object' && 'sharedFormula' in v) {
+          // Specifically a shared-formula DEPENDENT (the interesting case)
           sharedFormulaProbe = {
             addr: `R${r}C${c}`,
             valueShape: Object.keys(v),
-            'value.result': v.result,
-            'cell.result': (cell as ExcelJSCell).result,
-            '_value.result': internal?.result,
-            '_value.model.result': internal?.model?.result,
             extractedFinal: getCellText(cell as ExcelJSCell, colMeta[c - 1]?.numFmt),
           };
           break outer2;
@@ -939,7 +984,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       }
     }
 
-    console.log('[XlsxPreview] v11:', {
+    console.log('[XlsxPreview] v12:', {
       sheet: sheetName,
       totalRows,
       totalCols,
@@ -954,6 +999,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       missingExtraction: missing,
       colNumFmts,
       sharedFormulaProbe,
+      siteProbes,
     });
   }
 
