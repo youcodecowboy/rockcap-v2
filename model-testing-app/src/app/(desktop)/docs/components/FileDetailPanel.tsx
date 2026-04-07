@@ -1,8 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
+
+// Lazy-loaded xlsx renderer (shared with mobile). ExcelJS + SheetJS are heavy
+// and only needed when previewing a spreadsheet, so we keep them out of the
+// initial bundle.
+const XlsxPreview = dynamic(() => import('@/components/preview/XlsxPreview'), { ssr: false });
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
@@ -377,8 +383,15 @@ export default function FileDetailPanel({
     }
   };
 
+  const isXlsx = (() => {
+    const t = document.fileType.toLowerCase();
+    if (t.includes('spreadsheetml') || t.includes('ms-excel')) return true;
+    return /\.(xlsx|xls|xlsm)$/i.test(document.fileName);
+  })();
+
   const canPreview = document.fileType.toLowerCase().includes('pdf') ||
-                     document.fileType.toLowerCase().includes('image');
+                     document.fileType.toLowerCase().includes('image') ||
+                     isXlsx;
 
   const hasAnalysis = !!document.documentAnalysis;
   const hasSummary = hasAnalysis || !!document.summary;
@@ -919,6 +932,10 @@ export default function FileDetailPanel({
                       style={{ minHeight: '600px' }}
                       title="PDF Preview"
                     />
+                  ) : isXlsx ? (
+                    <div className="w-full h-full rounded-lg border border-gray-200 bg-white overflow-auto" style={{ minHeight: '600px' }}>
+                      <XlsxPreview fileUrl={fileUrl} zoom={1} />
+                    </div>
                   ) : (
                     <div className="flex items-center justify-center h-full">
                       <img

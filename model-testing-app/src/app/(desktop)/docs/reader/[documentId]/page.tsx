@@ -4,11 +4,15 @@ import { useParams, useRouter } from 'next/navigation';
 import { useDocument, useGetFileUrl } from '@/lib/documentStorage';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
-import { ArrowLeft, ExternalLink, Download, FileText, FileImage, File } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Download, FileText, FileImage, File, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import ReaderSidebar from './components/ReaderSidebar';
+
+// Lazy-loaded xlsx renderer (shared with mobile + drawer preview).
+const XlsxPreview = dynamic(() => import('@/components/preview/XlsxPreview'), { ssr: false });
 
 export default function DocumentReaderPage() {
   const params = useParams();
@@ -20,6 +24,13 @@ export default function DocumentReaderPage() {
   const document = useDocument(docId);
   const fileUrl = useGetFileUrl(document?.fileStorageId);
   const markAsOpened = useMutation(api.documents.markAsOpened);
+
+  // Zoom state for xlsx preview. Declared up here (before any early returns)
+  // so the hook order stays stable across loading and loaded renders.
+  const [xlsxZoom, setXlsxZoom] = useState(1);
+  const xlsxZoomIn = () => setXlsxZoom(z => Math.min(4, +(z + 0.25).toFixed(2)));
+  const xlsxZoomOut = () => setXlsxZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)));
+  const xlsxZoomReset = () => setXlsxZoom(1);
 
   // Mark document as opened when page loads
   useEffect(() => {
@@ -63,6 +74,11 @@ export default function DocumentReaderPage() {
   const isPDF = document.fileType === 'application/pdf' || document.fileName.toLowerCase().endsWith('.pdf');
   const isImage = document.fileType.startsWith('image/') ||
     /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName);
+  const isXlsx = (() => {
+    const t = document.fileType.toLowerCase();
+    if (t.includes('spreadsheetml') || t.includes('ms-excel')) return true;
+    return /\.(xlsx|xls|xlsm)$/i.test(document.fileName);
+  })();
 
   const handleDownload = () => {
     if (!document.fileStorageId) return;
@@ -148,6 +164,30 @@ export default function DocumentReaderPage() {
               className="w-full h-full bg-white rounded-lg shadow-sm border border-gray-300"
               title={document.fileName}
             />
+          ) : isXlsx ? (
+            <div className="h-full flex flex-col">
+              {/* Zoom toolbar */}
+              <div className="flex items-center justify-center gap-1 mb-2 flex-shrink-0">
+                <Button variant="outline" size="sm" onClick={xlsxZoomOut} className="h-8 w-8 p-0" aria-label="Zoom out">
+                  <ZoomOut className="w-4 h-4" />
+                </Button>
+                <span className="text-xs text-gray-600 w-12 text-center font-medium tabular-nums">
+                  {Math.round(xlsxZoom * 100)}%
+                </span>
+                <Button variant="outline" size="sm" onClick={xlsxZoomIn} className="h-8 w-8 p-0" aria-label="Zoom in">
+                  <ZoomIn className="w-4 h-4" />
+                </Button>
+                {xlsxZoom !== 1 && (
+                  <Button variant="outline" size="sm" onClick={xlsxZoomReset} className="h-8 w-8 p-0 ml-1" aria-label="Reset zoom">
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+              </div>
+              {/* Scrollable canvas */}
+              <div className="flex-1 min-h-0 bg-white rounded-lg shadow-sm border border-gray-300 overflow-auto">
+                <XlsxPreview fileUrl={fileUrl} zoom={xlsxZoom} />
+              </div>
+            </div>
           ) : isImage ? (
             <div className="h-full flex items-center justify-center">
               <img

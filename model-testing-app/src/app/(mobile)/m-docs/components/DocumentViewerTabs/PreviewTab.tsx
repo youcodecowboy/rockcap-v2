@@ -6,7 +6,7 @@ import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import FileTypeBadge from '../shared/FileTypeBadge';
 
 const PdfPreview = dynamic(() => import('./PdfPreview'), { ssr: false });
-const XlsxPreview = dynamic(() => import('./XlsxPreview'), { ssr: false });
+const XlsxPreview = dynamic(() => import('@/components/preview/XlsxPreview'), { ssr: false });
 
 interface PreviewTabProps {
   fileUrl: string | null | undefined;
