@@ -6,6 +6,7 @@ import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import FileTypeBadge from '../shared/FileTypeBadge';
 
 const PdfPreview = dynamic(() => import('./PdfPreview'), { ssr: false });
+const XlsxPreview = dynamic(() => import('./XlsxPreview'), { ssr: false });
 
 interface PreviewTabProps {
   fileUrl: string | null | undefined;
@@ -26,6 +27,12 @@ function isImage(fileType: string): boolean {
 
 function isPdf(fileType: string): boolean {
   return fileType.toLowerCase().includes('pdf');
+}
+
+function isXlsx(fileType: string, fileName: string): boolean {
+  const t = fileType.toLowerCase();
+  if (t.includes('spreadsheetml') || t.includes('ms-excel')) return true;
+  return /\.(xlsx|xls|xlsm)$/i.test(fileName);
 }
 
 // ─── Zoom toolbar ───────────────────────────────────────────────────
@@ -73,7 +80,7 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
 
   return (
     <div className="px-[var(--m-page-px)] py-4 flex flex-col gap-3">
-      {(isPdf(fileType) || isImage(fileType)) && (
+      {(isPdf(fileType) || isImage(fileType) || isXlsx(fileType, fileName)) && (
         <ZoomToolbar zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={resetZoom} />
       )}
 
@@ -85,6 +92,9 @@ export default function PreviewTab({ fileUrl, fileType, fileName, fileSize }: Pr
         >
           <PdfPreview fileUrl={fileUrl} zoom={zoom} />
         </div>
+      ) : isXlsx(fileType, fileName) ? (
+        /* XLSX: SheetJS sheet_to_html into scaled DOM wrapper */
+        <XlsxPreview fileUrl={fileUrl} zoom={zoom} />
       ) : isImage(fileType) ? (
         /* Image: CSS width scaling + native scroll for pan */
         <div
