@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v19';
+const CACHE_VERSION = 'v20';
 // We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
 // (fonts, fills, borders, themes, images), SheetJS as a value-recovery
 // fallback for cells where ExcelJS loses the cached <v> tag during parse.
@@ -271,6 +271,13 @@ export default function XlsxPreview({
           style={{
             width: dims ? dims.width * zoom : undefined,
             height: dims ? dims.height * zoom : undefined,
+            // Clip the inner contentRef's layout overflow. The contentRef has
+            // transform: scale(zoom) which is visually scaled but its LAYOUT
+            // box stays at the unscaled size. Without this clip, the unscaled
+            // layout box leaks into the scroll container's scrollHeight
+            // calculation at certain zoom levels (notably 75%), causing the
+            // scroll range to be wrong and rows at the bottom to be unreachable.
+            overflow: 'hidden',
           }}
         >
           <div
