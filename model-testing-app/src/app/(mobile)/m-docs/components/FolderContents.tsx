@@ -7,6 +7,7 @@ import { Id } from '../../../../../convex/_generated/dataModel';
 import { ChevronLeft } from 'lucide-react';
 import FolderRow from './shared/FolderRow';
 import FileRow from './shared/FileRow';
+import MoveFileSheet from './MoveFileSheet';
 
 type SortMode = 'newest' | 'oldest' | 'az' | 'za' | 'largest';
 
@@ -48,6 +49,7 @@ export default function FolderContents({
   onOpenViewer,
 }: FolderContentsProps) {
   const [sort, setSort] = useState<SortMode>('newest');
+  const [moveTarget, setMoveTarget] = useState<{ id: string; name: string } | null>(null);
 
   const removeMutation = useMutation(api.documents.remove);
   const duplicateMutation = useMutation(api.documents.duplicateDocument);
@@ -183,6 +185,20 @@ export default function FolderContents({
         </div>
       )}
 
+      {/* Move sheet */}
+      {moveTarget && (
+        <MoveFileSheet
+          documentId={moveTarget.id}
+          documentName={moveTarget.name}
+          clientId={clientId}
+          clientName={clientName}
+          currentFolderTypeKey={folderTypeKey}
+          currentFolderLevel={folderLevel}
+          currentProjectId={projectId}
+          onClose={() => setMoveTarget(null)}
+        />
+      )}
+
       {/* File list */}
       {sortedDocs && sortedDocs.length > 0 && (
         <div>
@@ -203,6 +219,7 @@ export default function FolderContents({
               uploadedAt={doc.uploadedAt}
               lastOpenedAt={doc.lastOpenedAt}
               onTap={() => onOpenViewer(doc._id)}
+              onMove={() => setMoveTarget({ id: doc._id, name: doc.documentCode || doc.displayName || doc.fileName })}
               onDuplicate={() => handleDuplicate(doc._id)}
               onFlag={() => {/* TODO: wire to flags.create */}}
               onDelete={() => handleDelete(doc._id)}

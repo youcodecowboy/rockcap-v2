@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MoreVertical, Eye, Pencil, Download, Copy, Flag, Trash2 } from 'lucide-react';
+import { MoreVertical, Eye, Pencil, Download, Copy, Flag, Trash2, FolderInput } from 'lucide-react';
 import FileTypeBadge from './FileTypeBadge';
 
 interface FileRowProps {
@@ -16,6 +16,7 @@ interface FileRowProps {
   fileUrl?: string | null;
   onTap: () => void;
   onRename?: () => void;
+  onMove?: () => void;
   onDuplicate?: () => void;
   onFlag?: () => void;
   onDelete?: () => void;
@@ -36,16 +37,18 @@ interface ActionSheetProps {
   onClose: () => void;
   onViewDetails: () => void;
   onRename?: () => void;
+  onMove?: () => void;
   onDownload?: () => void;
   onDuplicate?: () => void;
   onFlag?: () => void;
   onDelete?: () => void;
 }
 
-function ActionSheet({ onClose, onViewDetails, onRename, onDownload, onDuplicate, onFlag, onDelete }: ActionSheetProps) {
+function ActionSheet({ onClose, onViewDetails, onRename, onMove, onDownload, onDuplicate, onFlag, onDelete }: ActionSheetProps) {
   const actions = [
     { label: 'View Details', icon: Eye, action: onViewDetails },
     onRename ? { label: 'Rename', icon: Pencil, action: onRename } : null,
+    onMove ? { label: 'Move To...', icon: FolderInput, action: onMove } : null,
     onDownload ? { label: 'Download', icon: Download, action: onDownload } : null,
     onDuplicate ? { label: 'Duplicate', icon: Copy, action: onDuplicate } : null,
     onFlag ? { label: 'Flag for Review', icon: Flag, action: onFlag } : null,
@@ -86,7 +89,7 @@ function ActionSheet({ onClose, onViewDetails, onRename, onDownload, onDuplicate
   );
 }
 
-export default function FileRow({ fileName, displayName, documentCode, fileType, category, fileSize, uploadedAt, lastOpenedAt, fileUrl, onTap, onRename, onDuplicate, onFlag, onDelete }: FileRowProps) {
+export default function FileRow({ fileName, displayName, documentCode, fileType, category, fileSize, uploadedAt, lastOpenedAt, fileUrl, onTap, onRename, onMove, onDuplicate, onFlag, onDelete }: FileRowProps) {
   const [showActions, setShowActions] = useState(false);
   const name = documentCode || displayName || fileName;
   const originalName = documentCode ? (displayName || fileName) : (displayName && displayName !== fileName ? fileName : null);
@@ -124,6 +127,7 @@ export default function FileRow({ fileName, displayName, documentCode, fileType,
           onClose={() => setShowActions(false)}
           onViewDetails={onTap}
           onRename={onRename}
+          onMove={onMove}
           onDownload={fileUrl ? () => {
             const a = document.createElement('a');
             a.href = fileUrl;
