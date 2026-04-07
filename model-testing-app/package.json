@@ -61,6 +61,7 @@
     "convex-helpers": "^0.1.105",
     "date-fns": "^4.1.0",
     "emoji-picker-react": "^4.15.0",
+    "exceljs": "^4.4.0",
     "handsontable": "^16.1.1",
     "hyperformula": "^2.7.1",
     "lucide-react": "^0.553.0",
