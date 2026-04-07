@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -337,6 +337,13 @@ type ExcelJSCell = {
   value: unknown;
   numFmt?: string;
   type?: number;
+  // Cached result accessor for formula cells. Some ExcelJS versions surface
+  // shared-formula results here even when cell.value omits them.
+  result?: unknown;
+  formula?: string;
+  // Internal value object — used as a last-resort fallback for shared-formula
+  // results that don't bubble up through the public accessors.
+  _value?: { result?: unknown; model?: { result?: unknown } };
   style?: { numFmt?: string };
   font?: { bold?: boolean; italic?: boolean; size?: number; name?: string; color?: ExcelJSColor };
   fill?: { type?: string; pattern?: string; fgColor?: ExcelJSColor; bgColor?: ExcelJSColor };
@@ -479,6 +486,41 @@ function formatDate(d: Date, ...fmts: (string | undefined)[]): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
 }
 
+// Aggressive formula-result extractor.
+//
+// ExcelJS quirk #3: shared-formula cells (the dependent ones — `{ sharedFormula: 'H8' }`)
+// and even some shared-formula anchors expose their cached value via
+// alternative accessors instead of cell.value.result. We try every known
+// path to find the cached numeric/date/string result.
+function getFormulaResult(cell: ExcelJSCell): unknown {
+  const v = cell.value;
+
+  // Path 1: cell.value.result (the documented form for normal formulas)
+  if (v && typeof v === 'object' && 'result' in v) {
+    const r = (v as { result?: unknown }).result;
+    if (r !== undefined) return r;
+  }
+
+  // Path 2: cell.result (top-level accessor — works for some shared formulas)
+  if (cell.result !== undefined) return cell.result;
+
+  // Path 3: cell._value.result (internal — works in versions where cell.value
+  // strips the result for shared-formula dependents)
+  const internal = cell._value;
+  if (internal && typeof internal === 'object' && 'result' in internal) {
+    const r = internal.result;
+    if (r !== undefined) return r;
+  }
+
+  // Path 4: cell._value.model.result (deepest internal — last resort)
+  if (internal?.model && 'result' in internal.model) {
+    const r = internal.model.result;
+    if (r !== undefined) return r;
+  }
+
+  return undefined;
+}
+
 function localeNumber(num: number): string {
   if (Number.isInteger(num)) return num.toLocaleString('en-GB');
   const abs = Math.abs(num);
@@ -508,30 +550,38 @@ function getCellText(cell: ExcelJSCell, columnNumFmt?: string): string {
     return formatDate(v, cell.numFmt, cell.style?.numFmt, columnNumFmt);
   }
 
-  // Numeric extraction (direct or formula result)
+  // Numeric extraction (direct, formula result, shared-formula result, etc.)
   let num: number | null = null;
   let formulaResultDate: Date | null = null;
   if (typeof v === 'number') {
     num = v;
-  } else if (typeof v === 'object' && v !== null && 'result' in v) {
-    const r = (v as { result?: unknown }).result;
+  } else if (typeof v === 'object' && v !== null && 'richText' in v) {
+    // Rich text cell — flatten to plain string
+    const parts = (v as { richText?: Array<{ text?: string }> }).richText;
+    if (Array.isArray(parts)) return parts.map(p => p?.text ?? '').join('');
+  } else if (typeof v === 'object' && v !== null && 'hyperlink' in v && 'text' in v) {
+    // Hyperlink cell { text, hyperlink }
+    return String((v as { text?: unknown }).text ?? '');
+  } else if (
+    typeof v === 'object' && v !== null &&
+    ('formula' in v || 'sharedFormula' in v || 'result' in v)
+  ) {
+    // Any kind of formula cell — try every accessor we know about to dig out
+    // the cached result. Critical for shared-formula dependents which omit
+    // result from cell.value entirely in some ExcelJS versions.
+    const r = getFormulaResult(cell);
     if (typeof r === 'number') {
       num = r;
     } else if (r instanceof Date) {
       formulaResultDate = r;
     } else if (typeof r === 'string') {
       return r;
+    } else if (typeof r === 'boolean') {
+      return r ? 'TRUE' : 'FALSE';
     } else if (r == null) {
-      // Formula with no cached result — fall through to cell.text below
+      // Genuinely no cached result anywhere — fall through to cell.text
       return cell.text || '';
     }
-  } else if (typeof v === 'object' && v !== null && 'richText' in v) {
-    // Rich text cell — flatten to plain string
-    const parts = (v as { richText?: Array<{ text?: string }> }).richText;
-    if (Array.isArray(parts)) return parts.map(p => p?.text ?? '').join('');
-  } else if (typeof v === 'object' && v !== null && 'text' in v) {
-    // Hyperlink cell { text, hyperlink }
-    return String((v as { text?: unknown }).text ?? '');
   }
 
   if (formulaResultDate) {
@@ -863,34 +913,33 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       .filter(m => !m.hidden)
       .slice(0, 10);
 
-    // Sample a numeric cell so we can see exactly what cell-level formatting looks like
-    let sampleNumeric: Record<string, unknown> | null = null;
-    outer: for (let r = 1; r <= Math.min(60, totalRows); r++) {
+    // Find the first shared-formula cell and dump every accessor we know.
+    // This tells us which path actually works for this ExcelJS version.
+    let sharedFormulaProbe: Record<string, unknown> | null = null;
+    outer2: for (let r = 1; r <= Math.min(60, totalRows); r++) {
       const rr = ws.getRow(r);
       if (rr?.hidden) continue;
       for (let c = 1; c <= totalCols; c++) {
         if (hiddenCols.has(c)) continue;
         const cell = ws.getCell(r, c);
-        const v = cell?.value;
-        const isNumber =
-          typeof v === 'number' ||
-          (typeof v === 'object' && v !== null && 'result' in v && typeof (v as { result?: unknown }).result === 'number');
-        if (isNumber) {
-          sampleNumeric = {
+        const v = cell?.value as Record<string, unknown> | null;
+        if (v && typeof v === 'object' && ('formula' in v || 'sharedFormula' in v)) {
+          const internal = (cell as ExcelJSCell)._value;
+          sharedFormulaProbe = {
             addr: `R${r}C${c}`,
-            valueType: typeof v === 'object' ? 'formula' : 'number',
-            numFmt: cell.numFmt,
-            styleNumFmt: cell.style?.numFmt,
-            colNumFmt: colMeta[c - 1]?.numFmt,
-            cellText: cell.text,
-            extracted: getCellText(cell, colMeta[c - 1]?.numFmt),
+            valueShape: Object.keys(v),
+            'value.result': v.result,
+            'cell.result': (cell as ExcelJSCell).result,
+            '_value.result': internal?.result,
+            '_value.model.result': internal?.model?.result,
+            extractedFinal: getCellText(cell as ExcelJSCell, colMeta[c - 1]?.numFmt),
           };
-          break outer;
+          break outer2;
         }
       }
     }
 
-    console.log('[XlsxPreview] v10:', {
+    console.log('[XlsxPreview] v11:', {
       sheet: sheetName,
       totalRows,
       totalCols,
@@ -904,7 +953,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       scanned: { rows: scanRows, totalNonEmpty, missingCount },
       missingExtraction: missing,
       colNumFmts,
-      sampleNumeric,
+      sharedFormulaProbe,
     });
   }
 
