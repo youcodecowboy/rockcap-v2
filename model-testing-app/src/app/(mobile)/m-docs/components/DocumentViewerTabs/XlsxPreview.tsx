@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -525,7 +525,13 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       if (f?.bold) styles.push('font-weight:700');
       if (f?.italic) styles.push('font-style:italic');
       if (f?.size) styles.push(`font-size:${f.size}pt`);
-      if (f?.name) styles.push(`font-family:"${f.name}",sans-serif`);
+      if (f?.name) {
+        // Single quotes inside the style attribute (which is double-quoted in the
+        // emitted HTML). Using double quotes here would close the style attribute
+        // early and silently drop every subsequent CSS declaration on the cell.
+        const safeName = f.name.replace(/'/g, '');
+        styles.push(`font-family:'${safeName}',sans-serif`);
+      }
       const fontColor = resolveColor(f?.color);
       if (fontColor) styles.push(`color:${fontColor}`);
 
