@@ -873,7 +873,9 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
   // Sharpened diagnostic — surfaces the cells we're FAILING to extract,
   // plus column-level numFmt info so we can verify the v9 fallback chain.
   if (typeof window !== 'undefined') {
-    // Count extraction failures: cells with non-null value but empty display
+    // Count extraction failures: cells with non-null value but empty display.
+    // Skip cells whose formula result is intentionally an empty string (a
+    // common Excel pattern: IF(check, "", "FAIL") for QA dashboards).
     const missing: Array<{ ref: string; valueType: string; sample: string }> = [];
     let missingCount = 0;
     let totalNonEmpty = 0;
@@ -886,6 +888,11 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
         const cell = ws.getCell(r, c);
         const v = cell?.value;
         if (v == null || v === '') continue;
+        // Cells whose formula explicitly returns "" are intentionally empty
+        if (typeof v === 'object' && v !== null) {
+          const formulaResult = (v as { result?: unknown }).result;
+          if (formulaResult === '') continue;
+        }
         totalNonEmpty++;
         const display = getCellText(cell, colMeta[c - 1]?.numFmt);
         if (!display) {
