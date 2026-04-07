@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -426,7 +426,12 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
 
   const totalRows = ws.rowCount || 0;
   const totalCols = ws.columnCount || 0;
-  const defaultColChars = ws.properties?.defaultColWidth ?? 8.43;
+  // Excel's true default is 8.43 chars. Some files set defaultColWidth=0
+  // (meaning "no default, every visible column has explicit width"), but
+  // if any column slips through without an explicit width we still need a
+  // sensible fallback or it renders as a 5px sliver.
+  const rawDefault = ws.properties?.defaultColWidth;
+  const defaultColChars = rawDefault && rawDefault > 0 ? rawDefault : 8.43;
 
   // Build hidden-column set using ALL three signals Excel can use:
   //   1. ws.model.cols entries with hidden=true (raw OOXML, most reliable)
@@ -465,20 +470,46 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
     if (ws.getRow(r)?.hidden) hiddenRowCount++;
   }
 
-  // One-shot diagnostic — helps us see what ExcelJS actually parsed for this file
+  // One-shot diagnostic — helps us see what ExcelJS actually parsed for this file.
+  // Use JSON.stringify so the user gets fully expanded objects in the console
+  // without having to click through nested chevrons.
   if (typeof window !== 'undefined') {
-    console.log('[XlsxPreview] sheet diagnostic:', {
+    // Filter hiddenCols to only the visible data range so the count is meaningful
+    const hiddenInDataRange: number[] = [];
+    for (let c = 1; c <= totalCols; c++) {
+      if (hiddenCols.has(c)) hiddenInDataRange.push(c);
+    }
+    // Dump every model.cols entry that overlaps with the visible data range
+    const relevantModelCols = (ws.model.cols ?? []).filter(c => c.min <= totalCols);
+    // Sample a few cells the user can compare against the original file
+    const sampleCells: Record<string, unknown> = {};
+    for (const [label, r, c] of [
+      ['A1', 1, 1],
+      ['B2', 2, 2],
+      ['C2', 2, 3],
+      ['D2', 2, 4],
+      ['A8', 8, 1],
+      ['D8', 8, 4],
+    ] as const) {
+      const cell = ws.getCell(r, c);
+      sampleCells[label] = {
+        text: cell?.text,
+        fill: cell?.fill,
+        font: cell?.font,
+      };
+    }
+    console.log('[XlsxPreview] sheet diagnostic v4:\n' + JSON.stringify({
       sheet: sheetName,
       totalRows,
       totalCols,
-      hiddenColsCount: hiddenCols.size,
+      hiddenColsInDataRange: hiddenInDataRange,
       hiddenRowCount,
+      rawDefaultColWidth: rawDefault,
       defaultColChars,
-      modelColsCount: ws.model.cols?.length ?? 0,
-      modelColsSample: (ws.model.cols ?? []).slice(0, 8),
-      sampleA1Fill: ws.getCell(1, 1)?.fill,
-      sampleA1Font: ws.getCell(1, 1)?.font,
-    });
+      relevantModelCols,
+      colWidthsRendered: colMeta.map((m, i) => ({ col: i + 1, hidden: hiddenCols.has(i + 1), widthPx: m.widthPx })),
+      sampleCells,
+    }, null, 2));
   }
 
   // Build merge lookup. When a merge spans hidden columns, we count only the
