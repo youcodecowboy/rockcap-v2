@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -984,7 +984,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       }
     }
 
-    console.log('[XlsxPreview] v12:', {
+    console.log('[XlsxPreview] v13:', {
       sheet: sheetName,
       totalRows,
       totalCols,
@@ -994,13 +994,16 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       images: imageElements.length,
       tableSize: `${totalTableWidth}×${totalTableHeight}px`,
       htmlBytes: html.length,
-      // The new fields:
       scanned: { rows: scanRows, totalNonEmpty, missingCount },
       missingExtraction: missing,
       colNumFmts,
       sharedFormulaProbe,
-      siteProbes,
     });
+    // Log siteProbes separately as a flat JSON string so the nested cell
+    // arrays are visible without console click-through.
+    if (Object.keys(siteProbes).length > 0) {
+      console.log('[XlsxPreview] v13 siteProbes:\n' + JSON.stringify(siteProbes, null, 2));
+    }
   }
 
   return { html, capped };
