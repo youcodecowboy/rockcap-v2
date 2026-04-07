@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
+// Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
+const CACHE_VERSION = 'v3';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -104,7 +106,7 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
   // ─── Render active sheet into DOM ────────────────────────────────────
   useEffect(() => {
     if (!engine || !activeSheet || !workbookRef.current || !contentRef.current) return;
-    const cacheKey = `${fileUrl}::${engine}::${activeSheet}`;
+    const cacheKey = `${CACHE_VERSION}::${fileUrl}::${engine}::${activeSheet}`;
     const cached = htmlCache.get(cacheKey);
     if (cached) {
       contentRef.current.innerHTML = cached.html;
@@ -134,7 +136,7 @@ export default function XlsxPreview({ fileUrl, zoom = 1 }: XlsxPreviewProps) {
   // ─── Measure rendered content so the zoom wrapper can size itself ────
   useLayoutEffect(() => {
     if (status !== 'rendered' || !contentRef.current || !activeSheet || !engine) return;
-    const key = `${fileUrl}::${engine}::${activeSheet}`;
+    const key = `${CACHE_VERSION}::${fileUrl}::${engine}::${activeSheet}`;
     const cached = sizeCache.get(key);
     if (cached) {
       setDims(cached);
@@ -262,7 +264,18 @@ type ExcelJSWorksheet = {
   columnCount: number;
   columns: Array<ExcelJSColumn>;
   properties?: { defaultColWidth?: number; defaultRowHeight?: number };
-  model: { merges?: string[] };
+  model: {
+    merges?: string[];
+    // Raw OOXML column metadata, more reliable than getColumn().hidden
+    cols?: Array<{
+      min: number;
+      max: number;
+      width?: number;
+      hidden?: boolean;
+      collapsed?: boolean;
+      customWidth?: boolean;
+    }>;
+  };
   getRow: (rowNum: number) => ExcelJSRow;
   getColumn: (col: number) => ExcelJSColumn;
   getCell: (row: number, col: number) => ExcelJSCell;
@@ -270,6 +283,7 @@ type ExcelJSWorksheet = {
 type ExcelJSColumn = {
   width?: number;
   hidden?: boolean;
+  collapsed?: boolean;
   alignment?: ExcelJSAlignment;
 };
 type ExcelJSRow = {
@@ -414,22 +428,56 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
   const totalCols = ws.columnCount || 0;
   const defaultColChars = ws.properties?.defaultColWidth ?? 8.43;
 
-  // Pre-resolve which columns are hidden + their column-level metadata.
-  // ExcelJS marks columns as hidden via column.hidden — these are scratch/helper
-  // columns the author wanted invisible, and should not appear in the preview.
+  // Build hidden-column set using ALL three signals Excel can use:
+  //   1. ws.model.cols entries with hidden=true (raw OOXML, most reliable)
+  //   2. ws.model.cols entries with width===0 (very common "hidden" pattern)
+  //   3. getColumn(c).hidden as a final fallback
   const hiddenCols = new Set<number>();
-  const colMeta: Array<{ widthPx: number; alignment?: ExcelJSAlignment }> = [];
+  for (const col of ws.model.cols ?? []) {
+    const isHidden = col.hidden === true || (typeof col.width === 'number' && col.width === 0);
+    if (!isHidden) continue;
+    for (let c = col.min; c <= col.max; c++) hiddenCols.add(c);
+  }
   for (let c = 1; c <= totalCols; c++) {
     const col = ws.getColumn(c);
-    if (col?.hidden) {
-      hiddenCols.add(c);
+    if (col?.hidden === true) hiddenCols.add(c);
+    if (typeof col?.width === 'number' && col.width === 0) hiddenCols.add(c);
+  }
+
+  // Per-column rendered metadata (skipping hidden ones)
+  const colMeta: Array<{ widthPx: number; alignment?: ExcelJSAlignment }> = [];
+  for (let c = 1; c <= totalCols; c++) {
+    if (hiddenCols.has(c)) {
       colMeta.push({ widthPx: 0 });
       continue;
     }
-    const widthChars = col?.width ?? defaultColChars;
+    const col = ws.getColumn(c);
+    const widthChars = col?.width && col.width > 0 ? col.width : defaultColChars;
     colMeta.push({
       widthPx: Math.round(widthChars * 7 + 5),
       alignment: col?.alignment,
+    });
+  }
+
+  // Also count hidden rows for the diagnostic
+  let hiddenRowCount = 0;
+  for (let r = 1; r <= totalRows; r++) {
+    if (ws.getRow(r)?.hidden) hiddenRowCount++;
+  }
+
+  // One-shot diagnostic — helps us see what ExcelJS actually parsed for this file
+  if (typeof window !== 'undefined') {
+    console.log('[XlsxPreview] sheet diagnostic:', {
+      sheet: sheetName,
+      totalRows,
+      totalCols,
+      hiddenColsCount: hiddenCols.size,
+      hiddenRowCount,
+      defaultColChars,
+      modelColsCount: ws.model.cols?.length ?? 0,
+      modelColsSample: (ws.model.cols ?? []).slice(0, 8),
+      sampleA1Fill: ws.getCell(1, 1)?.fill,
+      sampleA1Font: ws.getCell(1, 1)?.font,
     });
   }
 
