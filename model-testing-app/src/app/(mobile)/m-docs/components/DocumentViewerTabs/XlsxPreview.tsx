@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Module-level caches: parsed workbook + rendered HTML dimensions
 // Kept as `unknown` since two different engines may produce different workbook shapes.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v8';
+const CACHE_VERSION = 'v9';
 const workbookCache = new Map<string, { engine: Engine; workbook: unknown }>();
 const htmlCache = new Map<string, { html: string; capped: { shown: number; total: number } | null }>();
 const sizeCache = new Map<string, { width: number; height: number }>();
@@ -322,6 +322,8 @@ type ExcelJSColumn = {
   hidden?: boolean;
   collapsed?: boolean;
   alignment?: ExcelJSAlignment;
+  numFmt?: string;
+  style?: { numFmt?: string };
 };
 type ExcelJSRow = {
   height?: number;
@@ -452,58 +454,100 @@ function parseAddr(addr: string, prefix: 's' | 'e'): { [k: string]: number } {
   return { [`${prefix}r`]: row, [`${prefix}c`]: col };
 }
 
-// Robust cell display extractor.
+// Excel epoch is Dec 30, 1899 (compensates for the 1900 leap-year bug).
+// For any date after March 1, 1900 the conversion is exact:
+//   serial = (jsTime - EXCEL_EPOCH_MS) / 86400000
+const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
+
+function tryFormat(num: number, fmt: string | undefined): string | null {
+  if (!fmt || fmt === 'General' || fmt === '@') return null;
+  try {
+    const out = XLSX.SSF.format(fmt, num);
+    return out && !out.includes('NaN') ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatDate(d: Date, ...fmts: (string | undefined)[]): string {
+  const serial = (d.getTime() - EXCEL_EPOCH_MS) / 86400000;
+  for (const fmt of fmts) {
+    const out = tryFormat(serial, fmt);
+    if (out) return out;
+  }
+  // Locale fallback — short, fits in a typical column
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+function localeNumber(num: number): string {
+  if (Number.isInteger(num)) return num.toLocaleString('en-GB');
+  const abs = Math.abs(num);
+  if (abs >= 1) {
+    return num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  }
+  return num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+}
+
+// Robust cell display extractor. Handles:
+//   - Direct numbers (with optional numFmt)
+//   - Formula cells where cell.value = { formula, result } or { sharedFormula, result }
+//   - Date cells (direct or as formula results) — converts to Excel serial + SSF
+//   - String / rich text / hyperlink cells
 //
-// ExcelJS quirk: cell.text correctly applies numFmt for direct number cells,
-// but for FORMULA cells (Type.Formula) it just stringifies the cached result
-// without applying numFmt — so a formula returning 1447839.81 with format
-// "£#,##0" comes out as "1447839.80871352" instead of "£1,447,840".
-//
-// This helper:
-//   1. Extracts a numeric value from either a direct number or a formula result
-//   2. Formats it via SheetJS SSF (Excel's format mini-language) when numFmt exists
-//   3. Falls back to a sensible locale-formatted display so we never show raw
-//      15-decimal floats even when no format is available
-function getCellText(cell: ExcelJSCell): string {
+// For numeric & date values, tries numFmt sources in this order:
+//   cell.numFmt → cell.style.numFmt → columnNumFmt
+// then falls back to a locale-formatted display so we never show raw
+// 15-decimal floats or JS Date.toString() output (both of which destroy
+// the visual layout via overflow into adjacent cells).
+function getCellText(cell: ExcelJSCell, columnNumFmt?: string): string {
   const v = cell.value;
   if (v == null || v === '') return '';
 
-  // Pull out a numeric value (direct or formula result)
+  // Direct Date value
+  if (v instanceof Date) {
+    return formatDate(v, cell.numFmt, cell.style?.numFmt, columnNumFmt);
+  }
+
+  // Numeric extraction (direct or formula result)
   let num: number | null = null;
+  let formulaResultDate: Date | null = null;
   if (typeof v === 'number') {
     num = v;
   } else if (typeof v === 'object' && v !== null && 'result' in v) {
     const r = (v as { result?: unknown }).result;
-    if (typeof r === 'number') num = r;
-    else if (r == null) {
-      // Formula with no cached result — fall through to cell.text
+    if (typeof r === 'number') {
+      num = r;
+    } else if (r instanceof Date) {
+      formulaResultDate = r;
+    } else if (typeof r === 'string') {
+      return r;
+    } else if (r == null) {
+      // Formula with no cached result — fall through to cell.text below
       return cell.text || '';
     }
+  } else if (typeof v === 'object' && v !== null && 'richText' in v) {
+    // Rich text cell — flatten to plain string
+    const parts = (v as { richText?: Array<{ text?: string }> }).richText;
+    if (Array.isArray(parts)) return parts.map(p => p?.text ?? '').join('');
+  } else if (typeof v === 'object' && v !== null && 'text' in v) {
+    // Hyperlink cell { text, hyperlink }
+    return String((v as { text?: unknown }).text ?? '');
+  }
+
+  if (formulaResultDate) {
+    return formatDate(formulaResultDate, cell.numFmt, cell.style?.numFmt, columnNumFmt);
   }
 
   if (num !== null && Number.isFinite(num)) {
-    // Try every place ExcelJS might surface a numFmt
-    const fmt = cell.numFmt || cell.style?.numFmt;
-    if (fmt && fmt !== 'General' && fmt !== '@') {
-      try {
-        return XLSX.SSF.format(fmt, num);
-      } catch {
-        // SSF can throw on exotic formats — fall through to locale fallback
-      }
-    }
-    // Sensible fallback so we never display raw 15-decimal floats
-    if (Number.isInteger(num)) {
-      return num.toLocaleString('en-GB');
-    }
-    const abs = Math.abs(num);
-    if (abs >= 1) {
-      return num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-    }
-    return num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+    // Try every numFmt source we know about
+    const formatted =
+      tryFormat(num, cell.numFmt) ??
+      tryFormat(num, cell.style?.numFmt) ??
+      tryFormat(num, columnNumFmt);
+    if (formatted) return formatted;
+    return localeNumber(num);
   }
 
-  // Non-numeric values: trust ExcelJS's text rendering (handles strings, dates,
-  // rich text, errors). Avoid stringifying objects to "[object Object]".
   if (typeof v === 'string') return v;
   return cell.text || '';
 }
@@ -571,7 +615,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
   }
 
   // Per-column rendered metadata (skipping hidden ones)
-  const colMeta: Array<{ widthPx: number; alignment?: ExcelJSAlignment }> = [];
+  const colMeta: Array<{ widthPx: number; alignment?: ExcelJSAlignment; numFmt?: string }> = [];
   for (let c = 1; c <= totalCols; c++) {
     if (hiddenCols.has(c)) {
       colMeta.push({ widthPx: 0 });
@@ -582,6 +626,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
     colMeta.push({
       widthPx: Math.round(widthChars * 7 + 5),
       alignment: col?.alignment,
+      numFmt: col?.numFmt || col?.style?.numFmt,
     });
   }
 
@@ -711,7 +756,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       if (merge?.rowspan && merge.rowspan > 1) attrs.push(`rowspan="${merge.rowspan}"`);
       if (isNumeric) attrs.push('data-t="n"');
 
-      const display = getCellText(cell);
+      const display = getCellText(cell, colMeta[c - 1]?.numFmt);
       const text = display ? escapeHtml(display) : '';
       body += `<td ${attrs.join(' ')}>${text}</td>`;
     }
