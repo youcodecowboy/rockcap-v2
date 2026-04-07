@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v20';
+const CACHE_VERSION = 'v21';
 // We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
 // (fonts, fills, borders, themes, images), SheetJS as a value-recovery
 // fallback for cells where ExcelJS loses the cached <v> tag during parse.
@@ -25,14 +25,15 @@ interface XlsxPreviewProps {
   fileUrl: string;
   zoom?: number;
   /**
-   * If true, the component grows to fill its parent's height using a flex
-   * layout (h-full + flex-1 on the scroll area). Required for desktop usage
-   * inside flex containers. When false (mobile default), the scroll area
-   * uses a fixed 55vh height.
+   * If true, the component uses flex-1 to fill its parent's height.
+   * Required for desktop usage inside flex containers. When false (mobile
+   * default), the scroll area uses a fixed 55vh height.
    *
-   * IMPORTANT: When fillParent is true, the parent must have a defined
-   * height (via flex-1, h-screen, h-full chain, or explicit pixel value).
-   * Otherwise the component collapses to zero height.
+   * IMPORTANT: When fillParent is true, the parent MUST be a flex column
+   * container (className includes 'flex flex-col'). The component uses
+   * flex-1 internally instead of percentage heights to avoid the "deeply
+   * nested percentage heights inside flex items" CSS resolution edge case
+   * that breaks scroll containers.
    */
   fillParent?: boolean;
   /**
@@ -227,7 +228,7 @@ export default function XlsxPreview({
   const showSheetPicker = sheetNames.length > 1;
 
   return (
-    <div className={`flex flex-col ${fillParent ? 'h-full min-h-0' : ''}`}>
+    <div className={`flex flex-col ${fillParent ? 'flex-1 min-h-0' : ''}`}>
       {status === 'loading' && (
         <div className="flex items-center justify-center py-16">
           <span className="text-[13px] text-[var(--m-text-tertiary)]">Rendering spreadsheet…</span>

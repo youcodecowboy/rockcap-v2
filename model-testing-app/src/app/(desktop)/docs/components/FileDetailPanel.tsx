@@ -959,11 +959,12 @@ export default function FileDetailPanel({
                           </Button>
                         )}
                       </div>
-                      {/* Scrollable canvas — XlsxPreview owns its own border
-                          + rounded styling. The wrapper is intentionally
-                          minimal to avoid clipping the inner scrollbars
-                          at rounded corners. */}
-                      <div className="flex-1 min-h-0">
+                      {/* Scrollable canvas — flex flex-col so XlsxPreview's
+                          outer flex-1 has a flex parent to grow within.
+                          (Drawer chain is deeply nested with multiple flex
+                          items; percentage heights stop resolving cleanly
+                          at this depth, so we use flex-1 throughout.) */}
+                      <div className="flex-1 min-h-0 flex flex-col">
                         <XlsxPreview
                           fileUrl={fileUrl}
                           zoom={xlsxZoom}
