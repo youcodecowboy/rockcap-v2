@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v14';
+const CACHE_VERSION = 'v15';
 // We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
 // (fonts, fills, borders, themes, images), SheetJS as a value-recovery
 // fallback for cells where ExcelJS loses the cached <v> tag during parse.
@@ -952,152 +952,14 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string, sjsSheet?: X
 
   const capped = totalRows > ROW_CAP ? { shown: renderedRowCount, total: totalRows } : null;
 
-  // Sharpened diagnostic — surfaces the cells we're FAILING to extract,
-  // plus column-level numFmt info so we can verify the v9 fallback chain.
+  // Compact one-line render summary. Useful for verifying the renderer is
+  // healthy on new files; not noisy enough to clutter the console.
   if (typeof window !== 'undefined') {
-    // Count extraction failures: cells with non-null value but empty display.
-    // Skip cells whose formula result is intentionally an empty string (a
-    // common Excel pattern: IF(check, "", "FAIL") for QA dashboards).
-    const missing: Array<{ ref: string; valueType: string; sample: string }> = [];
-    let missingCount = 0;
-    let totalNonEmpty = 0;
-    const scanRows = Math.min(120, totalRows);
-    for (let r = 1; r <= scanRows; r++) {
-      const rr = ws.getRow(r);
-      if (rr?.hidden) continue;
-      for (let c = 1; c <= totalCols; c++) {
-        if (hiddenCols.has(c)) continue;
-        const cell = ws.getCell(r, c);
-        const v = cell?.value;
-        if (v == null || v === '') continue;
-        // Cells whose formula explicitly returns "" are intentionally empty
-        if (typeof v === 'object' && v !== null) {
-          const formulaResult = (v as { result?: unknown }).result;
-          if (formulaResult === '') continue;
-        }
-        totalNonEmpty++;
-        const display = getCellText(cell, colMeta[c - 1]?.numFmt);
-        if (!display) {
-          missingCount++;
-          if (missing.length < 5) {
-            const valueType =
-              typeof v === 'number' ? 'number' :
-              v instanceof Date ? 'date' :
-              typeof v === 'object' && v !== null && 'result' in v ? 'formula' :
-              typeof v === 'object' && v !== null && 'richText' in v ? 'richText' :
-              typeof v;
-            missing.push({
-              ref: `R${r}C${c}`,
-              valueType,
-              sample: JSON.stringify(v).slice(0, 120),
-            });
-          }
-        }
-      }
-    }
-
-    // Dump numFmt for first ~10 visible columns
-    const colNumFmts = colMeta
-      .map((m, i) => ({ col: i + 1, hidden: hiddenCols.has(i + 1), numFmt: m.numFmt }))
-      .filter(m => !m.hidden)
-      .slice(0, 10);
-
-    // Find rows containing "Site 2" / "Site 3" labels and dump the FIRST data
-    // sub-row of each. This tells us EXACTLY what ExcelJS sees for the cells
-    // the user reports as missing — letting us distinguish "ExcelJS reads 0"
-    // from "ExcelJS reads the right value but we drop it" from "the cached
-    // value is genuinely 0 in the file".
-    const labelRows: Record<string, number | undefined> = {};
-    for (let r = 1; r <= totalRows; r++) {
-      const row = ws.getRow(r);
-      if (row?.hidden) continue;
-      for (let c = 1; c <= 5; c++) {
-        if (hiddenCols.has(c)) continue;
-        const t = ws.getCell(r, c)?.text;
-        if (typeof t === 'string') {
-          const trimmed = t.trim();
-          if (trimmed === 'Site 2' && !labelRows.site2) labelRows.site2 = r;
-          if (trimmed === 'Site 3' && !labelRows.site3) labelRows.site3 = r;
-          if (trimmed === 'Site 1' && !labelRows.site1) labelRows.site1 = r;
-        }
-      }
-      if (labelRows.site1 && labelRows.site2 && labelRows.site3) break;
-    }
-
-    const siteProbes: Record<string, unknown> = {};
-    for (const [name, anchor] of Object.entries(labelRows)) {
-      if (!anchor) continue;
-      // The "Net Drawn Loan To Date" sub-row is typically the row right after
-      // the site label. Probe its first 12 visible data cells.
-      const dataRow = anchor + 1;
-      const cells: Array<Record<string, unknown>> = [];
-      let visibleCount = 0;
-      for (let c = 1; c <= totalCols && visibleCount < 12; c++) {
-        if (hiddenCols.has(c)) continue;
-        visibleCount++;
-        const cell = ws.getCell(dataRow, c) as ExcelJSCell;
-        const v = cell?.value;
-        const result = getFormulaResult(cell);
-        // Pull the matching SheetJS cell for the recovery comparison
-        const sjsKey = sjsSheet ? XLSX.utils.encode_cell({ r: dataRow - 1, c: c - 1 }) : null;
-        const sjsCell = sjsKey ? (sjsSheet as Record<string, SheetJSCell> | undefined)?.[sjsKey] : undefined;
-        cells.push({
-          c,
-          shape:
-            v == null ? 'null' :
-            typeof v === 'object' ? `obj{${Object.keys(v as object).join(',')}}` :
-            typeof v,
-          rawText: cell?.text?.slice(0, 20),
-          exResult: typeof result === 'object' && result !== null ? String(result).slice(0, 30) : result,
-          sjsV: sjsCell?.v,
-          sjsW: sjsCell?.w,
-          extracted: getCellText(cell, colMeta[c - 1]?.numFmt, sjsCell),
-        });
-      }
-      siteProbes[`${name}_anchor=R${anchor}_dataRow=R${dataRow}`] = cells;
-    }
-
-    // Also keep one shared-formula sample for the version-detection sanity check
-    let sharedFormulaProbe: Record<string, unknown> | null = null;
-    outer2: for (let r = 1; r <= Math.min(60, totalRows); r++) {
-      const rr = ws.getRow(r);
-      if (rr?.hidden) continue;
-      for (let c = 1; c <= totalCols; c++) {
-        if (hiddenCols.has(c)) continue;
-        const cell = ws.getCell(r, c);
-        const v = cell?.value as Record<string, unknown> | null;
-        if (v && typeof v === 'object' && 'sharedFormula' in v) {
-          // Specifically a shared-formula DEPENDENT (the interesting case)
-          sharedFormulaProbe = {
-            addr: `R${r}C${c}`,
-            valueShape: Object.keys(v),
-            extractedFinal: getCellText(cell as ExcelJSCell, colMeta[c - 1]?.numFmt),
-          };
-          break outer2;
-        }
-      }
-    }
-
-    console.log('[XlsxPreview] v14:', {
-      sheet: sheetName,
-      totalRows,
-      totalCols,
-      renderedRows: renderedRowCount,
-      hiddenRows: hiddenRowCount,
-      hiddenColsInRange: Array.from(hiddenCols).filter(c => c <= totalCols).length,
-      images: imageElements.length,
-      tableSize: `${totalTableWidth}×${totalTableHeight}px`,
-      htmlBytes: html.length,
-      scanned: { rows: scanRows, totalNonEmpty, missingCount },
-      missingExtraction: missing,
-      colNumFmts,
-      sharedFormulaProbe,
-    });
-    // Log siteProbes separately as a flat JSON string so the nested cell
-    // arrays are visible without console click-through.
-    if (Object.keys(siteProbes).length > 0) {
-      console.log('[XlsxPreview] v14 siteProbes:\n' + JSON.stringify(siteProbes, null, 2));
-    }
+    console.debug(
+      `[XlsxPreview] ${sheetName}: ${renderedRowCount}/${totalRows} rows, ` +
+      `${totalCols - hiddenCols.size}/${totalCols} cols, ` +
+      `${imageElements.length} images, ${totalTableWidth}×${totalTableHeight}px`
+    );
   }
 
   return { html, capped };
