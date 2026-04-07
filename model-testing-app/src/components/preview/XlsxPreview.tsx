@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 
 // Module-level caches: parsed workbook + rendered HTML dimensions.
 // Bump CACHE_VERSION whenever the renderer output changes so old cached HTML is dropped.
-const CACHE_VERSION = 'v18';
+const CACHE_VERSION = 'v19';
 // We now parse with BOTH engines for the ExcelJS path: ExcelJS for styling
 // (fonts, fills, borders, themes, images), SheetJS as a value-recovery
 // fallback for cells where ExcelJS loses the cached <v> tag during parse.
@@ -324,15 +324,18 @@ export default function XlsxPreview({
         }
         /* Always-visible scrollbars for desktop usage. macOS hides scrollbars
            by default unless the user has 'Show scroll bars' set to Always —
-           we need them visible so users know horizontal scroll exists. */
+           we need them visible so users know horizontal scroll exists.
+           16px width + scrollbar-gutter: stable gives a consistently
+           clickable target that doesn't shift content as it appears. */
         :global(.mxlsx-force-scroll) {
           overflow: scroll !important;
           scrollbar-width: auto;
           scrollbar-color: #94a3b8 #f1f5f9;
+          scrollbar-gutter: stable;
         }
         :global(.mxlsx-force-scroll::-webkit-scrollbar) {
-          width: 14px;
-          height: 14px;
+          width: 16px;
+          height: 16px;
           background: #f1f5f9;
         }
         :global(.mxlsx-force-scroll::-webkit-scrollbar-track) {
@@ -340,14 +343,17 @@ export default function XlsxPreview({
           border-radius: 0;
         }
         :global(.mxlsx-force-scroll::-webkit-scrollbar-thumb) {
-          background: #94a3b8;
-          border-radius: 7px;
+          background: #64748b;
+          border-radius: 8px;
           border: 3px solid #f1f5f9;
-          min-height: 40px;
-          min-width: 40px;
+          min-height: 50px;
+          min-width: 50px;
         }
         :global(.mxlsx-force-scroll::-webkit-scrollbar-thumb:hover) {
-          background: #64748b;
+          background: #475569;
+        }
+        :global(.mxlsx-force-scroll::-webkit-scrollbar-thumb:active) {
+          background: #334155;
         }
         :global(.mxlsx-force-scroll::-webkit-scrollbar-corner) {
           background: #f1f5f9;
