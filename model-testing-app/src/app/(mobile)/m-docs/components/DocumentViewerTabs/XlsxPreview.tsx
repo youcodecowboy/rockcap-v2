@@ -260,24 +260,37 @@ type ExcelJSWorksheet = {
   name: string;
   rowCount: number;
   columnCount: number;
-  columns: Array<{ width?: number }>;
+  columns: Array<ExcelJSColumn>;
+  properties?: { defaultColWidth?: number; defaultRowHeight?: number };
   model: { merges?: string[] };
   getRow: (rowNum: number) => ExcelJSRow;
+  getColumn: (col: number) => ExcelJSColumn;
   getCell: (row: number, col: number) => ExcelJSCell;
 };
-type ExcelJSRow = { height?: number; getCell: (col: number) => ExcelJSCell };
+type ExcelJSColumn = {
+  width?: number;
+  hidden?: boolean;
+  alignment?: ExcelJSAlignment;
+};
+type ExcelJSRow = {
+  height?: number;
+  hidden?: boolean;
+  getCell: (col: number) => ExcelJSCell;
+};
+type ExcelJSColor = { argb?: string; theme?: number; tint?: number };
+type ExcelJSAlignment = { horizontal?: string; vertical?: string; wrapText?: boolean };
 type ExcelJSCell = {
   text: string;
   value: unknown;
-  font?: { bold?: boolean; italic?: boolean; size?: number; name?: string; color?: { argb?: string } };
-  fill?: { type?: string; pattern?: string; fgColor?: { argb?: string } };
+  font?: { bold?: boolean; italic?: boolean; size?: number; name?: string; color?: ExcelJSColor };
+  fill?: { type?: string; pattern?: string; fgColor?: ExcelJSColor; bgColor?: ExcelJSColor };
   border?: {
-    top?: { style?: string; color?: { argb?: string } };
-    right?: { style?: string; color?: { argb?: string } };
-    bottom?: { style?: string; color?: { argb?: string } };
-    left?: { style?: string; color?: { argb?: string } };
+    top?: { style?: string; color?: ExcelJSColor };
+    right?: { style?: string; color?: ExcelJSColor };
+    bottom?: { style?: string; color?: ExcelJSColor };
+    left?: { style?: string; color?: ExcelJSColor };
   };
-  alignment?: { horizontal?: string; vertical?: string; wrapText?: boolean };
+  alignment?: ExcelJSAlignment;
 };
 
 function argbToCss(argb?: string): string | null {
@@ -285,6 +298,52 @@ function argbToCss(argb?: string): string | null {
   // Excel stores ARGB (8 hex chars). Drop alpha for CSS.
   if (argb.length === 8) return `#${argb.slice(2)}`;
   if (argb.length === 6) return `#${argb}`;
+  return null;
+}
+
+// Default Office theme palette (indices 0-11). Theme indices 0/1 are bg/text 1
+// (white/black by default), 2/3 are bg/text 2, 4-9 are accents 1-6.
+const OFFICE_THEME: string[] = [
+  '#FFFFFF', // 0  lt1 / bg1
+  '#000000', // 1  dk1 / tx1
+  '#E7E6E6', // 2  lt2 / bg2
+  '#44546A', // 3  dk2 / tx2
+  '#5B9BD5', // 4  accent1
+  '#ED7D31', // 5  accent2
+  '#A5A5A5', // 6  accent3
+  '#FFC000', // 7  accent4
+  '#4472C4', // 8  accent5
+  '#70AD47', // 9  accent6
+  '#0563C1', // 10 hyperlink
+  '#954F72', // 11 followedHyperlink
+];
+
+function applyTint(hex: string, tint: number): string {
+  if (!tint) return hex;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  // Linear RGB approximation of OOXML's HLS-based tint formula.
+  // Negative tint → darken toward black, positive → lighten toward white.
+  const t = Math.max(-1, Math.min(1, tint));
+  const mix = (chan: number) =>
+    t < 0
+      ? Math.round(chan * (1 + t))
+      : Math.round(chan + (255 - chan) * t);
+  const toHex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
+}
+
+function resolveColor(color?: ExcelJSColor): string | null {
+  if (!color) return null;
+  // Prefer explicit ARGB when present and not the empty placeholder
+  if (color.argb && color.argb !== '00000000') {
+    return argbToCss(color.argb);
+  }
+  if (typeof color.theme === 'number') {
+    const base = OFFICE_THEME[color.theme] ?? OFFICE_THEME[1];
+    return applyTint(base, color.tint ?? 0);
+  }
   return null;
 }
 
@@ -313,12 +372,12 @@ function borderStyle(style?: string): string {
   return 'solid';
 }
 
-function borderCss(side?: { style?: string; color?: { argb?: string } }): string {
+function borderCss(side?: { style?: string; color?: ExcelJSColor }): string {
   if (!side) return '';
   const w = borderWidth(side.style);
   const s = borderStyle(side.style);
   if (!w || !s) return '';
-  const c = argbToCss(side.color?.argb) ?? '#94a3b8';
+  const c = resolveColor(side.color) ?? '#94a3b8';
   return `${w} ${s} ${c}`;
 }
 
@@ -353,14 +412,41 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
 
   const totalRows = ws.rowCount || 0;
   const totalCols = ws.columnCount || 0;
-  const renderedRows = Math.min(totalRows, ROW_CAP);
+  const defaultColChars = ws.properties?.defaultColWidth ?? 8.43;
 
-  // Build merge lookup: top-left addresses → rowspan/colspan, plus set of skipped addresses
+  // Pre-resolve which columns are hidden + their column-level metadata.
+  // ExcelJS marks columns as hidden via column.hidden — these are scratch/helper
+  // columns the author wanted invisible, and should not appear in the preview.
+  const hiddenCols = new Set<number>();
+  const colMeta: Array<{ widthPx: number; alignment?: ExcelJSAlignment }> = [];
+  for (let c = 1; c <= totalCols; c++) {
+    const col = ws.getColumn(c);
+    if (col?.hidden) {
+      hiddenCols.add(c);
+      colMeta.push({ widthPx: 0 });
+      continue;
+    }
+    const widthChars = col?.width ?? defaultColChars;
+    colMeta.push({
+      widthPx: Math.round(widthChars * 7 + 5),
+      alignment: col?.alignment,
+    });
+  }
+
+  // Build merge lookup. When a merge spans hidden columns, we count only the
+  // visible ones for colspan so the rendered grid stays consistent.
   const mergeMap = new Map<string, { colspan: number; rowspan: number }>();
   const skip = new Set<string>();
   for (const ref of ws.model.merges ?? []) {
     const { sr, sc, er, ec } = parseRange(ref);
-    mergeMap.set(`${sr}:${sc}`, { colspan: ec - sc + 1, rowspan: er - sr + 1 });
+    let visibleColspan = 0;
+    for (let c = sc; c <= ec; c++) {
+      if (!hiddenCols.has(c)) visibleColspan++;
+    }
+    mergeMap.set(`${sr}:${sc}`, {
+      colspan: Math.max(1, visibleColspan),
+      rowspan: er - sr + 1,
+    });
     for (let r = sr; r <= er; r++) {
       for (let c = sc; c <= ec; c++) {
         if (r === sr && c === sc) continue;
@@ -369,22 +455,28 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
     }
   }
 
-  // Colgroup for column widths (Excel width unit ≈ character count × ~7px)
+  // Colgroup — emit only visible columns
   let colgroup = '<colgroup>';
   for (let c = 1; c <= totalCols; c++) {
-    const width = ws.columns?.[c - 1]?.width;
-    const px = width ? Math.round(width * 7 + 5) : 72;
-    colgroup += `<col style="width:${px}px">`;
+    if (hiddenCols.has(c)) continue;
+    colgroup += `<col style="width:${colMeta[c - 1].widthPx}px">`;
   }
   colgroup += '</colgroup>';
 
   let body = '<tbody>';
-  for (let r = 1; r <= renderedRows; r++) {
+  let renderedRowCount = 0;
+  for (let r = 1; r <= totalRows; r++) {
+    if (renderedRowCount >= ROW_CAP) break;
     const row = ws.getRow(r);
+    if (row?.hidden) continue; // Skip rows the author hid
+    renderedRowCount++;
+
     const rowHeightPx = row.height ? Math.round(row.height * 1.333) : '';
     const rowStyle = rowHeightPx ? ` style="height:${rowHeightPx}px"` : '';
     body += `<tr${rowStyle}>`;
+
     for (let c = 1; c <= totalCols; c++) {
+      if (hiddenCols.has(c)) continue;
       if (skip.has(`${r}:${c}`)) continue;
       const cell = row.getCell(c);
       const merge = mergeMap.get(`${r}:${c}`);
@@ -395,11 +487,11 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       if (f?.italic) styles.push('font-style:italic');
       if (f?.size) styles.push(`font-size:${f.size}pt`);
       if (f?.name) styles.push(`font-family:"${f.name}",sans-serif`);
-      const fontColor = argbToCss(f?.color?.argb);
+      const fontColor = resolveColor(f?.color);
       if (fontColor) styles.push(`color:${fontColor}`);
 
       if (cell.fill?.type === 'pattern' && cell.fill.pattern === 'solid') {
-        const bg = argbToCss(cell.fill.fgColor?.argb);
+        const bg = resolveColor(cell.fill.fgColor) ?? resolveColor(cell.fill.bgColor);
         if (bg) styles.push(`background-color:${bg}`);
       }
 
@@ -412,7 +504,8 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       if (bb) styles.push(`border-bottom:${bb}`);
       if (bl) styles.push(`border-left:${bl}`);
 
-      const a = cell.alignment;
+      // Cell-level alignment wins; otherwise fall back to column-level alignment
+      const a = cell.alignment ?? colMeta[c - 1]?.alignment;
       if (a?.horizontal && ['left', 'center', 'right', 'justify'].includes(a.horizontal)) {
         styles.push(`text-align:${a.horizontal}`);
       }
@@ -422,7 +515,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
       }
       if (a?.wrapText) styles.push('white-space:normal');
 
-      // If no explicit alignment and value looks numeric, right-align
+      // Default right-align for numeric values without explicit alignment
       const isNumeric = typeof cell.value === 'number';
       if (!a?.horizontal && isNumeric) styles.push('text-align:right');
 
@@ -440,7 +533,7 @@ function renderExcelJSSheet(wb: ExcelJSWorkbook, sheetName: string) {
   body += '</tbody>';
 
   const html = `<table>${colgroup}${body}</table>`;
-  const capped = totalRows > ROW_CAP ? { shown: renderedRows, total: totalRows } : null;
+  const capped = totalRows > ROW_CAP ? { shown: renderedRowCount, total: totalRows } : null;
   return { html, capped };
 }
 
