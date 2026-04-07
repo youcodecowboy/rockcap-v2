@@ -641,6 +641,10 @@ interface PrePopulatedMessage {
 }
 
 interface MessengerContextType {
+  // Chat overlay open state (shared by mobile ChatOverlay and desktop ChatAssistantDrawer)
+  isChatOpen: boolean;
+  setChatOpen: (open: boolean) => void;
+
   // Mode (Assistant vs Messenger)
   mode: ChatMode;
   setMode: (mode: ChatMode) => void;
@@ -659,11 +663,15 @@ interface MessengerContextType {
 
   // Helper: open messenger in new conversation mode with prefilled data
   startNewMessage: (data: PrePopulatedMessage) => void;
+
+  // Helper: open a specific conversation thread in the chat overlay
+  openConversation: (conversationId: string) => void;
 }
 
 const MessengerContext = createContext<MessengerContextType | undefined>(undefined);
 
 export function MessengerProvider({ children }: { children: ReactNode }) {
+  const [isChatOpen, setChatOpen] = useState(false);
   const [mode, setMode] = useState<ChatMode>('assistant');
   const [view, setView] = useState<MessengerView>('library');
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -674,11 +682,21 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
     setView('new');
     setActiveConversationId(null);
     setPrePopulated(data);
+    setChatOpen(true);
+  };
+
+  const openConversation = (conversationId: string) => {
+    setMode('messenger');
+    setView('thread');
+    setActiveConversationId(conversationId);
+    setChatOpen(true);
   };
 
   return (
     <MessengerContext.Provider
       value={{
+        isChatOpen,
+        setChatOpen,
         mode,
         setMode,
         view,
@@ -688,6 +706,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
         prePopulated,
         setPrePopulated,
         startNewMessage,
+        openConversation,
       }}
     >
       {children}
@@ -1636,18 +1655,20 @@ function getInitials(name: string): string {
 }
 
 export default function ConversationLibrary({ variant = 'mobile' }: ConversationLibraryProps) {
-  const { setView, setActiveConversationId } = useMessenger();
+  const { openConversation, setView, setMode, setChatOpen } = useMessenger();
   const conversations = useQuery(api.conversations.getMyConversations, {});
 
   const isMobile = variant === 'mobile';
 
-  const openConversation = (id: string) => {
-    setActiveConversationId(id);
-    setView('thread');
-  };
+  // openConversation from context opens the chat overlay in thread view.
+  // This works identically whether the library is rendered inside the overlay
+  // (chat FAB → messenger mode → library) or on the mobile inbox page Messages tab.
 
   const startNew = () => {
+    // Ensure chat overlay is open and in messenger mode, then show new form
+    setMode('messenger');
     setView('new');
+    setChatOpen(true);
   };
 
   return (
@@ -2020,8 +2041,9 @@ git commit -m "feat: add MessengerPanel routing between library, thread, and new
 
 **Files:**
 - Modify: `src/components/mobile/ChatOverlay.tsx`
+- Modify: `src/components/mobile/MobileShell.tsx` (drop onChatOpen prop threading — now context-driven)
 
-- [ ] **Step 13.1: Update ChatOverlay to be dual-mode**
+- [ ] **Step 13.1: Update ChatOverlay to be dual-mode and read open state from context**
 
 Replace `src/components/mobile/ChatOverlay.tsx` with:
 
@@ -2037,15 +2059,13 @@ import { useMessenger } from '@/contexts/MessengerContext';
 import ModeToggle from '@/components/chat/ModeToggle';
 import MessengerPanel from '@/components/chat/MessengerPanel';
 
-interface ChatOverlayProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-export default function ChatOverlay({ isOpen, onClose }: ChatOverlayProps) {
+// No more props — state lives in MessengerContext
+export default function ChatOverlay() {
   const { tabs, activeTabId } = useTabs();
-  const { mode } = useMessenger();
+  const { mode, isChatOpen, setChatOpen } = useMessenger();
   const activeTab = tabs.find((t) => t.id === activeTabId);
+  const isOpen = isChatOpen;
+  const onClose = () => setChatOpen(false);
 
   const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
 
@@ -2129,11 +2149,21 @@ export default function ChatOverlay({ isOpen, onClose }: ChatOverlayProps) {
 }
 ```
 
-- [ ] **Step 13.2: Commit**
+- [ ] **Step 13.2: Update MobileShell to drop chat-open prop threading**
+
+Read `src/components/mobile/MobileShell.tsx`. It currently manages `chatOpen` state locally and passes `onChatOpen` to `StickyFooter` and `isOpen`/`onClose` to `ChatOverlay`. Update it to:
+
+1. Remove the local `chatOpen` useState
+2. Render `<ChatOverlay />` with no props (it reads from context)
+3. Render `<StickyFooter />` with no `onChatOpen` prop (StickyFooter will read from context in Task 16)
+
+Wrap the shell contents with `<MessengerProvider>` if it's not already provided at a higher level (it should be from Task 4.2, but verify).
+
+- [ ] **Step 13.3: Commit**
 
 ```bash
-git add src/components/mobile/ChatOverlay.tsx
-git commit -m "feat: add dual-mode chat overlay with messenger integration"
+git add src/components/mobile/ChatOverlay.tsx src/components/mobile/MobileShell.tsx
+git commit -m "feat: dual-mode chat overlay driven by MessengerContext"
 ```
 
 ---
@@ -2266,7 +2296,7 @@ git commit -m "feat: add notification bell with unread badge to mobile header"
 - Modify: `src/components/mobile/StickyFooter.tsx`
 - Modify: `src/components/mobile/MobileNavDrawer.tsx`
 
-- [ ] **Step 16.1: Update StickyFooter**
+- [ ] **Step 16.1: Update StickyFooter to use MessengerContext**
 
 Replace `src/components/mobile/StickyFooter.tsx`:
 
@@ -2278,11 +2308,9 @@ import Link from 'next/link';
 import { LayoutDashboard, Building, File, Mail, MessageCircle } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
+import { useMessenger } from '@/contexts/MessengerContext';
 
-interface StickyFooterProps {
-  onChatOpen: () => void;
-}
-
+// No more props — chat open state comes from MessengerContext
 const navItems = [
   { href: '/m-dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/m-clients', label: 'Clients', icon: Building },
@@ -2290,13 +2318,15 @@ const navItems = [
   { href: '/m-inbox', label: 'Inbox', icon: Mail },
 ];
 
-export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
+export default function StickyFooter() {
   const pathname = usePathname();
+  const { setChatOpen } = useMessenger();
 
   const unreadNotifications = useQuery(api.notifications.getUnreadCount, {});
   const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
 
-  const inboxBadge = (unreadNotifications ?? 0) + (openFlags?.length ?? 0);
+  const inboxBadge = (unreadNotifications ?? 0) + (openFlags?.length ?? 0) + (unreadMessages ?? 0);
 
   const isActive = (href: string) => {
     if (href === '/m-dashboard') return pathname === '/m-dashboard';
@@ -2335,7 +2365,7 @@ export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
 
         {/* Chat FAB — now dual-mode (Assistant + Messenger) */}
         <button
-          onClick={onChatOpen}
+          onClick={() => setChatOpen(true)}
           className="flex items-center justify-center w-11 h-11 -mt-4 bg-[var(--m-accent)] rounded-full shadow-md"
           aria-label="Open chat"
         >
@@ -2416,30 +2446,31 @@ git commit -m "feat: replace Tasks with Inbox in mobile bottom nav and drawer"
 
 ---
 
-## Task 17: Mobile Inbox — Page Shell & Tabs (Flags + Notifications only)
+## Task 17: Mobile Inbox — Page Shell & Tabs (Messages + Flags + Notifications)
 
 **Files:**
 - Create: `src/app/(mobile)/m-inbox/page.tsx`
 - Create: `src/app/(mobile)/m-inbox/components/InboxTabs.tsx`
 
-- [ ] **Step 17.1: Create InboxTabs**
+- [ ] **Step 17.1: Create InboxTabs with 3 tabs**
 
 Create `src/app/(mobile)/m-inbox/components/InboxTabs.tsx`:
 
 ```tsx
 'use client';
 
-import { Flag, Bell } from 'lucide-react';
+import { MessagesSquare, Flag, Bell } from 'lucide-react';
 
-export type MobileInboxTab = 'flags' | 'notifications';
+export type MobileInboxTab = 'messages' | 'flags' | 'notifications';
 
 interface InboxTabsProps {
   activeTab: MobileInboxTab;
   onTabChange: (tab: MobileInboxTab) => void;
-  counts: { flags: number; notifications: number };
+  counts: { messages: number; flags: number; notifications: number };
 }
 
 const TABS: Array<{ key: MobileInboxTab; label: string; icon: React.ElementType }> = [
+  { key: 'messages', label: 'Messages', icon: MessagesSquare },
   { key: 'flags', label: 'Flags', icon: Flag },
   { key: 'notifications', label: 'Notifications', icon: Bell },
 ];
@@ -2482,7 +2513,7 @@ export default function InboxTabs({ activeTab, onTabChange, counts }: InboxTabsP
 }
 ```
 
-- [ ] **Step 17.2: Create mobile inbox page**
+- [ ] **Step 17.2: Create mobile inbox page with Messages tab**
 
 Create `src/app/(mobile)/m-inbox/page.tsx`:
 
@@ -2493,16 +2524,19 @@ import { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import InboxTabs, { type MobileInboxTab } from './components/InboxTabs';
+import ConversationLibrary from '@/components/chat/ConversationLibrary';
 import MobileFlagList from './components/MobileFlagList';
 import MobileNotificationList from './components/MobileNotificationList';
 
 export default function MobileInboxPage() {
-  const [activeTab, setActiveTab] = useState<MobileInboxTab>('flags');
+  const [activeTab, setActiveTab] = useState<MobileInboxTab>('messages');
 
   const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
   const unreadNotifications = useQuery(api.notifications.getUnreadCount, {});
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
 
   const counts = {
+    messages: unreadMessages ?? 0,
     flags: openFlags?.length ?? 0,
     notifications: unreadNotifications ?? 0,
   };
@@ -2510,7 +2544,8 @@ export default function MobileInboxPage() {
   return (
     <div className="flex flex-col h-full">
       <InboxTabs activeTab={activeTab} onTabChange={setActiveTab} counts={counts} />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {activeTab === 'messages' && <ConversationLibrary variant="mobile" />}
         {activeTab === 'flags' && <MobileFlagList />}
         {activeTab === 'notifications' && <MobileNotificationList />}
       </div>
@@ -2518,6 +2553,8 @@ export default function MobileInboxPage() {
   );
 }
 ```
+
+**Note:** The Messages tab reuses the same `ConversationLibrary` component as the chat overlay. When a user taps a conversation from this tab, `ConversationLibrary` calls `openConversation(id)` from `MessengerContext`, which sets `isChatOpen=true` and opens the chat overlay in the thread view. The conversation thread itself is NOT rendered on the inbox page — only the library is.
 
 - [ ] **Step 17.3: Commit**
 

@@ -6,6 +6,7 @@
 
 ## Revision History
 
+- **v2.1 (2026-04-06):** Restored Messages tab on mobile inbox page alongside Flags and Notifications. Chat overlay remains the primary messaging surface, but inbox Messages tab provides a secondary discovery path. Extended `MessengerContext` to own chat overlay open state for cross-surface coordination.
 - **v2 (2026-04-06):** Repurposed chat overlay as dual-mode panel (Assistant | Messenger) instead of adding a messages tab to mobile inbox. Removed 1:1 conversation deduplication to support multiple named threads between the same users. Added document viewer "send" icon. Inbox page now focused on flags + notifications only.
 - **v1 (2026-04-06):** Initial design with separate mobile inbox page containing messages tab.
 
@@ -153,27 +154,34 @@ Notes use TipTap with inline mentions because they're long-form documents where 
 
 **State persistence:** The overlay remembers which mode was active and which conversation was open between open/close cycles within a session.
 
-### 3.3 Mobile Inbox Page (Flags + Notifications only)
+### 3.3 Mobile Inbox Page (Messages + Flags + Notifications)
 
-**Decision:** Mobile inbox page at `/m-inbox` with 2 tabs: **Flags** and **Notifications**. Messages live in the chat overlay instead.
+**Decision:** Mobile inbox page at `/m-inbox` with 3 tabs: **Messages**, **Flags**, **Notifications**. The chat overlay remains the primary messaging surface, but the inbox Messages tab gives users a secondary discovery path — useful for browsing conversation history when they're not actively chatting.
 
 **Tab structure:**
 | Tab | Content | Badge |
 |-----|---------|-------|
+| **Messages** | Conversation library (same component as chat overlay) → tap opens conversation in chat overlay | Unread message count |
 | **Flags** | Open flags assigned to user → tap for flag detail + thread | Open flag count |
 | **Notifications** | All notifications (reminders, mentions, uploads, changelog, new messages) | Unread notification count |
 
-**Why keep the inbox page at all?** 
-- Users need a historical view of notifications they've received
+**Why both the chat overlay AND an inbox Messages tab?**
+- **Chat overlay** = active conversation UX. Fast access from any page via the FAB. Optimized for real-time back-and-forth.
+- **Inbox Messages tab** = browsing/triage UX. Users landing on the inbox page see all their pending collaboration items (flags, notifications, AND conversations) in one place. A user checking "what do I need to respond to?" finds everything in the inbox.
+- **Same component under the hood:** Both surfaces render `ConversationLibrary`. Tapping a conversation from the inbox tab opens the chat overlay (in thread view for that conversation) rather than rendering the thread on the inbox page. This keeps the "conversation = chat overlay" mental model intact.
+
+**Why keep the inbox page at all (vs putting everything in chat overlay)?** 
+- Users need a historical view of notifications they've received — notifications don't fit in a conversation overlay
 - Flags have threading/resolution workflows that need dedicated space
-- The chat overlay is optimized for real-time conversation, not browsing historical triage items
+- The chat overlay is optimized for real-time conversation, not browsing mixed collaboration items
 
 **Navigation flow:**
 ```
-Bell icon / bottom nav → Inbox → [Flags | Notifications]
-                                    ↓           ↓
-                              Flag Detail  Notification
-                              (w/ thread)  Detail/Navigate
+Bell / bottom nav → Inbox → [Messages | Flags | Notifications]
+                               ↓          ↓            ↓
+                        Opens chat  Flag Detail  Notification
+                         overlay    (w/ thread)  Detail/Navigate
+                         in thread
 ```
 
 ### 3.4 Desktop Inbox (no changes to tabs)
@@ -625,13 +633,16 @@ src/components/chat/                     # NEW: shared messenger components
   EntityPicker.tsx                       # New: hierarchical picker (sheet on mobile, popover on desktop)
   NewConversationForm.tsx                # New: form with title, participants, optional client/project
 
-src/app/(mobile)/m-inbox/                # Inbox page (flags + notifications only)
-  page.tsx                               # New: mobile inbox with 2 tabs
+src/app/(mobile)/m-inbox/                # Inbox page (messages + flags + notifications)
+  page.tsx                               # New: mobile inbox with 3 tabs
   components/
-    InboxTabs.tsx                        # New: tab bar (Flags, Notifications)
+    InboxTabs.tsx                        # New: tab bar (Messages, Flags, Notifications)
     MobileFlagList.tsx                   # New: mobile flag list
     MobileFlagDetail.tsx                 # New: mobile flag detail + thread
     MobileNotificationList.tsx           # New: full notification list
+    # Messages tab reuses src/components/chat/ConversationLibrary.tsx directly —
+    # tapping a conversation calls openConversation() from MessengerContext,
+    # which opens the chat overlay in thread view.
 ```
 
 **Modified files:**
