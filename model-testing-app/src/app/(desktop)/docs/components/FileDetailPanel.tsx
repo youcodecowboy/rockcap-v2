@@ -934,8 +934,12 @@ export default function FileDetailPanel({
               {canPreview && fileUrl ? (
                 <div className="w-full flex-1 min-h-0 relative">
                   {document.fileType.toLowerCase().includes('pdf') ? (
+                    // Browser's native PDF viewer. toolbar=1 exposes the
+                    // built-in zoom / pan / page controls inside the iframe
+                    // chrome. Our custom zoom toolbar is xlsx-only and not
+                    // shown for PDFs — the browser's viewer handles it.
                     <iframe
-                      src={`${fileUrl}#toolbar=0`}
+                      src={`${fileUrl}#toolbar=1&navpanes=0`}
                       className="w-full h-full rounded-lg border border-gray-200 bg-white"
                       style={{ minHeight: '600px' }}
                       title="PDF Preview"

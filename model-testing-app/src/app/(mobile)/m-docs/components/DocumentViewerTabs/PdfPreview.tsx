@@ -148,19 +148,31 @@ export default function PdfPreview({ fileUrl, zoom = 1 }: PdfPreviewProps) {
           <span className="text-[13px] text-[var(--m-text-tertiary)]">Rendering PDF…</span>
         </div>
       )}
-      {/* Show cached image (instant) or live canvas */}
-      {cachedImage ? (
-        <img
-          src={cachedImage.dataUrl}
-          style={{ width: `${cachedImage.width}px`, height: `${cachedImage.height}px` }}
-          alt="PDF preview"
-        />
-      ) : (
+      {/* Canvas is ALWAYS mounted so canvasRef stays valid across re-renders.
+          The cached img overlays it when available (for instant display after
+          a render completes). Previously the canvas was unmounted when
+          cachedImage was set, which nulled the ref and broke all subsequent
+          zoom changes — any renderPage call would exit at the null-canvas guard. */}
+      <div className="relative" style={cachedImage ? { width: `${cachedImage.width}px`, height: `${cachedImage.height}px` } : undefined}>
         <canvas
           ref={canvasRef}
           className={status === 'loading' ? 'hidden' : 'block'}
+          style={cachedImage ? { visibility: 'hidden', position: 'absolute', top: 0, left: 0 } : undefined}
         />
-      )}
+        {cachedImage && (
+          <img
+            src={cachedImage.dataUrl}
+            style={{
+              width: `${cachedImage.width}px`,
+              height: `${cachedImage.height}px`,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+            }}
+            alt="PDF preview"
+          />
+        )}
+      </div>
       {numPages && numPages > 1 && status === 'rendered' && (
         <div className="text-center py-2 text-[10px] text-[var(--m-text-placeholder)]">
           Page 1 of {numPages}
