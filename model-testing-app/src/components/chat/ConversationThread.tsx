@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 import { useMessenger } from '@/contexts/MessengerContext';
+import { useTabs } from '@/contexts/TabContext';
+import type { EntityReference } from '@/components/messages/ReferenceChip';
 import MessageBubble from './MessageBubble';
 import MessageComposer from './MessageComposer';
 
@@ -15,14 +18,36 @@ interface ConversationThreadProps {
 }
 
 export default function ConversationThread({ conversationId, variant = 'mobile' }: ConversationThreadProps) {
-  const { setView, setActiveConversationId } = useMessenger();
+  const { setView, setActiveConversationId, setChatOpen } = useMessenger();
   const convId = conversationId as Id<'conversations'>;
   const conversation = useQuery(api.conversations.get, { id: convId });
   const messages = useQuery(api.directMessages.getByConversation, { conversationId: convId });
   const markAsRead = useMutation(api.conversations.markAsRead);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const tabs = (() => { try { return useTabs(); } catch { return null; } })();
 
   const isMobile = variant === 'mobile';
+
+  // Mobile: open documents in tab viewer, clients/projects via mobile route
+  // Desktop: no handler (ReferenceChip falls back to <Link> with desktop routes)
+  const handleReferencePress = useCallback((ref: EntityReference) => {
+    if (!isMobile) return;
+    setChatOpen(false);
+    if (ref.type === 'document') {
+      tabs?.openTab({
+        type: 'docs',
+        title: ref.name,
+        route: '/m-docs',
+        params: { documentId: ref.id },
+      });
+      router.push('/m-docs');
+    } else if (ref.type === 'client') {
+      router.push('/m-clients');
+    } else if (ref.type === 'project') {
+      router.push('/m-clients');
+    }
+  }, [isMobile, setChatOpen, tabs, router]);
 
   useEffect(() => {
     if (messages && messages.length > 0) {
@@ -93,6 +118,7 @@ export default function ConversationThread({ conversationId, variant = 'mobile' 
               createdAt={msg.createdAt}
               references={msg.references}
               variant={variant}
+              onReferencePress={isMobile ? handleReferencePress : undefined}
             />
           ))
         )}

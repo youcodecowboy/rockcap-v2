@@ -11,6 +11,7 @@ interface MessageBubbleProps {
   createdAt: string;
   references?: EntityReference[];
   variant?: 'mobile' | 'desktop';
+  onReferencePress?: (ref: EntityReference) => void;
 }
 
 function formatTime(dateString: string): string {
@@ -27,6 +28,7 @@ export default function MessageBubble({
   createdAt,
   references,
   variant = 'mobile',
+  onReferencePress,
 }: MessageBubbleProps) {
   const isMobile = variant === 'mobile';
 
@@ -55,7 +57,7 @@ export default function MessageBubble({
         {references && references.length > 0 && !isDeleted && (
           <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
             {references.map((ref, i) => (
-              <ReferenceChip key={`${ref.type}-${ref.id}-${i}`} reference={ref} />
+              <ReferenceChip key={`${ref.type}-${ref.id}-${i}`} reference={ref} onPress={onReferencePress} />
             ))}
           </div>
         )}

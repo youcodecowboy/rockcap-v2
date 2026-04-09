@@ -14,6 +14,8 @@ interface ReferenceChipProps {
   reference: EntityReference;
   removable?: boolean;
   onRemove?: () => void;
+  /** When provided, chip fires this instead of navigating via Link (used on mobile) */
+  onPress?: (ref: EntityReference) => void;
 }
 
 const ICON_MAP = {
@@ -28,7 +30,8 @@ const COLOR_MAP = {
   client: 'bg-green-50 text-green-700 border-green-200',
 };
 
-function getEntityHref(ref: EntityReference): string {
+/** Desktop routes — only used when no onPress is provided */
+function getDesktopHref(ref: EntityReference): string {
   switch (ref.type) {
     case 'document':
       return `/docs/reader/${ref.id}`;
@@ -43,7 +46,7 @@ function getEntityHref(ref: EntityReference): string {
   }
 }
 
-export default function ReferenceChip({ reference, removable, onRemove }: ReferenceChipProps) {
+export default function ReferenceChip({ reference, removable, onRemove, onPress }: ReferenceChipProps) {
   const Icon = ICON_MAP[reference.type];
   const colors = COLOR_MAP[reference.type];
 
@@ -68,8 +71,21 @@ export default function ReferenceChip({ reference, removable, onRemove }: Refere
 
   if (removable) return content;
 
+  // Mobile: use callback handler instead of Link
+  if (onPress) {
+    return (
+      <button
+        onClick={() => onPress(reference)}
+        className="hover:opacity-80 transition-opacity"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  // Desktop: use Link with desktop routes
   return (
-    <Link href={getEntityHref(reference)} className="hover:opacity-80 transition-opacity">
+    <Link href={getDesktopHref(reference)} className="hover:opacity-80 transition-opacity">
       {content}
     </Link>
   );
