@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, BotMessageSquare, Loader2, History, Plus, Trash2 } from 'lucide-react';
+import { X, BotMessageSquare, MessagesSquare, Loader2, History, Plus, Trash2 } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useTabs } from '@/contexts/TabContext';
 import { useMessenger } from '@/contexts/MessengerContext';
-import ModeToggle from '@/components/chat/ModeToggle';
+// ModeToggle replaced with inline full-width 50/50 split bar
 import MessengerPanel from '@/components/chat/MessengerPanel';
 import ChatMessage from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
@@ -19,7 +19,7 @@ import { parseMentions } from '@/lib/chat/mentionParser';
 export default function ChatOverlay() {
   const router = useRouter();
   const { tabs, activeTabId } = useTabs();
-  const { mode, isChatOpen, setChatOpen } = useMessenger();
+  const { mode, setMode, isChatOpen, setChatOpen } = useMessenger();
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isOpen = isChatOpen;
   const onClose = () => setChatOpen(false);
@@ -457,12 +457,38 @@ export default function ChatOverlay() {
             <div className="w-8 h-[3px] bg-[var(--m-border)] rounded-full" />
           </div>
 
-          {/* Header with mode toggle */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--m-border)]">
-            <ModeToggle unreadMessageCount={unreadMessages ?? 0} variant="mobile" />
+          {/* Full-width 50/50 mode toggle bar */}
+          <div className="flex bg-black">
+            <button
+              onClick={() => setMode('assistant')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-[13px] font-medium transition-colors ${
+                mode === 'assistant'
+                  ? 'bg-black text-white'
+                  : 'bg-white text-black'
+              }`}
+            >
+              <BotMessageSquare className="w-4 h-4" />
+              Assistant
+            </button>
+            <button
+              onClick={() => setMode('messenger')}
+              className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 text-[13px] font-medium transition-colors ${
+                mode === 'messenger'
+                  ? 'bg-black text-white'
+                  : 'bg-white text-black'
+              }`}
+            >
+              <MessagesSquare className="w-4 h-4" />
+              Messages
+              {(unreadMessages ?? 0) > 0 && (
+                <span className="min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold px-1 bg-[var(--m-error)] text-white">
+                  {(unreadMessages ?? 0) > 9 ? '9+' : unreadMessages}
+                </span>
+              )}
+            </button>
             <button
               onClick={onClose}
-              className="p-1.5 text-[var(--m-text-tertiary)] active:text-[var(--m-text-secondary)]"
+              className="px-3 flex items-center justify-center text-white active:text-gray-400"
             >
               <X className="w-4 h-4" />
             </button>
