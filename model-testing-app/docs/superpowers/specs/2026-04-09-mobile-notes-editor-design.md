@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-09
 **Branch:** mobile
-**Status:** Approved
+**Status:** Approved (revised post-Codex review)
 
 ## Purpose
 
@@ -19,9 +19,24 @@ type NoteView =
 ```
 
 - **List view:** scope tabs, search, notes list, "New Note" button
-- **Editor view:** full-page TipTap editor with metadata header and formatting toolbar
-- "New Note" creates a blank note in Convex immediately (so it has an ID for auto-save), then pushes editor view
+- **Editor view:** full-page TipTap editor with metadata header and formatting toolbar. **The global StickyFooter is hidden** while the editor is active (the editor is a full-page immersive experience).
+- "New Note" creates a blank draft note in Convex immediately (so it has an ID for auto-save), then pushes editor view
 - Back button saves and returns to list. List stays mounted so scroll position is preserved.
+
+## Draft & Discard Semantics
+
+New notes are created as explicit drafts (`isDraft: true`) to prevent half-written content from becoming team-visible when filed to a client/project.
+
+**Draft → published promotion:** A note is promoted from draft to non-draft (`isDraft: false`) on the first save where EITHER:
+- The title has been changed from "Untitled", OR
+- The content contains at least one text node (not just an empty paragraph)
+
+**Orphan discard:** When the user navigates back from the editor, if the note:
+- Still has title "Untitled" AND
+- Content is empty (just `{ type: 'doc', content: [{ type: 'paragraph' }] }`)
+- → Auto-delete the orphan via `api.notes.remove({ id })`
+
+This prevents accumulation of blank "Untitled" notes from users who tap "New Note" then immediately back out.
 
 ## List View (NotesList)
 
@@ -33,7 +48,7 @@ Improved version of the current page, with the `[object Object]` bug fixed.
 - **Notes list:** sorted by updatedAt descending
   - Per note: emoji (if set), title, content preview (truncated 80 chars), date, client/project labels with icons, draft badge
   - Tap → pushes editor view with note ID
-- **"New Note" button:** creates blank note via `api.notes.create({ title: 'Untitled', content: '{"type":"doc","content":[]}' })`, then pushes editor
+- **"New Note" button:** creates blank draft note via `api.notes.create({ title: 'Untitled', content: { type: 'doc', content: [{ type: 'paragraph' }] }, isDraft: true })`, then pushes editor
 
 ### The [object Object] Fix
 
@@ -65,7 +80,7 @@ function extractPlainText(content: unknown): string {
 
 ## Editor View (NoteEditor)
 
-Full-page editor that fills the viewport below the mobile header.
+Full-page editor that fills the viewport below the mobile header. **The global StickyFooter is hidden** while this view is active to maximize editing space and avoid toolbar/footer collision.
 
 ### Layout
 
@@ -82,7 +97,7 @@ Full-page editor that fills the viewport below the mobile header.
 │  filling remaining vertical space    │
 │                                      │
 ├──────────────────────────────────────┤
-│ B I U S H1 H2 • 1. ☐ "" —          │  ← fixed toolbar above keyboard
+│ B I U S H1 H2 • 1. ☐ "" — 🔗       │  ← fixed toolbar above keyboard
 ├──────────────────────────────────────┤
 │      [ iOS keyboard if active ]      │
 └──────────────────────────────────────┘
@@ -94,13 +109,13 @@ Included:
 - `StarterKit` — bold, italic, history, headings (H1-H3), paragraphs, blockquote, code block, bullet list, ordered list, horizontal rule
 - `Underline` — underline formatting
 - `Strike` — strikethrough (included in StarterKit but listed for clarity)
-- `Highlight` — multicolor text highlighting
-- `Link` — clickable links
+- `Link` — clickable links with URL editing via toolbar button
 - `TaskList` + `TaskItem` — checkbox lists
 - `Placeholder` — "Start writing..." ghost text
-- `TextStyle` — required for Highlight
 
 Excluded (deferred):
+- `Highlight` — multicolor highlighting (no toolbar control; add when slash commands come)
+- `TextStyle` — only needed for Highlight, deferred with it
 - `Table` + row/header/cell — complex touch UX
 - `Image` — base64 inline images
 - `Mention` — @user mentions
@@ -108,31 +123,54 @@ Excluded (deferred):
 
 ### Content Format
 
-ProseMirror JSON — same as desktop. A new empty document:
+ProseMirror JSON — same as desktop. The canonical empty document shape (used everywhere):
 ```json
-{"type": "doc", "content": [{"type": "paragraph"}]}
+{ "type": "doc", "content": [{ "type": "paragraph" }] }
 ```
+
+This is passed as a **real JSON object** to `notes.create`, never as a stringified string. The `notes.create` mutation stores content as-is, so the shape must be valid TipTap JSON from the start.
 
 Notes created on mobile are fully editable on desktop and vice versa.
 
+### Legacy Content Normalization
+
+Some older or tool-created notes may not be valid TipTap JSON. On editor load, wrap the content initialization in a try/catch:
+
+1. Try to load content directly into TipTap's `useEditor`
+2. If the editor fails to parse it, run the content through the existing `markdownToTiptap` utility at `src/lib/notes/markdownToTiptap.ts`
+3. If that also fails, fall back to wrapping the raw string in a paragraph node: `{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: String(content) }] }] }`
+
 ### Auto-Save Mechanism
 
-Ported from desktop `NotesEditor.tsx`:
+Ported from desktop `NotesEditor.tsx`, including error handling and offline resilience:
+
 - **Debounced:** 1500ms after last edit
 - **Minimum interval:** 2000ms between saves
-- **Mutation:** `api.notes.update({ id, content, title })`
-- **Save states:** `saving` | `saved` | `unsaved`
+- **Mutation:** `api.notes.update({ id, content, title, isDraft? })`
+- **Save states:** `saving` | `saved` | `unsaved` | `error`
 - **Additional triggers:** blur, visibility change, back navigation
 - **Keyboard shortcut:** Cmd+S / Ctrl+S (for external keyboards)
 - Content changes tracked via TipTap's `onUpdate` callback
 
+**Error handling:**
+- On save failure: set state to `error`, show persistent red indicator ("Save failed — tap to retry")
+- Tap the error indicator to manually retry the save
+- Retry with exponential backoff: 1s, 2s, 4s — max 3 retries before giving up and showing the error
+- Online/offline detection: listen to `navigator.onLine` and `window.addEventListener('online'/'offline')`. When offline, queue saves and flush when back online.
+
+**Back-navigation safety:** When the user taps "← Notes" and there are unsaved changes (state is `unsaved` or `error`):
+- Attempt one final save
+- If save succeeds, navigate back
+- If save fails, show a confirmation: "You have unsaved changes. Discard?" with Cancel/Discard buttons
+
 ### Nav Bar
 
-- Left: back button (← Notes) — triggers save before navigating back
+- Left: back button (← Notes) — triggers save-then-navigate flow
 - Right: save status indicator
   - "Saved" — green dot + text (fades after 2s)
   - "Saving..." — small spinner
   - "Unsaved" — amber dot (shown when edits pending)
+  - "Save failed" — red dot + text + tap-to-retry
 
 ### Title Field
 
@@ -146,7 +184,7 @@ Ported from desktop `NotesEditor.tsx`:
 
 Fixed row above the keyboard, horizontally scrollable.
 
-### Buttons (11)
+### Buttons (12)
 
 | Icon | Action | TipTap Command | Active Check |
 |------|--------|----------------|--------------|
@@ -161,6 +199,9 @@ Fixed row above the keyboard, horizontally scrollable.
 | ☐ | Task list | `toggleTaskList()` | `editor.isActive('taskList')` |
 | " | Blockquote | `toggleBlockquote()` | `editor.isActive('blockquote')` |
 | — | Divider | `setHorizontalRule()` | N/A (insert action) |
+| 🔗 | Link | Opens URL input popover | `editor.isActive('link')` |
+
+**Link button behavior:** Tap opens a small popover above the toolbar with a URL text input + "Set" button. If cursor is on existing link, popover pre-fills the URL and shows a "Remove" option. Uses TipTap's `setLink({ href })` and `unsetLink()`.
 
 ### Styling
 - Background: `bg-black` (matches mobile design system action buttons)
@@ -171,9 +212,9 @@ Fixed row above the keyboard, horizontally scrollable.
 
 ### Keyboard-Aware Positioning
 
-The toolbar must sit directly above the iOS/Android keyboard when it's open.
+The toolbar must sit directly above the iOS/Android keyboard when it's open. The global StickyFooter is hidden while the editor is active, so there is no footer collision.
 
-**Primary approach:** Listen to `window.visualViewport` resize events:
+**When keyboard is open:** Listen to `window.visualViewport` resize events:
 ```typescript
 const [keyboardHeight, setKeyboardHeight] = useState(0);
 
@@ -189,17 +230,19 @@ useEffect(() => {
 }, []);
 ```
 
-Toolbar positioned: `style={{ bottom: keyboardHeight }}` with `position: fixed`.
+Toolbar positioned: `position: fixed; bottom: ${keyboardHeight}px`.
 
-**Fallback:** If `visualViewport` is unavailable, use `position: sticky; bottom: 0` which works in most modern mobile browsers.
+**When keyboard is closed:** Toolbar sits at `bottom: calc(env(safe-area-inset-bottom, 0px))` since the StickyFooter is hidden.
+
+**Fallback:** If `visualViewport` is unavailable, use `position: sticky; bottom: 0`.
 
 ## Metadata Chips (MetadataChips)
 
 Horizontally scrollable row of tappable chips below the nav bar.
 
 ### Chip Types
-- **Client chip:** shows client name if attached. Tap opens a bottom sheet with searchable client list. "×" to remove.
-- **Project chip:** shows project name if attached (filters to selected client's projects). Tap opens bottom sheet. "×" to remove.
+- **Client chip:** shows client name if attached. Tap opens a bottom sheet with searchable client list. "×" to remove. **Removing the client also clears the project** (same behavior as desktop).
+- **Project chip:** shows project name if attached (filters to selected client's projects). Tap opens bottom sheet. "×" to remove. Only shown when a client is selected.
 - **Tag chips:** each tag as a pill. "[+]" button to add — opens a small text input inline.
 - All metadata changes trigger auto-save via the same debounce.
 
@@ -229,16 +272,24 @@ src/app/(mobile)/m-notes/
 └── components/
     ├── NotesList.tsx            ← search + scope tabs + notes list
     ├── NoteEditor.tsx           ← full-page editor (header + title + TipTap + toolbar)
-    ├── EditorToolbar.tsx        ← fixed formatting bar (11 buttons, keyboard-aware)
+    ├── EditorToolbar.tsx        ← fixed formatting bar (12 buttons, keyboard-aware)
     └── MetadataChips.tsx        ← client/project/tag chips + bottom sheet pickers
 ```
 
 ### Responsibilities
-- **page.tsx** — thin view router (list vs editor), owns noteId state, handles create-and-open flow
+- **page.tsx** — thin view router (list vs editor), owns noteId state, handles create-and-open flow, handles orphan discard on back
 - **NotesList.tsx** — extracted from current page, fixes ProseMirror text extraction, adds tap-to-open
-- **NoteEditor.tsx** — wraps TipTap `useEditor` hook + `EditorContent`, manages auto-save lifecycle, renders header/title/content layout. Estimated ~300-400 lines.
-- **EditorToolbar.tsx** — the 11 formatting buttons + keyboard-aware positioning via visualViewport API. Estimated ~80-100 lines.
-- **MetadataChips.tsx** — chips row + bottom sheet pickers for client/project/tags. Estimated ~150-200 lines.
+- **NoteEditor.tsx** — wraps TipTap `useEditor` hook + `EditorContent`, manages auto-save lifecycle with error/retry/offline handling, renders header/title/content layout, normalizes legacy content on load. Estimated ~350-450 lines.
+- **EditorToolbar.tsx** — the 12 formatting buttons + link popover + keyboard-aware positioning via visualViewport API. Estimated ~100-130 lines.
+- **MetadataChips.tsx** — chips row + bottom sheet pickers for client/project/tags, client-clear-cascades-to-project logic. Estimated ~150-200 lines.
+
+### StickyFooter Hiding
+
+The NoteEditor view needs to hide the global StickyFooter while active. Two approaches:
+
+**Preferred:** Add a context value or prop to the mobile shell that the editor can set. The `MobileShell` conditionally renders the footer based on this flag. This avoids direct DOM manipulation.
+
+**Alternative:** The page.tsx can pass a `hideFooter` flag up to the layout via a shared context (e.g., extend `MessengerContext` or create a small `MobileLayoutContext`).
 
 ## Convex Queries & Mutations Used
 
@@ -248,9 +299,9 @@ All existing — no backend changes:
 |-----|---------|---------|
 | `notes.getAll({})` | NotesList | List all user-visible notes |
 | `notes.get({ id })` | NoteEditor | Load note for editing |
-| `notes.create({ title, content })` | page.tsx | Create blank note on "New Note" |
-| `notes.update({ id, title?, content?, clientId?, projectId?, tags? })` | NoteEditor | Auto-save |
-| `notes.remove({ id })` | NotesList | Delete note |
+| `notes.create({ title, content, isDraft })` | page.tsx | Create blank draft note on "New Note" |
+| `notes.update({ id, title?, content?, clientId?, projectId?, tags?, isDraft? })` | NoteEditor | Auto-save + draft promotion |
+| `notes.remove({ id })` | NotesList, page.tsx | Delete note / discard orphan |
 | `clients.list({})` | NotesList, MetadataChips | Client name resolution + picker |
 | `projects.list({})` | NotesList | Project name resolution |
 | `projects.getByClient({ clientId })` | MetadataChips | Project picker (filtered) |
@@ -262,6 +313,7 @@ All existing — no backend changes:
 - Table editing on mobile
 - Image insertion on mobile
 - @mention support in editor
+- Highlight / TextStyle extensions (no toolbar control, deferred)
 - Slash command extension (replaced by toolbar)
 - AI cleanup bubble menu (deferred — add when AI features expand)
 - Note templates on mobile
