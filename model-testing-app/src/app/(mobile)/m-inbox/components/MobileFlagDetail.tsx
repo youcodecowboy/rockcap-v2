@@ -52,7 +52,7 @@ export default function MobileFlagDetail({ flagId, onBack }: MobileFlagDetailPro
   const uniqueUserIds = [...new Set(userIds)] as Id<'users'>[];
   const users = useQuery(
     api.users.getByIds,
-    uniqueUserIds.length > 0 ? { ids: uniqueUserIds } : 'skip'
+    uniqueUserIds.length > 0 ? { userIds: uniqueUserIds } : 'skip'
   );
 
   const userMap: Record<string, string> = {};
