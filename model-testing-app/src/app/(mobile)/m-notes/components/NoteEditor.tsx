@@ -13,7 +13,6 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { ChevronLeft, Loader2 } from 'lucide-react';
-import { useMobileLayout } from '@/contexts/MobileLayoutContext';
 import EditorToolbar from './EditorToolbar';
 import MetadataChips from './MetadataChips';
 
@@ -150,13 +149,6 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
     },
     [handleSave],
   );
-
-  // --- footer hiding ---
-  const { setHideFooter } = useMobileLayout();
-  useEffect(() => {
-    setHideFooter(true);
-    return () => setHideFooter(false);
-  }, [setHideFooter]);
 
   // --- initialize title from loaded note ---
   useEffect(() => {
@@ -319,7 +311,8 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
       </div>
 
       {/* Editor content — scrollable */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-[var(--m-page-px)] py-3 pb-[60px]">
+      {/* Bottom padding clears both the toolbar (44px) and the sticky footer */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-[var(--m-page-px)] py-3" style={{ paddingBottom: 'calc(44px + var(--m-footer-h) + env(safe-area-inset-bottom) + 1rem)' }}>
         {note === undefined ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-5 h-5 animate-spin text-[var(--m-text-tertiary)]" />

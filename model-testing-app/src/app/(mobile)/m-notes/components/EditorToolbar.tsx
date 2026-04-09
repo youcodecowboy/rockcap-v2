@@ -70,7 +70,10 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
   return (
     <div
       className="fixed left-0 right-0 z-50 bg-black"
-      style={{ bottom: keyboardHeight || 'env(safe-area-inset-bottom, 0px)' }}
+      style={{ bottom: keyboardHeight > 0
+        ? keyboardHeight
+        : 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))'
+      }}
     >
       {/* Link popover */}
       {showLinkPopover && (
