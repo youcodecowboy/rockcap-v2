@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Plus, Send } from 'lucide-react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -22,6 +22,18 @@ export default function MessageComposer({ conversationId, variant = 'mobile' }: 
   const sendMessage = useMutation(api.directMessages.send);
 
   const isMobile = variant === 'mobile';
+
+  // Auto-resize textarea as content grows
+  const autoResize = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, []);
+
+  useEffect(() => {
+    autoResize();
+  }, [text, autoResize]);
 
   const handleSend = async () => {
     const trimmed = text.trim();
@@ -70,8 +82,8 @@ export default function MessageComposer({ conversationId, variant = 'mobile' }: 
 
   return (
     <>
-      <div className={`border-t px-3 py-2 ${
-        isMobile ? 'border-[var(--m-border)] bg-[var(--m-bg)] pb-[env(safe-area-inset-bottom)]' : 'border-gray-200'
+      <div className={`border-t px-3 py-3 ${
+        isMobile ? 'border-[var(--m-border)] bg-[var(--m-bg)] pb-[max(0.75rem,env(safe-area-inset-bottom))]' : 'border-gray-200'
       }`}>
         {references.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
@@ -102,12 +114,12 @@ export default function MessageComposer({ conversationId, variant = 'mobile' }: 
             onKeyDown={handleKeyDown}
             placeholder={isMobile ? 'Message…' : 'Type a message… (Cmd+Enter to send)'}
             rows={1}
-            className={`flex-1 resize-none rounded-2xl px-3 py-2 text-[13px] outline-none max-h-24 leading-snug ${
+            className={`flex-1 resize-none rounded-2xl px-3 py-2.5 text-[13px] outline-none leading-snug overflow-y-auto ${
               isMobile
                 ? 'bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)]'
                 : 'bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-gray-300'
             }`}
-            style={{ minHeight: '36px' }}
+            style={{ minHeight: '38px', maxHeight: '140px' }}
           />
           <button
             onClick={handleSend}
