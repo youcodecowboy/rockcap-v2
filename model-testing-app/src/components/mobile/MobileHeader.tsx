@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Menu, Search, Bell } from 'lucide-react';
-import { UserButton } from '@clerk/nextjs';
+import { UserButton, useAuth } from '@clerk/nextjs';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import MobileNavDrawer from './MobileNavDrawer';
@@ -11,10 +11,14 @@ import MobileNavDrawer from './MobileNavDrawer';
 export default function MobileHeader() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const router = useRouter();
+  const { isSignedIn } = useAuth();
 
-  const unreadNotifications = useQuery(api.notifications.getUnreadCount, {});
-  const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
-  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+  // Skip auth-required queries until Clerk has loaded the session.
+  // Without this, the queries fire before authentication completes and
+  // throw "Unauthenticated" errors from the Convex backend.
+  const unreadNotifications = useQuery(api.notifications.getUnreadCount, isSignedIn ? {} : 'skip');
+  const openFlags = useQuery(api.flags.getMyFlags, isSignedIn ? { status: 'open' as const } : 'skip');
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, isSignedIn ? {} : 'skip');
 
   const totalUnread =
     (unreadNotifications ?? 0) + (openFlags?.length ?? 0) + (unreadMessages ?? 0);
