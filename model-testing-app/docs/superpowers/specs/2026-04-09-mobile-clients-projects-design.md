@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-09
 **Branch:** mobile
-**Status:** Approved
+**Status:** Approved (revised post-Codex review)
 
 ## Purpose
 
@@ -21,12 +21,24 @@ type NavScreen =
   | { screen: 'project'; clientId: string; clientName: string; projectId: string; projectName: string };
 ```
 
+Folder drill-down and document viewer states are **not** in this top-level union. The Docs tab components embed their own nested push/pop navigator internally (reusing the existing m-docs folder → contents → viewer flow). This keeps tab context alive — the tab bar stays visible while drilling into folders, and switching tabs doesn't lose folder position.
+
+### Direct Entry from Dashboard
+
+The dashboard recents section and future deep links can open `/m-clients` pre-navigated to a specific client or project. This uses the same `TabContext` params pattern that m-docs uses for documents:
+
+```typescript
+// TabContext param: { clientId: "abc123" }
+// On mount, ClientsContent reads activeTab.params.clientId
+// and auto-pushes the client detail screen
+```
+
 ### Flow
 
 ```
 Client List → Client Detail (9 tabs)
                   └─ Projects tab → Project Detail (6 tabs)
-                                         └─ Docs tab → Document Viewer (reused from m-docs)
+                  └─ Docs tab → [nested] Folder List → Folder Contents → Document Viewer
 ```
 
 - Back button pops the stack (same `push`/`pop` pattern as doc library)
@@ -72,11 +84,11 @@ Reuses the visual pattern from `DocsList.tsx` Clients scope:
 
 1. **Overview** — landing page, metric cards + shortcut sections
 2. **Projects** — project list, tap to push project detail
-3. **Docs** — client-level folder browser + file list
-4. **Intelligence** — AI-extracted intelligence entries
-5. **Notes** — notes list + create
-6. **Tasks** — active/completed task lists
-7. **Checklist** — compliance checklist with progress
+3. **Docs** — client-level folder browser + file list (nested navigator)
+4. **Intelligence** — knowledge items from knowledgeLibrary
+5. **Notes** — notes list + create (uses `notes` table, not `documentNotes`)
+6. **Tasks** — my active/completed tasks for this client
+7. **Checklist** — client-level compliance checklist with progress
 8. **Meetings** — meeting summary list (read-only, expandable)
 9. **Threads** — flag threads (read + comment, placeholder for future messaging)
 
@@ -119,10 +131,10 @@ Vertical stack of dense, tappable summary cards. Each card previews data from an
 **Queries:**
 - `api.clients.get(clientId)` — name, email, phone, type, status
 - `api.clients.getStats(clientId)` — project count, doc count, active projects, last activity
-- `api.tasks.getByClient(clientId)` — first 3 active tasks
+- `api.tasks.getByClient(clientId)` — first 3 of current user's active tasks
 - `api.flags.getOpenCountByClient(clientId)` — open flag count
 - `api.documents.getClientDocumentCounts(clientId)` — total doc count
-- `api.knowledgeLibrary.getChecklistByClient(clientId)` — completion ratio
+- `api.knowledgeLibrary.getClientLevelChecklist(clientId)` — completion ratio
 - `api.contacts.getByClient(clientId)` — key contacts (if query exists)
 
 ### Projects Tab
@@ -137,49 +149,72 @@ Vertical stack of dense, tappable summary cards. Each card previews data from an
 
 ### Docs Tab
 
-Reuses mobile doc library components:
-- Client-level folder list (same as `ClientDocDetail.tsx` in m-docs)
-- Tap folder → folder contents (reuses `FolderContents` component)
-- Tap file → pushes document viewer onto nav stack
+Reuses mobile doc library components with a **nested navigator** embedded inside the tab. The Docs tab manages its own folder drill-down state independently of the top-level `ClientsContent` nav stack. This means:
+
+- The tab bar stays visible while drilling into folders
+- Switching to another tab and back preserves folder position
+- The document viewer is pushed onto the nested doc navigator, not the parent
+
+Components reused from m-docs:
+- `ClientDocDetail.tsx` pattern for client-level folder list
+- `FolderContents` for folder contents display
+- `FileRow` / `FolderRow` for individual items
+- `DocumentViewer` for viewing documents
+- `MoveFileSheet` for moving files between folders
+
+All existing doc actions (move, duplicate, delete, flag) are included — these are already built and tested for mobile, and the client docs tab is a natural place to use them.
 
 **Queries:**
-- `api.folderStructure.getAllFoldersForClient(clientId)`
-- `api.documents.getByFolder(...)`
-- `api.documents.getFolderCounts(clientId)`
+- `api.folderStructure.getAllFoldersForClient(clientId)` — folder topology
+- `api.documents.getByFolder({ clientId, folderType, level: 'client' })` — folder contents
+- `api.documents.getFolderCounts(clientId)` — doc counts per folder
 
 ### Intelligence Tab
 
-- List of intelligence entries grouped by type (CUSTOM, EXTRACTED)
-- Per entry: title, value, confidence badge, source document name
+Displays knowledge items from the `knowledgeLibrary` system (same data model as desktop `ClientKnowledgeTab`), NOT document-level intelligence extractions.
+
+- List of knowledge items grouped by category
+- Per entry: title/key, value, source reference, confidence level
 - Read-only on mobile
 
-**Query:** `api.documents.getDocumentIntelligence` scoped to client (may need a new `getByClient` variant)
+**Query:** `api.knowledgeLibrary.getKnowledgeItemsByClient(clientId)` — verify this exists; if not, use the knowledge items returned by `getClientLevelChecklist` or add a new query
 
 ### Notes Tab
 
-- List of notes: content preview (2-line truncate), created date, author
+Uses the `notes` table (NOT `documentNotes`). Client/project notes have a different data model from document notes: they require a `title` and rich-text `content`.
+
+- List of notes: title, content preview (2-line truncate), created date, author
 - "Add Note" button at top
-- Tap add → inline textarea + submit button (same pattern as doc viewer NotesTab)
+- Tap add → lightweight composer: title input + plain-text body textarea + submit button
+- The composer writes a minimal rich-text document (just a text paragraph) via `api.notes.create`
 - Notes are visible on both desktop and mobile
 
-**Query:** `api.documentNotes.getByClient(clientId)` (may need new query)
+**Queries:**
+- `api.notes.getByClient(clientId)` — or filter `api.notes.list` by clientId
+- `api.notes.create({ clientId, title, content })` — for new notes
 
 ### Tasks Tab
+
+Shows the **current user's** tasks for this client (not all users' tasks — this matches the existing `api.tasks.getByClient` query which is user-scoped). This is a deliberate product decision: mobile is a personal productivity tool, not a team management surface.
 
 - Two sections: **Active** (sorted by due date) and **Completed** (collapsed by default, tap to expand)
 - Per task: title, due date badge, assignee, status indicator
 - Tap checkbox to toggle complete
 
-**Query:** `api.tasks.getByClient(clientId)`
+**Query:** `api.tasks.getByClient(clientId)` — returns current user's tasks only
 
 ### Checklist Tab
 
-- Progress bar at top: percentage + `N/M complete`
-- Items grouped by category
-- Per item: name, status toggle (complete/incomplete/N/A), linked document name if any
-- Tap checkbox to toggle status
+Uses `getClientLevelChecklist` (NOT `getChecklistByClient` which includes project-level items). Status values follow the existing schema: `missing`, `pending_review`, `fulfilled`.
 
-**Query:** `api.knowledgeLibrary.getChecklistByClient(clientId)`
+- Progress bar at top: percentage + `N/M fulfilled`
+- Items grouped by category
+- Per item: name, status toggle cycling through `missing` → `pending_review` → `fulfilled`, linked document name if any
+- Tap status to cycle
+
+**Queries:**
+- `api.knowledgeLibrary.getClientLevelChecklist(clientId)` — client-only checklist items
+- `api.knowledgeLibrary.updateChecklistItemStatus(...)` — status toggle mutation
 
 ### Meetings Tab
 
@@ -188,7 +223,7 @@ Reuses mobile doc library components:
 - Tap to expand full summary inline (accordion, not a new screen)
 - Read-only on mobile — no create/edit
 
-**Query:** `api.meetings.getByClient(clientId)` (may need new query or filter existing)
+**Query:** `api.meetings.getByClient(clientId)` — verify this exists; may need to filter `api.meetings.list` by clientId
 
 ### Threads Tab
 
@@ -198,7 +233,7 @@ Reuses mobile doc library components:
 - Comment input at bottom of expanded thread (simple text + submit)
 - Placeholder for future messaging expansion
 
-**Query:** `api.flags.getByClient(clientId)` (may need new query)
+**Query:** `api.flags.getByClient(clientId)` — verify this exists; may need new query
 
 ## Project Detail Screen
 
@@ -212,9 +247,9 @@ Same pattern as Client Detail:
 ### Tabs (6)
 
 1. **Overview** — project metrics + shortcut cards (same pattern as client overview, project-scoped)
-2. **Docs** — project-level folder browser + file list
-3. **Tasks** — project-scoped active/completed tasks
-4. **Intelligence** — project-scoped intelligence entries
+2. **Docs** — project-level folder browser + file list (nested navigator)
+3. **Tasks** — project-scoped active/completed tasks (current user only)
+4. **Intelligence** — project-scoped knowledge items
 5. **Checklist** — project-scoped checklist
 6. **Notes** — project-scoped notes
 
@@ -232,9 +267,23 @@ Same card-stack pattern as client overview but project-scoped:
 - `api.projects.getStats(projectId)` — doc count, loan amount, last activity
 - `api.tasks.getActiveCountByProject(projectId)`
 
-### Project Docs/Tasks/Intelligence/Checklist/Notes
+### Project Docs Tab
 
-Identical patterns to client-level versions, scoped by `projectId` instead of `clientId` in queries.
+Uses the same nested-navigator pattern as client Docs tab, but scoped to project-level folders:
+
+- Folder list via `folderStructure.getAllFoldersForClient(clientId)` → filter to project folders for `projectId`
+- Folder contents via `documents.getByFolder({ clientId, projectId, folderType, level: 'project' })`
+- Reuses `ProjectFolderList.tsx` pattern from existing m-docs
+
+This is NOT a simple "swap clientId for projectId" — the folder topology query takes `clientId` and the project folders are extracted from its response. The folder contents query takes both `clientId` AND `projectId` plus `level: 'project'`.
+
+### Project Tasks/Intelligence/Checklist/Notes
+
+Same patterns as client-level versions with project-scoped queries:
+- Tasks: `api.tasks.getByProject(projectId)` (current user only)
+- Intelligence: `api.knowledgeLibrary.getKnowledgeItemsByProject(projectId)` (verify/create)
+- Checklist: `api.knowledgeLibrary.getChecklistByProject(projectId)` with `missing`/`pending_review`/`fulfilled` statuses
+- Notes: `api.notes.getByProject(projectId)` or filter by projectId
 
 ## Component Structure
 
@@ -249,17 +298,17 @@ src/app/(mobile)/m-clients/
     └── tabs/
         ├── ClientOverviewTab.tsx     ← metric cards + shortcut sections
         ├── ClientProjectsTab.tsx     ← project list
-        ├── ClientDocsTab.tsx         ← reuses m-docs folder components
-        ├── ClientIntelligenceTab.tsx ← intelligence entries list
-        ├── ClientNotesTab.tsx        ← notes list + create
-        ├── ClientTasksTab.tsx        ← active/completed tasks
-        ├── ClientChecklistTab.tsx    ← checklist progress + items
+        ├── ClientDocsTab.tsx         ← nested doc navigator (reuses m-docs components)
+        ├── ClientIntelligenceTab.tsx ← knowledge items list
+        ├── ClientNotesTab.tsx        ← notes list + lightweight composer
+        ├── ClientTasksTab.tsx        ← user's active/completed tasks
+        ├── ClientChecklistTab.tsx    ← client-level checklist (missing/pending/fulfilled)
         ├── ClientMeetingsTab.tsx     ← meeting summaries (accordion)
         ├── ClientThreadsTab.tsx      ← flag threads (read + comment)
         ├── ProjectOverviewTab.tsx    ← project metrics + shortcuts
-        ├── ProjectDocsTab.tsx        ← project-scoped folder browser
+        ├── ProjectDocsTab.tsx        ← project-scoped nested doc navigator
         ├── ProjectTasksTab.tsx       ← project-scoped tasks
-        ├── ProjectIntelligenceTab.tsx← project-scoped intelligence
+        ├── ProjectIntelligenceTab.tsx← project-scoped knowledge items
         ├── ProjectChecklistTab.tsx   ← project-scoped checklist
         └── ProjectNotesTab.tsx       ← project-scoped notes
 ```
@@ -269,10 +318,12 @@ src/app/(mobile)/m-clients/
 | Component | Source | Used In |
 |-----------|--------|---------|
 | `FolderContents` | `m-docs/components/FolderContents.tsx` | ClientDocsTab, ProjectDocsTab |
-| `FileRow` | `m-docs/components/shared/FileRow.tsx` | All doc tabs |
+| `FileRow` | `m-docs/components/shared/FileRow.tsx` | All doc tabs (includes move/duplicate/delete/flag actions) |
 | `FolderRow` | `m-docs/components/shared/FolderRow.tsx` | All doc tabs |
-| `DocumentViewer` | `m-docs/components/DocumentViewer.tsx` | Pushed onto nav stack from any doc tap |
+| `DocumentViewer` | `m-docs/components/DocumentViewer.tsx` | Pushed onto nested doc nav from any doc tap |
 | `MoveFileSheet` | `m-docs/components/MoveFileSheet.tsx` | Available from FileRow's action menu |
+| `ProjectFolderList` | `m-docs/components/ProjectFolderList.tsx` | ProjectDocsTab |
+| `ClientDocDetail` | `m-docs/components/ClientDocDetail.tsx` | ClientDocsTab (pattern reference) |
 
 ## Design Tokens
 
@@ -290,16 +341,18 @@ Uses existing mobile design system (`--m-` prefix tokens from `globals.css`):
 - Data tab (desktop-only)
 - Project create/delete (desktop-only)
 - Full folder browser tree (simplified folder list instead)
+- Team-wide task view (mobile shows current user's tasks only)
 
-## Backend Queries
+## Backend Queries to Verify/Create
 
-Some queries may not exist yet at the client/project scope. During implementation, either:
-1. Use existing queries with client-side filtering (e.g., filter a global list by clientId)
-2. Add simple new Convex queries where client-side filtering would be too expensive
+During implementation, verify which queries exist and add simple new ones where needed:
 
-Queries to verify/create during implementation:
-- `api.contacts.getByClient(clientId)` — may not exist
-- `api.meetings.getByClient(clientId)` — may not exist  
-- `api.flags.getByClient(clientId)` — may not exist
-- `api.documentNotes.getByClient(clientId)` — may not exist
-- Intelligence queries scoped to client/project — may need new variants
+| Query | Table | Notes |
+|-------|-------|-------|
+| `knowledgeLibrary.getKnowledgeItemsByClient` | knowledgeLibrary | May exist; if not, add |
+| `knowledgeLibrary.getKnowledgeItemsByProject` | knowledgeLibrary | May exist; if not, add |
+| `notes.getByClient(clientId)` | notes | Filter by clientId |
+| `notes.getByProject(projectId)` | notes | Filter by projectId |
+| `meetings.getByClient(clientId)` | meetings | May need new query |
+| `flags.getByClient(clientId)` | flags | May need new query |
+| `contacts.getByClient(clientId)` | contacts | May need new query |
