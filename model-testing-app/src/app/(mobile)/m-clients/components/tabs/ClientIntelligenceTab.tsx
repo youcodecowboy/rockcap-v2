@@ -47,10 +47,14 @@ export default function ClientIntelligenceTab({ clientId }: ClientIntelligenceTa
 
   const renderItem = (item: (typeof items)[number], idx: number) => {
     const rec = item as Record<string, unknown>;
-    const label = (rec?.title as string) || (rec?.key as string) || 'Untitled';
-    const value = rec?.value as string | undefined;
+    // Knowledge items use `label` for the human-readable title and `fieldPath`
+    // for the canonical ID (e.g. "company.registrationNumber"). `value` holds
+    // the actual data. See convex/schema.ts knowledgeItems table definition.
+    const label = (rec?.label as string) || (rec?.fieldPath as string) || 'Untitled';
+    const value = rec?.value != null ? String(rec.value) : undefined;
     const sourceDocName = rec?.sourceDocumentName as string | undefined;
     const category = rec?.category as string | undefined;
+    const qualifier = rec?.qualifier as string | undefined;
 
     return (
       <div
@@ -60,7 +64,7 @@ export default function ClientIntelligenceTab({ clientId }: ClientIntelligenceTa
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">
-              {label}
+              {label}{qualifier ? ` (${qualifier})` : ''}
             </div>
             {value && (
               <div className="text-[12px] text-[var(--m-text-secondary)] mt-0.5 line-clamp-3">
