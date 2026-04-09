@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTabs } from '@/contexts/TabContext';
 import ClientList from './ClientList';
 import ClientDetail from './ClientDetail';
@@ -13,8 +13,8 @@ export type NavScreen =
 
 export default function ClientsContent() {
   const [navStack, setNavStack] = useState<NavScreen[]>([{ screen: 'list' }]);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const tabs = useTabs(); // reserved for future deep-link support
+  const { tabs: openTabs, activeTabId } = useTabs();
+  const activeTab = openTabs.find(t => t.id === activeTabId);
 
   const currentScreen = navStack[navStack.length - 1];
 
@@ -25,6 +25,14 @@ export default function ClientsContent() {
   const pop = useCallback(() => {
     setNavStack(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
   }, []);
+
+  useEffect(() => {
+    const paramClientId = activeTab?.params?.clientId;
+    const paramClientName = activeTab?.params?.clientName;
+    if (paramClientId && paramClientName && navStack.length === 1 && navStack[0].screen === 'list') {
+      push({ screen: 'client', clientId: paramClientId, clientName: paramClientName });
+    }
+  }, [activeTab?.params?.clientId]);
 
   return (
     <div className="min-h-[60vh]">
