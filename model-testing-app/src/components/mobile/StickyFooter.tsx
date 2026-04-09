@@ -3,10 +3,7 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { LayoutDashboard, Building, File, CheckSquare, MessageCircle } from 'lucide-react';
-
-interface StickyFooterProps {
-  onChatOpen: () => void;
-}
+import { useMessenger } from '@/contexts/MessengerContext';
 
 const navItems = [
   { href: '/m-dashboard', label: 'Home', icon: LayoutDashboard },
@@ -15,8 +12,9 @@ const navItems = [
   { href: '/m-tasks', label: 'Tasks', icon: CheckSquare },
 ];
 
-export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
+export default function StickyFooter() {
   const pathname = usePathname();
+  const { setChatOpen } = useMessenger();
 
   const isActive = (href: string) => {
     if (href === '/m-dashboard') return pathname === '/m-dashboard';
@@ -45,7 +43,7 @@ export default function StickyFooter({ onChatOpen }: StickyFooterProps) {
 
         {/* Chat FAB — dark, authoritative, compact */}
         <button
-          onClick={onChatOpen}
+          onClick={() => setChatOpen(true)}
           className="flex items-center justify-center w-11 h-11 -mt-4 bg-[var(--m-accent)] rounded-full shadow-md"
           aria-label="Open chat assistant"
         >
