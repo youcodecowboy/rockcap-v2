@@ -3,22 +3,23 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Menu, Search, Bell } from 'lucide-react';
-import { UserButton, useAuth } from '@clerk/nextjs';
+import { UserButton } from '@clerk/nextjs';
 import { useQuery } from 'convex/react';
+import { useConvexAuth } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import MobileNavDrawer from './MobileNavDrawer';
 
 export default function MobileHeader() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const router = useRouter();
-  const { isSignedIn } = useAuth();
+  const { isAuthenticated } = useConvexAuth();
 
-  // Skip auth-required queries until Clerk has loaded the session.
-  // Without this, the queries fire before authentication completes and
-  // throw "Unauthenticated" errors from the Convex backend.
-  const unreadNotifications = useQuery(api.notifications.getUnreadCount, isSignedIn ? {} : 'skip');
-  const openFlags = useQuery(api.flags.getMyFlags, isSignedIn ? { status: 'open' as const } : 'skip');
-  const unreadMessages = useQuery(api.conversations.getUnreadCount, isSignedIn ? {} : 'skip');
+  // Use Convex auth state (not Clerk's isSignedIn) — isAuthenticated only
+  // becomes true after the JWT has been passed to the Convex client,
+  // preventing "Unauthenticated" errors during the auth handoff window.
+  const unreadNotifications = useQuery(api.notifications.getUnreadCount, isAuthenticated ? {} : 'skip');
+  const openFlags = useQuery(api.flags.getMyFlags, isAuthenticated ? { status: 'open' as const } : 'skip');
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, isAuthenticated ? {} : 'skip');
 
   const totalUnread =
     (unreadNotifications ?? 0) + (openFlags?.length ?? 0) + (unreadMessages ?? 0);

@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { LayoutDashboard, Building, File, Mail, MessageCircle } from 'lucide-react';
-import { useQuery } from 'convex/react';
+import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { useMessenger } from '@/contexts/MessengerContext';
 
@@ -17,10 +17,11 @@ const navItems = [
 export default function StickyFooter() {
   const pathname = usePathname();
   const { setChatOpen } = useMessenger();
+  const { isAuthenticated } = useConvexAuth();
 
-  const unreadNotifications = useQuery(api.notifications.getUnreadCount, {});
-  const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
-  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+  const unreadNotifications = useQuery(api.notifications.getUnreadCount, isAuthenticated ? {} : 'skip');
+  const openFlags = useQuery(api.flags.getMyFlags, isAuthenticated ? { status: 'open' as const } : 'skip');
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, isAuthenticated ? {} : 'skip');
 
   const inboxBadge = (unreadNotifications ?? 0) + (openFlags?.length ?? 0) + (unreadMessages ?? 0);
 
