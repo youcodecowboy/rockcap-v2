@@ -15,6 +15,7 @@ import { Id } from '../../../../../convex/_generated/dataModel';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import { useMobileLayout } from '@/contexts/MobileLayoutContext';
 import EditorToolbar from './EditorToolbar';
+import MetadataChips from './MetadataChips';
 
 // ---------- constants ----------
 const DEBOUNCE_DELAY = 1500;
@@ -274,8 +275,8 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
         </div>
       </div>
 
-      {/* MetadataChips placeholder — will be wired in Task 5 */}
-      {/* <MetadataChips noteId={noteId} note={note} onSave={() => handleSave()} /> */}
+      {/* MetadataChips — client/project/tag pickers */}
+      <MetadataChips noteId={noteId} note={note} onSave={() => handleSave(editor?.getJSON())} />
 
       {/* Title input */}
       <input
