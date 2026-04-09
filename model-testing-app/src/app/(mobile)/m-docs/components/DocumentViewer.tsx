@@ -4,8 +4,9 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { X, Download, ExternalLink, PanelTop } from 'lucide-react';
+import { X, Download, ExternalLink, PanelTop, Send } from 'lucide-react';
 import { useTabs } from '@/contexts/TabContext';
+import { useMessenger } from '@/contexts/MessengerContext';
 import PreviewTab from './DocumentViewerTabs/PreviewTab';
 import DetailsTab from './DocumentViewerTabs/DetailsTab';
 import SummaryTab from './DocumentViewerTabs/SummaryTab';
@@ -31,6 +32,7 @@ interface DocumentViewerProps {
 export default function DocumentViewer({ documentId, onClose }: DocumentViewerProps) {
   const [activeTab, setActiveTab] = useState<ViewerTab>('preview');
   const { openTab } = useTabs();
+  const { startNewMessage } = useMessenger();
   const [toastVisible, setToastVisible] = useState(false);
 
   const doc = useQuery(api.documents.get, { id: documentId as Id<'documents'> });
@@ -46,6 +48,19 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
     markedRef[1](documentId);
     markAsOpened({ documentId: documentId as Id<'documents'> }).catch(() => {});
   }
+
+  const handleSendToMessage = useCallback(() => {
+    if (!doc) return;
+    startNewMessage({
+      references: [{
+        type: 'document',
+        id: documentId,
+        name: doc.fileName || 'Untitled',
+        meta: { clientId: doc.clientId, projectId: doc.projectId },
+      }],
+      suggestedTitle: `Re: ${doc.fileName || 'Document'}`,
+    });
+  }, [doc, documentId, startNewMessage]);
 
   const handleAddToTabs = useCallback(() => {
     if (!doc) return;
@@ -83,6 +98,13 @@ export default function DocumentViewer({ documentId, onClose }: DocumentViewerPr
             <p className="text-[12px] text-[var(--m-text-tertiary)] mt-0.5 truncate">{subtitle}</p>
           ) : null}
         </div>
+        <button
+          onClick={handleSendToMessage}
+          className="shrink-0 p-1.5 text-[var(--m-text-tertiary)] active:text-[var(--m-accent)]"
+          aria-label="Send to message"
+        >
+          <Send className="w-4 h-4" />
+        </button>
         <button
           onClick={onClose}
           className="shrink-0 p-1 -mr-1 text-[var(--m-text-tertiary)] active:text-[var(--m-text-primary)]"

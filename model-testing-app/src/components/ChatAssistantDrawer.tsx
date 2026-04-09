@@ -15,6 +15,9 @@ import BulkActionConfirmationModal from './BulkActionConfirmationModal';
 import ChatBriefing, { generateBriefingItems } from './ChatBriefing';
 import { parseMentions } from '@/lib/chat/mentionParser';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
+import { useMessenger } from '@/contexts/MessengerContext';
+import ModeToggle from '@/components/chat/ModeToggle';
+import MessengerPanel from '@/components/chat/MessengerPanel';
 
 // Context Badge Component
 function ContextBadge({
@@ -67,7 +70,9 @@ function ContextBadge({
 export default function ChatAssistantDrawer() {
   const router = useRouter();
   const { isOpen, setIsOpen } = useChatDrawer();
-  
+  const { mode } = useMessenger();
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+
   const onClose = () => setIsOpen(false);
   const [currentSessionId, setCurrentSessionId] = useState<Id<"chatSessions"> | null>(null);
   const [contextType, setContextType] = useState<'global' | 'client' | 'project'>('global');
@@ -698,135 +703,144 @@ export default function ChatAssistantDrawer() {
                   <Settings2 className="w-4 h-4 text-gray-600" />
                 </button>
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+              <div className="flex items-center gap-2">
+                <ModeToggle unreadMessageCount={unreadMessages ?? 0} variant="desktop" />
+                <button
+                  onClick={onClose}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5 text-gray-600" />
+                </button>
+              </div>
             </div>
 
-            {/* Context Selector */}
-            {showContextSelector && (
-              <div className="border-b border-gray-200 p-4 bg-gray-50">
-                <ContextSelector
-                  currentType={contextType}
-                  currentClientId={contextClientId}
-                  currentProjectId={contextProjectId}
-                  onChange={handleContextChange}
-                />
-              </div>
-            )}
-
-            {/* Context Badge */}
-            {(contextType !== 'global' || contextClientId || contextProjectId) && (
-              <ContextBadge
-                contextType={contextType}
-                clientId={contextClientId}
-                projectId={contextProjectId}
-              />
-            )}
-
-            {/* Context Gathering Progress */}
-            {isGatheringContext && (
-              <div className="px-6 py-4 bg-blue-50 border-b border-blue-100">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-blue-900">
-                      Preparing AI context...
-                    </div>
-                    <div className="text-xs text-blue-700 mt-1">
-                      {contextProgress || 'Gathering knowledge bank entries, documents, notes, and related data...'}
-                    </div>
-                    <div className="mt-2 text-xs text-blue-600">
-                      This may take a few moments. You can start typing your message below.
-                    </div>
+            {mode === 'assistant' && (
+              <>
+                {/* Context Selector */}
+                {showContextSelector && (
+                  <div className="border-b border-gray-200 p-4 bg-gray-50">
+                    <ContextSelector
+                      currentType={contextType}
+                      currentClientId={contextClientId}
+                      currentProjectId={contextProjectId}
+                      onChange={handleContextChange}
+                    />
                   </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 bg-gray-50">
-              {messages && messages.length > 0 ? (
-                <>
-                  {messages.map((message) => (
-                    <ChatMessage
-                      key={message._id}
-                      role={message.role}
-                      content={message.content}
-                      timestamp={message.createdAt}
-                      tokensUsed={message.metadata?.tokensUsed}
-                      metadata={message.metadata}
-                    />
-                  ))}
-                  {/* Activity Messages */}
-                  {activityMessages.map((activity) => (
-                    <ChatMessage
-                      key={activity.id}
-                      role="tool-activity"
-                      content={activity.activity}
-                    />
-                  ))}
-                  {/* Thinking Indicator */}
-                  {isLoading && (
-                    <ChatMessage role="assistant" content="" isThinking={true} />
-                  )}
-                  <div ref={messagesEndRef} />
-                </>
-              ) : (
-                <div className="flex flex-col h-full">
-                  {!isLoading && (
-                    <>
-                      {/* Proactive Briefing */}
-                      {briefingItems.length > 0 && (contextClient || contextProject) && (
-                        <ChatBriefing
-                          items={briefingItems}
-                          entityName={contextProject?.name || contextClient?.name || 'Unknown'}
-                          entityType={contextProjectId ? 'project' : 'client'}
-                          onAskAbout={(text) => setInitialMessage(text)}
-                        />
-                      )}
-                      <div className="flex items-center justify-center flex-1">
-                        <div className="text-center">
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">
-                            Welcome to AI Assistant
-                          </h3>
-                          <p className="text-sm text-gray-500 max-w-md">
-                            I can help you manage clients, projects, documents, and more. Just ask me anything!
-                          </p>
+                {/* Context Badge */}
+                {(contextType !== 'global' || contextClientId || contextProjectId) && (
+                  <ContextBadge
+                    contextType={contextType}
+                    clientId={contextClientId}
+                    projectId={contextProjectId}
+                  />
+                )}
+
+                {/* Context Gathering Progress */}
+                {isGatheringContext && (
+                  <div className="px-6 py-4 bg-blue-50 border-b border-blue-100">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-blue-900">
+                          Preparing AI context...
+                        </div>
+                        <div className="text-xs text-blue-700 mt-1">
+                          {contextProgress || 'Gathering knowledge bank entries, documents, notes, and related data...'}
+                        </div>
+                        <div className="mt-2 text-xs text-blue-600">
+                          This may take a few moments. You can start typing your message below.
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto px-6 py-4 bg-gray-50">
+                  {messages && messages.length > 0 ? (
+                    <>
+                      {messages.map((message) => (
+                        <ChatMessage
+                          key={message._id}
+                          role={message.role}
+                          content={message.content}
+                          timestamp={message.createdAt}
+                          tokensUsed={message.metadata?.tokensUsed}
+                          metadata={message.metadata}
+                        />
+                      ))}
+                      {/* Activity Messages */}
+                      {activityMessages.map((activity) => (
+                        <ChatMessage
+                          key={activity.id}
+                          role="tool-activity"
+                          content={activity.activity}
+                        />
+                      ))}
+                      {/* Thinking Indicator */}
+                      {isLoading && (
+                        <ChatMessage role="assistant" content="" isThinking={true} />
+                      )}
+                      <div ref={messagesEndRef} />
                     </>
-                  )}
-                  {isLoading && (
-                    <div className="pt-4">
-                      <ChatMessage role="assistant" content="" isThinking={true} />
+                  ) : (
+                    <div className="flex flex-col h-full">
+                      {!isLoading && (
+                        <>
+                          {/* Proactive Briefing */}
+                          {briefingItems.length > 0 && (contextClient || contextProject) && (
+                            <ChatBriefing
+                              items={briefingItems}
+                              entityName={contextProject?.name || contextClient?.name || 'Unknown'}
+                              entityType={contextProjectId ? 'project' : 'client'}
+                              onAskAbout={(text) => setInitialMessage(text)}
+                            />
+                          )}
+                          <div className="flex items-center justify-center flex-1">
+                            <div className="text-center">
+                              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                                Welcome to AI Assistant
+                              </h3>
+                              <p className="text-sm text-gray-500 max-w-md">
+                                I can help you manage clients, projects, documents, and more. Just ask me anything!
+                              </p>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      {isLoading && (
+                        <div className="pt-4">
+                          <ChatMessage role="assistant" content="" isThinking={true} />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* Input */}
-            <ChatInput
-              onSend={(msg, file) => {
-                setInitialMessage('');
-                handleSendMessage(msg, file);
-              }}
-              onFileSelect={handleFileUpload}
-              disabled={isLoading}
-              initialMessage={initialMessage}
-              placeholder={
-                isLoading
-                  ? 'AI is thinking...'
-                  : isGatheringContext
-                  ? 'Preparing context... (you can still type)'
-                  : 'Ask me anything...'
-              }
-            />
+                {/* Input */}
+                <ChatInput
+                  onSend={(msg, file) => {
+                    setInitialMessage('');
+                    handleSendMessage(msg, file);
+                  }}
+                  onFileSelect={handleFileUpload}
+                  disabled={isLoading}
+                  initialMessage={initialMessage}
+                  placeholder={
+                    isLoading
+                      ? 'AI is thinking...'
+                      : isGatheringContext
+                      ? 'Preparing context... (you can still type)'
+                      : 'Ask me anything...'
+                  }
+                />
+              </>
+            )}
+
+            {mode === 'messenger' && <MessengerPanel variant="desktop" />}
           </div>
         </div>
       </div>

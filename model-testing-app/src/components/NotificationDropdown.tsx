@@ -5,7 +5,8 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { useRouter } from 'next/navigation';
-import { Bell, CheckCircle2, AlertCircle, Loader2, X, Clock, CheckSquare, History, Files, FolderOpen, Flag, AtSign } from 'lucide-react';
+import { Bell, CheckCircle2, AlertCircle, Loader2, X, Clock, CheckSquare, History, Files, FolderOpen, Flag, AtSign, MessageSquare } from 'lucide-react';
+import { useMessenger } from '@/contexts/MessengerContext';
 
 const formatTimeAgo = (dateString: string): string => {
   const date = new Date(dateString);
@@ -26,6 +27,7 @@ export default function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { openConversation } = useMessenger();
 
   const recentJobs = useQuery(api.fileQueue.getRecentJobs, { includeRead: false });
   const unreadCount = useQuery(api.fileQueue.getUnreadCount);
@@ -38,6 +40,10 @@ export default function NotificationDropdown() {
   const markNotificationAsRead = useMutation(api.notifications.markAsRead);
   const markAllNotificationsAsRead = useMutation(api.notifications.markAllAsRead);
   
+  // Conversations (unread messages)
+  const conversations = useQuery(api.conversations.getMyConversations, {});
+  const unreadConversations = conversations?.filter((c: any) => c.unreadCount > 0)?.slice(0, 3) || [];
+
   // Bulk upload batches
   const currentUser = useQuery(api.users.getCurrent, {});
   const pendingBatches = useQuery(
@@ -201,6 +207,47 @@ export default function NotificationDropdown() {
 
           {/* Content */}
           <div className="overflow-y-auto flex-1">
+            {/* Unread Messages Section */}
+            {unreadConversations.length > 0 && (
+              <div className="border-b border-gray-200">
+                <div className="px-4 py-2 bg-gray-50">
+                  <p className="text-xs font-medium text-gray-700 flex items-center gap-1">
+                    <MessageSquare className="w-3 h-3" />
+                    Messages
+                  </p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {unreadConversations.map((conv: any) => (
+                    <button
+                      key={conv._id}
+                      onClick={() => {
+                        openConversation(conv._id);
+                        setIsOpen(false);
+                      }}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        <MessageSquare className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-gray-900 truncate">{conv.title}</p>
+                            {conv.unreadCount > 0 && (
+                              <span className="shrink-0 flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-blue-600 text-xs font-medium text-white">
+                                {conv.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                          {conv.lastMessagePreview && (
+                            <p className="text-xs text-gray-500 mt-0.5 truncate">{conv.lastMessagePreview}</p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Reminder and Task Notifications */}
             {notifications && notifications.length > 0 && (
               <div className="divide-y divide-gray-100">
@@ -518,7 +565,7 @@ export default function NotificationDropdown() {
             )}
 
             {/* Empty State */}
-            {totalJobs === 0 && totalNotifications === 0 && bulkBatchCount === 0 && (
+            {totalJobs === 0 && totalNotifications === 0 && bulkBatchCount === 0 && unreadConversations.length === 0 && (
               <div className="px-4 py-8 text-center text-sm text-gray-500">
                 No notifications
               </div>

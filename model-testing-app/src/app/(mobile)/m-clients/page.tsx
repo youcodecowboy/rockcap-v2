@@ -1,12 +1,5 @@
-import { Building } from 'lucide-react';
-import MobilePlaceholder from '../MobilePlaceholder';
-
-export default function MobileClients() {
-  return (
-    <MobilePlaceholder
-      title="Clients"
-      description="Browse client profiles and projects"
-      icon={Building}
-    />
-  );
+'use client';
+import ClientsContent from './components/ClientsContent';
+export default function MobileClientsPage() {
+  return <ClientsContent />;
 }

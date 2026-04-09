@@ -1680,7 +1680,8 @@ export default defineSchema({
       v.literal("task"),
       v.literal("changelog"),
       v.literal("flag"),
-      v.literal("mention")
+      v.literal("mention"),
+      v.literal("message")
     ),
     title: v.string(),
     message: v.string(),
@@ -3319,5 +3320,51 @@ export default defineSchema({
     createdAt: v.string(),
   })
     .index("by_flag", ["flagId", "createdAt"]),
+
+  // ============================================================================
+  // Direct Messaging
+  // ============================================================================
+
+  conversations: defineTable({
+    participantIds: v.array(v.id("users")),
+    title: v.string(),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    lastMessageAt: v.optional(v.string()),
+    lastMessagePreview: v.optional(v.string()),
+    lastMessageSenderId: v.optional(v.id("users")),
+    readCursors: v.optional(v.any()),
+    createdAt: v.string(),
+    createdBy: v.id("users"),
+  })
+    .index("by_lastMessage", ["lastMessageAt"])
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"]),
+
+  directMessages: defineTable({
+    conversationId: v.id("conversations"),
+    senderId: v.id("users"),
+    content: v.string(),
+    references: v.optional(
+      v.array(
+        v.object({
+          type: v.union(
+            v.literal("document"),
+            v.literal("project"),
+            v.literal("client")
+          ),
+          id: v.string(),
+          name: v.string(),
+          meta: v.optional(v.any()),
+        })
+      )
+    ),
+    isEdited: v.optional(v.boolean()),
+    isDeleted: v.optional(v.boolean()),
+    createdAt: v.string(),
+    updatedAt: v.optional(v.string()),
+  })
+    .index("by_conversation", ["conversationId", "createdAt"])
+    .index("by_sender", ["senderId"]),
 });
 
