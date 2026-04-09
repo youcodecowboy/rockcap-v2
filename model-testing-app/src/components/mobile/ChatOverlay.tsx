@@ -451,47 +451,43 @@ export default function ChatOverlay() {
         <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
         {/* Bottom-sheet panel */}
-        <div className="relative mt-auto h-[85vh] bg-[var(--m-bg)] rounded-t-xl flex flex-col z-10 shadow-2xl">
-          {/* Drag handle */}
-          <div className="flex justify-center pt-2 pb-1">
-            <div className="w-8 h-[3px] bg-[var(--m-border)] rounded-full" />
-          </div>
-
-          {/* Full-width 50/50 mode toggle bar */}
-          <div className="flex bg-black">
-            <button
-              onClick={() => setMode('assistant')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-[13px] font-medium transition-colors ${
-                mode === 'assistant'
-                  ? 'bg-black text-white'
-                  : 'bg-white text-black'
-              }`}
-            >
-              <BotMessageSquare className="w-4 h-4" />
-              Assistant
-            </button>
-            <button
-              onClick={() => setMode('messenger')}
-              className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 text-[13px] font-medium transition-colors ${
-                mode === 'messenger'
-                  ? 'bg-black text-white'
-                  : 'bg-white text-black'
-              }`}
-            >
-              <MessagesSquare className="w-4 h-4" />
-              Messages
-              {(unreadMessages ?? 0) > 0 && (
-                <span className="min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold px-1 bg-[var(--m-error)] text-white">
-                  {(unreadMessages ?? 0) > 9 ? '9+' : unreadMessages}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-3 flex items-center justify-center text-white active:text-gray-400"
-            >
-              <X className="w-4 h-4" />
-            </button>
+        <div className="relative mt-auto h-[85vh] bg-[var(--m-bg)] rounded-t-xl flex flex-col z-10 shadow-2xl overflow-hidden">
+          {/* Black header: drag handle + 50/50 mode toggle */}
+          <div className="bg-black rounded-t-xl flex-shrink-0">
+            {/* Drag handle */}
+            <div className="flex justify-center pt-2.5 pb-1.5">
+              <div className="w-8 h-[3px] bg-gray-600 rounded-full" />
+            </div>
+            {/* Mode toggle buttons */}
+            <div className="flex">
+              <button
+                onClick={() => setMode('assistant')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-[13px] font-medium transition-colors ${
+                  mode === 'assistant'
+                    ? 'bg-black text-white'
+                    : 'bg-white text-black'
+                }`}
+              >
+                <BotMessageSquare className="w-4 h-4" />
+                Assistant
+              </button>
+              <button
+                onClick={() => setMode('messenger')}
+                className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 text-[13px] font-medium transition-colors ${
+                  mode === 'messenger'
+                    ? 'bg-black text-white'
+                    : 'bg-white text-black'
+                }`}
+              >
+                <MessagesSquare className="w-4 h-4" />
+                Messages
+                {(unreadMessages ?? 0) > 0 && (
+                  <span className="min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold px-1 bg-[var(--m-error)] text-white">
+                    {(unreadMessages ?? 0) > 9 ? '9+' : unreadMessages}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* ── ASSISTANT MODE ── */}
