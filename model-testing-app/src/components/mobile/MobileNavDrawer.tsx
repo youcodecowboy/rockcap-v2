@@ -11,6 +11,7 @@ import {
   CheckSquare,
   FileText,
   ContactRound,
+  Mail,
 } from 'lucide-react';
 
 interface MobileNavDrawerProps {
@@ -22,6 +23,7 @@ const navItems = [
   { href: '/m-dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/m-clients', label: 'Clients', icon: Building },
   { href: '/m-docs', label: 'Documents', icon: File },
+  { href: '/m-inbox', label: 'Inbox', icon: Mail },
   { href: '/m-tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/m-notes', label: 'Notes', icon: FileText },
   { href: '/m-contacts', label: 'Contacts', icon: ContactRound },

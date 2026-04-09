@@ -2,19 +2,27 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, Building, File, CheckSquare, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Building, File, Mail, MessageCircle } from 'lucide-react';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 import { useMessenger } from '@/contexts/MessengerContext';
 
 const navItems = [
   { href: '/m-dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/m-clients', label: 'Clients', icon: Building },
   { href: '/m-docs', label: 'Docs', icon: File },
-  { href: '/m-tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/m-inbox', label: 'Inbox', icon: Mail },
 ];
 
 export default function StickyFooter() {
   const pathname = usePathname();
   const { setChatOpen } = useMessenger();
+
+  const unreadNotifications = useQuery(api.notifications.getUnreadCount, {});
+  const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+
+  const inboxBadge = (unreadNotifications ?? 0) + (openFlags?.length ?? 0) + (unreadMessages ?? 0);
 
   const isActive = (href: string) => {
     if (href === '/m-dashboard') return pathname === '/m-dashboard';
@@ -24,7 +32,7 @@ export default function StickyFooter() {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-[var(--m-bg)] border-t border-[var(--m-border)] z-30 pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-[var(--m-footer-h)] px-2">
-        {navItems.slice(0, 2).map(item => {
+        {navItems.slice(0, 2).map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
           return (
@@ -33,34 +41,59 @@ export default function StickyFooter() {
               href={item.href}
               className="flex flex-col items-center gap-0.5 min-w-[44px]"
             >
-              <Icon className={`w-[18px] h-[18px] ${active ? 'text-[var(--m-text-primary)]' : 'text-[var(--m-text-tertiary)]'}`} />
-              <span className={`text-[9px] tracking-wide uppercase ${active ? 'text-[var(--m-text-primary)] font-medium' : 'text-[var(--m-text-tertiary)]'}`}>
+              <Icon
+                className={`w-[18px] h-[18px] ${
+                  active ? 'text-[var(--m-text-primary)]' : 'text-[var(--m-text-tertiary)]'
+                }`}
+              />
+              <span
+                className={`text-[9px] tracking-wide uppercase ${
+                  active
+                    ? 'text-[var(--m-text-primary)] font-medium'
+                    : 'text-[var(--m-text-tertiary)]'
+                }`}
+              >
                 {item.label}
               </span>
             </Link>
           );
         })}
 
-        {/* Chat FAB — dark, authoritative, compact */}
         <button
           onClick={() => setChatOpen(true)}
           className="flex items-center justify-center w-11 h-11 -mt-4 bg-[var(--m-accent)] rounded-full shadow-md"
-          aria-label="Open chat assistant"
+          aria-label="Open chat"
         >
           <MessageCircle className="w-[18px] h-[18px] text-white" />
         </button>
 
-        {navItems.slice(2).map(item => {
+        {navItems.slice(2).map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
+          const showBadge = item.href === '/m-inbox' && inboxBadge > 0;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-col items-center gap-0.5 min-w-[44px]"
+              className="relative flex flex-col items-center gap-0.5 min-w-[44px]"
             >
-              <Icon className={`w-[18px] h-[18px] ${active ? 'text-[var(--m-text-primary)]' : 'text-[var(--m-text-tertiary)]'}`} />
-              <span className={`text-[9px] tracking-wide uppercase ${active ? 'text-[var(--m-text-primary)] font-medium' : 'text-[var(--m-text-tertiary)]'}`}>
+              <Icon
+                className={`w-[18px] h-[18px] ${
+                  active ? 'text-[var(--m-text-primary)]' : 'text-[var(--m-text-tertiary)]'
+                }`}
+              />
+              {showBadge && (
+                <span className="absolute -top-1 right-1 bg-[var(--m-error)] text-white text-[8px] font-bold min-w-[14px] h-[14px] flex items-center justify-center rounded-full px-0.5 leading-none">
+                  {inboxBadge > 9 ? '9+' : inboxBadge}
+                </span>
+              )}
+              <span
+                className={`text-[9px] tracking-wide uppercase ${
+                  active
+                    ? 'text-[var(--m-text-primary)] font-medium'
+                    : 'text-[var(--m-text-tertiary)]'
+                }`}
+              >
                 {item.label}
               </span>
             </Link>

@@ -1,12 +1,23 @@
 'use client';
 
 import { useState } from 'react';
-import { Menu, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Menu, Search, Bell } from 'lucide-react';
 import { UserButton } from '@clerk/nextjs';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 import MobileNavDrawer from './MobileNavDrawer';
 
 export default function MobileHeader() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const router = useRouter();
+
+  const unreadNotifications = useQuery(api.notifications.getUnreadCount, {});
+  const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+
+  const totalUnread =
+    (unreadNotifications ?? 0) + (openFlags?.length ?? 0) + (unreadMessages ?? 0);
 
   return (
     <>
@@ -33,6 +44,18 @@ export default function MobileHeader() {
             aria-label="Search"
           >
             <Search className="w-[18px] h-[18px]" />
+          </button>
+          <button
+            onClick={() => router.push('/m-inbox')}
+            className="relative p-1.5 text-[var(--m-text-tertiary)] active:text-[var(--m-text-secondary)]"
+            aria-label="Inbox"
+          >
+            <Bell className="w-[18px] h-[18px]" />
+            {totalUnread > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-[var(--m-error)] text-white text-[9px] font-bold min-w-[16px] h-[16px] flex items-center justify-center rounded-full px-1 leading-none">
+                {totalUnread > 9 ? '9+' : totalUnread}
+              </span>
+            )}
           </button>
           <div className="w-6 h-6">
             <UserButton afterSignOutUrl="/" />
