@@ -22,6 +22,9 @@ const DEBOUNCE_DELAY = 1500;
 const MIN_SAVE_INTERVAL = 2000;
 const MAX_RETRIES = 3;
 
+const EMOJI_PRESETS = ['📝', '📋', '📊', '💡', '🏗️', '🏠', '💰', '📞', '✅', '⚠️', '🔑', '📎',
+  '🎯', '📌', '🗓️', '💼', '📁', '🔍', '⭐', '🚀', '💬', '📈', '🛠️', '❓'];
+
 // ---------- helpers ----------
 function hasContentText(content: any): boolean {
   if (!content) return false;
@@ -48,6 +51,7 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
   // --- state ---
   const [title, setTitle] = useState('');
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'unsaved' | 'error'>('saved');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const isSavingRef = useRef(false);
   const lastSaveTimeRef = useRef(0);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -278,18 +282,41 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
       {/* MetadataChips — client/project/tag pickers */}
       <MetadataChips noteId={noteId} note={note} onSave={() => handleSave(editor?.getJSON())} />
 
-      {/* Title input */}
-      <input
-        value={title}
-        onChange={(e) => {
-          setTitle(e.target.value);
-          setSaveStatus('unsaved');
-          scheduleSave();
-        }}
-        placeholder="Untitled"
-        style={{ fontSize: '18px' }}
-        className="px-[var(--m-page-px)] py-3 text-[18px] font-semibold text-[var(--m-text-primary)] outline-none bg-transparent border-b border-[var(--m-border-subtle)] flex-shrink-0"
-      />
+      {/* Title input with emoji picker */}
+      <div className="flex items-center px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)] flex-shrink-0 relative">
+        <button
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          className="text-[22px] mr-2 flex-shrink-0 active:opacity-70"
+        >
+          {note?.emoji || '📄'}
+        </button>
+        <input
+          value={title}
+          onChange={e => { setTitle(e.target.value); setSaveStatus('unsaved'); scheduleSave(); }}
+          placeholder="Untitled"
+          style={{ fontSize: '18px' }}
+          className="flex-1 text-[18px] font-semibold text-[var(--m-text-primary)] outline-none bg-transparent"
+        />
+        {showEmojiPicker && (
+          <>
+            <div className="fixed inset-0 z-[60]" onClick={() => setShowEmojiPicker(false)} />
+            <div className="absolute left-[var(--m-page-px)] top-full mt-1 z-[61] bg-[var(--m-bg)] border border-[var(--m-border)] rounded-lg shadow-lg p-2 grid grid-cols-6 gap-1">
+              {EMOJI_PRESETS.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={async () => {
+                    await updateNote({ id: noteId as Id<'notes'>, emoji });
+                    setShowEmojiPicker(false);
+                  }}
+                  className="w-[40px] h-[40px] flex items-center justify-center text-[20px] rounded-md active:bg-[var(--m-bg-subtle)]"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Editor content — scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto px-[var(--m-page-px)] py-3 pb-[60px]">

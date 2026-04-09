@@ -8,12 +8,15 @@ import { Id } from '../../../../../../convex/_generated/dataModel';
 function extractPlainText(content: unknown): string {
   if (!content) return '';
   try {
-    const nodes = typeof content === 'string' ? JSON.parse(content) : content;
-    if (!Array.isArray(nodes)) return String(content);
-    return nodes
-      .flatMap((node: any) => (node.children ?? []).map((c: any) => c.text ?? ''))
-      .join(' ')
-      .trim();
+    const doc = typeof content === 'string' ? JSON.parse(content) : content;
+    if (typeof doc !== 'object') return String(doc);
+    const texts: string[] = [];
+    function walk(node: any) {
+      if (node.text) texts.push(node.text);
+      if (node.content) node.content.forEach(walk);
+    }
+    walk(doc);
+    return texts.join(' ').trim();
   } catch {
     return typeof content === 'string' ? content : '';
   }
