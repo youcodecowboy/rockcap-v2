@@ -1,4 +1,5 @@
 import { TabProvider } from '@/contexts/TabContext';
+import { MessengerProvider } from '@/contexts/MessengerContext';
 import MobileShell from '@/components/mobile/MobileShell';
 import type { Viewport } from 'next';
 
@@ -19,8 +20,10 @@ export default function MobileLayout({
   children: React.ReactNode;
 }) {
   return (
-    <TabProvider>
-      <MobileShell>{children}</MobileShell>
-    </TabProvider>
+    <MessengerProvider>
+      <TabProvider>
+        <MobileShell>{children}</MobileShell>
+      </TabProvider>
+    </MessengerProvider>
   );
 }
