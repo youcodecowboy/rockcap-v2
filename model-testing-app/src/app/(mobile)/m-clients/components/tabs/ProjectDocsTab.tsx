@@ -76,11 +76,14 @@ export default function ProjectDocsTab({ projectId, clientId, clientName }: Proj
   // --- Folders list view ---
   const isLoading = foldersData === undefined || folderCounts === undefined;
 
-  // Compute unfiled count
+  // Compute unfiled count.
+  // IMPORTANT: getFolderCounts keys project folder counts by `folderType`
+  // (e.g. "background", "terms_comparison"), NOT by folder record `_id`.
+  // This is the same dual-identity model used throughout the doc library.
   const topLevelFolders = folders.filter((f: any) => !f.parentFolderId);
-  const knownFolderIds = new Set(topLevelFolders.map((f: any) => f._id));
+  const knownFolderTypes = new Set(topLevelFolders.map((f: any) => f.folderType));
   const filedCount = Object.entries(projectFolderCounts)
-    .filter(([key]) => knownFolderIds.has(key))
+    .filter(([key]) => knownFolderTypes.has(key))
     .reduce((sum, [, n]) => sum + (n as number), 0);
 
   // Total project docs = sum of all counts in projectFolderCounts
@@ -106,7 +109,7 @@ export default function ProjectDocsTab({ projectId, clientId, clientName }: Proj
       ) : (
         <>
           {topLevelFolders.map((folder: any) => {
-            const count = projectFolderCounts[folder._id] ?? 0;
+            const count = projectFolderCounts[folder.folderType] ?? 0;
             return (
               <FolderRow
                 key={folder._id}
