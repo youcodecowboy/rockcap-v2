@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react';
 import type { BatchInfo } from '@/lib/bulkQueueProcessor';
 import UploadSetup from './components/UploadSetup';
 import ProcessingScreen from './components/ProcessingScreen';
+import ReviewFlow from './components/ReviewFlow';
 
 type UploadPhase =
   | { phase: 'setup' }
@@ -90,14 +91,10 @@ export default function MobileUploadPage() {
 
   if (uploadPhase.phase === 'review') {
     return (
-      <div className="flex items-center justify-center h-full px-[var(--m-page-px)]">
-        <div className="text-center space-y-3">
-          <div className="text-[15px] font-medium text-[var(--m-text-primary)]">Review pending</div>
-          <div className="text-[12px] text-[var(--m-text-tertiary)]">
-            Batch: {uploadPhase.batchId}
-          </div>
-        </div>
-      </div>
+      <ReviewFlow
+        batchId={uploadPhase.batchId}
+        onFiled={() => setUploadPhase({ phase: 'done', batchId: uploadPhase.batchId })}
+      />
     );
   }
 
