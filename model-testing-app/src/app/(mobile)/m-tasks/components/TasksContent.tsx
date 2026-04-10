@@ -158,10 +158,11 @@ export default function TasksContent() {
 
       <button
         onClick={() => setShowCreation(true)}
-        className="fixed bottom-[calc(var(--m-footer-h)+env(safe-area-inset-bottom)+1rem)] right-4 w-12 h-12 bg-[var(--m-accent)] text-white rounded-full shadow-lg flex items-center justify-center z-20"
+        className="fixed bottom-[calc(var(--m-footer-h)+env(safe-area-inset-bottom)+1rem)] right-4 bg-[var(--m-accent)] text-white rounded-full shadow-lg flex items-center gap-1.5 px-4 py-3 z-20"
         aria-label="Create new task"
       >
-        <Plus className="w-6 h-6" />
+        <Plus className="w-4 h-4" />
+        <span className="text-sm font-semibold">New Task</span>
       </button>
 
       <TaskDetailSheet
