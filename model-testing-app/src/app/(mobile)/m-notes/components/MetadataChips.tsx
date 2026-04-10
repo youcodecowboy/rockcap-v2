@@ -4,7 +4,8 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Plus, ChevronLeft } from 'lucide-react';
+import { Plus, ChevronLeft, Building2, FolderKanban, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface MetadataChipsProps {
   noteId: string;
@@ -14,7 +15,42 @@ interface MetadataChipsProps {
 
 type PickerMode = 'list' | 'create';
 
+function formatRelativeDate(dateString?: string): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// Consistent color palette for tags
+const TAG_COLORS = [
+  'bg-blue-100 text-blue-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-violet-100 text-violet-700',
+  'bg-amber-100 text-amber-700',
+  'bg-rose-100 text-rose-700',
+  'bg-cyan-100 text-cyan-700',
+  'bg-fuchsia-100 text-fuchsia-700',
+  'bg-lime-100 text-lime-700',
+];
+
+function tagColor(tag: string): string {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = ((hash << 5) - hash + tag.charCodeAt(i)) | 0;
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
 export default function MetadataChips({ noteId, note, onSave }: MetadataChipsProps) {
+  const router = useRouter();
   const updateNote = useMutation(api.notes.update);
   const createClient = useMutation(api.clients.create);
   const createProject = useMutation(api.projects.create);
@@ -192,97 +228,108 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
 
   return (
     <>
-      {/* Chips row */}
-      <div className="flex gap-1.5 overflow-x-auto px-[var(--m-page-px)] py-2 border-b border-[var(--m-border-subtle)] scrollbar-none flex-shrink-0">
-        {/* Client chip */}
-        {note?.clientId && clientName ? (
-          <button
-            onClick={() => { resetPickerState(); setShowClientPicker(true); }}
-            className="bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)] rounded-full px-2.5 py-1 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap flex-shrink-0"
-          >
-            {clientName}
-            <span
-              onClick={(e) => { e.stopPropagation(); handleRemoveClient(); }}
-              className="text-[var(--m-text-placeholder)] active:text-[var(--m-text-primary)]"
-            >
-              &times;
-            </span>
-          </button>
-        ) : (
-          <button
-            onClick={() => { resetPickerState(); setShowClientPicker(true); }}
-            className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap flex-shrink-0"
-          >
-            + Client
-          </button>
-        )}
-
-        {/* Project chip — always visible */}
-        {note?.projectId && projectName ? (
-          <button
-            onClick={() => { resetPickerState(); setShowProjectPicker(true); }}
-            className="bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)] rounded-full px-2.5 py-1 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap flex-shrink-0"
-          >
-            {projectName}
-            <span
-              onClick={(e) => { e.stopPropagation(); handleRemoveProject(); }}
-              className="text-[var(--m-text-placeholder)] active:text-[var(--m-text-primary)]"
-            >
-              &times;
-            </span>
-          </button>
-        ) : (
-          <button
-            onClick={() => { resetPickerState(); setShowProjectPicker(true); }}
-            className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap flex-shrink-0"
-          >
-            + Project
-          </button>
-        )}
-
-        {/* Tag chips */}
-        {tags.map((tag) => (
-          <span
-            key={tag}
-            className="bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)] rounded-full px-2.5 py-1 text-[11px] font-medium flex items-center gap-1 whitespace-nowrap flex-shrink-0"
-          >
-            {tag}
+      {/* Metadata bar */}
+      <div className="border-b border-[var(--m-border-subtle)] flex-shrink-0">
+        {/* Row 1: Client & Project */}
+        <div className="flex items-center gap-1.5 px-[var(--m-page-px)] pt-2 pb-1">
+          {note?.clientId && clientName ? (
             <button
-              onClick={() => handleRemoveTag(tag)}
-              className="text-[var(--m-text-placeholder)] active:text-[var(--m-text-primary)]"
+              onClick={() => router.push(`/m-clients?clientId=${note.clientId}`)}
+              className="bg-amber-50 text-amber-700 rounded-full px-2.5 py-1 text-[12px] font-medium flex items-center gap-1 whitespace-nowrap flex-shrink-0"
             >
-              &times;
+              <Building2 className="w-3 h-3" />
+              {clientName}
+              <span
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleRemoveClient(); }}
+                className="text-amber-400 hover:text-amber-700 ml-0.5"
+              >
+                <X className="w-3 h-3" />
+              </span>
             </button>
-          </span>
-        ))}
+          ) : (
+            <button
+              onClick={() => { resetPickerState(); setShowClientPicker(true); }}
+              className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2.5 py-1 text-[12px] font-medium whitespace-nowrap flex-shrink-0"
+            >
+              + Client
+            </button>
+          )}
 
-        {/* Add tag */}
-        {showTagInput ? (
-          <input
-            ref={tagInputRef}
-            type="text"
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAddTag(newTag);
-              if (e.key === 'Escape') { setNewTag(''); setShowTagInput(false); }
-            }}
-            onBlur={() => {
-              if (newTag.trim()) handleAddTag(newTag);
-              else { setNewTag(''); setShowTagInput(false); }
-            }}
-            placeholder="tag name"
-            style={{ fontSize: '16px' }}
-            className="w-20 bg-[var(--m-bg-inset)] border border-[var(--m-border-subtle)] rounded-full px-2.5 py-0.5 text-[11px] outline-none text-[var(--m-text-primary)] flex-shrink-0"
-          />
-        ) : (
-          <button
-            onClick={() => setShowTagInput(true)}
-            className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap flex-shrink-0"
-          >
-            + Tag
-          </button>
-        )}
+          {note?.projectId && projectName ? (
+            <button
+              onClick={() => router.push(`/m-clients?projectId=${note.projectId}`)}
+              className="bg-violet-50 text-violet-700 rounded-full px-2.5 py-1 text-[12px] font-medium flex items-center gap-1 whitespace-nowrap flex-shrink-0"
+            >
+              <FolderKanban className="w-3 h-3" />
+              {projectName}
+              <span
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleRemoveProject(); }}
+                className="text-violet-400 hover:text-violet-700 ml-0.5"
+              >
+                <X className="w-3 h-3" />
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={() => { resetPickerState(); setShowProjectPicker(true); }}
+              className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2.5 py-1 text-[12px] font-medium whitespace-nowrap flex-shrink-0"
+            >
+              + Project
+            </button>
+          )}
+
+          {/* Updated date — right-aligned */}
+          {note?.updatedAt && (
+            <span className="ml-auto text-[10px] text-[var(--m-text-tertiary)] whitespace-nowrap flex-shrink-0">
+              {formatRelativeDate(note.updatedAt)}
+            </span>
+          )}
+        </div>
+
+        {/* Row 2: Tags */}
+        <div className="flex items-center gap-1.5 overflow-x-auto px-[var(--m-page-px)] pb-2 scrollbar-none">
+          {tags.map((tag) => (
+            <span
+              key={tag}
+              className={`${tagColor(tag)} rounded-full px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap flex-shrink-0`}
+            >
+              {tag}
+              <button
+                onClick={() => handleRemoveTag(tag)}
+                className="opacity-50 hover:opacity-100"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+
+          {showTagInput ? (
+            <input
+              ref={tagInputRef}
+              type="text"
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddTag(newTag);
+                if (e.key === 'Escape') { setNewTag(''); setShowTagInput(false); }
+              }}
+              onBlur={() => {
+                if (newTag.trim()) handleAddTag(newTag);
+                else { setNewTag(''); setShowTagInput(false); }
+              }}
+              placeholder="tag name"
+              style={{ fontSize: '16px' }}
+              className="w-20 bg-[var(--m-bg-inset)] border border-[var(--m-border-subtle)] rounded-full px-2.5 py-0.5 text-[11px] outline-none text-[var(--m-text-primary)] flex-shrink-0"
+            />
+          ) : (
+            <button
+              onClick={() => setShowTagInput(true)}
+              className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap flex-shrink-0"
+            >
+              + Tag
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Client picker bottom sheet */}
