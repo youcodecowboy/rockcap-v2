@@ -1,0 +1,146 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../../../../convex/_generated/api';
+import { Id } from '../../../../../convex/_generated/dataModel';
+import { Plus } from 'lucide-react';
+import TaskSummaryPills from '@/components/tasks/TaskSummaryPills';
+import TaskDayStrip from '@/components/tasks/TaskDayStrip';
+import TaskListItem from '@/components/tasks/TaskListItem';
+import TaskDetailSheet from '@/components/tasks/TaskDetailSheet';
+import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
+
+export default function TasksContent() {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<Id<'tasks'> | null>(null);
+  const [showCreation, setShowCreation] = useState(false);
+
+  const tasks = useQuery(api.tasks.getByUser, { includeCreated: true, includeAssigned: true });
+  const metrics = useQuery(api.tasks.getMetrics, {});
+  const clients = useQuery(api.clients.list, {});
+  const completeTask = useMutation(api.tasks.complete);
+
+  const dateRange = useMemo(() => {
+    const start = new Date();
+    const end = new Date();
+    end.setDate(end.getDate() + 6);
+    return {
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+    };
+  }, []);
+
+  const dateCounts = useQuery(api.tasks.getByDateRange, dateRange);
+
+  const enhancedTasks = useMemo(() => {
+    if (!tasks) return [];
+    return tasks.map(t => ({
+      ...t,
+      clientName: t.clientId ? clients?.find(c => c._id === t.clientId)?.name : undefined,
+    }));
+  }, [tasks, clients]);
+
+  const displayTasks = useMemo(() => {
+    let filtered = enhancedTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled');
+
+    if (selectedDate) {
+      filtered = filtered.filter(t => {
+        if (!t.dueDate) return false;
+        return t.dueDate.split('T')[0] === selectedDate;
+      });
+    }
+
+    const priorityWeight: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    return filtered.sort((a, b) => {
+      const now = new Date().toISOString();
+      const aOverdue = a.dueDate && a.dueDate < now ? 0 : 1;
+      const bOverdue = b.dueDate && b.dueDate < now ? 0 : 1;
+      if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+
+      if (a.dueDate && b.dueDate) return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+
+      return (priorityWeight[a.priority || 'medium'] || 1) - (priorityWeight[b.priority || 'medium'] || 1);
+    });
+  }, [enhancedTasks, selectedDate]);
+
+  const sectionLabel = selectedDate
+    ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+    : 'All Tasks';
+
+  const handleToggleComplete = async (taskId: Id<'tasks'>) => {
+    await completeTask({ id: taskId });
+  };
+
+  if (showCreation) {
+    return (
+      <TaskCreationFlow
+        onTaskCreated={() => setShowCreation(false)}
+        onClose={() => setShowCreation(false)}
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-[calc(100vh-var(--m-header-h)-var(--m-footer-h))]">
+      <div className="px-[var(--m-page-px)] pt-3 space-y-3">
+        <TaskSummaryPills metrics={metrics} />
+        <TaskDayStrip
+          dateCounts={dateCounts}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+        />
+      </div>
+
+      <div className="border-t border-[var(--m-border)] mx-[var(--m-page-px)] mt-3" />
+
+      <div className="px-[var(--m-page-px)] pt-2.5 pb-1.5">
+        <span className="text-xs font-semibold text-[var(--m-text-secondary)] uppercase tracking-wider">
+          {sectionLabel}
+        </span>
+      </div>
+
+      <div className="flex-1 px-[var(--m-page-px)] space-y-1.5 pb-20">
+        {displayTasks.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-sm text-[var(--m-text-tertiary)]">
+              {selectedDate ? 'No tasks due on this day' : 'No tasks yet'}
+            </p>
+            <button
+              onClick={() => setShowCreation(true)}
+              className="mt-2 text-sm text-[var(--m-accent)] font-medium"
+            >
+              Create a task
+            </button>
+          </div>
+        ) : (
+          displayTasks.map(task => (
+            <TaskListItem
+              key={task._id}
+              task={task}
+              onTap={() => setSelectedTaskId(task._id)}
+              onToggleComplete={() => handleToggleComplete(task._id)}
+            />
+          ))
+        )}
+      </div>
+
+      <button
+        onClick={() => setShowCreation(true)}
+        className="fixed bottom-[calc(var(--m-footer-h)+env(safe-area-inset-bottom)+1rem)] right-4 w-12 h-12 bg-[var(--m-accent)] text-white rounded-full shadow-lg flex items-center justify-center z-20"
+        aria-label="Create new task"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
+      <TaskDetailSheet
+        taskId={selectedTaskId}
+        isOpen={!!selectedTaskId}
+        onClose={() => setSelectedTaskId(null)}
+        variant="sheet"
+      />
+    </div>
+  );
+}
