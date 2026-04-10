@@ -57,6 +57,8 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingContentRef = useRef<any>(null);
   const titleInitRef = useRef(false);
+  const titleRef = useRef(title);
+  titleRef.current = title;
   const contentInitRef = useRef(false);
 
   // --- normalized content ---
@@ -108,13 +110,14 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
 
       const contentToSave = content ?? editor?.getJSON();
 
+      const currentTitle = titleRef.current;
       const hasText = hasContentText(contentToSave);
-      const shouldPromote = note?.isDraft && (title !== 'Untitled' || hasText);
+      const shouldPromote = note?.isDraft && (currentTitle !== 'Untitled' || hasText);
 
       try {
         await updateNote({
           id: noteId as Id<'notes'>,
-          title,
+          title: currentTitle,
           content: contentToSave,
           ...(shouldPromote ? { isDraft: false } : {}),
         });
@@ -132,7 +135,7 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
         isSavingRef.current = false;
       }
     },
-    [noteId, title, editor, note?.isDraft, updateNote],
+    [noteId, editor, note?.isDraft, updateNote],
   );
 
   const scheduleSave = useCallback(

@@ -62,10 +62,15 @@ export default function StickyFooter() {
 
         <button
           onClick={() => setChatOpen(true)}
-          className="flex items-center justify-center w-11 h-11 -mt-4 bg-[var(--m-accent)] rounded-full shadow-md"
+          className="relative flex items-center justify-center w-11 h-11 -mt-4 bg-[var(--m-accent)] rounded-full shadow-md"
           aria-label="Open chat"
         >
           <MessageCircle className="w-[18px] h-[18px] text-white" />
+          {(unreadMessages ?? 0) > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 bg-[var(--m-error)] text-white text-[8px] font-bold min-w-[16px] h-[16px] flex items-center justify-center rounded-full px-0.5 leading-none border-2 border-[var(--m-bg)]">
+              {(unreadMessages ?? 0) > 9 ? '9+' : unreadMessages}
+            </span>
+          )}
         </button>
 
         {navItems.slice(2).map((item) => {
