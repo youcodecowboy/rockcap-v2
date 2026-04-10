@@ -56,17 +56,7 @@ export default function TaskDayStrip({ dateCounts, selectedDate, onSelectDate, w
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-[var(--m-text-primary)]">{weekLabel}</span>
-          {weekOffset !== 0 && (
-            <button
-              onClick={() => onWeekChange(0)}
-              className="text-[10px] text-[var(--m-accent)] font-medium px-1.5 py-0.5 rounded bg-[var(--m-accent-subtle)]"
-            >
-              Today
-            </button>
-          )}
-        </div>
+        <span className="text-xs font-semibold text-[var(--m-text-primary)]">{weekLabel}</span>
         <button
           onClick={() => onWeekChange(weekOffset + 1)}
           className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--m-border)] bg-white text-[var(--m-text-secondary)] active:bg-[var(--m-bg-subtle)]"
@@ -87,16 +77,22 @@ export default function TaskDayStrip({ dateCounts, selectedDate, onSelectDate, w
             <button
               key={day.iso}
               onClick={() => onSelectDate(isSelected ? null : day.iso)}
-              className={`flex-1 flex flex-col items-center py-2 rounded-lg transition-colors ${
+              className={`flex-1 flex flex-col items-center py-2 rounded-lg transition-colors relative ${
                 isSelected
                   ? 'bg-[var(--m-accent)] text-white shadow-sm'
                   : isToday
-                  ? 'bg-white border-2 border-[var(--m-accent)] border-opacity-40'
+                  ? 'bg-white border-2 border-[var(--m-accent)]'
                   : 'bg-white border border-[var(--m-border)]'
               }`}
             >
+              {/* Today label */}
+              {isToday && !isSelected && (
+                <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-white bg-[var(--m-accent)] px-1.5 rounded-full leading-[14px]">
+                  TODAY
+                </span>
+              )}
               <span className={`text-[10px] ${
-                isSelected ? 'opacity-80' : 'text-[var(--m-text-tertiary)]'
+                isSelected ? 'opacity-80' : isToday ? 'text-[var(--m-accent)] font-medium' : 'text-[var(--m-text-tertiary)]'
               }`}>
                 {day.dayShort}
               </span>
@@ -119,6 +115,16 @@ export default function TaskDayStrip({ dateCounts, selectedDate, onSelectDate, w
           );
         })}
       </div>
+
+      {/* Back to today link when viewing other weeks */}
+      {weekOffset !== 0 && (
+        <button
+          onClick={() => onWeekChange(0)}
+          className="mt-1.5 w-full text-center text-[11px] text-[var(--m-accent)] font-medium py-1"
+        >
+          ← Back to this week
+        </button>
+      )}
     </div>
   );
 }
