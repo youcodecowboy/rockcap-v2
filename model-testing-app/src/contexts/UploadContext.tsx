@@ -83,18 +83,19 @@ export type UploadPhase =
 // Helper
 // ---------------------------------------------------------------------------
 
-export function getFileIcon(name: string): string {
+/** Returns a lucide-react icon name for a given file extension */
+export function getFileIconName(name: string): 'file-text' | 'table' | 'file-type' | 'image' | 'mail' | 'file' {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   switch (ext) {
     case 'pdf':
-      return '\u{1F4C4}'; // page facing up
+      return 'file-text';
     case 'xlsx':
     case 'xls':
     case 'csv':
-      return '\u{1F4CA}'; // bar chart
+      return 'table';
     case 'docx':
     case 'doc':
-      return '\u{1F4DD}'; // memo
+      return 'file-type';
     case 'png':
     case 'jpg':
     case 'jpeg':
@@ -102,11 +103,11 @@ export function getFileIcon(name: string): string {
     case 'webp':
     case 'heic':
     case 'heif':
-      return '\u{1F5BC}\uFE0F'; // framed picture
+      return 'image';
     case 'eml':
-      return '\u{1F4E7}'; // e-mail
+      return 'mail';
     default:
-      return '\u{1F4C4}';
+      return 'file';
   }
 }
 

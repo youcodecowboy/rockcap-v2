@@ -82,9 +82,19 @@ export default function RecentsSection({
 }: RecentsSectionProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('projects');
 
-  const recentProjects = (projects ?? []).slice(0, 3);
-  const recentClients = (clients ?? []).slice(0, 3);
-  const recentDocs = (documents ?? []).slice(0, 3);
+  // Deduplicate by _id — keep only the first occurrence of each item
+  const dedupe = <T extends { _id: string }>(items: T[]): T[] => {
+    const seen = new Set<string>();
+    return items.filter(item => {
+      if (seen.has(item._id)) return false;
+      seen.add(item._id);
+      return true;
+    });
+  };
+
+  const recentProjects = dedupe(projects ?? []).slice(0, 3);
+  const recentClients = dedupe(clients ?? []).slice(0, 3);
+  const recentDocs = dedupe(documents ?? []).slice(0, 3);
 
   const viewAllLinks: Record<TabKey, { href: string; label: string }> = {
     projects: { href: '/m-clients', label: 'View all projects' },

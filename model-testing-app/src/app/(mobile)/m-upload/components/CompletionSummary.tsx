@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Check, AlertCircle } from 'lucide-react';
-import { useUpload } from '@/contexts/UploadContext';
-import { getFileIcon } from '@/contexts/UploadContext';
+import { Check, AlertCircle, CheckCircle, FileText, Table, FileType, Image, Mail, File } from 'lucide-react';
+import { useUpload, getFileIconName } from '@/contexts/UploadContext';
+
+const iconMap = { 'file-text': FileText, 'table': Table, 'file-type': FileType, 'image': Image, 'mail': Mail, 'file': File } as const;
 
 export default function CompletionSummary() {
   const router = useRouter();
@@ -13,7 +14,7 @@ export default function CompletionSummary() {
   const failed = reviewDocs.filter((d) => d.saveError);
   const allSucceeded = failed.length === 0;
 
-  const headerEmoji = allSucceeded ? '\u2705' : '\u26A0\uFE0F';
+  // no emoji — use lucide icons
   const title = `${reviewDocs.length} document${reviewDocs.length === 1 ? '' : 's'} uploaded`;
   const subtitle = allSucceeded
     ? 'All files analyzed and filed'
@@ -42,7 +43,10 @@ export default function CompletionSummary() {
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', gap: 8,
       }}>
-        <span style={{ fontSize: 32 }}>{headerEmoji}</span>
+        {allSucceeded
+          ? <CheckCircle size={32} style={{ color: '#4ade80' }} />
+          : <AlertCircle size={32} style={{ color: '#f59e0b' }} />
+        }
         <div style={{ color: 'var(--m-text-primary)', fontSize: 18, fontWeight: 600 }}>
           {title}
         </div>
@@ -108,7 +112,7 @@ export default function CompletionSummary() {
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                 }}>
-                  <span style={{ fontSize: 14 }}>{getFileIcon(doc.fileName)}</span>
+                  {(() => { const Icon = iconMap[getFileIconName(doc.fileName)]; return <Icon size={14} style={{ color: 'var(--m-text-tertiary)', flexShrink: 0 }} />; })()}
                   <span style={{
                     color: 'var(--m-text-primary)', fontSize: 14, fontWeight: 500,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',

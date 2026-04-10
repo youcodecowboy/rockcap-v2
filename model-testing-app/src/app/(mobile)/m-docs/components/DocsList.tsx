@@ -78,6 +78,17 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
     return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
   }, [clients, query]);
 
+  // 3 most recently accessed clients (deduplicated)
+  const recentClients = useMemo(() => {
+    if (!clients) return [];
+    const seen = new Set<string>();
+    return clients
+      .filter(c => !c.isDeleted && c.lastAccessedAt)
+      .sort((a, b) => new Date(b.lastAccessedAt!).getTime() - new Date(a.lastAccessedAt!).getTime())
+      .filter(c => { if (seen.has(c._id)) return false; seen.add(c._id); return true; })
+      .slice(0, 3);
+  }, [clients]);
+
   // Sorted flat file list helper
   function sortDocs(docs: any[]): any[] {
     return [...docs].sort((a, b) => {
@@ -167,6 +178,41 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
       {/* Clients scope */}
       {scope === 'clients' && (
         <div>
+          {/* Recent clients cards */}
+          {recentClients.length > 0 && (
+            <div className="px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)]">
+              <div className="text-[10px] font-medium text-[var(--m-text-tertiary)] uppercase tracking-wide mb-2">Recent</div>
+              <div className="grid grid-cols-3 gap-2">
+                {recentClients.map(client => {
+                  const docCount = clientDocCounts?.[client._id] ?? 0;
+                  return (
+                    <button
+                      key={client._id}
+                      onClick={() => onSelectClient(client._id, client.name)}
+                      className="flex flex-col items-start p-2.5 rounded-lg border border-[var(--m-border-subtle)] bg-[var(--m-bg-surface)] active:bg-[var(--m-bg-subtle)] text-left"
+                    >
+                      <span className="text-[12px] font-semibold text-[var(--m-text-primary)] truncate w-full leading-tight">
+                        {client.name}
+                      </span>
+                      {client.type && (
+                        <span className={`text-[8px] font-medium px-1 py-px rounded uppercase tracking-wide mt-1 ${
+                          client.type === 'lender'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {client.type}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-[var(--m-text-tertiary)] mt-1">
+                        {docCount} doc{docCount !== 1 ? 's' : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Search */}
           <div className="px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border-subtle)]">
             <input
@@ -203,9 +249,13 @@ export default function DocsList({ onSelectClient, onOpenViewer }: DocsListProps
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">{client.name}</span>
+                      <span className="text-[15px] font-semibold text-[var(--m-text-primary)] truncate">{client.name}</span>
                       {client.type && (
-                        <span className="text-[9px] font-medium px-1.5 py-px rounded bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)] flex-shrink-0 uppercase tracking-wide">
+                        <span className={`text-[9px] font-medium px-1.5 py-px rounded flex-shrink-0 uppercase tracking-wide ${
+                          client.type === 'lender'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}>
                           {client.type}
                         </span>
                       )}

@@ -1,9 +1,10 @@
 'use client';
 
-import { Loader2, Check, AlertCircle, ArrowUp } from 'lucide-react';
-import { useUpload } from '@/contexts/UploadContext';
-import { getFileIcon } from '@/contexts/UploadContext';
+import { Loader2, Check, AlertCircle, ArrowUp, FileText, Table, FileType, Image, Mail, File } from 'lucide-react';
+import { useUpload, getFileIconName } from '@/contexts/UploadContext';
 import type { FileStatus } from '@/contexts/UploadContext';
+
+const iconMap = { 'file-text': FileText, 'table': Table, 'file-type': FileType, 'image': Image, 'mail': Mail, 'file': File } as const;
 
 function StatusIcon({ status }: { status: FileStatus }) {
   switch (status) {
@@ -179,7 +180,7 @@ export default function ProcessingScreen() {
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                 }}>
-                  <span style={{ fontSize: 14 }}>{getFileIcon(f.file.name)}</span>
+                  {(() => { const Icon = iconMap[getFileIconName(f.file.name)]; return <Icon size={14} style={{ color: 'var(--m-text-tertiary)', flexShrink: 0 }} />; })()}
                   <span style={{
                     color: 'var(--m-text-primary)', fontSize: 14, fontWeight: 500,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',

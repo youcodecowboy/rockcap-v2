@@ -1,8 +1,10 @@
 'use client';
 
 import { useRef } from 'react';
-import { Upload, X } from 'lucide-react';
-import { useUpload, getFileIcon } from '@/contexts/UploadContext';
+import { Upload, X, FileText, Table, FileType, Image, Mail, File } from 'lucide-react';
+import { useUpload, getFileIconName } from '@/contexts/UploadContext';
+
+const iconMap = { 'file-text': FileText, 'table': Table, 'file-type': FileType, 'image': Image, 'mail': Mail, 'file': File } as const;
 
 const ACCEPTED_TYPES =
   '.pdf,.docx,.doc,.xls,.xlsx,.xlsm,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif';
@@ -116,7 +118,7 @@ export default function FilePicker() {
           textAlign: 'center',
         }}
       >
-        <span style={{ fontSize: '36px' }}>{'\u{1F4C4}'}</span>
+        <File size={36} style={{ color: 'var(--m-text-tertiary)' }} />
         <span style={{ fontSize: '15px', fontWeight: 500, color: 'var(--m-text-primary)' }}>
           Select files to upload
         </span>
@@ -170,9 +172,7 @@ export default function FilePicker() {
                 border: '1px solid var(--m-border-subtle)',
               }}
             >
-              <span style={{ fontSize: '20px', flexShrink: 0 }}>
-                {getFileIcon(uf.file.name)}
-              </span>
+              {(() => { const Icon = iconMap[getFileIconName(uf.file.name)]; return <Icon size={18} style={{ flexShrink: 0, color: 'var(--m-text-tertiary)' }} />; })()}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{

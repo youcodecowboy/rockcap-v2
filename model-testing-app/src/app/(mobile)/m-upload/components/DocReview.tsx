@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Building } from 'lucide-react';
 import { ReviewDoc } from '@/contexts/UploadContext';
 import CategorySheet from './CategorySheet';
 import FilingSheet from './FilingSheet';
@@ -112,7 +113,7 @@ export default function DocReview({ doc, onUpdate }: DocReviewProps) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div style={{ fontSize: 14, color: 'var(--m-text-primary, #fff)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>{'\uD83C\uDFE0'}</span>
+                  <Building size={14} style={{ color: 'var(--m-text-tertiary)', flexShrink: 0 }} />
                   <span>
                     {doc.clientName}
                     {doc.projectName ? ` \u2192 ${doc.projectName}` : ''}

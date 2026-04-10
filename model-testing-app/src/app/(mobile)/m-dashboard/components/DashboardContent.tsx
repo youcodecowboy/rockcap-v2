@@ -7,6 +7,7 @@ import DashboardGreeting from './DashboardGreeting';
 import QuickActions from './QuickActions';
 import UpNextCard, { type UpNextItem } from './UpNextCard';
 import NotificationsSection from './NotificationsSection';
+import MessagesFlagsSection from './MessagesFlagsSection';
 import RecentsSection from './RecentsSection';
 
 export default function DashboardContent() {
@@ -31,6 +32,11 @@ export default function DashboardContent() {
   const projects = useQuery(api.projects.list, {});
   const clients = useQuery(api.clients.list, {});
   const recentDocs = useQuery(api.documents.getRecent, { limit: 3 });
+
+  // Messages & Flags data
+  const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
+  const conversations = useQuery(api.conversations.getMyConversations, {});
+  const unreadMessageCount = useQuery(api.conversations.getUnreadCount, {});
 
   // Build client lookup map (shared by UpNext and RecentsSection later)
   const clientMap = new Map(clients?.map(c => [c._id, c.name]) ?? []);
@@ -124,6 +130,12 @@ export default function DashboardContent() {
       <QuickActions />
       <UpNextCard item={upNextItem} />
       <NotificationsSection notifications={notifications} unreadCount={unreadCount} />
+      <MessagesFlagsSection
+        flags={openFlags}
+        conversations={conversations}
+        openFlagCount={openFlags?.length ?? 0}
+        unreadMessageCount={unreadMessageCount ?? 0}
+      />
       <RecentsSection
         projects={projects}
         clients={clients}
