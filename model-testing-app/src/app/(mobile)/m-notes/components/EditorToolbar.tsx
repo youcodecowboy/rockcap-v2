@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Editor } from '@tiptap/react';
 import { List, ListChecks, Quote, Minus, Link2, AtSign } from 'lucide-react';
 
@@ -9,38 +9,51 @@ interface EditorToolbarProps {
 }
 
 export default function EditorToolbar({ editor }: EditorToolbarProps) {
-  const [bottomOffset, setBottomOffset] = useState<number | null>(null);
   const [showLinkPopover, setShowLinkPopover] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement>(null);
 
-  const updatePosition = useCallback(() => {
+  const reposition = useCallback(() => {
     const vv = window.visualViewport;
-    if (!vv) return;
+    const el = toolbarRef.current;
+    if (!vv || !el) return;
 
-    // On iOS, when the keyboard opens, visualViewport shrinks and may scroll.
-    // We position the toolbar at the bottom of the visible area.
-    const keyboardHeight = window.innerHeight - vv.height;
+    const kbHeight = window.innerHeight - vv.height;
 
-    if (keyboardHeight > 100) {
-      // Keyboard is open — stick to bottom of visual viewport
-      // Account for iOS scroll offset
-      setBottomOffset(keyboardHeight - vv.offsetTop);
+    if (kbHeight > 100) {
+      // Keyboard is open — absolute position at the bottom of the visual viewport
+      setKeyboardOpen(true);
+      el.style.position = 'absolute';
+      el.style.bottom = 'auto';
+      el.style.top = `${vv.offsetTop + vv.height - el.offsetHeight}px`;
+      el.style.left = `${vv.offsetLeft}px`;
+      el.style.right = '0';
     } else {
-      // Keyboard closed — reset to default
-      setBottomOffset(null);
+      // Keyboard closed — fixed at bottom above the footer
+      setKeyboardOpen(false);
+      el.style.position = 'fixed';
+      el.style.top = 'auto';
+      el.style.bottom = 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))';
+      el.style.left = '0';
+      el.style.right = '0';
     }
   }, []);
 
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    vv.addEventListener('resize', updatePosition);
-    vv.addEventListener('scroll', updatePosition);
+
+    // Initial position
+    reposition();
+
+    vv.addEventListener('resize', reposition);
+    vv.addEventListener('scroll', reposition);
     return () => {
-      vv.removeEventListener('resize', updatePosition);
-      vv.removeEventListener('scroll', updatePosition);
+      vv.removeEventListener('resize', reposition);
+      vv.removeEventListener('scroll', reposition);
     };
-  }, [updatePosition]);
+  }, [reposition]);
 
   if (!editor) return null;
 
@@ -82,11 +95,10 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
 
   return (
     <div
-      className="fixed left-0 right-0 z-50 bg-black"
-      style={{
-        bottom: bottomOffset !== null
-          ? `${bottomOffset}px`
-          : 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))',
+      ref={toolbarRef}
+      className={`z-50 bg-black ${keyboardOpen ? '' : 'fixed left-0 right-0'}`}
+      style={keyboardOpen ? { width: '100%' } : {
+        bottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))',
       }}
     >
       {/* Link popover */}
