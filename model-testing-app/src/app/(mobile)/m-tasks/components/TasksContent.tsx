@@ -10,6 +10,7 @@ import TaskDayStrip from '@/components/tasks/TaskDayStrip';
 import TaskListItem from '@/components/tasks/TaskListItem';
 import TaskDetailSheet from '@/components/tasks/TaskDetailSheet';
 import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
+import { groupTasksByDate } from '@/components/tasks/groupTasksByDate';
 
 export default function TasksContent() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -70,6 +71,12 @@ export default function TasksContent() {
     ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
     : 'All Tasks';
 
+  // Group tasks by date for sectioned display (only when not filtering by a specific date)
+  const groupedTasks = useMemo(() => {
+    if (selectedDate) return null; // flat list when filtering by day
+    return groupTasksByDate(displayTasks);
+  }, [displayTasks, selectedDate]);
+
   const handleToggleComplete = async (taskId: Id<'tasks'>) => {
     await completeTask({ id: taskId });
   };
@@ -96,13 +103,7 @@ export default function TasksContent() {
 
       <div className="border-t border-[var(--m-border)] mx-[var(--m-page-px)] mt-3" />
 
-      <div className="px-[var(--m-page-px)] pt-2.5 pb-1.5">
-        <span className="text-xs font-semibold text-[var(--m-text-secondary)] uppercase tracking-wider">
-          {sectionLabel}
-        </span>
-      </div>
-
-      <div className="flex-1 px-[var(--m-page-px)] space-y-1.5 pb-20">
+      <div className="flex-1 px-[var(--m-page-px)] pb-20">
         {displayTasks.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-sm text-[var(--m-text-tertiary)]">
@@ -115,15 +116,43 @@ export default function TasksContent() {
               Create a task
             </button>
           </div>
-        ) : (
-          displayTasks.map(task => (
-            <TaskListItem
-              key={task._id}
-              task={task}
-              onTap={() => setSelectedTaskId(task._id)}
-              onToggleComplete={() => handleToggleComplete(task._id)}
-            />
+        ) : groupedTasks ? (
+          /* Date-grouped sections */
+          groupedTasks.map(group => (
+            <div key={group.label} className="mt-3">
+              <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${group.color}`}>
+                {group.label}
+                <span className="text-[var(--m-text-tertiary)] font-normal ml-1.5">({group.tasks.length})</span>
+              </div>
+              <div className="space-y-1.5">
+                {group.tasks.map(task => (
+                  <TaskListItem
+                    key={task._id}
+                    task={task}
+                    onTap={() => setSelectedTaskId(task._id)}
+                    onToggleComplete={() => handleToggleComplete(task._id)}
+                  />
+                ))}
+              </div>
+            </div>
           ))
+        ) : (
+          /* Flat list when filtering by specific date */
+          <div className="mt-2.5">
+            <div className="text-[11px] font-semibold text-[var(--m-text-secondary)] uppercase tracking-wider mb-1.5">
+              {sectionLabel}
+            </div>
+            <div className="space-y-1.5">
+              {displayTasks.map(task => (
+                <TaskListItem
+                  key={task._id}
+                  task={task}
+                  onTap={() => setSelectedTaskId(task._id)}
+                  onToggleComplete={() => handleToggleComplete(task._id)}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

@@ -49,15 +49,30 @@ const priorityBadge: Record<string, { bg: string; text: string; label: string }>
   low: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Low' },
 };
 
+const statusBadge: Record<string, { bg: string; text: string; label: string } | null> = {
+  todo: null, // default, no badge needed
+  in_progress: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'In Progress' },
+  paused: { bg: 'bg-amber-50', text: 'text-amber-700', label: 'Paused' },
+  completed: { bg: 'bg-green-50', text: 'text-green-700', label: 'Done' },
+  cancelled: { bg: 'bg-slate-100', text: 'text-slate-500', label: 'Cancelled' },
+};
+
 export default function TaskListItem({ task, onTap, onToggleComplete }: TaskListItemProps) {
   const dueLabel = getDueLabel(task.dueDate);
   const isOverdue = dueLabel?.text.startsWith('Overdue');
   const checkBorder = isOverdue ? 'border-red-500' : (priorityColors[task.priority || 'medium']);
   const badge = priorityBadge[task.priority || 'medium'];
+  const status = statusBadge[task.status];
+
+  // Left accent color based on status
+  const accentBorder = task.status === 'in_progress' ? 'border-l-blue-500'
+    : task.status === 'paused' ? 'border-l-amber-500'
+    : isOverdue ? 'border-l-red-500'
+    : 'border-l-transparent';
 
   return (
     <div
-      className="bg-white border border-[var(--m-border)] rounded-lg px-3 py-2.5 flex items-center gap-2.5 active:bg-[var(--m-bg-subtle)] transition-colors cursor-pointer"
+      className={`bg-white border border-[var(--m-border)] border-l-[3px] ${accentBorder} rounded-lg px-3 py-2.5 flex items-center gap-2.5 active:bg-[var(--m-bg-subtle)] transition-colors cursor-pointer`}
       onClick={onTap}
     >
       <button
@@ -75,10 +90,17 @@ export default function TaskListItem({ task, onTap, onToggleComplete }: TaskList
       </button>
 
       <div className="flex-1 min-w-0">
-        <div className={`text-[13px] font-semibold truncate ${
-          task.status === 'completed' ? 'line-through text-[var(--m-text-tertiary)]' : 'text-[var(--m-text-primary)]'
-        }`}>
-          {task.title}
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[13px] font-semibold truncate ${
+            task.status === 'completed' ? 'line-through text-[var(--m-text-tertiary)]' : 'text-[var(--m-text-primary)]'
+          }`}>
+            {task.title}
+          </span>
+          {status && (
+            <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ${status.bg} ${status.text}`}>
+              {status.label}
+            </span>
+          )}
         </div>
         <div className="text-[11px] mt-0.5 flex items-center gap-1">
           {task.clientName && (

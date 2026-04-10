@@ -10,6 +10,7 @@ import TaskDayStrip from '@/components/tasks/TaskDayStrip';
 import TaskListItem from '@/components/tasks/TaskListItem';
 import TaskDetailSheet from '@/components/tasks/TaskDetailSheet';
 import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
+import { groupTasksByDate } from '@/components/tasks/groupTasksByDate';
 
 export default function TasksPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -67,6 +68,11 @@ export default function TasksPage() {
     ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
     : 'All Tasks';
 
+  const groupedTasks = useMemo(() => {
+    if (selectedDate) return null;
+    return groupTasksByDate(displayTasks);
+  }, [displayTasks, selectedDate]);
+
   return (
     <div className="bg-gray-50 min-h-screen p-8">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -115,25 +121,46 @@ export default function TasksPage() {
           <div className="flex gap-6">
             {/* Left: task list */}
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                {sectionLabel}
-              </div>
-              <div className="space-y-2">
-                {displayTasks.length === 0 ? (
-                  <div className="text-center py-12 text-sm text-gray-400">
-                    {selectedDate ? 'No tasks due on this day' : 'No tasks yet'}
+              {displayTasks.length === 0 ? (
+                <div className="text-center py-12 text-sm text-gray-400">
+                  {selectedDate ? 'No tasks due on this day' : 'No tasks yet'}
+                </div>
+              ) : groupedTasks ? (
+                groupedTasks.map(group => (
+                  <div key={group.label} className="mb-5">
+                    <div className={`text-xs font-semibold uppercase tracking-wider mb-2 ${group.color}`}>
+                      {group.label}
+                      <span className="text-gray-400 font-normal ml-1.5">({group.tasks.length})</span>
+                    </div>
+                    <div className="space-y-2">
+                      {group.tasks.map(task => (
+                        <TaskListItem
+                          key={task._id}
+                          task={task}
+                          onTap={() => setSelectedTaskId(task._id)}
+                          onToggleComplete={() => completeTask({ id: task._id })}
+                        />
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  displayTasks.map(task => (
-                    <TaskListItem
-                      key={task._id}
-                      task={task}
-                      onTap={() => setSelectedTaskId(task._id)}
-                      onToggleComplete={() => completeTask({ id: task._id })}
-                    />
-                  ))
-                )}
-              </div>
+                ))
+              ) : (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    {sectionLabel}
+                  </div>
+                  <div className="space-y-2">
+                    {displayTasks.map(task => (
+                      <TaskListItem
+                        key={task._id}
+                        task={task}
+                        onTap={() => setSelectedTaskId(task._id)}
+                        onToggleComplete={() => completeTask({ id: task._id })}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Right: detail panel */}
