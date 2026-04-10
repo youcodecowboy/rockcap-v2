@@ -261,7 +261,7 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
         .ProseMirror {
           outline: none;
           min-height: 200px;
-          font-size: 15px;
+          font-size: 16px;
           line-height: 1.6;
           color: var(--m-text-primary);
         }

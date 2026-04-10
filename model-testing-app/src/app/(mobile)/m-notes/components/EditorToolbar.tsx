@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { List, ListChecks, Quote, Minus, Link2, AtSign } from 'lucide-react';
 
@@ -9,24 +9,38 @@ interface EditorToolbarProps {
 }
 
 export default function EditorToolbar({ editor }: EditorToolbarProps) {
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [bottomOffset, setBottomOffset] = useState<number | null>(null);
   const [showLinkPopover, setShowLinkPopover] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+
+  const updatePosition = useCallback(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    // On iOS, when the keyboard opens, visualViewport shrinks and may scroll.
+    // We position the toolbar at the bottom of the visible area.
+    const keyboardHeight = window.innerHeight - vv.height;
+
+    if (keyboardHeight > 100) {
+      // Keyboard is open — stick to bottom of visual viewport
+      // Account for iOS scroll offset
+      setBottomOffset(keyboardHeight - vv.offsetTop);
+    } else {
+      // Keyboard closed — reset to default
+      setBottomOffset(null);
+    }
+  }, []);
 
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const handler = () => {
-      const kbHeight = window.innerHeight - vv.height;
-      setKeyboardHeight(Math.max(0, kbHeight));
-    };
-    vv.addEventListener('resize', handler);
-    vv.addEventListener('scroll', handler);
+    vv.addEventListener('resize', updatePosition);
+    vv.addEventListener('scroll', updatePosition);
     return () => {
-      vv.removeEventListener('resize', handler);
-      vv.removeEventListener('scroll', handler);
+      vv.removeEventListener('resize', updatePosition);
+      vv.removeEventListener('scroll', updatePosition);
     };
-  }, []);
+  }, [updatePosition]);
 
   if (!editor) return null;
 
@@ -38,7 +52,6 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
       setLinkUrl('');
       return;
     }
-    // Pre-fill URL if cursor is on a link
     if (isOnLink) {
       const href = editor.getAttributes('link').href || '';
       setLinkUrl(href);
@@ -70,9 +83,10 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
   return (
     <div
       className="fixed left-0 right-0 z-50 bg-black"
-      style={{ bottom: keyboardHeight > 0
-        ? keyboardHeight
-        : 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))'
+      style={{
+        bottom: bottomOffset !== null
+          ? `${bottomOffset}px`
+          : 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))',
       }}
     >
       {/* Link popover */}
