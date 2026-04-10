@@ -8,6 +8,7 @@ import { api } from '../../../../convex/_generated/api';
 import { Loader2 } from 'lucide-react';
 import type { BatchInfo } from '@/lib/bulkQueueProcessor';
 import UploadSetup from './components/UploadSetup';
+import ProcessingScreen from './components/ProcessingScreen';
 
 type UploadPhase =
   | { phase: 'setup' }
@@ -78,15 +79,12 @@ export default function MobileUploadPage() {
 
   if (uploadPhase.phase === 'processing') {
     return (
-      <div className="flex items-center justify-center h-full px-[var(--m-page-px)]">
-        <div className="text-center space-y-3">
-          <Loader2 className="w-8 h-8 animate-spin text-[var(--m-text-tertiary)] mx-auto" />
-          <div className="text-[15px] font-medium text-[var(--m-text-primary)]">Processing uploads...</div>
-          <div className="text-[12px] text-[var(--m-text-tertiary)]">
-            Batch: {uploadPhase.batchId}
-          </div>
-        </div>
-      </div>
+      <ProcessingScreen
+        batchId={uploadPhase.batchId}
+        files={uploadPhase.files}
+        batchInfo={uploadPhase.batchInfo}
+        onComplete={() => setUploadPhase({ phase: 'review', batchId: uploadPhase.batchId })}
+      />
     );
   }
 
