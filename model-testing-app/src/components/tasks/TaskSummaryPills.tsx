@@ -1,7 +1,11 @@
 'use client';
 
+import { Circle, ArrowRight, Pause, CheckCircle, AlertTriangle, CalendarClock } from 'lucide-react';
+
 interface TaskMetrics {
-  active: number;
+  total: number;
+  todo: number;
+  inProgress: number;
   completed: number;
   paused: number;
   dueToday: number;
@@ -12,29 +16,46 @@ interface TaskSummaryPillsProps {
   metrics: TaskMetrics | undefined;
 }
 
-const pills = [
-  { key: 'active' as const, label: 'Active', bg: 'bg-blue-50', text: 'text-blue-700' },
-  { key: 'completed' as const, label: 'Done', bg: 'bg-green-50', text: 'text-green-700' },
-  { key: 'paused' as const, label: 'Paused', bg: 'bg-slate-100', text: 'text-slate-600' },
-  { key: 'dueToday' as const, label: 'Due Today', bg: 'bg-amber-50', text: 'text-amber-700' },
-  { key: 'overdue' as const, label: 'Overdue', bg: 'bg-red-50', text: 'text-red-700' },
+const cards: {
+  key: keyof TaskMetrics;
+  label: string;
+  icon: typeof Circle;
+  accent: string;    // border-left color
+  iconColor: string; // icon color
+  numColor: string;  // number color
+}[] = [
+  { key: 'total', label: 'Total', icon: Circle, accent: 'border-l-slate-300', iconColor: 'text-slate-400', numColor: 'text-[var(--m-text-primary)]' },
+  { key: 'todo', label: 'To Do', icon: Circle, accent: 'border-l-blue-400', iconColor: 'text-blue-500', numColor: 'text-blue-700' },
+  { key: 'inProgress', label: 'In Progress', icon: ArrowRight, accent: 'border-l-blue-600', iconColor: 'text-blue-600', numColor: 'text-blue-700' },
+  { key: 'paused', label: 'Paused', icon: Pause, accent: 'border-l-amber-400', iconColor: 'text-amber-500', numColor: 'text-amber-700' },
+  { key: 'completed', label: 'Completed', icon: CheckCircle, accent: 'border-l-green-500', iconColor: 'text-green-500', numColor: 'text-green-700' },
+  { key: 'overdue', label: 'Overdue', icon: AlertTriangle, accent: 'border-l-red-500', iconColor: 'text-red-500', numColor: 'text-red-700' },
+  { key: 'dueToday', label: 'Due Today', icon: CalendarClock, accent: 'border-l-amber-500', iconColor: 'text-amber-600', numColor: 'text-amber-700' },
 ];
 
 export default function TaskSummaryPills({ metrics }: TaskSummaryPillsProps) {
   if (!metrics) return null;
 
-  const visiblePills = pills.filter(p => p.key === 'active' || metrics[p.key] > 0);
-
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-      {visiblePills.map(pill => (
-        <div
-          key={pill.key}
-          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold ${pill.bg} ${pill.text}`}
-        >
-          {metrics[pill.key]} {pill.label}
-        </div>
-      ))}
+    <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+      {cards.map(card => {
+        const Icon = card.icon;
+        const value = metrics[card.key];
+        return (
+          <div
+            key={card.key}
+            className={`bg-white border border-[var(--m-border)] border-l-[3px] ${card.accent} rounded-lg px-2.5 py-2 flex flex-col gap-1`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Icon className={`w-3 h-3 ${card.iconColor}`} />
+              <span className="text-[10px] text-[var(--m-text-tertiary)] font-medium truncate">{card.label}</span>
+            </div>
+            <span className={`text-lg font-bold leading-none ${value > 0 ? card.numColor : 'text-[var(--m-text-tertiary)]'}`}>
+              {value}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

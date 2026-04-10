@@ -699,7 +699,7 @@ export const getMetrics = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
-      return { active: 0, completed: 0, paused: 0, dueToday: 0, overdue: 0, upNext: null };
+      return { total: 0, todo: 0, inProgress: 0, completed: 0, paused: 0, dueToday: 0, overdue: 0, upNext: null };
     }
 
     const user = await ctx.db
@@ -707,7 +707,7 @@ export const getMetrics = query({
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
     if (!user) {
-      return { active: 0, completed: 0, paused: 0, dueToday: 0, overdue: 0, upNext: null };
+      return { total: 0, todo: 0, inProgress: 0, completed: 0, paused: 0, dueToday: 0, overdue: 0, upNext: null };
     }
 
     const allTasks = await ctx.db.query("tasks").collect();
@@ -721,10 +721,9 @@ export const getMetrics = query({
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
 
-    const active = userTasks.filter(t =>
-      t.status === "todo" || t.status === "in_progress"
-    ).length;
-
+    const total = userTasks.filter(t => t.status !== "cancelled").length;
+    const todo = userTasks.filter(t => t.status === "todo").length;
+    const inProgress = userTasks.filter(t => t.status === "in_progress").length;
     const completed = userTasks.filter(t => t.status === "completed").length;
     const paused = userTasks.filter(t => t.status === "paused").length;
 
@@ -750,7 +749,9 @@ export const getMetrics = query({
       });
 
     return {
-      active,
+      total,
+      todo,
+      inProgress,
       completed,
       paused,
       dueToday,
