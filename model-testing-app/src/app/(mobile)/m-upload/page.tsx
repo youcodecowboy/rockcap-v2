@@ -10,6 +10,7 @@ import type { BatchInfo } from '@/lib/bulkQueueProcessor';
 import UploadSetup from './components/UploadSetup';
 import ProcessingScreen from './components/ProcessingScreen';
 import ReviewFlow from './components/ReviewFlow';
+import CompletionSummary from './components/CompletionSummary';
 
 type UploadPhase =
   | { phase: 'setup' }
@@ -100,17 +101,10 @@ export default function MobileUploadPage() {
 
   if (uploadPhase.phase === 'done') {
     return (
-      <div className="flex items-center justify-center h-full px-[var(--m-page-px)]">
-        <div className="text-center space-y-3">
-          <div className="text-[15px] font-medium text-[var(--m-text-primary)]">Upload complete</div>
-          <button
-            onClick={() => setUploadPhase({ phase: 'setup' })}
-            className="px-4 py-2 text-[14px] font-medium text-white bg-[var(--m-text-primary)] rounded-lg"
-          >
-            New Upload
-          </button>
-        </div>
-      </div>
+      <CompletionSummary
+        batchId={uploadPhase.batchId}
+        onUploadMore={() => setUploadPhase({ phase: 'setup' })}
+      />
     );
   }
 
