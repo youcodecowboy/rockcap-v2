@@ -6,7 +6,7 @@ import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { Plus } from 'lucide-react';
 import TaskSummaryPills from '@/components/tasks/TaskSummaryPills';
-import TaskDayStrip from '@/components/tasks/TaskDayStrip';
+import TaskDayStrip, { getWeekRange } from '@/components/tasks/TaskDayStrip';
 import TaskListItem from '@/components/tasks/TaskListItem';
 import TaskDetailSheet from '@/components/tasks/TaskDetailSheet';
 import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
@@ -16,21 +16,14 @@ export default function TasksContent() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<Id<'tasks'> | null>(null);
   const [showCreation, setShowCreation] = useState(false);
+  const [weekOffset, setWeekOffset] = useState(0);
 
   const tasks = useQuery(api.tasks.getByUser, { includeCreated: true, includeAssigned: true });
   const metrics = useQuery(api.tasks.getMetrics, {});
   const clients = useQuery(api.clients.list, {});
   const completeTask = useMutation(api.tasks.complete);
 
-  const dateRange = useMemo(() => {
-    const start = new Date();
-    const end = new Date();
-    end.setDate(end.getDate() + 6);
-    return {
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0],
-    };
-  }, []);
+  const dateRange = useMemo(() => getWeekRange(weekOffset), [weekOffset]);
 
   const dateCounts = useQuery(api.tasks.getByDateRange, dateRange);
 
@@ -98,6 +91,8 @@ export default function TasksContent() {
           dateCounts={dateCounts}
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
+          weekOffset={weekOffset}
+          onWeekChange={setWeekOffset}
         />
       </div>
 
