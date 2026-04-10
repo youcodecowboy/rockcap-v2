@@ -91,7 +91,7 @@ export default function CategorySheet({
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={`flex items-center gap-2.5 w-full py-3 px-[var(--m-page-px)] border-b border-[var(--m-border-subtle)] text-left active:bg-[var(--m-bg-subtle)] ${
-                  isActive ? 'bg-white' : ''
+                  isActive ? 'bg-[var(--m-bg)]' : ''
                 }`}
               >
                 <span className={`flex-1 text-[13px] ${isActive ? 'text-[var(--m-text-primary)] font-medium' : 'text-[var(--m-text-secondary)]'}`}>
@@ -128,7 +128,7 @@ export default function CategorySheet({
           <button
             onClick={handleApply}
             disabled={!selectedCategory}
-            className="w-full py-2.5 text-center text-[14px] font-medium text-white bg-black rounded-lg disabled:opacity-40"
+            className="w-full py-2.5 text-center text-[14px] font-medium text-white bg-[var(--m-accent)] rounded-lg disabled:opacity-40"
           >
             Apply
           </button>

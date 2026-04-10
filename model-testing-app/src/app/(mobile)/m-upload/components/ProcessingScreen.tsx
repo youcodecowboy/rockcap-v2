@@ -10,52 +10,32 @@ function StatusIcon({ status }: { status: FileStatus }) {
   switch (status) {
     case 'waiting':
       return (
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: 'var(--m-bg-inset)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <ArrowUp size={16} style={{ color: 'var(--m-text-tertiary)' }} />
+        <div className="w-8 h-8 rounded-full bg-[var(--m-bg-inset)] flex items-center justify-center">
+          <ArrowUp size={16} className="text-[var(--m-text-tertiary)]" />
         </div>
       );
     case 'uploading':
       return (
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: 'var(--m-bg-inset)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <ArrowUp size={16} style={{ color: 'var(--m-text-primary)' }} />
+        <div className="w-8 h-8 rounded-full bg-[var(--m-bg-inset)] flex items-center justify-center">
+          <ArrowUp size={16} className="text-[var(--m-text-primary)]" />
         </div>
       );
     case 'analyzing':
       return (
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: '#1a1a2e', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Loader2 size={16} style={{ color: '#6ba3d6', animation: 'spin 1s linear infinite' }} />
+        <div className="w-8 h-8 rounded-full bg-[var(--m-accent-subtle)] flex items-center justify-center">
+          <Loader2 size={16} className="text-[var(--m-accent-indicator)] animate-spin" />
         </div>
       );
     case 'done':
       return (
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: '#1a3d1a', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Check size={16} style={{ color: '#4ade80' }} />
+        <div className="w-8 h-8 rounded-full bg-[var(--m-accent-subtle)] flex items-center justify-center">
+          <Check size={16} className="text-[var(--m-success)]" />
         </div>
       );
     case 'error':
       return (
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: '#3d1a1a', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <AlertCircle size={16} style={{ color: '#f87171' }} />
+        <div className="w-8 h-8 rounded-full bg-[var(--m-bg-inset)] flex items-center justify-center">
+          <AlertCircle size={16} className="text-[var(--m-error)]" />
         </div>
       );
   }
@@ -71,13 +51,13 @@ function statusText(status: FileStatus, error?: string): string {
   }
 }
 
-function statusColor(status: FileStatus): string {
+function statusColorClass(status: FileStatus): string {
   switch (status) {
-    case 'waiting': return 'var(--m-text-tertiary)';
-    case 'uploading': return 'var(--m-text-tertiary)';
-    case 'analyzing': return '#6ba3d6';
-    case 'done': return '#4ade80';
-    case 'error': return '#f87171';
+    case 'waiting': return 'text-[var(--m-text-tertiary)]';
+    case 'uploading': return 'text-[var(--m-text-tertiary)]';
+    case 'analyzing': return 'text-[var(--m-accent-indicator)]';
+    case 'done': return 'text-[var(--m-success)]';
+    case 'error': return 'text-[var(--m-error)]';
   }
 }
 
@@ -109,55 +89,39 @@ export default function ProcessingScreen() {
   };
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column',
-      height: '100%', background: 'var(--m-bg-inset)',
-    }}>
-      {/* Spin keyframes */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }
-@keyframes indeterminate { 0% { transform: translateX(-100%) } 100% { transform: translateX(200%) } }`}</style>
+    <div className="flex flex-col h-full bg-[var(--m-bg-inset)]">
+      {/* Indeterminate bar keyframes */}
+      <style>{`@keyframes indeterminate { 0% { transform: translateX(-100%) } 100% { transform: translateX(200%) } }`}</style>
 
       {/* Header bar */}
-      <div style={{
-        height: 'var(--m-header-h, 56px)',
-        display: 'flex', alignItems: 'center',
-        padding: '0 var(--m-page-px, 16px)',
-        borderBottom: '1px solid var(--m-border)',
-        color: 'var(--m-text-primary)',
-        fontWeight: 600, fontSize: 17,
-      }}>
+      <div
+        className="flex items-center px-[var(--m-page-px)] border-b border-[var(--m-border)] text-[var(--m-text-primary)] font-semibold text-[17px]"
+        style={{ height: 'var(--m-header-h)' }}
+      >
         Processing...
       </div>
 
       {/* Progress header */}
-      <div style={{
-        padding: '24px var(--m-page-px, 16px)',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: 8,
-      }}>
+      <div className="py-6 px-[var(--m-page-px)] flex flex-col items-center gap-2">
         {/* Status icon */}
         {isProcessing ? (
-          <Loader2 size={32} style={{ color: '#6ba3d6', animation: 'spin 1s linear infinite' }} />
+          <Loader2 size={32} className="text-[var(--m-accent-indicator)] animate-spin" />
         ) : allErrored ? (
-          <AlertCircle size={32} style={{ color: '#f87171' }} />
+          <AlertCircle size={32} className="text-[var(--m-error)]" />
         ) : (
-          <Check size={32} style={{ color: '#4ade80' }} />
+          <Check size={32} className="text-[var(--m-success)]" />
         )}
 
-        <div style={{ color: 'var(--m-text-primary)', fontSize: 18, fontWeight: 600 }}>
+        <div className="text-[var(--m-text-primary)] text-lg font-semibold">
           {title}
         </div>
-        <div style={{ color: 'var(--m-text-tertiary)', fontSize: 14 }}>
+        <div className="text-[var(--m-text-tertiary)] text-sm">
           {subtitle}
         </div>
       </div>
 
       {/* File list */}
-      <div style={{
-        flex: 1, overflowY: 'auto',
-        padding: '0 var(--m-page-px, 16px)',
-        display: 'flex', flexDirection: 'column', gap: 2,
-      }}>
+      <div className="flex-1 overflow-y-auto px-[var(--m-page-px)] flex flex-col gap-0.5">
         {files.map(f => {
           const isTappable = f.status === 'error';
           const showBar = f.status === 'uploading' || f.status === 'analyzing';
@@ -166,49 +130,35 @@ export default function ProcessingScreen() {
             <div
               key={f.id}
               onClick={isTappable ? () => retryFile(f.id) : undefined}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '12px 0',
-                borderBottom: '1px solid var(--m-border)',
-                cursor: isTappable ? 'pointer' : 'default',
-                opacity: f.status === 'waiting' ? 0.6 : 1,
-              }}
+              className={`flex items-center gap-3 py-3 border-b border-[var(--m-border)] ${
+                isTappable ? 'cursor-pointer' : 'cursor-default'
+              } ${f.status === 'waiting' ? 'opacity-60' : 'opacity-100'}`}
             >
               <StatusIcon status={f.status} />
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}>
-                  {(() => { const Icon = iconMap[getFileIconName(f.file.name)]; return <Icon size={14} style={{ color: 'var(--m-text-tertiary)', flexShrink: 0 }} />; })()}
-                  <span style={{
-                    color: 'var(--m-text-primary)', fontSize: 14, fontWeight: 500,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  {(() => { const Icon = iconMap[getFileIconName(f.file.name)]; return <Icon size={14} className="text-[var(--m-text-tertiary)] flex-shrink-0" />; })()}
+                  <span className="text-[var(--m-text-primary)] text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis">
                     {f.file.name}
                   </span>
                 </div>
 
-                <div style={{
-                  fontSize: 12, marginTop: 2,
-                  color: statusColor(f.status),
-                }}>
+                <div className={`text-xs mt-0.5 ${statusColorClass(f.status)}`}>
                   {statusText(f.status, f.error)}
                 </div>
 
                 {/* Indeterminate progress bar */}
                 {showBar && (
-                  <div style={{
-                    marginTop: 6, height: 3, borderRadius: 2,
-                    background: f.status === 'uploading' ? 'rgba(255,255,255,0.1)' : 'rgba(107,163,214,0.15)',
-                    overflow: 'hidden', position: 'relative',
-                  }}>
-                    <div style={{
-                      position: 'absolute', top: 0, left: 0,
-                      width: '50%', height: '100%', borderRadius: 2,
-                      background: f.status === 'uploading' ? 'rgba(255,255,255,0.3)' : '#6ba3d6',
-                      animation: 'indeterminate 1.2s ease-in-out infinite',
-                    }} />
+                  <div className={`mt-1.5 h-[3px] rounded-sm overflow-hidden relative ${
+                    f.status === 'uploading' ? 'bg-[var(--m-border)]' : 'bg-[var(--m-accent-subtle)]'
+                  }`}>
+                    <div
+                      className={`absolute top-0 left-0 w-1/2 h-full rounded-sm ${
+                        f.status === 'uploading' ? 'bg-[var(--m-text-tertiary)]' : 'bg-[var(--m-accent-indicator)]'
+                      }`}
+                      style={{ animation: 'indeterminate 1.2s ease-in-out infinite' }}
+                    />
                   </div>
                 )}
               </div>
@@ -218,9 +168,9 @@ export default function ProcessingScreen() {
       </div>
 
       {/* Bottom area */}
-      <div style={{ padding: '16px var(--m-page-px, 16px)', textAlign: 'center' }}>
+      <div className="py-4 px-[var(--m-page-px)] text-center">
         {isProcessing && (
-          <div style={{ color: 'var(--m-text-tertiary)', fontSize: 13 }}>
+          <div className="text-[var(--m-text-tertiary)] text-[13px]">
             You can close this screen — processing continues in the background
           </div>
         )}
@@ -228,12 +178,7 @@ export default function ProcessingScreen() {
         {allErrored && (
           <button
             onClick={handleRetryAll}
-            style={{
-              width: '100%', padding: '14px',
-              borderRadius: 10, border: 'none',
-              background: '#3d1a1a', color: '#f87171',
-              fontSize: 15, fontWeight: 600, cursor: 'pointer',
-            }}
+            className="w-full py-3.5 rounded-[10px] border-none bg-[var(--m-bg-subtle)] text-[var(--m-error)] text-[15px] font-semibold cursor-pointer border border-[var(--m-border)]"
           >
             Retry All
           </button>

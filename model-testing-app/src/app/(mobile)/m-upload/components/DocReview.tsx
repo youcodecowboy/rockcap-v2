@@ -35,10 +35,10 @@ function extractKeyDetails(data: any): { label: string; value: string }[] {
   return results;
 }
 
-function confidenceColor(confidence: number): string {
-  if (confidence >= 80) return '#22c55e'; // green
-  if (confidence >= 50) return '#f59e0b'; // amber
-  return '#ef4444'; // red
+function confidenceColorClass(confidence: number): string {
+  if (confidence >= 80) return 'bg-[var(--m-success)]';
+  if (confidence >= 50) return 'bg-[var(--m-warning)]';
+  return 'bg-[var(--m-error)]';
 }
 
 export default function DocReview({ doc, onUpdate }: DocReviewProps) {
@@ -50,89 +50,83 @@ export default function DocReview({ doc, onUpdate }: DocReviewProps) {
 
   return (
     <>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 var(--m-page-px, 16px) 24px' }}>
+      <div className="flex-1 overflow-y-auto px-[var(--m-page-px)] pb-6">
 
         {/* Document Title */}
-        <label style={labelStyle}>DOCUMENT TITLE</label>
-        <div style={cardStyle}>
-          <span style={{ fontSize: 14, color: 'var(--m-text-primary, #fff)', wordBreak: 'break-word' }}>
+        <label className="block text-[11px] font-semibold tracking-wider text-[var(--m-text-secondary)] mt-5 mb-1.5">DOCUMENT TITLE</label>
+        <div className="bg-[var(--m-bg-subtle)] rounded-[10px] px-3.5 py-3 border border-[var(--m-border)]">
+          <span className="text-sm text-[var(--m-text-primary)] break-words">
             {doc.fileName}
           </span>
         </div>
 
         {/* Summary */}
-        <label style={labelStyle}>SUMMARY</label>
-        <div style={cardStyle}>
-          <span style={{ fontSize: 14, color: 'var(--m-text-primary, #fff)', lineHeight: 1.5 }}>
+        <label className="block text-[11px] font-semibold tracking-wider text-[var(--m-text-secondary)] mt-5 mb-1.5">SUMMARY</label>
+        <div className="bg-[var(--m-bg-subtle)] rounded-[10px] px-3.5 py-3 border border-[var(--m-border)]">
+          <span className="text-sm text-[var(--m-text-primary)] leading-relaxed">
             {doc.analysis.summary}
           </span>
         </div>
 
         {/* Classification */}
-        <label style={labelStyle}>CLASSIFICATION</label>
+        <label className="block text-[11px] font-semibold tracking-wider text-[var(--m-text-secondary)] mt-5 mb-1.5">CLASSIFICATION</label>
         <div
-          style={{ ...cardStyle, cursor: 'pointer' }}
+          className="bg-[var(--m-bg-subtle)] rounded-[10px] px-3.5 py-3 border border-[var(--m-border)] cursor-pointer"
           onClick={() => setShowCategory(true)}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: 16, flex: 1 }}>
+          <div className="flex justify-between items-center">
+            <div className="flex gap-4 flex-1">
               <div>
-                <div style={sublabelStyle}>Category</div>
-                <div style={{ fontSize: 14, color: 'var(--m-text-primary, #fff)' }}>{doc.category}</div>
+                <div className="text-[11px] text-[var(--m-text-secondary)] mb-0.5">Category</div>
+                <div className="text-sm text-[var(--m-text-primary)]">{doc.category}</div>
               </div>
               <div>
-                <div style={sublabelStyle}>Type</div>
-                <div style={{ fontSize: 14, color: 'var(--m-text-primary, #fff)' }}>{doc.fileType}</div>
+                <div className="text-[11px] text-[var(--m-text-secondary)] mb-0.5">Type</div>
+                <div className="text-sm text-[var(--m-text-primary)]">{doc.fileType}</div>
               </div>
             </div>
-            <span style={{ color: 'var(--m-text-secondary, #888)', fontSize: 12 }}>{'\u25BC'}</span>
+            <span className="text-[var(--m-text-secondary)] text-xs">{'\u25BC'}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+          <div className="flex items-center gap-1.5 mt-2">
             <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                backgroundColor: confidenceColor(conf),
-                display: 'inline-block',
-              }}
+              className={`w-2 h-2 rounded-full inline-block ${confidenceColorClass(conf)}`}
             />
-            <span style={{ fontSize: 12, color: 'var(--m-text-secondary, #888)' }}>
+            <span className="text-xs text-[var(--m-text-secondary)]">
               {conf}% confidence
             </span>
           </div>
         </div>
 
         {/* Filing Destination */}
-        <label style={labelStyle}>FILE TO</label>
+        <label className="block text-[11px] font-semibold tracking-wider text-[var(--m-text-secondary)] mt-5 mb-1.5">FILE TO</label>
         <div
-          style={{ ...cardStyle, cursor: 'pointer' }}
+          className="bg-[var(--m-bg-subtle)] rounded-[10px] px-3.5 py-3 border border-[var(--m-border)] cursor-pointer"
           onClick={() => setShowFiling(true)}
         >
           {doc.clientId ? (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="flex justify-between items-start">
               <div>
-                <div style={{ fontSize: 14, color: 'var(--m-text-primary, #fff)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Building size={14} style={{ color: 'var(--m-text-tertiary)', flexShrink: 0 }} />
+                <div className="text-sm text-[var(--m-text-primary)] flex items-center gap-1.5">
+                  <Building size={14} className="text-[var(--m-text-tertiary)] flex-shrink-0" />
                   <span>
                     {doc.clientName}
                     {doc.projectName ? ` \u2192 ${doc.projectName}` : ''}
                   </span>
                 </div>
                 {doc.folderName && (
-                  <div style={{ fontSize: 12, color: 'var(--m-text-secondary, #888)', marginTop: 4 }}>
+                  <div className="text-xs text-[var(--m-text-secondary)] mt-1">
                     {doc.folderName}
                   </div>
                 )}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--m-accent, #3b82f6)' }}>Edit</span>
+              <span className="text-xs text-[var(--m-accent)]">Edit</span>
             </div>
           ) : (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 14, color: '#ef4444' }}>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-[var(--m-error)]">
                 Client required &mdash; tap to select
               </span>
-              <span style={{ fontSize: 12, color: 'var(--m-accent, #3b82f6)' }}>Edit</span>
+              <span className="text-xs text-[var(--m-accent)]">Edit</span>
             </div>
           )}
         </div>
@@ -140,31 +134,16 @@ export default function DocReview({ doc, onUpdate }: DocReviewProps) {
         {/* Key Details */}
         {keyDetails.length > 0 && (
           <>
-            <label style={labelStyle}>KEY DETAILS</label>
-            <div style={cardStyle}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <label className="block text-[11px] font-semibold tracking-wider text-[var(--m-text-secondary)] mt-5 mb-1.5">KEY DETAILS</label>
+            <div className="bg-[var(--m-bg-subtle)] rounded-[10px] px-3.5 py-3 border border-[var(--m-border)]">
+              <table className="w-full border-collapse">
                 <tbody>
                   {keyDetails.map((kv) => (
                     <tr key={kv.label}>
-                      <td
-                        style={{
-                          fontSize: 12,
-                          color: 'var(--m-text-secondary, #888)',
-                          padding: '6px 8px 6px 0',
-                          verticalAlign: 'top',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
+                      <td className="text-xs text-[var(--m-text-secondary)] py-1.5 pr-2 align-top whitespace-nowrap">
                         {kv.label}
                       </td>
-                      <td
-                        style={{
-                          fontSize: 14,
-                          color: 'var(--m-text-primary, #fff)',
-                          padding: '6px 0',
-                          wordBreak: 'break-word',
-                        }}
-                      >
+                      <td className="text-sm text-[var(--m-text-primary)] py-1.5 break-words">
                         {kv.value}
                       </td>
                     </tr>
@@ -214,30 +193,3 @@ export default function DocReview({ doc, onUpdate }: DocReviewProps) {
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Shared styles
-// ---------------------------------------------------------------------------
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: '0.05em',
-  color: 'var(--m-text-secondary, #888)',
-  marginTop: 20,
-  marginBottom: 6,
-};
-
-const sublabelStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: 'var(--m-text-secondary, #888)',
-  marginBottom: 2,
-};
-
-const cardStyle: React.CSSProperties = {
-  background: 'var(--m-card, #1a1a1a)',
-  borderRadius: 10,
-  padding: '12px 14px',
-  border: '1px solid var(--m-border, #2a2a2a)',
-};

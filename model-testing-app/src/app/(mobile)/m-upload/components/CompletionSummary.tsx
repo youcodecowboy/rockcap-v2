@@ -21,46 +21,31 @@ export default function CompletionSummary() {
     : `${failed.length} failed \u2014 tap to retry`;
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column',
-      height: '100%', background: 'var(--m-bg-inset)',
-    }}>
+    <div className="flex flex-col h-full bg-[var(--m-bg-inset)]">
       {/* Header bar */}
-      <div style={{
-        height: 'var(--m-header-h, 56px)',
-        display: 'flex', alignItems: 'center',
-        padding: '0 var(--m-page-px, 16px)',
-        borderBottom: '1px solid var(--m-border)',
-        color: 'var(--m-text-primary)',
-        fontWeight: 600, fontSize: 17,
-      }}>
+      <div
+        className="flex items-center px-[var(--m-page-px)] border-b border-[var(--m-border)] text-[var(--m-text-primary)] font-semibold text-[17px]"
+        style={{ height: 'var(--m-header-h)' }}
+      >
         Complete
       </div>
 
       {/* Success header */}
-      <div style={{
-        padding: '24px var(--m-page-px, 16px)',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: 8,
-      }}>
+      <div className="py-6 px-[var(--m-page-px)] flex flex-col items-center gap-2">
         {allSucceeded
-          ? <CheckCircle size={32} style={{ color: '#4ade80' }} />
-          : <AlertCircle size={32} style={{ color: '#f59e0b' }} />
+          ? <CheckCircle size={32} className="text-[var(--m-success)]" />
+          : <AlertCircle size={32} className="text-[var(--m-warning)]" />
         }
-        <div style={{ color: 'var(--m-text-primary)', fontSize: 18, fontWeight: 600 }}>
+        <div className="text-[var(--m-text-primary)] text-lg font-semibold">
           {title}
         </div>
-        <div style={{ color: 'var(--m-text-tertiary)', fontSize: 14 }}>
+        <div className="text-[var(--m-text-tertiary)] text-sm">
           {subtitle}
         </div>
       </div>
 
       {/* Document list */}
-      <div style={{
-        flex: 1, overflowY: 'auto',
-        padding: '0 var(--m-page-px, 16px)',
-        display: 'flex', flexDirection: 'column', gap: 2,
-      }}>
+      <div className="flex-1 overflow-y-auto px-[var(--m-page-px)] flex flex-col gap-0.5">
         {reviewDocs.map((doc) => {
           const isSaved = !!doc.savedDocId && !doc.saveError;
           const isFailed = !!doc.saveError;
@@ -79,69 +64,38 @@ export default function CompletionSummary() {
                 ? () => router.push(`/m-docs?documentId=${doc.savedDocId}`)
                 : undefined
               }
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '12px 0',
-                borderBottom: '1px solid var(--m-border)',
-                cursor: isSaved ? 'pointer' : 'default',
-              }}
+              className={`flex items-center gap-3 py-3 border-b border-[var(--m-border)] ${
+                isSaved ? 'cursor-pointer' : 'cursor-default'
+              }`}
             >
               {/* Status icon */}
               {isSaved ? (
-                <div style={{
-                  width: 32, height: 32, borderRadius: '50%',
-                  background: '#1a3d1a', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <Check size={16} style={{ color: '#4ade80' }} />
+                <div className="w-8 h-8 rounded-full bg-[var(--m-accent-subtle)] flex items-center justify-center flex-shrink-0">
+                  <Check size={16} className="text-[var(--m-success)]" />
                 </div>
               ) : (
-                <div style={{
-                  width: 32, height: 32, borderRadius: '50%',
-                  background: '#3d1a1a', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <AlertCircle size={16} style={{ color: '#f87171' }} />
+                <div className="w-8 h-8 rounded-full bg-[var(--m-bg-inset)] flex items-center justify-center flex-shrink-0">
+                  <AlertCircle size={16} className="text-[var(--m-error)]" />
                 </div>
               )}
 
               {/* Doc info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}>
-                  {(() => { const Icon = iconMap[getFileIconName(doc.fileName)]; return <Icon size={14} style={{ color: 'var(--m-text-tertiary)', flexShrink: 0 }} />; })()}
-                  <span style={{
-                    color: 'var(--m-text-primary)', fontSize: 14, fontWeight: 500,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  {(() => { const Icon = iconMap[getFileIconName(doc.fileName)]; return <Icon size={14} className="text-[var(--m-text-tertiary)] flex-shrink-0" />; })()}
+                  <span className="text-[var(--m-text-primary)] text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis">
                     {displayName}
                   </span>
                 </div>
 
                 {/* Second line: category badge + filing path, or error */}
                 {isSaved && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    marginTop: 4,
-                  }}>
-                    <span style={{
-                      fontSize: 11, fontWeight: 500,
-                      padding: '2px 6px', borderRadius: 4,
-                      background: 'rgba(107,163,214,0.15)',
-                      color: '#6ba3d6',
-                      whiteSpace: 'nowrap',
-                    }}>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-[var(--m-accent-subtle)] text-[var(--m-accent-indicator)] whitespace-nowrap">
                       {doc.category}
                     </span>
                     {filingPath && (
-                      <span style={{
-                        fontSize: 12,
-                        color: 'var(--m-text-tertiary)',
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>
+                      <span className="text-xs text-[var(--m-text-tertiary)] whitespace-nowrap overflow-hidden text-ellipsis">
                         {'\u2192'} {filingPath}
                       </span>
                     )}
@@ -149,10 +103,7 @@ export default function CompletionSummary() {
                 )}
 
                 {isFailed && (
-                  <div style={{
-                    fontSize: 12, marginTop: 2,
-                    color: '#f87171',
-                  }}>
+                  <div className="text-xs mt-0.5 text-[var(--m-error)]">
                     {doc.saveError}
                   </div>
                 )}
@@ -160,10 +111,7 @@ export default function CompletionSummary() {
 
               {/* Chevron for saved docs */}
               {isSaved && (
-                <span style={{
-                  color: 'var(--m-text-tertiary)', fontSize: 18,
-                  flexShrink: 0,
-                }}>
+                <span className="text-[var(--m-text-tertiary)] text-lg flex-shrink-0">
                   {'\u203A'}
                 </span>
               )}
@@ -173,35 +121,16 @@ export default function CompletionSummary() {
       </div>
 
       {/* Action buttons */}
-      <div style={{
-        padding: '16px var(--m-page-px, 16px)',
-        display: 'flex', gap: 12,
-        borderTop: '1px solid var(--m-border)',
-      }}>
+      <div className="py-4 px-[var(--m-page-px)] flex gap-3 border-t border-[var(--m-border)]">
         <button
           onClick={() => reset(true)}
-          style={{
-            flex: 1, padding: '14px',
-            borderRadius: 10,
-            border: '1px solid var(--m-border)',
-            background: 'transparent',
-            color: 'var(--m-text-primary)',
-            fontSize: 15, fontWeight: 600,
-            cursor: 'pointer',
-          }}
+          className="flex-1 py-3.5 rounded-[10px] border border-[var(--m-border)] bg-transparent text-[var(--m-text-primary)] text-[15px] font-semibold cursor-pointer"
         >
           Upload More
         </button>
         <button
           onClick={() => router.push('/m-docs')}
-          style={{
-            flex: 1, padding: '14px',
-            borderRadius: 10, border: 'none',
-            background: 'var(--m-accent, #6ba3d6)',
-            color: '#fff',
-            fontSize: 15, fontWeight: 600,
-            cursor: 'pointer',
-          }}
+          className="flex-1 py-3.5 rounded-[10px] border-none bg-[var(--m-accent)] text-white text-[15px] font-semibold cursor-pointer"
         >
           Done
         </button>

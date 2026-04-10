@@ -46,53 +46,29 @@ export default function FilePicker() {
 
   return (
     <div
+      className="min-h-[100dvh] bg-[var(--m-bg)] text-[var(--m-text-primary)] flex flex-col px-[var(--m-page-px)] gap-4"
       style={{
-        minHeight: '100dvh',
-        background: 'var(--m-bg)',
-        color: 'var(--m-text-primary)',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: 'var(--m-page-px, 16px)',
-        paddingTop: 'calc(var(--m-header-h, 56px) + 16px)',
-        paddingBottom: 'calc(var(--m-footer-h, 64px) + 16px)',
-        gap: '16px',
+        paddingTop: 'calc(var(--m-header-h) + 16px)',
+        paddingBottom: 'calc(var(--m-footer-h) + 16px)',
       }}
     >
       {/* Header */}
-      <h1 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>
+      <h1 className="text-xl font-semibold m-0">
         Upload Documents
       </h1>
 
       {/* Context banner */}
       {filingContext && (
-        <div
-          style={{
-            background: 'rgba(59, 130, 246, 0.12)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: '10px',
-            padding: '12px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '10px',
-          }}
-        >
-          <div style={{ fontSize: '13px', color: 'var(--m-text-secondary)', lineHeight: 1.4 }}>
-            <span style={{ color: 'rgba(59, 130, 246, 0.8)', fontWeight: 500 }}>Filing to: </span>
+        <div className="bg-[var(--m-accent-subtle)] border border-[var(--m-accent-indicator)]/30 rounded-[10px] px-3.5 py-3 flex items-center justify-between gap-2.5">
+          <div className="text-[13px] text-[var(--m-text-secondary)] leading-snug">
+            <span className="text-[var(--m-accent-indicator)] font-medium">Filing to: </span>
             {[filingContext.clientName, filingContext.projectName, filingContext.folderName]
               .filter(Boolean)
               .join(' \u2192 ')}
           </div>
           <button
             onClick={() => setFilingContext(null)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--m-text-tertiary)',
-              padding: '4px',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
+            className="bg-transparent border-none text-[var(--m-text-tertiary)] p-1 cursor-pointer flex-shrink-0"
             aria-label="Clear filing context"
           >
             <X size={16} />
@@ -103,42 +79,16 @@ export default function FilePicker() {
       {/* Drop zone */}
       <button
         onClick={handleDropZoneClick}
-        style={{
-          background: 'var(--m-bg-inset)',
-          border: '2px dashed var(--m-border)',
-          borderRadius: '12px',
-          padding: '32px 20px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '12px',
-          cursor: 'pointer',
-          width: '100%',
-          color: 'inherit',
-          textAlign: 'center',
-        }}
+        className="bg-[var(--m-bg-inset)] border-2 border-dashed border-[var(--m-border)] rounded-xl py-8 px-5 flex flex-col items-center gap-3 cursor-pointer w-full text-inherit text-center"
       >
-        <File size={36} style={{ color: 'var(--m-text-tertiary)' }} />
-        <span style={{ fontSize: '15px', fontWeight: 500, color: 'var(--m-text-primary)' }}>
+        <File size={36} className="text-[var(--m-text-tertiary)]" />
+        <span className="text-[15px] font-medium text-[var(--m-text-primary)]">
           Select files to upload
         </span>
-        <span style={{ fontSize: '13px', color: 'var(--m-text-tertiary)' }}>
+        <span className="text-[13px] text-[var(--m-text-tertiary)]">
           PDF, DOCX, XLSX, images — up to 5 files
         </span>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            marginTop: '4px',
-            padding: '8px 20px',
-            borderRadius: '8px',
-            background: 'var(--m-accent-indicator, #3b82f6)',
-            color: '#fff',
-            fontSize: '14px',
-            fontWeight: 500,
-          }}
-        >
+        <span className="inline-flex items-center gap-1.5 mt-1 px-5 py-2 rounded-lg bg-[var(--m-accent-indicator)] text-white text-sm font-medium">
           <Upload size={16} />
           Choose Files
         </span>
@@ -150,55 +100,32 @@ export default function FilePicker() {
         multiple
         accept={ACCEPTED_TYPES}
         onChange={handleFileChange}
-        style={{ display: 'none' }}
+        className="hidden"
       />
 
       {/* Selected files list */}
       {files.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <span style={{ fontSize: '13px', color: 'var(--m-text-secondary)', fontWeight: 500 }}>
+        <div className="flex flex-col gap-2">
+          <span className="text-[13px] text-[var(--m-text-secondary)] font-medium">
             {files.length} file{files.length !== 1 ? 's' : ''} selected
           </span>
           {files.map((uf) => (
             <div
               key={uf.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 12px',
-                background: 'var(--m-bg-subtle)',
-                borderRadius: '10px',
-                border: '1px solid var(--m-border-subtle)',
-              }}
+              className="flex items-center gap-2.5 px-3 py-2.5 bg-[var(--m-bg-subtle)] rounded-[10px] border border-[var(--m-border-subtle)]"
             >
-              {(() => { const Icon = iconMap[getFileIconName(uf.file.name)]; return <Icon size={18} style={{ flexShrink: 0, color: 'var(--m-text-tertiary)' }} />; })()}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: '14px',
-                    color: 'var(--m-text-primary)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
+              {(() => { const Icon = iconMap[getFileIconName(uf.file.name)]; return <Icon size={18} className="flex-shrink-0 text-[var(--m-text-tertiary)]" />; })()}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-[var(--m-text-primary)] whitespace-nowrap overflow-hidden text-ellipsis">
                   {uf.file.name}
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--m-text-tertiary)', marginTop: '2px' }}>
+                <div className="text-xs text-[var(--m-text-tertiary)] mt-0.5">
                   {formatFileSize(uf.file.size)}
                 </div>
               </div>
               <button
                 onClick={() => removeFile(uf.id)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--m-text-tertiary)',
-                  padding: '4px',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
+                className="bg-transparent border-none text-[var(--m-text-tertiary)] p-1 cursor-pointer flex-shrink-0"
                 aria-label={`Remove ${uf.file.name}`}
               >
                 <X size={16} />
@@ -212,21 +139,13 @@ export default function FilePicker() {
       <button
         onClick={startProcessing}
         disabled={files.length === 0}
-        style={{
-          marginTop: 'auto',
-          width: '100%',
-          padding: '14px',
-          borderRadius: '10px',
-          border: 'none',
-          fontSize: '15px',
-          fontWeight: 600,
-          cursor: files.length === 0 ? 'not-allowed' : 'pointer',
-          background: files.length === 0 ? 'var(--m-bg-subtle)' : 'var(--m-accent-indicator, #3b82f6)',
-          color: files.length === 0 ? 'var(--m-text-tertiary)' : '#fff',
-          opacity: files.length === 0 ? 0.5 : 1,
-        }}
+        className={`mt-auto w-full py-3.5 rounded-[10px] border-none text-[15px] font-semibold ${
+          files.length === 0
+            ? 'bg-[var(--m-bg-subtle)] text-[var(--m-text-tertiary)] opacity-50 cursor-not-allowed'
+            : 'bg-[var(--m-accent-indicator)] text-white cursor-pointer'
+        }`}
       >
-        Upload & Analyze
+        Upload &amp; Analyze
       </button>
     </div>
   );
