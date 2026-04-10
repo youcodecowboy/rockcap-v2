@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, MessagesSquare } from 'lucide-react';
-import { useQuery } from 'convex/react';
+import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { useMessenger } from '@/contexts/MessengerContext';
 
@@ -37,7 +37,8 @@ function getInitials(name: string): string {
 
 export default function ConversationLibrary({ variant = 'mobile' }: ConversationLibraryProps) {
   const { openConversation, setView, setMode, setChatOpen } = useMessenger();
-  const conversations = useQuery(api.conversations.getMyConversations, {});
+  const { isAuthenticated } = useConvexAuth();
+  const conversations = useQuery(api.conversations.getMyConversations, isAuthenticated ? {} : 'skip');
 
   const isMobile = variant === 'mobile';
 

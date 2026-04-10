@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { useRouter } from 'next/navigation';
@@ -28,6 +28,7 @@ export default function NotificationDropdown() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { openConversation } = useMessenger();
+  const { isAuthenticated } = useConvexAuth();
 
   const recentJobs = useQuery(api.fileQueue.getRecentJobs, { includeRead: false });
   const unreadCount = useQuery(api.fileQueue.getUnreadCount);
@@ -40,8 +41,8 @@ export default function NotificationDropdown() {
   const markNotificationAsRead = useMutation(api.notifications.markAsRead);
   const markAllNotificationsAsRead = useMutation(api.notifications.markAllAsRead);
   
-  // Conversations (unread messages)
-  const conversations = useQuery(api.conversations.getMyConversations, {});
+  // Conversations (unread messages — requires auth)
+  const conversations = useQuery(api.conversations.getMyConversations, isAuthenticated ? {} : 'skip');
   const unreadConversations = conversations?.filter((c: any) => c.unreadCount > 0)?.slice(0, 3) || [];
 
   // Bulk upload batches
