@@ -62,7 +62,7 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
   const [showTagInput, setShowTagInput] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
 
   // Create-mode state
@@ -229,10 +229,10 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
 
   return (
     <>
-      {/* Metadata bar */}
+      {/* Metadata bar — collapsible */}
       <div className="border-b border-[var(--m-border-subtle)] flex-shrink-0">
-        {/* Row 1: Client & Project */}
-        <div className="flex items-center gap-1.5 px-[var(--m-page-px)] pt-2 pb-1">
+        {/* Always visible: client, project, date, chevron */}
+        <div className="flex items-center gap-1.5 px-[var(--m-page-px)] py-2">
           {note?.clientId && clientName ? (
             <button
               onClick={() => router.push(`/m-clients?clientId=${note.clientId}`)}
@@ -240,12 +240,6 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
             >
               <Building2 className="w-3 h-3" />
               {clientName}
-              <span
-                onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleRemoveClient(); }}
-                className="text-amber-400 hover:text-amber-700 ml-0.5"
-              >
-                <X className="w-3 h-3" />
-              </span>
             </button>
           ) : (
             <button
@@ -263,12 +257,6 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
             >
               <FolderKanban className="w-3 h-3" />
               {projectName}
-              <span
-                onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleRemoveProject(); }}
-                className="text-violet-400 hover:text-violet-700 ml-0.5"
-              >
-                <X className="w-3 h-3" />
-              </span>
             </button>
           ) : (
             <button
@@ -279,73 +267,103 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
             </button>
           )}
 
-          {/* Updated date — right-aligned */}
-          {note?.updatedAt && (
-            <span className="ml-auto text-[10px] text-[var(--m-text-tertiary)] whitespace-nowrap flex-shrink-0">
-              {formatRelativeDate(note.updatedAt)}
+          {/* Tag count badge when collapsed */}
+          {!expanded && tags.length > 0 && (
+            <span className="text-[10px] text-[var(--m-text-tertiary)] whitespace-nowrap flex-shrink-0">
+              {tags.length} tag{tags.length !== 1 ? 's' : ''}
             </span>
           )}
-        </div>
 
-        {/* Row 2: Tags (collapsible) */}
-        <div className="flex items-center gap-1.5 px-[var(--m-page-px)] pb-2">
-          <div className={`flex items-center gap-1.5 flex-1 min-w-0 ${tagsExpanded ? 'flex-wrap' : 'overflow-x-auto scrollbar-none'}`}>
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className={`${tagColor(tag)} rounded-full px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap flex-shrink-0`}
-              >
-                {tag}
-                <button
-                  onClick={() => handleRemoveTag(tag)}
-                  className="opacity-50 hover:opacity-100"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
+          {/* Date + chevron — right side */}
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            {note?.updatedAt && (
+              <span className="text-[10px] text-[var(--m-text-tertiary)] whitespace-nowrap">
+                {formatRelativeDate(note.updatedAt)}
               </span>
-            ))}
-
-            {showTagInput ? (
-              <input
-                ref={tagInputRef}
-                type="text"
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddTag(newTag);
-                  if (e.key === 'Escape') { setNewTag(''); setShowTagInput(false); }
-                }}
-                onBlur={() => {
-                  if (newTag.trim()) handleAddTag(newTag);
-                  else { setNewTag(''); setShowTagInput(false); }
-                }}
-                placeholder="add tag"
-                className="w-16 bg-transparent border-b border-[var(--m-border)] px-1 py-0.5 text-[12px] outline-none text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] flex-shrink-0"
-                style={{ fontSize: '16px', lineHeight: '1.2', transform: 'scale(0.75)', transformOrigin: 'left center', width: '5.5rem' }}
-              />
-            ) : (
-              <button
-                onClick={() => setShowTagInput(true)}
-                className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2 py-1 text-[11px] font-medium whitespace-nowrap flex-shrink-0"
-              >
-                +
-              </button>
             )}
-          </div>
-
-          {/* Expand/collapse toggle — only show when there are enough tags */}
-          {tags.length > 2 && (
             <button
-              onClick={() => setTagsExpanded(!tagsExpanded)}
-              className="flex-shrink-0 text-[var(--m-text-tertiary)] p-0.5"
+              onClick={() => setExpanded(!expanded)}
+              className="text-[var(--m-text-tertiary)] p-0.5"
             >
-              {tagsExpanded
+              {expanded
                 ? <ChevronUp className="w-3.5 h-3.5" />
                 : <ChevronDown className="w-3.5 h-3.5" />
               }
             </button>
-          )}
+          </div>
         </div>
+
+        {/* Expanded section: tags, unlink buttons */}
+        {expanded && (
+          <div className="px-[var(--m-page-px)] pb-2 space-y-2">
+            {/* Unlink actions */}
+            {(note?.clientId || note?.projectId) && (
+              <div className="flex items-center gap-2">
+                {note?.clientId && (
+                  <button
+                    onClick={handleRemoveClient}
+                    className="text-[10px] text-[var(--m-text-tertiary)] flex items-center gap-0.5"
+                  >
+                    <X className="w-2.5 h-2.5" /> Unlink client
+                  </button>
+                )}
+                {note?.projectId && (
+                  <button
+                    onClick={handleRemoveProject}
+                    className="text-[10px] text-[var(--m-text-tertiary)] flex items-center gap-0.5"
+                  >
+                    <X className="w-2.5 h-2.5" /> Unlink project
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Tags */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className={`${tagColor(tag)} rounded-full px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap`}
+                >
+                  {tag}
+                  <button
+                    onClick={() => handleRemoveTag(tag)}
+                    className="opacity-50 hover:opacity-100"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              ))}
+
+              {showTagInput ? (
+                <input
+                  ref={tagInputRef}
+                  type="text"
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddTag(newTag);
+                    if (e.key === 'Escape') { setNewTag(''); setShowTagInput(false); }
+                  }}
+                  onBlur={() => {
+                    if (newTag.trim()) handleAddTag(newTag);
+                    else { setNewTag(''); setShowTagInput(false); }
+                  }}
+                  placeholder="add tag"
+                  className="bg-transparent border-b border-[var(--m-border)] px-1 py-0.5 outline-none text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] flex-shrink-0"
+                  style={{ fontSize: '16px', lineHeight: '1.2', transform: 'scale(0.75)', transformOrigin: 'left center', width: '5.5rem' }}
+                />
+              ) : (
+                <button
+                  onClick={() => setShowTagInput(true)}
+                  className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2 py-1 text-[11px] font-medium whitespace-nowrap"
+                >
+                  + Tag
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Client picker bottom sheet */}
