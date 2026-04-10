@@ -501,7 +501,8 @@ export const get = query({
     }
 
     // Only return if user created or is assigned to the task
-    if (task.createdBy !== user._id && task.assignedTo !== user._id) {
+    const isAssigned = Array.isArray(task.assignedTo) && task.assignedTo.includes(user._id);
+    if (task.createdBy !== user._id && !isAssigned) {
       return null;
     }
 
@@ -516,9 +517,9 @@ export const getByUser = query({
       v.literal("todo"),
       v.literal("in_progress"),
       v.literal("completed"),
-      v.literal("cancelled")
+      v.literal("cancelled"),
+      v.literal("paused")
     )),
-    assignedTo: v.optional(v.id("users")), // Filter by assigned user
     clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
     tags: v.optional(v.array(v.string())),
@@ -552,18 +553,18 @@ export const getByUser = query({
     // Filter by user relationship
     tasks = tasks.filter(task => {
       if (includeCreated && task.createdBy === user._id) return true;
-      if (includeAssigned && task.assignedTo === user._id) return true;
+      if (includeAssigned) {
+        if (Array.isArray(task.assignedTo)) {
+          return task.assignedTo.includes(user._id);
+        }
+        return task.assignedTo === user._id;
+      }
       return false;
     });
 
     // Filter by status
     if (args.status) {
       tasks = tasks.filter(t => t.status === args.status);
-    }
-
-    // Filter by assignedTo
-    if (args.assignedTo) {
-      tasks = tasks.filter(t => t.assignedTo === args.assignedTo);
     }
 
     // Filter by client
@@ -578,13 +579,13 @@ export const getByUser = query({
 
     // Filter by tags
     if (args.tags && args.tags.length > 0) {
-      tasks = tasks.filter(t => 
+      tasks = tasks.filter(t =>
         t.tags && args.tags!.some(tag => t.tags!.includes(tag))
       );
     }
 
     // Sort by updatedAt descending (most recently updated first)
-    return tasks.sort((a, b) => 
+    return tasks.sort((a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
   },
@@ -614,11 +615,13 @@ export const getByClient = query({
       .collect();
 
     // Filter to tasks user created or is assigned to
-    tasks = tasks.filter(task => 
-      task.createdBy === user._id || task.assignedTo === user._id
-    );
+    tasks = tasks.filter(task => {
+      if (task.createdBy === user._id) return true;
+      if (Array.isArray(task.assignedTo)) return task.assignedTo.includes(user._id);
+      return task.assignedTo === user._id;
+    });
 
-    return tasks.sort((a, b) => 
+    return tasks.sort((a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
   },
@@ -648,11 +651,13 @@ export const getByProject = query({
       .collect();
 
     // Filter to tasks user created or is assigned to
-    tasks = tasks.filter(task => 
-      task.createdBy === user._id || task.assignedTo === user._id
-    );
+    tasks = tasks.filter(task => {
+      if (task.createdBy === user._id) return true;
+      if (Array.isArray(task.assignedTo)) return task.assignedTo.includes(user._id);
+      return task.assignedTo === user._id;
+    });
 
-    return tasks.sort((a, b) => 
+    return tasks.sort((a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
   },
@@ -668,7 +673,7 @@ export const getActiveCountByClient = query({
       .collect();
 
     return tasks.filter(t =>
-      t.status === "todo" || t.status === "in_progress"
+      t.status === "todo" || t.status === "in_progress" || t.status === "paused"
     ).length;
   },
 });
@@ -683,7 +688,7 @@ export const getActiveCountByProject = query({
       .collect();
 
     return tasks.filter(t =>
-      t.status === "todo" || t.status === "in_progress"
+      t.status === "todo" || t.status === "in_progress" || t.status === "paused"
     ).length;
   },
 });
@@ -694,68 +699,104 @@ export const getMetrics = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
-      return {
-        activeTasks: 0,
-        completed: 0,
-        upNext: null,
-      };
+      return { active: 0, completed: 0, paused: 0, dueToday: 0, overdue: 0, upNext: null };
     }
 
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .first();
-
     if (!user) {
-      return {
-        activeTasks: 0,
-        completed: 0,
-        upNext: null,
-      };
+      return { active: 0, completed: 0, paused: 0, dueToday: 0, overdue: 0, upNext: null };
     }
 
-    // Get all tasks for user
     const allTasks = await ctx.db.query("tasks").collect();
-    const userTasks = allTasks.filter(task => 
-      task.createdBy === user._id || task.assignedTo === user._id
-    );
+    const userTasks = allTasks.filter(task => {
+      if (task.createdBy === user._id) return true;
+      if (Array.isArray(task.assignedTo)) return task.assignedTo.includes(user._id);
+      return task.assignedTo === user._id;
+    });
 
     const now = new Date();
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
 
-    // Calculate metrics
-    const activeTasks = userTasks.filter(t => 
-      t.status !== 'completed' && t.status !== 'cancelled'
+    const active = userTasks.filter(t =>
+      t.status === "todo" || t.status === "in_progress"
     ).length;
-    
-    const completed = userTasks.filter(t => t.status === 'completed').length;
 
-    // Find up next task (earliest due date, not completed)
-    // Include all non-completed tasks (overdue, upcoming, or no due date)
+    const completed = userTasks.filter(t => t.status === "completed").length;
+    const paused = userTasks.filter(t => t.status === "paused").length;
+
+    const dueToday = userTasks.filter(t =>
+      t.dueDate &&
+      t.dueDate >= todayStart && t.dueDate < todayEnd &&
+      t.status !== "completed" && t.status !== "cancelled"
+    ).length;
+
+    const overdue = userTasks.filter(t =>
+      t.dueDate &&
+      t.dueDate < todayStart &&
+      t.status !== "completed" && t.status !== "cancelled"
+    ).length;
+
     const upcomingTasks = userTasks
-      .filter(t => {
-        // Exclude only completed and cancelled tasks
-        return t.status !== 'completed' && t.status !== 'cancelled';
-      })
+      .filter(t => t.status !== "completed" && t.status !== "cancelled")
       .sort((a, b) => {
-        // Sort: overdue tasks first (most urgent), then upcoming tasks, then tasks without due dates
         if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1; // Tasks without due dates go to end
+        if (!a.dueDate) return 1;
         if (!b.dueDate) return -1;
-        const dateA = new Date(a.dueDate!).getTime();
-        const dateB = new Date(b.dueDate!).getTime();
-        // Sort by date ascending (earliest first, including overdue)
-        return dateA - dateB;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
 
-    const upNext = upcomingTasks.length > 0 ? upcomingTasks[0] : null;
-
     return {
-      activeTasks,
+      active,
       completed,
-      upNext,
+      paused,
+      dueToday,
+      overdue,
+      upNext: upcomingTasks.length > 0 ? upcomingTasks[0] : null,
     };
+  },
+});
+
+// Query: Get task counts by date for 7-day strip
+export const getByDateRange = query({
+  args: {
+    startDate: v.string(),
+    endDate: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return {};
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) return {};
+
+    const allTasks = await ctx.db.query("tasks").collect();
+    const userTasks = allTasks.filter(task => {
+      if (task.createdBy === user._id) return true;
+      if (Array.isArray(task.assignedTo)) return task.assignedTo.includes(user._id);
+      return task.assignedTo === user._id;
+    });
+
+    const activeTasks = userTasks.filter(t =>
+      t.dueDate &&
+      t.status !== "completed" && t.status !== "cancelled"
+    );
+
+    const counts: Record<string, number> = {};
+    for (const task of activeTasks) {
+      const dateKey = task.dueDate!.split("T")[0];
+      if (dateKey >= args.startDate && dateKey <= args.endDate) {
+        counts[dateKey] = (counts[dateKey] || 0) + 1;
+      }
+    }
+
+    return counts;
   },
 });
 
