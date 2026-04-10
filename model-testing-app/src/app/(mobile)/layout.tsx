@@ -1,7 +1,6 @@
 import { TabProvider } from '@/contexts/TabContext';
 import { MessengerProvider } from '@/contexts/MessengerContext';
 import { MobileLayoutProvider } from '@/contexts/MobileLayoutContext';
-import { UploadProvider } from '@/contexts/UploadContext';
 import MobileShell from '@/components/mobile/MobileShell';
 import type { Viewport } from 'next';
 
@@ -23,13 +22,11 @@ export default function MobileLayout({
 }) {
   return (
     <MessengerProvider>
-      <UploadProvider>
-        <MobileLayoutProvider>
-          <TabProvider>
-            <MobileShell>{children}</MobileShell>
-          </TabProvider>
-        </MobileLayoutProvider>
-      </UploadProvider>
+      <MobileLayoutProvider>
+        <TabProvider>
+          <MobileShell>{children}</MobileShell>
+        </TabProvider>
+      </MobileLayoutProvider>
     </MessengerProvider>
   );
 }
