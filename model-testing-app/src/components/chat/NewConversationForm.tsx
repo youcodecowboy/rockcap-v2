@@ -100,10 +100,10 @@ export default function NewConversationForm({ variant = 'mobile' }: NewConversat
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g., Wimbledon Park - Valuation"
-            className={`w-full px-3 py-2 rounded-lg text-[13px] outline-none ${
+            className={`w-full px-3 py-2 rounded-lg outline-none ${
               isMobile
-                ? 'bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)]'
-                : 'bg-gray-50 border border-gray-200 text-gray-900 focus:border-gray-300'
+                ? 'text-[16px] bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)]'
+                : 'text-[13px] bg-gray-50 border border-gray-200 text-gray-900 focus:border-gray-300'
             }`}
           />
         </div>
@@ -131,7 +131,7 @@ export default function NewConversationForm({ variant = 'mobile' }: NewConversat
               value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)}
               placeholder="Search users..."
-              className={`flex-1 bg-transparent text-[13px] outline-none ${isMobile ? 'text-[var(--m-text-primary)]' : 'text-gray-900'}`}
+              className={`flex-1 bg-transparent outline-none ${isMobile ? 'text-[16px] text-[var(--m-text-primary)]' : 'text-[13px] text-gray-900'}`}
             />
           </div>
           <div className={`max-h-40 overflow-y-auto rounded-lg ${isMobile ? 'bg-[var(--m-bg-inset)]/30' : 'bg-gray-50'}`}>
@@ -166,9 +166,9 @@ export default function NewConversationForm({ variant = 'mobile' }: NewConversat
             onChange={(e) => setFirstMessage(e.target.value)}
             placeholder="Kick off the conversation..."
             rows={3}
-            className={`w-full px-3 py-2 rounded-lg text-[13px] outline-none resize-none ${
+            className={`w-full px-3 py-2 rounded-lg outline-none resize-none ${
               isMobile
-                ? 'bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)]'
+                ? 'text-[16px] bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)]'
                 : 'bg-gray-50 border border-gray-200 text-gray-900 focus:border-gray-300'
             }`}
           />

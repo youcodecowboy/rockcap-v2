@@ -632,6 +632,7 @@ export default function ChatOverlay() {
                   onFileSelect={handleFileUpload}
                   disabled={isLoading}
                   placeholder={isLoading ? 'AI is thinking...' : 'Ask me anything...'}
+                  variant="mobile"
                 />
               </div>
             </>

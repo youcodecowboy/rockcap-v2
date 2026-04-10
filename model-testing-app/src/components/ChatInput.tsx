@@ -17,6 +17,7 @@ interface ChatInputProps {
   placeholder?: string;
   onFileSelect?: (file: File) => Promise<{ storageId: string }>;
   initialMessage?: string;
+  variant?: 'desktop' | 'mobile';
 }
 
 export default function ChatInput({
@@ -25,6 +26,7 @@ export default function ChatInput({
   placeholder = 'Type your message... Use @ to mention clients/projects',
   onFileSelect,
   initialMessage,
+  variant = 'desktop',
 }: ChatInputProps) {
   const [message, setMessage] = useState(initialMessage || '');
 
@@ -194,7 +196,7 @@ export default function ChatInput({
           placeholder={pendingFile ? 'Add instructions for this file...' : placeholder}
           disabled={disabled || isUploading}
           rows={1}
-          className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed text-sm"
+          className={`flex-1 resize-none border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${variant === 'mobile' ? 'text-[16px]' : 'text-sm'}`}
           style={{
             minHeight: '44px',
             maxHeight: '200px',

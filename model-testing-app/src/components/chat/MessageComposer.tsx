@@ -114,10 +114,10 @@ export default function MessageComposer({ conversationId, variant = 'mobile' }: 
             onKeyDown={handleKeyDown}
             placeholder={isMobile ? 'Message…' : 'Type a message… (Cmd+Enter to send)'}
             rows={1}
-            className={`flex-1 resize-none rounded-2xl px-3 py-2.5 text-[13px] outline-none leading-snug overflow-y-auto ${
+            className={`flex-1 resize-none rounded-2xl px-3 py-2.5 outline-none leading-snug overflow-y-auto ${
               isMobile
-                ? 'bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)]'
-                : 'bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-gray-300'
+                ? 'text-[16px] bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)]'
+                : 'text-[13px] bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-gray-300'
             }`}
             style={{ minHeight: '38px', maxHeight: '140px' }}
           />
