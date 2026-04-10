@@ -353,7 +353,14 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteReviewDoc = useCallback((id: string) => {
-    setReviewDocs((prev) => prev.filter((d) => d.id !== id));
+    setReviewDocs((prev) => {
+      const filtered = prev.filter((d) => d.id !== id);
+      if (filtered.length === 0) {
+        setPhase({ name: 'pick' });
+        setFiles([]);
+      }
+      return filtered;
+    });
   }, []);
 
   // ---- finishReview ----

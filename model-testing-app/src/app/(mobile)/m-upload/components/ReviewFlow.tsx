@@ -47,13 +47,16 @@ export default function ReviewFlow() {
 
   const handleDelete = () => {
     if (!confirm(`Delete "${doc.fileName}" from this batch?`)) return;
-    deleteReviewDoc(doc.id);
-    // If last doc deleted, context resets to pick automatically via empty reviewDocs
-    if (total === 1) return;
-    // Adjust index if we deleted last item
+    // If last doc, deleteReviewDoc resets to pick phase automatically
+    if (total === 1) {
+      deleteReviewDoc(doc.id);
+      return;
+    }
+    // Adjust index before deleting if we're on the last item
     if (currentIndex >= total - 1) {
       setReviewIndex(Math.max(0, currentIndex - 1));
     }
+    deleteReviewDoc(doc.id);
   };
 
   const handlePrev = () => {
