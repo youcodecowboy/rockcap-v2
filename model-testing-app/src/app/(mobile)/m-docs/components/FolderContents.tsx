@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Upload } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import FolderRow from './shared/FolderRow';
 import FileRow from './shared/FileRow';
 import MoveFileSheet from './MoveFileSheet';
@@ -48,6 +49,7 @@ export default function FolderContents({
   onOpenSubfolder,
   onOpenViewer,
 }: FolderContentsProps) {
+  const router = useRouter();
   const [sort, setSort] = useState<SortMode>('newest');
   const [moveTarget, setMoveTarget] = useState<{ id: string; name: string } | null>(null);
 
@@ -130,10 +132,29 @@ export default function FolderContents({
     <div>
       {/* Header */}
       <div className="flex items-center justify-between px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border)]">
-        <button onClick={onBack} className="flex items-center gap-1">
-          <ChevronLeft className="w-3.5 h-3.5 text-[var(--m-accent-indicator)]" />
-          <span className="text-[12px] text-[var(--m-accent-indicator)]">{backLabel}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={onBack} className="flex items-center gap-1">
+            <ChevronLeft className="w-3.5 h-3.5 text-[var(--m-accent-indicator)]" />
+            <span className="text-[12px] text-[var(--m-accent-indicator)]">{backLabel}</span>
+          </button>
+          <button
+            onClick={() => {
+              const params = new URLSearchParams({
+                clientId,
+                clientName,
+                ...(projectId ? { projectId } : {}),
+                ...(projectName ? { projectName } : {}),
+                folderTypeKey,
+                folderLevel,
+                folderName,
+              });
+              router.push(`/m-upload?${params.toString()}`);
+            }}
+            className="flex items-center justify-center w-3.5 h-3.5"
+          >
+            <Upload className="w-3.5 h-3.5 text-[var(--m-accent-indicator)]" />
+          </button>
+        </div>
         <div className="text-right min-w-0">
           <div className="text-[14px] font-semibold text-[var(--m-text-primary)] truncate">{folderName}</div>
           <div className="text-[10px] text-[var(--m-text-tertiary)]">{contextLine}</div>
