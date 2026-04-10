@@ -10,6 +10,7 @@ import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { ChevronLeft, Loader2 } from 'lucide-react';
@@ -84,6 +85,10 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
       Link.configure({ openOnClick: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Placeholder.configure({ placeholder: 'Start writing...' }),
     ],
     content: normalizedContent,
@@ -221,7 +226,8 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
         .ProseMirror h1 { font-size: 24px; font-weight: 700; margin: 16px 0 8px; }
         .ProseMirror h2 { font-size: 20px; font-weight: 600; margin: 14px 0 6px; }
         .ProseMirror h3 { font-size: 17px; font-weight: 600; margin: 12px 0 4px; }
-        .ProseMirror ul, .ProseMirror ol { padding-left: 20px; }
+        .ProseMirror ul { padding-left: 20px; list-style-type: disc; }
+        .ProseMirror ol { padding-left: 20px; list-style-type: decimal; }
         .ProseMirror li { margin: 2px 0; }
         .ProseMirror blockquote { border-left: 3px solid var(--m-border); padding-left: 12px; color: var(--m-text-secondary); margin: 8px 0; }
         .ProseMirror hr { border: none; border-top: 1px solid var(--m-border); margin: 16px 0; }
@@ -231,6 +237,10 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
         .ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; }
         .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
         .ProseMirror ul[data-type="taskList"] li label { margin-top: 3px; }
+        .ProseMirror table { border-collapse: collapse; width: 100%; margin: 8px 0; overflow-x: auto; display: block; }
+        .ProseMirror th, .ProseMirror td { border: 1px solid var(--m-border); padding: 6px 10px; text-align: left; font-size: 13px; min-width: 80px; }
+        .ProseMirror th { background: var(--m-bg-subtle); font-weight: 600; font-size: 12px; }
+        .ProseMirror td { color: var(--m-text-primary); }
       `}</style>
 
       {/* Nav bar */}

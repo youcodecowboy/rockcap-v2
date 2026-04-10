@@ -33,10 +33,11 @@ export default function DashboardContent() {
   const clients = useQuery(api.clients.list, {});
   const recentDocs = useQuery(api.documents.getRecent, { limit: 3 });
 
-  // Messages & Flags data
-  const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
-  const conversations = useQuery(api.conversations.getMyConversations, {});
-  const unreadMessageCount = useQuery(api.conversations.getUnreadCount, {});
+  // Messages & Flags data (require auth — skip until user is loaded)
+  const isSignedIn = !!user;
+  const openFlags = useQuery(api.flags.getMyFlags, isSignedIn ? { status: 'open' } : 'skip');
+  const conversations = useQuery(api.conversations.getMyConversations, isSignedIn ? {} : 'skip');
+  const unreadMessageCount = useQuery(api.conversations.getUnreadCount, isSignedIn ? {} : 'skip');
 
   // Build client lookup map (shared by UpNext and RecentsSection later)
   const clientMap = new Map(clients?.map(c => [c._id, c.name]) ?? []);

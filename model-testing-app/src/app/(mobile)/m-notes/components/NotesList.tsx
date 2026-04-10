@@ -168,9 +168,12 @@ export default function NotesList({ onOpenNote, onNewNote }: NotesListProps) {
 
         return (
           <div key={note._id} className="border-b border-[var(--m-border-subtle)]">
-            <button
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => onOpenNote(note._id)}
-              className="flex items-start gap-2 w-full text-left px-[var(--m-page-px)] py-3 active:bg-[var(--m-bg-subtle)]"
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenNote(note._id); }}
+              className="flex items-start gap-2 w-full text-left px-[var(--m-page-px)] py-3 active:bg-[var(--m-bg-subtle)] cursor-pointer"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -218,7 +221,7 @@ export default function NotesList({ onOpenNote, onNewNote }: NotesListProps) {
                 </button>
                 <ChevronRight className="w-4 h-4 text-[var(--m-text-placeholder)]" />
               </div>
-            </button>
+            </div>
           </div>
         );
       })}

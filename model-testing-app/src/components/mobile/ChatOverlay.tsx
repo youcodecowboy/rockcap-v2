@@ -315,23 +315,23 @@ export default function ChatOverlay() {
       if (data.itemId && data.itemType) {
         switch (data.itemType) {
           case 'note':
-            itemLink = { url: `/notes?note=${data.itemId}`, text: 'View Note' };
+            itemLink = { url: `/m-notes?note=${data.itemId}`, text: 'View Note' };
             break;
           case 'client':
-            itemLink = { url: `/clients/${data.itemId}`, text: 'View Client' };
+            itemLink = { url: `/m-clients?clientId=${data.itemId}`, text: 'View Client' };
             break;
           case 'project':
-            itemLink = { url: `/projects/${data.itemId}`, text: 'View Project' };
+            itemLink = { url: `/m-clients?projectId=${data.itemId}`, text: 'View Project' };
             break;
           case 'contact':
-            itemLink = { url: `/rolodex?contact=${data.itemId}`, text: 'View Contact' };
+            itemLink = { url: `/m-contacts?contact=${data.itemId}`, text: 'View Contact' };
             break;
           case 'document':
-            itemLink = { url: `/docs/${data.itemId}`, text: 'View Document' };
+            itemLink = { url: `/m-docs?documentId=${data.itemId}`, text: 'View Document' };
             break;
           case 'knowledgeBankEntry':
             if (data.clientId) {
-              itemLink = { url: `/knowledge-bank/${data.clientId}`, text: 'View Knowledge Bank Entry' };
+              itemLink = { url: `/m-clients?clientId=${data.clientId}`, text: 'View Knowledge Bank Entry' };
             }
             break;
         }

@@ -258,6 +258,13 @@ export function markdownToTiptap(markdown: string): TipTapDocument {
       continue;
     }
 
+    // --- Stray pipe line (not a valid table) — treat as paragraph ---
+    if (trimmed.startsWith('|')) {
+      content.push(paragraph(trimmed));
+      i++;
+      continue;
+    }
+
     // --- Blockquote ---
     if (trimmed.startsWith('>')) {
       const quoteLines: string[] = [];
@@ -323,7 +330,6 @@ export function markdownToTiptap(markdown: string): TipTapDocument {
       !lines[i].trim().startsWith('#') &&
       !lines[i].trim().startsWith('```') &&
       !lines[i].trim().startsWith('>') &&
-      !lines[i].trim().startsWith('|') &&
       !/^[-*+]\s+/.test(lines[i].trim()) &&
       !/^\d+[.)]\s+/.test(lines[i].trim()) &&
       !/^(-{3,}|\*{3,}|_{3,})$/.test(lines[i].trim())

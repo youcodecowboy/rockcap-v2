@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -12,9 +13,21 @@ type NoteView =
   | { view: 'editor'; noteId: string };
 
 export default function MobileNotes() {
-  const [currentView, setCurrentView] = useState<NoteView>({ view: 'list' });
+  const searchParams = useSearchParams();
+  const noteParam = searchParams.get('note');
+
+  const [currentView, setCurrentView] = useState<NoteView>(
+    noteParam ? { view: 'editor', noteId: noteParam } : { view: 'list' }
+  );
   const createNote = useMutation(api.notes.create);
   const removeNote = useMutation(api.notes.remove);
+
+  // Handle deep-link from query param (e.g. navigating from chat)
+  useEffect(() => {
+    if (noteParam) {
+      setCurrentView({ view: 'editor', noteId: noteParam });
+    }
+  }, [noteParam]);
 
   const handleNewNote = useCallback(async () => {
     const noteId = await createNote({
