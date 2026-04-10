@@ -52,8 +52,8 @@ export default clerkMiddleware(async (auth, request) => {
     const url = new URL(request.url)
     const pathname = url.pathname
 
-    // Don't rewrite API routes or static assets
-    if (pathname.startsWith('/api/') || pathname.startsWith('/_next/')) {
+    // Don't rewrite API routes, static assets, or already-mobile paths
+    if (pathname.startsWith('/api/') || pathname.startsWith('/_next/') || pathname.startsWith('/m-')) {
       return NextResponse.next()
     }
 
