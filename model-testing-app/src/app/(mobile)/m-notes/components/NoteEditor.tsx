@@ -11,11 +11,14 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
+import Mention from '@tiptap/extension-mention';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import EditorToolbar from './EditorToolbar';
 import MetadataChips from './MetadataChips';
+import { getMentionSuggestion } from '@/components/mentionSuggestion';
+import type { MentionItem } from '@/components/NoteMentionList';
 
 // ---------- constants ----------
 const DEBOUNCE_DELAY = 1500;
@@ -37,6 +40,18 @@ function hasContentText(content: any): boolean {
   return texts.join('').trim().length > 0;
 }
 
+function extractMentionedUserIds(content: any): string[] {
+  const userIds: string[] = [];
+  function walk(node: any) {
+    if (node.type === 'mention' && node.attrs?.type === 'user' && node.attrs?.id) {
+      userIds.push(node.attrs.id);
+    }
+    if (node.content) node.content.forEach(walk);
+  }
+  if (content?.content) content.content.forEach(walk);
+  return [...new Set(userIds)];
+}
+
 // ---------- component ----------
 interface NoteEditorProps {
   noteId: string;
@@ -47,6 +62,20 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
   // --- data ---
   const note = useQuery(api.notes.get, { id: noteId as Id<'notes'> });
   const updateNote = useMutation(api.notes.update);
+
+  // Data for @mention suggestions
+  const users = useQuery(api.users.getAll);
+  const allClients = useQuery(api.clients.list, {});
+  const allProjects = useQuery(api.projects.list, {});
+
+  const mentionItemsRef = useRef<MentionItem[]>([]);
+  useMemo(() => {
+    const items: MentionItem[] = [];
+    if (users) items.push(...users.map((u: any) => ({ id: u._id, label: u.name || u.email, type: 'user' as const })));
+    if (allClients) items.push(...allClients.map((c: any) => ({ id: c._id, label: c.name, type: 'client' as const })));
+    if (allProjects) items.push(...allProjects.map((p: any) => ({ id: p._id, label: p.name, type: 'project' as const })));
+    mentionItemsRef.current = items;
+  }, [users, allClients, allProjects]);
 
   // --- state ---
   const [title, setTitle] = useState('');
@@ -91,6 +120,21 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
       TableRow,
       TableHeader,
       TableCell,
+      Mention.configure({
+        HTMLAttributes: { class: 'mention' },
+        suggestion: getMentionSuggestion(() => mentionItemsRef.current),
+        renderHTML({ node }) {
+          const mentionType = node.attrs.type || 'user';
+          const label = node.attrs.label || node.attrs.id;
+          if (mentionType === 'client') {
+            return ['a', { class: 'mention mention-client', 'data-type': 'client', 'data-id': node.attrs.id }, `@${label}`];
+          }
+          if (mentionType === 'project') {
+            return ['a', { class: 'mention mention-project', 'data-type': 'project', 'data-id': node.attrs.id }, `@${label}`];
+          }
+          return ['span', { class: 'mention mention-user', 'data-type': 'user', 'data-id': node.attrs.id }, `@${label}`];
+        },
+      }),
       Placeholder.configure({ placeholder: 'Start writing...' }),
     ],
     content: normalizedContent,
@@ -115,11 +159,13 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
       const shouldPromote = note?.isDraft && (currentTitle !== 'Untitled' || hasText);
 
       try {
+        const mentionedUserIds = extractMentionedUserIds(contentToSave);
         await updateNote({
           id: noteId as Id<'notes'>,
           title: currentTitle,
           content: contentToSave,
           ...(shouldPromote ? { isDraft: false } : {}),
+          ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
         });
         lastSaveTimeRef.current = Date.now();
         setSaveStatus('saved');

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Editor } from '@tiptap/react';
-import { List, ListChecks, Quote, Minus, Link2 } from 'lucide-react';
+import { List, ListChecks, Quote, Minus, Link2, AtSign } from 'lucide-react';
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -180,6 +180,12 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
           className={btnClass(isOnLink)}
         >
           <Link2 size={18} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().insertContent('@').run()}
+          className={btnClass(false)}
+        >
+          <AtSign size={18} />
         </button>
       </div>
     </div>
