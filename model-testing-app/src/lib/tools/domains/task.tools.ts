@@ -15,7 +15,7 @@ export const TASK_TOOLS: AtomicTool[] = [
       properties: {
         status: {
           type: "string",
-          enum: ["todo", "in_progress", "completed", "cancelled"],
+          enum: ["todo", "in_progress", "completed", "cancelled", "paused"],
           description: "Filter tasks by status",
         },
         clientId: { type: "string", description: "Filter by client ID" },
@@ -65,7 +65,7 @@ export const TASK_TOOLS: AtomicTool[] = [
         },
         priority: {
           type: "string",
-          enum: ["low", "medium", "high", "urgent"],
+          enum: ["low", "medium", "high"],
           description: "Task priority (default: medium)",
         },
         tags: {
@@ -76,7 +76,7 @@ export const TASK_TOOLS: AtomicTool[] = [
         projectId: { type: "string", description: "Link to a project" },
         assignedTo: {
           type: "string",
-          description: "User ID to assign the task to",
+          description: "Comma-separated user IDs to assign the task to (supports multiple assignees)",
         },
       },
       required: ["title"],
@@ -100,16 +100,20 @@ export const TASK_TOOLS: AtomicTool[] = [
         dueDate: { type: "string", description: "Updated due date (ISO timestamp)" },
         status: {
           type: "string",
-          enum: ["todo", "in_progress", "completed", "cancelled"],
+          enum: ["todo", "in_progress", "completed", "cancelled", "paused"],
           description: "Updated status",
         },
         priority: {
           type: "string",
-          enum: ["low", "medium", "high", "urgent"],
+          enum: ["low", "medium", "high"],
           description: "Updated priority",
         },
         clientId: { type: "string", description: "Updated client link" },
         projectId: { type: "string", description: "Updated project link" },
+        assignedTo: {
+          type: "string",
+          description: "Comma-separated user IDs to assign (replaces current assignees)",
+        },
       },
       required: ["taskId"],
     },

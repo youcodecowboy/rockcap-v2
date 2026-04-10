@@ -436,7 +436,7 @@ const handlers: Record<string, ToolHandler> = {
       tags: validation.validatedParams!.tags,
       clientId: validation.validatedParams!.clientId as Id<"clients"> | undefined,
       projectId: validation.validatedParams!.projectId as Id<"projects"> | undefined,
-      assignedTo: validation.validatedParams!.assignedTo as Id<"users"> | undefined,
+      assignedTo: validation.validatedParams!.assignedTo as Id<"users">[] | undefined,
     });
   },
 

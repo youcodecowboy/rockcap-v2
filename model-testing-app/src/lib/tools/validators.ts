@@ -195,13 +195,22 @@ export async function parseAndValidateTaskParams(
     return { valid: false, error: "Task title is required" };
   }
 
+  let assignedTo: string[] | undefined;
+  if (params.assignedTo) {
+    if (Array.isArray(params.assignedTo)) {
+      assignedTo = params.assignedTo;
+    } else if (typeof params.assignedTo === "string") {
+      assignedTo = params.assignedTo.split(",").map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+
   const validatedParams: any = {
     title: params.title.trim(),
     description: params.description,
     notes: params.notes,
-    priority: params.priority || "medium",
+    priority: params.priority === "urgent" ? "high" : (params.priority || "medium"),
     tags: params.tags || [],
-    assignedTo: params.assignedTo,
+    assignedTo: assignedTo,
     projectId: params.projectId,
   };
 
