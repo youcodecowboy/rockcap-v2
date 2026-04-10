@@ -75,7 +75,7 @@ Full-page upload screen at `/m-upload`.
 ├──────────────────────────────────────┤
 │      [ Upload & Analyze ]            │  ← primary action
 ├──────────────────────────────────────┤
-│  [ Home ] [ Docs ] [Upload] [ ··· ] │  ← StickyFooter
+│  [ Home ] [Clients] [💬] [Docs] [Inbox] │  ← StickyFooter
 └──────────────────────────────────────┘
 ```
 
@@ -375,18 +375,15 @@ src/app/(mobile)/m-upload/
 
 The StickyFooter remains visible throughout all upload phases. The upload page needs a new nav item added to the footer.
 
-### Footer Changes
+### Navigation Access
 
-The current StickyFooter has 4 nav links split around a central chat button (Home, Docs, [Chat], Notes, More). Adding a 5th item would crowd the layout. Two options:
+No StickyFooter changes — the existing 4-item footer stays as-is. Upload is accessible from:
 
-**Option A (recommended):** Replace the "More" item with "Upload" in the footer. Move "More" functionality into the MobileNavDrawer (hamburger menu) only. Upload is a higher-frequency action on mobile than "More" (which just opens contacts/tasks).
-
-**Option B:** Keep the current 4 items, add Upload only to the MobileNavDrawer side menu. Less discoverable but zero footer changes.
-
-Regardless of footer choice, add "Upload" as a menu item in `MobileNavDrawer.tsx`:
-- **Icon**: `Upload` from lucide-react
-- **Label**: "Upload"
-- **Route**: `/m-upload`
+1. **MobileNavDrawer** (hamburger menu) — add "Upload" menu item:
+   - **Icon**: `Upload` from lucide-react
+   - **Label**: "Upload"
+   - **Route**: `/m-upload`
+2. **Folder view in m-docs** — upload button within `FolderContents.tsx` (see Pre-filled Context section)
 
 ## Pre-filled Context from Folder View
 
