@@ -44,13 +44,10 @@ export default function FilePicker() {
   };
 
   return (
-    <div
-      className="min-h-[100dvh] bg-[var(--m-bg)] text-[var(--m-text-primary)] flex flex-col px-[var(--m-page-px)] gap-4"
-      style={{
-        paddingTop: 'calc(var(--m-header-h) + 16px)',
-        paddingBottom: 'calc(var(--m-footer-h) + 16px)',
-      }}
-    >
+    <div className="flex flex-col h-[calc(100dvh-var(--m-header-h))]">
+      <div
+        className="flex-1 overflow-y-auto bg-[var(--m-bg)] text-[var(--m-text-primary)] flex flex-col px-[var(--m-page-px)] gap-4 pt-4 pb-4"
+      >
       {/* Header */}
       <h1 className="text-xl font-semibold m-0">
         Upload Documents
@@ -153,18 +150,25 @@ export default function FilePicker() {
         </div>
       )}
 
-      {/* Upload button — disabled until client selected AND files added */}
-      <button
-        onClick={startProcessing}
-        disabled={files.length === 0 || !hasClient}
-        className={`mt-auto w-full py-3.5 rounded-[10px] border-none text-[15px] font-semibold ${
-          files.length > 0 && hasClient
-            ? 'bg-[var(--m-accent)] text-white cursor-pointer'
-            : 'bg-[var(--m-bg-subtle)] text-[var(--m-text-tertiary)] opacity-50 cursor-not-allowed'
-        }`}
+      </div>
+
+      {/* Sticky upload button above footer */}
+      <div
+        className="flex-shrink-0 px-[var(--m-page-px)] py-3 border-t border-[var(--m-border)] bg-[var(--m-bg)]"
+        style={{ paddingBottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom) + 12px)' }}
       >
-        Upload &amp; Analyze
-      </button>
+        <button
+          onClick={startProcessing}
+          disabled={files.length === 0 || !hasClient}
+          className={`w-full py-3.5 rounded-[10px] border-none text-[15px] font-semibold ${
+            files.length > 0 && hasClient
+              ? 'bg-[var(--m-accent)] text-white cursor-pointer'
+              : 'bg-[var(--m-bg-subtle)] text-[var(--m-text-tertiary)] opacity-50 cursor-not-allowed'
+          }`}
+        >
+          Upload &amp; Analyze
+        </button>
+      </div>
 
       {/* Filing sheet */}
       {showFilingSheet && (
