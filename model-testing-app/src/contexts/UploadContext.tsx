@@ -35,11 +35,14 @@ export interface AnalysisResult {
   confidence: number;
   reasoning: string;
   tokensUsed: number;
+  suggestedFolder?: string;
   clientId?: string;
   clientName?: string;
   projectId?: string;
   projectName?: string;
   extractedData?: any;
+  documentAnalysis?: any;
+  extractedIntelligence?: any;
 }
 
 export interface UploadingFile {
@@ -191,10 +194,10 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     setFiles([]);
   }, []);
 
-  // ---- process a single file ----
+  // ---- process a single file via V4 pipeline (same as desktop bulk upload) ----
   const processFile = useCallback(
     async (uf: UploadingFile): Promise<UploadingFile> => {
-      // Upload to Convex storage
+      // Step 1: Upload to Convex storage
       patchFile(uf.id, { status: 'uploading' });
       const uploadUrl = await generateUploadUrl();
       if (!uploadUrl || typeof uploadUrl !== 'string') {
@@ -203,7 +206,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
       const uploadRes = await fetch(uploadUrl, {
         method: 'POST',
-        headers: { 'Content-Type': uf.file.type },
+        headers: { 'Content-Type': uf.file.type || 'application/octet-stream' },
         body: uf.file,
       });
 
@@ -222,11 +225,22 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
       patchFile(uf.id, { status: 'analyzing', storageId });
 
-      // Analyze via API
+      // Step 2: Analyze via V4 pipeline (same endpoint as desktop bulk upload)
       const formData = new FormData();
-      formData.append('file', uf.file);
+      formData.append('file_0', uf.file);
 
-      const analyzeRes = await fetch('/api/analyze-file', {
+      // Pass metadata matching the desktop bulk processor pattern
+      const metadata: Record<string, any> = {};
+      if (filingContext?.clientName) {
+        metadata.clientName = filingContext.clientName;
+        metadata.clientContext = { clientName: filingContext.clientName };
+      }
+      if (filingContext?.folderTypeKey) {
+        metadata.folderHints = { '0': filingContext.folderTypeKey };
+      }
+      formData.append('metadata', JSON.stringify(metadata));
+
+      const analyzeRes = await fetch('/api/v4-analyze', {
         method: 'POST',
         body: formData,
       });
@@ -238,12 +252,36 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      const analysis: AnalysisResult = await analyzeRes.json();
+      const v4Data = await analyzeRes.json();
+
+      if (!v4Data.success || !v4Data.documents || v4Data.documents.length === 0) {
+        const errorMsg = v4Data.errors?.[0]?.error || 'V4 analysis returned no results';
+        throw new Error(errorMsg);
+      }
+
+      // Map V4 response to AnalysisResult
+      const doc = v4Data.documents[0];
+      const analysis: AnalysisResult = {
+        summary: doc.summary || '',
+        fileType: doc.fileType || 'Unknown',
+        category: doc.category || 'miscellaneous',
+        confidence: doc.confidence || 0,
+        reasoning: doc.classificationReasoning || '',
+        tokensUsed: v4Data.tokensUsed || 0,
+        suggestedFolder: doc.suggestedFolder || '',
+        clientId: filingContext?.clientId,
+        clientName: filingContext?.clientName,
+        projectId: filingContext?.projectId,
+        projectName: filingContext?.projectName,
+        extractedData: doc.extractedData,
+        documentAnalysis: doc.documentAnalysis,
+        extractedIntelligence: doc.intelligenceFields,
+      };
 
       patchFile(uf.id, { status: 'done', storageId, analysis });
       return { ...uf, status: 'done', storageId, analysis };
     },
-    [generateUploadUrl, patchFile]
+    [generateUploadUrl, patchFile, filingContext]
   );
 
   // ---- startProcessing ----
@@ -395,13 +433,17 @@ export function UploadProvider({ children }: { children: ReactNode }) {
           extractedData: doc.analysis.extractedData,
         });
 
-        // 2. If folder is set, assign folder
+        // 2. Update with folder assignment + V4 rich fields not accepted by directUpload
+        const updateFields: Record<string, any> = {};
         if (doc.folderTypeKey && doc.folderLevel) {
-          await updateDocument({
-            id: docId,
-            folderId: doc.folderTypeKey,
-            folderType: doc.folderLevel,
-          });
+          updateFields.folderId = doc.folderTypeKey;
+          updateFields.folderType = doc.folderLevel;
+        }
+        if (doc.analysis.documentAnalysis) {
+          updateFields.documentAnalysis = doc.analysis.documentAnalysis;
+        }
+        if (Object.keys(updateFields).length > 0) {
+          await updateDocument({ id: docId, ...updateFields });
         }
 
         updateReviewDoc(doc.id, { savedDocId: docId });
