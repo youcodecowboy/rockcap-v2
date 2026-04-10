@@ -24,7 +24,6 @@ const cards: {
   iconColor: string; // icon color
   numColor: string;  // number color
 }[] = [
-  { key: 'total', label: 'Total', icon: Circle, accent: 'border-l-slate-300', iconColor: 'text-slate-400', numColor: 'text-[var(--m-text-primary)]' },
   { key: 'todo', label: 'To Do', icon: Circle, accent: 'border-l-blue-400', iconColor: 'text-blue-500', numColor: 'text-blue-700' },
   { key: 'inProgress', label: 'In Progress', icon: ArrowRight, accent: 'border-l-blue-600', iconColor: 'text-blue-600', numColor: 'text-blue-700' },
   { key: 'paused', label: 'Paused', icon: Pause, accent: 'border-l-amber-400', iconColor: 'text-amber-500', numColor: 'text-amber-700' },
@@ -37,7 +36,7 @@ export default function TaskSummaryPills({ metrics }: TaskSummaryPillsProps) {
   if (!metrics) return null;
 
   return (
-    <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+    <div className="grid grid-cols-3 gap-2">
       {cards.map(card => {
         const Icon = card.icon;
         const value = metrics[card.key];
