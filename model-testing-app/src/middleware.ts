@@ -25,12 +25,18 @@ const mobileRouteMap: Record<string, string> = {
 function isMobileRequest(request: Request): boolean {
   const url = new URL(request.url)
 
-  // Dev override: ?mobile=true
-  if (url.searchParams.get('mobile') === 'true') return true
+  // Dev override: ?mobile=true / ?mobile=false
+  const mobileParam = url.searchParams.get('mobile')
+  if (mobileParam === 'true') return true
+  if (mobileParam === 'false') return false
 
   // Subdomain detection
   const hostname = request.headers.get('host') || ''
   if (hostname.startsWith('m.')) return true
+
+  // User-agent detection for phones (not tablets)
+  const ua = request.headers.get('user-agent') || ''
+  if (/iPhone|Android.*Mobile|webOS|iPod|BlackBerry|Windows Phone/i.test(ua)) return true
 
   return false
 }
