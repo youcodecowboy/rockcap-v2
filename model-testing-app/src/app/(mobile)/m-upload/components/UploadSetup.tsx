@@ -281,8 +281,8 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
 
   return (
     <div className="flex flex-col h-full">
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Scrollable content — bottom padding clears fixed button + nav */}
+      <div className="flex-1 overflow-y-auto pb-20">
         <div className="px-[var(--m-page-px)] py-4 space-y-5">
           {/* Scope toggle */}
           <div>
@@ -456,7 +456,7 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full aspect-square max-h-[160px] flex flex-col items-center justify-center gap-2 bg-[var(--m-accent-subtle)] border-2 border-dashed border-[var(--m-accent-indicator)] rounded-xl text-[var(--m-accent-indicator)] active:opacity-80"
+                className="w-full h-[120px] flex flex-col items-center justify-center gap-2 bg-[var(--m-accent-subtle)] border-2 border-dashed border-[var(--m-accent-indicator)] rounded-xl text-[var(--m-accent-indicator)] active:opacity-80"
               >
                 <div className="relative">
                   <File className="w-8 h-8" />
@@ -478,10 +478,10 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
         </div>
       </div>
 
-      {/* Sticky footer — flush above nav bar */}
+      {/* Fixed footer — flush above nav bar */}
       <div
-        className="flex-shrink-0 border-t border-[var(--m-border)] px-[var(--m-page-px)] pt-3 bg-[var(--m-bg)]"
-        style={{ paddingBottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px) + 8px)' }}
+        className="fixed left-0 right-0 border-t border-[var(--m-border)] px-[var(--m-page-px)] pt-3 pb-3 bg-[var(--m-bg)] z-20"
+        style={{ bottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))' }}
       >
         {error && (
           <div className="text-[11px] text-red-500 pb-2">{error}</div>
