@@ -2,11 +2,13 @@
 
 **Date:** 2026-04-10
 **Branch:** mobile
-**Status:** Draft
+**Status:** Approved (revised post-Codex review)
 
 ## Purpose
 
-Add a lightweight mobile upload flow for 3-5 documents on the go. Uses the existing backend pipeline (`/api/analyze-file` + `convex/directUpload.uploadDocumentDirect`) — no backend changes. The experience is a linear four-phase flow: pick files → upload & process → per-doc review → completion summary.
+Add a lightweight mobile upload flow for 3-5 documents on the go. Uses the existing backend pipeline (`/api/analyze-file` + `convex/directUpload.uploadDocumentDirect` + `convex/documents.update` for folder assignment) — no backend changes. The experience is a linear four-phase flow: pick files → upload & process → per-doc review → completion summary.
+
+**Note on analysis depth:** The mobile upload uses `/api/analyze-file` (the single-file direct upload path), not the V4 batch pipeline. This means uploaded documents will have `summary`, `category`, `fileType`, `confidence`, `reasoning`, and `extractedData`, but will NOT have `documentAnalysis`, `classificationReasoning`, `textContent`, or `extractedIntelligence` fields that the desktop bulk pipeline populates. The mobile Summary tab gracefully falls back to the basic `summary` field when `documentAnalysis` is absent. The Intelligence tab will show no items for mobile-uploaded docs until they are re-analyzed on desktop. This is an intentional trade-off for a lighter, faster mobile experience.
 
 ## Entry Points
 
@@ -82,7 +84,7 @@ Full-page upload screen at `/m-upload`.
 - **File input**: `<input type="file" multiple accept="..." />` — same accept list as `DirectUploadButton.tsx`: `.pdf,.docx,.doc,.xls,.xlsx,.xlsm,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif`
 - **Max 5 files**: If user selects more than 5, show a toast/alert: "Maximum 5 files per upload. Please remove some files."
 - **File list**: Each row shows icon (based on extension), filename (truncated with ellipsis), file size, and × remove button.
-- **Context banner**: Only shown when navigated from a folder in m-docs. Displays the pre-filled client → project → folder path. Has × to clear it (reverts to no pre-fill). Stored in component state, passed via URL search params: `?clientId=xxx&projectId=yyy&folderId=zzz&folderName=Appraisals`.
+- **Context banner**: Only shown when navigated from a folder in m-docs. Displays the pre-filled client → project → folder path. Has × to clear it (reverts to no pre-fill). Stored in component state, passed via URL search params: `?clientId=xxx&projectId=yyy&folderTypeKey=appraisals&folderLevel=client|project&folderName=Appraisals&clientName=Bayfield+Homes&projectName=Comberton+Rise`. Note: `folderTypeKey` is the string key used by `documents.folderId` (e.g., `"appraisals"`, `"background"`), NOT the Convex folder record ID. `folderLevel` distinguishes client-level vs project-level folders.
 - **"Choose Files" button**: Opens native OS file picker. Users can also tap the entire drop zone area.
 - **"Upload & Analyze" button**: Disabled when no files selected. Tapping advances to Phase 2.
 - **Camera support**: On mobile, the file picker natively offers camera capture — no special handling needed.
@@ -181,10 +183,11 @@ When all files have finished (success or error), and at least one succeeded:
 
 For unstable mobile networks, the processing phase should be resilient to the user leaving the screen:
 
-- **State persistence**: The upload phase state (files, progress, results) is stored in a React ref or context that survives unmount within the same session.
+- **State persistence**: The upload phase state (files, progress, results) is stored in a React context provider (`UploadContext`) mounted in the mobile layout — above the route children. This ensures state survives when the user navigates away from `/m-upload` and back. A `useRef` inside the page component would NOT work because route children unmount on navigation.
 - **"You can close this screen"** hint shown at the bottom of the processing phase.
-- **Re-entry**: If the user navigates away and comes back to `/m-upload` while processing is active, they see the current progress (not a fresh picker).
-- **Implementation**: Use a simple `useRef`-based state holder in the page component. Since the mobile app is a SPA with client-side routing, component state survives tab switches within the app. For true background survival (app closed), we'd need service workers — that's out of scope. The hint is about navigating within the app, not closing the browser.
+- **Re-entry**: If the user navigates away and comes back to `/m-upload` while processing is active, they see the current progress (not a fresh picker). The `UploadContext` holds the current phase, file list, processing results, and review edits.
+- **Implementation**: Create `src/contexts/UploadContext.tsx` with a provider wrapping route children in the mobile layout (same pattern as `MessengerContext` and `MobileLayoutContext`). The context exposes the upload state machine and mutation functions. The `/m-upload` page reads from this context rather than owning the state directly.
+- **Scope**: This covers navigation within the app only. True background survival (browser tab closed, app killed) would require service workers or server-side job tracking — that's out of scope for this iteration. The files are already uploaded to Convex storage during Phase 2, so even if the user loses the review state, the storage files exist (though without document records).
 
 ## Phase 3: Per-Doc Review
 
@@ -294,10 +297,12 @@ The `directUpload.uploadDocumentDirect()` mutation requires `clientId` (non-opti
 Documents are NOT saved to the database during review. They are saved in bulk when the user taps "Finish" on the last doc (or navigates to Phase 4). This means:
 
 1. User reviews/edits all docs
-2. On "Finish", each doc is saved via `directUpload.uploadDocumentDirect()` with the (potentially edited) classification and filing info
+2. On "Finish", for each doc:
+   a. Call `directUpload.uploadDocumentDirect()` with the (potentially edited) classification, client/project, and analysis results. This creates the document record and generates the document code.
+   b. If the user set a folder destination, immediately call `documents.update()` on the returned document ID to set `folderId` (the `folderTypeKey` string, e.g., `"appraisals"`) and `folderType` (`"client"` or `"project"`). This is necessary because `directUpload.uploadDocumentDirect()` does not accept folder fields.
 3. If any save fails, show error on the completion screen with retry
 
-This approach avoids creating partially-reviewed documents in the database.
+This two-step save (create + update folder) avoids backend changes while ensuring documents appear in the correct folder. The `documents.update` mutation already accepts `folderId` and `folderType` fields.
 
 ## Phase 4: Completion Summary
 
@@ -332,29 +337,32 @@ Shows all successfully uploaded documents with their classification and filing d
 
 ### Behavior
 
-- **Document rows**: Each shows the generated document code/title, classification badge, and filing destination. Tap to navigate to the document in the m-docs viewer.
+- **Document rows**: Each shows the generated document code/title, classification badge, and filing destination. Tap to open the document in the m-docs viewer via `TabContext.openTab({ type: 'docs', route: '/m-docs', params: { documentId } })` — same pattern used by dashboard quick links.
 - **Error rows**: If any saves failed, show them with a red indicator and "Tap to retry" action.
 - **"Upload More"**: Resets to Phase 1 (pick), preserving the filing context if it was set.
-- **"Done"**: Navigates to m-docs. If all docs were filed to the same client/project, navigate directly to that project's folder view.
+- **"Done"**: Navigates to `/m-docs` via the StickyFooter route. Deep-linking into a specific folder is not supported by the current `DocsContent` navigation model (it uses local component state, not URL params), so "Done" always lands on the docs root. This is acceptable for V1 — folder deep-linking can be added later if needed.
 
 ## Component Structure
 
 ```
+src/contexts/UploadContext.tsx        ← upload state machine + processing logic (survives route changes)
+
 src/app/(mobile)/m-upload/
-├── page.tsx                     ← phase state machine, orchestrates the 4 phases
+├── page.tsx                          ← thin shell, reads from UploadContext, renders current phase
 └── components/
-    ├── FilePicker.tsx           ← Phase 1: file selection UI, context banner
-    ├── ProcessingScreen.tsx     ← Phase 2: per-file progress, sequential upload+analyze
-    ├── DocReview.tsx            ← Phase 3: single-doc review card (full page)
-    ├── ReviewFlow.tsx           ← Phase 3: wraps DocReview with prev/next/finish nav
-    ├── CompletionSummary.tsx    ← Phase 4: batch result list with actions
-    ├── FilingSheet.tsx          ← Bottom sheet for client/project/folder selection
-    └── CategorySheet.tsx        ← Bottom sheet for category/type editing
+    ├── FilePicker.tsx                ← Phase 1: file selection UI, context banner
+    ├── ProcessingScreen.tsx          ← Phase 2: per-file progress, sequential upload+analyze
+    ├── DocReview.tsx                 ← Phase 3: single-doc review card (full page)
+    ├── ReviewFlow.tsx                ← Phase 3: wraps DocReview with prev/next/finish nav
+    ├── CompletionSummary.tsx         ← Phase 4: batch result list with actions
+    ├── FilingSheet.tsx               ← Bottom sheet for client/project/folder selection
+    └── CategorySheet.tsx             ← Bottom sheet for category/type editing
 ```
 
 ### Responsibilities
 
-- **page.tsx** — Thin phase router. Holds the upload state (`UploadPhase` discriminated union), file list, processing results, and review edits. Passes relevant slices to each phase component.
+- **UploadContext.tsx** — Mounted in mobile layout (`layout.tsx`), same level as `MessengerProvider` and `MobileLayoutProvider`. Owns the upload phase state machine, file list, processing results, review edits, and processing async logic. Exposes `useUpload()` hook. This ensures state survives when the user navigates away from `/m-upload` during processing and returns.
+- **page.tsx** — Thin phase router. Reads from `useUpload()` context, renders the component for the current phase.
 - **FilePicker.tsx** — File input, selected files list with remove, context banner, "Upload & Analyze" button. ~100-120 lines.
 - **ProcessingScreen.tsx** — Orchestrates sequential file processing (upload to Convex + analyze). Displays per-file progress rows. Calls back when all done. ~120-150 lines.
 - **DocReview.tsx** — Renders one document's review card: title, summary, classification (editable), filing (editable), key details. Calls back on edits. ~180-220 lines.
@@ -369,13 +377,16 @@ The StickyFooter remains visible throughout all upload phases. The upload page n
 
 ### Footer Changes
 
-Add an "Upload" icon to the StickyFooter:
+The current StickyFooter has 4 nav links split around a central chat button (Home, Docs, [Chat], Notes, More). Adding a 5th item would crowd the layout. Two options:
+
+**Option A (recommended):** Replace the "More" item with "Upload" in the footer. Move "More" functionality into the MobileNavDrawer (hamburger menu) only. Upload is a higher-frequency action on mobile than "More" (which just opens contacts/tasks).
+
+**Option B:** Keep the current 4 items, add Upload only to the MobileNavDrawer side menu. Less discoverable but zero footer changes.
+
+Regardless of footer choice, add "Upload" as a menu item in `MobileNavDrawer.tsx`:
 - **Icon**: `Upload` from lucide-react
 - **Label**: "Upload"
 - **Route**: `/m-upload`
-- **Position**: Between existing nav items (suggested: after Docs)
-
-Also add "Upload" as a menu item in `MobileNavDrawer.tsx`.
 
 ## Pre-filled Context from Folder View
 
@@ -386,8 +397,10 @@ When entering upload from a folder in m-docs (`FolderContents.tsx`):
 Add an "Upload" button to `FolderContents.tsx` header area. When tapped, navigate to `/m-upload` with context:
 
 ```typescript
-router.push(`/m-upload?clientId=${clientId}&projectId=${projectId}&folderId=${folderId}&folderName=${encodeURIComponent(folderName)}&clientName=${encodeURIComponent(clientName)}&projectName=${encodeURIComponent(projectName)}`);
+router.push(`/m-upload?clientId=${clientId}&projectId=${projectId}&folderTypeKey=${folderTypeKey}&folderLevel=${folderLevel}&folderName=${encodeURIComponent(folderName)}&clientName=${encodeURIComponent(clientName)}&projectName=${encodeURIComponent(projectName)}`);
 ```
+
+Where `folderTypeKey` is the string key stored in `documents.folderId` (e.g., `"appraisals"`, `"background"`, `"custom_xyz"`), and `folderLevel` is `"client"` or `"project"` (maps to `documents.folderType`).
 
 ### Context Handling
 
@@ -405,13 +418,14 @@ All existing — no backend changes:
 | `files.generateUploadUrl()` | ProcessingScreen | Get Convex storage upload URL |
 | `/api/analyze-file` (POST) | ProcessingScreen | Analyze single file (summary, classification, extraction) |
 | `directUpload.uploadDocumentDirect()` | ReviewFlow (on finish) | Create document record with analysis results |
+| `documents.update()` | ReviewFlow (on finish) | Set `folderId` + `folderType` after document creation |
 | `clients.list({})` | FilingSheet | Client picker |
 | `projects.getByClient({ clientId })` | FilingSheet | Project picker |
 | `folderStructure.getAllFoldersForClient({ clientId })` | FilingSheet | Folder picker |
 
 ## What's NOT Being Built
 
-- New backend APIs or Convex mutations
+- New backend APIs or Convex mutations (uses existing `directUpload.uploadDocumentDirect` + `documents.update`)
 - Bulk upload batch tracking (`bulkUploadBatches` / `bulkUploadItems`) — mobile uses the simpler `directUpload` path per file
 - Service worker for true offline/background processing
 - Drag and drop (not applicable on mobile)
