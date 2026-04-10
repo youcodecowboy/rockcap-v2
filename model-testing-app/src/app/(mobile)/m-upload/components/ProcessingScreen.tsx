@@ -9,8 +9,8 @@ import { Loader2, Check, AlertCircle, Clock } from 'lucide-react';
 
 interface ProcessingScreenProps {
   batchId: string;
-  files: File[];
-  batchInfo: BatchInfo;
+  files?: File[];
+  batchInfo?: BatchInfo;
   onComplete: () => void;
 }
 
@@ -33,9 +33,12 @@ export default function ProcessingScreen({ batchId, files, batchInfo, onComplete
   // Track auto-advance
   const [autoAdvanceTriggered, setAutoAdvanceTriggered] = useState(false);
 
-  // Create processor and start processing once items are loaded
+  // Create processor and start processing once items are loaded.
+  // Only starts if files and batchInfo are available (i.e., navigated from setup).
+  // If navigating to this URL directly, we just show reactive status without starting a processor.
   useEffect(() => {
     if (!items || items.length === 0 || processingStarted.current) return;
+    if (!files || !batchInfo) return; // No files — just display status reactively
     processingStarted.current = true;
 
     const processor = createBulkQueueProcessor(
@@ -105,7 +108,7 @@ export default function ProcessingScreen({ batchId, files, batchInfo, onComplete
   }, [items, autoAdvanceTriggered, onComplete]);
 
   // Derive overall status
-  const totalItems = items?.length ?? files.length;
+  const totalItems = items?.length ?? files?.length ?? 0;
   const completedItems = items?.filter(
     (i) => i.status === 'ready_for_review' || i.status === 'error' || i.status === 'filed'
   ).length ?? 0;

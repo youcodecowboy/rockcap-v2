@@ -78,6 +78,7 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
   const [folderName, setFolderName] = useState<string | null>(initialContext?.folderName || null);
   const [folderLevel, setFolderLevel] = useState<'client' | 'project' | null>(initialContext?.folderLevel || null);
   const [isInternal, setIsInternal] = useState(false);
+  const [deepExtraction, setDeepExtraction] = useState(false);
   const [instructions, setInstructions] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [showClientSheet, setShowClientSheet] = useState(false);
@@ -141,7 +142,7 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
     setFolderKey(null);
     setFolderName(null);
     setFolderLevel(null);
-    setIsInternal(false);
+    setIsInternal(newScope === 'internal');
   }, []);
 
   const handleClientSelect = useCallback((id: string, name: string) => {
@@ -365,28 +366,6 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
             </button>
           </div>
 
-          {/* Internal/External toggle (client scope) */}
-          {scope === 'client' && (
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold tracking-wider text-[var(--m-text-secondary)] uppercase">
-                Internal Document
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsInternal(!isInternal)}
-                className={`w-11 h-6 rounded-full transition-colors relative ${
-                  isInternal ? 'bg-[var(--m-text-primary)]' : 'bg-[var(--m-border)]'
-                }`}
-              >
-                <div
-                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                    isInternal ? 'translate-x-[22px]' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
-            </div>
-          )}
-
           {/* Instructions (collapsible) */}
           <div>
             <button
@@ -414,6 +393,34 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
                 style={{ fontSize: '16px' }}
               />
             )}
+          </div>
+
+          {/* Deep Extraction toggle */}
+          {/* TODO: Wire deepExtraction to batch items after processing — currently UI-only.
+              Desktop uses per-item extractionEnabled in review; mobile sets it as a batch-level
+              setting here. Requires backend coordination to apply to items post-processing. */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <label className="text-[11px] font-semibold tracking-wider text-[var(--m-text-secondary)] uppercase block">
+                Deep Extraction
+              </label>
+              <p className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5 leading-relaxed">
+                Run a detailed second-pass analysis on spreadsheets for full data extraction
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeepExtraction(!deepExtraction)}
+              className={`mt-0.5 w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${
+                deepExtraction ? 'bg-[var(--m-text-primary)]' : 'bg-[var(--m-border)]'
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  deepExtraction ? 'translate-x-[22px]' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
           </div>
 
           {/* File picker */}
