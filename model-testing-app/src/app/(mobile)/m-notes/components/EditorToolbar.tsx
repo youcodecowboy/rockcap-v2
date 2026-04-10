@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import { Editor } from '@tiptap/react';
 import { List, ListChecks, Quote, Minus, Link2, AtSign } from 'lucide-react';
 
@@ -11,49 +11,6 @@ interface EditorToolbarProps {
 export default function EditorToolbar({ editor }: EditorToolbarProps) {
   const [showLinkPopover, setShowLinkPopover] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const toolbarRef = useRef<HTMLDivElement>(null);
-
-  const reposition = useCallback(() => {
-    const vv = window.visualViewport;
-    const el = toolbarRef.current;
-    if (!vv || !el) return;
-
-    const kbHeight = window.innerHeight - vv.height;
-
-    if (kbHeight > 100) {
-      // Keyboard is open — absolute position at the bottom of the visual viewport
-      setKeyboardOpen(true);
-      el.style.position = 'absolute';
-      el.style.bottom = 'auto';
-      el.style.top = `${vv.offsetTop + vv.height - el.offsetHeight}px`;
-      el.style.left = `${vv.offsetLeft}px`;
-      el.style.right = '0';
-    } else {
-      // Keyboard closed — fixed at bottom above the footer
-      setKeyboardOpen(false);
-      el.style.position = 'fixed';
-      el.style.top = 'auto';
-      el.style.bottom = 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))';
-      el.style.left = '0';
-      el.style.right = '0';
-    }
-  }, []);
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    // Initial position
-    reposition();
-
-    vv.addEventListener('resize', reposition);
-    vv.addEventListener('scroll', reposition);
-    return () => {
-      vv.removeEventListener('resize', reposition);
-      vv.removeEventListener('scroll', reposition);
-    };
-  }, [reposition]);
 
   if (!editor) return null;
 
@@ -89,21 +46,15 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
   };
 
   const btnClass = (active: boolean) =>
-    `flex-shrink-0 w-[44px] h-[44px] flex items-center justify-center text-[13px] font-semibold ${
-      active ? 'bg-white text-black rounded-md' : 'text-white'
+    `flex-shrink-0 w-[36px] h-[36px] flex items-center justify-center text-[12px] font-semibold rounded-md ${
+      active ? 'bg-[var(--m-text-primary)] text-[var(--m-bg)]' : 'text-[var(--m-text-secondary)] active:bg-[var(--m-bg-inset)]'
     }`;
 
   return (
-    <div
-      ref={toolbarRef}
-      className={`z-50 bg-black ${keyboardOpen ? '' : 'fixed left-0 right-0'}`}
-      style={keyboardOpen ? { width: '100%' } : {
-        bottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px))',
-      }}
-    >
+    <div className="flex-shrink-0 border-b border-[var(--m-border-subtle)] bg-[var(--m-bg)]">
       {/* Link popover */}
       {showLinkPopover && (
-        <div className="absolute bottom-full left-0 right-0 bg-[var(--m-bg)] border-t border-[var(--m-border)] px-3 py-2 flex items-center gap-2">
+        <div className="px-[var(--m-page-px)] py-2 border-b border-[var(--m-border-subtle)] flex items-center gap-2">
           <input
             type="url"
             placeholder="Enter URL..."
@@ -112,20 +63,20 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSetLink();
             }}
-            className="flex-1 bg-black/50 text-white border border-[var(--m-border)] rounded px-2 py-1"
+            className="flex-1 bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] border border-[var(--m-border-subtle)] rounded-lg px-2.5 py-1.5 outline-none"
             style={{ fontSize: '16px' }}
             autoFocus
           />
           <button
             onClick={handleSetLink}
-            className="px-3 py-1 bg-white text-black rounded text-sm font-medium"
+            className="px-3 py-1.5 bg-[var(--m-accent)] text-white rounded-lg text-[12px] font-medium"
           >
             Set
           </button>
           {isOnLink && (
             <button
               onClick={handleRemoveLink}
-              className="px-3 py-1 bg-red-600 text-white rounded text-sm font-medium"
+              className="px-3 py-1.5 bg-[var(--m-error)] text-white rounded-lg text-[12px] font-medium"
             >
               Remove
             </button>
@@ -134,7 +85,7 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
       )}
 
       {/* Button row */}
-      <div className="flex overflow-x-auto scrollbar-none px-1">
+      <div className="flex overflow-x-auto scrollbar-none px-[var(--m-page-px)] py-1 gap-0.5">
         <button
           onClick={() => editor.chain().focus().toggleBold().run()}
           className={btnClass(editor.isActive('bold'))}
@@ -159,6 +110,9 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
         >
           <span className="line-through">S</span>
         </button>
+
+        <div className="w-px bg-[var(--m-border-subtle)] mx-1 self-stretch" />
+
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           className={btnClass(editor.isActive('heading', { level: 1 }))}
@@ -171,11 +125,14 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
         >
           H2
         </button>
+
+        <div className="w-px bg-[var(--m-border-subtle)] mx-1 self-stretch" />
+
         <button
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           className={btnClass(editor.isActive('bulletList'))}
         >
-          <List size={18} />
+          <List size={16} />
         </button>
         <button
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
@@ -187,31 +144,34 @@ export default function EditorToolbar({ editor }: EditorToolbarProps) {
           onClick={() => editor.chain().focus().toggleTaskList().run()}
           className={btnClass(editor.isActive('taskList'))}
         >
-          <ListChecks size={18} />
+          <ListChecks size={16} />
         </button>
+
+        <div className="w-px bg-[var(--m-border-subtle)] mx-1 self-stretch" />
+
         <button
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           className={btnClass(editor.isActive('blockquote'))}
         >
-          <Quote size={18} />
+          <Quote size={16} />
         </button>
         <button
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
           className={btnClass(false)}
         >
-          <Minus size={18} />
+          <Minus size={16} />
         </button>
         <button
           onClick={handleLinkToggle}
           className={btnClass(isOnLink)}
         >
-          <Link2 size={18} />
+          <Link2 size={16} />
         </button>
         <button
           onClick={() => editor.chain().focus().insertContent('@').run()}
           className={btnClass(false)}
         >
-          <AtSign size={18} />
+          <AtSign size={16} />
         </button>
       </div>
     </div>

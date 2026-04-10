@@ -369,9 +369,11 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
         )}
       </div>
 
+      {/* Formatting toolbar — static, in document flow */}
+      <EditorToolbar editor={editor} />
+
       {/* Editor content — scrollable */}
-      {/* Bottom padding clears both the toolbar (44px) and the sticky footer */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-[var(--m-page-px)] py-3" style={{ paddingBottom: 'calc(44px + var(--m-footer-h) + env(safe-area-inset-bottom) + 1rem)' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-[var(--m-page-px)] py-3" style={{ paddingBottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom) + 1rem)' }}>
         {note === undefined ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-5 h-5 animate-spin text-[var(--m-text-tertiary)]" />
@@ -380,9 +382,6 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
           <EditorContent editor={editor} />
         )}
       </div>
-
-      {/* Formatting toolbar */}
-      <EditorToolbar editor={editor} />
     </div>
   );
 }
