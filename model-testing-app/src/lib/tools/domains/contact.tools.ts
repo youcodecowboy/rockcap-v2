@@ -87,7 +87,7 @@ export const CONTACT_TOOLS: AtomicTool[] = [
     name: "updateContact",
     domain: "contact",
     action: "write",
-    description: "Update an existing contact's information.",
+    description: "Update an existing contact's information, including which client they're associated with.",
     parameters: {
       type: "object",
       properties: {
@@ -101,6 +101,7 @@ export const CONTACT_TOOLS: AtomicTool[] = [
         role: { type: "string", description: "Updated role/title" },
         company: { type: "string", description: "Updated company name" },
         notes: { type: "string", description: "Updated notes" },
+        clientId: { type: "string", description: "Updated client association (use client ID, or null to remove)" },
       },
       required: ["contactId"],
     },

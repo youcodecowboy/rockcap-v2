@@ -539,10 +539,11 @@ const handlers: Record<string, ToolHandler> = {
     }),
 
   updateContact: async (params, client) => {
-    const { contactId, ...updates } = params;
+    const { contactId, clientId, ...updates } = params;
     return client.mutation(api.contacts.update, {
       id: contactId as Id<"contacts">,
       ...updates,
+      clientId: clientId === 'null' || clientId === null ? null : (clientId as Id<"clients"> | undefined),
     });
   },
 
