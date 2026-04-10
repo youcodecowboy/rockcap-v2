@@ -1641,7 +1641,7 @@ export default defineSchema({
   // Tasks table - task management with assignment and linking
   tasks: defineTable({
     createdBy: v.id("users"), // Who created the task
-    assignedTo: v.optional(v.id("users")), // Who the task is assigned to (can be different from creator)
+    assignedTo: v.optional(v.array(v.id("users"))), // Users assigned to this task (array)
     title: v.string(),
     description: v.optional(v.string()), // What needs to happen
     notes: v.optional(v.string()), // Additional notes/context (editable)
@@ -1650,7 +1650,8 @@ export default defineSchema({
       v.literal("todo"),
       v.literal("in_progress"),
       v.literal("completed"),
-      v.literal("cancelled")
+      v.literal("cancelled"),
+      v.literal("paused")
     ),
     priority: v.optional(v.union(
       v.literal("low"),
@@ -1665,7 +1666,6 @@ export default defineSchema({
     updatedAt: v.string(),
   })
     .index("by_createdBy", ["createdBy"])
-    .index("by_assignedTo", ["assignedTo"])
     .index("by_status", ["status"])
     .index("by_dueDate", ["dueDate"])
     .index("by_client", ["clientId"])
