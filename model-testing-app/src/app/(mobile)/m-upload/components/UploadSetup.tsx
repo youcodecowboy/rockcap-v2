@@ -456,9 +456,12 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full aspect-[2.5/1] flex flex-col items-center justify-center gap-2 bg-[var(--m-accent-subtle)] border-2 border-dashed border-[var(--m-accent-indicator)] rounded-xl text-[var(--m-accent-indicator)] active:opacity-80"
+                className="w-full aspect-square max-h-[160px] flex flex-col items-center justify-center gap-2 bg-[var(--m-accent-subtle)] border-2 border-dashed border-[var(--m-accent-indicator)] rounded-xl text-[var(--m-accent-indicator)] active:opacity-80"
               >
-                <File className="w-6 h-6" />
+                <div className="relative">
+                  <File className="w-8 h-8" />
+                  <Plus className="w-4 h-4 absolute -top-1 -right-1.5 bg-[var(--m-accent-subtle)] rounded-full" />
+                </div>
                 <span className="text-[13px] font-medium">Add Files</span>
               </button>
             )}
@@ -475,8 +478,11 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
         </div>
       </div>
 
-      {/* Sticky footer */}
-      <div className="flex-shrink-0 border-t border-[var(--m-border)] px-[var(--m-page-px)] pt-3 pb-3">
+      {/* Sticky footer — flush above nav bar */}
+      <div
+        className="flex-shrink-0 border-t border-[var(--m-border)] px-[var(--m-page-px)] pt-3 bg-[var(--m-bg)]"
+        style={{ paddingBottom: 'calc(var(--m-footer-h) + env(safe-area-inset-bottom, 0px) + 8px)' }}
+      >
         {error && (
           <div className="text-[11px] text-red-500 pb-2">{error}</div>
         )}
