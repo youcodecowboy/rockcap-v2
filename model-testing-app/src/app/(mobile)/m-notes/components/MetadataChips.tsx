@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Plus, ChevronLeft, Building2, FolderKanban, X } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronDown, ChevronUp, Building2, FolderKanban, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface MetadataChipsProps {
@@ -62,6 +62,7 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
   const [showTagInput, setShowTagInput] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
 
   // Create-mode state
@@ -286,47 +287,62 @@ export default function MetadataChips({ noteId, note, onSave }: MetadataChipsPro
           )}
         </div>
 
-        {/* Row 2: Tags */}
-        <div className="flex items-center gap-1.5 overflow-x-auto px-[var(--m-page-px)] pb-2 scrollbar-none">
-          {tags.map((tag) => (
-            <span
-              key={tag}
-              className={`${tagColor(tag)} rounded-full px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap flex-shrink-0`}
-            >
-              {tag}
-              <button
-                onClick={() => handleRemoveTag(tag)}
-                className="opacity-50 hover:opacity-100"
+        {/* Row 2: Tags (collapsible) */}
+        <div className="flex items-center gap-1.5 px-[var(--m-page-px)] pb-2">
+          <div className={`flex items-center gap-1.5 flex-1 min-w-0 ${tagsExpanded ? 'flex-wrap' : 'overflow-x-auto scrollbar-none'}`}>
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className={`${tagColor(tag)} rounded-full px-2.5 py-1 text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap flex-shrink-0`}
               >
-                <X className="w-2.5 h-2.5" />
-              </button>
-            </span>
-          ))}
+                {tag}
+                <button
+                  onClick={() => handleRemoveTag(tag)}
+                  className="opacity-50 hover:opacity-100"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            ))}
 
-          {showTagInput ? (
-            <input
-              ref={tagInputRef}
-              type="text"
-              value={newTag}
-              onChange={(e) => setNewTag(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAddTag(newTag);
-                if (e.key === 'Escape') { setNewTag(''); setShowTagInput(false); }
-              }}
-              onBlur={() => {
-                if (newTag.trim()) handleAddTag(newTag);
-                else { setNewTag(''); setShowTagInput(false); }
-              }}
-              placeholder="tag name"
-              style={{ fontSize: '16px' }}
-              className="w-20 bg-[var(--m-bg-inset)] border border-[var(--m-border-subtle)] rounded-full px-2.5 py-0.5 text-[11px] outline-none text-[var(--m-text-primary)] flex-shrink-0"
-            />
-          ) : (
+            {showTagInput ? (
+              <input
+                ref={tagInputRef}
+                type="text"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddTag(newTag);
+                  if (e.key === 'Escape') { setNewTag(''); setShowTagInput(false); }
+                }}
+                onBlur={() => {
+                  if (newTag.trim()) handleAddTag(newTag);
+                  else { setNewTag(''); setShowTagInput(false); }
+                }}
+                placeholder="add tag"
+                className="w-16 bg-transparent border-b border-[var(--m-border)] px-1 py-0.5 text-[12px] outline-none text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] flex-shrink-0"
+                style={{ fontSize: '16px', lineHeight: '1.2', transform: 'scale(0.75)', transformOrigin: 'left center', width: '5.5rem' }}
+              />
+            ) : (
+              <button
+                onClick={() => setShowTagInput(true)}
+                className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2 py-1 text-[11px] font-medium whitespace-nowrap flex-shrink-0"
+              >
+                +
+              </button>
+            )}
+          </div>
+
+          {/* Expand/collapse toggle — only show when there are enough tags */}
+          {tags.length > 2 && (
             <button
-              onClick={() => setShowTagInput(true)}
-              className="border border-dashed border-[var(--m-border)] text-[var(--m-text-tertiary)] rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap flex-shrink-0"
+              onClick={() => setTagsExpanded(!tagsExpanded)}
+              className="flex-shrink-0 text-[var(--m-text-tertiary)] p-0.5"
             >
-              + Tag
+              {tagsExpanded
+                ? <ChevronUp className="w-3.5 h-3.5" />
+                : <ChevronDown className="w-3.5 h-3.5" />
+              }
             </button>
           )}
         </div>
