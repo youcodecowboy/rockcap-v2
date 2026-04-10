@@ -456,10 +456,10 @@ export default function UploadSetup({ initialContext, onBatchCreated }: UploadSe
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-3 border border-dashed border-[var(--m-border)] rounded-lg text-[13px] text-[var(--m-text-secondary)] active:bg-[var(--m-bg-subtle)]"
+                className="w-full aspect-[2.5/1] flex flex-col items-center justify-center gap-2 bg-[var(--m-accent-subtle)] border-2 border-dashed border-[var(--m-accent-indicator)] rounded-xl text-[var(--m-accent-indicator)] active:opacity-80"
               >
-                <Plus className="w-4 h-4" />
-                Add Files
+                <File className="w-6 h-6" />
+                <span className="text-[13px] font-medium">Add Files</span>
               </button>
             )}
 
