@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, BotMessageSquare, MessagesSquare, Loader2, History, Plus, Trash2 } from 'lucide-react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useTabs } from '@/contexts/TabContext';
@@ -47,7 +47,8 @@ export default function ChatOverlay() {
   const deleteSession = useMutation(api.chatSessions.remove);
 
   // ── Convex queries ──
-  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+  const { isAuthenticated } = useConvexAuth();
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, isAuthenticated ? {} : 'skip');
 
   const sessions = useQuery(api.chatSessions.list, {
     contextType: 'global' as const,

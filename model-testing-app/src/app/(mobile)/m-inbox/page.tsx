@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import InboxTabs, { type MobileInboxTab } from './components/InboxTabs';
 import ConversationLibrary from '@/components/chat/ConversationLibrary';
@@ -11,9 +11,10 @@ import MobileNotificationList from './components/MobileNotificationList';
 export default function MobileInboxPage() {
   const [activeTab, setActiveTab] = useState<MobileInboxTab>('messages');
 
-  const openFlags = useQuery(api.flags.getMyFlags, { status: 'open' });
-  const unreadNotifications = useQuery(api.notifications.getUnreadCount, {});
-  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+  const { isAuthenticated } = useConvexAuth();
+  const openFlags = useQuery(api.flags.getMyFlags, isAuthenticated ? { status: 'open' } : 'skip');
+  const unreadNotifications = useQuery(api.notifications.getUnreadCount, isAuthenticated ? {} : 'skip');
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, isAuthenticated ? {} : 'skip');
 
   const counts = {
     messages: unreadMessages ?? 0,

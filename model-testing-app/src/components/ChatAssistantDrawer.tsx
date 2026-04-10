@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Settings2, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import ChatHistory from './ChatHistory';
@@ -71,7 +71,8 @@ export default function ChatAssistantDrawer() {
   const router = useRouter();
   const { isOpen, setIsOpen } = useChatDrawer();
   const { mode } = useMessenger();
-  const unreadMessages = useQuery(api.conversations.getUnreadCount, {});
+  const { isAuthenticated } = useConvexAuth();
+  const unreadMessages = useQuery(api.conversations.getUnreadCount, isAuthenticated ? {} : 'skip');
 
   const onClose = () => setIsOpen(false);
   const [currentSessionId, setCurrentSessionId] = useState<Id<"chatSessions"> | null>(null);
