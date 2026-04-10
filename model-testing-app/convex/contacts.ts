@@ -116,6 +116,7 @@ export const update = mutation({
     phone: v.optional(v.string()),
     company: v.optional(v.string()),
     notes: v.optional(v.string()),
+    clientId: v.optional(v.union(v.id("clients"), v.null())),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;
@@ -123,8 +124,11 @@ export const update = mutation({
     if (!existing) {
       throw new Error("Contact not found");
     }
-    
-    await ctx.db.patch(id, updates);
+
+    const patchData: any = { ...updates, updatedAt: new Date().toISOString() };
+    if (patchData.clientId === null) patchData.clientId = undefined;
+
+    await ctx.db.patch(id, patchData);
     return id;
   },
 });
