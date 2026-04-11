@@ -12,11 +12,14 @@ import TaskDetailSheet from '@/components/tasks/TaskDetailSheet';
 import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
 import { groupTasksByDate } from '@/components/tasks/groupTasksByDate';
 
+type StatusFilter = 'active' | 'completed' | 'all';
+
 export default function TasksContent() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<Id<'tasks'> | null>(null);
   const [showCreation, setShowCreation] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
 
   const tasks = useQuery(api.tasks.getByUser, { includeCreated: true, includeAssigned: true });
   const metrics = useQuery(api.tasks.getMetrics, {});
@@ -36,7 +39,12 @@ export default function TasksContent() {
   }, [tasks, clients]);
 
   const displayTasks = useMemo(() => {
-    let filtered = enhancedTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled');
+    let filtered = enhancedTasks.filter(t => {
+      if (t.status === 'cancelled') return false;
+      if (statusFilter === 'active') return t.status !== 'completed';
+      if (statusFilter === 'completed') return t.status === 'completed';
+      return true; // 'all'
+    });
 
     if (selectedDate) {
       filtered = filtered.filter(t => {
@@ -47,6 +55,13 @@ export default function TasksContent() {
 
     const priorityWeight: Record<string, number> = { high: 0, medium: 1, low: 2 };
     return filtered.sort((a, b) => {
+      // Active tasks before completed in 'all' view
+      if (statusFilter === 'all') {
+        const aComplete = a.status === 'completed' ? 1 : 0;
+        const bComplete = b.status === 'completed' ? 1 : 0;
+        if (aComplete !== bComplete) return aComplete - bComplete;
+      }
+
       const now = new Date().toISOString();
       const aOverdue = a.dueDate && a.dueDate < now ? 0 : 1;
       const bOverdue = b.dueDate && b.dueDate < now ? 0 : 1;
@@ -58,7 +73,13 @@ export default function TasksContent() {
 
       return (priorityWeight[a.priority || 'medium'] || 1) - (priorityWeight[b.priority || 'medium'] || 1);
     });
-  }, [enhancedTasks, selectedDate]);
+  }, [enhancedTasks, selectedDate, statusFilter]);
+
+  const filterCounts = useMemo(() => {
+    const active = enhancedTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length;
+    const completed = enhancedTasks.filter(t => t.status === 'completed').length;
+    return { active, completed, all: active + completed };
+  }, [enhancedTasks]);
 
   const sectionLabel = selectedDate
     ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
@@ -96,7 +117,31 @@ export default function TasksContent() {
         />
       </div>
 
-      <div className="border-t border-[var(--m-border)] mx-[var(--m-page-px)] mt-3" />
+      {/* Status filter */}
+      <div className="flex items-center gap-1.5 px-[var(--m-page-px)] mt-3 pb-2">
+        {([
+          { key: 'active' as StatusFilter, label: 'Active', count: filterCounts.active },
+          { key: 'completed' as StatusFilter, label: 'Done', count: filterCounts.completed },
+          { key: 'all' as StatusFilter, label: 'All', count: filterCounts.all },
+        ]).map(f => (
+          <button
+            key={f.key}
+            onClick={() => setStatusFilter(f.key)}
+            className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
+              statusFilter === f.key
+                ? 'bg-[var(--m-text-primary)] text-[var(--m-bg)]'
+                : 'bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)]'
+            }`}
+          >
+            {f.label}
+            <span className={`ml-1 ${statusFilter === f.key ? 'opacity-70' : 'opacity-50'}`}>
+              {f.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="border-t border-[var(--m-border)] mx-[var(--m-page-px)]" />
 
       <div className="flex-1 px-[var(--m-page-px)] pb-20">
         {displayTasks.length === 0 ? (
