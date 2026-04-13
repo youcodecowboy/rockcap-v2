@@ -32,6 +32,7 @@ export default function ClientThreadsTab({ clientId }: ClientThreadsTabProps) {
       await createFlag({
         entityType: 'client',
         entityId: clientId,
+        clientId: clientId as Id<'clients'>,
         note: newThreadNote.trim(),
         priority: 'normal',
       });

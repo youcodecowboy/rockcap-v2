@@ -25,7 +25,7 @@ const CLIENT_TABS = [
   { key: 'tasks', label: 'Tasks' },
   { key: 'checklist', label: 'Checklist' },
   { key: 'meetings', label: 'Meetings' },
-  { key: 'threads', label: 'Threads' },
+  { key: 'threads', label: 'Flags' },
 ] as const;
 
 type ClientTab = typeof CLIENT_TABS[number]['key'];
