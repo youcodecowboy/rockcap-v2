@@ -124,7 +124,7 @@ export default function ClientDetail({ clientId, clientName, onBack, onSelectPro
         <ClientMeetingsTab clientId={clientId} />
       )}
       {activeTab === 'threads' && (
-        <ClientThreadsTab clientId={clientId} />
+        <ClientThreadsTab clientId={clientId} clientName={clientName} />
       )}
     </div>
   );
