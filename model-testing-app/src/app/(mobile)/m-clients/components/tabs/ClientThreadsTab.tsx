@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
+import { Plus } from 'lucide-react';
 
 interface ClientThreadsTabProps {
   clientId: string;
@@ -12,6 +13,9 @@ interface ClientThreadsTabProps {
 export default function ClientThreadsTab({ clientId }: ClientThreadsTabProps) {
   const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState<string>('');
+  const [showNewThread, setShowNewThread] = useState(false);
+  const [newThreadNote, setNewThreadNote] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   const flags = useQuery(api.flags.getByClient, { clientId: clientId as Id<'clients'> });
   const threadEntries = useQuery(
@@ -19,6 +23,24 @@ export default function ClientThreadsTab({ clientId }: ClientThreadsTabProps) {
     expandedFlagId ? { flagId: expandedFlagId as Id<'flags'> } : 'skip'
   );
   const replyMutation = useMutation(api.flags.reply);
+  const createFlag = useMutation(api.flags.create);
+
+  const handleCreateThread = async () => {
+    if (!newThreadNote.trim() || isCreating) return;
+    setIsCreating(true);
+    try {
+      await createFlag({
+        entityType: 'client',
+        entityId: clientId,
+        note: newThreadNote.trim(),
+        priority: 'normal',
+      });
+      setNewThreadNote('');
+      setShowNewThread(false);
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   const handleReply = async (flagId: string) => {
     if (!replyText.trim()) return;
@@ -47,10 +69,16 @@ export default function ClientThreadsTab({ clientId }: ClientThreadsTabProps) {
     );
   }
 
-  if (flags.length === 0) {
+  if (flags.length === 0 && !showNewThread) {
     return (
-      <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">
-        No threads yet
+      <div className="px-[var(--m-page-px)] py-8 text-center">
+        <p className="text-[12px] text-[var(--m-text-tertiary)]">No threads yet</p>
+        <button
+          onClick={() => setShowNewThread(true)}
+          className="mt-2 text-[12px] font-medium text-[var(--m-accent-indicator)]"
+        >
+          Start a thread
+        </button>
       </div>
     );
   }
@@ -59,6 +87,44 @@ export default function ClientThreadsTab({ clientId }: ClientThreadsTabProps) {
 
   return (
     <div className="px-[var(--m-page-px)] py-3">
+      {/* New thread button / composer */}
+      {showNewThread ? (
+        <div className="mb-3 bg-[var(--m-bg-card)] border border-[var(--m-border-subtle)] rounded-xl p-3">
+          <div className="text-[13px] font-medium text-[var(--m-text-primary)] mb-2">New Thread</div>
+          <textarea
+            value={newThreadNote}
+            onChange={(e) => setNewThreadNote(e.target.value)}
+            placeholder="What's this thread about?"
+            rows={3}
+            className="w-full bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] rounded-lg px-3 py-2 border border-[var(--m-border-subtle)] outline-none resize-none"
+            style={{ fontSize: '16px' }}
+            autoFocus
+          />
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={() => { setShowNewThread(false); setNewThreadNote(''); }}
+              className="px-3 py-1.5 text-[12px] font-medium text-[var(--m-text-secondary)]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreateThread}
+              disabled={!newThreadNote.trim() || isCreating}
+              className="px-4 py-1.5 text-[12px] font-semibold text-white bg-[var(--m-accent)] rounded-lg disabled:opacity-40"
+            >
+              {isCreating ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowNewThread(true)}
+          className="flex items-center gap-1.5 mb-3 text-[12px] font-medium text-[var(--m-accent-indicator)]"
+        >
+          <Plus className="w-3.5 h-3.5" /> New Thread
+        </button>
+      )}
+
       <div className="flex flex-col gap-2">
         {sortedFlags.map((flag) => {
           const isExpanded = expandedFlagId === flag._id;
