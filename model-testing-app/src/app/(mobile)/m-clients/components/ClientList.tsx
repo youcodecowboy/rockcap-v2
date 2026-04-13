@@ -43,6 +43,17 @@ export default function ClientList({ onSelectClient }: ClientListProps) {
     return sorted.filter(c => (c.name ?? '').toLowerCase().includes(q));
   }, [clients, q]);
 
+  // 3 most recently accessed clients
+  const recentClients = useMemo(() => {
+    if (!clients) return [];
+    const seen = new Set<string>();
+    return clients
+      .filter(c => !(c as any).isDeleted && (c as any).lastAccessedAt)
+      .sort((a, b) => new Date((b as any).lastAccessedAt).getTime() - new Date((a as any).lastAccessedAt).getTime())
+      .filter(c => { if (seen.has(c._id)) return false; seen.add(c._id); return true; })
+      .slice(0, 3);
+  }, [clients]);
+
   return (
     <div>
       {/* Search */}
@@ -56,6 +67,42 @@ export default function ClientList({ onSelectClient }: ClientListProps) {
           style={{ fontSize: '16px' }}
         />
       </div>
+
+      {/* Recent clients cards */}
+      {!q && recentClients.length > 0 && (
+        <div className="px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)]">
+          <div className="text-[10px] font-medium text-[var(--m-text-tertiary)] uppercase tracking-wide mb-2">Recent</div>
+          <div className="grid grid-cols-3 gap-2">
+            {recentClients.map(client => {
+              const projCount = projectCountMap.get(client._id) ?? 0;
+              const clientType = (client as any).type as string | undefined;
+              return (
+                <button
+                  key={client._id}
+                  onClick={() => onSelectClient(client._id, client.name ?? 'Unnamed')}
+                  className="flex flex-col items-start p-2.5 rounded-lg border border-[var(--m-border-subtle)] bg-[var(--m-bg-surface)] active:bg-[var(--m-bg-subtle)] text-left"
+                >
+                  <span className="text-[12px] font-semibold text-[var(--m-text-primary)] truncate w-full leading-tight">
+                    {client.name ?? 'Unnamed'}
+                  </span>
+                  {clientType && (
+                    <span className={`text-[8px] font-medium px-1 py-px rounded uppercase tracking-wide mt-1 ${
+                      clientType === 'lender'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {clientType}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-[var(--m-text-tertiary)] mt-1">
+                    {projCount} project{projCount !== 1 ? 's' : ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Loading */}
       {isLoading && (
