@@ -1,14 +1,27 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import type { Id } from '../../../../../../convex/_generated/dataModel';
+import { ChevronDown } from 'lucide-react';
 
 interface ClientIntelligenceTabProps {
   clientId: string;
 }
 
 export default function ClientIntelligenceTab({ clientId }: ClientIntelligenceTabProps) {
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
   const items = useQuery(api.knowledgeLibrary.getKnowledgeItemsByClient, {
     clientId: clientId as Id<'clients'>,
   });
@@ -87,26 +100,33 @@ export default function ClientIntelligenceTab({ clientId }: ClientIntelligenceTa
     );
   };
 
+  const allCategories = [
+    ...sortedCategories.map(cat => ({ key: cat, label: cat, items: grouped[cat] })),
+    ...(uncategorized.length > 0 ? [{ key: '__other', label: 'Other', items: uncategorized }] : []),
+  ];
+
   return (
     <div>
-      {sortedCategories.map((cat) => (
-        <div key={cat}>
-          <div className="py-2 px-[var(--m-page-px)] bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)] text-[11px] font-semibold uppercase tracking-wide text-[var(--m-text-secondary)]">
-            {cat}
+      {allCategories.map(({ key, label, items: catItems }) => {
+        const isOpen = expandedCategories.has(key);
+        return (
+          <div key={key}>
+            <button
+              onClick={() => toggleCategory(key)}
+              className="flex items-center justify-between w-full py-2.5 px-[var(--m-page-px)] bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)] text-left"
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--m-text-secondary)]">
+                {label}
+                <span className="text-[var(--m-text-tertiary)] font-normal ml-1.5">({catItems.length})</span>
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-[var(--m-text-tertiary)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {isOpen && catItems.map((item, idx) => renderItem(item, idx))}
           </div>
-          {grouped[cat].map((item, idx) => renderItem(item, idx))}
-        </div>
-      ))}
-      {uncategorized.length > 0 && (
-        <>
-          {sortedCategories.length > 0 && (
-            <div className="py-2 px-[var(--m-page-px)] bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)] text-[11px] font-semibold uppercase tracking-wide text-[var(--m-text-secondary)]">
-              Other
-            </div>
-          )}
-          {uncategorized.map((item, idx) => renderItem(item, idx))}
-        </>
-      )}
+        );
+      })}
     </div>
   );
 }
