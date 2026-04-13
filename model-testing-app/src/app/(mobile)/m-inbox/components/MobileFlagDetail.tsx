@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Flag, CheckCircle2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Flag, CheckCircle2, RotateCcw, Building2, FolderKanban, FileText, ListTodo, Calendar, ClipboardCheck, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
+import { useRouter } from 'next/navigation';
 import { api } from '../../../../../convex/_generated/api';
 import type { Id } from '../../../../../convex/_generated/dataModel';
 import { ENTITY_TYPE_SHORT } from '@/components/threads/utils';
@@ -30,13 +31,39 @@ function formatTime(dateString: string): string {
   });
 }
 
+const ENTITY_ICONS: Record<string, any> = {
+  client: Building2,
+  project: FolderKanban,
+  document: FileText,
+  task: ListTodo,
+  meeting: Calendar,
+  checklist_item: ClipboardCheck,
+};
+
+function getEntityRoute(entityType: string, entityId: string, clientId?: string): string | null {
+  switch (entityType) {
+    case 'client': return `/m-clients?clientId=${entityId}`;
+    case 'project': return `/m-clients?projectId=${entityId}`;
+    case 'document': return `/m-docs?documentId=${entityId}`;
+    case 'task': return `/m-tasks`;
+    default: return null;
+  }
+}
+
 export default function MobileFlagDetail({ flagId, onBack }: MobileFlagDetailProps) {
   const fId = flagId as Id<'flags'>;
+  const router = useRouter();
   const flag = useQuery(api.flags.get, { id: fId });
   const thread = useQuery(api.flags.getThread, { flagId: fId });
   const reply = useMutation(api.flags.reply);
   const resolve = useMutation(api.flags.resolve);
   const reopen = useMutation(api.flags.reopen);
+
+  // Resolve the entity this flag is about
+  const entityContext = useQuery(
+    api.flags.getEntityContext,
+    flag ? { entityType: flag.entityType as any, entityId: flag.entityId } : 'skip'
+  );
 
   const [replyText, setReplyText] = useState('');
   const [resolveOnSend, setResolveOnSend] = useState(false);
@@ -94,15 +121,16 @@ export default function MobileFlagDetail({ flagId, onBack }: MobileFlagDetailPro
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-center gap-3 px-3 py-2.5 border-b border-[var(--m-border)] bg-[var(--m-bg)]">
         <button onClick={onBack} className="p-1 text-[var(--m-text-secondary)]">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1 min-w-0 flex items-center gap-2">
-          <Flag className={`w-4 h-4 ${flag.priority === 'urgent' ? 'text-[var(--m-error)]' : 'text-orange-500'}`} />
-          {flag.entityType && (
-            <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-[var(--m-bg-inset)] text-[var(--m-text-tertiary)] uppercase tracking-wide">
-              {ENTITY_TYPE_SHORT[flag.entityType] || flag.entityType}
+          <Flag className={`w-4 h-4 shrink-0 ${flag.priority === 'urgent' ? 'text-[var(--m-error)]' : 'text-orange-500'}`} />
+          {flag.priority === 'urgent' && (
+            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-700">
+              <AlertTriangle className="w-3 h-3" /> Urgent
             </span>
           )}
           <span
@@ -133,6 +161,45 @@ export default function MobileFlagDetail({ flagId, onBack }: MobileFlagDetailPro
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-[var(--m-page-px)] py-3">
+        {/* Entity context card — shows what the flag is about */}
+        {entityContext && entityContext.name !== 'Unknown' && (() => {
+          const EntityIcon = ENTITY_ICONS[flag.entityType] || Flag;
+          const route = getEntityRoute(flag.entityType, flag.entityId, flag.clientId);
+          return (
+            <button
+              onClick={() => route && router.push(route)}
+              disabled={!route}
+              className={`w-full flex items-center gap-2.5 p-2.5 mb-3 rounded-lg border border-[var(--m-border-subtle)] bg-[var(--m-bg-subtle)] text-left ${route ? 'active:bg-[var(--m-bg-inset)]' : ''}`}
+            >
+              <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
+                <EntityIcon className="w-4 h-4 text-amber-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">
+                  {entityContext.name}
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--m-text-tertiary)]">
+                    {flag.entityType.replace('_', ' ')}
+                  </span>
+                  {entityContext.subtitle && (
+                    <span className="text-[10px] text-[var(--m-text-tertiary)]">
+                      {entityContext.subtitle}
+                    </span>
+                  )}
+                  {entityContext.badges?.map((b: string) => (
+                    <span key={b} className="text-[9px] px-1 py-px rounded bg-[var(--m-bg-inset)] text-[var(--m-text-tertiary)]">
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {route && <ChevronRight className="w-4 h-4 text-[var(--m-text-tertiary)] shrink-0" />}
+            </button>
+          );
+        })()}
+
+        {/* Flag details */}
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[12px] font-semibold text-[var(--m-text-primary)]">
@@ -143,6 +210,15 @@ export default function MobileFlagDetail({ flagId, onBack }: MobileFlagDetailPro
           <p className="text-[13px] text-[var(--m-text-primary)] whitespace-pre-wrap leading-relaxed">
             {flag.note}
           </p>
+          {/* Assigned to */}
+          {flag.assignedTo && flag.assignedTo !== flag.createdBy && (
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--m-text-tertiary)]">
+              Assigned to
+              <span className="bg-blue-50 text-blue-600 px-1.5 py-px rounded font-medium">
+                {userMap[flag.assignedTo] || 'Unknown'}
+              </span>
+            </div>
+          )}
         </div>
 
         {thread?.map((entry: any) => (
@@ -196,7 +272,7 @@ export default function MobileFlagDetail({ flagId, onBack }: MobileFlagDetailPro
               onChange={(e) => setReplyText(e.target.value)}
               placeholder="Reply..."
               rows={1}
-              className="flex-1 resize-none rounded-2xl bg-[var(--m-bg-inset)] px-3 py-2 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none max-h-24"
+              className="flex-1 resize-none rounded-2xl bg-[var(--m-bg-inset)] px-3 py-2 text-[16px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none max-h-24"
               style={{ minHeight: '36px' }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
