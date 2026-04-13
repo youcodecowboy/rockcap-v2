@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import { Circle, CheckCircle2, Plus } from 'lucide-react';
 import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
+import { groupTasksByDate } from '@/components/tasks/groupTasksByDate';
 
 interface ClientTasksTabProps {
   clientId: string;
@@ -15,7 +16,6 @@ interface ClientTasksTabProps {
 export default function ClientTasksTab({ clientId, clientName }: ClientTasksTabProps) {
   const tasks = useQuery(api.tasks.getByClient, { clientId: clientId as Id<'clients'> });
   const updateTask = useMutation(api.tasks.update);
-  const [completedExpanded, setCompletedExpanded] = useState(false);
   const [showCreation, setShowCreation] = useState(false);
 
   if (showCreation) {
@@ -70,6 +70,30 @@ export default function ClientTasksTab({ clientId, clientName }: ClientTasksTabP
       return bTime - aTime;
     });
 
+  const groupedActive = groupTasksByDate(activeTasks);
+
+  // Define the sections we always want to show (with empty states)
+  const standardSections = [
+    { key: 'overdue', label: 'Overdue', color: 'text-red-600', emptyText: 'No overdue tasks' },
+    { key: 'today', label: 'Due Today', color: 'text-amber-600', emptyText: 'Nothing due today' },
+    { key: 'tomorrow', label: 'Tomorrow', color: 'text-[var(--m-text-secondary)]', emptyText: 'Nothing due tomorrow' },
+  ];
+
+  // Build display: standard sections (always shown) + any additional date groups
+  const standardKeys = new Set(['overdue', 'today', 'tomorrow']);
+  const groupMap = new Map(groupedActive.map(g => {
+    // Map group labels back to keys for matching
+    if (g.label === 'Overdue') return ['overdue', g];
+    if (g.label === 'Due Today') return ['today', g];
+    if (g.label === 'Tomorrow') return ['tomorrow', g];
+    return [g.label, g];
+  }));
+
+  // Extra groups beyond the standard three (future dates, no due date)
+  const extraGroups = groupedActive.filter(g =>
+    g.label !== 'Overdue' && g.label !== 'Due Today' && g.label !== 'Tomorrow'
+  );
+
   function getDueBadge(dueDate: string | undefined | null) {
     if (!dueDate) return null;
     const dateStr = dueDate.split('T')[0];
@@ -97,67 +121,71 @@ export default function ClientTasksTab({ clientId, clientName }: ClientTasksTabP
     await updateTask({ id: taskId, status: newStatus });
   }
 
+  function renderTaskRow(task: any) {
+    const isComplete = task.status === 'completed';
+    return (
+      <button
+        key={task._id}
+        type="button"
+        onClick={() => toggleTask(task._id, task.status)}
+        className="flex w-full items-center gap-2.5 px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)] active:bg-[var(--m-bg-subtle)] text-left"
+      >
+        {isComplete ? (
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+        ) : (
+          <Circle className="h-5 w-5 shrink-0 text-[var(--m-text-tertiary)]" />
+        )}
+        <span className={`text-[13px] truncate ${isComplete ? 'text-[var(--m-text-tertiary)] line-through' : 'text-[var(--m-text-primary)]'}`}>
+          {task.title}
+        </span>
+        {getDueBadge(task.dueDate)}
+      </button>
+    );
+  }
+
+  function renderSection(label: string, color: string, sectionTasks: any[], emptyText?: string) {
+    return (
+      <div key={label} className="mt-1">
+        <div className={`px-[var(--m-page-px)] py-2 text-[11px] font-semibold uppercase tracking-wider ${color}`}>
+          {label}
+          {sectionTasks.length > 0 && (
+            <span className="text-[var(--m-text-tertiary)] font-normal ml-1.5">({sectionTasks.length})</span>
+          )}
+        </div>
+        {sectionTasks.length > 0 ? (
+          sectionTasks.map(renderTaskRow)
+        ) : emptyText ? (
+          <div className="px-[var(--m-page-px)] py-3 text-[12px] text-[var(--m-text-tertiary)]">
+            {emptyText}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* New task button */}
       <div className="px-[var(--m-page-px)] pt-3">
         <button
           onClick={() => setShowCreation(true)}
-          className="flex items-center gap-1.5 mb-2 text-[12px] font-medium text-[var(--m-accent-indicator)]"
+          className="flex items-center gap-1.5 mb-1 text-[12px] font-medium text-[var(--m-accent-indicator)]"
         >
           <Plus className="w-3.5 h-3.5" /> New Task
         </button>
       </div>
 
-      {/* Active section */}
-      {activeTasks.length > 0 && (
-        <div>
-          <div className="px-[var(--m-page-px)] py-2 text-[12px] font-semibold text-[var(--m-text-secondary)]">
-            Active ({activeTasks.length})
-          </div>
-          {activeTasks.map((task) => (
-            <button
-              key={task._id}
-              type="button"
-              onClick={() => toggleTask(task._id, task.status)}
-              className="flex w-full items-center gap-2.5 px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)] active:bg-[var(--m-bg-subtle)] text-left"
-            >
-              <Circle className="h-5 w-5 shrink-0 text-[var(--m-text-tertiary)]" />
-              <span className="text-[13px] text-[var(--m-text-primary)] truncate">{task.title}</span>
-              {getDueBadge(task.dueDate)}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Standard sections (always visible with empty states) */}
+      {standardSections.map(s => {
+        const group = groupMap.get(s.key);
+        return renderSection(s.label, s.color, group?.tasks || [], s.emptyText);
+      })}
 
-      {/* Completed section */}
-      {completedTasks.length > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setCompletedExpanded(!completedExpanded)}
-            className="flex w-full items-center px-[var(--m-page-px)] py-2 text-[12px] font-semibold text-[var(--m-text-secondary)]"
-          >
-            Completed ({completedTasks.length})
-            <span className="ml-1 text-[10px]">{completedExpanded ? '▲' : '▼'}</span>
-          </button>
-          {completedExpanded &&
-            completedTasks.map((task) => (
-              <button
-                key={task._id}
-                type="button"
-                onClick={() => toggleTask(task._id, task.status)}
-                className="flex w-full items-center gap-2.5 px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)] active:bg-[var(--m-bg-subtle)] text-left"
-              >
-                <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
-                <span className="text-[13px] text-[var(--m-text-tertiary)] line-through truncate">
-                  {task.title}
-                </span>
-                {getDueBadge(task.dueDate)}
-              </button>
-            ))}
-        </div>
-      )}
+      {/* Additional date sections (upcoming dates, no due date) */}
+      {extraGroups.map(g => renderSection(g.label, g.color, g.tasks))}
+
+      {/* Completed section (expanded by default) */}
+      {renderSection('Completed', 'text-green-600', completedTasks, 'No completed tasks')}
     </div>
   );
 }
