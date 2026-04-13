@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Circle, CheckCircle2 } from 'lucide-react';
+import { Circle, CheckCircle2, Plus } from 'lucide-react';
 
 interface ClientTasksTabProps {
   clientId: string;
@@ -13,7 +13,29 @@ interface ClientTasksTabProps {
 export default function ClientTasksTab({ clientId }: ClientTasksTabProps) {
   const tasks = useQuery(api.tasks.getByClient, { clientId: clientId as Id<'clients'> });
   const updateTask = useMutation(api.tasks.update);
+  const createTask = useMutation(api.tasks.create);
   const [completedExpanded, setCompletedExpanded] = useState(false);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDueDate, setNewDueDate] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateTask = async () => {
+    if (!newTitle.trim() || isCreating) return;
+    setIsCreating(true);
+    try {
+      await createTask({
+        title: newTitle.trim(),
+        clientId: clientId as Id<'clients'>,
+        ...(newDueDate ? { dueDate: new Date(newDueDate).toISOString() } : {}),
+      });
+      setNewTitle('');
+      setNewDueDate('');
+      setShowNewTask(false);
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   if (tasks === undefined) {
     return (
@@ -23,10 +45,16 @@ export default function ClientTasksTab({ clientId }: ClientTasksTabProps) {
     );
   }
 
-  if (tasks.length === 0) {
+  if (tasks.length === 0 && !showNewTask) {
     return (
-      <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">
-        No tasks yet
+      <div className="px-[var(--m-page-px)] py-8 text-center">
+        <p className="text-[12px] text-[var(--m-text-tertiary)]">No tasks yet</p>
+        <button
+          onClick={() => setShowNewTask(true)}
+          className="mt-2 text-[12px] font-medium text-[var(--m-accent-indicator)]"
+        >
+          Create a task
+        </button>
       </div>
     );
   }
@@ -79,6 +107,53 @@ export default function ClientTasksTab({ clientId }: ClientTasksTabProps) {
 
   return (
     <div>
+      {/* New task */}
+      <div className="px-[var(--m-page-px)] pt-3">
+        {showNewTask ? (
+          <div className="bg-[var(--m-bg-card)] border border-[var(--m-border-subtle)] rounded-xl p-3 mb-2">
+            <input
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Task title"
+              className="w-full bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] rounded-lg px-3 py-2 border border-[var(--m-border-subtle)] outline-none"
+              style={{ fontSize: '16px' }}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateTask(); }}
+            />
+            <input
+              type="date"
+              value={newDueDate}
+              onChange={(e) => setNewDueDate(e.target.value)}
+              className="w-full mt-2 bg-[var(--m-bg-inset)] text-[var(--m-text-primary)] rounded-lg px-3 py-2 border border-[var(--m-border-subtle)] outline-none text-[14px]"
+              style={{ fontSize: '16px' }}
+            />
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                onClick={() => { setShowNewTask(false); setNewTitle(''); setNewDueDate(''); }}
+                className="px-3 py-1.5 text-[12px] font-medium text-[var(--m-text-secondary)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateTask}
+                disabled={!newTitle.trim() || isCreating}
+                className="px-4 py-1.5 text-[12px] font-semibold text-white bg-[var(--m-accent)] rounded-lg disabled:opacity-40"
+              >
+                {isCreating ? 'Creating...' : 'Add Task'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowNewTask(true)}
+            className="flex items-center gap-1.5 mb-2 text-[12px] font-medium text-[var(--m-accent-indicator)]"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Task
+          </button>
+        )}
+      </div>
+
       {/* Active section */}
       {activeTasks.length > 0 && (
         <div>
