@@ -10,6 +10,10 @@ import TaskConfirmationCard from './TaskConfirmationCard';
 interface TaskCreationFlowProps {
   onTaskCreated: (taskId: string) => void;
   onClose: () => void;
+  initialClientId?: string;
+  initialClientName?: string;
+  initialProjectId?: string;
+  initialProjectName?: string;
 }
 
 interface AgentMessage {
@@ -27,7 +31,14 @@ interface ParsedTask {
   projectId?: string;
 }
 
-export default function TaskCreationFlow({ onTaskCreated, onClose }: TaskCreationFlowProps) {
+export default function TaskCreationFlow({
+  onTaskCreated,
+  onClose,
+  initialClientId,
+  initialClientName,
+  initialProjectId,
+  initialProjectName,
+}: TaskCreationFlowProps) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -67,10 +78,24 @@ export default function TaskCreationFlow({ onTaskCreated, onClose }: TaskCreatio
         users: (allUsers || []).map(u => ({ id: u._id, name: u.name || u.email })),
       };
 
+      // If this flow was opened from a client/project context, prepend a
+      // system hint so the AI knows the scope without the user having to
+      // repeat it. Only inject on the first message to avoid duplication.
+      let agentMessages = newMessages;
+      if (newMessages.length === 1 && (initialClientName || initialProjectName)) {
+        const parts: string[] = [];
+        if (initialClientName) parts.push(`client "${initialClientName}"`);
+        if (initialProjectName) parts.push(`project "${initialProjectName}"`);
+        const hint = `[Context: this task is for ${parts.join(', ')}]`;
+        agentMessages = [
+          { role: 'user' as const, content: `${hint}\n\n${newMessages[0].content}` },
+        ];
+      }
+
       const res = await fetch('/api/tasks/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, context }),
+        body: JSON.stringify({ messages: agentMessages, context }),
       });
 
       if (!res.ok) throw new Error('Agent request failed');
@@ -78,7 +103,11 @@ export default function TaskCreationFlow({ onTaskCreated, onClose }: TaskCreatio
       const data = await res.json();
 
       if (data.type === 'task') {
-        setParsedTask(data.task);
+        const task = { ...data.task };
+        // Default to the initial client/project if the AI didn't resolve one
+        if (!task.clientId && initialClientId) task.clientId = initialClientId;
+        if (!task.projectId && initialProjectId) task.projectId = initialProjectId;
+        setParsedTask(task);
         setMessages([...newMessages, { role: 'assistant', content: 'Here\'s your task — review and confirm below.' }]);
       } else if (data.type === 'message') {
         setMessages([...newMessages, { role: 'assistant', content: data.content }]);
@@ -204,9 +233,9 @@ export default function TaskCreationFlow({ onTaskCreated, onClose }: TaskCreatio
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Describe your task..."
+              placeholder={initialClientName ? `Describe your task for ${initialClientName}...` : 'Describe your task...'}
               rows={1}
-              className="flex-1 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] resize-none bg-transparent outline-none max-h-[120px]"
+              className="flex-1 text-[16px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] resize-none bg-transparent outline-none max-h-[120px]"
               style={{ fieldSizing: 'content' } as any}
             />
             <button

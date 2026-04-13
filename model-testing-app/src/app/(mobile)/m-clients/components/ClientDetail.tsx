@@ -115,7 +115,7 @@ export default function ClientDetail({ clientId, clientName, onBack, onSelectPro
         <ClientNotesTab clientId={clientId} />
       )}
       {activeTab === 'tasks' && (
-        <ClientTasksTab clientId={clientId} />
+        <ClientTasksTab clientId={clientId} clientName={clientName} />
       )}
       {activeTab === 'checklist' && (
         <ClientChecklistTab clientId={clientId} />
