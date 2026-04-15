@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, FolderKanban, Building2, FileText } from 'lucide-react';
+import { type LucideIcon } from 'lucide-react';
 
 type TabKey = 'projects' | 'clients' | 'docs';
 
@@ -57,17 +58,35 @@ function formatRelativeDate(dateString?: string): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-function RecentRow({ title, subtitle, href }: { title: string; subtitle: string; href: string }) {
+function RecentRow({
+  title,
+  subtitle,
+  href,
+  icon: Icon,
+  pill,
+}: {
+  title: string;
+  subtitle: string;
+  href: string;
+  icon: LucideIcon;
+  pill?: string;
+}) {
   return (
     <Link
       href={href}
-      className="flex items-center justify-between px-[var(--m-page-px)] py-2.5 border-b border-[var(--m-border-subtle)] active:bg-[var(--m-bg-subtle)]"
+      className="flex items-center gap-3 px-4 py-3 border-b border-[var(--m-border-subtle)] last:border-b-0 active:bg-[var(--m-bg-subtle)]"
     >
+      <Icon className="w-4 h-4 text-[var(--m-text-tertiary)] flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="text-[14px] font-medium text-[var(--m-text-primary)] truncate">{title}</div>
         <div className="text-[12px] text-[var(--m-text-tertiary)] mt-0.5 truncate">{subtitle}</div>
       </div>
-      <ChevronRight className="w-3.5 h-3.5 text-[var(--m-text-placeholder)] flex-shrink-0 ml-2" />
+      {pill && (
+        <span className="text-[11px] text-[var(--m-text-secondary)] bg-[var(--m-bg-subtle)] px-2 py-0.5 rounded-md font-medium flex-shrink-0">
+          {pill}
+        </span>
+      )}
+      <ChevronRight className="w-4 h-4 text-[var(--m-text-placeholder)] flex-shrink-0" />
     </Link>
   );
 }
@@ -82,7 +101,6 @@ export default function RecentsSection({
 }: RecentsSectionProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('projects');
 
-  // Deduplicate by _id — keep only the first occurrence of each item
   const dedupe = <T extends { _id: string }>(items: T[]): T[] => {
     const seen = new Set<string>();
     return items.filter(item => {
@@ -103,108 +121,114 @@ export default function RecentsSection({
   };
 
   return (
-    <div className="border-t border-[var(--m-border)] mt-1">
-      {/* Segmented tab bar */}
-      <div className="flex bg-[var(--m-bg-subtle)]">
-        {tabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 text-center py-2.5 text-[12px] transition-colors ${
-              activeTab === tab.key
-                ? 'text-[var(--m-text-primary)] font-medium border-b-2 border-[var(--m-accent-indicator)]'
-                : 'text-[var(--m-text-tertiary)] border-b-2 border-transparent'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+    <div className="mx-[var(--m-page-px)] mb-3">
+      <div className="bg-[var(--m-bg-card)] border border-[var(--m-border)] rounded-[var(--m-card-radius)] overflow-hidden">
+        {/* Tab bar */}
+        <div className="flex border-b border-[var(--m-border-subtle)]">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 text-center py-2.5 text-[13px] font-medium transition-colors border-b-2 ${
+                activeTab === tab.key
+                  ? 'text-[var(--m-text-primary)] border-[var(--m-accent-indicator)]'
+                  : 'text-[var(--m-text-tertiary)] border-transparent'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-      {/* Tab content */}
-      <div>
-        {activeTab === 'projects' && (
-          <>
-            {recentProjects.length === 0 ? (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[12px] text-[var(--m-text-tertiary)]">
-                No projects yet
-              </div>
-            ) : (
-              recentProjects.map(project => {
-                const clientName = project.clientRoles[0]
-                  ? clientMap.get(project.clientRoles[0].clientId) ?? 'Unknown client'
-                  : 'No client';
-                const taskCount = taskCountByProject.get(project._id) ?? 0;
-                return (
-                  <RecentRow
-                    key={project._id}
-                    title={project.name}
-                    subtitle={`${clientName} · ${taskCount} task${taskCount !== 1 ? 's' : ''}`}
-                    href="/m-clients"
-                  />
-                );
-              })
-            )}
-          </>
-        )}
+        {/* Tab content */}
+        <div>
+          {activeTab === 'projects' && (
+            <>
+              {recentProjects.length === 0 ? (
+                <div className="px-4 py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
+                  No projects yet
+                </div>
+              ) : (
+                recentProjects.map(project => {
+                  const clientName = project.clientRoles[0]
+                    ? clientMap.get(project.clientRoles[0].clientId) ?? 'Unknown client'
+                    : 'No client';
+                  const taskCount = taskCountByProject.get(project._id) ?? 0;
+                  return (
+                    <RecentRow
+                      key={project._id}
+                      title={project.name}
+                      subtitle={`${clientName} · ${project.status || 'Active'}`}
+                      icon={FolderKanban}
+                      pill={taskCount > 0 ? `${taskCount} task${taskCount !== 1 ? 's' : ''}` : undefined}
+                      href="/m-clients"
+                    />
+                  );
+                })
+              )}
+            </>
+          )}
 
-        {activeTab === 'clients' && (
-          <>
-            {recentClients.length === 0 ? (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[12px] text-[var(--m-text-tertiary)]">
-                No clients yet
-              </div>
-            ) : (
-              recentClients.map(client => {
-                const projectCount = projectCountByClient.get(client._id) ?? 0;
-                const lastAccessed = formatRelativeDate(client.lastAccessedAt);
-                const parts = [`${projectCount} project${projectCount !== 1 ? 's' : ''}`];
-                if (lastAccessed) parts.push(`Last accessed ${lastAccessed.toLowerCase()}`);
-                return (
-                  <RecentRow
-                    key={client._id}
-                    title={client.name}
-                    subtitle={parts.join(' · ')}
-                    href="/m-clients"
-                  />
-                );
-              })
-            )}
-          </>
-        )}
+          {activeTab === 'clients' && (
+            <>
+              {recentClients.length === 0 ? (
+                <div className="px-4 py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
+                  No clients yet
+                </div>
+              ) : (
+                recentClients.map(client => {
+                  const projectCount = projectCountByClient.get(client._id) ?? 0;
+                  const lastAccessed = formatRelativeDate(client.lastAccessedAt);
+                  const parts = [`${projectCount} project${projectCount !== 1 ? 's' : ''}`];
+                  if (lastAccessed) parts.push(lastAccessed);
+                  return (
+                    <RecentRow
+                      key={client._id}
+                      title={client.name}
+                      subtitle={parts.join(' · ')}
+                      icon={Building2}
+                      href="/m-clients"
+                    />
+                  );
+                })
+              )}
+            </>
+          )}
 
-        {activeTab === 'docs' && (
-          <>
-            {recentDocs.length === 0 ? (
-              <div className="px-[var(--m-page-px)] py-6 text-center text-[12px] text-[var(--m-text-tertiary)]">
-                No documents yet
-              </div>
-            ) : (
-              recentDocs.map(doc => {
-                const name = doc.displayName || doc.fileName;
-                const parts = [doc.clientName || 'Unassigned'];
-                if (doc.category) parts.push(doc.category);
-                return (
-                  <RecentRow
-                    key={doc._id}
-                    title={name}
-                    subtitle={parts.join(' · ')}
-                    href="/m-docs"
-                  />
-                );
-              })
-            )}
-          </>
-        )}
+          {activeTab === 'docs' && (
+            <>
+              {recentDocs.length === 0 ? (
+                <div className="px-4 py-6 text-center text-[13px] text-[var(--m-text-tertiary)]">
+                  No documents yet
+                </div>
+              ) : (
+                recentDocs.map(doc => {
+                  const name = doc.displayName || doc.fileName;
+                  const parts = [doc.clientName || 'Unassigned'];
+                  if (doc.category) parts.push(doc.category);
+                  return (
+                    <RecentRow
+                      key={doc._id}
+                      title={name}
+                      subtitle={parts.join(' · ')}
+                      icon={FileText}
+                      href="/m-docs"
+                    />
+                  );
+                })
+              )}
+            </>
+          )}
 
-        {/* View all link */}
-        <div className="py-2.5 text-center">
-          <Link
-            href={viewAllLinks[activeTab].href}
-            className="text-[12px] font-medium text-[var(--m-accent-indicator)]"
-          >
-            {viewAllLinks[activeTab].label} →
-          </Link>
+          {/* View all */}
+          <div className="py-3 text-center border-t border-[var(--m-border-subtle)]">
+            <Link
+              href={viewAllLinks[activeTab].href}
+              className="text-[13px] font-medium text-[var(--m-text-tertiary)]"
+            >
+              {viewAllLinks[activeTab].label} →
+            </Link>
+          </div>
         </div>
       </div>
     </div>

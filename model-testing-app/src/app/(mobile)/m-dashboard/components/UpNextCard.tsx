@@ -3,7 +3,7 @@ import Link from 'next/link';
 interface UpNextItem {
   type: 'task' | 'reminder' | 'event';
   title: string;
-  context: string; // e.g. client name
+  context: string;
   dueDate: Date;
   href: string;
 }
@@ -44,24 +44,21 @@ function formatRelativeTime(dueDate: Date): string {
 
 const urgencyStyles = {
   overdue: {
-    card: 'bg-[#fef2f2] border border-[#fecaca]',
-    label: 'text-[#991b1b]',
-    subtitle: 'text-[#92400e]',
-    badge: 'bg-[#fecaca] text-[#991b1b]',
+    border: 'border-l-[var(--m-error)]',
+    label: 'text-[var(--m-error)]',
+    badge: 'bg-red-50 text-[#991b1b]',
     badgeText: 'OVERDUE',
   },
   today: {
-    card: 'bg-[#fefce8] border border-[#fef08a]',
-    label: 'text-[#a16207]',
-    subtitle: 'text-[#92400e]',
-    badge: 'bg-[#fef08a] text-[#a16207]',
+    border: 'border-l-[var(--m-warning)]',
+    label: 'text-[var(--m-warning)]',
+    badge: 'bg-amber-50 text-[#92400e]',
     badgeText: 'DUE TODAY',
   },
   future: {
-    card: 'bg-[var(--m-bg-subtle)] border border-[var(--m-border)]',
+    border: 'border-l-[var(--m-text-tertiary)]',
     label: 'text-[var(--m-text-tertiary)]',
-    subtitle: 'text-[var(--m-text-tertiary)]',
-    badge: 'bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)]',
+    badge: 'bg-[var(--m-bg-subtle)] text-[var(--m-text-secondary)]',
     badgeText: 'UPCOMING',
   },
 };
@@ -74,23 +71,21 @@ export default function UpNextCard({ item }: UpNextCardProps) {
   const relativeTime = formatRelativeTime(item.dueDate);
 
   return (
-    <Link href={item.href} className="block mx-[var(--m-page-px)] mb-4">
-      <div className={`px-3.5 py-3 rounded-lg ${style.card}`}>
-        <div className="flex justify-between items-start">
-          <div className="flex-1 min-w-0">
-            <div className={`text-[10px] uppercase tracking-[0.5px] font-semibold mb-1 ${style.label}`}>
-              Up Next
-            </div>
-            <div className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">
-              {item.title}
-            </div>
-            <div className={`text-[11px] mt-0.5 ${style.subtitle}`}>
-              {item.context} · {relativeTime}
-            </div>
-          </div>
-          <div className={`text-[10px] font-semibold px-2 py-0.5 rounded flex-shrink-0 ml-3 mt-3 ${style.badge}`}>
+    <Link href={item.href} className="block mx-[var(--m-page-px)] mb-3">
+      <div className={`px-4 py-3.5 bg-[var(--m-bg-card)] border border-[var(--m-border)] border-l-4 ${style.border} rounded-[var(--m-card-radius)]`}>
+        <div className="flex justify-between items-center mb-1.5">
+          <span className={`text-[10px] uppercase tracking-[0.5px] font-semibold ${style.label}`}>
+            Up Next
+          </span>
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${style.badge}`}>
             {style.badgeText}
-          </div>
+          </span>
+        </div>
+        <div className="text-[14px] font-semibold text-[var(--m-text-primary)]">
+          {item.title}
+        </div>
+        <div className="text-[12px] text-[var(--m-text-tertiary)] mt-1">
+          {item.context} · {relativeTime}
         </div>
       </div>
     </Link>

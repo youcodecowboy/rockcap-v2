@@ -26,38 +26,38 @@ export default function MobileHeader() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 h-[var(--m-header-h)] bg-[var(--m-bg)] border-b border-[var(--m-border)] z-40 flex items-center justify-between px-3">
+      <header className="fixed top-0 left-0 right-0 h-[var(--m-header-h)] bg-[var(--m-bg-brand)] z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setIsDrawerOpen(true)}
-            className="p-1.5 -ml-1 text-[var(--m-text-secondary)] active:text-[var(--m-text-primary)]"
+            className="p-1.5 -ml-1 text-[var(--m-text-on-brand)] active:opacity-70"
             aria-label="Open navigation menu"
           >
             <Menu className="w-[18px] h-[18px]" />
           </button>
           <span
-            className="text-[1.125rem] font-normal tracking-[-0.01em] text-[var(--m-text-primary)]"
+            className="text-[1.125rem] font-normal tracking-[-0.01em] text-[var(--m-text-on-brand)]"
             style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}
           >
             RockCap
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <button
-            className="p-1.5 text-[var(--m-text-tertiary)] active:text-[var(--m-text-secondary)]"
+            className="p-1.5 text-[var(--m-text-on-brand-muted)] active:text-[var(--m-text-on-brand)]"
             aria-label="Search"
           >
             <Search className="w-[18px] h-[18px]" />
           </button>
           <button
             onClick={() => router.push('/m-inbox')}
-            className="relative p-1.5 text-[var(--m-text-tertiary)] active:text-[var(--m-text-secondary)]"
+            className="relative p-1.5 text-[var(--m-text-on-brand-muted)] active:text-[var(--m-text-on-brand)]"
             aria-label="Inbox"
           >
             <Bell className="w-[18px] h-[18px]" />
             {totalUnread > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-[var(--m-error)] text-white text-[9px] font-bold min-w-[16px] h-[16px] flex items-center justify-center rounded-full px-1 leading-none">
+              <span className="absolute -top-0.5 -right-0.5 bg-[var(--m-error)] text-white text-[9px] font-bold min-w-[16px] h-[16px] flex items-center justify-center rounded-full px-1 leading-none border-2 border-[var(--m-bg-brand)]">
                 {totalUnread > 9 ? '9+' : totalUnread}
               </span>
             )}

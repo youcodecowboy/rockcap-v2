@@ -31,7 +31,7 @@ export default function StickyFooter() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-[var(--m-bg)] border-t border-[var(--m-border)] z-30 pb-[env(safe-area-inset-bottom)]">
+    <div className="fixed bottom-0 left-0 right-0 bg-[var(--m-bg-brand)] z-30 pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-[var(--m-footer-h)] px-2">
         {navItems.slice(0, 2).map((item) => {
           const Icon = item.icon;
@@ -44,14 +44,14 @@ export default function StickyFooter() {
             >
               <Icon
                 className={`w-[18px] h-[18px] ${
-                  active ? 'text-[var(--m-text-primary)]' : 'text-[var(--m-text-tertiary)]'
+                  active ? 'text-[var(--m-text-on-brand)]' : 'text-[var(--m-text-on-brand-muted)]'
                 }`}
               />
               <span
                 className={`text-[9px] tracking-wide uppercase ${
                   active
-                    ? 'text-[var(--m-text-primary)] font-medium'
-                    : 'text-[var(--m-text-tertiary)]'
+                    ? 'text-[var(--m-text-on-brand)] font-semibold'
+                    : 'text-[var(--m-text-on-brand-muted)]'
                 }`}
               >
                 {item.label}
@@ -62,12 +62,12 @@ export default function StickyFooter() {
 
         <button
           onClick={() => setChatOpen(true)}
-          className="relative flex items-center justify-center w-11 h-11 -mt-4 bg-[var(--m-accent)] rounded-full shadow-md"
+          className="relative flex items-center justify-center w-11 h-11 -mt-4 bg-[var(--m-text-on-brand)] rounded-full shadow-lg"
           aria-label="Open chat"
         >
-          <MessageCircle className="w-[18px] h-[18px] text-white" />
+          <MessageCircle className="w-[18px] h-[18px] text-[var(--m-bg-brand)]" />
           {(unreadMessages ?? 0) > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 bg-[var(--m-error)] text-white text-[8px] font-bold min-w-[16px] h-[16px] flex items-center justify-center rounded-full px-0.5 leading-none border-2 border-[var(--m-bg)]">
+            <span className="absolute -top-0.5 -right-0.5 bg-[var(--m-error)] text-white text-[8px] font-bold min-w-[16px] h-[16px] flex items-center justify-center rounded-full px-0.5 leading-none border-2 border-[var(--m-bg-brand)]">
               {(unreadMessages ?? 0) > 9 ? '9+' : unreadMessages}
             </span>
           )}
@@ -85,19 +85,19 @@ export default function StickyFooter() {
             >
               <Icon
                 className={`w-[18px] h-[18px] ${
-                  active ? 'text-[var(--m-text-primary)]' : 'text-[var(--m-text-tertiary)]'
+                  active ? 'text-[var(--m-text-on-brand)]' : 'text-[var(--m-text-on-brand-muted)]'
                 }`}
               />
               {showBadge && (
-                <span className="absolute -top-1 right-1 bg-[var(--m-error)] text-white text-[8px] font-bold min-w-[14px] h-[14px] flex items-center justify-center rounded-full px-0.5 leading-none">
+                <span className="absolute -top-1 right-1 bg-[var(--m-error)] text-white text-[8px] font-bold min-w-[14px] h-[14px] flex items-center justify-center rounded-full px-0.5 leading-none border-2 border-[var(--m-bg-brand)]">
                   {inboxBadge > 9 ? '9+' : inboxBadge}
                 </span>
               )}
               <span
                 className={`text-[9px] tracking-wide uppercase ${
                   active
-                    ? 'text-[var(--m-text-primary)] font-medium'
-                    : 'text-[var(--m-text-tertiary)]'
+                    ? 'text-[var(--m-text-on-brand)] font-semibold'
+                    : 'text-[var(--m-text-on-brand-muted)]'
                 }`}
               >
                 {item.label}

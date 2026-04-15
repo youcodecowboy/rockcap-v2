@@ -6,6 +6,7 @@ import { api } from '../../../../../convex/_generated/api';
 import DashboardGreeting from './DashboardGreeting';
 import QuickActions from './QuickActions';
 import UpNextCard, { type UpNextItem } from './UpNextCard';
+import DailyBriefWidget from './DailyBriefWidget';
 import NotificationsSection from './NotificationsSection';
 import MessagesFlagsSection from './MessagesFlagsSection';
 import RecentsSection from './RecentsSection';
@@ -35,7 +36,7 @@ export default function DashboardContent() {
 
   // Messages & Flags data (require auth — skip until user is loaded)
   const isSignedIn = !!user;
-  const openFlags = useQuery(api.flags.getMyFlags, isSignedIn ? { status: 'open' } : 'skip');
+  const enrichedInbox = useQuery(api.flags.getInboxItemsEnriched, isSignedIn ? { filter: 'flags', limit: 3 } : 'skip');
   const conversations = useQuery(api.conversations.getMyConversations, isSignedIn ? {} : 'skip');
   const unreadMessageCount = useQuery(api.conversations.getUnreadCount, isSignedIn ? {} : 'skip');
 
@@ -122,19 +123,28 @@ export default function DashboardContent() {
   const upNextItem = resolveUpNext();
 
   return (
-    <div>
+    <div className="pb-4">
       <DashboardGreeting
         firstName={firstName}
         overdueCount={overdueCount}
         unreadCount={unreadCount ?? undefined}
+        todayTaskCount={tasks ? tasks.filter(t => {
+          if (t.status === 'completed' || t.status === 'cancelled') return false;
+          if (!t.dueDate) return false;
+          const due = new Date(t.dueDate);
+          const now = new Date();
+          return due.toDateString() === now.toDateString();
+        }).length : undefined}
+        inProgressCount={tasks ? tasks.filter(t => t.status === 'in_progress').length : undefined}
       />
-      <QuickActions />
+      {/* <QuickActions /> */}
       <UpNextCard item={upNextItem} />
+      <DailyBriefWidget />
       <NotificationsSection notifications={notifications} unreadCount={unreadCount} />
       <MessagesFlagsSection
-        flags={openFlags}
+        enrichedFlags={enrichedInbox?.filter(i => i.kind === 'flag') ?? []}
         conversations={conversations}
-        openFlagCount={openFlags?.length ?? 0}
+        openFlagCount={enrichedInbox?.filter(i => i.kind === 'flag').length ?? 0}
         unreadMessageCount={unreadMessageCount ?? 0}
       />
       <RecentsSection

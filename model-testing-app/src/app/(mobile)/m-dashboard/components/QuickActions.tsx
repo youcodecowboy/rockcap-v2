@@ -11,7 +11,7 @@ const actions: { href: string; label: string; icon: LucideIcon }[] = [
 
 export default function QuickActions() {
   return (
-    <div className="grid grid-cols-2 gap-2 px-[var(--m-page-px)] pb-4">
+    <div className="grid grid-cols-2 gap-2 px-[var(--m-page-px)] pb-3">
       {actions.map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
