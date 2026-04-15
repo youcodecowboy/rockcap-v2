@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "RockCap",
+    "slug": "rockcap-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "rockcap",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.rockcap.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "RockCap needs camera access to capture site photos",
+        "NSPhotoLibraryUsageDescription": "RockCap needs photo library access to upload documents",
+        "NSLocationWhenInUseUsageDescription": "RockCap uses your location to tag site photos with GPS coordinates"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        { "cameraPermission": "RockCap needs camera access to capture site photos" }
+      ],
+      [
+        "expo-notifications",
+        { "icon": "./assets/images/icon.png" }
+      ],
+      [
+        "expo-location",
+        { "locationWhenInUsePermission": "RockCap uses your location to tag site photos" }
+      ]
+    ]
+  }
+}
