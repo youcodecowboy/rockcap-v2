@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
@@ -136,7 +136,10 @@ export default function InboxScreen() {
             keyExtractor={(item: any) => item._id}
             contentContainerStyle={{ padding: 16, gap: 8 }}
             renderItem={({ item }: { item: any }) => (
-              <TouchableOpacity className="bg-m-bg-card border border-m-border rounded-xl px-4 py-3 flex-row items-center">
+              <TouchableOpacity
+                onPress={() => Alert.alert(item.title || 'Conversation', 'Open conversation — coming soon')}
+                className="bg-m-bg-card border border-m-border rounded-xl px-4 py-3 flex-row items-center"
+              >
                 <View className="w-8 h-8 rounded-full bg-m-bg-inset items-center justify-center">
                   <MessageSquare size={14} color={colors.textTertiary} />
                 </View>

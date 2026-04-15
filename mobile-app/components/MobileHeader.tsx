@@ -1,16 +1,19 @@
 import { View, Text, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Bell, User } from 'lucide-react-native';
+import { Bell, User, Menu } from 'lucide-react-native';
 import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../model-testing-app/convex/_generated/api';
 import { useClerk } from '@clerk/clerk-expo';
 import Badge from '@/components/ui/Badge';
+import MobileNavDrawer from '@/components/MobileNavDrawer';
 import { colors } from '@/lib/theme';
 
 export default function MobileHeader() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const { signOut } = useClerk();
+  const [drawerVisible, setDrawerVisible] = useState(false);
 
   const unreadNotifications = useQuery(
     api.notifications.getUnreadCount,
@@ -29,9 +32,14 @@ export default function MobileHeader() {
 
   return (
     <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center justify-between">
-      <Text className="text-lg font-bold text-m-text-on-brand tracking-tight">
-        RockCap
-      </Text>
+      <View className="flex-row items-center gap-3">
+        <TouchableOpacity onPress={() => setDrawerVisible(true)}>
+          <Menu size={20} color={colors.textOnBrand} />
+        </TouchableOpacity>
+        <Text className="text-lg font-bold text-m-text-on-brand tracking-tight">
+          RockCap
+        </Text>
+      </View>
       <View className="flex-row items-center gap-4">
         <TouchableOpacity
           onPress={() => router.push('/inbox')}
@@ -51,6 +59,11 @@ export default function MobileHeader() {
           <User size={14} color={colors.textOnBrand} />
         </TouchableOpacity>
       </View>
+
+      <MobileNavDrawer
+        visible={drawerVisible}
+        onClose={() => setDrawerVisible(false)}
+      />
     </View>
   );
 }

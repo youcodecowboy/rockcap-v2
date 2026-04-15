@@ -160,12 +160,12 @@ export default function DashboardScreen() {
           {todayTasks && todayTasks.length > 0 ? (
             <View className="gap-2">
               {todayTasks.slice(0, 3).map((task) => (
-                <View key={task._id} className="flex-row items-center gap-2">
+                <TouchableOpacity key={task._id} onPress={() => router.push('/tasks')} className="flex-row items-center gap-2">
                   <View className="w-1.5 h-1.5 rounded-full bg-m-accent" />
                   <Text className="text-sm text-m-text-primary flex-1" numberOfLines={1}>
                     {task.title}
                   </Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           ) : (
@@ -189,9 +189,11 @@ export default function DashboardScreen() {
             </Text>
             <View className="gap-2">
               {overdueTasks.slice(0, 3).map((task) => (
-                <Text key={task._id} className="text-sm text-m-text-primary" numberOfLines={1}>
-                  {task.title}
-                </Text>
+                <TouchableOpacity key={task._id} onPress={() => router.push('/tasks')}>
+                  <Text className="text-sm text-m-text-primary" numberOfLines={1}>
+                    {task.title}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
           </Card>
@@ -210,7 +212,7 @@ export default function DashboardScreen() {
             </View>
             <View className="gap-3">
               {notifications.map((n) => (
-                <View key={n._id} className="flex-row items-start gap-2">
+                <TouchableOpacity key={n._id} onPress={() => router.push('/inbox')} className="flex-row items-start gap-2">
                   <View className="w-1.5 h-1.5 rounded-full bg-m-accent mt-1.5" />
                   <View className="flex-1">
                     <Text className="text-sm text-m-text-secondary" numberOfLines={2}>
@@ -220,7 +222,7 @@ export default function DashboardScreen() {
                       {formatRelativeTime(new Date(n._creationTime))}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </Card>
