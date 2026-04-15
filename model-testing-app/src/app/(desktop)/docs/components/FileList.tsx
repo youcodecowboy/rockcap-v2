@@ -36,6 +36,8 @@ import {
   FolderPlus,
   Trash2,
   ChevronRight,
+  StickyNote,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import FileCard from './FileCard';
@@ -181,6 +183,15 @@ export default function FileList({
       : "skip"
   );
 
+  // Notes for the "notes" folder — virtual items from the Notes section
+  const isNotesFolder = selectedFolder?.folderId === 'notes' && selectedFolder?.type === 'project';
+  const projectNotesForFolder = useQuery(
+    api.notes.getByProjectForFolder,
+    isNotesFolder && selectedFolder?.projectId
+      ? { projectId: selectedFolder.projectId }
+      : "skip"
+  );
+
   // Internal/Personal scope - documents by scope
   const scopedDocuments = useQuery(
     api.documents.getByScope,
@@ -208,6 +219,34 @@ export default function FileList({
     // Client scope (default)
     return folderDocuments || [];
   }, [isInbox, unfiledDocuments, folderDocuments, scopedDocuments, scope]);
+
+  // Unified item type for mixed documents + notes in the notes folder
+  type NoteItem = {
+    _type: 'note';
+    _id: string;
+    title: string;
+    emoji?: string;
+    updatedAt: string;
+    createdAt: string;
+    wordCount?: number;
+    isDraft?: boolean;
+    tags: string[];
+  };
+
+  const noteItems: NoteItem[] = useMemo(() => {
+    if (!isNotesFolder || !projectNotesForFolder) return [];
+    return projectNotesForFolder.map(note => ({
+      _type: 'note' as const,
+      _id: note._id,
+      title: note.title,
+      emoji: note.emoji ?? undefined,
+      updatedAt: note.updatedAt,
+      createdAt: note.createdAt,
+      wordCount: note.wordCount ?? undefined,
+      isDraft: note.isDraft ?? undefined,
+      tags: note.tags,
+    }));
+  }, [isNotesFolder, projectNotesForFolder]);
 
   // Sort documents
   const sortedDocuments = useMemo(() => {
@@ -544,6 +583,56 @@ export default function FileList({
           onSelectionChange={() => toggleSelection(doc._id)}
         />
       ))}
+
+      {/* Note items from Notes section */}
+      {noteItems.map(note => (
+        <div
+          key={`note-${note._id}`}
+          onClick={() => router.push(`/notes?note=${note._id}`)}
+          className="flex items-center px-3 py-2 border-b border-gray-100 cursor-pointer group transition-colors hover:bg-gray-50/60"
+        >
+          {/* Spacer for expand chevron */}
+          <div className="flex-shrink-0 w-5" />
+          {/* Spacer for checkbox */}
+          <div className="flex-shrink-0 w-5" />
+          {/* Name block */}
+          <div className="flex-1 min-w-0 pl-2 pr-4">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Pencil className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+              <span className="text-[13px] font-medium text-gray-900 truncate">
+                {note.emoji ? `${note.emoji} ` : ''}{note.title || 'Untitled Note'}
+              </span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
+                Note
+              </Badge>
+              {note.isDraft && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  Draft
+                </Badge>
+              )}
+            </div>
+          </div>
+          {/* Type */}
+          <div className="flex-shrink-0 w-32 hidden md:block text-[12px] text-gray-500 truncate pr-3">
+            Note
+          </div>
+          {/* Category */}
+          <div className="flex-shrink-0 w-32 hidden lg:flex items-center gap-1.5 pr-3">
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-500" />
+            <span className="text-[12px] text-gray-500 truncate">Notes</span>
+          </div>
+          {/* Date */}
+          <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
+            {new Date(note.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </div>
+          {/* Size placeholder — show word count */}
+          <div className="flex-shrink-0 w-16 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
+            {note.wordCount ? `${note.wordCount}w` : '\u2014'}
+          </div>
+          {/* Actions spacer */}
+          <div className="flex-shrink-0 w-7 ml-1" />
+        </div>
+      ))}
     </div>
   );
 
@@ -578,7 +667,7 @@ export default function FileList({
             <h2 className="font-semibold text-gray-900 truncate">{getTitle()}</h2>
           )}
           <span className="text-sm text-gray-500 flex-shrink-0">
-            ({sortedDocuments.length} {sortedDocuments.length === 1 ? 'file' : 'files'})
+            ({sortedDocuments.length + noteItems.length} {(sortedDocuments.length + noteItems.length) === 1 ? 'item' : 'items'})
           </span>
         </div>
 
@@ -670,7 +759,7 @@ export default function FileList({
 
       {/* File Content */}
       <div className="flex-1 overflow-auto">
-        {sortedDocuments.length === 0 ? (
+        {sortedDocuments.length === 0 && noteItems.length === 0 ? (
           <div
             className="flex items-center justify-center h-full"
             onDragOver={canUpload ? handleDragOver : undefined}
@@ -723,6 +812,37 @@ export default function FileList({
                 {...fileCardProps(doc)}
                 viewMode="grid"
               />
+            ))}
+            {/* Note items in grid */}
+            {noteItems.map(note => (
+              <div
+                key={`note-${note._id}`}
+                onClick={() => router.push(`/notes?note=${note._id}`)}
+                className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="p-2 bg-amber-50 rounded-lg">
+                    <Pencil className="w-8 h-8 text-amber-500" />
+                  </div>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
+                    Note
+                  </Badge>
+                </div>
+                <div className="mb-2">
+                  <div className="font-medium text-gray-900 text-sm truncate">
+                    {note.emoji ? `${note.emoji} ` : ''}{note.title || 'Untitled Note'}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {note.isDraft && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Draft</Badge>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-400">
+                  <span>{new Date(note.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                  {note.wordCount && <span>{note.wordCount} words</span>}
+                </div>
+              </div>
             ))}
           </div>
         ) : (
