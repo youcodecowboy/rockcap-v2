@@ -14,8 +14,11 @@ export default function GoogleCalendarCard() {
 
   useEffect(() => {
     const google = searchParams.get('google');
-    if (google === 'success') setStatusMessage('Google Calendar connected successfully');
-    else if (google === 'denied') setStatusMessage('Google Calendar access was denied');
+    if (google === 'success') {
+      setStatusMessage('Google Calendar connected successfully');
+      // Trigger initial sync
+      fetch('/api/google/setup-sync', { method: 'POST' }).catch(console.error);
+    } else if (google === 'denied') setStatusMessage('Google Calendar access was denied');
     else if (google === 'error') setStatusMessage('Failed to connect Google Calendar');
 
     if (google) {
