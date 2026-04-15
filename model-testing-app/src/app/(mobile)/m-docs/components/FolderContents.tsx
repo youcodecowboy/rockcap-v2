@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { ChevronLeft, Upload } from 'lucide-react';
+import { ChevronLeft, Upload, Pencil } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import FolderRow from './shared/FolderRow';
 import FileRow from './shared/FileRow';
@@ -77,6 +77,20 @@ export default function FolderContents({
     ...(projectId ? { projectId: projectId as Id<'projects'> } : {}),
   });
 
+  // Notes for the "notes" folder — virtual items from the Notes section
+  const isNotesFolder = folderTypeKey === 'notes' && folderLevel === 'project' && !!projectId;
+  const projectNotesForFolder = useQuery(
+    api.notes.getByProjectForFolder,
+    isNotesFolder
+      ? { projectId: projectId as Id<'projects'> }
+      : "skip"
+  );
+
+  const noteItems = useMemo(() => {
+    if (!isNotesFolder || !projectNotesForFolder) return [];
+    return projectNotesForFolder;
+  }, [isNotesFolder, projectNotesForFolder]);
+
   // Find child subfolders — folders whose parentFolderId matches our folderRecordId
   const subfolders = useMemo(() => {
     if (!foldersData) return [];
@@ -122,9 +136,10 @@ export default function FolderContents({
 
   const isLoading = docs === undefined;
   const docCount = sortedDocs?.length ?? 0;
-  const isEmpty = !isLoading && subfolders.length === 0 && docCount === 0;
+  const totalCount = docCount + noteItems.length;
+  const isEmpty = !isLoading && subfolders.length === 0 && totalCount === 0;
   const backLabel = projectName || clientName;
-  const contextLine = [projectName, `${docCount} document${docCount !== 1 ? 's' : ''}`]
+  const contextLine = [projectName, `${totalCount} item${totalCount !== 1 ? 's' : ''}`]
     .filter(Boolean)
     .join(' · ');
 
@@ -164,7 +179,7 @@ export default function FolderContents({
       {/* Sort bar */}
       <div className="flex items-center justify-between px-[var(--m-page-px)] py-2 border-b border-[var(--m-border-subtle)]">
         <span className="text-[11px] text-[var(--m-text-tertiary)]">
-          {isLoading ? '' : `${docCount} document${docCount !== 1 ? 's' : ''}`}
+          {isLoading ? '' : `${totalCount} item${totalCount !== 1 ? 's' : ''}`}
         </span>
         <button
           onClick={cycleSort}
@@ -245,6 +260,53 @@ export default function FolderContents({
               onFlag={() => {/* TODO: wire to flags.create */}}
               onDelete={() => handleDelete(doc._id)}
             />
+          ))}
+        </div>
+      )}
+
+      {/* Note items from Notes section */}
+      {noteItems.length > 0 && (
+        <div>
+          {(subfolders.length > 0 || (sortedDocs && sortedDocs.length > 0)) && (
+            <div className="py-2 px-[var(--m-page-px)] bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)]">
+              <span className="text-[12px] font-semibold text-[var(--m-text-secondary)]">Notes</span>
+            </div>
+          )}
+          {noteItems.map(note => (
+            <div
+              key={`note-${note._id}`}
+              className="flex items-center border-b border-[var(--m-border-subtle)]"
+            >
+              <button
+                onClick={() => router.push(`/m-notes?note=${note._id}`)}
+                className="flex items-center gap-2.5 flex-1 min-w-0 text-left px-[var(--m-page-px)] py-2.5 active:bg-[var(--m-bg-subtle)]"
+              >
+                <div className="relative flex-shrink-0 w-8 h-8 rounded-md bg-amber-50 flex items-center justify-center">
+                  <Pencil className="w-4 h-4 text-amber-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">
+                      {note.emoji ? `${note.emoji} ` : ''}{note.title || 'Untitled Note'}
+                    </span>
+                    <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-amber-50 text-amber-700 flex-shrink-0">
+                      Note
+                    </span>
+                    {note.isDraft && (
+                      <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">
+                        Draft
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5 truncate">
+                    {[
+                      note.wordCount ? `${note.wordCount} words` : null,
+                      new Date(note.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+              </button>
+            </div>
           ))}
         </div>
       )}
