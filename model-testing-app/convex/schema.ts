@@ -3398,5 +3398,16 @@ export default defineSchema({
     generatedAt: v.string(),
   })
     .index("by_user_date", ["userId", "date"]),
+
+  // Push notification tokens for mobile devices
+  pushTokens: defineTable({
+    userId: v.id("users"),
+    token: v.string(),
+    platform: v.string(),
+    createdAt: v.number(),
+    lastUsedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_token", ["token"]),
 });
 
