@@ -68,7 +68,7 @@ INSTRUCTIONS:
 4. If critical information is missing or ambiguous, ask ONE targeted follow-up question.
 5. Default priority to "medium" if not mentioned.
 6. If the user says "me" or "myself" for assignment, use their ID: ${context.userId}
-7. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday, "next week" = next Monday, etc. Today is ${new Date().toISOString().split('T')[0]}.
+7. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday, "next week" = next Monday, etc. Today is ${new Date().toISOString().split('T')[0]}. The user's timezone is ${context.timeZone || 'Europe/London'}. All times should be interpreted in that timezone.
 8. Tasks do NOT need to be linked to a client — they can be personal/general tasks. If the task clearly relates to a client, match it. If it's unclear whether the task is client-related or personal, ask: "Is this a personal task or related to a specific client?" Do NOT guess a client — only assign one when you're confident.
 
 RESPONSE FORMAT:
@@ -116,8 +116,8 @@ INSTRUCTIONS:
 2. Be smart about matching names — "bayfield" matches "Bayfield Homes", "john" matches team members.
 3. Default duration to 1 hour if not specified.
 4. If the user specifies a time, set start and end. If only a date, make it a 1-hour meeting at 10:00.
-5. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday. Today is ${new Date().toISOString().split('T')[0]}. Current time is ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })} in Europe/London timezone.
-6. IMPORTANT: All times should be in Europe/London timezone. When the user says "3pm", they mean 15:00 Europe/London. Convert to ISO format accordingly — e.g. during BST (summer), 15:00 London = 14:00 UTC = "2026-04-15T14:00:00.000Z".
+5. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday. Today is ${new Date().toISOString().split('T')[0]}. Current time is ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: context.timeZone || 'Europe/London' })} in ${context.timeZone || 'Europe/London'} timezone.
+6. IMPORTANT: All times should be in the user's timezone (${context.timeZone || 'Europe/London'}). When the user says "3pm", they mean 15:00 in their local timezone. Output ISO timestamps adjusted for their timezone offset.
 7. For recurrence, use simple descriptions: "weekly", "daily", "monthly", "every Tuesday".
 8. For reminders, default to 30 minutes popup if not specified.
 9. Attendees should be matched to team member IDs when possible.

@@ -36,10 +36,10 @@ export async function POST(request: NextRequest) {
       description: body.description,
       start: body.allDay
         ? { date: body.startDate }
-        : { dateTime: body.startTime, timeZone: 'Europe/London' },
+        : { dateTime: body.startTime, timeZone: body.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone },
       end: body.allDay
         ? { date: body.endDate || body.startDate }
-        : { dateTime: body.endTime || body.startTime, timeZone: 'Europe/London' },
+        : { dateTime: body.endTime || body.startTime, timeZone: body.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone },
       attendees: body.attendees?.map((a: { email: string; name?: string }) => ({
         email: a.email,
         displayName: a.name,
@@ -74,12 +74,12 @@ export async function PATCH(request: NextRequest) {
     if (body.startTime) {
       updates.start = body.allDay
         ? { date: body.startDate }
-        : { dateTime: body.startTime, timeZone: 'Europe/London' };
+        : { dateTime: body.startTime, timeZone: body.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone };
     }
     if (body.endTime || body.endDate) {
       updates.end = body.allDay
         ? { date: body.endDate }
-        : { dateTime: body.endTime, timeZone: 'Europe/London' };
+        : { dateTime: body.endTime, timeZone: body.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone };
     }
 
     await updateEvent(accessToken, body.googleEventId, updates);

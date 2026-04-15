@@ -90,6 +90,7 @@ export default function TaskCreationFlow({
         clients: (clients || []).map(c => ({ id: c._id, name: c.name })),
         projects: (projects || []).map(p => ({ id: p._id, name: p.name, clientId: (p as any).clientRoles?.[0]?.clientId })),
         users: (allUsers || []).map(u => ({ id: u._id, name: u.name || u.email })),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
 
       // If this flow was opened from a client/project context, prepend a
@@ -171,6 +172,7 @@ export default function TaskCreationFlow({
               startDate: parsedTask.dueDate.split('T')[0],
               allDay: !parsedTask.dueDate.includes('T'),
               startTime: parsedTask.dueDate.includes('T') ? parsedTask.dueDate : undefined,
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             }),
           });
           if (res.ok) {
@@ -219,10 +221,10 @@ export default function TaskCreationFlow({
               endTime: parsedEvent.endTime,
               allDay: false,
               attendees: parsedEvent.attendees?.map(a => {
-                // If it looks like an email, use it directly; otherwise try to resolve
                 const isEmail = a.includes('@');
                 return { email: isEmail ? a : `${a}@unknown`, name: isEmail ? undefined : a };
               }).filter(a => a.email !== '@unknown'),
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             }),
           });
           if (res.ok) {
