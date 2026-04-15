@@ -238,8 +238,8 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
             <View className="gap-3">
-              {recentConversations?.map((conv) => (
-                <View key={conv._id} className="flex-row items-start gap-2">
+              {recentConversations?.map((conv, i) => (
+                <View key={`conv-${conv._id ?? i}`} className="flex-row items-start gap-2">
                   <MessageCircle size={14} color={colors.textTertiary} />
                   <View className="flex-1">
                     <Text className="text-sm text-m-text-primary" numberOfLines={1}>
@@ -251,8 +251,8 @@ export default function DashboardScreen() {
                   </View>
                 </View>
               ))}
-              {recentFlags?.map((flag) => (
-                <View key={flag._id} className="flex-row items-start gap-2">
+              {recentFlags?.map((flag, i) => (
+                <View key={`flag-${flag._id ?? i}`} className="flex-row items-start gap-2">
                   <Flag size={14} color={colors.warning} />
                   <View className="flex-1">
                     <Text className="text-sm text-m-text-primary" numberOfLines={1}>

@@ -20,13 +20,18 @@ export default function ViewerScreen() {
   const { isAuthenticated } = useConvexAuth();
   const { tabs, activeTabId, openTab } = useDocTabs();
 
+  // First get the document to find the storageId
   const document = useQuery(
     api.documents.get,
     isAuthenticated && documentId ? { id: documentId as any } : 'skip'
   );
+
+  // Then get the file URL using the storageId from the document
   const fileUrl = useQuery(
     api.documents.getFileUrl,
-    isAuthenticated && documentId ? { documentId: documentId as any } : 'skip'
+    isAuthenticated && document?.fileStorageId
+      ? { storageId: document.fileStorageId as any }
+      : 'skip'
   );
 
   useEffect(() => {
@@ -42,7 +47,8 @@ export default function ViewerScreen() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
-  if (!fileUrl) return <LoadingSpinner message="Loading document..." />;
+  if (!document) return <LoadingSpinner message="Loading document..." />;
+  if (!fileUrl) return <LoadingSpinner message="Loading file..." />;
 
   return (
     <View className="flex-1 bg-m-bg">
@@ -51,7 +57,7 @@ export default function ViewerScreen() {
           <ArrowLeft size={20} color={colors.textOnBrand} />
         </TouchableOpacity>
         <Text className="text-base font-medium text-m-text-on-brand flex-1" numberOfLines={1}>
-          {activeTab?.title || title || 'Document'}
+          {activeTab?.title || title || document?.fileName || 'Document'}
         </Text>
       </View>
 
@@ -59,8 +65,8 @@ export default function ViewerScreen() {
 
       <DocumentRenderer
         fileUrl={fileUrl}
-        fileType={activeTab?.fileType || fileType || ''}
-        fileName={activeTab?.title || title || ''}
+        fileType={activeTab?.fileType || fileType || document?.fileType || ''}
+        fileName={activeTab?.title || title || document?.fileName || ''}
       />
     </View>
   );
