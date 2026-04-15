@@ -54,6 +54,14 @@ export default function DocsScreen() {
       : 'skip'
   );
 
+  // Folder counts for showing document counts on folders
+  const folderCounts = useQuery(
+    api.documents.getFolderCounts,
+    isAuthenticated && nav.level !== 'clients'
+      ? { clientId: nav.clientId }
+      : 'skip'
+  );
+
   // Build breadcrumbs from current nav state
   const breadcrumbs = useMemo(() => {
     const crumbs: { id: string; name: string }[] = [];
@@ -78,18 +86,28 @@ export default function DocsScreen() {
           name: c.name,
           type: 'folder' as const,
         }));
-      case 'projects':
-        return (projects || []).map((p) => ({
-          id: p._id,
-          name: p.name,
-          type: 'folder' as const,
-        }));
-      case 'folders':
+      case 'projects': {
+        const pFolders = folderCounts?.projectFolders ?? {};
+        return (projects || []).map((p) => {
+          const projectCounts = pFolders[p._id] ?? {};
+          const total = Object.values(projectCounts).reduce((sum: number, n: number) => sum + n, 0);
+          return {
+            id: p._id,
+            name: p.name,
+            type: 'folder' as const,
+            documentCount: total,
+          };
+        });
+      }
+      case 'folders': {
+        const projectCounts = folderCounts?.projectFolders?.[nav.projectId] ?? {};
         return (folders || []).map((f) => ({
           id: f._id,
           name: f.name,
           type: 'folder' as const,
+          documentCount: projectCounts[f._id] ?? 0,
         }));
+      }
       case 'documents':
         return (documents || []).map((d) => ({
           id: d._id,
@@ -98,7 +116,7 @@ export default function DocsScreen() {
           fileType: d.fileType,
         }));
     }
-  }, [nav.level, clients, projects, folders, documents]);
+  }, [nav.level, clients, projects, folders, documents, folderCounts]);
 
   // Loading state
   const isLoading =

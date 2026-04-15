@@ -31,12 +31,15 @@ export default function MobileHeader() {
   const totalBadge = (unreadNotifications ?? 0) + (openFlags?.length ?? 0) + (unreadMessages ?? 0);
 
   return (
-    <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center justify-between">
+    <View className="bg-m-bg-brand pt-14 pb-5 px-4 flex-row items-center justify-between">
       <View className="flex-row items-center gap-3">
         <TouchableOpacity onPress={() => setDrawerVisible(true)}>
           <Menu size={20} color={colors.textOnBrand} />
         </TouchableOpacity>
-        <Text className="text-lg font-bold text-m-text-on-brand tracking-tight">
+        <Text
+          className="text-xl font-normal text-m-text-on-brand"
+          style={{ fontFamily: 'Helvetica Neue', letterSpacing: -0.2 }}
+        >
           RockCap
         </Text>
       </View>

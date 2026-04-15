@@ -75,7 +75,7 @@ export default function InboxScreen() {
   }, [flags, flagFilter]);
 
   const unreadNotifications = useMemo(
-    () => notifications?.filter((n: any) => !n.read).length ?? 0,
+    () => notifications?.filter((n: any) => !n.isRead).length ?? 0,
     [notifications]
   );
 
