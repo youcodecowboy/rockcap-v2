@@ -56,6 +56,7 @@ export default function TaskCreationFlow({
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
   const allUsers = useQuery(api.users.getAll, {});
+  const allContacts = useQuery(api.contacts.getAll, {});
   const currentUser = useQuery(api.users.getCurrent, {});
   const createTask = useMutation(api.tasks.create);
   const createEvent = useMutation(api.events.create);
@@ -217,6 +218,11 @@ export default function TaskCreationFlow({
               startTime: parsedEvent.startTime,
               endTime: parsedEvent.endTime,
               allDay: false,
+              attendees: parsedEvent.attendees?.map(a => {
+                // If it looks like an email, use it directly; otherwise try to resolve
+                const isEmail = a.includes('@');
+                return { email: isEmail ? a : `${a}@unknown`, name: isEmail ? undefined : a };
+              }).filter(a => a.email !== '@unknown'),
             }),
           });
           if (res.ok) {
@@ -348,6 +354,10 @@ export default function TaskCreationFlow({
           onEventChange={setParsedEvent}
           clients={clients?.map(c => ({ _id: String(c._id), name: c.name })) || []}
           projects={projects?.map(p => ({ _id: String(p._id), name: p.name, clientRoles: p.clientRoles })) || []}
+          people={[
+            ...(allUsers || []).filter(u => u.email).map(u => ({ name: u.name || u.email, email: u.email, source: 'user' as const })),
+            ...(allContacts || []).filter((c: any) => c.email).map((c: any) => ({ name: c.name, email: c.email, source: 'contact' as const })),
+          ]}
         />
       )}
 

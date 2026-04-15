@@ -39,6 +39,12 @@ interface ProjectOption {
   clientRoles?: { clientId: string }[];
 }
 
+interface PersonOption {
+  name: string;
+  email: string;
+  source: 'user' | 'contact';
+}
+
 interface EditableConfirmationCardProps {
   mode: 'task' | 'meeting';
   task?: ParsedTask;
@@ -53,6 +59,7 @@ interface EditableConfirmationCardProps {
   onEventChange?: (event: ParsedEvent) => void;
   clients?: ClientOption[];
   projects?: ProjectOption[];
+  people?: PersonOption[];
 }
 
 function formatDate(dateStr?: string): string {
@@ -105,9 +112,11 @@ export default function EditableConfirmationCard({
   onEventChange,
   clients,
   projects,
+  people,
 }: EditableConfirmationCardProps) {
   const [editing, setEditing] = useState<EditingField>(null);
   const [attendeeInput, setAttendeeInput] = useState('');
+  const [attendeeSearch, setAttendeeSearch] = useState('');
 
   const priorityColors: Record<string, string> = {
     high: 'text-red-700 bg-red-50',
@@ -435,7 +444,7 @@ export default function EditableConfirmationCard({
           {/* ── Attendees (meetings) ── */}
           {mode === 'meeting' && (
             <>
-              <button onClick={() => setEditing(editing === 'attendees' ? null : 'attendees')} className="flex items-center gap-3 py-2 w-full text-left">
+              <button onClick={() => { setEditing(editing === 'attendees' ? null : 'attendees'); setAttendeeSearch(''); }} className="flex items-center gap-3 py-2 w-full text-left">
                 <Users className="w-4 h-4 text-[var(--m-text-tertiary)]" />
                 <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
                   {currentAttendees.length > 0 ? `${currentAttendees.length} attendee${currentAttendees.length !== 1 ? 's' : ''}` : 'Add attendees'}
@@ -447,31 +456,68 @@ export default function EditableConfirmationCard({
                 <div className="pb-2 pl-7 space-y-2">
                   {/* Current attendees */}
                   {currentAttendees.map((a, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                    <div key={i} className="flex items-center gap-2 py-0.5">
                       <span className="flex-1 text-[13px] text-[var(--m-text-secondary)] truncate">{a}</span>
                       <button onClick={() => removeAttendee(i)} className="p-0.5 text-[var(--m-text-tertiary)]">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
                   ))}
-                  {/* Add input */}
-                  <div className="flex gap-2">
-                    <input
-                      type="email"
-                      value={attendeeInput}
-                      onChange={e => setAttendeeInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAttendee(attendeeInput); } }}
-                      placeholder="Name or email..."
-                      className="flex-1 text-[13px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-1.5 bg-transparent outline-none"
-                    />
-                    <button
-                      onClick={() => addAttendee(attendeeInput)}
-                      disabled={!attendeeInput.trim()}
-                      className="px-3 py-1.5 text-[12px] font-medium text-[var(--m-text-on-brand)] bg-[var(--m-bg-brand)] rounded-lg disabled:opacity-30"
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
-                  </div>
+
+                  {/* Search/add input */}
+                  <input
+                    type="text"
+                    value={attendeeSearch}
+                    onChange={e => setAttendeeSearch(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && attendeeSearch.trim()) {
+                        e.preventDefault();
+                        addAttendee(attendeeSearch);
+                        setAttendeeSearch('');
+                      }
+                    }}
+                    placeholder="Search people or type email..."
+                    className="w-full text-[13px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none"
+                  />
+
+                  {/* People suggestions */}
+                  {attendeeSearch.trim().length > 0 && (
+                    <div className="border border-[var(--m-border)] rounded-lg overflow-hidden max-h-[150px] overflow-y-auto">
+                      {(people || [])
+                        .filter(p => {
+                          const q = attendeeSearch.toLowerCase();
+                          const alreadyAdded = currentAttendees.some(a => a === p.email || a === p.name);
+                          return !alreadyAdded && (p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q));
+                        })
+                        .slice(0, 6)
+                        .map((p, i) => (
+                          <button
+                            key={`${p.email}-${i}`}
+                            onClick={() => { addAttendee(p.email); setAttendeeSearch(''); }}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-left border-b border-[var(--m-border-subtle)] last:border-b-0 active:bg-[var(--m-bg-subtle)]"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] text-[var(--m-text-primary)] truncate">{p.name}</div>
+                              <div className="text-[11px] text-[var(--m-text-tertiary)] truncate">{p.email}</div>
+                            </div>
+                            <span className="text-[10px] text-[var(--m-text-tertiary)] bg-[var(--m-bg-subtle)] px-1.5 py-0.5 rounded flex-shrink-0">
+                              {p.source === 'user' ? 'Team' : 'Contact'}
+                            </span>
+                          </button>
+                        ))
+                      }
+                      {/* Manual email option */}
+                      {attendeeSearch.includes('@') && (
+                        <button
+                          onClick={() => { addAttendee(attendeeSearch); setAttendeeSearch(''); }}
+                          className="flex items-center gap-2 w-full px-3 py-2 text-left active:bg-[var(--m-bg-subtle)]"
+                        >
+                          <Plus className="w-3 h-3 text-[var(--m-text-tertiary)]" />
+                          <span className="text-[13px] text-[var(--m-text-secondary)]">Add "{attendeeSearch}"</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>

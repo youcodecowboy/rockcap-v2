@@ -40,6 +40,10 @@ export async function POST(request: NextRequest) {
       end: body.allDay
         ? { date: body.endDate || body.startDate }
         : { dateTime: body.endTime || body.startTime, timeZone: 'Europe/London' },
+      attendees: body.attendees?.map((a: { email: string; name?: string }) => ({
+        email: a.email,
+        displayName: a.name,
+      })),
     };
 
     const created = await insertEvent(accessToken, event);
