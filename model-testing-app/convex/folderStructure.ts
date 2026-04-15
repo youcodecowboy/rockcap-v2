@@ -67,6 +67,10 @@ export const CATEGORY_TO_FOLDER_MAP: Record<string, {
   "renders": { level: "project", folderType: "background" },
   "warranties": { level: "project", folderType: "background" },
 
+  "captured photos": { level: "project", folderType: "captured_photos" },
+  "site photos": { level: "project", folderType: "captured_photos" },
+  "site photo": { level: "project", folderType: "captured_photos" },
+
   // Client-level folders
   "kyc": { level: "client", folderType: "kyc" },
   "kyc document": { level: "client", folderType: "kyc" },
@@ -319,6 +323,7 @@ export const ensureProjectFolders = mutation({
       { type: "appraisals" as const, name: "Appraisals" },
       { type: "notes" as const, name: "Notes" },
       { type: "operational_model" as const, name: "Operational Model" },
+      { type: "captured_photos" as const, name: "Captured Photos" },
       { type: "unfiled" as const, name: "Unfiled" },
     ];
     
@@ -439,6 +444,7 @@ export const getFolderDisplayNames = query({
         appraisals: "Appraisals",
         notes: "Notes",
         operational_model: "Operational Model",
+        captured_photos: "Captured Photos",
         unfiled: "Unfiled",
       },
     };
