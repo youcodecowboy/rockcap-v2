@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, Building, File, Mail } from 'lucide-react-native';
+import { LayoutDashboard, Building, MessageCircle, File, Mail } from 'lucide-react-native';
 import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { colors, layout } from '@/lib/theme';
@@ -60,6 +60,15 @@ export default function TabLayout() {
         options={{
           title: 'Clients',
           tabBarIcon: ({ color }) => <Building size={18} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ color }) => (
+            <MessageCircle size={22} color={color} strokeWidth={2.5} />
+          ),
         }}
       />
       <Tabs.Screen

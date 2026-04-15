@@ -1,64 +1,277 @@
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { useState } from 'react';
-import { useQuery, useConvexAuth } from 'convex/react';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import FlagListItem from '@/components/FlagListItem';
 import NotificationItem from '@/components/NotificationItem';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
-import { Inbox } from 'lucide-react-native';
+import MobileHeader from '@/components/MobileHeader';
+import {
+  MessageSquare,
+  Flag,
+  Bell,
+  Inbox,
+  CheckCheck,
+} from 'lucide-react-native';
+import { colors } from '@/lib/theme';
 
-type ViewMode = 'flags' | 'notifications';
+type TabKey = 'messages' | 'flags' | 'notifications';
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+  icon: typeof MessageSquare;
+}
+
+const TABS: TabDef[] = [
+  { key: 'messages', label: 'Messages', icon: MessageSquare },
+  { key: 'flags', label: 'Flags', icon: Flag },
+  { key: 'notifications', label: 'Notifications', icon: Bell },
+];
+
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
 
 export default function InboxScreen() {
   const { isAuthenticated } = useConvexAuth();
-  const [view, setView] = useState<ViewMode>('flags');
+  const [activeTab, setActiveTab] = useState<TabKey>('messages');
+  const [flagFilter, setFlagFilter] = useState<'open' | 'resolved'>('open');
 
-  const flags = useQuery(api.flags.getInboxItemsEnriched, isAuthenticated ? {} : 'skip');
-  const notifications = useQuery(api.notifications.getByUser, isAuthenticated ? {} : 'skip');
+  const conversations = useQuery(
+    api.conversations.getMyConversations,
+    isAuthenticated ? {} : 'skip'
+  );
+  const flags = useQuery(
+    api.flags.getInboxItemsEnriched,
+    isAuthenticated ? {} : 'skip'
+  );
+  const notifications = useQuery(
+    api.notifications.getByUser,
+    isAuthenticated ? {} : 'skip'
+  );
+  const markAllAsRead = useMutation(api.notifications.markAllAsRead);
+
+  const counts: Record<TabKey, number> = {
+    messages: conversations?.length ?? 0,
+    flags: flags?.length ?? 0,
+    notifications: notifications?.length ?? 0,
+  };
+
+  const filteredFlags = useMemo(() => {
+    if (!flags) return [];
+    return flags.filter((f: any) =>
+      flagFilter === 'open' ? f.status === 'open' : f.status !== 'open'
+    );
+  }, [flags, flagFilter]);
+
+  const unreadNotifications = useMemo(
+    () => notifications?.filter((n: any) => !n.read).length ?? 0,
+    [notifications]
+  );
 
   return (
     <View className="flex-1 bg-m-bg">
-      <View className="bg-m-bg-brand pt-14 pb-4 px-4">
-        <Text className="text-xl font-bold text-m-text-on-brand">Inbox</Text>
-        <View className="flex-row mt-3 bg-white/10 rounded-lg p-0.5">
-          <TouchableOpacity
-            onPress={() => setView('flags')}
-            className={`flex-1 py-2 rounded-md items-center ${view === 'flags' ? 'bg-white/20' : ''}`}
-          >
-            <Text className="text-m-text-on-brand text-xs font-medium">
-              Flags {flags?.length ? `(${flags.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setView('notifications')}
-            className={`flex-1 py-2 rounded-md items-center ${view === 'notifications' ? 'bg-white/20' : ''}`}
-          >
-            <Text className="text-m-text-on-brand text-xs font-medium">Notifications</Text>
-          </TouchableOpacity>
+      <MobileHeader />
+
+      {/* Tab bar */}
+      <View className="bg-m-bg-card border-b border-m-border">
+        <View className="flex-row">
+          {TABS.map((tab) => {
+            const active = activeTab === tab.key;
+            const Icon = tab.icon;
+            const count = counts[tab.key];
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
+                className={`flex-1 py-3 items-center border-b-2 ${
+                  active ? 'border-m-accent' : 'border-transparent'
+                }`}
+              >
+                <View className="flex-row items-center gap-1.5">
+                  <Icon
+                    size={14}
+                    color={active ? colors.textPrimary : colors.textTertiary}
+                  />
+                  <Text
+                    className={`text-xs font-semibold ${
+                      active ? 'text-m-text-primary' : 'text-m-text-tertiary'
+                    }`}
+                  >
+                    {tab.label}
+                  </Text>
+                  {count > 0 && (
+                    <View className="bg-m-accent rounded-full px-1.5 min-w-[18px] items-center">
+                      <Text className="text-[10px] font-bold text-m-text-on-brand">
+                        {count > 99 ? '99+' : count}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      {view === 'flags' ? (
-        !flags ? <LoadingSpinner /> : flags.length === 0 ? (
-          <EmptyState icon={Inbox} title="No flags" />
+      {/* Messages tab */}
+      {activeTab === 'messages' && (
+        !conversations ? (
+          <LoadingSpinner />
+        ) : conversations.length === 0 ? (
+          <EmptyState icon={MessageSquare} title="No messages" />
         ) : (
           <FlatList
-            data={flags}
-            keyExtractor={(item, index) => item._id ?? `flag-${index}`}
-            renderItem={({ item }) => <FlagListItem flag={item} />}
+            data={conversations}
+            keyExtractor={(item: any) => item._id}
             contentContainerStyle={{ padding: 16, gap: 8 }}
+            renderItem={({ item }: { item: any }) => (
+              <TouchableOpacity className="bg-m-bg-card border border-m-border rounded-xl px-4 py-3 flex-row items-center">
+                <View className="w-8 h-8 rounded-full bg-m-bg-inset items-center justify-center">
+                  <MessageSquare size={14} color={colors.textTertiary} />
+                </View>
+                <View className="flex-1 ml-3">
+                  <View className="flex-row items-center justify-between">
+                    <Text
+                      className="text-sm font-medium text-m-text-primary flex-1"
+                      numberOfLines={1}
+                    >
+                      {item.title || 'Conversation'}
+                    </Text>
+                    <Text className="text-[10px] text-m-text-tertiary ml-2">
+                      {formatRelativeTime(item.lastMessageAt ?? item._creationTime)}
+                    </Text>
+                  </View>
+                  <Text
+                    className="text-xs text-m-text-tertiary mt-0.5"
+                    numberOfLines={1}
+                  >
+                    {item.lastMessagePreview || 'No messages yet'}
+                  </Text>
+                </View>
+                {(item.unreadCount ?? 0) > 0 && (
+                  <View className="ml-2 bg-m-accent rounded-full w-5 h-5 items-center justify-center">
+                    <Text className="text-[10px] font-bold text-m-text-on-brand">
+                      {item.unreadCount > 9 ? '9+' : item.unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
           />
         )
-      ) : !notifications ? <LoadingSpinner /> : notifications.length === 0 ? (
-        <EmptyState icon={Inbox} title="No notifications" />
-      ) : (
-        <FlatList
-          data={notifications}
-          keyExtractor={(item, index) => item._id ?? `notif-${index}`}
-          renderItem={({ item }) => <NotificationItem notification={item} />}
-          contentContainerStyle={{ padding: 16, gap: 8 }}
-        />
+      )}
+
+      {/* Flags tab */}
+      {activeTab === 'flags' && (
+        <View className="flex-1">
+          {/* Open/Resolved toggle */}
+          <View className="flex-row px-4 pt-3 pb-1 gap-2">
+            <TouchableOpacity
+              onPress={() => setFlagFilter('open')}
+              className={`px-3 py-1.5 rounded-full border ${
+                flagFilter === 'open'
+                  ? 'bg-m-accent border-m-accent'
+                  : 'border-m-border bg-m-bg-card'
+              }`}
+            >
+              <Text
+                className={`text-xs font-medium ${
+                  flagFilter === 'open'
+                    ? 'text-m-text-on-brand'
+                    : 'text-m-text-secondary'
+                }`}
+              >
+                Open
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setFlagFilter('resolved')}
+              className={`px-3 py-1.5 rounded-full border ${
+                flagFilter === 'resolved'
+                  ? 'bg-m-accent border-m-accent'
+                  : 'border-m-border bg-m-bg-card'
+              }`}
+            >
+              <Text
+                className={`text-xs font-medium ${
+                  flagFilter === 'resolved'
+                    ? 'text-m-text-on-brand'
+                    : 'text-m-text-secondary'
+                }`}
+              >
+                Resolved
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {!flags ? (
+            <LoadingSpinner />
+          ) : filteredFlags.length === 0 ? (
+            <EmptyState
+              icon={Flag}
+              title={`No ${flagFilter} flags`}
+            />
+          ) : (
+            <FlatList
+              data={filteredFlags}
+              keyExtractor={(item: any, index: number) =>
+                item._id ?? `flag-${index}`
+              }
+              renderItem={({ item }: { item: any }) => (
+                <FlagListItem flag={item} />
+              )}
+              contentContainerStyle={{ padding: 16, gap: 8 }}
+            />
+          )}
+        </View>
+      )}
+
+      {/* Notifications tab */}
+      {activeTab === 'notifications' && (
+        <View className="flex-1">
+          {/* Mark all read header */}
+          {unreadNotifications > 0 && (
+            <View className="flex-row items-center justify-end px-4 pt-3 pb-1">
+              <TouchableOpacity
+                onPress={() => markAllAsRead({})}
+                className="flex-row items-center gap-1"
+              >
+                <CheckCheck size={14} color={colors.accent} />
+                <Text className="text-xs font-medium text-m-text-primary">
+                  Mark all read
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!notifications ? (
+            <LoadingSpinner />
+          ) : notifications.length === 0 ? (
+            <EmptyState icon={Bell} title="No notifications" />
+          ) : (
+            <FlatList
+              data={notifications}
+              keyExtractor={(item: any, index: number) =>
+                item._id ?? `notif-${index}`
+              }
+              renderItem={({ item }: { item: any }) => (
+                <NotificationItem notification={item} />
+              )}
+              contentContainerStyle={{ padding: 16, gap: 8 }}
+            />
+          )}
+        </View>
       )}
     </View>
   );
