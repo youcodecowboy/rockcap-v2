@@ -14,6 +14,7 @@ import {
   ContactRound,
   Mail,
   Settings,
+  Sparkles,
 } from 'lucide-react';
 
 interface MobileNavDrawerProps {
@@ -27,6 +28,7 @@ const navItems = [
   { href: '/m-docs', label: 'Documents', icon: File },
   { href: '/m-upload', label: 'Upload', icon: Upload },
   { href: '/m-inbox', label: 'Inbox', icon: Mail },
+  { href: '/m-brief', label: 'Daily Brief', icon: Sparkles },
   { href: '/m-tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/m-notes', label: 'Notes', icon: FileText },
   { href: '/m-contacts', label: 'Contacts', icon: ContactRound },
