@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
-import { ArrowLeft, ArrowUp, Loader2, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowUp, Calendar, Loader2, Sparkles } from 'lucide-react';
 import TaskConfirmationCard from './TaskConfirmationCard';
 
 interface TaskCreationFlowProps {
@@ -44,6 +44,7 @@ export default function TaskCreationFlow({
   const [isLoading, setIsLoading] = useState(false);
   const [parsedTask, setParsedTask] = useState<ParsedTask | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [addToCalendar, setAddToCalendar] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -52,6 +53,8 @@ export default function TaskCreationFlow({
   const allUsers = useQuery(api.users.getAll, {});
   const currentUser = useQuery(api.users.getCurrent, {});
   const createTask = useMutation(api.tasks.create);
+  const googleStatus = useQuery(api.googleCalendar.getSyncStatus, {});
+  const isGoogleConnected = googleStatus?.isConnected ?? false;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -138,6 +141,25 @@ export default function TaskCreationFlow({
         assignedTo: assignees,
       });
       onTaskCreated(taskId);
+
+      // Push to Google Calendar if opted in
+      if (addToCalendar && parsedTask.dueDate) {
+        try {
+          await fetch('/api/google/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: parsedTask.title,
+              description: parsedTask.clientId ? `Client task` : undefined,
+              startDate: parsedTask.dueDate.split('T')[0],
+              allDay: !parsedTask.dueDate.includes('T'),
+              startTime: parsedTask.dueDate.includes('T') ? parsedTask.dueDate : undefined,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to push to Google Calendar:', err);
+        }
+      }
     } catch (err) {
       console.error('Failed to create task:', err);
     } finally {
@@ -208,6 +230,22 @@ export default function TaskCreationFlow({
           </div>
         )}
       </div>
+
+      {/* Google Calendar toggle */}
+      {parsedTask && isGoogleConnected && parsedTask.dueDate && (
+        <div className="px-4 pb-2">
+          <button
+            onClick={() => setAddToCalendar(!addToCalendar)}
+            className="flex items-center gap-2 w-full px-3 py-2 mb-2 rounded-lg border border-[var(--m-border)] text-[13px]"
+          >
+            <Calendar className="w-3.5 h-3.5 text-[var(--m-text-tertiary)]" />
+            <span className="flex-1 text-left text-[var(--m-text-secondary)]">Add to Google Calendar</span>
+            <div className={`w-8 h-5 rounded-full transition-colors ${addToCalendar ? 'bg-[var(--m-bg-brand)]' : 'bg-[var(--m-border)]'}`}>
+              <div className={`w-4 h-4 rounded-full bg-white shadow mt-0.5 transition-transform ${addToCalendar ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* Confirmation card */}
       {parsedTask && (
