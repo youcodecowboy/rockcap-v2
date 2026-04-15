@@ -45,7 +45,7 @@ export default function InboxScreen() {
         ) : (
           <FlatList
             data={flags}
-            keyExtractor={(item) => item._id}
+            keyExtractor={(item, index) => item._id ?? `flag-${index}`}
             renderItem={({ item }) => <FlagListItem flag={item} />}
             contentContainerStyle={{ padding: 16, gap: 8 }}
           />
@@ -55,7 +55,7 @@ export default function InboxScreen() {
       ) : (
         <FlatList
           data={notifications}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item, index) => item._id ?? `notif-${index}`}
           renderItem={({ item }) => <NotificationItem notification={item} />}
           contentContainerStyle={{ padding: 16, gap: 8 }}
         />
