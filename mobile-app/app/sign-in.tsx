@@ -1,96 +1,72 @@
-import { useSignIn } from '@clerk/clerk-expo';
-import { useState } from 'react';
+import { useSSO } from '@clerk/clerk-expo';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+
+// Required for OAuth redirect handling
+WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
-  const { signIn, setActive, isLoaded } = useSignIn();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { startSSOFlow } = useSSO();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const onSignIn = async () => {
-    if (!isLoaded) return;
+  const onGoogleSignIn = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
-      const result = await signIn.create({
-        identifier: email,
-        password,
+      const { createdSessionId, setActive } = await startSSOFlow({
+        strategy: 'oauth_google',
       });
 
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
       }
     } catch (err: any) {
-      setError(err.errors?.[0]?.message || 'Sign in failed');
+      setError(err.errors?.[0]?.longMessage || err.message || 'Sign in failed');
     } finally {
       setLoading(false);
     }
-  };
+  }, [startSSOFlow]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-m-bg-brand"
-    >
-      <View className="flex-1 justify-center px-8">
-        <Text className="text-3xl font-bold text-m-text-on-brand text-center mb-2">
-          RockCap
-        </Text>
-        <Text className="text-sm text-m-text-on-brand/50 text-center mb-10">
-          Property Finance Platform
-        </Text>
+    <View className="flex-1 bg-m-bg-brand justify-center px-8">
+      <Text className="text-3xl font-bold text-m-text-on-brand text-center mb-2">
+        RockCap
+      </Text>
+      <Text className="text-sm text-m-text-on-brand/50 text-center mb-10">
+        Property Finance Platform
+      </Text>
 
-        <View className="bg-m-bg-card rounded-xl p-6 gap-4">
-          <TextInput
-            placeholder="Email"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            className="bg-m-bg-subtle rounded-lg px-4 py-3 text-m-text-primary text-base"
-            placeholderTextColor="#d4d4d4"
-          />
-
-          <TextInput
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            className="bg-m-bg-subtle rounded-lg px-4 py-3 text-m-text-primary text-base"
-            placeholderTextColor="#d4d4d4"
-          />
-
-          {error ? (
-            <Text className="text-m-error text-sm text-center">{error}</Text>
-          ) : null}
-
-          <TouchableOpacity
-            onPress={onSignIn}
-            disabled={loading || !email || !password}
-            className="bg-m-accent rounded-lg py-3.5 items-center mt-2"
-            style={{ opacity: loading || !email || !password ? 0.5 : 1 }}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text className="text-m-text-on-brand font-semibold text-base">
-                Sign In
+      <View className="bg-m-bg-card rounded-xl p-6 gap-4">
+        <TouchableOpacity
+          onPress={onGoogleSignIn}
+          disabled={loading}
+          className="bg-m-bg-subtle rounded-lg py-3.5 flex-row items-center justify-center gap-3"
+          style={{ opacity: loading ? 0.5 : 1 }}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#0a0a0a" />
+          ) : (
+            <>
+              <Text className="text-lg">G</Text>
+              <Text className="text-m-text-primary font-semibold text-base">
+                Continue with Google
               </Text>
-            )}
-          </TouchableOpacity>
-        </View>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {error ? (
+          <Text className="text-m-error text-sm text-center">{error}</Text>
+        ) : null}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
