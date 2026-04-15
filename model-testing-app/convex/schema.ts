@@ -3389,5 +3389,14 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_channel", ["channelId"]),
+
+  // Daily AI-generated briefings — one per user per day
+  dailyBriefs: defineTable({
+    userId: v.id("users"),
+    date: v.string(),
+    content: v.any(),
+    generatedAt: v.string(),
+  })
+    .index("by_user_date", ["userId", "date"]),
 });
 
