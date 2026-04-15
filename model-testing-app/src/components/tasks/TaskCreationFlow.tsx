@@ -337,6 +337,8 @@ export default function TaskCreationFlow({
           isCreating={isCreating}
           onTaskChange={setParsedTask}
           onEventChange={setParsedEvent}
+          clients={clients?.map(c => ({ _id: String(c._id), name: c.name })) || []}
+          projects={projects?.map(p => ({ _id: String(p._id), name: p.name, clientRoles: p.clientRoles })) || []}
         />
       )}
 
