@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, Clock, MapPin, Users, Building2, FolderKanban, AlertCircle, Repeat, Bell, ChevronDown, X } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Building2, FolderKanban, AlertCircle, Repeat, Bell, ChevronDown, Plus, X } from 'lucide-react';
 
 interface ParsedTask {
   title: string;
@@ -69,7 +69,12 @@ function formatTime(dateStr?: string): string {
 
 function toDateInputValue(dateStr?: string): string {
   if (!dateStr) return '';
-  return new Date(dateStr).toISOString().split('T')[0];
+  const d = new Date(dateStr);
+  // Use local date parts to avoid timezone offset issues
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function toTimeInputValue(dateStr?: string): string {
@@ -78,7 +83,13 @@ function toTimeInputValue(dateStr?: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-type EditingField = null | 'title' | 'date' | 'time' | 'location' | 'client' | 'project' | 'description';
+/** Parse "YYYY-MM-DD" as local date (not UTC) */
+function parseLocalDate(dateStr: string, hours = 0, minutes = 0): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d, hours, minutes, 0, 0);
+}
+
+type EditingField = null | 'title' | 'date' | 'taskTime' | 'time' | 'location' | 'client' | 'project' | 'description' | 'attendees';
 
 export default function EditableConfirmationCard({
   mode,
@@ -96,6 +107,7 @@ export default function EditableConfirmationCard({
   projects,
 }: EditableConfirmationCardProps) {
   const [editing, setEditing] = useState<EditingField>(null);
+  const [attendeeInput, setAttendeeInput] = useState('');
 
   const priorityColors: Record<string, string> = {
     high: 'text-red-700 bg-red-50',
@@ -110,27 +122,42 @@ export default function EditableConfirmationCard({
     onTaskChange({ ...task, priority: next });
   };
 
+  // ── Date/time updates (timezone-safe) ──────────────────────
+
   const updateTaskDate = (dateStr: string) => {
     if (!task || !onTaskChange) return;
     if (!dateStr) { onTaskChange({ ...task, dueDate: undefined }); return; }
-    // Preserve existing time if present, otherwise set to end of day
     const existing = task.dueDate ? new Date(task.dueDate) : null;
-    const newDate = new Date(dateStr);
-    if (existing) {
-      newDate.setHours(existing.getHours(), existing.getMinutes());
-    } else {
-      newDate.setHours(17, 0, 0, 0);
-    }
+    const hours = existing ? existing.getHours() : 17;
+    const mins = existing ? existing.getMinutes() : 0;
+    const newDate = parseLocalDate(dateStr, hours, mins);
     onTaskChange({ ...task, dueDate: newDate.toISOString() });
     setEditing(null);
   };
 
+  const updateTaskTime = (timeStr: string) => {
+    if (!task || !onTaskChange) return;
+    if (!timeStr) {
+      // Clear time — set to date-only (end of day)
+      if (task.dueDate) {
+        const d = new Date(task.dueDate);
+        d.setHours(23, 59, 0, 0);
+        onTaskChange({ ...task, dueDate: d.toISOString() });
+      }
+      setEditing(null);
+      return;
+    }
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const d = task.dueDate ? new Date(task.dueDate) : new Date();
+    d.setHours(hours, minutes, 0, 0);
+    onTaskChange({ ...task, dueDate: d.toISOString() });
+    setEditing(null);
+  };
+
   const updateEventDate = (dateStr: string) => {
-    if (!event || !onEventChange) return;
-    if (!dateStr) return;
+    if (!event || !onEventChange || !dateStr) return;
     const existingStart = event.startTime ? new Date(event.startTime) : new Date();
-    const newStart = new Date(dateStr);
-    newStart.setHours(existingStart.getHours(), existingStart.getMinutes());
+    const newStart = parseLocalDate(dateStr, existingStart.getHours(), existingStart.getMinutes());
     const duration = event.duration || 60;
     const newEnd = new Date(newStart.getTime() + duration * 60000);
     onEventChange({ ...event, startTime: newStart.toISOString(), endTime: newEnd.toISOString() });
@@ -172,6 +199,25 @@ export default function EditableConfirmationCard({
     setEditing(null);
   };
 
+  // ── Attendee management ────────────────────────────────────
+
+  const currentAttendees = event?.attendees || [];
+
+  const addAttendee = (value: string) => {
+    if (!value.trim() || !event || !onEventChange) return;
+    const updated = [...currentAttendees, value.trim()];
+    onEventChange({ ...event, attendees: updated });
+    setAttendeeInput('');
+  };
+
+  const removeAttendee = (index: number) => {
+    if (!event || !onEventChange) return;
+    const updated = currentAttendees.filter((_, i) => i !== index);
+    onEventChange({ ...event, attendees: updated });
+  };
+
+  // ── Derived values ─────────────────────────────────────────
+
   const activeClientId = mode === 'task' ? task?.clientId : event?.clientId;
   const activeProjectId = mode === 'task' ? task?.projectId : event?.projectId;
   const filteredProjects = projects?.filter(p =>
@@ -184,6 +230,8 @@ export default function EditableConfirmationCard({
   const resolvedProjectName = activeProjectId
     ? projects?.find(p => p._id === activeProjectId)?.name || projectName
     : projectName;
+
+  const hasTaskTime = task?.dueDate ? new Date(task.dueDate).getHours() !== 23 : false;
 
   return (
     <div className="mx-4 mb-4">
@@ -217,7 +265,7 @@ export default function EditableConfirmationCard({
         </div>
 
         <div className="px-4 pb-3 space-y-0.5">
-          {/* Date */}
+          {/* ── Date ── */}
           {editing === 'date' ? (
             <div className="py-2">
               <input
@@ -234,15 +282,47 @@ export default function EditableConfirmationCard({
               <Calendar className="w-4 h-4 text-[var(--m-text-tertiary)]" />
               <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
                 {mode === 'task'
-                  ? formatDate(task?.dueDate)
-                  : event?.startTime ? formatDate(event.startTime) : 'Not set'
+                  ? (task?.dueDate ? formatDate(task.dueDate) : 'Set date')
+                  : (event?.startTime ? formatDate(event.startTime) : 'Set date')
                 }
               </span>
               <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
             </button>
           )}
 
-          {/* Time (meetings) */}
+          {/* ── Task Time (optional) ── */}
+          {mode === 'task' && task?.dueDate && (
+            editing === 'taskTime' ? (
+              <div className="py-2 flex gap-2">
+                <input
+                  type="time"
+                  autoFocus
+                  defaultValue={hasTaskTime ? toTimeInputValue(task.dueDate) : ''}
+                  onChange={e => updateTaskTime(e.target.value)}
+                  onBlur={() => setEditing(null)}
+                  className="flex-1 text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none"
+                />
+                {hasTaskTime && (
+                  <button
+                    onClick={() => updateTaskTime('')}
+                    className="px-3 py-2 text-[12px] text-[var(--m-text-tertiary)] border border-[var(--m-border)] rounded-lg"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button onClick={() => setEditing('taskTime')} className="flex items-center gap-3 py-2 w-full text-left">
+                <Clock className="w-4 h-4 text-[var(--m-text-tertiary)]" />
+                <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
+                  {hasTaskTime ? formatTime(task.dueDate) : 'Add time (optional)'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+              </button>
+            )
+          )}
+
+          {/* ── Meeting Time ── */}
           {mode === 'meeting' && (
             editing === 'time' ? (
               <div className="py-2">
@@ -269,7 +349,7 @@ export default function EditableConfirmationCard({
             )
           )}
 
-          {/* Location (meetings) */}
+          {/* ── Location (meetings) ── */}
           {mode === 'meeting' && (
             editing === 'location' ? (
               <div className="py-2">
@@ -294,7 +374,7 @@ export default function EditableConfirmationCard({
             )
           )}
 
-          {/* Priority (tasks) */}
+          {/* ── Priority (tasks) ── */}
           {mode === 'task' && task && (
             <button onClick={cyclePriority} className="flex items-center gap-3 py-2 w-full text-left">
               <AlertCircle className="w-4 h-4 text-[var(--m-text-tertiary)]" />
@@ -304,7 +384,7 @@ export default function EditableConfirmationCard({
             </button>
           )}
 
-          {/* Client */}
+          {/* ── Client ── */}
           {editing === 'client' ? (
             <div className="py-2">
               <select
@@ -328,7 +408,7 @@ export default function EditableConfirmationCard({
             </button>
           )}
 
-          {/* Project */}
+          {/* ── Project ── */}
           {editing === 'project' ? (
             <div className="py-2">
               <select
@@ -352,15 +432,62 @@ export default function EditableConfirmationCard({
             </button>
           )}
 
-          {/* Assignees */}
-          <div className="flex items-center gap-3 py-2">
-            <Users className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-            <span className="text-[13px] text-[var(--m-text-secondary)]">
-              {assigneeNames.length > 0 ? assigneeNames.join(', ') : 'You'}
-            </span>
-          </div>
+          {/* ── Attendees (meetings) ── */}
+          {mode === 'meeting' && (
+            <>
+              <button onClick={() => setEditing(editing === 'attendees' ? null : 'attendees')} className="flex items-center gap-3 py-2 w-full text-left">
+                <Users className="w-4 h-4 text-[var(--m-text-tertiary)]" />
+                <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
+                  {currentAttendees.length > 0 ? `${currentAttendees.length} attendee${currentAttendees.length !== 1 ? 's' : ''}` : 'Add attendees'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+              </button>
 
-          {/* Description */}
+              {editing === 'attendees' && (
+                <div className="pb-2 pl-7 space-y-2">
+                  {/* Current attendees */}
+                  {currentAttendees.map((a, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="flex-1 text-[13px] text-[var(--m-text-secondary)] truncate">{a}</span>
+                      <button onClick={() => removeAttendee(i)} className="p-0.5 text-[var(--m-text-tertiary)]">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {/* Add input */}
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={attendeeInput}
+                      onChange={e => setAttendeeInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAttendee(attendeeInput); } }}
+                      placeholder="Name or email..."
+                      className="flex-1 text-[13px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-1.5 bg-transparent outline-none"
+                    />
+                    <button
+                      onClick={() => addAttendee(attendeeInput)}
+                      disabled={!attendeeInput.trim()}
+                      className="px-3 py-1.5 text-[12px] font-medium text-[var(--m-text-on-brand)] bg-[var(--m-bg-brand)] rounded-lg disabled:opacity-30"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Assignees (tasks — display only for now) ── */}
+          {mode === 'task' && (
+            <div className="flex items-center gap-3 py-2">
+              <Users className="w-4 h-4 text-[var(--m-text-tertiary)]" />
+              <span className="text-[13px] text-[var(--m-text-secondary)]">
+                {assigneeNames.length > 0 ? assigneeNames.join(', ') : 'You'}
+              </span>
+            </div>
+          )}
+
+          {/* ── Description ── */}
           {editing === 'description' ? (
             <div className="py-2">
               <textarea
@@ -385,7 +512,7 @@ export default function EditableConfirmationCard({
             </button>
           )}
 
-          {/* Recurrence (events, display only for now) */}
+          {/* ── Recurrence (display only) ── */}
           {mode === 'meeting' && event?.recurrence && (
             <div className="flex items-center gap-3 py-2">
               <Repeat className="w-4 h-4 text-[var(--m-text-tertiary)]" />
@@ -393,7 +520,7 @@ export default function EditableConfirmationCard({
             </div>
           )}
 
-          {/* Reminders (events, display only for now) */}
+          {/* ── Reminders (display only) ── */}
           {mode === 'meeting' && event?.reminders && event.reminders.length > 0 && (
             <div className="flex items-center gap-3 py-2">
               <Bell className="w-4 h-4 text-[var(--m-text-tertiary)]" />

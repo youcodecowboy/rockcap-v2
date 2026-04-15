@@ -46,6 +46,7 @@ export default function TaskCreationFlow({
   const [parsedTask, setParsedTask] = useState<ParsedTask | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [addToCalendar, setAddToCalendar] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [mode, setMode] = useState<'task' | 'meeting'>('task');
   const [parsedEvent, setParsedEvent] = useState<ParsedEvent | null>(null);
   const [manualMode, setManualMode] = useState(false);
@@ -160,7 +161,7 @@ export default function TaskCreationFlow({
       // Push to Google Calendar if opted in
       if (addToCalendar && parsedTask.dueDate) {
         try {
-          await fetch('/api/google/events', {
+          const res = await fetch('/api/google/events', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -171,6 +172,10 @@ export default function TaskCreationFlow({
               startTime: parsedTask.dueDate.includes('T') ? parsedTask.dueDate : undefined,
             }),
           });
+          if (res.ok) {
+            setToast('Added to Google Calendar');
+            setTimeout(() => setToast(null), 3000);
+          }
         } catch (err) {
           console.error('Failed to push to Google Calendar:', err);
         }
@@ -203,7 +208,7 @@ export default function TaskCreationFlow({
 
       if (addToCalendar && parsedEvent.startTime) {
         try {
-          await fetch('/api/google/events', {
+          const res = await fetch('/api/google/events', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -214,6 +219,10 @@ export default function TaskCreationFlow({
               allDay: false,
             }),
           });
+          if (res.ok) {
+            setToast('Added to Google Calendar');
+            setTimeout(() => setToast(null), 3000);
+          }
         } catch (err) {
           console.error('Failed to push event to Google Calendar:', err);
         }
@@ -380,6 +389,12 @@ export default function TaskCreationFlow({
           >
             Skip AI, create manually
           </button>
+        </div>
+      )}
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-[var(--m-bg-brand)] text-[var(--m-text-on-brand)] text-[13px] font-medium rounded-lg shadow-lg">
+          {toast}
         </div>
       )}
     </div>
