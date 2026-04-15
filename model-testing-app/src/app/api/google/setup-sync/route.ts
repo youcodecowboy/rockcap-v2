@@ -34,6 +34,34 @@ export async function POST() {
       timeMax: thirtyDaysOut.toISOString(),
     });
 
+    // Save fetched events to Convex
+    let syncedCount = 0;
+    if (eventsResponse.items) {
+      for (const gEvent of eventsResponse.items) {
+        if (!gEvent.id || !gEvent.summary) continue;
+        try {
+          await convex.mutation(api.googleCalendar.syncGoogleEvent, {
+            googleEventId: gEvent.id,
+            title: gEvent.summary,
+            description: gEvent.description,
+            location: gEvent.location,
+            startTime: gEvent.start?.dateTime || gEvent.start?.date || now.toISOString(),
+            endTime: gEvent.end?.dateTime || gEvent.end?.date || now.toISOString(),
+            allDay: !gEvent.start?.dateTime,
+            status: gEvent.status || 'confirmed',
+            attendees: gEvent.attendees?.map(a => ({
+              email: a.email || '',
+              name: a.displayName,
+              status: a.responseStatus,
+            })),
+          });
+          syncedCount++;
+        } catch (err) {
+          console.warn(`Failed to sync event ${gEvent.id}:`, err);
+        }
+      }
+    }
+
     const syncToken = eventsResponse.nextSyncToken || '';
 
     const channelId = crypto.randomUUID();
@@ -60,7 +88,7 @@ export async function POST() {
 
     return NextResponse.json({
       success: true,
-      eventsSynced: eventsResponse.items?.length ?? 0,
+      eventsSynced: syncedCount,
       webhookActive: !!resourceId,
     });
   } catch (error) {

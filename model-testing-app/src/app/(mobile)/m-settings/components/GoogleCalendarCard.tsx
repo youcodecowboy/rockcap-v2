@@ -10,6 +10,7 @@ export default function GoogleCalendarCard() {
   const syncStatus = useQuery(api.googleCalendar.getSyncStatus, {});
   const searchParams = useSearchParams();
   const [disconnecting, setDisconnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -82,15 +83,37 @@ export default function GoogleCalendarCard() {
           </div>
         )}
 
-        <div className="mt-3">
+        <div className="mt-3 space-y-2">
           {syncStatus.isConnected ? (
-            <button
-              onClick={handleDisconnect}
-              disabled={disconnecting}
-              className="w-full py-2 px-3 text-[13px] font-medium text-[var(--m-error)] bg-red-50 rounded-lg active:bg-red-100 disabled:opacity-50"
-            >
-              {disconnecting ? 'Disconnecting...' : 'Disconnect'}
-            </button>
+            <>
+              <button
+                onClick={async () => {
+                  setSyncing(true);
+                  setStatusMessage(null);
+                  try {
+                    const res = await fetch('/api/google/setup-sync', { method: 'POST' });
+                    const data = await res.json();
+                    setStatusMessage(`Synced ${data.eventsSynced} events from Google Calendar`);
+                    setTimeout(() => setStatusMessage(null), 5000);
+                  } catch {
+                    setStatusMessage('Sync failed');
+                  } finally {
+                    setSyncing(false);
+                  }
+                }}
+                disabled={syncing}
+                className="w-full py-2 px-3 text-[13px] font-medium text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg active:bg-[var(--m-bg-subtle)] disabled:opacity-50"
+              >
+                {syncing ? 'Syncing...' : 'Sync Now'}
+              </button>
+              <button
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+                className="w-full py-2 px-3 text-[13px] font-medium text-[var(--m-error)] bg-red-50 rounded-lg active:bg-red-100 disabled:opacity-50"
+              >
+                {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            </>
           ) : (
             <button
               onClick={handleConnect}

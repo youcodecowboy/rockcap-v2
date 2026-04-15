@@ -116,10 +116,11 @@ INSTRUCTIONS:
 2. Be smart about matching names — "bayfield" matches "Bayfield Homes", "john" matches team members.
 3. Default duration to 1 hour if not specified.
 4. If the user specifies a time, set start and end. If only a date, make it a 1-hour meeting at 10:00.
-5. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday. Today is ${new Date().toISOString().split('T')[0]}.
-6. For recurrence, use simple descriptions: "weekly", "daily", "monthly", "every Tuesday".
-7. For reminders, default to 30 minutes popup if not specified.
-8. Attendees should be matched to team member IDs when possible.
+5. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday. Today is ${new Date().toISOString().split('T')[0]}. Current time is ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })} in Europe/London timezone.
+6. IMPORTANT: All times should be in Europe/London timezone. When the user says "3pm", they mean 15:00 Europe/London. Convert to ISO format accordingly — e.g. during BST (summer), 15:00 London = 14:00 UTC = "2026-04-15T14:00:00.000Z".
+7. For recurrence, use simple descriptions: "weekly", "daily", "monthly", "every Tuesday".
+8. For reminders, default to 30 minutes popup if not specified.
+9. Attendees should be matched to team member IDs when possible.
 
 RESPONSE FORMAT:
 When you have enough info, respond with ONLY a JSON block:

@@ -193,6 +193,66 @@ export const getTokensByUserId = internalMutation({
   },
 });
 
+// ── Event Upsert (public — called by setup-sync with user auth) ─
+
+export const syncGoogleEvent = mutation({
+  args: {
+    googleEventId: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    location: v.optional(v.string()),
+    startTime: v.string(),
+    endTime: v.string(),
+    allDay: v.optional(v.boolean()),
+    status: v.optional(v.string()),
+    attendees: v.optional(v.array(v.object({
+      email: v.string(),
+      name: v.optional(v.string()),
+      status: v.optional(v.string()),
+    }))),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    const now = new Date().toISOString();
+    const existing = await ctx.db
+      .query("events")
+      .withIndex("by_google_event_id", (q: any) => q.eq("googleEventId", args.googleEventId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        title: args.title,
+        description: args.description,
+        location: args.location,
+        startTime: args.startTime,
+        endTime: args.endTime,
+        allDay: args.allDay ?? false,
+        status: args.status || "confirmed",
+        attendees: args.attendees,
+        syncStatus: "synced",
+        lastGoogleSync: now,
+        updatedAt: now,
+      });
+      return existing._id;
+    }
+    return ctx.db.insert("events", {
+      title: args.title,
+      description: args.description,
+      location: args.location,
+      startTime: args.startTime,
+      endTime: args.endTime,
+      allDay: args.allDay ?? false,
+      status: args.status || "confirmed",
+      attendees: args.attendees,
+      googleEventId: args.googleEventId,
+      syncStatus: "synced",
+      lastGoogleSync: now,
+      createdBy: user._id,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
 // ── Event Upsert (internal — called by webhook, no user auth) ─
 
 export const upsertGoogleEvent = internalMutation({
