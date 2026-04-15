@@ -1,0 +1,31 @@
+export const colors = {
+  bg: '#fafaf9',
+  bgSubtle: '#f5f5f4',
+  bgInset: '#e7e5e4',
+  bgCard: '#ffffff',
+  bgBrand: '#000000',
+  textPrimary: '#0a0a0a',
+  textSecondary: '#525252',
+  textTertiary: '#a3a3a3',
+  textPlaceholder: '#d4d4d4',
+  textOnBrand: '#ffffff',
+  border: '#e5e5e5',
+  borderSubtle: '#f5f5f5',
+  accent: '#000000',
+  accentHover: '#171717',
+  accentSubtle: '#f5f5f5',
+  success: '#059669',
+  warning: '#d97706',
+  error: '#ef4444',
+} as const;
+
+export const layout = {
+  headerHeight: 52,
+  tabBarHeight: 36,
+  footerHeight: 64,
+  pagePadding: 16,
+  sectionGap: 12,
+  cardPadding: 16,
+  cardRadius: 12,
+  itemGap: 8,
+} as const;
