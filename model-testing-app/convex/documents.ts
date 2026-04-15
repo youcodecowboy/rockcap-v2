@@ -1831,6 +1831,18 @@ export const getFolderCounts = query({
       }
     }
 
+    // Add note counts to the "notes" folder for each project
+    const allNotes = await ctx.db.query("notes").collect();
+    for (const note of allNotes) {
+      if (note.projectId) {
+        const pid = note.projectId as string;
+        if (!projectFolders[pid]) {
+          projectFolders[pid] = {};
+        }
+        projectFolders[pid]["notes"] = (projectFolders[pid]["notes"] || 0) + 1;
+      }
+    }
+
     return { clientFolders, projectFolders, clientTotal };
   },
 });
@@ -1864,6 +1876,21 @@ export const getProjectFolderCounts = query({
         const folderKey = doc.folderId || 'uncategorized';
         result[doc.projectId].folders[folderKey] = (result[doc.projectId].folders[folderKey] || 0) + 1;
         result[doc.projectId].total++;
+      }
+    }
+
+    // Add note counts to the "notes" folder for each project
+    for (const project of clientProjects) {
+      const projectNotes = await ctx.db
+        .query("notes")
+        .withIndex("by_project", (q: any) => q.eq("projectId", project._id))
+        .collect();
+      if (projectNotes.length > 0) {
+        if (!result[project._id]) {
+          result[project._id] = { folders: {}, total: 0 };
+        }
+        result[project._id].folders["notes"] = (result[project._id].folders["notes"] || 0) + projectNotes.length;
+        result[project._id].total += projectNotes.length;
       }
     }
 
