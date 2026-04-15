@@ -1,249 +1,289 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { mutation, query, internalMutation } from "./_generated/server";
 
-/**
- * Google Calendar Integration Stubs
- * 
- * These functions are prepared for future Google OAuth integration.
- * Once Google OAuth is set up, these functions will:
- * 1. Authenticate with Google Calendar API
- * 2. Sync events bidirectionally
- * 3. Handle webhooks for real-time updates
- * 
- * For now, these are placeholder implementations that return appropriate
- * responses but don't actually interact with Google Calendar.
- */
-
-// Helper function to get authenticated user
+// ── Auth helper ──────────────────────────────────────────────
 async function getAuthenticatedUser(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Unauthenticated");
-  }
-
+  if (!identity) throw new Error("Unauthenticated");
   const user = await ctx.db
     .query("users")
     .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
     .first();
-  
-  if (!user) {
-    throw new Error("User not found");
-  }
-
+  if (!user) throw new Error("User not found");
   return user;
 }
 
-/**
- * Sync events from Google Calendar to local database
- * 
- * This function will:
- * 1. Authenticate with Google Calendar API using stored OAuth tokens
- * 2. Fetch events from user's Google Calendar(s)
- * 3. Create or update local events based on Google Calendar data
- * 4. Handle recurring events and exceptions
- * 
- * @param calendarId - Google Calendar ID (e.g., "primary" or specific calendar ID)
- * @param timeMin - Start time for sync (ISO timestamp)
- * @param timeMax - End time for sync (ISO timestamp)
- */
-export const syncFromGoogle = mutation({
+// ── Token CRUD ───────────────────────────────────────────────
+
+export const saveTokens = mutation({
   args: {
-    calendarId: v.optional(v.string()), // Defaults to "primary"
-    timeMin: v.optional(v.string()), // ISO timestamp
-    timeMax: v.optional(v.string()), // ISO timestamp
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    scope: v.string(),
+    connectedEmail: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
-    // TODO: Once Google OAuth is set up:
-    // 1. Retrieve stored OAuth tokens for user
-    // 2. Refresh token if expired
-    // 3. Call Google Calendar API: calendar.events.list
-    // 4. For each Google event:
-    //    - Check if local event exists (by googleEventId)
-    //    - Create new event or update existing
-    //    - Set syncStatus to "synced"
-    //    - Store googleEventId, googleCalendarId, googleCalendarUrl
-    
-    // Placeholder response
-    return {
-      success: false,
-      message: "Google Calendar integration not yet configured. Please set up Google OAuth first.",
-      eventsSynced: 0,
-    };
+    const existing = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (existing) {
+      await ctx.db.delete(existing._id);
+    }
+    return ctx.db.insert("googleCalendarTokens", {
+      userId: user._id,
+      accessToken: args.accessToken,
+      refreshToken: args.refreshToken,
+      expiresAt: args.expiresAt,
+      scope: args.scope,
+      connectedAt: new Date().toISOString(),
+      connectedEmail: args.connectedEmail,
+    });
   },
 });
 
-/**
- * Push local events to Google Calendar
- * 
- * This function will:
- * 1. Find all local events with syncStatus "pending" or "local_only"
- * 2. Create or update events in Google Calendar
- * 3. Update local events with Google event IDs and sync status
- * 
- * @param eventIds - Optional array of event IDs to sync (if not provided, syncs all pending)
- */
-export const pushToGoogle = mutation({
+export const getTokens = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    return ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+  },
+});
+
+export const updateAccessToken = mutation({
   args: {
-    eventIds: v.optional(v.array(v.id("events"))),
+    accessToken: v.string(),
+    expiresAt: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
-    // TODO: Once Google OAuth is set up:
-    // 1. Retrieve stored OAuth tokens for user
-    // 2. Refresh token if expired
-    // 3. Find events to sync:
-    //    - If eventIds provided: sync those specific events
-    //    - Otherwise: find all events with syncStatus "pending" or "local_only"
-    // 4. For each event:
-    //    - Convert local event format to Google Calendar API format
-    //    - If googleEventId exists: call calendar.events.update
-    //    - Otherwise: call calendar.events.insert
-    //    - Update local event with googleEventId and set syncStatus to "synced"
-    
-    // Placeholder response
-    return {
-      success: false,
-      message: "Google Calendar integration not yet configured. Please set up Google OAuth first.",
-      eventsPushed: 0,
-    };
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (!tokens) throw new Error("No Google Calendar connection found");
+    await ctx.db.patch(tokens._id, {
+      accessToken: args.accessToken,
+      expiresAt: args.expiresAt,
+    });
   },
 });
 
-/**
- * Handle Google Calendar webhook notifications
- * 
- * This function will be called when Google Calendar sends push notifications
- * about event changes. It will:
- * 1. Verify the webhook signature
- * 2. Process the notification (event created, updated, deleted)
- * 3. Update local events accordingly
- * 
- * @param channelId - Google Calendar channel ID
- * @param resourceId - Google Calendar resource ID
- * @param resourceState - State of the resource (sync, exists, not_exists)
- * @param resourceUri - URI of the changed resource
- */
-export const handleWebhook = mutation({
+export const deleteTokens = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (tokens) {
+      await ctx.db.delete(tokens._id);
+    }
+  },
+});
+
+// ── Channel CRUD ─────────────────────────────────────────────
+
+export const saveChannel = mutation({
   args: {
     channelId: v.string(),
     resourceId: v.string(),
-    resourceState: v.string(), // "sync", "exists", "not_exists"
-    resourceUri: v.string(),
+    expiration: v.string(),
+    syncToken: v.string(),
   },
   handler: async (ctx, args) => {
-    // TODO: Once Google OAuth is set up:
-    // 1. Verify webhook signature (if using signed webhooks)
-    // 2. Parse resourceUri to extract calendar ID and event ID
-    // 3. Fetch event from Google Calendar API
-    // 4. Find local event by googleEventId
-    // 5. Update local event with latest Google Calendar data
-    // 6. Set syncStatus to "synced"
-    
-    // Placeholder response
-    return {
-      success: false,
-      message: "Google Calendar webhook handling not yet configured.",
-    };
+    const user = await getAuthenticatedUser(ctx);
+    const existing = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (existing) {
+      await ctx.db.delete(existing._id);
+    }
+    return ctx.db.insert("googleCalendarChannels", {
+      userId: user._id,
+      channelId: args.channelId,
+      resourceId: args.resourceId,
+      expiration: args.expiration,
+      syncToken: args.syncToken,
+    });
   },
 });
 
-/**
- * Get Google Calendar sync status for user
- * 
- * Returns information about the user's Google Calendar integration status
- */
+export const getChannelByChannelId = query({
+  args: { channelId: v.string() },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_channel", (q: any) => q.eq("channelId", args.channelId))
+      .first();
+  },
+});
+
+export const updateSyncToken = mutation({
+  args: {
+    channelId: v.string(),
+    syncToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_channel", (q: any) => q.eq("channelId", args.channelId))
+      .first();
+    if (!channel) throw new Error("Channel not found");
+    await ctx.db.patch(channel._id, { syncToken: args.syncToken });
+  },
+});
+
+export const deleteChannel = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (channel) {
+      await ctx.db.delete(channel._id);
+    }
+  },
+});
+
+// ── Sync Status ──────────────────────────────────────────────
+
 export const getSyncStatus = query({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);
-    
-    // TODO: Once Google OAuth is set up:
-    // 1. Check if user has stored OAuth tokens
-    // 2. Verify tokens are still valid
-    // 3. Return sync status, last sync time, calendars connected, etc.
-    
-    // Placeholder response
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (!tokens) {
+      return { isConnected: false, connectedEmail: null, connectedAt: null };
+    }
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
     return {
-      isConnected: false,
-      message: "Google Calendar integration not yet configured.",
-      lastSyncAt: null,
-      calendarsConnected: [],
+      isConnected: true,
+      connectedEmail: tokens.connectedEmail,
+      connectedAt: tokens.connectedAt,
+      channelExpiration: channel?.expiration ?? null,
     };
   },
 });
 
-/**
- * Disconnect Google Calendar integration
- * 
- * Removes OAuth tokens and stops syncing
- */
+// ── Internal: Token lookup by userId (for webhook — no user auth) ─
+
+export const getTokensByUserId = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+  },
+});
+
+// ── Event Upsert (internal — called by webhook, no user auth) ─
+
+export const upsertGoogleEvent = internalMutation({
+  args: {
+    userId: v.id("users"),
+    googleEventId: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    location: v.optional(v.string()),
+    startTime: v.string(),
+    endTime: v.string(),
+    allDay: v.optional(v.boolean()),
+    status: v.optional(v.string()),
+    attendees: v.optional(v.array(v.object({
+      email: v.string(),
+      name: v.optional(v.string()),
+      status: v.optional(v.string()),
+    }))),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    const existing = await ctx.db
+      .query("events")
+      .withIndex("by_google_event_id", (q: any) => q.eq("googleEventId", args.googleEventId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        title: args.title,
+        description: args.description,
+        location: args.location,
+        startTime: args.startTime,
+        endTime: args.endTime,
+        allDay: args.allDay ?? false,
+        status: args.status || "confirmed",
+        attendees: args.attendees,
+        syncStatus: "synced",
+        lastGoogleSync: now,
+        updatedAt: now,
+      });
+      return existing._id;
+    }
+    return ctx.db.insert("events", {
+      title: args.title,
+      description: args.description,
+      location: args.location,
+      startTime: args.startTime,
+      endTime: args.endTime,
+      allDay: args.allDay ?? false,
+      status: args.status || "confirmed",
+      attendees: args.attendees,
+      googleEventId: args.googleEventId,
+      syncStatus: "synced",
+      lastGoogleSync: now,
+      createdBy: args.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+// ── Delete synced event (cancelled on Google) ────────────────
+
+export const deleteByGoogleEventId = mutation({
+  args: { googleEventId: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("events")
+      .withIndex("by_google_event_id", (q: any) => q.eq("googleEventId", args.googleEventId))
+      .first();
+    if (existing) {
+      await ctx.db.delete(existing._id);
+    }
+  },
+});
+
+// ── Disconnect ───────────────────────────────────────────────
+
 export const disconnect = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);
-    
-    // TODO: Once Google OAuth is set up:
-    // 1. Revoke OAuth tokens with Google
-    // 2. Delete stored tokens from database
-    // 3. Optionally: stop webhook channels
-    // 4. Update all user's events: set syncStatus to "local_only", clear googleEventId
-    
-    // Placeholder response
-    return {
-      success: false,
-      message: "Google Calendar integration not yet configured.",
-    };
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (tokens) await ctx.db.delete(tokens._id);
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (channel) await ctx.db.delete(channel._id);
+    return { success: true };
   },
 });
-
-/**
- * NOTES FOR FUTURE IMPLEMENTATION:
- * 
- * 1. OAuth Token Storage:
- *    - Store refresh_token and access_token securely (encrypted)
- *    - Consider creating a googleCalendarTokens table:
- *      - userId: Id<"users">
- *      - accessToken: string (encrypted)
- *      - refreshToken: string (encrypted)
- *      - expiresAt: string (ISO timestamp)
- *      - calendarIds: array<string> (list of calendar IDs user has access to)
- * 
- * 2. Google Calendar API Endpoints:
- *    - List calendars: GET https://www.googleapis.com/calendar/v3/users/me/calendarList
- *    - List events: GET https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events
- *    - Create event: POST https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events
- *    - Update event: PUT https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}
- *    - Delete event: DELETE https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}
- * 
- * 3. Webhook Setup:
- *    - Use Google Calendar Push Notifications API
- *    - Create watch channel: POST https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/watch
- *    - Store channel information for later cleanup
- * 
- * 4. Event Format Mapping:
- *    - Google Calendar event fields map to our schema:
- *      - id -> googleEventId
- *      - summary -> title
- *      - description -> description
- *      - location -> location
- *      - start.dateTime / start.date -> startTime
- *      - end.dateTime / end.date -> endTime
- *      - attendees -> attendees (with responseStatus)
- *      - recurrence -> recurrence (RRULE format)
- *      - colorId -> colorId
- *      - visibility -> visibility
- *      - status -> status
- *      - reminders -> reminders
- *      - conferenceData -> conferenceData
- *      - htmlLink -> googleCalendarUrl
- * 
- * 5. Conflict Resolution:
- *    - When syncing, check lastModified times
- *    - If local event was modified after lastGoogleSync, prompt user or use "last write wins"
- *    - Consider adding a conflictResolution field to events table
- */
-
