@@ -1,57 +1,80 @@
-import React from 'react';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, Tabs } from 'expo-router';
-import { Pressable } from 'react-native';
-
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
-
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
-function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>['name'];
-  color: string;
-}) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
-}
+import { Tabs } from 'expo-router';
+import { LayoutDashboard, Building, File, Mail } from 'lucide-react-native';
+import { useQuery, useConvexAuth } from 'convex/react';
+import { api } from '../../../model-testing-app/convex/_generated/api';
+import { colors, layout } from '@/lib/theme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { isAuthenticated } = useConvexAuth();
+
+  const unreadNotifications = useQuery(
+    api.notifications.getUnreadCount,
+    isAuthenticated ? {} : 'skip'
+  );
+  const openFlags = useQuery(
+    api.flags.getMyFlags,
+    isAuthenticated ? { status: 'open' as const } : 'skip'
+  );
+  const unreadMessages = useQuery(
+    api.conversations.getUnreadCount,
+    isAuthenticated ? {} : 'skip'
+  );
+
+  const inboxBadge =
+    (unreadNotifications ?? 0) +
+    (openFlags?.length ?? 0) +
+    (unreadMessages ?? 0);
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}>
+        headerShown: false,
+        tabBarActiveTintColor: colors.textOnBrand,
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.5)',
+        tabBarStyle: {
+          backgroundColor: colors.bgBrand,
+          borderTopWidth: 0,
+          height: layout.footerHeight,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 9,
+          letterSpacing: 0.5,
+          textTransform: 'uppercase',
+          fontWeight: '600',
+        },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="info-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <LayoutDashboard size={18} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="clients"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'Clients',
+          tabBarIcon: ({ color }) => <Building size={18} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="docs"
+        options={{
+          title: 'Docs',
+          tabBarIcon: ({ color }) => <File size={18} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="inbox"
+        options={{
+          title: 'Inbox',
+          tabBarIcon: ({ color }) => <Mail size={18} color={color} />,
+          tabBarBadge: inboxBadge > 0 ? (inboxBadge > 9 ? '9+' : inboxBadge) : undefined,
         }}
       />
     </Tabs>
