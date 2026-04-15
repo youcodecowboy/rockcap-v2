@@ -69,6 +69,7 @@ INSTRUCTIONS:
 5. Default priority to "medium" if not mentioned.
 6. If the user says "me" or "myself" for assignment, use their ID: ${context.userId}
 7. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday, "next week" = next Monday, etc. Today is ${new Date().toISOString().split('T')[0]}.
+8. Tasks do NOT need to be linked to a client — they can be personal/general tasks. If the task clearly relates to a client, match it. If it's unclear whether the task is client-related or personal, ask: "Is this a personal task or related to a specific client?" Do NOT guess a client — only assign one when you're confident.
 
 RESPONSE FORMAT:
 When you have enough info, respond with ONLY a JSON block (no other text):
@@ -81,8 +82,8 @@ When you have enough info, respond with ONLY a JSON block (no other text):
     "dueDate": "2026-04-11T17:00:00.000Z",
     "priority": "low" | "medium" | "high",
     "assignedTo": ["user-id-1", "user-id-2"],
-    "clientId": "client-id or null",
-    "projectId": "project-id or null"
+    "clientId": "client-id or omit if personal task",
+    "projectId": "project-id or omit if not applicable"
   }
 }
 \`\`\`

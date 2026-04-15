@@ -54,7 +54,7 @@ export default function TaskConfirmationCard({
         )}
         <div className="space-y-2">
           {[
-            { label: 'Client', value: clientName || '—' },
+            { label: 'Client', value: clientName || 'Personal' },
             { label: 'Project', value: projectName || '—' },
             { label: 'Due', value: formatDate(task.dueDate) },
             { label: 'Priority', value: task.priority.charAt(0).toUpperCase() + task.priority.slice(1), color: priorityLabel[task.priority]?.color },

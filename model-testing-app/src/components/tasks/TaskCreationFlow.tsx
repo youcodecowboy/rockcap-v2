@@ -130,11 +130,11 @@ export default function TaskCreationFlow({
 
       const taskId = await createTask({
         title: parsedTask.title,
-        description: parsedTask.description,
-        dueDate: parsedTask.dueDate,
+        description: parsedTask.description || undefined,
+        dueDate: parsedTask.dueDate || undefined,
         priority: parsedTask.priority,
-        clientId: parsedTask.clientId as Id<'clients'> | undefined,
-        projectId: parsedTask.projectId as Id<'projects'> | undefined,
+        clientId: parsedTask.clientId ? parsedTask.clientId as Id<'clients'> : undefined,
+        projectId: parsedTask.projectId ? parsedTask.projectId as Id<'projects'> : undefined,
         assignedTo: assignees,
       });
       onTaskCreated(taskId);
