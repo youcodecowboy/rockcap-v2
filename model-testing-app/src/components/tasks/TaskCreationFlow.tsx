@@ -5,7 +5,8 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { ArrowLeft, ArrowUp, Calendar, Loader2, Sparkles } from 'lucide-react';
-import TaskConfirmationCard from './TaskConfirmationCard';
+import CreationModeToggle from './CreationModeToggle';
+import EditableConfirmationCard, { type ParsedEvent } from './EditableConfirmationCard';
 
 interface TaskCreationFlowProps {
   onTaskCreated: (taskId: string) => void;
@@ -45,6 +46,9 @@ export default function TaskCreationFlow({
   const [parsedTask, setParsedTask] = useState<ParsedTask | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [addToCalendar, setAddToCalendar] = useState(false);
+  const [mode, setMode] = useState<'task' | 'meeting'>('task');
+  const [parsedEvent, setParsedEvent] = useState<ParsedEvent | null>(null);
+  const [manualMode, setManualMode] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +57,7 @@ export default function TaskCreationFlow({
   const allUsers = useQuery(api.users.getAll, {});
   const currentUser = useQuery(api.users.getCurrent, {});
   const createTask = useMutation(api.tasks.create);
+  const createEvent = useMutation(api.events.create);
   const googleStatus = useQuery(api.googleCalendar.getSyncStatus, {});
   const isGoogleConnected = googleStatus?.isConnected ?? false;
 
@@ -63,6 +68,10 @@ export default function TaskCreationFlow({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    setAddToCalendar(mode === 'meeting' && isGoogleConnected);
+  }, [mode, isGoogleConnected]);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -98,7 +107,7 @@ export default function TaskCreationFlow({
       const res = await fetch('/api/tasks/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: agentMessages, context }),
+        body: JSON.stringify({ messages: agentMessages, context, mode }),
       });
 
       if (!res.ok) throw new Error('Agent request failed');
@@ -112,6 +121,12 @@ export default function TaskCreationFlow({
         if (!task.projectId && initialProjectId) task.projectId = initialProjectId;
         setParsedTask(task);
         setMessages([...newMessages, { role: 'assistant', content: 'Here\'s your task — review and confirm below.' }]);
+      } else if (data.type === 'event') {
+        const event = { ...data.event };
+        if (!event.clientId && initialClientId) event.clientId = initialClientId;
+        if (!event.projectId && initialProjectId) event.projectId = initialProjectId;
+        setParsedEvent(event);
+        setMessages([...newMessages, { role: 'assistant', content: 'Here\'s your meeting — review and confirm below.' }]);
       } else if (data.type === 'message') {
         setMessages([...newMessages, { role: 'assistant', content: data.content }]);
       }
@@ -167,13 +182,74 @@ export default function TaskCreationFlow({
     }
   };
 
+  const handleConfirmEvent = async () => {
+    if (!parsedEvent || !parsedEvent.startTime || !parsedEvent.endTime) return;
+    setIsCreating(true);
+    try {
+      const eventId = await createEvent({
+        title: parsedEvent.title,
+        description: parsedEvent.description,
+        startTime: parsedEvent.startTime,
+        endTime: parsedEvent.endTime,
+        location: parsedEvent.location,
+        clientId: parsedEvent.clientId ? parsedEvent.clientId as Id<'clients'> : undefined,
+        projectId: parsedEvent.projectId ? parsedEvent.projectId as Id<'projects'> : undefined,
+        attendees: parsedEvent.attendees?.map(id => ({ name: id })),
+        reminders: parsedEvent.reminders?.map(r => ({ method: r.method as 'email' | 'popup', minutes: r.minutes })),
+        recurrence: parsedEvent.recurrence,
+        conferenceData: parsedEvent.videoLink ? { videoLink: parsedEvent.videoLink } : undefined,
+      });
+      onTaskCreated(String(eventId));
+
+      if (addToCalendar && parsedEvent.startTime) {
+        try {
+          await fetch('/api/google/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: parsedEvent.title,
+              description: parsedEvent.description,
+              startTime: parsedEvent.startTime,
+              endTime: parsedEvent.endTime,
+              allDay: false,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to push event to Google Calendar:', err);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to create event:', err);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleManualCreate = () => {
+    setManualMode(true);
+    if (mode === 'task') {
+      setParsedTask({ title: '', priority: 'medium', assignedTo: [] });
+    } else {
+      setParsedEvent({
+        title: '',
+        startTime: new Date().toISOString(),
+        endTime: new Date(Date.now() + 3600000).toISOString(),
+        duration: 60,
+      });
+    }
+  };
+
   const handleEdit = () => {
     setParsedTask(null);
+    setParsedEvent(null);
+    setManualMode(false);
     setMessages(prev => [...prev, { role: 'user', content: 'I want to make some changes.' }]);
   };
 
-  const clientName = parsedTask?.clientId ? clients?.find(c => c._id === parsedTask.clientId)?.name : undefined;
-  const projectName = parsedTask?.projectId ? projects?.find(p => p._id === parsedTask.projectId)?.name : undefined;
+  const activeClientId = parsedTask?.clientId || parsedEvent?.clientId;
+  const activeProjectId = parsedTask?.projectId || parsedEvent?.projectId;
+  const clientName = activeClientId ? clients?.find(c => c._id === activeClientId)?.name : undefined;
+  const projectName = activeProjectId ? projects?.find(p => p._id === activeProjectId)?.name : undefined;
   const assigneeNames = parsedTask?.assignedTo.map(id => {
     const u = allUsers?.find(u => u._id === id);
     return u?.name || u?.email || 'You';
@@ -188,7 +264,7 @@ export default function TaskCreationFlow({
         <button onClick={onClose} className="text-sm text-[var(--m-text-tertiary)]">
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <span className="text-[15px] font-bold text-[var(--m-text-primary)]">New Task</span>
+        <span className="text-[15px] font-bold text-[var(--m-text-primary)]">{mode === 'meeting' ? 'New Meeting' : 'New Task'}</span>
         <div className="w-5" />
       </div>
 
@@ -232,7 +308,7 @@ export default function TaskCreationFlow({
       </div>
 
       {/* Google Calendar toggle */}
-      {parsedTask && isGoogleConnected && parsedTask.dueDate && (
+      {(parsedTask || parsedEvent) && isGoogleConnected && (parsedTask?.dueDate || parsedEvent?.startTime) && (
         <div className="px-4 pb-2">
           <button
             onClick={() => setAddToCalendar(!addToCalendar)}
@@ -248,21 +324,28 @@ export default function TaskCreationFlow({
       )}
 
       {/* Confirmation card */}
-      {parsedTask && (
-        <TaskConfirmationCard
-          task={parsedTask}
+      {(parsedTask || parsedEvent) && (
+        <EditableConfirmationCard
+          mode={mode}
+          task={parsedTask || undefined}
+          event={parsedEvent || undefined}
           clientName={clientName}
           projectName={projectName}
           assigneeNames={assigneeNames}
-          onConfirm={handleConfirm}
+          onConfirm={mode === 'task' ? handleConfirm : handleConfirmEvent}
           onEdit={handleEdit}
           isCreating={isCreating}
+          onTaskChange={setParsedTask}
+          onEventChange={setParsedEvent}
         />
       )}
 
       {/* Input area */}
-      {!parsedTask && (
+      {!parsedTask && !parsedEvent && (
         <div className="px-4 pb-4 pt-2">
+          <div className="mb-3">
+            <CreationModeToggle mode={mode} onModeChange={setMode} />
+          </div>
           <div className={`flex items-end gap-2 bg-white border rounded-xl px-3 py-2 ${
             input ? 'border-[var(--m-accent)]' : 'border-[var(--m-border)]'
           }`}>
@@ -271,7 +354,10 @@ export default function TaskCreationFlow({
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder={initialClientName ? `Describe your task for ${initialClientName}...` : 'Describe your task...'}
+              placeholder={mode === 'meeting'
+                ? (initialClientName ? `Describe your meeting for ${initialClientName}...` : 'Describe your meeting...')
+                : (initialClientName ? `Describe your task for ${initialClientName}...` : 'Describe your task...')
+              }
               rows={1}
               className="flex-1 text-[16px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] resize-none bg-transparent outline-none max-h-[120px]"
               style={{ fieldSizing: 'content' } as any}
@@ -286,6 +372,12 @@ export default function TaskCreationFlow({
               <ArrowUp className="w-4 h-4" />
             </button>
           </div>
+          <button
+            onClick={handleManualCreate}
+            className="w-full mt-2 text-[12px] text-[var(--m-text-tertiary)] text-center py-1"
+          >
+            Skip AI, create manually
+          </button>
         </div>
       )}
     </div>
