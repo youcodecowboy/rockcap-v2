@@ -385,6 +385,29 @@ export const getAll = query({
   },
 });
 
+// Query: Get notes for a project — lightweight metadata for document library folder view
+export const getByProjectForFolder = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const notes = await ctx.db
+      .query("notes")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+
+    // Return lightweight metadata — no content field
+    return notes.map(note => ({
+      _id: note._id,
+      title: note.title,
+      emoji: note.emoji,
+      updatedAt: note.updatedAt,
+      createdAt: note.createdAt,
+      wordCount: note.wordCount,
+      isDraft: note.isDraft,
+      tags: note.tags,
+    }));
+  },
+});
+
 // Mutation: Apply template to create note from knowledge bank entries
 export const applyTemplate = mutation({
   args: {
