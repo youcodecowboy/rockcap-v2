@@ -13,6 +13,7 @@ import {
   FileText,
   ContactRound,
   Mail,
+  Settings,
 } from 'lucide-react';
 
 interface MobileNavDrawerProps {
@@ -29,6 +30,7 @@ const navItems = [
   { href: '/m-tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/m-notes', label: 'Notes', icon: FileText },
   { href: '/m-contacts', label: 'Contacts', icon: ContactRound },
+  { href: '/m-settings', label: 'Settings', icon: Settings },
 ];
 
 export default function MobileNavDrawer({ isOpen, onClose }: MobileNavDrawerProps) {
