@@ -15,7 +15,11 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'model-testing-app', 'node_modules'),
 ];
 
-// Ensure we don't duplicate React
-config.resolver.disableHierarchicalLookup = true;
+// Ensure React/React Native aren't duplicated when resolving from sibling
+config.resolver.extraNodeModules = {
+  react: path.resolve(projectRoot, 'node_modules/react'),
+  'react-native': path.resolve(projectRoot, 'node_modules/react-native'),
+  'react-dom': path.resolve(projectRoot, 'node_modules/react-dom'),
+};
 
 module.exports = config;
