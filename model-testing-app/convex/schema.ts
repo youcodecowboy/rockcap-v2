@@ -3366,5 +3366,28 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversationId", "createdAt"])
     .index("by_sender", ["senderId"]),
+
+  // Google Calendar OAuth tokens — per-user
+  googleCalendarTokens: defineTable({
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    scope: v.string(),
+    connectedAt: v.string(),
+    connectedEmail: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // Google Calendar webhook channels — per-user
+  googleCalendarChannels: defineTable({
+    userId: v.id("users"),
+    channelId: v.string(),
+    resourceId: v.string(),
+    expiration: v.string(),
+    syncToken: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_channel", ["channelId"]),
 });
 
