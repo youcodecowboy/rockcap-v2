@@ -14,7 +14,8 @@ import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table
 import Mention from '@tiptap/extension-mention';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { ChevronLeft, Loader2 } from 'lucide-react';
+import { ChevronLeft, Loader2, FolderOpen } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import EditorToolbar from './EditorToolbar';
 import MetadataChips from './MetadataChips';
 import { getMentionSuggestion } from '@/components/mentionSuggestion';
@@ -59,6 +60,8 @@ interface NoteEditorProps {
 }
 
 export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
+  const router = useRouter();
+
   // --- data ---
   const note = useQuery(api.notes.get, { id: noteId as Id<'notes'> });
   const updateNote = useMutation(api.notes.update);
@@ -298,8 +301,38 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
           <ChevronLeft className="w-3.5 h-3.5 text-[var(--m-accent-indicator)]" />
           <span className="text-[12px] text-[var(--m-accent-indicator)]">Notes</span>
         </button>
-        {/* Save status */}
-        <div className="flex items-center gap-1.5 text-[11px]">
+        {/* Doc library link — only when note is filed to a client/project */}
+        {(note?.clientId || note?.projectId) && (
+          <button
+            onClick={() => router.push('/m-docs')}
+            className="flex items-center gap-1 active:opacity-70"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-[var(--m-accent-indicator)]" />
+            <span className="text-[12px] text-[var(--m-accent-indicator)]">Docs</span>
+          </button>
+        )}
+      </div>
+
+      {/* MetadataChips — client/project/tag pickers */}
+      <MetadataChips noteId={noteId} note={note} onSave={() => handleSave(editor?.getJSON())} />
+
+      {/* Title input with emoji picker + save status */}
+      <div className="flex items-center px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)] flex-shrink-0 relative">
+        <button
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          className="text-[22px] mr-2 flex-shrink-0 active:opacity-70"
+        >
+          {note?.emoji || '📄'}
+        </button>
+        <input
+          value={title}
+          onChange={e => { setTitle(e.target.value); setSaveStatus('unsaved'); scheduleSave(); }}
+          placeholder="Untitled"
+          style={{ fontSize: '18px' }}
+          className="flex-1 text-[18px] font-semibold text-[var(--m-text-primary)] outline-none bg-transparent"
+        />
+        {/* Save status — inline with title */}
+        <div className="flex items-center gap-1 text-[11px] flex-shrink-0 ml-2">
           {saveStatus === 'saving' && (
             <>
               <Loader2 className="w-3 h-3 animate-spin text-[var(--m-text-tertiary)]" />
@@ -324,30 +357,10 @@ export default function NoteEditor({ noteId, onBack }: NoteEditorProps) {
               className="flex items-center gap-1 text-[var(--m-error)]"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--m-error)]" />
-              Save failed — tap to retry
+              Retry
             </button>
           )}
         </div>
-      </div>
-
-      {/* MetadataChips — client/project/tag pickers */}
-      <MetadataChips noteId={noteId} note={note} onSave={() => handleSave(editor?.getJSON())} />
-
-      {/* Title input with emoji picker */}
-      <div className="flex items-center px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)] flex-shrink-0 relative">
-        <button
-          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          className="text-[22px] mr-2 flex-shrink-0 active:opacity-70"
-        >
-          {note?.emoji || '📄'}
-        </button>
-        <input
-          value={title}
-          onChange={e => { setTitle(e.target.value); setSaveStatus('unsaved'); scheduleSave(); }}
-          placeholder="Untitled"
-          style={{ fontSize: '18px' }}
-          className="flex-1 text-[18px] font-semibold text-[var(--m-text-primary)] outline-none bg-transparent"
-        />
         {showEmojiPicker && (
           <>
             <div className="fixed inset-0 z-[60]" onClick={() => setShowEmojiPicker(false)} />
