@@ -1,6 +1,6 @@
 'use client';
 
-import { Circle, ArrowRight, Pause, CheckCircle, AlertTriangle, CalendarClock } from 'lucide-react';
+import { Circle, ArrowRight, CheckCircle, AlertTriangle, CalendarClock, CalendarDays } from 'lucide-react';
 
 interface TaskMetrics {
   total: number;
@@ -10,6 +10,7 @@ interface TaskMetrics {
   paused: number;
   dueToday: number;
   overdue: number;
+  meetingsToday: number;
 }
 
 interface TaskSummaryPillsProps {
@@ -26,7 +27,7 @@ const cards: {
 }[] = [
   { key: 'todo', label: 'To Do', icon: Circle, accent: 'border-l-blue-400', iconColor: 'text-blue-500', numColor: 'text-blue-700' },
   { key: 'inProgress', label: 'In Progress', icon: ArrowRight, accent: 'border-l-blue-600', iconColor: 'text-blue-600', numColor: 'text-blue-700' },
-  { key: 'paused', label: 'Paused', icon: Pause, accent: 'border-l-amber-400', iconColor: 'text-amber-500', numColor: 'text-amber-700' },
+  { key: 'meetingsToday', label: 'Meetings', icon: CalendarDays, accent: 'border-l-indigo-400', iconColor: 'text-indigo-500', numColor: 'text-indigo-700' },
   { key: 'completed', label: 'Completed', icon: CheckCircle, accent: 'border-l-green-500', iconColor: 'text-green-500', numColor: 'text-green-700' },
   { key: 'overdue', label: 'Overdue', icon: AlertTriangle, accent: 'border-l-red-500', iconColor: 'text-red-500', numColor: 'text-red-700' },
   { key: 'dueToday', label: 'Due Today', icon: CalendarClock, accent: 'border-l-amber-500', iconColor: 'text-amber-600', numColor: 'text-amber-700' },
