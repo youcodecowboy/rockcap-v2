@@ -10,7 +10,9 @@ import TaskDayStrip, { getWeekRange } from '@/components/tasks/TaskDayStrip';
 import TaskListItem from '@/components/tasks/TaskListItem';
 import TaskDetailSheet from '@/components/tasks/TaskDetailSheet';
 import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
-import { groupTasksByDate } from '@/components/tasks/groupTasksByDate';
+import EventListItem from '@/components/tasks/EventListItem';
+import EventDetailSheet from '@/components/tasks/EventDetailSheet';
+import { groupByDate } from '@/components/tasks/groupTasksByDate';
 
 type StatusFilter = 'active' | 'completed' | 'all';
 
@@ -20,8 +22,10 @@ export default function TasksContent() {
   const [showCreation, setShowCreation] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
+  const [selectedEventId, setSelectedEventId] = useState<Id<'events'> | null>(null);
 
   const tasks = useQuery(api.tasks.getByUser, { includeCreated: true, includeAssigned: true });
+  const events = useQuery(api.events.getByUser, {});
   const metrics = useQuery(api.tasks.getMetrics, {});
   const clients = useQuery(api.clients.list, {});
   const completeTask = useMutation(api.tasks.complete);
@@ -75,6 +79,64 @@ export default function TasksContent() {
     });
   }, [enhancedTasks, selectedDate, statusFilter]);
 
+  type ScheduleItem =
+    | { kind: 'task'; _id: string; date: string | undefined; data: any }
+    | { kind: 'event'; _id: string; date: string | undefined; data: any };
+
+  const unifiedItems = useMemo(() => {
+    const items: ScheduleItem[] = [];
+
+    for (const t of displayTasks) {
+      items.push({ kind: 'task', _id: t._id, date: t.dueDate, data: t });
+    }
+
+    if (events) {
+      for (const e of events) {
+        if (e.status === 'cancelled') continue;
+        // When filtering by date, only include events on that date
+        if (selectedDate) {
+          const eventDate = e.startTime?.split('T')[0];
+          if (eventDate !== selectedDate) continue;
+        }
+        items.push({ kind: 'event', _id: e._id, date: e.startTime, data: e });
+      }
+    }
+
+    items.sort((a, b) => {
+      if (!a.date && !b.date) return 0;
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (diff !== 0) return diff;
+      return a.kind === 'event' ? -1 : 1;
+    });
+
+    return items;
+  }, [displayTasks, events, selectedDate]);
+
+  const combinedDateCounts = useMemo(() => {
+    const counts: Record<string, number> = { ...(dateCounts || {}) };
+    if (events) {
+      for (const e of events) {
+        if (e.status === 'cancelled') continue;
+        const dateKey = e.startTime?.split('T')[0];
+        if (dateKey) {
+          counts[dateKey] = (counts[dateKey] || 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }, [dateCounts, events]);
+
+  const combinedMetrics = useMemo(() => {
+    if (!metrics) return undefined;
+    const today = new Date().toISOString().split('T')[0];
+    const meetingsToday = events?.filter(e =>
+      e.status !== 'cancelled' && e.startTime?.startsWith(today)
+    ).length ?? 0;
+    return { ...metrics, meetingsToday };
+  }, [metrics, events]);
+
   const filterCounts = useMemo(() => {
     const active = enhancedTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length;
     const completed = enhancedTasks.filter(t => t.status === 'completed').length;
@@ -85,11 +147,11 @@ export default function TasksContent() {
     ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
     : 'All Tasks';
 
-  // Group tasks by date for sectioned display (only when not filtering by a specific date)
-  const groupedTasks = useMemo(() => {
+  // Group unified items by date for sectioned display (only when not filtering by a specific date)
+  const groupedItems = useMemo(() => {
     if (selectedDate) return null; // flat list when filtering by day
-    return groupTasksByDate(displayTasks);
-  }, [displayTasks, selectedDate]);
+    return groupByDate(unifiedItems, item => item.date);
+  }, [unifiedItems, selectedDate]);
 
   const handleToggleComplete = async (taskId: Id<'tasks'>) => {
     await completeTask({ id: taskId });
@@ -107,9 +169,9 @@ export default function TasksContent() {
   return (
     <div className="flex flex-col min-h-[calc(100vh-var(--m-header-h)-var(--m-footer-h))]">
       <div className="px-[var(--m-page-px)] pt-3 space-y-3">
-        <TaskSummaryPills metrics={metrics} />
+        <TaskSummaryPills metrics={combinedMetrics} />
         <TaskDayStrip
-          dateCounts={dateCounts}
+          dateCounts={combinedDateCounts}
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
           weekOffset={weekOffset}
@@ -144,10 +206,10 @@ export default function TasksContent() {
       <div className="border-t border-[var(--m-border)] mx-[var(--m-page-px)]" />
 
       <div className="flex-1 px-[var(--m-page-px)] pb-20">
-        {displayTasks.length === 0 ? (
+        {unifiedItems.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-sm text-[var(--m-text-tertiary)]">
-              {selectedDate ? 'No tasks due on this day' : 'No tasks yet'}
+              {selectedDate ? 'No tasks or events on this day' : 'No tasks yet'}
             </p>
             <button
               onClick={() => setShowCreation(true)}
@@ -156,23 +218,31 @@ export default function TasksContent() {
               Create a task
             </button>
           </div>
-        ) : groupedTasks ? (
+        ) : groupedItems ? (
           /* Date-grouped sections */
-          groupedTasks.map(group => (
+          groupedItems.map(group => (
             <div key={group.label} className="mt-3">
               <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${group.color}`}>
                 {group.label}
                 <span className="text-[var(--m-text-tertiary)] font-normal ml-1.5">({group.tasks.length})</span>
               </div>
               <div className="space-y-1.5">
-                {group.tasks.map(task => (
-                  <TaskListItem
-                    key={task._id}
-                    task={task}
-                    onTap={() => setSelectedTaskId(task._id)}
-                    onToggleComplete={() => handleToggleComplete(task._id)}
-                  />
-                ))}
+                {group.tasks.map(item =>
+                  item.kind === 'task' ? (
+                    <TaskListItem
+                      key={item.data._id}
+                      task={item.data}
+                      onTap={() => setSelectedTaskId(item.data._id)}
+                      onToggleComplete={() => handleToggleComplete(item.data._id)}
+                    />
+                  ) : (
+                    <EventListItem
+                      key={item.data._id}
+                      event={item.data}
+                      onTap={() => setSelectedEventId(item.data._id)}
+                    />
+                  )
+                )}
               </div>
             </div>
           ))
@@ -183,14 +253,22 @@ export default function TasksContent() {
               {sectionLabel}
             </div>
             <div className="space-y-1.5">
-              {displayTasks.map(task => (
-                <TaskListItem
-                  key={task._id}
-                  task={task}
-                  onTap={() => setSelectedTaskId(task._id)}
-                  onToggleComplete={() => handleToggleComplete(task._id)}
-                />
-              ))}
+              {unifiedItems.map(item =>
+                item.kind === 'task' ? (
+                  <TaskListItem
+                    key={item.data._id}
+                    task={item.data}
+                    onTap={() => setSelectedTaskId(item.data._id)}
+                    onToggleComplete={() => handleToggleComplete(item.data._id)}
+                  />
+                ) : (
+                  <EventListItem
+                    key={item.data._id}
+                    event={item.data}
+                    onTap={() => setSelectedEventId(item.data._id)}
+                  />
+                )
+              )}
             </div>
           </div>
         )}
@@ -210,6 +288,16 @@ export default function TasksContent() {
         isOpen={!!selectedTaskId}
         onClose={() => setSelectedTaskId(null)}
         variant="sheet"
+      />
+
+      <EventDetailSheet
+        event={events?.find(e => e._id === selectedEventId) || null}
+        isOpen={!!selectedEventId}
+        onClose={() => setSelectedEventId(null)}
+        onCreateTaskFromEvent={() => {
+          setSelectedEventId(null);
+          setShowCreation(true);
+        }}
       />
     </div>
   );
