@@ -70,6 +70,8 @@ import { api } from "../../model-testing-app/convex/_generated/api";
 
 No duplication, no API wrapper. Same queries, same mutations, same real-time subscriptions.
 
+**Note:** Expo uses Metro bundler, which by default only resolves modules within the project root. To import from the sibling `model-testing-app/convex/` directory, the mobile app's `metro.config.js` must be configured with `watchFolders` pointing to the parent directory and `nodeModulesPaths` to resolve dependencies correctly. This is a standard pattern for Expo monorepo setups.
+
 ### Future Additions (Not Phase 1)
 
 When the chat agent overhaul happens, the repo will gain:
@@ -124,10 +126,10 @@ Matches the existing `StickyFooter.tsx` layout:
 
 | Tab | Icon | Screen | Stack Depth |
 |-----|------|--------|-------------|
-| Home | `Home` | Dashboard | 1 (no sub-navigation) |
-| Clients | `Users` | Client list → Client detail | 2-3 levels deep |
-| Docs | `FileText` | Document library → Folder → Document viewer | 3-4 levels deep |
-| Inbox | `Inbox` | Notifications + Flags → Flag thread | 2 levels deep |
+| Home | `LayoutDashboard` | Dashboard | 1 (no sub-navigation) |
+| Clients | `Building` | Client list → Client detail | 2-3 levels deep |
+| Docs | `File` | Document library → Folder → Document viewer | 3-4 levels deep |
+| Inbox | `Mail` | Notifications + Flags → Flag thread | 2 levels deep |
 
 ### Additional Stack Screens (Pushed Over Tabs)
 
@@ -166,12 +168,14 @@ This is the core UX for field use — open an appraisal, a set of plans, and an 
 - Recent flags/messages
 
 **Convex Queries:**
-- `tasks.getByDateRange` — today's tasks
+- `tasks.getByUser` — all active tasks (filtered client-side for today/overdue)
 - `events.getNextEvent` — upcoming calendar event
-- `notifications.getRecent` — recent notifications
-- `flags.getMyFlags` — open flags
-- `dailyBriefs` — today's brief
-- `reminders.getUpcoming` — upcoming reminders
+- `notifications.getRecent` — recent notifications (`{ limit: 3, includeRead: false }`)
+- `notifications.getUnreadCount` — badge count
+- `flags.getMyFlags` — open flags (`{ status: 'open' }`)
+- `conversations.getUnreadCount` — unread message count
+- `dailyBriefs.getToday` — today's brief
+- `reminders.getUpcoming` — next upcoming reminder (`{ limit: 1 }`)
 
 **Design Notes:**
 - Scrollable single-column layout
@@ -337,8 +341,8 @@ This is the core UX for field use — open an appraisal, a set of plans, and an 
 - Schedule timeline for the day
 
 **Convex Queries:**
-- `dailyBriefs` — today's brief data
-- `tasks.getByDateRange`, `events.getByDateRange` — schedule data
+- `dailyBriefs.getToday` — today's brief data
+- `tasks.getByUser`, `events.getByDateRange` — schedule data
 
 ---
 
@@ -434,9 +438,10 @@ Add "Captured Photos" as a default folder in the project folder template structu
 
 ### Photo Metadata
 
-Each captured photo is stored as a standard `documents` record with additional metadata:
+Each captured photo is stored as a standard `documents` record using the existing "Photographs" category (which already exists in `fileTypeDefinitions` as "Site Photographs"):
 
-- `category`: "Photographs"
+- `category`: "Photographs" (existing category)
+- `fileType`: "Site Photographs" (existing file type definition)
 - `scope`: "client-specific"
 - `source`: "mobile-capture" (new field or stored in metadata)
 - GPS coordinates (if user grants location permission): stored in document metadata
