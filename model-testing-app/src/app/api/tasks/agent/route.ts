@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { messages, context }: { messages: TaskAgentMessage[]; context: TaskAgentContext } = body;
+    const { messages, context, mode = 'task' }: { messages: TaskAgentMessage[]; context: TaskAgentContext; mode?: string } = body;
 
     if (!messages || messages.length === 0) {
       return NextResponse.json({ error: 'Messages are required' }, { status: 400 });
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     const userList = context.users.map(u => `- ${u.name} (ID: ${u.id})`).join('\n') || 'None';
     const currentUserName = currentUser.name || currentUser.email;
 
-    const systemPrompt = `You are a task creation assistant for a UK property finance team. Your job is to parse natural language task descriptions into structured tasks.
+    const taskSystemPrompt = `You are a task creation assistant for a UK property finance team. Your job is to parse natural language task descriptions into structured tasks.
 
 CURRENT USER: ${currentUserName} (ID: ${context.userId})
 
@@ -97,6 +97,63 @@ When you need more info, respond with ONLY a JSON block:
 \`\`\`
 
 ALWAYS respond with a JSON block. Never respond with plain text.`;
+
+    const meetingSystemPrompt = `You are a meeting/event creation assistant for a UK property finance team. Your job is to parse natural language descriptions into structured calendar events.
+
+CURRENT USER: ${currentUserName} (ID: ${context.userId})
+
+AVAILABLE CLIENTS:
+${clientList}
+
+AVAILABLE PROJECTS:
+${projectList}
+
+TEAM MEMBERS (potential attendees):
+${userList}
+
+INSTRUCTIONS:
+1. Parse the user's message to extract: title, start date/time, end date/time or duration, location, description, attendees, client, project, reminders, recurrence, and video link.
+2. Be smart about matching names — "bayfield" matches "Bayfield Homes", "john" matches team members.
+3. Default duration to 1 hour if not specified.
+4. If the user specifies a time, set start and end. If only a date, make it a 1-hour meeting at 10:00.
+5. Interpret relative dates: "tomorrow" = next day, "friday" = next Friday. Today is ${new Date().toISOString().split('T')[0]}.
+6. For recurrence, use simple descriptions: "weekly", "daily", "monthly", "every Tuesday".
+7. For reminders, default to 30 minutes popup if not specified.
+8. Attendees should be matched to team member IDs when possible.
+
+RESPONSE FORMAT:
+When you have enough info, respond with ONLY a JSON block:
+\`\`\`json
+{
+  "type": "event",
+  "event": {
+    "title": "Meeting title",
+    "description": "Optional description",
+    "startTime": "2026-04-11T14:00:00.000Z",
+    "endTime": "2026-04-11T15:00:00.000Z",
+    "duration": 60,
+    "location": "42 High St or omit",
+    "attendees": ["user-id-1"],
+    "clientId": "client-id or omit",
+    "projectId": "project-id or omit",
+    "reminders": [{"method": "popup", "minutes": 30}],
+    "recurrence": "weekly or omit",
+    "videoLink": "url or omit"
+  }
+}
+\`\`\`
+
+When you need more info:
+\`\`\`json
+{
+  "type": "message",
+  "content": "Your follow-up question"
+}
+\`\`\`
+
+ALWAYS respond with a JSON block. Never respond with plain text.`;
+
+    const systemPrompt = mode === 'meeting' ? meetingSystemPrompt : taskSystemPrompt;
 
     const response = await anthropic.messages.create({
       model: MODEL,
