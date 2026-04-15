@@ -9,11 +9,32 @@ import { ArrowLeft, Save } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
+function extractPlainText(content: any): string {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  const texts: string[] = [];
+  function walk(node: any) {
+    if (node.text) texts.push(node.text);
+    if (node.content) node.content.forEach(walk);
+    if (node.children) node.children.forEach(walk);
+  }
+  walk(content);
+  return texts.join(' ');
+}
+
+function wrapInTiptapJson(text: string): string {
+  return JSON.stringify({
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  });
+}
+
 export default function NoteEditorScreen() {
   const { noteId } = useLocalSearchParams<{ noteId?: string }>();
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
-  const [content, setContent] = useState('');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
 
   const existingNote = useQuery(
@@ -25,19 +46,23 @@ export default function NoteEditorScreen() {
   const updateNote = useMutation(api.notes.update);
 
   useEffect(() => {
-    if (existingNote && typeof existingNote.content === 'string') {
-      setContent(existingNote.content);
+    if (existingNote) {
+      setTitle(existingNote.title || '');
+      setBody(extractPlainText(existingNote.content));
     }
   }, [existingNote]);
 
   const handleSave = async () => {
-    if (!content.trim()) return;
+    if (!title.trim() && !body.trim()) return;
     setSaving(true);
     try {
+      const noteTitle = title.trim() || 'Untitled';
+      const content = body.trim() ? wrapInTiptapJson(body.trim()) : wrapInTiptapJson('');
+
       if (noteId) {
-        await updateNote({ id: noteId as any, content: content.trim() } as any);
+        await updateNote({ id: noteId as any, title: noteTitle, content } as any);
       } else {
-        await createNote({ content: content.trim() } as any);
+        await createNote({ title: noteTitle, content } as any);
       }
       router.back();
     } catch (error) {
@@ -46,6 +71,8 @@ export default function NoteEditorScreen() {
       setSaving(false);
     }
   };
+
+  const canSave = title.trim() || body.trim();
 
   if (noteId && !existingNote) return <LoadingSpinner message="Loading note..." />;
 
@@ -62,9 +89,9 @@ export default function NoteEditorScreen() {
         </View>
         <TouchableOpacity
           onPress={handleSave}
-          disabled={saving || !content.trim()}
+          disabled={saving || !canSave}
           className="flex-row items-center gap-1.5 bg-white/10 rounded-full px-4 py-2"
-          style={{ opacity: saving || !content.trim() ? 0.4 : 1 }}
+          style={{ opacity: saving || !canSave ? 0.4 : 1 }}
         >
           <Save size={14} color={colors.textOnBrand} />
           <Text className="text-m-text-on-brand text-sm font-medium">
@@ -74,13 +101,23 @@ export default function NoteEditorScreen() {
       </View>
 
       <TextInput
-        value={content}
-        onChangeText={setContent}
+        value={title}
+        onChangeText={setTitle}
+        placeholder="Note title"
+        autoFocus={!noteId}
+        className="px-4 pt-4 pb-2 text-lg text-m-text-primary font-semibold"
+        placeholderTextColor={colors.textPlaceholder}
+      />
+
+      <View className="mx-4 h-px bg-m-border" />
+
+      <TextInput
+        value={body}
+        onChangeText={setBody}
         placeholder="Start writing..."
         multiline
         textAlignVertical="top"
-        autoFocus={!noteId}
-        className="flex-1 px-4 pt-4 text-base text-m-text-primary leading-6"
+        className="flex-1 px-4 pt-3 text-base text-m-text-primary leading-6"
         placeholderTextColor={colors.textPlaceholder}
       />
     </KeyboardAvoidingView>

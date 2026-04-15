@@ -1,4 +1,5 @@
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
+import { useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
@@ -8,10 +9,44 @@ import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 
+function extractPlainText(content: any): string {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  const texts: string[] = [];
+  function walk(node: any) {
+    if (node.text) texts.push(node.text);
+    if (node.content) node.content.forEach(walk);
+    if (node.children) node.children.forEach(walk);
+  }
+  walk(content);
+  return texts.join(' ');
+}
+
+const TAG_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
+function getTagColor(tag: string): string {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
 export default function NotesScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const notes = useQuery(api.notes.getAll, isAuthenticated ? {} : 'skip');
+  const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
+  const projects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
+
+  const clientMap = useMemo(() => {
+    const m = new Map<string, string>();
+    clients?.forEach((c: any) => m.set(c._id, c.name));
+    return m;
+  }, [clients]);
+
+  const projectMap = useMemo(() => {
+    const m = new Map<string, string>();
+    projects?.forEach((p: any) => m.set(p._id, p.name));
+    return m;
+  }, [projects]);
 
   return (
     <View className="flex-1 bg-m-bg">
@@ -38,18 +73,71 @@ export default function NotesScreen() {
         <FlatList
           data={notes}
           keyExtractor={(item) => item._id}
-          renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => router.push({ pathname: '/notes/editor', params: { noteId: item._id } })}>
-              <Card>
-                <Text className="text-sm text-m-text-primary font-medium" numberOfLines={1}>
-                  {typeof item.content === 'string' ? item.content.slice(0, 60) : 'Untitled note'}
-                </Text>
-                <Text className="text-xs text-m-text-tertiary mt-1">
-                  {new Date(item._creationTime).toLocaleDateString('en-GB')}
-                </Text>
-              </Card>
-            </TouchableOpacity>
-          )}
+          renderItem={({ item }) => {
+            const preview = extractPlainText(item.content);
+            const truncatedPreview = preview.length > 80 ? preview.slice(0, 80) + '...' : preview;
+            const displayDate = item.updatedAt ?? item.createdAt ?? item._creationTime;
+            const clientName = item.clientId ? clientMap.get(item.clientId) : null;
+            const projectName = item.projectId ? projectMap.get(item.projectId) : null;
+
+            return (
+              <TouchableOpacity onPress={() => router.push({ pathname: '/notes/editor', params: { noteId: item._id } })}>
+                <Card>
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm text-m-text-primary font-medium flex-1" numberOfLines={1}>
+                      {item.emoji ? `${item.emoji} ` : ''}{item.title || 'Untitled'}
+                    </Text>
+                    <View className="flex-row items-center gap-1.5 ml-2">
+                      {item.isDraft && (
+                        <View className="bg-amber-100 rounded px-1.5 py-0.5">
+                          <Text className="text-[10px] text-amber-700 font-medium">Draft</Text>
+                        </View>
+                      )}
+                      {item.wordCount != null && (
+                        <Text className="text-[10px] text-m-text-tertiary">{item.wordCount}w</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {truncatedPreview ? (
+                    <Text className="text-xs text-m-text-secondary mt-1" numberOfLines={2}>
+                      {truncatedPreview}
+                    </Text>
+                  ) : null}
+
+                  {item.tags && item.tags.length > 0 && (
+                    <View className="flex-row flex-wrap gap-1 mt-1.5">
+                      {item.tags.map((tag: string) => (
+                        <View
+                          key={tag}
+                          className="rounded-full px-2 py-0.5"
+                          style={{ backgroundColor: getTagColor(tag) + '20' }}
+                        >
+                          <Text style={{ color: getTagColor(tag), fontSize: 10, fontWeight: '500' }}>{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  <View className="flex-row items-center mt-1.5 gap-2">
+                    <Text className="text-[10px] text-m-text-tertiary">
+                      {new Date(displayDate).toLocaleDateString('en-GB')}
+                    </Text>
+                    {clientName && (
+                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                        Client: {clientName}
+                      </Text>
+                    )}
+                    {projectName && (
+                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                        Project: {projectName}
+                      </Text>
+                    )}
+                  </View>
+                </Card>
+              </TouchableOpacity>
+            );
+          }}
           contentContainerStyle={{ padding: 16, gap: 8 }}
         />
       )}
