@@ -18,16 +18,20 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-function formatRelativeTime(date: Date): string {
+function formatRelativeTime(date: Date | number | string | undefined | null): string {
+  if (!date) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
+  const diffMs = now.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   if (diffMins < 1) return 'just now';
   if (diffMins < 60) return `${diffMins}m`;
   const diffHrs = Math.floor(diffMins / 60);
   if (diffHrs < 24) return `${diffHrs}h`;
   const diffDays = Math.floor(diffHrs / 24);
-  return `${diffDays}d`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 export default function DashboardScreen() {
@@ -219,7 +223,7 @@ export default function DashboardScreen() {
                       {n.message || n.type}
                     </Text>
                     <Text className="text-[10px] text-m-text-tertiary mt-0.5">
-                      {formatRelativeTime(new Date(n._creationTime))}
+                      {formatRelativeTime(n._creationTime)}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -229,7 +233,7 @@ export default function DashboardScreen() {
         ) : null}
 
         {/* Messages & Flags */}
-        {((recentConversations && recentConversations.length > 0) || (recentFlags && recentFlags.length > 0)) ? (
+        {((recentConversations?.length ?? 0) > 0 || (recentFlags?.length ?? 0) > 0) ? (
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide">
@@ -241,30 +245,40 @@ export default function DashboardScreen() {
             </View>
             <View className="gap-3">
               {recentConversations?.map((conv, i) => (
-                <View key={`conv-${conv._id ?? i}`} className="flex-row items-start gap-2">
+                <TouchableOpacity key={`conv-${conv._id ?? i}`} onPress={() => router.push('/inbox')} className="flex-row items-start gap-2">
                   <MessageCircle size={14} color={colors.textTertiary} />
                   <View className="flex-1">
                     <Text className="text-sm text-m-text-primary" numberOfLines={1}>
                       {conv.title || 'Conversation'}
                     </Text>
+                    {(conv as any).participants?.length > 0 && (
+                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                        {(conv as any).participants.map((p: any) => p.name).join(', ')}
+                      </Text>
+                    )}
                     <Text className="text-[10px] text-m-text-tertiary mt-0.5">
-                      {formatRelativeTime(new Date(conv.lastMessageAt || conv._creationTime))}
+                      {formatRelativeTime(conv.lastMessageAt || conv._creationTime)}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
               {recentFlags?.map((flag, i) => (
-                <View key={`flag-${flag._id ?? i}`} className="flex-row items-start gap-2">
+                <TouchableOpacity key={`flag-${flag._id ?? i}`} onPress={() => router.push('/inbox')} className="flex-row items-start gap-2">
                   <Flag size={14} color={colors.warning} />
                   <View className="flex-1">
                     <Text className="text-sm text-m-text-primary" numberOfLines={1}>
-                      {flag.title}
+                      {(flag as any).data?.title || (flag as any).entityName || 'Flag'}
                     </Text>
+                    {((flag as any).entityName || (flag as any).entityContext) && (
+                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                        {[(flag as any).entityName, (flag as any).entityContext].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
                     <Text className="text-[10px] text-m-text-tertiary mt-0.5">
-                      {formatRelativeTime(new Date(flag._creationTime))}
+                      {formatRelativeTime((flag as any).createdAt || (flag as any)._creationTime)}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </Card>
@@ -293,7 +307,7 @@ export default function DashboardScreen() {
           <View className="gap-3">
             {recentsTab === 'projects' &&
               recentProjects?.map((p) => (
-                <View key={p._id} className="flex-row items-center gap-2">
+                <TouchableOpacity key={p._id} onPress={() => router.push(`/projects/${p._id}`)} className="flex-row items-center gap-2">
                   <FolderOpen size={16} color={colors.textTertiary} />
                   <View className="flex-1">
                     <Text className="text-sm text-m-text-primary" numberOfLines={1}>
@@ -303,7 +317,8 @@ export default function DashboardScreen() {
                       {p.status || 'active'}
                     </Text>
                   </View>
-                </View>
+                  <ChevronRight size={14} color={colors.textTertiary} />
+                </TouchableOpacity>
               ))}
 
             {recentsTab === 'clients' &&
@@ -328,7 +343,14 @@ export default function DashboardScreen() {
 
             {recentsTab === 'docs' &&
               recentDocs?.map((d) => (
-                <View key={d._id} className="flex-row items-center gap-2">
+                <TouchableOpacity
+                  key={d._id}
+                  onPress={() => router.push({
+                    pathname: '/docs/viewer',
+                    params: { documentId: d._id, title: d.fileName || 'Document', fileType: d.fileType || '' },
+                  })}
+                  className="flex-row items-center gap-2"
+                >
                   <FileText size={16} color={colors.textTertiary} />
                   <View className="flex-1">
                     <Text className="text-sm text-m-text-primary" numberOfLines={1}>
@@ -338,7 +360,7 @@ export default function DashboardScreen() {
                       {d.category || d.fileType || ''}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
 
             {((recentsTab === 'projects' && (!recentProjects || recentProjects.length === 0)) ||

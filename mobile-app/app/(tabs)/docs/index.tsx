@@ -1,4 +1,4 @@
-import { View, TouchableOpacity, Text } from 'react-native';
+import { View, TouchableOpacity, Text, ScrollView } from 'react-native';
 import { useState, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { useQuery, useConvexAuth } from 'convex/react';
@@ -61,6 +61,18 @@ export default function DocsScreen() {
       ? { clientId: nav.clientId }
       : 'skip'
   );
+
+  // Recent clients — first 3 sorted by lastAccessedAt if available
+  const recentClients = useMemo(() => {
+    if (!clients) return [];
+    const sorted = [...clients].sort((a, b) => {
+      const aTime = (a as any).lastAccessedAt ?? a._creationTime ?? 0;
+      const bTime = (b as any).lastAccessedAt ?? b._creationTime ?? 0;
+      return (typeof bTime === 'number' ? bTime : new Date(bTime).getTime()) -
+             (typeof aTime === 'number' ? aTime : new Date(aTime).getTime());
+    });
+    return sorted.slice(0, 3);
+  }, [clients]);
 
   // Build breadcrumbs from current nav state
   const breadcrumbs = useMemo(() => {
@@ -224,6 +236,39 @@ export default function DocsScreen() {
             <ChevronLeft size={16} color={colors.textOnBrand} />
             <Text className="text-sm text-m-text-on-brand ml-1">Back</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {nav.level === 'clients' && recentClients.length > 0 && (
+        <View>
+          <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide px-4 pt-4 pb-2">
+            Recent
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+            className="pb-3"
+          >
+            {recentClients.map((client) => (
+              <TouchableOpacity
+                key={client._id}
+                onPress={() => handleFolderPress(client._id, client.name)}
+                className="bg-m-bg-card border border-m-border rounded-xl p-3 w-[140px]"
+              >
+                <Text className="text-sm font-medium text-m-text-primary" numberOfLines={1}>
+                  {client.name}
+                </Text>
+                <Text className="text-xs text-m-text-tertiary mt-1">
+                  Client
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide px-4 pt-2 pb-2">
+            All Clients
+          </Text>
         </View>
       )}
 
