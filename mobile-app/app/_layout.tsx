@@ -5,6 +5,8 @@ import { ConvexProviderWithClerk } from 'convex/react-clerk';
 import { ConvexReactClient } from 'convex/react';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
+import { OfflineProvider, useOffline } from '@/contexts/OfflineContext';
+import OfflineBanner from '@/components/ui/OfflineBanner';
 
 import '../global.css';
 
@@ -23,6 +25,7 @@ const tokenCache = {
 
 function AuthGate() {
   const { isSignedIn, isLoaded } = useAuth();
+  const { isOnline } = useOffline();
   const segments = useSegments();
   const router = useRouter();
 
@@ -38,7 +41,12 @@ function AuthGate() {
     }
   }, [isSignedIn, isLoaded, segments]);
 
-  return <Slot />;
+  return (
+    <>
+      {!isOnline && <OfflineBanner />}
+      <Slot />
+    </>
+  );
 }
 
 export default function RootLayout() {
@@ -49,8 +57,10 @@ export default function RootLayout() {
     >
       <ClerkLoaded>
         <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-          <StatusBar style="light" />
-          <AuthGate />
+          <OfflineProvider>
+            <StatusBar style="light" />
+            <AuthGate />
+          </OfflineProvider>
         </ConvexProviderWithClerk>
       </ClerkLoaded>
     </ClerkProvider>
