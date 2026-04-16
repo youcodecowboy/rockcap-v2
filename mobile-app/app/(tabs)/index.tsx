@@ -8,7 +8,18 @@ import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import QuickActions from '@/components/QuickActions';
 import MobileHeader from '@/components/MobileHeader';
-import { Flag, MessageCircle, FileText, Building, FolderOpen, ChevronRight } from 'lucide-react-native';
+import {
+  Flag,
+  MessageCircle,
+  FileText,
+  Building,
+  FolderOpen,
+  ChevronRight,
+  Sparkles,
+  ListTodo,
+  AlertCircle,
+  Clock,
+} from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import UpNextCard, { type UpNextItem } from '@/components/UpNextCard';
 
@@ -144,10 +155,32 @@ export default function DashboardScreen() {
   const recentProjects = projects?.slice(0, 3);
   const recentClients = clients?.slice(0, 3);
 
-  // Recent flags (limit 3)
-  const recentFlags = flags?.slice(0, 3);
-  // Recent conversations with unread
-  const recentConversations = conversations?.slice(0, 2);
+  // Merged messages + flags feed, sorted by timestamp desc, capped at 5 most recent.
+  type MessagesFlagsItem =
+    | { kind: 'conversation'; item: any; timestamp: number }
+    | { kind: 'flag'; item: any; timestamp: number };
+  const messagesAndFlags: MessagesFlagsItem[] = [];
+  if (conversations) {
+    for (const c of conversations) {
+      messagesAndFlags.push({
+        kind: 'conversation',
+        item: c,
+        timestamp: (c as any).lastMessageAt || (c as any)._creationTime || 0,
+      });
+    }
+  }
+  if (flags) {
+    for (const f of flags) {
+      messagesAndFlags.push({
+        kind: 'flag',
+        item: f,
+        timestamp: (f as any).createdAt || (f as any)._creationTime || 0,
+      });
+    }
+  }
+  messagesAndFlags.sort((a, b) => b.timestamp - a.timestamp);
+  const recentMessagesAndFlags = messagesAndFlags.slice(0, 5);
+  const openFlagCountForBrief = flags?.length ?? 0;
 
   return (
     <View className="flex-1 bg-m-bg">
@@ -172,24 +205,54 @@ export default function DashboardScreen() {
               month: 'long',
             })}
           </Text>
-          <View className="flex-row mt-3 pt-3 border-t border-m-border-subtle gap-4">
-            <View className="flex-1 items-center">
-              <Text className="text-lg font-bold text-m-text-primary">
+          <View className="flex-row mt-4 gap-2">
+            <View className="flex-1 rounded-lg bg-m-bg-subtle px-3 py-2.5">
+              <View className="flex-row items-center gap-1.5 mb-1.5">
+                <ListTodo size={12} color={colors.textTertiary} />
+                <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                  Today
+                </Text>
+              </View>
+              <Text className="text-2xl font-bold text-m-text-primary leading-7">
                 {todayTasks?.length ?? 0}
               </Text>
-              <Text className="text-[10px] text-m-text-tertiary uppercase">Today</Text>
             </View>
-            <View className="flex-1 items-center">
-              <Text className={`text-lg font-bold ${(overdueTasks?.length ?? 0) > 0 ? 'text-m-error' : 'text-m-text-primary'}`}>
+            <View
+              className={`flex-1 rounded-lg px-3 py-2.5 ${
+                (overdueTasks?.length ?? 0) > 0 ? 'bg-m-error/10' : 'bg-m-bg-subtle'
+              }`}
+            >
+              <View className="flex-row items-center gap-1.5 mb-1.5">
+                <AlertCircle
+                  size={12}
+                  color={(overdueTasks?.length ?? 0) > 0 ? colors.error : colors.textTertiary}
+                />
+                <Text
+                  className={`text-[10px] font-semibold uppercase tracking-wide ${
+                    (overdueTasks?.length ?? 0) > 0 ? 'text-m-error' : 'text-m-text-tertiary'
+                  }`}
+                >
+                  Overdue
+                </Text>
+              </View>
+              <Text
+                className={`text-2xl font-bold leading-7 ${
+                  (overdueTasks?.length ?? 0) > 0 ? 'text-m-error' : 'text-m-text-primary'
+                }`}
+              >
                 {overdueTasks?.length ?? 0}
               </Text>
-              <Text className="text-[10px] text-m-text-tertiary uppercase">Overdue</Text>
             </View>
-            <View className="flex-1 items-center">
-              <Text className="text-lg font-bold text-m-text-primary">
+            <View className="flex-1 rounded-lg bg-m-bg-subtle px-3 py-2.5">
+              <View className="flex-row items-center gap-1.5 mb-1.5">
+                <Clock size={12} color={colors.textTertiary} />
+                <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                  In Progress
+                </Text>
+              </View>
+              <Text className="text-2xl font-bold text-m-text-primary leading-7">
                 {inProgressTasks?.length ?? 0}
               </Text>
-              <Text className="text-[10px] text-m-text-tertiary uppercase">In Progress</Text>
             </View>
           </View>
         </Card>
@@ -200,17 +263,20 @@ export default function DashboardScreen() {
         {/* Daily Brief Widget */}
         {brief ? (
           <TouchableOpacity onPress={() => router.push('/brief')}>
-            <Card>
+            <Card className="border-l-[3px] border-l-m-accent">
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide">
-                  Daily Brief
-                </Text>
+                <View className="flex-row items-center gap-1.5">
+                  <Sparkles size={14} color={colors.accent} />
+                  <Text className="text-xs font-semibold text-m-text-primary uppercase tracking-wide">
+                    Daily Brief
+                  </Text>
+                </View>
                 <ChevronRight size={14} color={colors.textTertiary} />
               </View>
               <Text className="text-sm text-m-text-secondary leading-5" numberOfLines={3}>
                 {typeof brief.content === 'string'
                   ? brief.content
-                  : `${overdueTasks?.length ?? 0} overdue · ${todayTasks?.length ?? 0} due today · ${recentFlags?.length ?? 0} open flags`}
+                  : `${overdueTasks?.length ?? 0} overdue · ${todayTasks?.length ?? 0} due today · ${openFlagCountForBrief} open flags`}
               </Text>
             </Card>
           </TouchableOpacity>
@@ -266,8 +332,8 @@ export default function DashboardScreen() {
           </Card>
         ) : null}
 
-        {/* Messages & Flags */}
-        {((recentConversations?.length ?? 0) > 0 || (recentFlags?.length ?? 0) > 0) ? (
+        {/* Messages & Flags — merged feed, 5 most recent by timestamp */}
+        {recentMessagesAndFlags.length > 0 ? (
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide">
@@ -278,42 +344,58 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
             <View className="gap-3">
-              {recentConversations?.map((conv, i) => (
-                <TouchableOpacity key={`conv-${conv._id ?? i}`} onPress={() => router.push('/inbox')} className="flex-row items-start gap-2">
-                  <MessageCircle size={14} color={colors.textTertiary} />
-                  <View className="flex-1">
-                    <Text className="text-sm text-m-text-primary" numberOfLines={1}>
-                      {conv.title || 'Conversation'}
-                    </Text>
-                    {(conv as any).participants?.length > 0 && (
-                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
-                        {(conv as any).participants.map((p: any) => p.name).join(', ')}
+              {recentMessagesAndFlags.map((entry, i) => {
+                if (entry.kind === 'conversation') {
+                  const conv = entry.item;
+                  return (
+                    <TouchableOpacity
+                      key={`conv-${conv._id ?? i}`}
+                      onPress={() => router.push('/inbox')}
+                      className="flex-row items-start gap-2"
+                    >
+                      <MessageCircle size={14} color={colors.textTertiary} />
+                      <View className="flex-1">
+                        <Text className="text-sm text-m-text-primary" numberOfLines={1}>
+                          {conv.title || 'Conversation'}
+                        </Text>
+                        {(conv as any).participants?.length > 0 && (
+                          <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                            {(conv as any).participants.map((p: any) => p.name).join(', ')}
+                          </Text>
+                        )}
+                        <Text className="text-[10px] text-m-text-tertiary mt-0.5">
+                          {formatRelativeTime(entry.timestamp)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }
+                const flag = entry.item;
+                return (
+                  <TouchableOpacity
+                    key={`flag-${flag._id ?? i}`}
+                    onPress={() => router.push('/inbox')}
+                    className="flex-row items-start gap-2"
+                  >
+                    <Flag size={14} color={colors.warning} />
+                    <View className="flex-1">
+                      <Text className="text-sm text-m-text-primary" numberOfLines={1}>
+                        {(flag as any).data?.title || (flag as any).entityName || 'Flag'}
                       </Text>
-                    )}
-                    <Text className="text-[10px] text-m-text-tertiary mt-0.5">
-                      {formatRelativeTime(conv.lastMessageAt || conv._creationTime)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-              {recentFlags?.map((flag, i) => (
-                <TouchableOpacity key={`flag-${flag._id ?? i}`} onPress={() => router.push('/inbox')} className="flex-row items-start gap-2">
-                  <Flag size={14} color={colors.warning} />
-                  <View className="flex-1">
-                    <Text className="text-sm text-m-text-primary" numberOfLines={1}>
-                      {(flag as any).data?.title || (flag as any).entityName || 'Flag'}
-                    </Text>
-                    {((flag as any).entityName || (flag as any).entityContext) && (
-                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
-                        {[(flag as any).entityName, (flag as any).entityContext].filter(Boolean).join(' · ')}
+                      {((flag as any).entityName || (flag as any).entityContext) && (
+                        <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                          {[(flag as any).entityName, (flag as any).entityContext]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
+                      )}
+                      <Text className="text-[10px] text-m-text-tertiary mt-0.5">
+                        {formatRelativeTime(entry.timestamp)}
                       </Text>
-                    )}
-                    <Text className="text-[10px] text-m-text-tertiary mt-0.5">
-                      {formatRelativeTime((flag as any).createdAt || (flag as any)._creationTime)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </Card>
         ) : null}
