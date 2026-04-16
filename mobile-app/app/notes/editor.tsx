@@ -2,14 +2,28 @@ import {
   View, Text, TextInput, TouchableOpacity, Alert,
   Modal, FlatList,
 } from 'react-native';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { ArrowLeft, Save, X, Plus, Building2, FolderOpen, FileText } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import RichTextEditor from '@/components/RichTextEditor';
+import RichTextEditor, { type MentionItem } from '@/components/RichTextEditor';
+import MobileHeader from '@/components/MobileHeader';
+import MiniTabBar from '@/components/MiniTabBar';
+
+function extractMentionedUserIds(content: any): string[] {
+  const ids: string[] = [];
+  function walk(node: any) {
+    if (node.type === 'mention' && node.attrs?.type === 'user' && node.attrs?.id) {
+      ids.push(node.attrs.id);
+    }
+    if (node.content) node.content.forEach(walk);
+  }
+  if (content?.content) content.content.forEach(walk);
+  return [...new Set(ids)];
+}
 
 const TAG_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 function getTagColor(tag: string): string {
@@ -104,6 +118,16 @@ export default function NoteEditorScreen() {
 
   const allClients = clients || [];
   const allProjects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
+  const allUsers = useQuery(api.users.getAll, isAuthenticated ? {} : 'skip');
+
+  // Build mention items for the editor
+  const editorMentionItems = useMemo((): MentionItem[] => {
+    const items: MentionItem[] = [];
+    if (allUsers) items.push(...(allUsers as any[]).map((u: any) => ({ id: u._id, label: u.name || u.email || 'User', type: 'user' as const })));
+    if (allClients.length) items.push(...(allClients as any[]).map((c: any) => ({ id: c._id, label: c.name, type: 'client' as const })));
+    if (allProjects) items.push(...(allProjects as any[]).map((p: any) => ({ id: p._id, label: (p as any).name || 'Project', type: 'project' as const })));
+    return items;
+  }, [allUsers, allClients, allProjects]);
 
   const [initialEditorContent, setInitialEditorContent] = useState<any>(undefined);
 
@@ -147,6 +171,8 @@ export default function NoteEditorScreen() {
       const noteTitle = title.trim() || 'Untitled';
       const content = contentJson ? JSON.stringify(contentJson) : '{"type":"doc","content":[]}';
 
+      const mentionedUserIds = contentJson ? extractMentionedUserIds(contentJson) : [];
+
       if (noteId) {
         await updateNote({
           id: noteId as any,
@@ -155,6 +181,7 @@ export default function NoteEditorScreen() {
           clientId: selectedClientId || undefined,
           projectId: selectedProjectId || undefined,
           tags: tags,
+          mentionedUserIds,
           updatedAt: new Date().toISOString(),
         } as any);
       } else {
@@ -164,6 +191,7 @@ export default function NoteEditorScreen() {
           clientId: selectedClientId || undefined,
           projectId: selectedProjectId || undefined,
           tags: tags,
+          mentionedUserIds,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         } as any);
@@ -208,19 +236,17 @@ export default function NoteEditorScreen() {
 
   return (
     <View className="flex-1 bg-m-bg">
-      {/* Header — matches web style */}
-      <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center justify-between">
-        <View className="flex-row items-center gap-3">
-          <TouchableOpacity onPress={() => router.back()} className="p-1">
-            <ArrowLeft size={18} color={colors.textOnBrand} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text className="text-sm text-white/60">Notes</Text>
-          </TouchableOpacity>
-        </View>
+      <MobileHeader />
+
+      {/* Sub-navigation — matches web's "← Notes" + "Docs" bar */}
+      <View className="flex-row items-center justify-between px-4 py-2 border-b border-m-border bg-m-bg-card">
+        <TouchableOpacity onPress={() => router.back()} className="flex-row items-center gap-1.5">
+          <ArrowLeft size={14} color={colors.textSecondary} />
+          <Text className="text-sm text-m-text-secondary">Notes</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/docs')} className="flex-row items-center gap-1.5">
-          <FileText size={14} color="rgba(255,255,255,0.6)" />
-          <Text className="text-sm text-white/60">Docs</Text>
+          <FileText size={14} color={colors.textTertiary} />
+          <Text className="text-sm text-m-text-tertiary">Docs</Text>
         </TouchableOpacity>
       </View>
 
@@ -338,7 +364,10 @@ export default function NoteEditorScreen() {
         placeholder="Start writing..."
         onChange={handleContentChange}
         onReady={() => setEditorReady(true)}
+        mentionItems={editorMentionItems}
       />
+
+      <MiniTabBar />
 
       {/* Picker modals */}
       <PickerModal

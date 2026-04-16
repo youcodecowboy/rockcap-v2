@@ -5,11 +5,18 @@ import { WebView } from 'react-native-webview';
 // Load the HTML asset
 const editorHtml = require('@/assets/tiptap-editor.html');
 
+export interface MentionItem {
+  id: string;
+  label: string;
+  type: 'user' | 'client' | 'project';
+}
+
 interface RichTextEditorProps {
   initialContent?: any; // Tiptap JSON, JSON string, or plain text
   placeholder?: string;
   onChange?: (json: any) => void;
   onReady?: () => void;
+  mentionItems?: MentionItem[];
   style?: any;
 }
 
@@ -18,6 +25,7 @@ export default function RichTextEditor({
   placeholder,
   onChange,
   onReady,
+  mentionItems,
   style,
 }: RichTextEditorProps) {
   const webViewRef = useRef<WebView>(null);

@@ -83,6 +83,7 @@
   const StarterKit = window['@tiptap/starter-kit'].StarterKit;
   const Underline = window['@tiptap/extension-underline'].Underline;
   const Placeholder = window['@tiptap/extension-placeholder'].Placeholder;
+  const Mention = window['@tiptap/extension-mention'].Mention;
 
   let editor;
 
@@ -93,6 +94,10 @@
         StarterKit,
         Underline,
         Placeholder.configure({ placeholder: placeholder || 'Start writing...' }),
+        Mention.configure({
+          HTMLAttributes: { class: 'mention' },
+          renderText({ node }) { return node.attrs.label ? '@' + node.attrs.label : '@' + node.attrs.id; },
+        }),
       ],
       content: content || '',
       onUpdate: () => {
