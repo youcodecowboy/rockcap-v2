@@ -8,6 +8,8 @@ import { api } from '../../../../../../model-testing-app/convex/_generated/api';
 import {
   ArrowLeft, ChevronRight, ChevronDown, FolderOpen, FileText,
   Circle, CheckCircle2, Plus, AlertTriangle, Clock,
+  DollarSign, CheckSquare, TrendingUp, Briefcase, MapPin, Calendar,
+  Percent,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
@@ -57,6 +59,31 @@ function extractPlainText(content: any): string {
   return texts.join(' ');
 }
 
+function formatCurrencyShort(amount: number | undefined | null): string {
+  if (amount == null) return '—';
+  if (amount >= 1_000_000) return `£${(amount / 1_000_000).toFixed(1)}M`;
+  if (amount >= 1_000) return `£${Math.round(amount / 1_000)}K`;
+  return `£${amount.toLocaleString()}`;
+}
+
+function formatProjectAddress(project: any): string | null {
+  const parts: string[] = [];
+  if (project.address) parts.push(project.address);
+  if (project.city) parts.push(project.city);
+  if (project.state) parts.push(project.state);
+  if (project.zip) parts.push(project.zip);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+// Shared palette for the metric tiles (same keys as the client overview).
+const metricTones = {
+  green: { bg: '#dcfce7', tint: '#059669' },
+  purple: { bg: '#f3e8ff', tint: '#9333ea' },
+  blue: { bg: '#dbeafe', tint: '#2563eb' },
+  orange: { bg: '#ffedd5', tint: '#ea580c' },
+  amber: { bg: '#fef3c7', tint: '#d97706' },
+};
+
 // ============================================================================
 // Small shared components
 // ============================================================================
@@ -94,6 +121,81 @@ function SectionHeader({ title, count }: { title: string; count?: number }) {
 
 function EmptyState({ message }: { message: string }) {
   return <Text className="text-sm text-m-text-tertiary text-center py-8">{message}</Text>;
+}
+
+// Compact "label over value" row used inside the Project Information card.
+function InfoRow({
+  label, value, icon,
+}: {
+  label: string;
+  value: string | React.ReactNode;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <View>
+      <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+        {label}
+      </Text>
+      <View className="flex-row items-center gap-1.5">
+        {icon}
+        {typeof value === 'string' ? (
+          <Text className="text-sm text-m-text-primary flex-1">{value}</Text>
+        ) : (
+          value
+        )}
+      </View>
+    </View>
+  );
+}
+
+// Key-metric tile — colored icon chip + label/value on the right. Mirrors
+// the client-overview version so the two screens feel connected.
+function MetricTile({
+  icon, tone, label, value, valueSubtle, onPress,
+}: {
+  icon: React.ReactNode;
+  tone: keyof typeof metricTones;
+  label: string;
+  value: string;
+  valueSubtle?: string;
+  onPress?: () => void;
+}) {
+  const { bg } = metricTones[tone];
+  const Inner = (
+    <View className="bg-m-bg-card rounded-[12px] border border-m-border p-3 flex-row items-center gap-2.5">
+      <View
+        className="w-9 h-9 rounded-[8px] items-center justify-center"
+        style={{ backgroundColor: bg }}
+      >
+        {icon}
+      </View>
+      <View className="flex-1 min-w-0">
+        <Text
+          className="text-[10px] font-medium text-m-text-tertiary uppercase tracking-wide"
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        <Text
+          className="text-[15px] font-semibold text-m-text-primary"
+          numberOfLines={1}
+        >
+          {value}
+          {valueSubtle ? (
+            <Text className="text-xs font-normal text-m-text-tertiary"> {valueSubtle}</Text>
+          ) : null}
+        </Text>
+      </View>
+    </View>
+  );
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} className="flex-1 min-w-[48%]">
+        {Inner}
+      </TouchableOpacity>
+    );
+  }
+  return <View className="flex-1 min-w-[48%]">{Inner}</View>;
 }
 
 function QuickLinkRow({
@@ -306,12 +408,45 @@ export default function ProjectDetailScreen() {
     return groups;
   }, [tasks]);
 
+  // Extended checklist stats for the Overview "Document Checklist" card.
+  // Personal-progress fields (total/fulfilled/pct) are used by existing code;
+  // the extra status + byCategory counts drive the three status tiles and
+  // the by-category breakdown.
   const checklistProgress = useMemo(() => {
     if (!checklist || !Array.isArray(checklist) || checklist.length === 0) return null;
     const total = checklist.length;
     const fulfilled = checklist.filter((i: any) => i.status === 'fulfilled').length;
-    return { total, fulfilled, pct: Math.round((fulfilled / total) * 100) };
+    const pendingReview = checklist.filter((i: any) => i.status === 'pending_review').length;
+    const missing = checklist.filter((i: any) => i.status === 'missing').length;
+    const byCategory: Record<string, { fulfilled: number; total: number }> = {};
+    for (const item of checklist) {
+      const cat = item.category || 'General';
+      if (!byCategory[cat]) byCategory[cat] = { fulfilled: 0, total: 0 };
+      byCategory[cat].total += 1;
+      if (item.status === 'fulfilled') byCategory[cat].fulfilled += 1;
+    }
+    return {
+      total,
+      fulfilled,
+      pendingReview,
+      missing,
+      pct: Math.round((fulfilled / total) * 100),
+      byCategory,
+    };
   }, [checklist]);
+
+  // Recent documents — top 5 by uploadedAt (falling back to _creationTime)
+  // for the Overview tab's Recent Documents card.
+  const recentDocuments = useMemo(() => {
+    if (!documents) return [];
+    return [...documents]
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.uploadedAt || b._creationTime || 0).getTime() -
+          new Date(a.uploadedAt || a._creationTime || 0).getTime()
+      )
+      .slice(0, 5);
+  }, [documents]);
 
   const checklistByCategory = useMemo(() => {
     if (!checklist || !Array.isArray(checklist)) return {};
@@ -462,109 +597,317 @@ export default function ProjectDetailScreen() {
         {/* ==================== OVERVIEW ==================== */}
         {activeTab === 'Overview' && (
           <>
-            {/* Project Info */}
-            <Card>
-              <SectionHeader title="Details" />
-              <View className="gap-2">
-                {stats?.loanAmount != null && (
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm text-m-text-secondary">Loan Amount</Text>
+            {/* Key Metrics — 4 colored tiles (wraps to 2x2 on narrow screens) */}
+            <View className="flex-row flex-wrap gap-2">
+              <MetricTile
+                icon={<DollarSign size={18} color={metricTones.green.tint} />}
+                tone="green"
+                label="Loan Amount"
+                value={
+                  stats?.loanAmount
+                    ? formatCurrencyShort(stats.loanAmount)
+                    : (project as any).loanAmount
+                    ? formatCurrencyShort((project as any).loanAmount)
+                    : '—'
+                }
+              />
+              <MetricTile
+                icon={<CheckSquare size={18} color={metricTones.blue.tint} />}
+                tone="blue"
+                label="Active Tasks"
+                value={String(activeTaskCount ?? 0)}
+                onPress={() => setActiveTab('Tasks')}
+              />
+              <MetricTile
+                icon={<FileText size={18} color={metricTones.orange.tint} />}
+                tone="orange"
+                label="Documents"
+                value={String(totalDocs)}
+                onPress={() => setActiveTab('Docs')}
+              />
+              <MetricTile
+                icon={<Percent size={18} color={metricTones.amber.tint} />}
+                tone="amber"
+                label="Checklist"
+                value={checklistProgress ? `${checklistProgress.pct}%` : '—'}
+                valueSubtle={
+                  checklistProgress
+                    ? `${checklistProgress.fulfilled}/${checklistProgress.total}`
+                    : undefined
+                }
+                onPress={() => setActiveTab('Checklist')}
+              />
+            </View>
+
+            {/* Document Checklist — rich card with progress + 3 status tiles */}
+            {checklistProgress && (
+              <Card>
+                <View className="flex-row items-center gap-2 mb-3">
+                  <CheckSquare size={16} color={colors.textSecondary} />
+                  <Text className="text-sm font-semibold text-m-text-primary flex-1">
+                    Document Checklist
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('Checklist')}
+                    className="flex-row items-center"
+                  >
+                    <Text className="text-xs text-m-text-tertiary mr-0.5">View all</Text>
+                    <ChevronRight size={12} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Overall Progress */}
+                <View className="mb-3">
+                  <View className="flex-row items-center justify-between mb-1">
+                    <Text className="text-sm text-m-text-secondary">Overall Completion</Text>
                     <Text className="text-sm font-semibold text-m-text-primary">
-                      {formatGBP(stats.loanAmount)}
+                      {checklistProgress.pct}%
                     </Text>
                   </View>
-                )}
-                {stats?.totalCosts != null && (
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm text-m-text-secondary">Total Costs</Text>
-                    <Text className="text-sm font-semibold text-m-text-primary">
-                      {formatGBP(stats.totalCosts)}
-                    </Text>
+                  <View className="h-2 bg-m-bg-inset rounded-full overflow-hidden">
+                    <View
+                      className="h-full bg-m-accent rounded-full"
+                      style={{ width: `${checklistProgress.pct}%` }}
+                    />
                   </View>
-                )}
-                {(project as any).startDate && (
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm text-m-text-secondary">Start Date</Text>
-                    <Text className="text-sm text-m-text-primary">
-                      {formatDate((project as any).startDate)}
-                    </Text>
-                  </View>
-                )}
-                {(project as any).endDate && (
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm text-m-text-secondary">End Date</Text>
-                    <Text className="text-sm text-m-text-primary">
-                      {formatDate((project as any).endDate)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              {project.description ? (
-                <View className="mt-3 pt-3 border-t border-m-border-subtle">
-                  <Text className="text-sm text-m-text-secondary leading-5">
-                    {project.description}
+                  <Text className="text-xs text-m-text-tertiary mt-1">
+                    {checklistProgress.fulfilled} of {checklistProgress.total} documents
                   </Text>
                 </View>
-              ) : null}
+
+                {/* Status Breakdown — 3 tiles */}
+                <View className="flex-row gap-2 pt-3 border-t border-m-border-subtle">
+                  <View className="flex-1 items-center">
+                    <View className="flex-row items-center gap-1 mb-0.5">
+                      <CheckCircle2 size={14} color={colors.success} />
+                      <Text className="text-lg font-semibold" style={{ color: '#15803d' }}>
+                        {checklistProgress.fulfilled}
+                      </Text>
+                    </View>
+                    <Text className="text-[10px] text-m-text-tertiary">Fulfilled</Text>
+                  </View>
+                  <View className="w-px bg-m-border-subtle" />
+                  <View className="flex-1 items-center">
+                    <View className="flex-row items-center gap-1 mb-0.5">
+                      <Clock size={14} color={metricTones.amber.tint} />
+                      <Text
+                        className="text-lg font-semibold"
+                        style={{ color: '#b45309' }}
+                      >
+                        {checklistProgress.pendingReview}
+                      </Text>
+                    </View>
+                    <Text className="text-[10px] text-m-text-tertiary">Pending</Text>
+                  </View>
+                  <View className="w-px bg-m-border-subtle" />
+                  <View className="flex-1 items-center">
+                    <View className="flex-row items-center gap-1 mb-0.5">
+                      <Circle size={14} color={colors.textTertiary} />
+                      <Text
+                        className="text-lg font-semibold text-m-text-primary"
+                      >
+                        {checklistProgress.missing}
+                      </Text>
+                    </View>
+                    <Text className="text-[10px] text-m-text-tertiary">Missing</Text>
+                  </View>
+                </View>
+
+                {/* By Category — top 4 */}
+                {Object.keys(checklistProgress.byCategory).length > 0 && (
+                  <View className="mt-3 pt-3 border-t border-m-border-subtle">
+                    <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-1.5">
+                      By Category
+                    </Text>
+                    <View className="gap-1">
+                      {Object.entries(checklistProgress.byCategory)
+                        .slice(0, 4)
+                        .map(([cat, s]: any) => (
+                          <View
+                            key={cat}
+                            className="flex-row items-center justify-between"
+                          >
+                            <Text
+                              className="text-xs text-m-text-secondary flex-1"
+                              numberOfLines={1}
+                            >
+                              {cat}
+                            </Text>
+                            <Text className="text-xs text-m-text-tertiary ml-2">
+                              {s.fulfilled}/{s.total}
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Alert when many missing */}
+                {checklistProgress.missing > 3 && (
+                  <View
+                    className="mt-3 flex-row items-start gap-2 p-2 rounded-[8px]"
+                    style={{ backgroundColor: '#fffbeb' }}
+                  >
+                    <AlertTriangle size={14} color={metricTones.amber.tint} style={{ marginTop: 1 }} />
+                    <Text className="text-xs flex-1" style={{ color: '#92400e' }}>
+                      {checklistProgress.missing} documents still missing. Use the
+                      Checklist tab to request them.
+                    </Text>
+                  </View>
+                )}
+              </Card>
+            )}
+
+            {/* Project Information — expanded detail card */}
+            <Card>
+              <View className="flex-row items-center gap-2 mb-3">
+                <Briefcase size={16} color={colors.textSecondary} />
+                <Text className="text-sm font-semibold text-m-text-primary flex-1">
+                  Project Information
+                </Text>
+              </View>
+              <View className="gap-2.5">
+                <InfoRow label="Project Name" value={project.name} />
+                {(project as any).projectShortcode ? (
+                  <View>
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+                      Shortcode
+                    </Text>
+                    <View className="self-start bg-m-bg-subtle rounded-[6px] px-1.5 py-0.5">
+                      <Text className="text-[11px] font-mono text-m-text-secondary">
+                        {(project as any).projectShortcode}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+                {project.description ? (
+                  <InfoRow label="Description" value={project.description} />
+                ) : null}
+                {formatProjectAddress(project) ? (
+                  <InfoRow
+                    label="Address"
+                    value={
+                      <>
+                        <MapPin size={12} color={colors.textTertiary} />
+                        <Text className="text-sm text-m-text-primary flex-1">
+                          {formatProjectAddress(project)}
+                        </Text>
+                      </>
+                    }
+                  />
+                ) : null}
+                {(project as any).startDate ? (
+                  <InfoRow
+                    label="Start Date"
+                    icon={<Calendar size={12} color={colors.textTertiary} />}
+                    value={formatDate((project as any).startDate)}
+                  />
+                ) : null}
+                {(project as any).expectedCompletionDate ||
+                (project as any).endDate ? (
+                  <InfoRow
+                    label="Expected Completion"
+                    icon={<Calendar size={12} color={colors.textTertiary} />}
+                    value={formatDate(
+                      (project as any).expectedCompletionDate ||
+                        (project as any).endDate,
+                    )}
+                  />
+                ) : null}
+                {stats?.loanAmount != null ? (
+                  <InfoRow label="Loan Amount" value={formatGBP(stats.loanAmount)} />
+                ) : (project as any).loanAmount ? (
+                  <InfoRow
+                    label="Loan Amount"
+                    value={formatGBP((project as any).loanAmount)}
+                  />
+                ) : null}
+                {stats?.totalCosts != null ? (
+                  <InfoRow label="Total Costs" value={formatGBP(stats.totalCosts)} />
+                ) : null}
+                {(project as any).interestRate ? (
+                  <InfoRow
+                    label="Interest Rate"
+                    value={`${(project as any).interestRate}%`}
+                  />
+                ) : null}
+              </View>
             </Card>
 
-            {/* Summary metrics */}
-            <Card>
-              <SectionHeader title="Summary" />
-              <View className="flex-row justify-between">
-                <View className="items-center flex-1">
-                  <Text className="text-2xl font-bold text-m-text-primary">
-                    {totalDocs}
+            {/* Recent Documents */}
+            {recentDocuments.length > 0 && (
+              <Card>
+                <View className="flex-row items-center gap-2 mb-3">
+                  <TrendingUp size={16} color={colors.textSecondary} />
+                  <Text className="text-sm font-semibold text-m-text-primary flex-1">
+                    Recent Documents
                   </Text>
-                  <Text className="text-xs text-m-text-tertiary">Documents</Text>
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('Docs')}
+                    className="flex-row items-center"
+                  >
+                    <Text className="text-xs text-m-text-tertiary mr-0.5">View all</Text>
+                    <ChevronRight size={12} color={colors.textTertiary} />
+                  </TouchableOpacity>
                 </View>
-                <View className="w-px bg-m-border-subtle" />
-                <View className="items-center flex-1">
-                  <Text className="text-2xl font-bold text-m-text-primary">
-                    {activeTaskCount ?? 0}
-                  </Text>
-                  <Text className="text-xs text-m-text-tertiary">Active Tasks</Text>
+                <View className="gap-1">
+                  {recentDocuments.map((doc: any, idx: number) => (
+                    <View key={doc._id}>
+                      {idx > 0 && <View className="h-px bg-m-border-subtle" />}
+                      <TouchableOpacity
+                        onPress={() =>
+                          router.push(`/(tabs)/docs/viewer?id=${doc._id}` as any)
+                        }
+                        className="flex-row items-center gap-2 py-2"
+                      >
+                        <FileText size={14} color={colors.textTertiary} />
+                        <Text
+                          className="text-sm text-m-text-primary flex-1"
+                          numberOfLines={1}
+                        >
+                          {doc.displayName || doc.documentCode || doc.fileName}
+                        </Text>
+                        {doc.category ? (
+                          <View className="bg-m-bg-subtle rounded-[6px] px-1.5 py-0.5">
+                            <Text
+                              className="text-[10px] text-m-text-secondary"
+                              numberOfLines={1}
+                            >
+                              {doc.category}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {doc.uploadedAt ? (
+                          <Text className="text-[10px] text-m-text-tertiary">
+                            {new Date(doc.uploadedAt).toLocaleDateString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    </View>
+                  ))}
                 </View>
-                <View className="w-px bg-m-border-subtle" />
-                <View className="items-center flex-1">
-                  <Text className="text-2xl font-bold text-m-text-primary">
-                    {checklistProgress ? `${checklistProgress.pct}%` : '--'}
-                  </Text>
-                  <Text className="text-xs text-m-text-tertiary">Checklist</Text>
-                </View>
-              </View>
-            </Card>
+              </Card>
+            )}
 
-            {/* Quick links */}
+            {/* Quick Links — slimmed since metrics handle the common ones */}
             <Card>
               <SectionHeader title="Quick Links" />
               <View className="gap-0">
-                <QuickLinkRow
-                  label="Documents"
-                  value={totalDocs}
-                  onPress={() => setActiveTab('Docs')}
-                />
-                <QuickLinkRow
-                  label="Tasks"
-                  value={tasks?.length ?? 0}
-                  onPress={() => setActiveTab('Tasks')}
-                />
                 <QuickLinkRow
                   label="Notes"
                   value={notes?.length ?? 0}
                   onPress={() => setActiveTab('Notes')}
                 />
-                {checklist ? (
-                  <QuickLinkRow
-                    label="Checklist"
-                    value={
-                      checklistProgress
-                        ? `${checklistProgress.fulfilled}/${checklistProgress.total}`
-                        : '--'
-                    }
-                    onPress={() => setActiveTab('Checklist')}
-                  />
-                ) : null}
+                <QuickLinkRow
+                  label="Intelligence"
+                  value={
+                    intelligence && Array.isArray(intelligence) ? intelligence.length : 0
+                  }
+                  onPress={() => setActiveTab('Intelligence')}
+                />
               </View>
             </Card>
           </>

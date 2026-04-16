@@ -34,6 +34,7 @@ import {
   Lightbulb,
   TrendingUp,
   Briefcase,
+  Search,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
@@ -149,6 +150,211 @@ function formatClientAddress(client: any): string | null {
   if (client.zip) parts.push(client.zip);
   if (client.country) parts.push(client.country);
   return parts.length > 0 ? parts.join(', ') : null;
+}
+
+// ----------------------------------------------------------------------------
+// ProjectsList — the client's Projects tab. Search bar at the top, then
+// Active projects grouped separately from everything else, matching the
+// desktop ClientProjectsTab. Each project card has a colored briefcase tile
+// (purple for active, gray otherwise), shortcode chip, description, and a
+// footer with document count + creation date.
+// ----------------------------------------------------------------------------
+function ProjectsList({
+  clientId, projects, folderCounts, projectSearch, setProjectSearch, onOpenProject,
+}: {
+  clientId: string;
+  projects: any[];
+  folderCounts: any;
+  projectSearch: string;
+  setProjectSearch: (s: string) => void;
+  onOpenProject: (projectId: string) => void;
+}) {
+  const q = projectSearch.trim().toLowerCase();
+  const filtered = q
+    ? projects.filter((p) =>
+        (p.name ?? '').toLowerCase().includes(q) ||
+        (p.projectShortcode ?? '').toLowerCase().includes(q) ||
+        (p.description ?? '').toLowerCase().includes(q),
+      )
+    : projects;
+
+  const active = filtered.filter((p) => p.status === 'active');
+  const other = filtered.filter((p) => p.status !== 'active');
+
+  const Card = ProjectListCard; // local alias for readability
+
+  return (
+    <View className="gap-3">
+      {/* Search bar */}
+      <View className="bg-m-bg-card rounded-[10px] border border-m-border flex-row items-center px-3">
+        <Search size={14} color={colors.textTertiary} />
+        <TextInput
+          placeholder="Search projects..."
+          placeholderTextColor={colors.textTertiary}
+          value={projectSearch}
+          onChangeText={setProjectSearch}
+          className="flex-1 text-sm text-m-text-primary ml-2 py-2.5"
+        />
+        {projectSearch.length > 0 ? (
+          <TouchableOpacity onPress={() => setProjectSearch('')} className="p-1">
+            <X size={14} color={colors.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {filtered.length === 0 ? (
+        <View className="items-center py-12">
+          <View
+            className="w-12 h-12 rounded-[12px] items-center justify-center mb-3"
+            style={{ backgroundColor: colors.bgSubtle }}
+          >
+            <FolderKanban size={24} color={colors.textTertiary} />
+          </View>
+          <Text className="text-sm font-medium text-m-text-primary mb-1">
+            {q ? 'No projects found' : 'No projects yet'}
+          </Text>
+          <Text className="text-xs text-m-text-tertiary text-center px-8">
+            {q ? 'Try adjusting your search terms' : 'Create your first project on desktop.'}
+          </Text>
+        </View>
+      ) : (
+        <>
+          {/* Active Projects */}
+          {active.length > 0 && (
+            <View>
+              <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-2">
+                Active Projects ({active.length})
+              </Text>
+              <View className="gap-2">
+                {active.map((p) => (
+                  <Card
+                    key={p._id}
+                    project={p}
+                    clientId={clientId}
+                    folderCounts={folderCounts}
+                    onPress={() => onOpenProject(p._id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Other Projects */}
+          {other.length > 0 && (
+            <View>
+              <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-2">
+                Other Projects ({other.length})
+              </Text>
+              <View className="gap-2">
+                {other.map((p) => (
+                  <Card
+                    key={p._id}
+                    project={p}
+                    clientId={clientId}
+                    folderCounts={folderCounts}
+                    onPress={() => onOpenProject(p._id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
+function ProjectListCard({
+  project, folderCounts, onPress,
+}: {
+  project: any;
+  clientId: string;
+  folderCounts: any;
+  onPress: () => void;
+}) {
+  const isActive = project.status === 'active';
+  const projectDocs = folderCounts?.projectFolders?.[project._id] ?? {};
+  const docCount = Object.values(projectDocs).reduce(
+    (s: number, c: any) => s + (c as number),
+    0,
+  );
+  const iconTone = isActive ? metricTones.purple : { bg: colors.bgInset, tint: colors.textTertiary };
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <View className="bg-m-bg-card rounded-[12px] border border-m-border p-3 flex-row items-start gap-3">
+        {/* Colored briefcase tile */}
+        <View
+          className="w-11 h-11 rounded-[10px] items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: iconTone.bg }}
+        >
+          <Briefcase size={20} color={iconTone.tint} />
+        </View>
+
+        {/* Name + status */}
+        <View className="flex-1 min-w-0">
+          <View className="flex-row items-start justify-between gap-2">
+            <Text
+              className="text-sm font-semibold text-m-text-primary flex-1"
+              numberOfLines={1}
+            >
+              {project.name}
+            </Text>
+            {project.status ? <StatusBadge status={project.status} size="xs" /> : null}
+          </View>
+
+          {/* Shortcode chip */}
+          {project.projectShortcode ? (
+            <View className="self-start bg-m-bg-subtle rounded-[6px] px-1.5 py-0.5 mt-1">
+              <Text
+                className="text-[11px] font-mono text-m-text-secondary"
+                numberOfLines={1}
+              >
+                {project.projectShortcode}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Description */}
+          {project.description ? (
+            <Text
+              className="text-xs text-m-text-secondary mt-1.5"
+              numberOfLines={2}
+            >
+              {project.description}
+            </Text>
+          ) : null}
+
+          {/* Footer: doc count + created date */}
+          <View className="flex-row items-center gap-3 mt-2">
+            <View className="flex-row items-center gap-1">
+              <FileText size={11} color={colors.textTertiary} />
+              <Text className="text-[11px] text-m-text-tertiary">
+                {docCount} {docCount === 1 ? 'doc' : 'docs'}
+              </Text>
+            </View>
+            {project.createdAt || project._creationTime ? (
+              <View className="flex-row items-center gap-1">
+                <Calendar size={11} color={colors.textTertiary} />
+                <Text className="text-[11px] text-m-text-tertiary">
+                  {new Date(
+                    project.createdAt ||
+                      new Date(project._creationTime).toISOString(),
+                  ).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        <ChevronRight size={16} color={colors.textTertiary} style={{ marginTop: 2 }} />
+      </View>
+    </TouchableOpacity>
+  );
 }
 
 // ----------------------------------------------------------------------------
@@ -675,6 +881,7 @@ export default function ClientDetailScreen() {
   const [expandedMeetings, setExpandedMeetings] = useState<Set<string>>(new Set());
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [flagFilter, setFlagFilter] = useState<'open' | 'resolved'>('open');
+  const [projectSearch, setProjectSearch] = useState('');
 
   // Notes form
   const [showNoteForm, setShowNoteForm] = useState(false);
@@ -1538,57 +1745,16 @@ export default function ClientDetailScreen() {
         {/* PROJECTS TAB */}
         {/* ================================================================ */}
         {activeTab === 'Projects' && (
-          <View className="gap-2">
-            {sortedProjects.length > 0 ? (
-              sortedProjects.map((p) => {
-                const projectDocs = folderCounts?.projectFolders?.[p._id] ?? {};
-                const docCount = Object.values(projectDocs).reduce(
-                  (s: number, c: any) => s + (c as number),
-                  0,
-                );
-                return (
-                  <TouchableOpacity
-                    key={p._id}
-                    onPress={() =>
-                      router.push(`/(tabs)/clients/${clientId}/projects/${p._id}` as any)
-                    }
-                  >
-                    <Card>
-                      <View className="flex-row items-center justify-between mb-1">
-                        <View className="flex-1 flex-row items-center gap-2 mr-2">
-                          <FolderOpen size={14} color={colors.accent} />
-                          <Text
-                            className="text-sm font-medium text-m-text-primary flex-1"
-                            numberOfLines={1}
-                          >
-                            {p.name}
-                          </Text>
-                        </View>
-                        {p.status && <StatusBadge status={p.status} />}
-                      </View>
-                      {p.description ? (
-                        <Text
-                          className="text-sm text-m-text-secondary mt-1"
-                          numberOfLines={2}
-                        >
-                          {p.description}
-                        </Text>
-                      ) : null}
-                      {/* Footer: doc count + chevron */}
-                      <View className="flex-row items-center justify-between mt-2 pt-2 border-t border-m-border-subtle">
-                        <Text className="text-xs text-m-text-tertiary">
-                          {docCount} {docCount === 1 ? 'document' : 'documents'}
-                        </Text>
-                        <ChevronRight size={14} color={colors.textTertiary} />
-                      </View>
-                    </Card>
-                  </TouchableOpacity>
-                );
-              })
-            ) : (
-              <EmptyState message="No projects" />
-            )}
-          </View>
+          <ProjectsList
+            clientId={clientId as string}
+            projects={sortedProjects}
+            folderCounts={folderCounts}
+            projectSearch={projectSearch}
+            setProjectSearch={setProjectSearch}
+            onOpenProject={(pid) =>
+              router.push(`/(tabs)/clients/${clientId}/projects/${pid}` as any)
+            }
+          />
         )}
 
         {/* ================================================================ */}
