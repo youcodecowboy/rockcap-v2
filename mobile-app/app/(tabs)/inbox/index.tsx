@@ -1,4 +1,5 @@
 import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
@@ -45,6 +46,7 @@ function formatRelativeTime(ts: number): string {
 
 export default function InboxScreen() {
   const { isAuthenticated } = useConvexAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>('messages');
   const [flagFilter, setFlagFilter] = useState<'open' | 'resolved'>('open');
 
@@ -137,7 +139,7 @@ export default function InboxScreen() {
             contentContainerStyle={{ paddingBottom: 16 }}
             ListHeaderComponent={
               <TouchableOpacity
-                onPress={() => Alert.alert('New Conversation', 'Coming soon')}
+                onPress={() => router.push('/inbox/conversation/new' as any)}
                 className="mx-4 mt-3 mb-2 bg-m-bg-brand rounded-lg py-3 flex-row items-center justify-center"
               >
                 <Plus size={16} color={colors.textOnBrand} />
@@ -156,7 +158,7 @@ export default function InboxScreen() {
 
               return (
                 <TouchableOpacity
-                  onPress={() => Alert.alert(item.title || 'Conversation', 'Open conversation — coming soon')}
+                  onPress={() => router.push(`/inbox/conversation/${item._id}` as any)}
                   className="px-4 py-3 border-b border-m-border flex-row items-center"
                 >
                   <View className="w-8 h-8 rounded-full bg-m-bg-inset items-center justify-center">

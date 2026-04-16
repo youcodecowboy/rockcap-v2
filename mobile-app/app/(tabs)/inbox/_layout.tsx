@@ -5,6 +5,8 @@ export default function InboxLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="[flagId]" />
+      <Stack.Screen name="conversation/[id]" />
+      <Stack.Screen name="conversation/new" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }
