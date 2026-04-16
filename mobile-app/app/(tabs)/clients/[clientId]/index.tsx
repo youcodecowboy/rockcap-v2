@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput, Linking } from 're
 import { useState, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
-import { api } from '../../../../model-testing-app/convex/_generated/api';
+import { api } from '../../../../../model-testing-app/convex/_generated/api';
 import {
   ArrowLeft,
   Check,
