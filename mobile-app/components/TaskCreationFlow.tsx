@@ -25,12 +25,24 @@ interface TaskCreationFlowProps {
   initialMode?: 'task' | 'meeting';
   prefilledTitle?: string;
   prefilledDate?: string;
+  // New: allow callers to launch the flow with a link/participant
+  // already in place. Useful for "Create task about {contact}" and
+  // "Schedule meeting with {contact}" from the contact detail sheet.
+  prefilledDescription?: string;
+  prefilledClientId?: string;
+  prefilledProjectId?: string;
+  // For meetings: attendee IDs from the combined (users + contacts) pool.
+  prefilledAttendeeIds?: string[];
+  // For tasks: assignee user IDs (overrides the default "current user" seed).
+  prefilledAssigneeIds?: string[];
 }
 
 type Step = 'intro' | 'manual' | 'creating';
 
 export default function TaskCreationFlow({
   visible, onClose, initialMode = 'task', prefilledTitle, prefilledDate,
+  prefilledDescription, prefilledClientId, prefilledProjectId,
+  prefilledAttendeeIds, prefilledAssigneeIds,
 }: TaskCreationFlowProps) {
   const { user } = useUser();
   const { isAuthenticated } = useConvexAuth();
@@ -63,19 +75,23 @@ export default function TaskCreationFlow({
 
   // Manual form state
   const [title, setTitle] = useState(prefilledTitle ?? '');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(prefilledDescription ?? '');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [dueDate, setDueDate] = useState(defaultTaskDate);
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
+  const [clientId, setClientId] = useState<string | null>(prefilledClientId ?? null);
+  const [projectId, setProjectId] = useState<string | null>(prefilledProjectId ?? null);
+  const [assignedToIds, setAssignedToIds] = useState<string[]>(
+    prefilledAssigneeIds ?? [],
+  );
   const [attachments, setAttachments] = useState<AttachedDoc[]>([]);
   const [showDocPicker, setShowDocPicker] = useState(false);
   // Event-specific
   const [startTime, setStartTime] = useState(defaultMeetingStart);
   const [endTime, setEndTime] = useState(defaultMeetingEnd);
   const [location, setLocation] = useState('');
-  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
+  const [attendeeIds, setAttendeeIds] = useState<string[]>(
+    prefilledAttendeeIds ?? [],
+  );
 
   // Load context for AI + pickers
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
@@ -101,17 +117,20 @@ export default function TaskCreationFlow({
     setAiInput('');
     setAiError(null);
     setTitle(prefilledTitle ?? '');
-    setDescription('');
+    setDescription(prefilledDescription ?? '');
     setPriority('medium');
     setDueDate(defaultTaskDate);
-    setClientId(null);
-    setProjectId(null);
-    setAssignedToIds(currentUser ? [(currentUser as any)._id] : []);
+    setClientId(prefilledClientId ?? null);
+    setProjectId(prefilledProjectId ?? null);
+    setAssignedToIds(
+      prefilledAssigneeIds
+        ?? (currentUser ? [(currentUser as any)._id] : []),
+    );
     setAttachments([]);
     setStartTime(defaultMeetingStart);
     setEndTime(defaultMeetingEnd);
     setLocation('');
-    setAttendeeIds([]);
+    setAttendeeIds(prefilledAttendeeIds ?? []);
   };
 
   const handleClose = () => { reset(); onClose(); };
