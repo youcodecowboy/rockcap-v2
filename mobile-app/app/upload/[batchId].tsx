@@ -1,0 +1,424 @@
+import {
+  View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
+  Animated, Easing,
+} from 'react-native';
+import { useEffect, useRef } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQuery, useConvexAuth } from 'convex/react';
+import { api } from '../../../model-testing-app/convex/_generated/api';
+import {
+  ArrowLeft, CheckCircle2, AlertCircle, Eye, FileText, Sparkles,
+} from 'lucide-react-native';
+import { colors } from '@/lib/theme';
+import MobileHeader from '@/components/MobileHeader';
+import Card from '@/components/ui/Card';
+
+// ---------------------------------------------------------------------------
+// Batch detail / processing status screen (Phase 1)
+//
+// This screen is intentionally a "status dashboard" today. The full review
+// flow (per-doc cards, classification edits, completion summary) lands in
+// Phase 2 — matching mobile-web's ReviewFlow / CompletionSummary components.
+//
+// Phase 1 responsibilities:
+// 1. Show reactive batch status via Convex subscription
+// 2. Show per-item status (pending/processing/ready/error)
+// 3. Direct the user to desktop for AI review when the batch reaches review
+// ---------------------------------------------------------------------------
+
+function StatusPill({
+  kind, label,
+}: {
+  kind: 'ok' | 'warn' | 'err' | 'info';
+  label: string;
+}) {
+  const palette = {
+    ok: { bg: '#dcfce7', fg: '#15803d' },
+    warn: { bg: '#fef3c7', fg: '#b45309' },
+    err: { bg: '#fef2f2', fg: '#b91c1c' },
+    info: { bg: '#dbeafe', fg: '#1d4ed8' },
+  }[kind];
+  return (
+    <View
+      className="self-start rounded-[6px] px-1.5 py-0.5"
+      style={{ backgroundColor: palette.bg }}
+    >
+      <Text className="text-[10px] font-semibold" style={{ color: palette.fg }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function ItemStatusPill({ status }: { status: string }) {
+  if (status === 'pending' || status === 'processing') {
+    return <StatusPill kind="warn" label={status === 'processing' ? 'Analysing' : 'Queued'} />;
+  }
+  if (status === 'ready_for_review') {
+    return <StatusPill kind="info" label="Ready" />;
+  }
+  if (status === 'filed') {
+    return <StatusPill kind="ok" label="Filed" />;
+  }
+  if (status === 'error') {
+    return <StatusPill kind="err" label="Failed" />;
+  }
+  if (status === 'discarded') {
+    return <StatusPill kind="err" label="Discarded" />;
+  }
+  return <StatusPill kind="info" label={status} />;
+}
+
+export default function BatchDetailScreen() {
+  const router = useRouter();
+  const { batchId } = useLocalSearchParams<{ batchId: string }>();
+  const { isAuthenticated } = useConvexAuth();
+
+  const batch = useQuery(
+    api.bulkUpload.getBatch,
+    isAuthenticated && batchId ? { batchId: batchId as any } : 'skip',
+  );
+  const items = useQuery(
+    api.bulkUpload.getBatchItems,
+    isAuthenticated && batchId ? { batchId: batchId as any } : 'skip',
+  );
+
+  // --- Shimmer/spinner for "analysing" state ---
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [pulse]);
+  const pulseOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
+
+  if (batch === undefined || items === undefined) {
+    return (
+      <View className="flex-1 bg-m-bg items-center justify-center">
+        <ActivityIndicator size="small" color={colors.textTertiary} />
+        <Text className="text-sm text-m-text-tertiary mt-3">Loading batch...</Text>
+      </View>
+    );
+  }
+
+  if (batch === null) {
+    return (
+      <View className="flex-1 bg-m-bg">
+        <MobileHeader />
+        <View className="flex-1 items-center justify-center px-8">
+          <AlertCircle size={32} color={colors.textTertiary} />
+          <Text className="text-sm font-medium text-m-text-primary mt-3">
+            Batch not found
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.replace('/upload')}
+            className="mt-4 px-4 py-2 bg-m-bg-brand rounded-[10px]"
+          >
+            <Text className="text-sm font-medium text-m-text-on-brand">
+              Back to Upload
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  const status = batch.status as string;
+  const isUploading = status === 'uploading';
+  const isProcessing = status === 'processing';
+  const isReview = status === 'review';
+  const isComplete = status === 'completed' || status === 'filed';
+
+  // Scope / destination label
+  const scopeLabel =
+    batch.scope === 'internal'
+      ? 'Internal'
+      : batch.scope === 'personal'
+      ? 'Personal'
+      : batch.clientName || 'Client upload';
+
+  const subLabel = batch.projectName
+    ? `${batch.projectName}${batch.projectShortcode ? ` · ${batch.projectShortcode}` : ''}`
+    : batch.internalFolderName || batch.personalFolderName || undefined;
+
+  // Aggregate counts
+  const total = items.length;
+  const ready = items.filter((i: any) => i.status === 'ready_for_review').length;
+  const filed = items.filter((i: any) => i.status === 'filed').length;
+  const errored = items.filter((i: any) => i.status === 'error').length;
+  const pending = items.filter(
+    (i: any) => i.status === 'pending' || i.status === 'processing',
+  ).length;
+
+  // Progress percentage (treat "filed" + "ready" + "error" as "done")
+  const done = ready + filed + errored;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  return (
+    <View className="flex-1 bg-m-bg">
+      <MobileHeader />
+
+      {/* Sub-header */}
+      <View className="bg-m-bg-card border-b border-m-border px-4 py-3 flex-row items-center justify-between">
+        <TouchableOpacity onPress={() => router.back()} className="p-1 -ml-1">
+          <ArrowLeft size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
+        <Text className="text-[15px] font-medium text-m-text-primary">
+          Batch Detail
+        </Text>
+        <View style={{ width: 22 }} />
+      </View>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }}
+      >
+        {/* Status hero card */}
+        <Card>
+          <View className="flex-row items-start gap-3">
+            <View
+              className="w-10 h-10 rounded-[10px] items-center justify-center"
+              style={{
+                backgroundColor:
+                  isComplete
+                    ? '#dcfce7'
+                    : isReview
+                    ? '#dbeafe'
+                    : '#fef3c7',
+              }}
+            >
+              {isComplete ? (
+                <CheckCircle2 size={20} color={colors.success} />
+              ) : isReview ? (
+                <Eye size={20} color="#1d4ed8" />
+              ) : (
+                <Animated.View style={{ opacity: pulseOpacity }}>
+                  <Sparkles size={20} color="#b45309" />
+                </Animated.View>
+              )}
+            </View>
+            <View className="flex-1 min-w-0">
+              <Text
+                className="text-base font-semibold text-m-text-primary"
+                numberOfLines={1}
+              >
+                {scopeLabel}
+              </Text>
+              {subLabel ? (
+                <Text className="text-xs text-m-text-tertiary mt-0.5" numberOfLines={1}>
+                  {subLabel}
+                </Text>
+              ) : null}
+              <View className="mt-2">
+                <StatusHeroText
+                  status={status}
+                  total={total}
+                  ready={ready}
+                  pending={pending}
+                  errored={errored}
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* Progress bar */}
+          {(isUploading || isProcessing) && total > 0 && (
+            <View className="mt-4">
+              <View className="flex-row items-center justify-between mb-1">
+                <Text className="text-xs text-m-text-secondary">
+                  {done} of {total} processed
+                </Text>
+                <Text className="text-xs font-semibold text-m-text-primary">
+                  {pct}%
+                </Text>
+              </View>
+              <View className="h-1.5 bg-m-bg-inset rounded-full overflow-hidden">
+                <View
+                  className="h-full bg-m-accent rounded-full"
+                  style={{ width: `${pct}%` }}
+                />
+              </View>
+            </View>
+          )}
+        </Card>
+
+        {/* Review on desktop banner — Phase 1 only */}
+        {isReview && (
+          <Card>
+            <View className="flex-row items-start gap-2.5">
+              <Eye size={16} color="#1d4ed8" style={{ marginTop: 2 }} />
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-m-text-primary">
+                  Ready to review
+                </Text>
+                <Text className="text-xs text-m-text-secondary mt-1 leading-5">
+                  All {total} {total === 1 ? 'document' : 'documents'} have been
+                  analysed. Open RockCap on desktop to review the AI
+                  classifications and file them.
+                </Text>
+                <Text className="text-[11px] text-m-text-tertiary mt-1.5 italic">
+                  Mobile review flow coming next — for now desktop is the
+                  fastest path to file.
+                </Text>
+              </View>
+            </View>
+          </Card>
+        )}
+
+        {/* Instructions (if any) */}
+        {batch.instructions ? (
+          <Card>
+            <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-1">
+              Instructions
+            </Text>
+            <Text className="text-sm text-m-text-secondary leading-5">
+              {batch.instructions}
+            </Text>
+          </Card>
+        ) : null}
+
+        {/* Per-file list */}
+        <Card>
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-sm font-semibold text-m-text-primary">
+              Files
+            </Text>
+            <Text className="text-xs text-m-text-tertiary">
+              {total} {total === 1 ? 'file' : 'files'}
+            </Text>
+          </View>
+          {items.length === 0 ? (
+            <Text className="text-sm text-m-text-tertiary text-center py-2">
+              No files in batch
+            </Text>
+          ) : (
+            <View>
+              {items.map((item: any, idx: number) => (
+                <View key={item._id}>
+                  {idx > 0 && <View className="h-px bg-m-border-subtle" />}
+                  <View className="flex-row items-center gap-2.5 py-2.5">
+                    <FileText size={15} color={colors.textTertiary} />
+                    <View className="flex-1 min-w-0">
+                      <Text
+                        className="text-sm text-m-text-primary"
+                        numberOfLines={1}
+                      >
+                        {item.fileName}
+                      </Text>
+                      {item.error ? (
+                        <Text
+                          className="text-[11px] mt-0.5"
+                          style={{ color: colors.error }}
+                          numberOfLines={2}
+                        >
+                          {item.error}
+                        </Text>
+                      ) : item.category ? (
+                        <Text
+                          className="text-[11px] text-m-text-tertiary mt-0.5"
+                          numberOfLines={1}
+                        >
+                          {item.category}
+                          {item.confidence
+                            ? ` · ${Math.round(item.confidence * 100)}%`
+                            : ''}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <ItemStatusPill status={item.status} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+
+        {/* Actions */}
+        <View className="flex-row gap-2">
+          <TouchableOpacity
+            onPress={() => router.replace('/upload')}
+            className="flex-1 py-3 rounded-[10px] items-center bg-m-bg-card border border-m-border"
+          >
+            <Text className="text-sm font-medium text-m-text-primary">
+              Upload More
+            </Text>
+          </TouchableOpacity>
+          {isComplete && (
+            <TouchableOpacity
+              onPress={() => router.replace('/(tabs)/docs' as any)}
+              className="flex-1 py-3 rounded-[10px] items-center"
+              style={{ backgroundColor: colors.bgBrand }}
+            >
+              <Text
+                className="text-sm font-medium"
+                style={{ color: colors.textOnBrand }}
+              >
+                View in Docs
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function StatusHeroText({
+  status, total, ready, pending, errored,
+}: {
+  status: string;
+  total: number;
+  ready: number;
+  pending: number;
+  errored: number;
+}) {
+  if (status === 'uploading') {
+    return (
+      <Text className="text-[13px] text-m-text-secondary">
+        Uploading your files. Keep the app open until this completes...
+      </Text>
+    );
+  }
+  if (status === 'processing') {
+    return (
+      <Text className="text-[13px] text-m-text-secondary">
+        AI is analysing {pending} {pending === 1 ? 'file' : 'files'}...
+      </Text>
+    );
+  }
+  if (status === 'review') {
+    return (
+      <Text className="text-[13px] text-m-text-secondary">
+        {ready} {ready === 1 ? 'document' : 'documents'} ready for review
+        {errored > 0 ? ` · ${errored} failed` : ''}
+      </Text>
+    );
+  }
+  if (status === 'completed' || status === 'filed') {
+    return (
+      <Text className="text-[13px] text-m-text-secondary">
+        All {total} {total === 1 ? 'document is' : 'documents are'} filed.
+      </Text>
+    );
+  }
+  return (
+    <Text className="text-[13px] text-m-text-secondary capitalize">
+      Status: {status.replace(/_/g, ' ')}
+    </Text>
+  );
+}
