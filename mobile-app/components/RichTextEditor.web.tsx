@@ -4,7 +4,7 @@ import { View } from 'react-native';
 export interface MentionItem {
   id: string;
   label: string;
-  type: 'user' | 'client' | 'project';
+  type: 'user' | 'client' | 'project' | 'contact';
 }
 
 interface RichTextEditorProps {
@@ -87,8 +87,9 @@ let mentionItems = []; // populated from parent via postMessage
 let selectedMentionIndex = 0;
 let currentMentionCommand = null;
 
-const typeIcons = { user: '\\ud83d\\udc64', client: '\\ud83c\\udfe2', project: '\\ud83d\\udcc1' };
-const typeColors = { user: '#3b82f6', client: '#f59e0b', project: '#8b5cf6' };
+// 👤 user · 🏢 client · 📁 project · 🪪 contact
+const typeIcons = { user: '\\ud83d\\udc64', client: '\\ud83c\\udfe2', project: '\\ud83d\\udcc1', contact: '\\ud83e\\ude92' };
+const typeColors = { user: '#3b82f6', client: '#f59e0b', project: '#8b5cf6', contact: '#059669' };
 
 function renderMentionPopup(items, command) {
   const popup = document.getElementById('mention-popup');

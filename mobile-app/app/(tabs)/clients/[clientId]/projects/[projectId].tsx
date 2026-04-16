@@ -15,6 +15,8 @@ import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MobileHeader from '@/components/MobileHeader';
+import ContactAvatar from '@/components/contacts/ContactAvatar';
+import ContactDetailModal from '@/components/contacts/ContactDetailModal';
 
 // ============================================================================
 // Constants
@@ -299,6 +301,8 @@ export default function ProjectDetailScreen() {
   const { isAuthenticated } = useConvexAuth();
   const [activeTab, setActiveTab] = useState<TabName>('Overview');
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
+  // Contact detail sheet — opened from the Overview's Key Contacts card.
+  const [openContactId, setOpenContactId] = useState<string | null>(null);
 
   // Notes form
   const [showNoteForm, setShowNoteForm] = useState(false);
@@ -337,6 +341,13 @@ export default function ProjectDetailScreen() {
   );
   const projectFolders = useQuery(
     api.projects.getProjectFolders,
+    skip ? 'skip' : { projectId: projectId as any },
+  );
+  // Contacts directly attached to this project (via their `projectId` field).
+  // Distinct from the client's contact list — a project may have a subset
+  // of key people who are only relevant to this engagement.
+  const contacts = useQuery(
+    api.contacts.getByProject,
     skip ? 'skip' : { projectId: projectId as any },
   );
 
@@ -897,6 +908,60 @@ export default function ProjectDetailScreen() {
               </Card>
             )}
 
+            {/* Key Contacts — project-level people (contacts.projectId === this project) */}
+            {contacts && contacts.length > 0 ? (
+              <Card>
+                <View className="flex-row items-center mb-2">
+                  <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide flex-1">
+                    Key Contacts ({contacts.length})
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push(`/contacts?clientId=${clientId}` as any)
+                    }
+                    className="flex-row items-center"
+                    hitSlop={6}
+                  >
+                    <Text className="text-xs text-m-text-tertiary mr-0.5">
+                      View all
+                    </Text>
+                    <ChevronRight size={12} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+                <View className="gap-0">
+                  {contacts.slice(0, 5).map((c: any, idx: number) => (
+                    <View key={c._id}>
+                      {idx > 0 && <View className="h-px bg-m-border-subtle" />}
+                      <TouchableOpacity
+                        onPress={() => setOpenContactId(c._id)}
+                        activeOpacity={0.6}
+                        className="flex-row items-center gap-3 py-2.5"
+                      >
+                        <ContactAvatar name={c.name} size={32} />
+                        <View className="flex-1 min-w-0">
+                          <Text
+                            className="text-sm font-medium text-m-text-primary"
+                            numberOfLines={1}
+                          >
+                            {c.name}
+                          </Text>
+                          {c.role || c.email ? (
+                            <Text
+                              className="text-xs text-m-text-tertiary mt-0.5"
+                              numberOfLines={1}
+                            >
+                              {c.role || c.email}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <ChevronRight size={14} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              </Card>
+            ) : null}
+
             {/* Quick Links — slimmed since metrics handle the common ones */}
             <Card>
               <SectionHeader title="Quick Links" />
@@ -1320,6 +1385,13 @@ export default function ProjectDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Contact detail — opened from the Overview's Key Contacts card */}
+      <ContactDetailModal
+        visible={openContactId !== null}
+        contactId={openContactId}
+        onClose={() => setOpenContactId(null)}
+      />
     </View>
   );
 }

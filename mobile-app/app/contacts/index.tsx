@@ -30,6 +30,12 @@ import ContactDetailModal from '@/components/contacts/ContactDetailModal';
 // ContactCreateModal. Both are full-screen Modals — no stack route churn.
 // ---------------------------------------------------------------------------
 
+// Sentinel value for the "Unlinked" filter chip. Using a string literal
+// (rather than undefined/null) keeps the filter state a simple `string | null`
+// where null means "All" and any non-null string is either a clientId or this
+// sentinel. Clean to switch on in the filter logic.
+const UNLINKED_FILTER = '__unlinked__';
+
 // Helpers for alphabetical grouping. Kept inline so this screen is fully
 // self-contained; extract later if we add contact grouping elsewhere.
 interface ContactGroup {
@@ -117,10 +123,24 @@ export default function ContactsScreen() {
       .sort((a: any, b: any) => a.name.localeCompare(b.name));
   }, [contacts, clients]);
 
+  // Count contacts without any client linkage. With HubSpot sync, most
+  // imports land without clientId — this chip gives users a one-tap view
+  // to triage them into clients. When the count is 0, the chip is hidden.
+  const unlinkedCount = useMemo(() => {
+    if (!contacts) return 0;
+    return contacts.filter((c: any) => !c.clientId).length;
+  }, [contacts]);
+
   const filtered = useMemo(() => {
     if (!contacts) return [];
     let list = contacts;
-    if (activeClientFilter) {
+    // The `activeClientFilter` can be:
+    //   null           — no filter (All)
+    //   '__unlinked__' — sentinel: show contacts with no clientId
+    //   <clientId>     — show contacts for that client
+    if (activeClientFilter === UNLINKED_FILTER) {
+      list = list.filter((c: any) => !c.clientId);
+    } else if (activeClientFilter) {
       list = list.filter((c: any) => c.clientId === activeClientFilter);
     }
     const q = search.trim().toLowerCase();
@@ -203,8 +223,8 @@ export default function ContactsScreen() {
         </View>
       </View>
 
-      {/* Client filter chips */}
-      {clientsWithContacts.length > 0 && (
+      {/* Filter chips row — All · Unlinked (when present) · each client */}
+      {(clientsWithContacts.length > 0 || unlinkedCount > 0) && (
         <View className="pb-2">
           <ScrollView
             horizontal
@@ -216,6 +236,22 @@ export default function ContactsScreen() {
               active={activeClientFilter === null}
               onPress={() => setActiveClientFilter(null)}
             />
+            {unlinkedCount > 0 && (
+              <FilterChip
+                // Shows the count inline so users can quickly gauge how much
+                // triage work HubSpot left behind. "Unlinked · 87" reads well
+                // and avoids a separate badge element.
+                label={`Unlinked · ${unlinkedCount}`}
+                active={activeClientFilter === UNLINKED_FILTER}
+                onPress={() =>
+                  setActiveClientFilter(
+                    activeClientFilter === UNLINKED_FILTER
+                      ? null
+                      : UNLINKED_FILTER,
+                  )
+                }
+              />
+            )}
             {clientsWithContacts.map((c: any) => (
               <FilterChip
                 key={c._id}

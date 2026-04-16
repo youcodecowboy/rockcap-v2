@@ -8,7 +8,7 @@ const editorHtml = require('@/assets/tiptap-editor.html');
 export interface MentionItem {
   id: string;
   label: string;
-  type: 'user' | 'client' | 'project';
+  type: 'user' | 'client' | 'project' | 'contact';
 }
 
 interface RichTextEditorProps {

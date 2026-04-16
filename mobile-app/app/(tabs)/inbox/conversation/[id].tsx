@@ -6,15 +6,29 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../../model-testing-app/convex/_generated/api';
-import { ArrowLeft, Send, Paperclip, FileText, Building, FolderOpen, X } from 'lucide-react-native';
+import { ArrowLeft, Send, Paperclip, FileText, Building, FolderOpen, User, X } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MobileHeader from '@/components/MobileHeader';
+import ContactDetailModal from '@/components/contacts/ContactDetailModal';
 
+// Types referencable in a message. Historical: document/project/client. Added
+// 'contact' so users can share a rolodex entry in-thread (e.g., "here's the
+// solicitor we discussed — @John Smith"). Receiver taps the chip → opens the
+// contact detail modal with live details.
 interface EntityReference {
-  type: 'document' | 'project' | 'client';
+  type: 'document' | 'project' | 'client' | 'contact';
   id: string;
   name: string;
+}
+
+// Shared icon mapping — a single source of truth for the chip icon across
+// composer pending-refs, in-message chips, and the attach menu list.
+function iconForReference(type: EntityReference['type']) {
+  if (type === 'document') return FileText;
+  if (type === 'client') return Building;
+  if (type === 'contact') return User;
+  return FolderOpen; // project
 }
 
 function formatTime(ts: number | string): string {
@@ -34,6 +48,10 @@ export default function ConversationDetailScreen() {
   const [references, setReferences] = useState<EntityReference[]>([]);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [sending, setSending] = useState(false);
+  // When a user taps a "contact" chip in a message, open the contact
+  // detail modal. We keep this state here (rather than navigate to a route)
+  // so the reader stays in context of the conversation.
+  const [openContactId, setOpenContactId] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
 
   const conversation = useQuery(
@@ -59,6 +77,9 @@ export default function ConversationDetailScreen() {
         pathname: '/docs/viewer',
         params: { documentId: ref.id, title: ref.name, fileType: '' },
       } as any);
+    } else if (ref.type === 'contact') {
+      // Stay in-conversation — open the contact detail as a modal overlay.
+      setOpenContactId(ref.id);
     }
   }, [router]);
 
@@ -173,7 +194,7 @@ export default function ConversationDetailScreen() {
                   {msgRefs.length > 0 && (
                     <View className="mt-1.5 gap-1">
                       {msgRefs.map((ref, i) => {
-                        const Icon = ref.type === 'document' ? FileText : ref.type === 'client' ? Building : FolderOpen;
+                        const Icon = iconForReference(ref.type);
                         return (
                           <TouchableOpacity
                             key={i}
@@ -210,7 +231,7 @@ export default function ConversationDetailScreen() {
       {references.length > 0 && (
         <View className="flex-row flex-wrap gap-1.5 px-4 py-2 border-t border-m-border bg-m-bg-subtle">
           {references.map((ref, i) => {
-            const Icon = ref.type === 'document' ? FileText : ref.type === 'client' ? Building : FolderOpen;
+            const Icon = iconForReference(ref.type);
             return (
               <View key={i} className="flex-row items-center gap-1 bg-m-bg-card border border-m-border rounded-full px-2 py-1">
                 <Icon size={10} color={colors.textSecondary} />
@@ -260,6 +281,13 @@ export default function ConversationDetailScreen() {
           existingIds={references.map(r => r.id)}
         />
       )}
+
+      {/* Contact detail — shown when user taps a 'contact' reference chip */}
+      <ContactDetailModal
+        visible={openContactId !== null}
+        contactId={openContactId}
+        onClose={() => setOpenContactId(null)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -272,7 +300,7 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
   existingIds: string[];
 }) {
   const { isAuthenticated } = useConvexAuth();
-  const [tab, setTab] = useState<'client' | 'project' | 'document'>('client');
+  const [tab, setTab] = useState<'client' | 'project' | 'document' | 'contact'>('client');
   const [search, setSearch] = useState('');
 
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
@@ -281,20 +309,32 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
     api.documents.getRecent,
     isAuthenticated ? { limit: 50 } : 'skip'
   );
+  // Contacts — only fetched when the "contact" tab is active, so users who
+  // only attach clients/projects/documents never pay the 1000-record download.
+  // Once the tab is opened, Convex's reactive subscription keeps it warm for
+  // the rest of the session.
+  const contacts = useQuery(
+    api.contacts.getAll,
+    isAuthenticated && tab === 'contact' ? {} : 'skip'
+  );
 
   const items = useMemo(() => {
     const q = search.toLowerCase();
-    let list: { id: string; name: string; type: 'client' | 'project' | 'document' }[] = [];
+    let list: { id: string; name: string; type: EntityReference['type'] }[] = [];
     if (tab === 'client' && clients) {
       list = (clients as any[]).map(c => ({ id: c._id, name: c.name, type: 'client' as const }));
     } else if (tab === 'project' && projects) {
       list = (projects as any[]).map(p => ({ id: p._id, name: (p as any).name || 'Project', type: 'project' as const }));
     } else if (tab === 'document' && documents) {
       list = (documents as any[]).map(d => ({ id: d._id, name: d.fileName || 'Document', type: 'document' as const }));
+    } else if (tab === 'contact' && contacts) {
+      list = (contacts as any[]).map(c => ({ id: c._id, name: c.name || 'Contact', type: 'contact' as const }));
     }
     if (q) list = list.filter(i => i.name.toLowerCase().includes(q));
+    // Cap to 30 for render cost — search narrows below that for typical use.
+    // Contacts tab: at 1000 records, this keeps the FlatList tiny.
     return list.filter(i => !existingIds.includes(i.id)).slice(0, 30);
-  }, [tab, clients, projects, documents, search, existingIds]);
+  }, [tab, clients, projects, documents, contacts, search, existingIds]);
 
   return (
     <View className="absolute inset-0 bg-black/50 justify-end" style={{ zIndex: 1000 }}>
@@ -307,7 +347,7 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
         </View>
         {/* Tabs */}
         <View className="flex-row border-b border-m-border">
-          {(['client', 'project', 'document'] as const).map(t => (
+          {(['client', 'project', 'document', 'contact'] as const).map(t => (
             <TouchableOpacity
               key={t}
               onPress={() => setTab(t)}
@@ -334,7 +374,7 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
           data={items}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
-            const Icon = item.type === 'document' ? FileText : item.type === 'client' ? Building : FolderOpen;
+            const Icon = iconForReference(item.type);
             return (
               <TouchableOpacity
                 onPress={() => onSelect(item)}

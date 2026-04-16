@@ -119,15 +119,24 @@ export default function NoteEditorScreen() {
   const allClients = clients || [];
   const allProjects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
   const allUsers = useQuery(api.users.getAll, isAuthenticated ? {} : 'skip');
+  // Contacts — with HubSpot sync, this can be 1000+ entries. The Tiptap
+  // mention popup filters client-side and slices to 10 results, so it
+  // stays snappy regardless of list size. Convex shares this subscription
+  // across any screen using the same query+args (e.g. TaskCreationFlow),
+  // so we don't double-fetch.
+  const allContacts = useQuery(api.contacts.getAll, isAuthenticated ? {} : 'skip');
 
-  // Build mention items for the editor
+  // Build mention items for the editor. Order matters: users first (most
+  // common mention target), then clients, projects, contacts. Tiptap's
+  // default suggestion sort preserves insertion order when scores tie.
   const editorMentionItems = useMemo((): MentionItem[] => {
     const items: MentionItem[] = [];
     if (allUsers) items.push(...(allUsers as any[]).map((u: any) => ({ id: u._id, label: u.name || u.email || 'User', type: 'user' as const })));
     if (allClients.length) items.push(...(allClients as any[]).map((c: any) => ({ id: c._id, label: c.name, type: 'client' as const })));
     if (allProjects) items.push(...(allProjects as any[]).map((p: any) => ({ id: p._id, label: (p as any).name || 'Project', type: 'project' as const })));
+    if (allContacts) items.push(...(allContacts as any[]).map((c: any) => ({ id: c._id, label: c.name || 'Contact', type: 'contact' as const })));
     return items;
-  }, [allUsers, allClients, allProjects]);
+  }, [allUsers, allClients, allProjects, allContacts]);
 
   const [initialEditorContent, setInitialEditorContent] = useState<any>(undefined);
 
