@@ -22,6 +22,18 @@ import {
   FileText,
   Send,
   X,
+  StickyNote,
+  Pencil,
+  DollarSign,
+  FolderKanban,
+  Video,
+  Building2,
+  Globe,
+  MapPin,
+  Calendar,
+  Lightbulb,
+  TrendingUp,
+  Briefcase,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
@@ -50,6 +62,31 @@ function extractPlainText(content: any): string {
   walk(content);
   return texts.join(' ');
 }
+
+function formatCurrency(amount: number): string {
+  if (amount >= 1_000_000) return `£${(amount / 1_000_000).toFixed(1)}M`;
+  if (amount >= 1_000) return `£${Math.round(amount / 1_000)}K`;
+  return `£${amount.toLocaleString()}`;
+}
+
+function formatDateShort(dateStr: string | undefined | null): string {
+  if (!dateStr) return '--';
+  return new Date(dateStr).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+// Palette for metric-tile icons. Each entry is { iconBg, iconTint } so the
+// tiles pop visually without fighting the overall neutral palette.
+const metricTones = {
+  green: { bg: '#dcfce7', tint: '#059669' },
+  purple: { bg: '#f3e8ff', tint: '#9333ea' },
+  blue: { bg: '#dbeafe', tint: '#2563eb' },
+  orange: { bg: '#ffedd5', tint: '#ea580c' },
+  amber: { bg: '#fef3c7', tint: '#d97706' },
+};
 
 // ============================================================================
 // Helper Sub-Components
@@ -86,6 +123,351 @@ function SectionHeader({ title, count }: { title: string; count?: number }) {
     <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide mb-2">
       {title}{count !== undefined ? ` (${count})` : ''}
     </Text>
+  );
+}
+
+// Compact "label over value" row used inside the Company Information card.
+function InfoRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <View>
+      <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+        {label}
+      </Text>
+      <Text className="text-sm text-m-text-primary">{value}</Text>
+    </View>
+  );
+}
+
+// Build a human-readable address line from the client's components. Returns
+// null when the client has no address fields so the caller can suppress the
+// row entirely.
+function formatClientAddress(client: any): string | null {
+  const parts: string[] = [];
+  if (client.address) parts.push(client.address);
+  if (client.city) parts.push(client.city);
+  if (client.state) parts.push(client.state);
+  if (client.zip) parts.push(client.zip);
+  if (client.country) parts.push(client.country);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+// ----------------------------------------------------------------------------
+// StageNoteBanner — inline-editable "Status: X" strip with blue left border.
+// Mirrors the desktop ClientOverviewTab stage note banner at the top of the
+// overview, but adapted for touch: tap the pencil to open the editor, tap ✓
+// to save. Empty state reads "Click to add..." (tap to start editing).
+// ----------------------------------------------------------------------------
+function StageNoteBanner({
+  value, onSave,
+}: {
+  value: string;
+  onSave: (next: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } catch (e) {
+      console.error('Failed to save stage note:', e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setDraft(value);
+    setEditing(false);
+  };
+
+  return (
+    <View
+      className="bg-m-bg-card rounded-[12px] border border-m-border px-3 py-2.5"
+      style={{ borderLeftWidth: 4, borderLeftColor: '#3b82f6' }}
+    >
+      <View className="flex-row items-center gap-2">
+        <StickyNote size={14} color="#3b82f6" />
+        {editing ? (
+          <>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="e.g. Awaiting KYC docs"
+              placeholderTextColor={colors.textPlaceholder}
+              autoFocus
+              className="flex-1 text-sm text-m-text-primary py-0"
+            />
+            <TouchableOpacity onPress={handleSave} disabled={saving} className="p-1">
+              <Check size={16} color={colors.success} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleCancel} className="p-1">
+              <X size={16} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <View className="flex-1 flex-row flex-wrap items-center gap-1">
+              <Text className="text-sm font-semibold text-m-text-secondary">Status:</Text>
+              {value ? (
+                <Text className="text-sm text-m-text-primary flex-1" numberOfLines={1}>
+                  {value}
+                </Text>
+              ) : (
+                <Text className="text-sm italic text-m-text-tertiary flex-1">
+                  Tap to add...
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity onPress={() => setEditing(true)} className="p-1" hitSlop={6}>
+              <Pencil size={13} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// MetricTile — one of four in the Key Metrics row. Colored icon chip on the
+// left, a compact value/label pair on the right. Tappable tiles get a
+// subtle chevron via the natural shadow on Card. Keeps tiles compact so 4
+// fit on a narrow phone screen (2x2 grid on the narrowest, otherwise a row).
+// ----------------------------------------------------------------------------
+function MetricTile({
+  icon, tone, label, value, valueSubtle, onPress,
+}: {
+  icon: React.ReactNode;
+  tone: keyof typeof metricTones;
+  label: string;
+  value: string;
+  valueSubtle?: string;
+  onPress?: () => void;
+}) {
+  const { bg } = metricTones[tone];
+  const Inner = (
+    <View className="bg-m-bg-card rounded-[12px] border border-m-border p-3 flex-row items-center gap-2.5">
+      <View
+        className="w-9 h-9 rounded-[8px] items-center justify-center"
+        style={{ backgroundColor: bg }}
+      >
+        {icon}
+      </View>
+      <View className="flex-1 min-w-0">
+        <Text className="text-[10px] font-medium text-m-text-tertiary uppercase tracking-wide" numberOfLines={1}>
+          {label}
+        </Text>
+        <Text
+          className="text-[15px] font-semibold text-m-text-primary"
+          numberOfLines={1}
+        >
+          {value}
+          {valueSubtle ? (
+            <Text className="text-xs font-normal text-m-text-tertiary"> {valueSubtle}</Text>
+          ) : null}
+        </Text>
+      </View>
+    </View>
+  );
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} className="flex-1 min-w-[48%]">
+        {Inner}
+      </TouchableOpacity>
+    );
+  }
+  return <View className="flex-1 min-w-[48%]">{Inner}</View>;
+}
+
+// ----------------------------------------------------------------------------
+// KnowledgeLibraryCard — compact version of the desktop MissingDocumentsCard.
+// Shows overall progress, a "X required missing" alert, and the top 5 missing
+// items. When everything is fulfilled, switches to the green "All Complete"
+// state.
+// ----------------------------------------------------------------------------
+function KnowledgeLibraryCard({
+  summary, missingItems, onViewAll,
+}: {
+  summary: any;
+  missingItems: any[] | undefined;
+  onViewAll: () => void;
+}) {
+  // Loading — render nothing; avoids layout flash
+  if (summary === undefined || missingItems === undefined) {
+    return null;
+  }
+
+  // Not set up yet
+  if (!summary || summary.overall?.total === 0) {
+    return (
+      <Card>
+        <View className="flex-row items-center gap-2 mb-2">
+          <Lightbulb size={16} color={metricTones.amber.tint} />
+          <Text className="text-sm font-semibold text-m-text-primary flex-1">
+            Knowledge Library
+          </Text>
+        </View>
+        <Text className="text-sm text-m-text-tertiary">
+          No document requirements configured yet.
+        </Text>
+        <TouchableOpacity
+          onPress={onViewAll}
+          className="mt-3 flex-row items-center self-start bg-m-bg-subtle rounded-full px-3 py-1.5"
+        >
+          <Text className="text-xs text-m-text-secondary mr-1">Set up requirements</Text>
+          <ChevronRight size={12} color={colors.textTertiary} />
+        </TouchableOpacity>
+      </Card>
+    );
+  }
+
+  const total = summary.overall.total as number;
+  const fulfilled = summary.overall.fulfilled as number;
+  const missing = summary.overall.missing as number;
+  const pct = Math.round((fulfilled / total) * 100);
+
+  const requiredMissing = (missingItems ?? []).filter((m: any) => m.priority === 'required');
+  const topMissing = requiredMissing.slice(0, 5);
+
+  // All complete state — green accent
+  if (missing === 0) {
+    return (
+      <Card
+        style={{
+          backgroundColor: '#f0fdf4',
+          borderColor: '#bbf7d0',
+        }}
+      >
+        <View className="flex-row items-center gap-2 mb-2">
+          <CheckCircle2 size={16} color={colors.success} />
+          <Text className="text-sm font-semibold" style={{ color: '#065f46', flex: 1 }}>
+            Knowledge Library
+          </Text>
+          <Text className="text-xs" style={{ color: '#059669' }}>
+            {fulfilled}/{total}
+          </Text>
+        </View>
+        <Text className="text-sm font-medium mb-2" style={{ color: '#065f46' }}>
+          All Complete!
+        </Text>
+        <View className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: '#bbf7d0' }}>
+          <View className="h-full rounded-full" style={{ width: '100%', backgroundColor: colors.success }} />
+        </View>
+        <TouchableOpacity onPress={onViewAll} className="mt-3 flex-row items-center self-start">
+          <Text className="text-xs font-medium" style={{ color: '#059669' }}>
+            View all documents
+          </Text>
+          <ChevronRight size={12} color="#059669" style={{ marginLeft: 2 }} />
+        </TouchableOpacity>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <View className="flex-row items-center gap-2 mb-3">
+        <Lightbulb size={16} color={metricTones.amber.tint} />
+        <Text className="text-sm font-semibold text-m-text-primary flex-1">
+          Knowledge Library
+        </Text>
+        <TouchableOpacity onPress={onViewAll} className="flex-row items-center">
+          <Text className="text-xs text-m-text-tertiary mr-1">View all</Text>
+          <ChevronRight size={12} color={colors.textTertiary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Progress */}
+      <View className="mb-3">
+        <View className="flex-row items-center justify-between mb-1">
+          <Text className="text-sm font-medium text-m-text-primary">{pct}% Complete</Text>
+          <Text className="text-xs text-m-text-tertiary">
+            {fulfilled}/{total} documents
+          </Text>
+        </View>
+        <View className="h-2 bg-m-bg-inset rounded-full overflow-hidden">
+          <View
+            className="h-full bg-m-accent rounded-full"
+            style={{ width: `${pct}%` }}
+          />
+        </View>
+      </View>
+
+      {/* Required missing alert */}
+      {requiredMissing.length > 0 && (
+        <View
+          className="rounded-[8px] px-2.5 py-1.5 mb-3 flex-row items-center gap-1.5"
+          style={{ backgroundColor: '#fef2f2' }}
+        >
+          <AlertTriangle size={13} color="#b91c1c" />
+          <Text className="text-xs font-medium" style={{ color: '#b91c1c' }}>
+            {requiredMissing.length} required document{requiredMissing.length !== 1 ? 's' : ''} missing
+          </Text>
+        </View>
+      )}
+
+      {/* Top missing items */}
+      {topMissing.length > 0 && (
+        <>
+          <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-1.5">
+            Priority Missing
+          </Text>
+          <View className="gap-1.5">
+            {topMissing.map((item: any) => (
+              <View key={item._id} className="flex-row items-center gap-2">
+                <FileText size={13} color={colors.textTertiary} />
+                <Text
+                  className="text-sm text-m-text-secondary flex-1"
+                  numberOfLines={1}
+                >
+                  {item.name}
+                </Text>
+                {item.priority === 'required' ? (
+                  <View
+                    className="rounded-[6px] px-1.5 py-0.5"
+                    style={{ backgroundColor: '#fef2f2' }}
+                  >
+                    <Text className="text-[10px] font-medium" style={{ color: '#b91c1c' }}>
+                      Required
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+            {requiredMissing.length > 5 && (
+              <Text className="text-xs text-m-text-tertiary pl-5">
+                +{requiredMissing.length - 5} more required documents
+              </Text>
+            )}
+          </View>
+        </>
+      )}
+
+      {/* Category breakdown */}
+      {summary.byCategory && Object.keys(summary.byCategory).length > 0 && (
+        <View className="mt-3 pt-3 border-t border-m-border-subtle">
+          <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-1.5">
+            By Category
+          </Text>
+          <View className="gap-1">
+            {Object.entries(summary.byCategory).map(([cat, stats]: any) => (
+              <View key={cat} className="flex-row items-center justify-between">
+                <Text className="text-xs text-m-text-secondary">{cat}</Text>
+                <Text
+                  className="text-xs font-medium"
+                  style={{ color: stats.missing > 0 ? colors.error : colors.success }}
+                >
+                  {stats.fulfilled}/{stats.total}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </Card>
   );
 }
 
@@ -384,6 +766,28 @@ export default function ClientDetailScreen() {
     // API may not exist
   }
 
+  // Checklist summary — powers the Knowledge Library card progress bar.
+  let checklistSummary: any = undefined;
+  try {
+    checklistSummary = useQuery(
+      api.knowledgeLibrary.getChecklistSummary,
+      skip ? 'skip' : { clientId: clientId as any },
+    );
+  } catch {
+    // API may not exist
+  }
+
+  // Missing items — powers "Priority Missing" list inside Knowledge Library.
+  let missingItems: any = undefined;
+  try {
+    missingItems = useQuery(
+      api.knowledgeLibrary.getMissingItems,
+      skip ? 'skip' : { clientId: clientId as any },
+    );
+  } catch {
+    // API may not exist
+  }
+
   // ---------- Mutations ----------
   const createNote = useMutation(api.notes.create);
   const createTask = useMutation(api.tasks.create);
@@ -391,6 +795,7 @@ export default function ClientDetailScreen() {
   const updateChecklistStatus = useMutation(api.knowledgeLibrary.updateItemStatus);
   const createFlag = useMutation(api.flags.create);
   const replyToFlag = useMutation(api.flags.reply);
+  const updateStageNote = useMutation(api.clients.updateStageNote);
 
   // ---------- Derived data ----------
   const totalDocs = documents?.length ?? 0;
@@ -461,6 +866,53 @@ export default function ClientDetailScreen() {
     return grouped;
   }, [intelligence]);
 
+  // Overview: derived metrics for the 4-tile key-metrics row.
+  const totalDealValue = useMemo(() => {
+    if (!projects) return 0;
+    return projects.reduce((s: number, p: any) => s + (p.loanAmount || 0), 0);
+  }, [projects]);
+
+  const activeProjectsCount = useMemo(() => {
+    if (!projects) return 0;
+    return projects.filter((p: any) => p.status === 'active').length;
+  }, [projects]);
+
+  const primaryContact = useMemo(() => {
+    if (!contacts || contacts.length === 0) return null;
+    return contacts[0];
+  }, [contacts]);
+
+  // Overview: recent documents (top 3 by uploadedAt desc) + recent projects.
+  const recentDocuments = useMemo(() => {
+    if (!documents) return [];
+    return [...documents]
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.uploadedAt || 0).getTime() -
+          new Date(a.uploadedAt || 0).getTime()
+      )
+      .slice(0, 3);
+  }, [documents]);
+
+  const recentProjects = useMemo(() => {
+    if (!projects) return [];
+    return [...projects]
+      .sort(
+        (a: any, b: any) =>
+          new Date(b._creationTime || 0).getTime() -
+          new Date(a._creationTime || 0).getTime()
+      )
+      .slice(0, 3);
+  }, [projects]);
+
+  // Overview: top 5 active tasks for the Active Tasks preview card.
+  const activeTasksPreview = useMemo(() => {
+    if (!tasks) return [];
+    return tasks
+      .filter((t: any) => t.status === 'todo' || t.status === 'in_progress')
+      .slice(0, 5);
+  }, [tasks]);
+
   // Docs: project folders with document counts
   const docsProjectFolders = useMemo(() => {
     if (!projects || !folderCounts) return [];
@@ -477,6 +929,11 @@ export default function ClientDetailScreen() {
   }, [projects, folderCounts]);
 
   // ---------- Handlers ----------
+  const handleSaveStageNote = async (next: string) => {
+    if (!clientId) return;
+    await updateStageNote({ id: clientId as any, stageNote: next });
+  };
+
   const handleSaveNote = async () => {
     if (!noteTitle.trim()) return;
     try {
@@ -632,49 +1089,399 @@ export default function ClientDetailScreen() {
         {/* ================================================================ */}
         {activeTab === 'Overview' && (
           <>
-            {/* Contact Details */}
-            <Card>
-              <SectionHeader title="Details" />
-              {client.email ? (
-                <TouchableOpacity onPress={() => Linking.openURL(`mailto:${client.email}`)} className="flex-row items-center gap-2 mb-1.5">
-                  <Mail size={14} color={colors.accent} />
-                  <Text className="text-sm text-m-accent underline">{client.email}</Text>
-                </TouchableOpacity>
-              ) : null}
-              {client.phone ? (
-                <TouchableOpacity onPress={() => Linking.openURL(`tel:${client.phone}`)} className="flex-row items-center gap-2 mb-1.5">
-                  <Phone size={14} color={colors.accent} />
-                  <Text className="text-sm text-m-accent underline">{client.phone}</Text>
-                </TouchableOpacity>
-              ) : null}
-              {client.stageNote ? (
-                <View className="mt-2 pt-2 border-t border-m-border-subtle">
-                  <Text className="text-xs text-m-text-tertiary mb-1">Stage Note</Text>
-                  <Text className="text-sm text-m-text-secondary">{client.stageNote}</Text>
-                </View>
-              ) : null}
-            </Card>
+            {/* Stage Note — inline-editable "Status:" banner with blue accent */}
+            <StageNoteBanner
+              value={client.stageNote || ''}
+              onSave={handleSaveStageNote}
+            />
 
-            {/* Summary Metrics */}
+            {/* Key Metrics — 4 colored tiles, wrap to 2x2 on narrow screens */}
+            <View className="flex-row flex-wrap gap-2">
+              <MetricTile
+                icon={<DollarSign size={18} color={metricTones.green.tint} />}
+                tone="green"
+                label="Deal Value"
+                value={totalDealValue > 0 ? formatCurrency(totalDealValue) : '—'}
+                valueSubtle={projects && projects.length === 0 ? '(no projects)' : undefined}
+              />
+              <MetricTile
+                icon={<FolderKanban size={18} color={metricTones.purple.tint} />}
+                tone="purple"
+                label="Active Projects"
+                value={String(activeProjectsCount)}
+                valueSubtle={
+                  projects && projects.length > 0
+                    ? `of ${projects.length}`
+                    : undefined
+                }
+                onPress={() => setActiveTab('Projects')}
+              />
+              <MetricTile
+                icon={<User size={18} color={metricTones.blue.tint} />}
+                tone="blue"
+                label="Primary Contact"
+                value={primaryContact?.name ?? 'No contacts'}
+                valueSubtle={
+                  primaryContact?.role || primaryContact?.email || undefined
+                }
+              />
+              <MetricTile
+                icon={<FileText size={18} color={metricTones.orange.tint} />}
+                tone="orange"
+                label="Documents"
+                value={String(totalDocs)}
+                onPress={() => setActiveTab('Docs')}
+              />
+            </View>
+
+            {/* Knowledge Library — progress + missing required docs */}
+            <KnowledgeLibraryCard
+              summary={checklistSummary}
+              missingItems={missingItems}
+              onViewAll={() => setActiveTab('Checklist')}
+            />
+
+            {/* Company Information — expanded detail card */}
             <Card>
-              <SectionHeader title="Summary" />
-              <View className="flex-row justify-between">
-                <View className="items-center flex-1">
-                  <Text className="text-2xl font-bold text-m-text-primary">{projects?.length ?? 0}</Text>
-                  <Text className="text-xs text-m-text-tertiary">Projects</Text>
-                </View>
-                <View className="w-px bg-m-border-subtle" />
-                <View className="items-center flex-1">
-                  <Text className="text-2xl font-bold text-m-text-primary">{totalDocs}</Text>
-                  <Text className="text-xs text-m-text-tertiary">Documents</Text>
-                </View>
-                <View className="w-px bg-m-border-subtle" />
-                <View className="items-center flex-1">
-                  <Text className="text-2xl font-bold text-m-text-primary">{tasks?.length ?? 0}</Text>
-                  <Text className="text-xs text-m-text-tertiary">Tasks</Text>
-                </View>
+              <View className="flex-row items-center gap-2 mb-3">
+                <Building2 size={16} color={colors.textSecondary} />
+                <Text className="text-sm font-semibold text-m-text-primary flex-1">
+                  Company Information
+                </Text>
+              </View>
+              <View className="gap-2.5">
+                <InfoRow label="Company Name" value={(client as any).companyName || client.name} />
+                {(client as any).industry ? (
+                  <InfoRow label="Industry" value={(client as any).industry} />
+                ) : null}
+                {formatClientAddress(client) ? (
+                  <View>
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+                      Address
+                    </Text>
+                    <View className="flex-row items-start gap-1.5">
+                      <MapPin size={12} color={colors.textTertiary} style={{ marginTop: 2 }} />
+                      <Text className="text-sm text-m-text-primary flex-1">
+                        {formatClientAddress(client)}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+                {client.email ? (
+                  <View>
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+                      Email
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(`mailto:${client.email}`)}
+                      className="flex-row items-center gap-1.5"
+                    >
+                      <Mail size={12} color={colors.accent} />
+                      <Text className="text-sm text-m-accent">{client.email}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {client.phone ? (
+                  <View>
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+                      Phone
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(`tel:${client.phone}`)}
+                      className="flex-row items-center gap-1.5"
+                    >
+                      <Phone size={12} color={colors.accent} />
+                      <Text className="text-sm text-m-accent">{client.phone}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {(client as any).website ? (
+                  <View>
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+                      Website
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const url = (client as any).website;
+                        Linking.openURL(url.startsWith('http') ? url : `https://${url}`);
+                      }}
+                      className="flex-row items-center gap-1.5"
+                    >
+                      <Globe size={12} color={colors.accent} />
+                      <Text className="text-sm text-m-accent">{(client as any).website}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {(client as any).createdAt || client._creationTime ? (
+                  <View>
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-0.5">
+                      Client Since
+                    </Text>
+                    <View className="flex-row items-center gap-1.5">
+                      <Calendar size={12} color={colors.textTertiary} />
+                      <Text className="text-sm text-m-text-primary">
+                        {formatDateShort(
+                          (client as any).createdAt ||
+                            new Date(client._creationTime).toISOString()
+                        )}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+                {(client as any).tags && (client as any).tags.length > 0 ? (
+                  <View>
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-1">
+                      Tags
+                    </Text>
+                    <View className="flex-row flex-wrap gap-1">
+                      {(client as any).tags.map((tag: string, i: number) => (
+                        <View
+                          key={i}
+                          className="bg-m-bg-subtle rounded-full px-2 py-0.5"
+                        >
+                          <Text className="text-[11px] font-medium text-m-text-secondary">
+                            {tag}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+                {(client as any).notes ? (
+                  <View className="mt-1 pt-2 border-t border-m-border-subtle">
+                    <Text className="text-[10px] text-m-text-tertiary uppercase tracking-wide mb-1">
+                      Notes
+                    </Text>
+                    <Text className="text-sm text-m-text-secondary leading-5">
+                      {String((client as any).notes).slice(0, 300)}
+                      {String((client as any).notes).length > 300 ? '...' : ''}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </Card>
+
+            {/* Recent Activity — Documents + Projects sections */}
+            {(recentDocuments.length > 0 || recentProjects.length > 0) && (
+              <Card>
+                <View className="flex-row items-center gap-2 mb-3">
+                  <TrendingUp size={16} color={colors.textSecondary} />
+                  <Text className="text-sm font-semibold text-m-text-primary flex-1">
+                    Recent Activity
+                  </Text>
+                </View>
+
+                {/* Documents */}
+                {recentDocuments.length > 0 && (
+                  <View className="mb-3">
+                    <View className="flex-row items-center justify-between mb-1.5">
+                      <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                        Documents
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setActiveTab('Docs')}
+                        className="flex-row items-center"
+                      >
+                        <Text className="text-xs text-m-text-tertiary mr-0.5">View all</Text>
+                        <ChevronRight size={12} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    </View>
+                    <View className="gap-1">
+                      {recentDocuments.map((doc: any) => (
+                        <TouchableOpacity
+                          key={doc._id}
+                          onPress={() =>
+                            router.push(`/(tabs)/docs/viewer?id=${doc._id}` as any)
+                          }
+                          className="flex-row items-center gap-2 py-1.5"
+                        >
+                          <FileText size={14} color={colors.textTertiary} />
+                          <Text
+                            className="text-sm text-m-text-primary flex-1"
+                            numberOfLines={1}
+                          >
+                            {doc.displayName || doc.documentCode || doc.fileName}
+                          </Text>
+                          {doc.category ? (
+                            <View className="bg-m-bg-subtle rounded-[6px] px-1.5 py-0.5">
+                              <Text className="text-[10px] text-m-text-secondary" numberOfLines={1}>
+                                {doc.category}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Projects */}
+                {recentProjects.length > 0 && (
+                  <View
+                    className={recentDocuments.length > 0 ? 'pt-3 border-t border-m-border-subtle' : ''}
+                  >
+                    <View className="flex-row items-center justify-between mb-1.5">
+                      <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                        Projects
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setActiveTab('Projects')}
+                        className="flex-row items-center"
+                      >
+                        <Text className="text-xs text-m-text-tertiary mr-0.5">View all</Text>
+                        <ChevronRight size={12} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    </View>
+                    <View className="gap-1">
+                      {recentProjects.map((p: any) => {
+                        const isActive = p.status === 'active';
+                        return (
+                          <TouchableOpacity
+                            key={p._id}
+                            onPress={() =>
+                              router.push(
+                                `/(tabs)/clients/${clientId}/projects/${p._id}` as any
+                              )
+                            }
+                            className="flex-row items-center gap-2 py-1.5"
+                          >
+                            <View
+                              className="w-6 h-6 rounded-[6px] items-center justify-center"
+                              style={{
+                                backgroundColor: isActive
+                                  ? metricTones.green.bg
+                                  : colors.bgInset,
+                              }}
+                            >
+                              <Briefcase
+                                size={12}
+                                color={
+                                  isActive ? metricTones.green.tint : colors.textTertiary
+                                }
+                              />
+                            </View>
+                            <Text
+                              className="text-sm text-m-text-primary flex-1"
+                              numberOfLines={1}
+                            >
+                              {p.name}
+                            </Text>
+                            {p.loanAmount ? (
+                              <Text className="text-xs text-m-text-tertiary">
+                                {formatCurrency(p.loanAmount)}
+                              </Text>
+                            ) : null}
+                            {p.status ? <StatusBadge status={p.status} size="xs" /> : null}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+              </Card>
+            )}
+
+            {/* Active Tasks preview (top 5) */}
+            {activeTasksPreview.length > 0 && (
+              <Card>
+                <View className="flex-row items-center gap-2 mb-3">
+                  <CheckCircle2 size={16} color={colors.textSecondary} />
+                  <Text className="text-sm font-semibold text-m-text-primary flex-1">
+                    Active Tasks
+                  </Text>
+                  <View className="bg-m-bg-subtle rounded-full px-1.5 py-0.5">
+                    <Text className="text-[10px] font-semibold text-m-text-secondary">
+                      {activeTasksPreview.length}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('Tasks')}
+                    className="flex-row items-center"
+                  >
+                    <Text className="text-xs text-m-text-tertiary mr-0.5">View all</Text>
+                    <ChevronRight size={12} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+                <View className="gap-2">
+                  {activeTasksPreview.map((task: any) => {
+                    const isOverdue =
+                      task.dueDate && new Date(task.dueDate) < new Date();
+                    return (
+                      <View
+                        key={task._id}
+                        className="flex-row items-start gap-2"
+                      >
+                        <View
+                          className="w-1.5 h-1.5 rounded-full mt-2"
+                          style={{
+                            backgroundColor:
+                              task.status === 'in_progress'
+                                ? metricTones.blue.tint
+                                : colors.textTertiary,
+                          }}
+                        />
+                        <View className="flex-1">
+                          <Text
+                            className="text-sm text-m-text-primary"
+                            numberOfLines={1}
+                          >
+                            {task.title}
+                          </Text>
+                          <View className="flex-row items-center gap-2 mt-0.5">
+                            {task.priority ? (
+                              <View
+                                className="rounded-[6px] px-1.5 py-0.5"
+                                style={{
+                                  backgroundColor:
+                                    task.priority === 'high'
+                                      ? '#fef2f2'
+                                      : task.priority === 'medium'
+                                        ? '#fef3c7'
+                                        : '#f0fdf4',
+                                }}
+                              >
+                                <Text
+                                  className="text-[10px] font-medium capitalize"
+                                  style={{
+                                    color:
+                                      task.priority === 'high'
+                                        ? '#b91c1c'
+                                        : task.priority === 'medium'
+                                          ? '#92400e'
+                                          : '#166534',
+                                  }}
+                                >
+                                  {task.priority}
+                                </Text>
+                              </View>
+                            ) : null}
+                            {task.dueDate ? (
+                              <View className="flex-row items-center gap-0.5">
+                                <Clock
+                                  size={10}
+                                  color={isOverdue ? colors.error : colors.textTertiary}
+                                />
+                                <Text
+                                  className="text-[10px]"
+                                  style={{
+                                    color: isOverdue ? colors.error : colors.textTertiary,
+                                  }}
+                                >
+                                  {new Date(task.dueDate).toLocaleDateString('en-GB', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                  })}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </Card>
+            )}
 
             {/* Key Contacts */}
             {contacts && contacts.length > 0 ? (
@@ -708,26 +1515,20 @@ export default function ClientDetailScreen() {
               </Card>
             ) : null}
 
-            {/* Quick Links */}
+            {/* Quick Links — compact remaining-jumps */}
             <Card>
               <SectionHeader title="Quick Links" />
               <View className="gap-0">
-                {taskGroups.overdue.length > 0 || taskGroups.today.length > 0 ? (
-                  <QuickLinkRow
-                    label="Active Tasks"
-                    value={taskGroups.overdue.length + taskGroups.today.length + taskGroups.upcoming.length + taskGroups.noDue.length}
-                    onPress={() => setActiveTab('Tasks')}
-                  />
-                ) : (
-                  <QuickLinkRow label="Tasks" value={tasks?.length ?? 0} onPress={() => setActiveTab('Tasks')} />
-                )}
                 <QuickLinkRow
                   label="Open Flags"
                   value={openFlagCount ?? 0}
                   onPress={() => setActiveTab('Flags')}
                 />
-                <QuickLinkRow label="Documents" value={totalDocs} onPress={() => setActiveTab('Docs')} />
-                <QuickLinkRow label="Notes" value={notes?.length ?? 0} onPress={() => setActiveTab('Notes')} />
+                <QuickLinkRow
+                  label="Notes"
+                  value={notes?.length ?? 0}
+                  onPress={() => setActiveTab('Notes')}
+                />
               </View>
             </Card>
           </>
