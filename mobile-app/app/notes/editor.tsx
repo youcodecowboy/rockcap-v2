@@ -1,34 +1,15 @@
 import {
-  View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert,
+  View, Text, TextInput, TouchableOpacity, Alert,
   Modal, FlatList,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
-import { ArrowLeft, Save, X, Plus, Building2, FolderOpen } from 'lucide-react-native';
+import { ArrowLeft, Save, X, Plus, Building2, FolderOpen, FileText } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-
-function extractPlainText(content: any): string {
-  if (!content) return '';
-  if (typeof content === 'string') return content;
-  const texts: string[] = [];
-  function walk(node: any) {
-    if (node.text) texts.push(node.text);
-    if (node.content) node.content.forEach(walk);
-    if (node.children) node.children.forEach(walk);
-  }
-  walk(content);
-  return texts.join(' ');
-}
-
-function wrapInTiptapJson(text: string): string {
-  return JSON.stringify({
-    type: 'doc',
-    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
-  });
-}
+import RichTextEditor from '@/components/RichTextEditor';
 
 const TAG_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 function getTagColor(tag: string): string {
@@ -93,8 +74,9 @@ export default function NoteEditorScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
+  const [contentJson, setContentJson] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
@@ -104,6 +86,7 @@ export default function NoteEditorScreen() {
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
   const [showClientPicker, setShowClientPicker] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [editorReady, setEditorReady] = useState(false);
 
   const existingNote = useQuery(
     api.notes.get,
@@ -119,34 +102,50 @@ export default function NoteEditorScreen() {
   const createNote = useMutation(api.notes.create);
   const updateNote = useMutation(api.notes.update);
 
-  // Resolve client/project names when editing existing note
   const allClients = clients || [];
   const allProjects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
 
+  const [initialEditorContent, setInitialEditorContent] = useState<any>(undefined);
+
+  // Load existing note data (once)
+  const loadedRef = useRef(false);
   useEffect(() => {
-    if (existingNote) {
+    if (existingNote && !loadedRef.current) {
+      loadedRef.current = true;
       setTitle(existingNote.title || '');
-      setBody(extractPlainText(existingNote.content));
       setTags((existingNote as any).tags || []);
-      if ((existingNote as any).clientId) {
-        setSelectedClientId((existingNote as any).clientId);
-        const client = allClients.find((c: any) => c._id === (existingNote as any).clientId);
-        if (client) setSelectedClientName((client as any).name);
-      }
-      if ((existingNote as any).projectId) {
-        setSelectedProjectId((existingNote as any).projectId);
-        const project = allProjects?.find((p: any) => p._id === (existingNote as any).projectId);
-        if (project) setSelectedProjectName((project as any).name);
-      }
+      setInitialEditorContent(existingNote.content);
+      if ((existingNote as any).clientId) setSelectedClientId((existingNote as any).clientId);
+      if ((existingNote as any).projectId) setSelectedProjectId((existingNote as any).projectId);
     }
-  }, [existingNote, allClients, allProjects]);
+  }, [existingNote]);
+
+  // Resolve client/project names reactively as lookup data loads
+  useEffect(() => {
+    if (selectedClientId && allClients.length > 0 && !selectedClientName) {
+      const client = allClients.find((c: any) => c._id === selectedClientId);
+      if (client) setSelectedClientName((client as any).name);
+    }
+  }, [selectedClientId, allClients, selectedClientName]);
+
+  useEffect(() => {
+    if (selectedProjectId && allProjects && !selectedProjectName) {
+      const project = allProjects.find((p: any) => p._id === selectedProjectId);
+      if (project) setSelectedProjectName((project as any).name);
+    }
+  }, [selectedProjectId, allProjects, selectedProjectName]);
+
+  const handleContentChange = (json: any) => {
+    setContentJson(json);
+    setSaved(false);
+  };
 
   const handleSave = async () => {
-    if (!title.trim() && !body.trim()) return;
+    if (!title.trim() && !contentJson) return;
     setSaving(true);
     try {
       const noteTitle = title.trim() || 'Untitled';
-      const content = body.trim() ? wrapInTiptapJson(body.trim()) : wrapInTiptapJson('');
+      const content = contentJson ? JSON.stringify(contentJson) : '{"type":"doc","content":[]}';
 
       if (noteId) {
         await updateNote({
@@ -169,10 +168,10 @@ export default function NoteEditorScreen() {
           updatedAt: new Date().toISOString(),
         } as any);
       }
-      router.back();
+      setSaved(true);
+      setSaving(false);
     } catch (error) {
       Alert.alert('Error', 'Failed to save note');
-    } finally {
       setSaving(false);
     }
   };
@@ -193,7 +192,6 @@ export default function NoteEditorScreen() {
   const handleClientSelect = (id: string, name: string) => {
     setSelectedClientId(id);
     setSelectedClientName(name);
-    // Reset project when client changes
     setSelectedProjectId(null);
     setSelectedProjectName(null);
   };
@@ -206,119 +204,110 @@ export default function NoteEditorScreen() {
   const clientItems = (allClients as any[]).map((c: any) => ({ id: c._id, name: c.name }));
   const projectItems = (projects || []).map((p: any) => ({ id: p._id, name: p.name }));
 
-  const canSave = title.trim() || body.trim();
-
   if (noteId && !existingNote) return <LoadingSpinner message="Loading note..." />;
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1 bg-m-bg">
-      <View className="bg-m-bg-brand pt-14 pb-4 px-4 flex-row items-center justify-between">
-        <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => router.back()} className="mr-3">
-            <ArrowLeft size={20} color={colors.textOnBrand} />
+    <View className="flex-1 bg-m-bg">
+      {/* Header — matches web style */}
+      <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center justify-between">
+        <View className="flex-row items-center gap-3">
+          <TouchableOpacity onPress={() => router.back()} className="p-1">
+            <ArrowLeft size={18} color={colors.textOnBrand} />
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-m-text-on-brand">
-            {noteId ? 'Edit Note' : 'New Note'}
-          </Text>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text className="text-sm text-white/60">Notes</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={handleSave}
-          disabled={saving || !canSave}
-          className="flex-row items-center gap-1.5 bg-white/10 rounded-full px-4 py-2"
-          style={{ opacity: saving || !canSave ? 0.4 : 1 }}
-        >
-          <Save size={14} color={colors.textOnBrand} />
-          <Text className="text-m-text-on-brand text-sm font-medium">
-            {saving ? 'Saving...' : 'Save'}
-          </Text>
+        <TouchableOpacity onPress={() => router.push('/docs')} className="flex-row items-center gap-1.5">
+          <FileText size={14} color="rgba(255,255,255,0.6)" />
+          <Text className="text-sm text-white/60">Docs</Text>
         </TouchableOpacity>
       </View>
 
-      <TextInput
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Note title"
-        autoFocus={!noteId}
-        className="px-4 pt-4 pb-2 text-lg text-m-text-primary font-semibold"
-        placeholderTextColor={colors.textPlaceholder}
-      />
-
-      <View className="mx-4 h-px bg-m-border" />
-
-      {/* Client / Project chips */}
-      <View className="flex-row items-center gap-2 px-4 py-2.5">
+      {/* Metadata bar — client/project chips + tag count */}
+      <View className="flex-row items-center gap-2 px-4 py-2 border-b border-m-border">
         <TouchableOpacity
           onPress={() => setShowClientPicker(true)}
           className="flex-row items-center gap-1.5 bg-m-bg-subtle rounded-full px-3 py-1.5"
         >
-          <Building2 size={13} color={selectedClientId ? colors.textPrimary : colors.textTertiary} />
+          <Building2 size={12} color={selectedClientId ? colors.textPrimary : colors.textTertiary} />
           <Text
             className={`text-xs font-medium ${selectedClientId ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}
             numberOfLines={1}
           >
-            {selectedClientName || 'Link to client'}
+            {selectedClientName || 'Client'}
           </Text>
           {selectedClientId && (
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation();
-                setSelectedClientId(null);
-                setSelectedClientName(null);
-                setSelectedProjectId(null);
-                setSelectedProjectName(null);
-              }}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-            >
-              <X size={12} color={colors.textTertiary} />
+            <TouchableOpacity onPress={() => { setSelectedClientId(null); setSelectedClientName(null); setSelectedProjectId(null); setSelectedProjectName(null); }}>
+              <X size={10} color={colors.textTertiary} />
             </TouchableOpacity>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => {
-            if (!selectedClientId) {
-              Alert.alert('Select client first', 'Link a client before selecting a project.');
-              return;
-            }
+            if (!selectedClientId) { Alert.alert('Select client first'); return; }
             setShowProjectPicker(true);
           }}
           className="flex-row items-center gap-1.5 bg-m-bg-subtle rounded-full px-3 py-1.5"
         >
-          <FolderOpen size={13} color={selectedProjectId ? colors.textPrimary : colors.textTertiary} />
+          <FolderOpen size={12} color={selectedProjectId ? colors.textPrimary : colors.textTertiary} />
           <Text
             className={`text-xs font-medium ${selectedProjectId ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}
             numberOfLines={1}
           >
-            {selectedProjectName || 'Link to project'}
+            {selectedProjectName || 'Project'}
           </Text>
           {selectedProjectId && (
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation();
-                setSelectedProjectId(null);
-                setSelectedProjectName(null);
-              }}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-            >
-              <X size={12} color={colors.textTertiary} />
+            <TouchableOpacity onPress={() => { setSelectedProjectId(null); setSelectedProjectName(null); }}>
+              <X size={10} color={colors.textTertiary} />
             </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+
+        {tags.length > 0 && (
+          <Text className="text-xs text-m-text-tertiary">{tags.length} tags</Text>
+        )}
+      </View>
+
+      {/* Title + save status */}
+      <View className="flex-row items-center px-4 pt-3 pb-1">
+        <TextInput
+          value={title}
+          onChangeText={(t) => { setTitle(t); setSaved(false); }}
+          placeholder="Note title"
+          autoFocus={!noteId}
+          className="flex-1 text-lg text-m-text-primary font-semibold"
+          placeholderTextColor={colors.textPlaceholder}
+        />
+        <TouchableOpacity onPress={handleSave} className="flex-row items-center gap-1.5 ml-2">
+          {saved ? (
+            <>
+              <View className="w-2 h-2 rounded-full bg-m-success" />
+              <Text className="text-xs text-m-text-tertiary">Saved</Text>
+            </>
+          ) : (
+            <>
+              <Save size={14} color={saving ? colors.textTertiary : colors.textPrimary} />
+              <Text className={`text-xs font-medium ${saving ? 'text-m-text-tertiary' : 'text-m-text-primary'}`}>
+                {saving ? 'Saving...' : 'Save'}
+              </Text>
+            </>
           )}
         </TouchableOpacity>
       </View>
 
-      <View className="mx-4 h-px bg-m-border" />
-
-      {/* Tags */}
-      <View className="flex-row flex-wrap items-center gap-1.5 px-4 py-2.5">
+      {/* Tags row */}
+      <View className="flex-row flex-wrap items-center gap-1.5 px-4 py-1.5">
         {tags.map(tag => (
           <TouchableOpacity
             key={tag}
             onPress={() => removeTag(tag)}
-            className="flex-row items-center gap-1 rounded-full px-2.5 py-1"
+            className="flex-row items-center gap-1 rounded-full px-2.5 py-0.5"
             style={{ backgroundColor: getTagColor(tag) + '20' }}
           >
-            <Text style={{ color: getTagColor(tag), fontSize: 12, fontWeight: '500' }}>{tag}</Text>
-            <X size={10} color={getTagColor(tag)} />
+            <Text style={{ color: getTagColor(tag), fontSize: 11, fontWeight: '500' }}>{tag}</Text>
+            <X size={9} color={getTagColor(tag)} />
           </TouchableOpacity>
         ))}
         {showTagInput ? (
@@ -328,34 +317,27 @@ export default function NoteEditorScreen() {
             placeholder="Tag name"
             autoFocus
             onSubmitEditing={() => addTag(tagInput)}
-            onBlur={() => {
-              if (tagInput.trim()) addTag(tagInput);
-              else setShowTagInput(false);
-            }}
+            onBlur={() => { if (tagInput.trim()) addTag(tagInput); else setShowTagInput(false); }}
             returnKeyType="done"
-            className="bg-m-bg-subtle rounded-full px-2.5 py-1 text-xs text-m-text-primary min-w-[80px]"
+            className="bg-m-bg-subtle rounded-full px-2.5 py-0.5 text-xs text-m-text-primary min-w-[80px]"
             placeholderTextColor={colors.textPlaceholder}
           />
         ) : (
           <TouchableOpacity
             onPress={() => setShowTagInput(true)}
-            className="w-6 h-6 rounded-full bg-m-bg-subtle items-center justify-center"
+            className="w-5 h-5 rounded-full bg-m-bg-subtle items-center justify-center"
           >
-            <Plus size={12} color={colors.textTertiary} />
+            <Plus size={10} color={colors.textTertiary} />
           </TouchableOpacity>
         )}
       </View>
 
-      <View className="mx-4 h-px bg-m-border" />
-
-      <TextInput
-        value={body}
-        onChangeText={setBody}
+      {/* Rich text editor — Tiptap via WebView */}
+      <RichTextEditor
+        initialContent={initialEditorContent}
         placeholder="Start writing..."
-        multiline
-        textAlignVertical="top"
-        className="flex-1 px-4 pt-3 text-base text-m-text-primary leading-6"
-        placeholderTextColor={colors.textPlaceholder}
+        onChange={handleContentChange}
+        onReady={() => setEditorReady(true)}
       />
 
       {/* Picker modals */}
@@ -373,6 +355,6 @@ export default function NoteEditorScreen() {
         items={projectItems}
         onSelect={handleProjectSelect}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
