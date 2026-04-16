@@ -2,6 +2,8 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Circle, CheckCircle2 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 
+// ── Types ────────────────────────────────────────────────────
+
 interface TaskListItemProps {
   task: {
     _id: string;
@@ -14,6 +16,8 @@ interface TaskListItemProps {
   onComplete: (taskId: string) => void;
   onPress?: (taskId: string) => void;
 }
+
+// ── Helpers ──────────────────────────────────────────────────
 
 function getDueLabel(dueDate: string): { text: string; color: string } {
   const due = new Date(dueDate);
@@ -41,10 +45,42 @@ function getAccentColor(task: { status: string; dueDate?: string }): string {
   return 'transparent';
 }
 
+const priorityBadge: Record<string, { bg: string; text: string; label: string }> = {
+  high: { bg: '#fee2e2', text: '#dc2626', label: 'High' },
+  medium: { bg: '#fef3c7', text: '#d97706', label: 'Med' },
+  low: { bg: '#eff6ff', text: '#2563eb', label: 'Low' },
+};
+
+const statusBadge: Record<string, { bg: string; text: string; label: string } | null> = {
+  todo: null,
+  in_progress: { bg: '#dbeafe', text: '#1d4ed8', label: 'In Progress' },
+  paused: { bg: '#fef3c7', text: '#d97706', label: 'Paused' },
+  completed: { bg: '#dcfce7', text: '#059669', label: 'Done' },
+  cancelled: { bg: '#f1f5f9', text: '#64748b', label: 'Cancelled' },
+};
+
+function getCheckBorderColor(task: { status: string; priority?: string; dueDate?: string }): string {
+  if (task.dueDate && task.status !== 'completed') {
+    const due = new Date(task.dueDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (due < today) return colors.error;
+  }
+  if (task.priority === 'high') return '#ef4444';
+  if (task.priority === 'medium') return '#f59e0b';
+  if (task.priority === 'low') return '#3b82f6';
+  return colors.textTertiary;
+}
+
+// ── Component ────────────────────────────────────────────────
+
 export default function TaskListItem({ task, onComplete, onPress }: TaskListItemProps) {
   const isCompleted = task.status === 'completed';
   const accent = getAccentColor(task);
   const dueLabel = task.dueDate ? getDueLabel(task.dueDate) : null;
+  const badge = priorityBadge[task.priority || 'medium'];
+  const status = statusBadge[task.status];
+  const checkColor = getCheckBorderColor(task);
 
   return (
     <View className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row">
@@ -61,46 +97,46 @@ export default function TaskListItem({ task, onComplete, onPress }: TaskListItem
           {isCompleted ? (
             <CheckCircle2 size={20} color={colors.success} />
           ) : (
-            <Circle size={20} color={colors.textTertiary} />
+            <Circle size={20} color={checkColor} />
           )}
         </TouchableOpacity>
 
-        {/* Content — tappable to open detail */}
+        {/* Content */}
         <TouchableOpacity className="flex-1" activeOpacity={0.6} onPress={() => onPress?.(task._id)}>
-          <Text
-            className={`text-sm ${isCompleted ? 'text-m-text-tertiary line-through' : 'text-m-text-primary'}`}
-            numberOfLines={1}
-          >
-            {task.title}
-          </Text>
-          <View className="flex-row items-center mt-0.5 gap-2">
-            {dueLabel && (
-              <Text className="text-xs" style={{ color: dueLabel.color }}>
-                {dueLabel.text}
+          <View className="flex-row items-center gap-1.5">
+            <Text
+              className={`text-sm font-semibold flex-1 ${isCompleted ? 'text-m-text-tertiary line-through' : 'text-m-text-primary'}`}
+              numberOfLines={1}
+            >
+              {task.title}
+            </Text>
+            {status && (
+              <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: status.bg }}>
+                <Text className="text-[9px] font-semibold" style={{ color: status.text }}>{status.label}</Text>
+              </View>
+            )}
+          </View>
+          <View className="flex-row items-center mt-0.5 gap-1">
+            {task.clientName && (
+              <Text className="text-[11px] text-m-text-tertiary" numberOfLines={1}>
+                {task.clientName}
               </Text>
             )}
-            {task.clientName && (
-              <Text className="text-xs text-m-text-tertiary" numberOfLines={1}>
-                {task.clientName}
+            {task.clientName && dueLabel && (
+              <Text className="text-[11px] text-m-text-tertiary">{'\u00B7'}</Text>
+            )}
+            {dueLabel && (
+              <Text className="text-[11px]" style={{ color: dueLabel.color }}>
+                {dueLabel.text}
               </Text>
             )}
           </View>
         </TouchableOpacity>
 
         {/* Priority badge */}
-        {task.priority === 'high' && (
-          <View className="bg-red-50 rounded px-1.5 py-0.5 ml-2">
-            <Text className="text-[10px] font-medium" style={{ color: colors.error }}>High</Text>
-          </View>
-        )}
-        {task.priority === 'medium' && (
-          <View className="bg-amber-50 rounded px-1.5 py-0.5 ml-2">
-            <Text className="text-[10px] font-medium" style={{ color: colors.warning }}>Med</Text>
-          </View>
-        )}
-        {task.priority === 'low' && (
-          <View className="bg-gray-50 rounded px-1.5 py-0.5 ml-2">
-            <Text className="text-[10px] font-medium" style={{ color: colors.textTertiary }}>Low</Text>
+        {badge && (
+          <View className="rounded-full px-2 py-0.5 ml-2" style={{ backgroundColor: badge.bg }}>
+            <Text className="text-[10px] font-semibold" style={{ color: badge.text }}>{badge.label}</Text>
           </View>
         )}
       </View>
