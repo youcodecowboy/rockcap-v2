@@ -13,6 +13,7 @@ export default function ClientsScreen() {
   const { isAuthenticated } = useConvexAuth();
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const allProjects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
+  const clientDocCounts = useQuery(api.documents.getClientDocumentCounts, isAuthenticated ? {} : 'skip') as Record<string, number> | undefined;
   const [search, setSearch] = useState('');
 
   // Build project counts per client
@@ -91,6 +92,7 @@ export default function ClientsScreen() {
                       <ClientListItem
                         client={c}
                         projectCount={projectCountMap[c._id]}
+                        docCount={clientDocCounts?.[c._id]}
                         compact
                       />
                     </View>
@@ -107,7 +109,8 @@ export default function ClientsScreen() {
           renderItem={({ item }) => (
             <ClientListItem
               client={item}
-              projectCount={projectCountMap[item._id]}
+              projectCount={projectCountMap[item._id] ?? 0}
+              docCount={clientDocCounts?.[item._id] ?? 0}
             />
           )}
           contentContainerStyle={{ padding: 16, gap: 8 }}

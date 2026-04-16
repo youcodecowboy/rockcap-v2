@@ -1,13 +1,14 @@
-import { View, TouchableOpacity, Text, ScrollView, Alert } from 'react-native';
+import { View, TouchableOpacity, Text, ScrollView, Alert, TextInput } from 'react-native';
 import { useState, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import FolderBrowser from '@/components/FolderBrowser';
 import MobileHeader from '@/components/MobileHeader';
+import ClientListItem from '@/components/ClientListItem';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
-import { FileText, ChevronLeft } from 'lucide-react-native';
+import { FileText, ChevronLeft, Search } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import type { Id } from '../../../../model-testing-app/convex/_generated/dataModel';
 
@@ -17,10 +18,15 @@ type NavLevel =
   | { level: 'folders'; clientId: Id<'clients'>; clientName: string; projectId: Id<'projects'>; projectName: string }
   | { level: 'documents'; clientId: Id<'clients'>; clientName: string; projectId: Id<'projects'>; projectName: string; folderType: string; folderName: string };
 
+const TABS = ['Clients', 'Internal', 'Personal'] as const;
+type DocTab = typeof TABS[number];
+
 export default function DocsScreen() {
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const [nav, setNav] = useState<NavLevel>({ level: 'clients' });
+  const [activeTab, setActiveTab] = useState<DocTab>('Clients');
+  const [search, setSearch] = useState('');
 
   const duplicateDoc = useMutation(api.documents.duplicateDocument);
   const removeDoc = useMutation(api.documents.remove);
@@ -62,6 +68,22 @@ export default function DocsScreen() {
     api.clients.list,
     isAuthenticated ? {} : 'skip'
   );
+
+  const clientDocCounts = useQuery(
+    api.documents.getClientDocumentCounts,
+    isAuthenticated ? {} : 'skip'
+  ) as Record<string, number> | undefined;
+
+  const allProjects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
+  const projectCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (allProjects) {
+      for (const p of allProjects) {
+        if (p.clientId) map[p.clientId] = (map[p.clientId] || 0) + 1;
+      }
+    }
+    return map;
+  }, [allProjects]);
 
   const projects = useQuery(
     api.projects.getByClient,
@@ -124,11 +146,22 @@ export default function DocsScreen() {
     return crumbs;
   }, [nav]);
 
+  // Filter clients by search and tab
+  const filteredClients = useMemo(() => {
+    if (!clients) return [];
+    let filtered = clients;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter((c) => c.name.toLowerCase().includes(q));
+    }
+    return filtered;
+  }, [clients, search]);
+
   // Build items for current level
   const items = useMemo(() => {
     switch (nav.level) {
       case 'clients':
-        return (clients || []).map((c) => ({
+        return filteredClients.map((c) => ({
           id: c._id,
           name: c.name,
           type: 'folder' as const,
@@ -274,37 +307,62 @@ export default function DocsScreen() {
         </View>
       )}
 
-      {nav.level === 'clients' && recentClients.length > 0 && (
-        <View>
-          <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide px-4 pt-4 pb-2">
-            Recent
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-            className="pb-3"
-          >
-            {recentClients.map((client) => (
+      {nav.level === 'clients' && (
+        <>
+          {/* Filter tabs */}
+          <View className="flex-row border-b border-m-border">
+            {TABS.map((tab) => (
               <TouchableOpacity
-                key={client._id}
-                onPress={() => handleFolderPress(client._id, client.name)}
-                className="bg-m-bg-card border border-m-border rounded-xl p-3 w-[140px]"
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                className={`flex-1 py-2.5 items-center ${activeTab === tab ? 'border-b-2 border-m-accent' : ''}`}
               >
-                <Text className="text-sm font-medium text-m-text-primary" numberOfLines={1}>
-                  {client.name}
-                </Text>
-                <Text className="text-xs text-m-text-tertiary mt-1">
-                  Client
+                <Text className={`text-sm font-medium ${activeTab === tab ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}>
+                  {tab}
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
 
-          <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide px-4 pt-2 pb-2">
-            All Clients
-          </Text>
-        </View>
+          {/* Search */}
+          <View className="px-4 py-2">
+            <View className="bg-m-bg-subtle rounded-lg flex-row items-center px-3 py-2">
+              <Search size={16} color={colors.textTertiary} />
+              <TextInput
+                placeholder="Search clients..."
+                value={search}
+                onChangeText={setSearch}
+                className="flex-1 text-sm ml-2"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+          </View>
+
+          {/* Recent cards */}
+          {recentClients.length > 0 && !search.trim() && (
+            <View>
+              <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide px-4 pt-2 pb-2">
+                Recent
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+                className="pb-3"
+              >
+                {recentClients.map((client) => (
+                  <View key={client._id} style={{ width: 180 }}>
+                    <ClientListItem
+                      client={client}
+                      docCount={clientDocCounts?.[client._id] ?? 0}
+                      compact
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+        </>
       )}
 
       {items.length === 0 ? (

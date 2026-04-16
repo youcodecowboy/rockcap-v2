@@ -108,6 +108,7 @@ export default function TasksScreen() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [taskFilter, setTaskFilter] = useState<'active' | 'done' | 'all'>('active');
 
   // Client/project name lookups
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
@@ -591,6 +592,31 @@ export default function TasksScreen() {
                     })}
                   </View>
                 </ScrollView>
+              </View>
+
+              {/* ── Filter Pills ── */}
+              <View className="flex-row px-4 pb-2 gap-2">
+                {(['active', 'done', 'all'] as const).map((filter) => {
+                  const active = taskFilter === filter;
+                  const count = filter === 'active'
+                    ? tasks?.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length ?? 0
+                    : filter === 'done'
+                      ? tasks?.filter((t) => t.status === 'completed').length ?? 0
+                      : tasks?.length ?? 0;
+                  return (
+                    <TouchableOpacity
+                      key={filter}
+                      onPress={() => setTaskFilter(filter)}
+                      className={`px-3 py-1.5 rounded-full border ${
+                        active ? 'bg-m-accent border-m-accent' : 'border-m-border bg-m-bg-card'
+                      }`}
+                    >
+                      <Text className={`text-xs font-medium ${active ? 'text-m-text-on-brand' : 'text-m-text-secondary'}`}>
+                        {filter.charAt(0).toUpperCase() + filter.slice(1)} {count}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           }

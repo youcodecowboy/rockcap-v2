@@ -13,6 +13,7 @@ import {
   Bell,
   Inbox,
   CheckCheck,
+  Plus,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 
@@ -61,10 +62,11 @@ export default function InboxScreen() {
   );
   const markAllAsRead = useMutation(api.notifications.markAllAsRead);
 
+  // Use meaningful counts: unread messages, open flags, unread notifications
   const counts: Record<TabKey, number> = {
-    messages: conversations?.length ?? 0,
-    flags: flags?.length ?? 0,
-    notifications: notifications?.length ?? 0,
+    messages: conversations?.filter((c: any) => (c.unreadCount ?? 0) > 0).length ?? 0,
+    flags: flags?.filter((f: any) => f.status === 'open').length ?? 0,
+    notifications: notifications?.filter((n: any) => !n.isRead).length ?? 0,
   };
 
   const filteredFlags = useMemo(() => {
@@ -128,49 +130,67 @@ export default function InboxScreen() {
       {activeTab === 'messages' && (
         !conversations ? (
           <LoadingSpinner />
-        ) : conversations.length === 0 ? (
-          <EmptyState icon={MessageSquare} title="No messages" />
         ) : (
           <FlatList
             data={conversations}
             keyExtractor={(item: any) => item._id}
-            contentContainerStyle={{ padding: 16, gap: 8 }}
-            renderItem={({ item }: { item: any }) => (
+            contentContainerStyle={{ paddingBottom: 16 }}
+            ListHeaderComponent={
               <TouchableOpacity
-                onPress={() => Alert.alert(item.title || 'Conversation', 'Open conversation — coming soon')}
-                className="bg-m-bg-card border border-m-border rounded-xl px-4 py-3 flex-row items-center"
+                onPress={() => Alert.alert('New Conversation', 'Coming soon')}
+                className="mx-4 mt-3 mb-2 bg-m-bg-brand rounded-lg py-3 flex-row items-center justify-center"
               >
-                <View className="w-8 h-8 rounded-full bg-m-bg-inset items-center justify-center">
-                  <MessageSquare size={14} color={colors.textTertiary} />
-                </View>
-                <View className="flex-1 ml-3">
-                  <View className="flex-row items-center justify-between">
+                <Plus size={16} color={colors.textOnBrand} />
+                <Text className="text-sm font-medium text-m-text-on-brand ml-2">New Conversation</Text>
+              </TouchableOpacity>
+            }
+            ListEmptyComponent={<EmptyState icon={MessageSquare} title="No messages" />}
+            renderItem={({ item }: { item: any }) => {
+              // Extract initials from participants or title
+              const initials = (item.participantNames?.[0] || item.title || 'C')
+                .split(' ')
+                .map((w: string) => w[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase();
+
+              return (
+                <TouchableOpacity
+                  onPress={() => Alert.alert(item.title || 'Conversation', 'Open conversation — coming soon')}
+                  className="px-4 py-3 border-b border-m-border flex-row items-center"
+                >
+                  <View className="w-8 h-8 rounded-full bg-m-bg-inset items-center justify-center">
+                    <Text className="text-[11px] font-semibold text-m-text-secondary">{initials}</Text>
+                  </View>
+                  <View className="flex-1 ml-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text
+                        className="text-sm font-medium text-m-text-primary flex-1"
+                        numberOfLines={1}
+                      >
+                        {item.title || 'Conversation'}
+                      </Text>
+                      <Text className="text-[10px] text-m-text-tertiary ml-2">
+                        {formatRelativeTime(item.lastMessageAt ?? item._creationTime)}
+                      </Text>
+                    </View>
                     <Text
-                      className="text-sm font-medium text-m-text-primary flex-1"
+                      className="text-xs text-m-text-tertiary mt-0.5"
                       numberOfLines={1}
                     >
-                      {item.title || 'Conversation'}
-                    </Text>
-                    <Text className="text-[10px] text-m-text-tertiary ml-2">
-                      {formatRelativeTime(item.lastMessageAt ?? item._creationTime)}
+                      {item.lastMessagePreview || 'No messages yet'}
                     </Text>
                   </View>
-                  <Text
-                    className="text-xs text-m-text-tertiary mt-0.5"
-                    numberOfLines={1}
-                  >
-                    {item.lastMessagePreview || 'No messages yet'}
-                  </Text>
-                </View>
-                {(item.unreadCount ?? 0) > 0 && (
-                  <View className="ml-2 bg-m-accent rounded-full w-5 h-5 items-center justify-center">
-                    <Text className="text-[10px] font-bold text-m-text-on-brand">
-                      {item.unreadCount > 9 ? '9+' : item.unreadCount}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
+                  {(item.unreadCount ?? 0) > 0 && (
+                    <View className="ml-2 bg-m-accent rounded-full w-5 h-5 items-center justify-center">
+                      <Text className="text-[10px] font-bold text-m-text-on-brand">
+                        {item.unreadCount > 9 ? '9+' : item.unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
           />
         )
       )}

@@ -1,17 +1,24 @@
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { useMemo } from 'react';
+import { View, Text, FlatList, TouchableOpacity, TextInput } from 'react-native';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
-import { ArrowLeft, Plus, FileText } from 'lucide-react-native';
+import { ArrowLeft, Plus, FileText, Search, Trash2 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
-import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 
 function extractPlainText(content: any): string {
   if (!content) return '';
-  if (typeof content === 'string') return content;
+  // Handle JSON strings — parse before walking
+  if (typeof content === 'string') {
+    try {
+      const parsed = JSON.parse(content);
+      return extractPlainText(parsed);
+    } catch {
+      return content;
+    }
+  }
   const texts: string[] = [];
   function walk(node: any) {
     if (node.text) texts.push(node.text);
@@ -29,12 +36,18 @@ function getTagColor(tag: string): string {
   return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
 }
 
+const TABS = ['All Notes', 'Personal', 'Filed'] as const;
+type NoteTab = typeof TABS[number];
+
 export default function NotesScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const notes = useQuery(api.notes.getAll, isAuthenticated ? {} : 'skip');
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const projects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
+
+  const [activeTab, setActiveTab] = useState<NoteTab>('All Notes');
+  const [search, setSearch] = useState('');
 
   const clientMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -48,30 +61,94 @@ export default function NotesScreen() {
     return m;
   }, [projects]);
 
+  const filteredNotes = useMemo(() => {
+    if (!notes) return [];
+    let filtered = [...notes];
+
+    // Tab filter
+    if (activeTab === 'Personal') {
+      filtered = filtered.filter((n) => !n.clientId && !n.projectId);
+    } else if (activeTab === 'Filed') {
+      filtered = filtered.filter((n) => n.clientId || n.projectId);
+    }
+
+    // Search filter
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter((n) =>
+        (n.title || '').toLowerCase().includes(q) ||
+        extractPlainText(n.content).toLowerCase().includes(q)
+      );
+    }
+
+    return filtered;
+  }, [notes, activeTab, search]);
+
   return (
     <View className="flex-1 bg-m-bg">
-      <View className="bg-m-bg-brand pt-14 pb-4 px-4 flex-row items-center justify-between">
+      {/* Header */}
+      <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center justify-between">
         <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => router.back()} className="mr-3">
-            <ArrowLeft size={20} color={colors.textOnBrand} />
+          <TouchableOpacity onPress={() => router.back()} className="mr-3 p-1">
+            <ArrowLeft size={18} color={colors.textOnBrand} />
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-m-text-on-brand">Notes</Text>
+          <Text className="text-lg font-bold text-m-text-on-brand">Notes</Text>
         </View>
         <TouchableOpacity
           onPress={() => router.push('/notes/editor')}
-          className="w-8 h-8 rounded-full bg-white/10 items-center justify-center"
+          className="w-7 h-7 rounded-full bg-white/10 items-center justify-center"
         >
-          <Plus size={18} color={colors.textOnBrand} />
+          <Plus size={16} color={colors.textOnBrand} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Filter tabs */}
+      <View className="flex-row border-b border-m-border">
+        {TABS.map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            onPress={() => setActiveTab(tab)}
+            className={`flex-1 py-2.5 items-center ${activeTab === tab ? 'border-b-2 border-m-accent' : ''}`}
+          >
+            <Text className={`text-sm font-medium ${activeTab === tab ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}>
+              {tab}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Search */}
+      <View className="px-4 py-2">
+        <View className="bg-m-bg-subtle rounded-lg flex-row items-center px-3 py-2">
+          <Search size={16} color={colors.textTertiary} />
+          <TextInput
+            placeholder="Search notes..."
+            value={search}
+            onChangeText={setSearch}
+            className="flex-1 text-sm ml-2"
+            placeholderTextColor={colors.textTertiary}
+          />
+        </View>
+      </View>
+
+      {/* New Note button */}
+      <View className="px-4 pb-2">
+        <TouchableOpacity
+          onPress={() => router.push('/notes/editor')}
+          className="bg-m-bg-brand rounded-lg py-3 flex-row items-center justify-center"
+        >
+          <Plus size={16} color={colors.textOnBrand} />
+          <Text className="text-sm font-medium text-m-text-on-brand ml-2">New Note</Text>
         </TouchableOpacity>
       </View>
 
       {!notes ? (
         <LoadingSpinner />
-      ) : notes.length === 0 ? (
+      ) : filteredNotes.length === 0 ? (
         <EmptyState icon={FileText} title="No notes" description="Tap + to create one" />
       ) : (
         <FlatList
-          data={notes}
+          data={filteredNotes}
           keyExtractor={(item) => item._id}
           renderItem={({ item }) => {
             const preview = extractPlainText(item.content);
@@ -81,64 +158,59 @@ export default function NotesScreen() {
             const projectName = item.projectId ? projectMap.get(item.projectId) : null;
 
             return (
-              <TouchableOpacity onPress={() => router.push({ pathname: '/notes/editor', params: { noteId: item._id } })}>
-                <Card>
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm text-m-text-primary font-medium flex-1" numberOfLines={1}>
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/notes/editor', params: { noteId: item._id } })}
+                className="border-b border-m-border px-4 py-3"
+              >
+                <View className="flex-row items-start justify-between">
+                  <View className="flex-1 mr-2">
+                    <Text className="text-sm text-m-text-primary font-medium" numberOfLines={1}>
                       {item.emoji ? `${item.emoji} ` : ''}{item.title || 'Untitled'}
                     </Text>
-                    <View className="flex-row items-center gap-1.5 ml-2">
-                      {item.isDraft && (
-                        <View className="bg-amber-100 rounded px-1.5 py-0.5">
-                          <Text className="text-[10px] text-amber-700 font-medium">Draft</Text>
-                        </View>
-                      )}
-                      {item.wordCount != null && (
-                        <Text className="text-[10px] text-m-text-tertiary">{item.wordCount}w</Text>
-                      )}
-                    </View>
+                    {truncatedPreview ? (
+                      <Text className="text-xs text-m-text-secondary mt-0.5" numberOfLines={2}>
+                        {truncatedPreview}
+                      </Text>
+                    ) : null}
                   </View>
+                  <TouchableOpacity className="p-1 opacity-40">
+                    <Trash2 size={14} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
 
-                  {truncatedPreview ? (
-                    <Text className="text-xs text-m-text-secondary mt-1" numberOfLines={2}>
-                      {truncatedPreview}
+                {item.tags && item.tags.length > 0 && (
+                  <View className="flex-row flex-wrap gap-1 mt-1.5">
+                    {item.tags.map((tag: string) => (
+                      <View
+                        key={tag}
+                        className="rounded-full px-2 py-0.5"
+                        style={{ backgroundColor: getTagColor(tag) + '20' }}
+                      >
+                        <Text style={{ color: getTagColor(tag), fontSize: 10, fontWeight: '500' }}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <View className="flex-row items-center mt-1.5 gap-2">
+                  <Text className="text-[10px] text-m-text-tertiary">
+                    {new Date(displayDate).toLocaleDateString('en-GB')}
+                  </Text>
+                  {clientName && (
+                    <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                      {clientName}
                     </Text>
-                  ) : null}
-
-                  {item.tags && item.tags.length > 0 && (
-                    <View className="flex-row flex-wrap gap-1 mt-1.5">
-                      {item.tags.map((tag: string) => (
-                        <View
-                          key={tag}
-                          className="rounded-full px-2 py-0.5"
-                          style={{ backgroundColor: getTagColor(tag) + '20' }}
-                        >
-                          <Text style={{ color: getTagColor(tag), fontSize: 10, fontWeight: '500' }}>{tag}</Text>
-                        </View>
-                      ))}
-                    </View>
                   )}
-
-                  <View className="flex-row items-center mt-1.5 gap-2">
-                    <Text className="text-[10px] text-m-text-tertiary">
-                      {new Date(displayDate).toLocaleDateString('en-GB')}
+                  {projectName && (
+                    <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
+                      {projectName}
                     </Text>
-                    {clientName && (
-                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
-                        Client: {clientName}
-                      </Text>
-                    )}
-                    {projectName && (
-                      <Text className="text-[10px] text-m-text-tertiary" numberOfLines={1}>
-                        Project: {projectName}
-                      </Text>
-                    )}
-                  </View>
-                </Card>
+                  )}
+                </View>
               </TouchableOpacity>
             );
           }}
-          contentContainerStyle={{ padding: 16, gap: 8 }}
+          contentContainerStyle={{ paddingBottom: 16 }}
         />
       )}
     </View>

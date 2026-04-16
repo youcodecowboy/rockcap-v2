@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "next-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "model-testing-app", "run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "expo-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "mobile-app", "start"],
+      "port": 8081,
+      "autoPort": true
+    }
+  ]
+}
