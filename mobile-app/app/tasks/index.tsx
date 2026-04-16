@@ -1,5 +1,5 @@
 import {
-  View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView,
+  View, Text, FlatList, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView,
 } from 'react-native';
 import { useState, useMemo, useCallback } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -13,6 +13,8 @@ import MobileHeader from '@/components/MobileHeader';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import TaskDetailSheet from '@/components/TaskDetailSheet';
+import TaskCreateSheet from '@/components/TaskCreateSheet';
+import TaskListItem from '@/components/TaskListItem';
 
 // ── Date helpers ──────────────────────────────────────────────
 
@@ -54,18 +56,6 @@ function getDueLabel(dueDate: string): { text: string; color: string } {
   return { text: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), color: colors.textTertiary };
 }
 
-function getAccentColor(task: { status: string; dueDate?: string }): string {
-  if (task.status === 'in_progress') return '#3b82f6'; // blue
-  if (task.status === 'paused') return '#f59e0b'; // amber
-  if (task.dueDate && task.status !== 'completed') {
-    const due = new Date(task.dueDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (due < today) return colors.error;
-  }
-  return 'transparent';
-}
-
 // ── Types ─────────────────────────────────────────────────────
 
 type TaskItem = {
@@ -103,7 +93,6 @@ export default function TasksScreen() {
   const { create } = useLocalSearchParams();
   const { isAuthenticated } = useConvexAuth();
   const [showCreate, setShowCreate] = useState(create === 'true');
-  const [newTaskTitle, setNewTaskTitle] = useState('');
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -165,7 +154,6 @@ export default function TasksScreen() {
     api.events.getByDateRange,
     isAuthenticated ? { startDate: weekStart.toISOString(), endDate: weekEnd.toISOString() } : 'skip',
   );
-  const createTask = useMutation(api.tasks.create);
   const completeTask = useMutation(api.tasks.complete);
 
   // ── Metrics ───────────────────────────────────────────────
@@ -242,7 +230,7 @@ export default function TasksScreen() {
       status: t.status,
       dueDate: t.dueDate,
       priority: (t as any).priority,
-      clientName: (t as any).clientName,
+      clientName: (t as any).clientId ? clientNameMap[(t as any).clientId] : undefined,
     }));
 
     // Map events to list items
@@ -256,13 +244,19 @@ export default function TasksScreen() {
       syncStatus: e.syncStatus,
     }));
 
+    // Apply task filter
+    const filteredTasks = taskItems.filter((t) => {
+      if (taskFilter === 'active') return t.status !== 'completed' && t.status !== 'cancelled';
+      if (taskFilter === 'done') return t.status === 'completed';
+      return true;
+    });
+
     // If a specific day is selected, filter to that day
     if (selectedDay) {
       const dayEnd = new Date(selectedDay);
       dayEnd.setDate(dayEnd.getDate() + 1);
 
-      const dayTasks = taskItems.filter((t) => {
-        if (t.status === 'completed' || t.status === 'cancelled') return false;
+      const dayTasks = filteredTasks.filter((t) => {
         if (!t.dueDate) return false;
         const d = new Date(t.dueDate);
         return d >= selectedDay && d < dayEnd;
@@ -281,7 +275,7 @@ export default function TasksScreen() {
       return [{ title: label, data: items }];
     }
 
-    // No day selected — group into sections
+    // No day selected — group into sections with sorting
     const overdue: ListItem[] = [];
     const dueTodayItems: ListItem[] = [];
     const tomorrowItems: ListItem[] = [];
@@ -289,7 +283,16 @@ export default function TasksScreen() {
     const noDueDate: ListItem[] = [];
     const completedItems: ListItem[] = [];
 
-    for (const t of taskItems) {
+    // Sort tasks: overdue first, then by due date, then by priority
+    const priorityWeight: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    const sortedTasks = [...filteredTasks].sort((a, b) => {
+      if (a.dueDate && b.dueDate) return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+      return (priorityWeight[a.priority || 'medium'] || 1) - (priorityWeight[b.priority || 'medium'] || 1);
+    });
+
+    for (const t of sortedTasks) {
       if (t.status === 'completed') {
         completedItems.push(t);
         continue;
@@ -306,7 +309,7 @@ export default function TasksScreen() {
       else futureItems.push(t);
     }
 
-    // Add today's events to the "Today" section
+    // Add events to the relevant sections
     for (const e of eventItems) {
       const s = new Date(e.startTime);
       if (s >= todayStart && s < tomorrowStart) dueTodayItems.unshift(e);
@@ -323,7 +326,7 @@ export default function TasksScreen() {
     if (completedItems.length > 0) result.push({ title: 'Completed', data: completedItems.slice(0, showCompleted ? 20 : 0), collapsed: !showCompleted });
 
     return result;
-  }, [tasks, events, selectedDay, showCompleted]);
+  }, [tasks, events, selectedDay, showCompleted, taskFilter, clientNameMap]);
 
   // Flatten sections into a FlatList-friendly array
   const flatData = useMemo(() => {
@@ -339,17 +342,6 @@ export default function TasksScreen() {
 
   // ── Handlers ───────────────────────────────────────────────
 
-  const handleCreate = useCallback(async () => {
-    if (!newTaskTitle.trim()) return;
-    try {
-      await createTask({ title: newTaskTitle.trim() } as any);
-      setNewTaskTitle('');
-      setShowCreate(false);
-    } catch {
-      Alert.alert('Error', 'Failed to create task');
-    }
-  }, [newTaskTitle, createTask]);
-
   const handleComplete = useCallback(async (taskId: string) => {
     try {
       await completeTask({ id: taskId } as any);
@@ -358,13 +350,19 @@ export default function TasksScreen() {
     }
   }, [completeTask]);
 
+  const handleOpenTask = useCallback((taskId: string) => {
+    const fullTask = tasks?.find((t) => t._id === taskId);
+    if (fullTask) {
+      setSelectedTask(fullTask);
+    }
+  }, [tasks]);
+
   // ── Render helpers ─────────────────────────────────────────
 
   const renderMetricPill = (
     label: string,
     count: number,
     icon: React.ReactNode,
-    bgColor: string,
   ) => (
     <View key={label} className="flex-1 bg-m-bg-card border border-m-border rounded-xl px-3 py-2.5 items-center">
       <View className="mb-1">{icon}</View>
@@ -373,74 +371,13 @@ export default function TasksScreen() {
     </View>
   );
 
-  const handleOpenTask = useCallback((task: TaskItem) => {
-    // Find the full task data from the query results
-    const fullTask = tasks?.find((t) => t._id === task._id);
-    if (fullTask) {
-      setSelectedTask(fullTask);
-    }
-  }, [tasks]);
-
-  const renderTaskItem = (task: TaskItem) => {
-    const accent = getAccentColor(task);
-    const dueLabel = task.dueDate ? getDueLabel(task.dueDate) : null;
-    const isCompleted = task.status === 'completed';
-
-    return (
-      <View className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row">
-        {/* Left accent border */}
-        <View style={{ width: 3, backgroundColor: accent }} />
-
-        <View className="flex-1 flex-row items-center px-3 py-3">
-          {/* Checkbox */}
-          <TouchableOpacity
-            onPress={() => !isCompleted && handleComplete(task._id)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            className="mr-3"
-          >
-            {isCompleted ? (
-              <CheckCircle2 size={20} color={colors.success} />
-            ) : (
-              <Circle size={20} color={colors.textTertiary} />
-            )}
-          </TouchableOpacity>
-
-          {/* Content — tappable to open detail */}
-          <TouchableOpacity className="flex-1" activeOpacity={0.6} onPress={() => handleOpenTask(task)}>
-            <Text
-              className={`text-sm ${isCompleted ? 'text-m-text-tertiary line-through' : 'text-m-text-primary'}`}
-              numberOfLines={1}
-            >
-              {task.title}
-            </Text>
-            <View className="flex-row items-center mt-0.5 gap-2">
-              {dueLabel && (
-                <Text className="text-xs" style={{ color: dueLabel.color }}>
-                  {dueLabel.text}
-                </Text>
-              )}
-              {task.clientName && (
-                <Text className="text-xs text-m-text-tertiary" numberOfLines={1}>
-                  {task.clientName}
-                </Text>
-              )}
-            </View>
-          </TouchableOpacity>
-
-          {/* Priority badge */}
-          {task.priority === 'high' && (
-            <View className="bg-red-50 rounded px-1.5 py-0.5 ml-2">
-              <Text className="text-[10px] font-medium" style={{ color: colors.error }}>High</Text>
-            </View>
-          )}
-          {task.priority === 'medium' && (
-            <View className="bg-amber-50 rounded px-1.5 py-0.5 ml-2">
-              <Text className="text-[10px] font-medium" style={{ color: colors.warning }}>Med</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    );
+  const sectionHeaderColor: Record<string, string> = {
+    'Overdue': colors.error,
+    'Today': colors.warning,
+    'Tomorrow': colors.textTertiary,
+    'Upcoming': colors.textTertiary,
+    'No due date': colors.textTertiary,
+    'Completed': colors.textTertiary,
   };
 
   const renderEventItem = (event: EventItem) => {
@@ -485,30 +422,6 @@ export default function TasksScreen() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1 bg-m-bg">
       <MobileHeader />
 
-      {/* Create task bar */}
-      {showCreate && (
-        <View className="px-4 py-3 bg-m-bg-card border-b border-m-border flex-row items-center gap-2">
-          <TextInput
-            placeholder="What needs to be done?"
-            value={newTaskTitle}
-            onChangeText={setNewTaskTitle}
-            autoFocus
-            onSubmitEditing={handleCreate}
-            returnKeyType="done"
-            className="flex-1 bg-m-bg-subtle rounded-lg px-3 py-2.5 text-sm text-m-text-primary"
-            placeholderTextColor={colors.textPlaceholder}
-          />
-          <TouchableOpacity
-            onPress={handleCreate}
-            disabled={!newTaskTitle.trim()}
-            className="bg-m-accent rounded-lg px-4 py-2.5"
-            style={{ opacity: newTaskTitle.trim() ? 1 : 0.3 }}
-          >
-            <Text className="text-m-text-on-brand text-sm font-medium">Add</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {!tasks ? (
         <LoadingSpinner />
       ) : (
@@ -523,14 +436,14 @@ export default function TasksScreen() {
                 <View className="px-4 pt-4 pb-2">
                   <Text className="text-lg font-bold text-m-text-primary mb-3">Tasks</Text>
                   <View className="flex-row gap-2 mb-2">
-                    {renderMetricPill('To Do', metrics.todo, <Circle size={16} color="#3b82f6" />, '#eff6ff')}
-                    {renderMetricPill('In Progress', metrics.inProgress, <ArrowRight size={16} color="#3b82f6" />, '#eff6ff')}
-                    {renderMetricPill('Meetings', metrics.meetings, <Calendar size={16} color="#6366f1" />, '#eef2ff')}
+                    {renderMetricPill('To Do', metrics.todo, <Circle size={16} color="#3b82f6" />)}
+                    {renderMetricPill('In Progress', metrics.inProgress, <ArrowRight size={16} color="#3b82f6" />)}
+                    {renderMetricPill('Meetings', metrics.meetings, <Calendar size={16} color="#6366f1" />)}
                   </View>
                   <View className="flex-row gap-2">
-                    {renderMetricPill('Completed', metrics.completed, <CheckCircle2 size={16} color={colors.success} />, '#ecfdf5')}
-                    {renderMetricPill('Overdue', metrics.overdue, <AlertCircle size={16} color={colors.error} />, '#fef2f2')}
-                    {renderMetricPill('Due Today', metrics.dueToday, <Calendar size={16} color={colors.warning} />, '#fffbeb')}
+                    {renderMetricPill('Completed', metrics.completed, <CheckCircle2 size={16} color={colors.success} />)}
+                    {renderMetricPill('Overdue', metrics.overdue, <AlertCircle size={16} color={colors.error} />)}
+                    {renderMetricPill('Due Today', metrics.dueToday, <Calendar size={16} color={colors.warning} />)}
                   </View>
                 </View>
               )}
@@ -581,11 +494,17 @@ export default function TasksScreen() {
                           >
                             {day.getDate()}
                           </Text>
-                          {hasItems && !isSelected && (
+                          {isToday && !isSelected && (
+                            <Text className="text-[8px] font-bold text-m-accent mt-0.5">TODAY</Text>
+                          )}
+                          {hasItems && !isSelected && !isToday && (
                             <View className="w-1 h-1 rounded-full bg-m-accent mt-1" />
                           )}
                           {hasItems && isSelected && (
                             <View className="w-1 h-1 rounded-full bg-white mt-1" />
+                          )}
+                          {hasItems && isToday && !isSelected && (
+                            <View className="w-1 h-1 rounded-full bg-m-accent mt-0.5" />
                           )}
                         </TouchableOpacity>
                       );
@@ -624,15 +543,24 @@ export default function TasksScreen() {
             if (item.type === 'header') {
               const section = item.section!;
               const isCompletedSection = section.title === 'Completed';
+              const headerColor = sectionHeaderColor[section.title] || colors.textTertiary;
               return (
                 <TouchableOpacity
                   onPress={isCompletedSection ? () => setShowCompleted((s) => !s) : undefined}
                   activeOpacity={isCompletedSection ? 0.6 : 1}
                   className="px-4 pt-4 pb-1.5 flex-row items-center justify-between"
                 >
-                  <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wider">
-                    {section.title}
-                  </Text>
+                  <View className="flex-row items-center gap-1.5">
+                    <Text
+                      className="text-xs font-semibold uppercase tracking-wider"
+                      style={{ color: headerColor }}
+                    >
+                      {section.title}
+                    </Text>
+                    <Text className="text-xs font-normal text-m-text-tertiary">
+                      ({section.data.length})
+                    </Text>
+                  </View>
                   {isCompletedSection && (
                     <Text className="text-xs text-m-text-tertiary">
                       {showCompleted ? 'Hide' : `Show (${tasks?.filter((t) => t.status === 'completed').length ?? 0})`}
@@ -645,7 +573,15 @@ export default function TasksScreen() {
             const listItem = item.item!;
             return (
               <View className="px-4 mb-2">
-                {listItem._type === 'task' ? renderTaskItem(listItem) : renderEventItem(listItem)}
+                {listItem._type === 'task' ? (
+                  <TaskListItem
+                    task={listItem}
+                    onComplete={handleComplete}
+                    onPress={handleOpenTask}
+                  />
+                ) : (
+                  renderEventItem(listItem)
+                )}
               </View>
             );
           }}
@@ -675,6 +611,16 @@ export default function TasksScreen() {
       >
         <Plus size={24} color={colors.textOnBrand} />
       </TouchableOpacity>
+
+      {/* Task create sheet */}
+      <TaskCreateSheet
+        visible={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={(taskId) => {
+          const newTask = tasks?.find((t) => t._id === taskId);
+          if (newTask) setSelectedTask(newTask);
+        }}
+      />
 
       {/* Task detail sheet */}
       {selectedTask && (
