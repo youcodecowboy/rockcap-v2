@@ -3395,10 +3395,15 @@ export default defineSchema({
   dailyBriefs: defineTable({
     userId: v.id("users"),
     date: v.string(),
+    // Scope of the brief. `personal` = signed-in user's own data; `organization` = team-wide.
+    // Optional for backwards-compat with records written before this field existed.
+    // Treat missing as "personal".
+    scope: v.optional(v.union(v.literal("personal"), v.literal("organization"))),
     content: v.any(),
     generatedAt: v.string(),
   })
-    .index("by_user_date", ["userId", "date"]),
+    .index("by_user_date", ["userId", "date"])
+    .index("by_user_date_scope", ["userId", "date", "scope"]),
 
   // Push notification tokens for mobile devices
   pushTokens: defineTable({

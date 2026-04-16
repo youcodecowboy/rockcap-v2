@@ -95,6 +95,7 @@ import type * as modelingTemplates from "../modelingTemplates.js";
 import type * as noteTemplates from "../noteTemplates.js";
 import type * as notes from "../notes.js";
 import type * as notifications from "../notifications.js";
+import type * as orgBrief from "../orgBrief.js";
 import type * as personalFolders from "../personalFolders.js";
 import type * as placementRules from "../placementRules.js";
 import type * as planning from "../planning.js";
@@ -209,6 +210,7 @@ declare const fullApi: ApiFromModules<{
   noteTemplates: typeof noteTemplates;
   notes: typeof notes;
   notifications: typeof notifications;
+  orgBrief: typeof orgBrief;
   personalFolders: typeof personalFolders;
   placementRules: typeof placementRules;
   planning: typeof planning;

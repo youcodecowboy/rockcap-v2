@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
-import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-react-native';
+import { ArrowLeft, RefreshCw, Sparkles, User, Users } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
 import MobileHeader from '@/components/MobileHeader';
@@ -20,6 +20,8 @@ const GENERATE_API_URL =
   process.env.EXPO_PUBLIC_API_URL
     ? `${process.env.EXPO_PUBLIC_API_URL}/api/mobile/daily-brief/generate`
     : 'http://localhost:3000/api/mobile/daily-brief/generate';
+
+type BriefScope = 'personal' | 'organization';
 
 // ---------------------------------------------------------------------------
 // Brief content shape (mirrors the JSON returned by the generator)
@@ -83,7 +85,66 @@ function parseBriefContent(content: any): BriefContent | string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Stats Bar — four card-style tiles (mirrors mobile web BriefStatsBar)
+// Segmented control — Personal | Organization
+// ---------------------------------------------------------------------------
+
+function ScopeSegmented({
+  scope, onChange,
+}: {
+  scope: BriefScope;
+  onChange: (s: BriefScope) => void;
+}) {
+  return (
+    <View
+      className="flex-row p-1 rounded-[10px] bg-m-bg-subtle border border-m-border"
+      style={{ gap: 4 }}
+    >
+      <SegmentButton
+        active={scope === 'personal'}
+        onPress={() => onChange('personal')}
+        icon={<User size={14} color={scope === 'personal' ? colors.textOnBrand : colors.textSecondary} />}
+        label="Personal"
+      />
+      <SegmentButton
+        active={scope === 'organization'}
+        onPress={() => onChange('organization')}
+        icon={<Users size={14} color={scope === 'organization' ? colors.textOnBrand : colors.textSecondary} />}
+        label="Organization"
+      />
+    </View>
+  );
+}
+
+function SegmentButton({
+  active, onPress, icon, label,
+}: {
+  active: boolean;
+  onPress: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      className="flex-1 flex-row items-center justify-center rounded-[8px] py-2"
+      style={{
+        backgroundColor: active ? colors.bgBrand : 'transparent',
+        gap: 6,
+      }}
+    >
+      {icon}
+      <Text
+        className="text-[13px] font-medium"
+        style={{ color: active ? colors.textOnBrand : colors.textSecondary }}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stats Bar — four card-style tiles
 // ---------------------------------------------------------------------------
 
 function StatTile({
@@ -168,7 +229,7 @@ function InsightText({ text }: { text: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Attention Needed
+// Sections
 // ---------------------------------------------------------------------------
 
 function AttentionNeededSection({ data }: { data: BriefContent['attentionNeeded'] }) {
@@ -215,10 +276,6 @@ function AttentionNeededSection({ data }: { data: BriefContent['attentionNeeded'
   );
 }
 
-// ---------------------------------------------------------------------------
-// Today's Schedule (timeline)
-// ---------------------------------------------------------------------------
-
 function TodayScheduleSection({ data }: { data: BriefContent['todaySchedule'] }) {
   if (!data) return null;
   const items = data.items ?? [];
@@ -264,10 +321,6 @@ function TodayScheduleSection({ data }: { data: BriefContent['todaySchedule'] })
   );
 }
 
-// ---------------------------------------------------------------------------
-// Activity Recap
-// ---------------------------------------------------------------------------
-
 function ActivityRecapSection({ data }: { data: BriefContent['activityRecap'] }) {
   if (!data) return null;
   const items = data.items ?? [];
@@ -304,10 +357,6 @@ function ActivityRecapSection({ data }: { data: BriefContent['activityRecap'] })
     </Card>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Looking Ahead
-// ---------------------------------------------------------------------------
 
 function LookingAheadSection({ data }: { data: BriefContent['lookingAhead'] }) {
   if (!data) return null;
@@ -356,23 +405,54 @@ function LookingAheadSection({ data }: { data: BriefContent['lookingAhead'] }) {
 export default function BriefScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
+  const [scope, setScope] = useState<BriefScope>('personal');
 
-  // Gathered data (same set the /api/daily-brief/generate web route uses)
-  const brief = useQuery(api.dailyBriefs.getToday, isAuthenticated ? {} : 'skip');
-  const tasks = useQuery(
+  // --- Per-scope brief record -------------------------------------------------
+  const brief = useQuery(api.dailyBriefs.getToday, isAuthenticated ? { scope } : 'skip');
+
+  // --- Personal-scope data ----------------------------------------------------
+  const personalTasks = useQuery(
     api.tasks.getByUser,
-    isAuthenticated ? { includeCreated: true, includeAssigned: true } : 'skip',
+    isAuthenticated && scope === 'personal'
+      ? { includeCreated: true, includeAssigned: true }
+      : 'skip',
   );
-  const metrics = useQuery(api.tasks.getMetrics, isAuthenticated ? {} : 'skip');
-  const events = useQuery(api.events.getUpcoming, isAuthenticated ? { days: 1 } : 'skip');
-  const flags = useQuery(
+  const personalMetrics = useQuery(
+    api.tasks.getMetrics,
+    isAuthenticated && scope === 'personal' ? {} : 'skip',
+  );
+  const personalEvents = useQuery(
+    api.events.getUpcoming,
+    isAuthenticated && scope === 'personal' ? { days: 1 } : 'skip',
+  );
+  const personalFlags = useQuery(
     api.flags.getMyFlags,
-    isAuthenticated ? { status: 'open' as const } : 'skip',
+    isAuthenticated && scope === 'personal' ? { status: 'open' as const } : 'skip',
   );
-  const notifications = useQuery(
+  const personalNotifs = useQuery(
     api.notifications.getRecent,
-    isAuthenticated ? { limit: 20, includeRead: false } : 'skip',
+    isAuthenticated && scope === 'personal' ? { limit: 20, includeRead: false } : 'skip',
   );
+
+  // --- Organization-scope data -----------------------------------------------
+  const orgTasks = useQuery(
+    api.orgBrief.getAllTasks,
+    isAuthenticated && scope === 'organization' ? {} : 'skip',
+  );
+  const orgMetrics = useQuery(
+    api.orgBrief.getTeamMetrics,
+    isAuthenticated && scope === 'organization' ? {} : 'skip',
+  );
+  const orgEvents = useQuery(
+    api.orgBrief.getTodayEvents,
+    isAuthenticated && scope === 'organization' ? {} : 'skip',
+  );
+  const orgFlags = useQuery(
+    api.orgBrief.getAllOpenFlags,
+    isAuthenticated && scope === 'organization' ? { limit: 50 } : 'skip',
+  );
+
+  // --- Shared data (org-wide in both tabs) -----------------------------------
   const recentDocs = useQuery(
     api.documents.getRecent,
     isAuthenticated ? { limit: 10 } : 'skip',
@@ -384,7 +464,12 @@ export default function BriefScreen() {
 
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasTriggered, setHasTriggered] = useState(false);
+  // Track which scopes have been auto-triggered this mount so switching tabs
+  // doesn't re-trigger the one you just saw, and so each tab gets one shot.
+  const triggeredRef = useRef<Record<BriefScope, boolean>>({
+    personal: false,
+    organization: false,
+  });
 
   // Spin animation for the refresh icon
   const spin = useRef(new Animated.Value(0)).current;
@@ -409,6 +494,13 @@ export default function BriefScreen() {
   const content: BriefContent | null =
     parsed && typeof parsed === 'object' ? (parsed as BriefContent) : null;
 
+  // Select the right payload for the active scope.
+  const tasks = scope === 'personal' ? personalTasks : orgTasks;
+  const metrics = scope === 'personal' ? personalMetrics : orgMetrics;
+  const events = scope === 'personal' ? personalEvents : orgEvents;
+  const flags = scope === 'personal' ? personalFlags : orgFlags;
+  const notifications = scope === 'personal' ? personalNotifs : [];
+
   const handleGenerate = async () => {
     if (generating) return;
     setGenerating(true);
@@ -418,7 +510,7 @@ export default function BriefScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          scope: 'personal',
+          scope,
           tasks: tasks ?? [],
           metrics: metrics ?? null,
           events: events ?? [],
@@ -436,6 +528,7 @@ export default function BriefScreen() {
       const data = await res.json();
       const now = new Date();
       await saveBrief({
+        scope,
         date: data.date ?? now.toISOString().split('T')[0],
         content: data.brief,
         generatedAt: now.toISOString(),
@@ -447,10 +540,8 @@ export default function BriefScreen() {
     }
   };
 
-  // Auto-generate on first visit if no brief exists and we have the data to send.
-  // `brief === null` means the query ran and returned nothing; `undefined` means
-  // still loading. We also wait for tasks/clients to be loaded so the first run
-  // isn't populated with empty arrays.
+  // Auto-generate when we land on an empty tab and we have the data to send.
+  // `tasks === undefined` means the Convex query for this tab is still loading.
   const ready =
     tasks !== undefined &&
     clients !== undefined &&
@@ -464,13 +555,19 @@ export default function BriefScreen() {
       brief === null &&
       !generating &&
       !error &&
-      !hasTriggered
+      !triggeredRef.current[scope]
     ) {
-      setHasTriggered(true);
+      triggeredRef.current[scope] = true;
       handleGenerate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, ready, brief, generating, error, hasTriggered]);
+  }, [isAuthenticated, ready, brief, generating, error, scope]);
+
+  // Clear any stale error when the user switches tabs so each tab gets a
+  // clean surface.
+  useEffect(() => {
+    setError(null);
+  }, [scope]);
 
   const today = new Date().toLocaleDateString('en-GB', {
     weekday: 'long',
@@ -508,6 +605,9 @@ export default function BriefScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12 }}
       >
+        {/* Scope toggle */}
+        <ScopeSegmented scope={scope} onChange={setScope} />
+
         {/* Loading state — first generation or manual refresh with no cached brief */}
         {(brief === undefined || (generating && !content)) && (
           <View className="items-center py-16">
@@ -519,10 +619,14 @@ export default function BriefScreen() {
             </View>
             <ActivityIndicator size="small" color={colors.textTertiary} style={{ marginBottom: 10 }} />
             <Text className="text-sm text-m-text-secondary font-medium">
-              Preparing your daily brief...
+              {scope === 'personal'
+                ? 'Preparing your daily brief...'
+                : 'Preparing your team brief...'}
             </Text>
             <Text className="text-xs text-m-text-tertiary mt-1">
-              Analysing tasks, events, and activity
+              {scope === 'personal'
+                ? 'Analysing your tasks, events, and activity'
+                : 'Analysing team tasks, events, and activity'}
             </Text>
           </View>
         )}
@@ -556,6 +660,8 @@ export default function BriefScreen() {
                 {today}
               </Text>
               <Text className="text-xs text-m-text-tertiary mt-1">
+                {scope === 'personal' ? 'Your brief' : 'Team brief'}
+                {' · '}
                 Generated at{' '}
                 {brief?.generatedAt
                   ? new Date(brief.generatedAt).toLocaleTimeString('en-GB', {
