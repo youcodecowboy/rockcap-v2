@@ -12,6 +12,7 @@ import { colors } from '@/lib/theme';
 import { useDocTabs } from '@/contexts/TabContext';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DocumentRenderer from '@/components/DocumentRenderer';
+import MobileHeader from '@/components/MobileHeader';
 
 const TABS = ['Preview', 'Summary', 'Details', 'Intelligence', 'Notes'] as const;
 type TabKey = typeof TABS[number];
@@ -72,13 +73,20 @@ export default function ViewerScreen() {
   }, [fileUrl]);
 
   if (!document) {
-    return <View className="flex-1 bg-m-bg"><LoadingSpinner message="Loading document..." /></View>;
+    return (
+      <View className="flex-1 bg-m-bg">
+        <MobileHeader />
+        <LoadingSpinner message="Loading document..." />
+      </View>
+    );
   }
 
   return (
     <View className="flex-1 bg-m-bg">
-      {/* Viewer header */}
-      <View className="bg-m-bg-card border-b border-m-border pt-14 pb-3 px-4 flex-row items-start">
+      <MobileHeader />
+
+      {/* Document sub-header */}
+      <View className="bg-m-bg-card border-b border-m-border px-4 py-3 flex-row items-start">
         <View className="flex-1 mr-2">
           <Text className="text-base font-semibold text-m-text-primary" numberOfLines={1}>
             {docTitle}
