@@ -1,5 +1,5 @@
-import { View, Text, TouchableOpacity, FlatList } from 'react-native';
-import { Folder, FileText, ChevronRight } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, FlatList, ActionSheetIOS, Platform, Alert } from 'react-native';
+import { Folder, FileText, ChevronRight, MoreVertical } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 
 interface FolderItem {
@@ -16,11 +16,36 @@ interface FolderBrowserProps {
   onFolderPress: (folderId: string, folderName: string) => void;
   onDocumentPress: (documentId: string, title: string, fileType: string) => void;
   onBreadcrumbPress: (index: number) => void;
+  onDocumentAction?: (documentId: string, action: 'duplicate' | 'flag' | 'delete') => void;
 }
 
 export default function FolderBrowser({
-  items, breadcrumbs, onFolderPress, onDocumentPress, onBreadcrumbPress,
+  items, breadcrumbs, onFolderPress, onDocumentPress, onBreadcrumbPress, onDocumentAction,
 }: FolderBrowserProps) {
+  function showDocumentActions(documentId: string) {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Duplicate', 'Flag', 'Delete', 'Cancel'],
+          destructiveButtonIndex: 2,
+          cancelButtonIndex: 3,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) onDocumentAction?.(documentId, 'duplicate');
+          if (buttonIndex === 1) onDocumentAction?.(documentId, 'flag');
+          if (buttonIndex === 2) onDocumentAction?.(documentId, 'delete');
+        }
+      );
+    } else {
+      Alert.alert('Document Actions', '', [
+        { text: 'Duplicate', onPress: () => onDocumentAction?.(documentId, 'duplicate') },
+        { text: 'Flag', onPress: () => onDocumentAction?.(documentId, 'flag') },
+        { text: 'Delete', style: 'destructive', onPress: () => onDocumentAction?.(documentId, 'delete') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  }
+
   return (
     <View className="flex-1">
       {breadcrumbs.length > 0 && (
@@ -66,6 +91,18 @@ export default function FolderBrowser({
                 <Text className="text-xs text-m-text-tertiary mt-0.5 uppercase">{item.fileType}</Text>
               ) : null}
             </View>
+            {item.type === 'document' && onDocumentAction && (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  showDocumentActions(item.id);
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                className="px-2"
+              >
+                <MoreVertical size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+            )}
             <ChevronRight size={16} color={colors.textTertiary} />
           </TouchableOpacity>
         )}

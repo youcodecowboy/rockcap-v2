@@ -1,7 +1,7 @@
-import { View, TouchableOpacity, Text, ScrollView } from 'react-native';
+import { View, TouchableOpacity, Text, ScrollView, Alert } from 'react-native';
 import { useState, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { useQuery, useConvexAuth } from 'convex/react';
+import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import FolderBrowser from '@/components/FolderBrowser';
 import MobileHeader from '@/components/MobileHeader';
@@ -21,6 +21,41 @@ export default function DocsScreen() {
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const [nav, setNav] = useState<NavLevel>({ level: 'clients' });
+
+  const duplicateDoc = useMutation(api.documents.duplicateDocument);
+  const removeDoc = useMutation(api.documents.remove);
+  const createFlag = useMutation(api.flags.create);
+
+  const handleDocumentAction = async (documentId: string, action: 'duplicate' | 'flag' | 'delete') => {
+    try {
+      if (action === 'duplicate') {
+        await duplicateDoc({ documentId: documentId as any });
+        Alert.alert('Done', 'Document duplicated');
+      } else if (action === 'flag') {
+        await createFlag({
+          entityType: 'document',
+          entityId: documentId,
+          note: 'Flagged from mobile',
+          priority: 'normal',
+        } as any);
+        Alert.alert('Done', 'Document flagged');
+      } else if (action === 'delete') {
+        Alert.alert('Delete Document', 'Are you sure?', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              await removeDoc({ id: documentId as any });
+              Alert.alert('Done', 'Document deleted');
+            },
+          },
+        ]);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Action failed');
+    }
+  };
 
   // Conditional queries based on current navigation level
   const clients = useQuery(
@@ -289,6 +324,7 @@ export default function DocsScreen() {
           onFolderPress={handleFolderPress}
           onDocumentPress={handleDocumentPress}
           onBreadcrumbPress={handleBreadcrumbPress}
+          onDocumentAction={handleDocumentAction}
         />
       )}
     </View>
