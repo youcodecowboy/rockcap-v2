@@ -10,6 +10,7 @@ import QuickActions from '@/components/QuickActions';
 import MobileHeader from '@/components/MobileHeader';
 import { Flag, MessageCircle, FileText, Building, FolderOpen, ChevronRight } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import UpNextCard, { type UpNextItem } from '@/components/UpNextCard';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -44,6 +45,10 @@ export default function DashboardScreen() {
   const firstName = user?.firstName || 'there';
   const tasks = useQuery(api.tasks.getByUser, isAuthenticated ? {} : 'skip');
   const nextEvent = useQuery(api.events.getNextEvent, isAuthenticated ? {} : 'skip');
+  const upcomingReminders = useQuery(
+    api.reminders.getUpcoming,
+    isAuthenticated ? { limit: 3 } : 'skip'
+  );
   const notifications = useQuery(
     api.notifications.getRecent,
     isAuthenticated ? { limit: 3, includeRead: false } : 'skip'
@@ -79,6 +84,61 @@ export default function DashboardScreen() {
     (t) => t.dueDate && new Date(t.dueDate).toDateString() === now.toDateString()
   );
   const inProgressTasks = activeTasks?.filter((t) => t.status === 'in_progress');
+
+  // Client lookup (also used by Up Next for context)
+  const clientMap = new Map(clients?.map((c) => [c._id, c.name]) ?? []);
+
+  // Build Up Next items: merge tasks + reminders + events, sort by urgency
+  // (overdue first, then soonest upcoming). Mirrors web's resolveUpNext().
+  const upNextItems: UpNextItem[] = [];
+
+  if (tasks) {
+    for (const t of tasks) {
+      if (t.status !== 'completed' && t.status !== 'cancelled' && t.dueDate) {
+        upNextItems.push({
+          id: String(t._id),
+          type: 'task',
+          title: t.title,
+          context: (t.clientId && clientMap.get(t.clientId)) || 'No client',
+          dueDate: new Date(t.dueDate),
+          href: '/tasks',
+        });
+      }
+    }
+  }
+
+  if (upcomingReminders) {
+    for (const r of upcomingReminders) {
+      upNextItems.push({
+        id: String(r._id),
+        type: 'reminder',
+        title: r.title,
+        context: (r.clientId && clientMap.get(r.clientId)) || 'Reminder',
+        dueDate: new Date(r.scheduledFor),
+        href: '/tasks',
+      });
+    }
+  }
+
+  if (nextEvent) {
+    upNextItems.push({
+      id: String(nextEvent._id),
+      type: 'event',
+      title: nextEvent.title,
+      context: nextEvent.location || 'No location',
+      dueDate: new Date(nextEvent.startTime),
+      href: '/tasks',
+    });
+  }
+
+  const nowMs = now.getTime();
+  upNextItems.sort((a, b) => {
+    const aOverdue = a.dueDate.getTime() < nowMs;
+    const bOverdue = b.dueDate.getTime() < nowMs;
+    if (aOverdue && !bOverdue) return -1;
+    if (!aOverdue && bOverdue) return 1;
+    return a.dueDate.getTime() - b.dueDate.getTime();
+  });
 
   // Recents data
   const recentProjects = projects?.slice(0, 3);
@@ -157,33 +217,7 @@ export default function DashboardScreen() {
         ) : null}
 
         {/* Up Next */}
-        <Card>
-          <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide mb-3">
-            Up Next
-          </Text>
-          {todayTasks && todayTasks.length > 0 ? (
-            <View className="gap-2">
-              {todayTasks.slice(0, 3).map((task) => (
-                <TouchableOpacity key={task._id} onPress={() => router.push('/tasks')} className="flex-row items-center gap-2">
-                  <View className="w-1.5 h-1.5 rounded-full bg-m-accent" />
-                  <Text className="text-sm text-m-text-primary flex-1" numberOfLines={1}>
-                    {task.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <Text className="text-sm text-m-text-tertiary">Nothing scheduled</Text>
-          )}
-          {nextEvent ? (
-            <View className="flex-row items-center gap-2 mt-3 pt-3 border-t border-m-border-subtle">
-              <View className="w-1.5 h-1.5 rounded-full bg-m-success" />
-              <Text className="text-sm text-m-text-primary flex-1" numberOfLines={1}>
-                {nextEvent.title}
-              </Text>
-            </View>
-          ) : null}
-        </Card>
+        <UpNextCard items={upNextItems} />
 
         {/* Overdue */}
         {overdueTasks && overdueTasks.length > 0 ? (
