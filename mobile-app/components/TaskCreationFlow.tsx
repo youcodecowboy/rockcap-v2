@@ -2,14 +2,16 @@ import {
   View, Text, TextInput, TouchableOpacity, Modal, ScrollView, Alert,
   KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { useUser } from '@clerk/clerk-expo';
 import { api } from '../../model-testing-app/convex/_generated/api';
 import {
-  X, Sparkles, ArrowUp, Calendar, Building, FolderOpen, User, Flag,
+  X, Sparkles, ArrowUp, Calendar, Building, FolderOpen, User, Flag, Users,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import DateTimePicker from '@/components/DateTimePicker';
+import PeoplePicker, { type PersonOption } from '@/components/PeoplePicker';
 
 const PARSE_API_URL =
   process.env.EXPO_PUBLIC_API_URL
@@ -37,23 +39,56 @@ export default function TaskCreationFlow({
   const [aiThinking, setAiThinking] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Smart defaults: tasks default to end-of-today, meetings to next rounded hour
+  const defaultTaskDate = useMemo(() => {
+    if (prefilledDate) return prefilledDate;
+    const d = new Date();
+    d.setHours(17, 0, 0, 0); // 5pm today
+    return d.toISOString();
+  }, [prefilledDate]);
+  const defaultMeetingStart = useMemo(() => {
+    if (prefilledDate) return prefilledDate;
+    const d = new Date();
+    // Round up to the next hour
+    d.setMinutes(0, 0, 0);
+    d.setHours(d.getHours() + 1);
+    return d.toISOString();
+  }, [prefilledDate]);
+  const defaultMeetingEnd = useMemo(() => {
+    const d = new Date(defaultMeetingStart);
+    d.setHours(d.getHours() + 1);
+    return d.toISOString();
+  }, [defaultMeetingStart]);
+
   // Manual form state
   const [title, setTitle] = useState(prefilledTitle ?? '');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
-  const [dueDate, setDueDate] = useState(prefilledDate ?? '');
+  const [dueDate, setDueDate] = useState(defaultTaskDate);
   const [clientId, setClientId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
   // Event-specific
-  const [startTime, setStartTime] = useState(prefilledDate ?? '');
-  const [endTime, setEndTime] = useState('');
+  const [startTime, setStartTime] = useState(defaultMeetingStart);
+  const [endTime, setEndTime] = useState(defaultMeetingEnd);
   const [location, setLocation] = useState('');
+  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
 
-  // Load context for AI
+  // Load context for AI + pickers
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const projects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
   const users = useQuery(api.users.getAll, isAuthenticated ? {} : 'skip');
+  const contacts = useQuery(api.contacts.getAll, isAuthenticated ? {} : 'skip');
   const currentUser = useQuery(api.users.getCurrent, isAuthenticated ? {} : 'skip');
+
+  // Default assignee = current user (only on first load)
+  const defaultAssigneeSet = useRef(false);
+  useEffect(() => {
+    if (currentUser && !defaultAssigneeSet.current && assignedToIds.length === 0) {
+      defaultAssigneeSet.current = true;
+      setAssignedToIds([(currentUser as any)._id]);
+    }
+  }, [currentUser, assignedToIds.length]);
 
   const createTask = useMutation(api.tasks.create);
   const createEvent = useMutation(api.events.create);
@@ -65,12 +100,14 @@ export default function TaskCreationFlow({
     setTitle(prefilledTitle ?? '');
     setDescription('');
     setPriority('medium');
-    setDueDate(prefilledDate ?? '');
+    setDueDate(defaultTaskDate);
     setClientId(null);
     setProjectId(null);
-    setStartTime(prefilledDate ?? '');
-    setEndTime('');
+    setAssignedToIds(currentUser ? [(currentUser as any)._id] : []);
+    setStartTime(defaultMeetingStart);
+    setEndTime(defaultMeetingEnd);
     setLocation('');
+    setAttendeeIds([]);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -79,6 +116,28 @@ export default function TaskCreationFlow({
     () => (projects || []).filter((p: any) => !clientId || p.clientId === clientId),
     [projects, clientId]
   );
+
+  // People option lists
+  const userOptions: PersonOption[] = useMemo(
+    () => (users || []).map((u: any) => ({
+      id: u._id,
+      name: u.name || u.email || 'User',
+      email: u.email,
+      source: 'user' as const,
+    })),
+    [users]
+  );
+
+  // For meeting attendees: combine users + contacts
+  const attendeeOptions: PersonOption[] = useMemo(() => {
+    const fromContacts = (contacts || []).map((c: any) => ({
+      id: c._id,
+      name: c.name || 'Contact',
+      email: c.email,
+      source: 'contact' as const,
+    }));
+    return [...userOptions, ...fromContacts];
+  }, [userOptions, contacts]);
 
   const handleAISubmit = useCallback(async () => {
     if (!aiInput.trim() || !currentUser) return;
@@ -104,23 +163,29 @@ export default function TaskCreationFlow({
       const data = await res.json();
 
       if (data.type === 'task' && data.task) {
-        // Pre-fill manual form with AI-parsed values for review
         setTitle(data.task.title || '');
         setDescription(data.task.description || '');
         setPriority(data.task.priority || 'medium');
-        setDueDate(data.task.dueDate || '');
+        setDueDate(data.task.dueDate || defaultTaskDate);
         setClientId(data.task.clientId || null);
         setProjectId(data.task.projectId || null);
+        // AI may return assignedTo array — pre-fill, else keep current user
+        if (Array.isArray(data.task.assignedTo) && data.task.assignedTo.length > 0) {
+          setAssignedToIds(data.task.assignedTo);
+        }
         setMode('task');
         setStep('manual');
       } else if (data.type === 'event' && data.event) {
         setTitle(data.event.title || '');
         setDescription(data.event.description || '');
-        setStartTime(data.event.startTime || '');
-        setEndTime(data.event.endTime || '');
+        setStartTime(data.event.startTime || defaultMeetingStart);
+        setEndTime(data.event.endTime || defaultMeetingEnd);
         setLocation(data.event.location || '');
         setClientId(data.event.clientId || null);
         setProjectId(data.event.projectId || null);
+        if (Array.isArray(data.event.attendees) && data.event.attendees.length > 0) {
+          setAttendeeIds(data.event.attendees);
+        }
         setMode('meeting');
         setStep('manual');
       } else if (data.type === 'message') {
@@ -154,6 +219,8 @@ export default function TaskCreationFlow({
         }
         if (clientId) args.clientId = clientId;
         if (projectId) args.projectId = projectId;
+        // assignedTo triggers notifications in convex/tasks.ts on anyone other than creator
+        if (assignedToIds.length > 0) args.assignedTo = assignedToIds;
         await createTask(args);
       } else {
         const start = new Date(startTime);
@@ -168,6 +235,13 @@ export default function TaskCreationFlow({
         };
         if (clientId) args.clientId = clientId;
         if (projectId) args.projectId = projectId;
+        // Map attendee IDs to the events.create attendees shape (email/name)
+        if (attendeeIds.length > 0) {
+          args.attendees = attendeeIds
+            .map(id => attendeeOptions.find(o => o.id === id))
+            .filter((o): o is PersonOption => Boolean(o))
+            .map(o => ({ email: o.email, name: o.name, responseStatus: 'needsAction' as const }));
+        }
         await createEvent(args);
       }
       handleClose();
@@ -273,36 +347,42 @@ export default function TaskCreationFlow({
               />
 
               {mode === 'task' ? (
-                <FormRow icon={Calendar} label={dueDate ? new Date(dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'Set date'}>
-                  <TextInput
+                <FormRow icon={Calendar} label="Due date">
+                  <DateTimePicker
                     value={dueDate}
-                    onChangeText={setDueDate}
-                    placeholder="YYYY-MM-DD or ISO"
-                    placeholderTextColor={colors.textPlaceholder}
-                    className="text-sm text-m-text-primary text-right"
+                    onChange={setDueDate}
+                    mode="datetime"
+                    placeholder="Set date"
                   />
                 </FormRow>
               ) : (
                 <>
                   <FormRow icon={Calendar} label="Start">
-                    <TextInput
+                    <DateTimePicker
                       value={startTime}
-                      onChangeText={setStartTime}
-                      placeholder="ISO start"
-                      placeholderTextColor={colors.textPlaceholder}
-                      className="text-sm text-m-text-primary text-right"
+                      onChange={(iso) => {
+                        setStartTime(iso);
+                        // Keep end time at least 15 min after start if it's earlier
+                        if (endTime && new Date(endTime) <= new Date(iso)) {
+                          const newEnd = new Date(iso);
+                          newEnd.setHours(newEnd.getHours() + 1);
+                          setEndTime(newEnd.toISOString());
+                        }
+                      }}
+                      mode="datetime"
+                      placeholder="Pick start"
                     />
                   </FormRow>
                   <FormRow icon={Calendar} label="End">
-                    <TextInput
+                    <DateTimePicker
                       value={endTime}
-                      onChangeText={setEndTime}
-                      placeholder="ISO end (optional)"
-                      placeholderTextColor={colors.textPlaceholder}
-                      className="text-sm text-m-text-primary text-right"
+                      onChange={setEndTime}
+                      mode="datetime"
+                      minDate={startTime ? new Date(startTime) : undefined}
+                      placeholder="Pick end"
                     />
                   </FormRow>
-                  <FormRow icon={Building} label={location || 'Location'}>
+                  <FormRow icon={Building} label="Location">
                     <TextInput
                       value={location}
                       onChangeText={setLocation}
@@ -354,9 +434,27 @@ export default function TaskCreationFlow({
                 </FormRow>
               )}
 
-              <FormRow icon={User} label="You" last>
-                <Text className="text-sm text-m-text-tertiary">Assigned</Text>
-              </FormRow>
+              {mode === 'task' ? (
+                <FormRow icon={User} label="Assigned to" last>
+                  <PeoplePicker
+                    options={userOptions}
+                    selectedIds={assignedToIds}
+                    onChange={setAssignedToIds}
+                    title="Assign Task"
+                    placeholder="No one"
+                  />
+                </FormRow>
+              ) : (
+                <FormRow icon={Users} label="Attendees" last>
+                  <PeoplePicker
+                    options={attendeeOptions}
+                    selectedIds={attendeeIds}
+                    onChange={setAttendeeIds}
+                    title="Invite Attendees"
+                    placeholder="No attendees"
+                  />
+                </FormRow>
+              )}
 
               <TextInput
                 value={description}

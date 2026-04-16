@@ -6,7 +6,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import {
-  Plus, Circle, CheckCircle2, ArrowRight, Calendar, AlertCircle, ChevronLeft, ChevronRight, Clock, MapPin,
+  Plus, Circle, CheckCircle2, ArrowRight, Calendar, AlertCircle, ChevronLeft, ChevronRight, Clock, MapPin, User,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
@@ -78,6 +78,9 @@ type TaskItem = {
   dueDate?: string;
   priority?: string;
   clientName?: string;
+  createdBy?: string;
+  assignedTo?: string[];
+  assignedByName?: string; // filled in when someone else assigned it
 };
 
 type EventItem = {
@@ -117,6 +120,14 @@ export default function TasksScreen() {
   // Client/project name lookups
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const projects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
+  const allUsers = useQuery(api.users.getAll, isAuthenticated ? {} : 'skip');
+  const currentUser = useQuery(api.users.getCurrent, isAuthenticated ? {} : 'skip');
+
+  const userNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (allUsers) for (const u of allUsers as any[]) map[u._id] = u.name || u.email || 'User';
+    return map;
+  }, [allUsers]);
 
   const clientNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -239,15 +250,33 @@ export default function TasksScreen() {
     tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
 
     // Map tasks to list items
-    const taskItems: TaskItem[] = tasks.map((t) => ({
-      _type: 'task' as const,
-      _id: t._id,
-      title: t.title,
-      status: t.status,
-      dueDate: t.dueDate,
-      priority: (t as any).priority,
-      clientName: (t as any).clientName,
-    }));
+    const currentUserId = (currentUser as any)?._id;
+    const taskItems: TaskItem[] = tasks.map((t) => {
+      const createdBy = (t as any).createdBy;
+      const assignedTo = (t as any).assignedTo || [];
+      // "Assigned by X" when current user is in assignedTo and was NOT the creator
+      let assignedByName: string | undefined;
+      if (
+        currentUserId &&
+        createdBy &&
+        createdBy !== currentUserId &&
+        assignedTo.includes(currentUserId)
+      ) {
+        assignedByName = userNameMap[createdBy];
+      }
+      return {
+        _type: 'task' as const,
+        _id: t._id,
+        title: t.title,
+        status: t.status,
+        dueDate: t.dueDate,
+        priority: (t as any).priority,
+        clientName: (t as any).clientName,
+        createdBy,
+        assignedTo,
+        assignedByName,
+      };
+    });
 
     // Map events to list items
     const eventItems: EventItem[] = (events ?? []).map((e) => ({
@@ -389,6 +418,15 @@ export default function TasksScreen() {
     const accent = getAccentColor(task);
     const dueLabel = task.dueDate ? getDueLabel(task.dueDate) : null;
     const isCompleted = task.status === 'completed';
+    // "Delegated" = I created this and assigned it to others (not myself)
+    const currentUserId = (currentUser as any)?._id;
+    const isDelegatedByMe = Boolean(
+      currentUserId &&
+      task.createdBy === currentUserId &&
+      task.assignedTo &&
+      task.assignedTo.length > 0 &&
+      !task.assignedTo.includes(currentUserId)
+    );
 
     return (
       <View className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row">
@@ -417,7 +455,7 @@ export default function TasksScreen() {
             >
               {task.title}
             </Text>
-            <View className="flex-row items-center mt-0.5 gap-2">
+            <View className="flex-row items-center mt-0.5 gap-2 flex-wrap">
               {dueLabel && (
                 <Text className="text-xs" style={{ color: dueLabel.color }}>
                   {dueLabel.text}
@@ -427,6 +465,24 @@ export default function TasksScreen() {
                 <Text className="text-xs text-m-text-tertiary" numberOfLines={1}>
                   {task.clientName}
                 </Text>
+              )}
+              {task.assignedByName && (
+                <View className="flex-row items-center gap-1 bg-blue-50 rounded-full px-1.5 py-0.5">
+                  <User size={9} color="#1d4ed8" />
+                  <Text className="text-[10px] font-medium" style={{ color: '#1d4ed8' }}>
+                    Assigned by {task.assignedByName}
+                  </Text>
+                </View>
+              )}
+              {isDelegatedByMe && task.assignedTo && task.assignedTo.length > 0 && (
+                <View className="flex-row items-center gap-1 bg-m-bg-subtle rounded-full px-1.5 py-0.5">
+                  <User size={9} color={colors.textSecondary} />
+                  <Text className="text-[10px] font-medium text-m-text-secondary">
+                    {task.assignedTo.length === 1
+                      ? `Assigned to ${userNameMap[task.assignedTo[0]] || 'team'}`
+                      : `Assigned to ${task.assignedTo.length} people`}
+                  </Text>
+                </View>
               )}
             </View>
           </TouchableOpacity>
