@@ -48,6 +48,20 @@ export default function ConversationDetailScreen() {
   const sendMessage = useMutation(api.directMessages.send);
   const markAsRead = useMutation(api.conversations.markAsRead);
 
+  const navigateToReference = useCallback((ref: EntityReference) => {
+    if (ref.type === 'client') {
+      router.push(`/clients/${ref.id}` as any);
+    } else if (ref.type === 'project') {
+      // Projects nest under clients; use the project's clientId if known, else go to clients list
+      router.push(`/clients` as any);
+    } else if (ref.type === 'document') {
+      router.push({
+        pathname: '/docs/viewer',
+        params: { documentId: ref.id, title: ref.name, fileType: '' },
+      } as any);
+    }
+  }, [router]);
+
   // Mark as read when viewing
   useEffect(() => {
     if (id && messages && messages.length > 0) {
@@ -161,12 +175,17 @@ export default function ConversationDetailScreen() {
                       {msgRefs.map((ref, i) => {
                         const Icon = ref.type === 'document' ? FileText : ref.type === 'client' ? Building : FolderOpen;
                         return (
-                          <View key={i} className={`flex-row items-center gap-1 rounded px-2 py-1 ${isMe ? 'bg-white/10' : 'bg-white/50'}`}>
-                            <Icon size={11} color={isMe ? 'rgba(255,255,255,0.8)' : colors.textSecondary} />
-                            <Text className={`text-xs ${isMe ? 'text-white/90' : 'text-m-text-secondary'}`} numberOfLines={1}>
+                          <TouchableOpacity
+                            key={i}
+                            onPress={() => navigateToReference(ref)}
+                            className={`flex-row items-center gap-1 rounded px-2 py-1 ${isMe ? 'bg-white/10' : 'bg-white/60'}`}
+                            activeOpacity={0.7}
+                          >
+                            <Icon size={11} color={isMe ? 'rgba(255,255,255,0.9)' : colors.textSecondary} />
+                            <Text className={`text-xs underline ${isMe ? 'text-white' : 'text-m-text-primary'}`} numberOfLines={1}>
                               {ref.name}
                             </Text>
-                          </View>
+                          </TouchableOpacity>
                         );
                       })}
                     </View>
