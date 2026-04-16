@@ -13,6 +13,8 @@ import MobileHeader from '@/components/MobileHeader';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import TaskDetailSheet from '@/components/TaskDetailSheet';
+import EventDetailSheet from '@/components/EventDetailSheet';
+import TaskCreationFlow from '@/components/TaskCreationFlow';
 
 // ── Date helpers ──────────────────────────────────────────────
 
@@ -108,6 +110,8 @@ export default function TasksScreen() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [showCreationFlow, setShowCreationFlow] = useState(false);
   const [taskFilter, setTaskFilter] = useState<'active' | 'done' | 'all'>('active');
 
   // Client/project name lookups
@@ -443,12 +447,21 @@ export default function TasksScreen() {
     );
   };
 
+  const handleOpenEvent = useCallback((eventItem: EventItem) => {
+    const fullEvent = events?.find((e) => e._id === eventItem._id);
+    if (fullEvent) setSelectedEvent(fullEvent);
+  }, [events]);
+
   const renderEventItem = (event: EventItem) => {
     const startTime = new Date(event.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const endTime = new Date(event.endTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
     return (
-      <View className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row">
+      <TouchableOpacity
+        onPress={() => handleOpenEvent(event)}
+        activeOpacity={0.7}
+        className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row"
+      >
         {/* Left indigo accent */}
         <View style={{ width: 3, backgroundColor: '#6366f1' }} />
 
@@ -475,7 +488,7 @@ export default function TasksScreen() {
             )}
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -661,10 +674,10 @@ export default function TasksScreen() {
         />
       )}
 
-      {/* Floating action button */}
+      {/* Floating "New Task" button — opens AI/manual creation flow */}
       <TouchableOpacity
-        onPress={() => setShowCreate(true)}
-        className="absolute bottom-6 right-5 w-14 h-14 rounded-full bg-m-accent items-center justify-center"
+        onPress={() => setShowCreationFlow(true)}
+        className="absolute bottom-6 right-5 flex-row items-center gap-2 bg-m-bg-brand rounded-full px-4 py-3"
         style={{
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
@@ -673,7 +686,8 @@ export default function TasksScreen() {
           elevation: 4,
         }}
       >
-        <Plus size={24} color={colors.textOnBrand} />
+        <Plus size={16} color={colors.textOnBrand} />
+        <Text className="text-sm font-semibold text-m-text-on-brand">New Task</Text>
       </TouchableOpacity>
 
       {/* Task detail sheet */}
@@ -687,6 +701,27 @@ export default function TasksScreen() {
           onClose={() => setSelectedTask(null)}
         />
       )}
+
+      {/* Event detail sheet */}
+      {selectedEvent && (
+        <EventDetailSheet
+          key={selectedEvent._id}
+          event={selectedEvent}
+          visible={!!selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+          onCreateTaskFromEvent={(event) => {
+            setSelectedEvent(null);
+            // Open creation flow pre-filled with event title
+            setShowCreationFlow(true);
+          }}
+        />
+      )}
+
+      {/* Creation flow (AI + Manual) */}
+      <TaskCreationFlow
+        visible={showCreationFlow}
+        onClose={() => setShowCreationFlow(false)}
+      />
     </KeyboardAvoidingView>
   );
 }

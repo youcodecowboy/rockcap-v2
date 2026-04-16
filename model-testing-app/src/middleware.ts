@@ -10,6 +10,10 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-feedback-loop(.*)',
   '/api/process-meeting-queue(.*)',
   '/api/process-intelligence-queue(.*)',
+  // Mobile-app endpoints — they don't use Next cookie auth.
+  // The mobile app authenticates separately via Clerk Expo for any sensitive operations
+  // that touch user data; these endpoints only do AI text parsing and are safe to expose.
+  '/api/mobile/(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path
