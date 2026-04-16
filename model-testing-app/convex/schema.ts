@@ -1663,6 +1663,10 @@ export default defineSchema({
     projectId: v.optional(v.id("projects")), // Attached project
     reminderIds: v.optional(v.array(v.id("reminders"))), // Reminders linked to task
     attachmentIds: v.optional(v.array(v.id("documents"))), // Reference docs attached to task
+    // People-from-contacts-book linked to this task. Distinct from `assignedTo`
+    // (which are internal users). Used to surface "tasks involving this contact"
+    // from the contact detail sheet.
+    contactIds: v.optional(v.array(v.id("contacts"))),
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -1789,7 +1793,12 @@ export default defineSchema({
       }))),
     })),
     metadata: v.optional(v.any()), // Flexible metadata object
-    
+
+    // Contact-book references linked to this event (distinct from `attendees`,
+    // which is a raw email/name list designed for Google Calendar parity).
+    // Used to find "meetings with this contact" from the contact detail.
+    contactIds: v.optional(v.array(v.id("contacts"))),
+
     createdAt: v.string(),
     updatedAt: v.string(),
   })

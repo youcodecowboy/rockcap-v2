@@ -74,6 +74,7 @@ export const create = mutation({
       }))),
     })),
     metadata: v.optional(v.any()),
+    contactIds: v.optional(v.array(v.id("contacts"))), // Linked contact-book entries
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
@@ -99,6 +100,7 @@ export const create = mutation({
       attachments: args.attachments,
       conferenceData: args.conferenceData,
       metadata: args.metadata,
+      contactIds: args.contactIds || undefined,
       syncStatus: "local_only", // Will be synced to Google when OAuth is set up
       createdAt: now,
       updatedAt: now,
@@ -550,6 +552,45 @@ export const getUpcoming = query({
     );
 
     return args.limit ? sorted.slice(0, args.limit) : sorted;
+  },
+});
+
+// Query: Get events (meetings) linked to a specific contact.
+//
+// Full table scan + filter because `contactIds` is an array field (Convex
+// doesn't index array contents). Sorted newest-first by startTime so the
+// contact detail can show "recent meetings" naturally.
+export const getByContact = query({
+  args: { contactId: v.id("contacts") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) return [];
+
+    const allEvents = await ctx.db.query("events").collect();
+
+    // Events are "accessible" if the user created, organized, or attends
+    // (by email). We apply the same visibility rule as events.list.
+    const matching = allEvents.filter((event) => {
+      const hasContact =
+        Array.isArray(event.contactIds) &&
+        event.contactIds.includes(args.contactId);
+      if (!hasContact) return false;
+      if (event.status === 'cancelled') return false;
+      if (event.createdBy === user._id) return true;
+      if (event.organizerId === user._id) return true;
+      return event.attendees?.some((a: any) => a.email === user.email) ?? false;
+    });
+
+    return matching.sort(
+      (a, b) =>
+        new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+    );
   },
 });
 

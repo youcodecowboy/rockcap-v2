@@ -2,8 +2,8 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView, FlatList, Linking,
   ActivityIndicator,
 } from 'react-native';
-import { useState, useMemo } from 'react';
-import { useRouter } from 'expo-router';
+import { useState, useMemo, useEffect } from 'react';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import {
@@ -58,13 +58,45 @@ export default function ContactsScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
 
+  // Deep-link params:
+  //   ?clientId=X     — pre-select the client filter chip
+  //   ?contactId=X    — auto-open the detail modal for this contact
+  // Both are useful when navigating from the client detail's Key Contacts,
+  // where "Contact A" should open the detail and "View all" should filter
+  // the list to that client.
+  const params = useLocalSearchParams<{
+    clientId?: string;
+    contactId?: string;
+  }>();
+
   const contacts = useQuery(api.contacts.getAll, isAuthenticated ? {} : 'skip');
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
 
   const [search, setSearch] = useState('');
-  const [activeClientFilter, setActiveClientFilter] = useState<string | null>(null);
+  const [activeClientFilter, setActiveClientFilter] = useState<string | null>(
+    params.clientId ?? null,
+  );
   const [showCreate, setShowCreate] = useState(false);
-  const [openContactId, setOpenContactId] = useState<string | null>(null);
+  const [openContactId, setOpenContactId] = useState<string | null>(
+    params.contactId ?? null,
+  );
+
+  // If the user navigates here with a new `contactId` while the screen is
+  // already mounted (e.g. from two different client detail pages in the
+  // stack), re-open the right modal. React to param changes with an effect.
+  useEffect(() => {
+    if (params.contactId && params.contactId !== openContactId) {
+      setOpenContactId(params.contactId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.contactId]);
+
+  useEffect(() => {
+    if (params.clientId && params.clientId !== activeClientFilter) {
+      setActiveClientFilter(params.clientId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.clientId]);
 
   // Map client IDs → names for quick lookup in the list
   const clientMap = useMemo(() => {
@@ -332,51 +364,72 @@ function ContactRow({
   clientName?: string;
   onPress: () => void;
 }) {
+  // Row layout: outer View contains TWO siblings — a flex-1 TouchableOpacity
+  // that covers the avatar + name/subtitle block, and a flat View with the
+  // inline action buttons. This means:
+  //   - Tapping anywhere on the avatar/text area opens the detail modal
+  //   - Tapping a Call or Email button ONLY fires that button's onPress
+  //   - No `stopPropagation` needed — siblings don't bubble to each other
+  //
+  // Previous implementation nested Touchables and used `e.stopPropagation?.()`
+  // which worked on native but was fragile on react-native-web where the
+  // event shape can differ. Sibling layout is bulletproof cross-platform.
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      className="flex-row items-center gap-3 px-4 py-3 border-b border-m-border-subtle"
-      activeOpacity={0.6}
-    >
-      <ContactAvatar name={contact.name} size={36} />
-      <View className="flex-1 min-w-0">
-        <Text
-          className="text-[14px] font-medium text-m-text-primary"
-          numberOfLines={1}
-        >
-          {contact.name}
-        </Text>
-        <View className="flex-row items-center gap-1 mt-0.5">
-          {contact.role ? (
-            <Text className="text-[11px] text-m-text-tertiary" numberOfLines={1}>
-              {contact.role}
-              {clientName ? ` · ${clientName}` : ''}
-            </Text>
-          ) : clientName ? (
-            <View className="flex-row items-center gap-0.5">
-              <Building size={10} color={colors.accent} />
-              <Text className="text-[11px] text-m-accent" numberOfLines={1}>
-                {clientName}
+    <View className="flex-row items-center border-b border-m-border-subtle">
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.6}
+        className="flex-1 flex-row items-center gap-3 px-4 py-3"
+      >
+        <ContactAvatar name={contact.name} size={36} />
+        <View className="flex-1 min-w-0">
+          <Text
+            className="text-[14px] font-medium text-m-text-primary"
+            numberOfLines={1}
+          >
+            {contact.name}
+          </Text>
+          <View className="flex-row items-center gap-1 mt-0.5">
+            {contact.role ? (
+              <Text
+                className="text-[11px] text-m-text-tertiary"
+                numberOfLines={1}
+              >
+                {contact.role}
+                {clientName ? ` · ${clientName}` : ''}
               </Text>
-            </View>
-          ) : contact.email ? (
-            <Text className="text-[11px] text-m-text-tertiary" numberOfLines={1}>
-              {contact.email}
-            </Text>
-          ) : (
-            <Text className="text-[11px] text-m-text-tertiary italic">
-              No details
-            </Text>
-          )}
+            ) : clientName ? (
+              <View className="flex-row items-center gap-0.5">
+                <Building size={10} color={colors.accent} />
+                <Text
+                  className="text-[11px] text-m-accent"
+                  numberOfLines={1}
+                >
+                  {clientName}
+                </Text>
+              </View>
+            ) : contact.email ? (
+              <Text
+                className="text-[11px] text-m-text-tertiary"
+                numberOfLines={1}
+              >
+                {contact.email}
+              </Text>
+            ) : (
+              <Text className="text-[11px] text-m-text-tertiary italic">
+                No details
+              </Text>
+            )}
+          </View>
         </View>
-      </View>
+      </TouchableOpacity>
 
-      {/* Inline quick actions — tap-through to tel:/mailto: without opening detail */}
-      <View className="flex-row items-center gap-1">
+      {/* Inline quick actions — genuinely outside the main tap area.
+          Own padding/margin so hit targets are the same ~36px they were before. */}
+      <View className="flex-row items-center gap-1 pr-4 pl-1 py-3">
         {contact.phone ? (
           <TouchableOpacity
-            onPress={(e) => {
-              e.stopPropagation?.();
+            onPress={() => {
               Linking.openURL(`tel:${contact.phone}`).catch(() => {});
             }}
             hitSlop={6}
@@ -388,8 +441,7 @@ function ContactRow({
         ) : null}
         {contact.email ? (
           <TouchableOpacity
-            onPress={(e) => {
-              e.stopPropagation?.();
+            onPress={() => {
               Linking.openURL(`mailto:${contact.email}`).catch(() => {});
             }}
             hitSlop={6}
@@ -401,7 +453,7 @@ function ContactRow({
         ) : null}
         <ChevronRight size={14} color={colors.textTertiary} />
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 

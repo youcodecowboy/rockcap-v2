@@ -69,6 +69,7 @@ export const create = mutation({
     projectId: v.optional(v.id("projects")),
     assignedTo: v.optional(v.array(v.id("users"))), // Can assign to multiple users
     attachmentIds: v.optional(v.array(v.id("documents"))), // Reference documents
+    contactIds: v.optional(v.array(v.id("contacts"))), // Linked contact-book entries
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
@@ -90,6 +91,7 @@ export const create = mutation({
       projectId: args.projectId,
       reminderIds: [],
       attachmentIds: args.attachmentIds || [],
+      contactIds: args.contactIds || undefined,
       createdAt: now,
       updatedAt: now,
     });
@@ -663,6 +665,46 @@ export const getByProject = query({
 
     return tasks.sort((a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+  },
+});
+
+// Query: Get tasks linked to a specific contact.
+//
+// No index on `contactIds` (it's an array field — Convex doesn't index array
+// contents by default), so this scans the tasks table and filters. For
+// typical user scales (hundreds to low-thousands of tasks per user) this is
+// fine. If it becomes a hotspot, we can either denormalize (contactTasks
+// join table) or use `search` with a custom index.
+export const getByContact = query({
+  args: { contactId: v.id("contacts") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) return [];
+
+    const allTasks = await ctx.db.query("tasks").collect();
+
+    // Must both (a) reference this contact and (b) be accessible to the user
+    // (created by or assigned to them).
+    const matching = allTasks.filter((task) => {
+      const hasContact =
+        Array.isArray(task.contactIds) && task.contactIds.includes(args.contactId);
+      if (!hasContact) return false;
+      if (task.createdBy === user._id) return true;
+      if (Array.isArray(task.assignedTo))
+        return task.assignedTo.includes(user._id);
+      return task.assignedTo === user._id;
+    });
+
+    return matching.sort(
+      (a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     );
   },
 });

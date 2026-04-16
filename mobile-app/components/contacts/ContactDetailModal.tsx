@@ -8,7 +8,8 @@ import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import {
   X, Phone, Mail, Copy, Pencil, Trash2, Building,
-  Check, CheckSquare, Calendar,
+  Check, CheckSquare, Calendar, Circle, CheckCircle2, Clock,
+  AlertTriangle, MapPin, Users,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import ContactAvatar from './ContactAvatar';
@@ -41,6 +42,18 @@ export default function ContactDetailModal({ visible, contactId, onClose }: Prop
     isAuthenticated && contactId ? { id: contactId as any } : 'skip',
   );
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
+
+  // Related records — tasks and meetings that reference this contact via
+  // their contactIds field. Guarded by isAuthenticated + contactId so we
+  // don't fire queries when the modal is closed.
+  const relatedTasks = useQuery(
+    api.tasks.getByContact,
+    isAuthenticated && contactId ? { contactId: contactId as any } : 'skip',
+  );
+  const relatedEvents = useQuery(
+    api.events.getByContact,
+    isAuthenticated && contactId ? { contactId: contactId as any } : 'skip',
+  );
 
   const updateContact = useMutation(api.contacts.update);
   const removeContact = useMutation(api.contacts.remove);
@@ -394,6 +407,73 @@ export default function ContactDetailModal({ visible, contactId, onClose }: Prop
               )}
             </View>
 
+            {/* Related Tasks — only shown when not editing, keeps edit mode focused */}
+            {!editing && relatedTasks && relatedTasks.length > 0 && (
+              <View className="mt-5">
+                <View className="flex-row items-center gap-1.5 mb-2">
+                  <CheckSquare size={13} color={colors.textSecondary} />
+                  <Text className="text-[10px] font-semibold text-m-text-secondary uppercase tracking-wide">
+                    Related Tasks ({relatedTasks.length})
+                  </Text>
+                </View>
+                <View className="bg-m-bg-card border border-m-border rounded-[12px] overflow-hidden">
+                  {relatedTasks.slice(0, 5).map((task: any, idx: number) => (
+                    <View key={task._id}>
+                      {idx > 0 && <View className="h-px bg-m-border-subtle" />}
+                      <RelatedTaskRow task={task} />
+                    </View>
+                  ))}
+                </View>
+                {relatedTasks.length > 5 ? (
+                  <Text className="text-xs text-m-text-tertiary mt-1.5">
+                    +{relatedTasks.length - 5} more — view in Tasks
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {/* Related Meetings — events linked via contactIds */}
+            {!editing && relatedEvents && relatedEvents.length > 0 && (
+              <View className="mt-5">
+                <View className="flex-row items-center gap-1.5 mb-2">
+                  <Calendar size={13} color={colors.textSecondary} />
+                  <Text className="text-[10px] font-semibold text-m-text-secondary uppercase tracking-wide">
+                    Related Meetings ({relatedEvents.length})
+                  </Text>
+                </View>
+                <View className="bg-m-bg-card border border-m-border rounded-[12px] overflow-hidden">
+                  {relatedEvents.slice(0, 5).map((event: any, idx: number) => (
+                    <View key={event._id}>
+                      {idx > 0 && <View className="h-px bg-m-border-subtle" />}
+                      <RelatedMeetingRow event={event} />
+                    </View>
+                  ))}
+                </View>
+                {relatedEvents.length > 5 ? (
+                  <Text className="text-xs text-m-text-tertiary mt-1.5">
+                    +{relatedEvents.length - 5} more — view in Calendar
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {/* Empty-state hint when neither exists */}
+            {!editing &&
+              relatedTasks !== undefined &&
+              relatedEvents !== undefined &&
+              relatedTasks.length === 0 &&
+              relatedEvents.length === 0 && (
+                <View className="mt-5 py-4 items-center">
+                  <Users size={18} color={colors.textTertiary} />
+                  <Text className="text-xs text-m-text-tertiary mt-1.5 text-center">
+                    No tasks or meetings yet.
+                  </Text>
+                  <Text className="text-[11px] text-m-text-tertiary mt-0.5 text-center">
+                    Tap Task or Meeting above to start one.
+                  </Text>
+                </View>
+              )}
+
             {/* Delete (edit mode only) */}
             {editing && (
               <TouchableOpacity
@@ -425,6 +505,9 @@ export default function ContactDetailModal({ visible, contactId, onClose }: Prop
               .join('\n') || undefined
           }
           prefilledClientId={contact.clientId ?? undefined}
+          // Link the task to this contact so it surfaces in the "Related Tasks"
+          // section next time someone opens this contact's detail.
+          prefilledContactIds={[contact._id as unknown as string]}
         />
 
         {/* Create meeting with this contact as attendee */}
@@ -436,8 +519,9 @@ export default function ContactDetailModal({ visible, contactId, onClose }: Prop
           prefilledClientId={contact.clientId ?? undefined}
           // attendeeOptions in TaskCreationFlow keys contacts by their Convex _id,
           // which is exactly what contact._id is — so this pre-selects the contact
-          // in the attendees picker.
+          // in the attendees picker AND links the event via contactIds.
           prefilledAttendeeIds={[contact._id as unknown as string]}
+          prefilledContactIds={[contact._id as unknown as string]}
         />
       </View>
     </Modal>
@@ -642,5 +726,170 @@ function ClientRow({
         </Modal>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Related Task row — compact read-only snapshot shown inside the contact detail.
+// Mirrors the visual vocabulary of TaskItem on the tasks screen but stripped
+// down for display: status dot, title, priority/due-date metadata row.
+// ---------------------------------------------------------------------------
+
+function RelatedTaskRow({ task }: { task: any }) {
+  const isCompleted = task.status === 'completed';
+  const isOverdue =
+    task.dueDate && !isCompleted && new Date(task.dueDate) < new Date();
+
+  return (
+    <View className="flex-row items-start gap-2.5 px-3 py-2.5">
+      <View style={{ marginTop: 2 }}>
+        {isCompleted ? (
+          <CheckCircle2 size={14} color={colors.success} />
+        ) : (
+          <Circle size={14} color={colors.border} />
+        )}
+      </View>
+      <View className="flex-1 min-w-0">
+        <Text
+          className="text-sm"
+          numberOfLines={1}
+          style={{
+            color: isCompleted ? colors.textTertiary : colors.textPrimary,
+            textDecorationLine: isCompleted ? 'line-through' : 'none',
+          }}
+        >
+          {task.title}
+        </Text>
+        <View className="flex-row items-center gap-2 mt-0.5">
+          {task.priority && (
+            <View
+              className="rounded-[5px] px-1 py-0.5"
+              style={{
+                backgroundColor:
+                  task.priority === 'high'
+                    ? '#fef2f2'
+                    : task.priority === 'medium'
+                    ? '#fef3c7'
+                    : '#f0fdf4',
+              }}
+            >
+              <Text
+                className="text-[9px] font-semibold capitalize"
+                style={{
+                  color:
+                    task.priority === 'high'
+                      ? '#b91c1c'
+                      : task.priority === 'medium'
+                      ? '#92400e'
+                      : '#166534',
+                }}
+              >
+                {task.priority}
+              </Text>
+            </View>
+          )}
+          {task.dueDate && (
+            <View className="flex-row items-center gap-0.5">
+              <Clock
+                size={9}
+                color={isOverdue ? colors.error : colors.textTertiary}
+              />
+              <Text
+                className="text-[10px]"
+                style={{
+                  color: isOverdue ? colors.error : colors.textTertiary,
+                }}
+              >
+                {new Date(task.dueDate).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                })}
+              </Text>
+              {isOverdue ? (
+                <AlertTriangle size={9} color={colors.error} style={{ marginLeft: 2 }} />
+              ) : null}
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Related Meeting row — shows event title + start time + location.
+// Uses Intl date formatter with a "Today"/"Tomorrow" fallback so near-future
+// meetings read at a glance. Past events use the full "5 Mar" format.
+// ---------------------------------------------------------------------------
+
+function RelatedMeetingRow({ event }: { event: any }) {
+  const start = new Date(event.startTime);
+  const now = new Date();
+  const isToday = start.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const isTomorrow = start.toDateString() === tomorrow.toDateString();
+  const isPast = start.getTime() < now.getTime();
+
+  const dateLabel = isToday
+    ? 'Today'
+    : isTomorrow
+    ? 'Tomorrow'
+    : start.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year:
+          start.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+      });
+
+  const timeLabel = event.allDay
+    ? 'All day'
+    : start.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+  return (
+    <View className="flex-row items-start gap-2.5 px-3 py-2.5">
+      <View
+        className="rounded-[6px] items-center justify-center"
+        style={{
+          width: 28,
+          height: 28,
+          backgroundColor: isPast ? colors.bgInset : '#dbeafe',
+          marginTop: 1,
+        }}
+      >
+        <Calendar
+          size={13}
+          color={isPast ? colors.textTertiary : '#1d4ed8'}
+        />
+      </View>
+      <View className="flex-1 min-w-0">
+        <Text
+          className="text-sm text-m-text-primary"
+          numberOfLines={1}
+          style={{ opacity: isPast ? 0.6 : 1 }}
+        >
+          {event.title}
+        </Text>
+        <View className="flex-row items-center gap-1 mt-0.5">
+          <Text className="text-[11px] font-medium text-m-text-tertiary">
+            {dateLabel} · {timeLabel}
+          </Text>
+          {event.location ? (
+            <View className="flex-row items-center gap-0.5 ml-2">
+              <MapPin size={9} color={colors.textTertiary} />
+              <Text
+                className="text-[11px] text-m-text-tertiary"
+                numberOfLines={1}
+              >
+                {event.location}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </View>
   );
 }

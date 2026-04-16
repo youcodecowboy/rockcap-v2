@@ -35,6 +35,11 @@ interface TaskCreationFlowProps {
   prefilledAttendeeIds?: string[];
   // For tasks: assignee user IDs (overrides the default "current user" seed).
   prefilledAssigneeIds?: string[];
+  // Contact-book entries to link to the task/event. Distinct from attendees:
+  // attendees become email snapshots on the event for calendar sync, while
+  // contactIds persist as live references so contact detail can query
+  // "tasks/meetings involving this contact".
+  prefilledContactIds?: string[];
 }
 
 type Step = 'intro' | 'manual' | 'creating';
@@ -42,7 +47,7 @@ type Step = 'intro' | 'manual' | 'creating';
 export default function TaskCreationFlow({
   visible, onClose, initialMode = 'task', prefilledTitle, prefilledDate,
   prefilledDescription, prefilledClientId, prefilledProjectId,
-  prefilledAttendeeIds, prefilledAssigneeIds,
+  prefilledAttendeeIds, prefilledAssigneeIds, prefilledContactIds,
 }: TaskCreationFlowProps) {
   const { user } = useUser();
   const { isAuthenticated } = useConvexAuth();
@@ -229,6 +234,24 @@ export default function TaskCreationFlow({
   const handleCreate = useCallback(async () => {
     if (!title.trim()) { Alert.alert('Title required'); return; }
     setStep('creating');
+
+    // Derive the set of contact IDs to persist onto the task/event.
+    // - Always include explicitly-prefilled contactIds (from contact detail).
+    // - For meetings: union with any attendees that came from the contacts
+    //   side of the attendee pool (`source: 'contact'`). Selecting a contact
+    //   as an attendee implies a link.
+    const contactIdsFromAttendees =
+      mode === 'meeting'
+        ? attendeeIds
+            .map((id) => attendeeOptions.find((o) => o.id === id))
+            .filter((o): o is PersonOption => Boolean(o))
+            .filter((o) => o.source === 'contact')
+            .map((o) => o.id)
+        : [];
+    const linkedContactIds = Array.from(
+      new Set([...(prefilledContactIds ?? []), ...contactIdsFromAttendees]),
+    );
+
     try {
       if (mode === 'task') {
         const args: any = {
@@ -245,6 +268,7 @@ export default function TaskCreationFlow({
         // assignedTo triggers notifications in convex/tasks.ts on anyone other than creator
         if (assignedToIds.length > 0) args.assignedTo = assignedToIds;
         if (attachments.length > 0) args.attachmentIds = attachments.map(a => a.id);
+        if (linkedContactIds.length > 0) args.contactIds = linkedContactIds;
         await createTask(args);
       } else {
         const start = new Date(startTime);
@@ -266,6 +290,7 @@ export default function TaskCreationFlow({
             .filter((o): o is PersonOption => Boolean(o))
             .map(o => ({ email: o.email, name: o.name, responseStatus: 'needsAction' as const }));
         }
+        if (linkedContactIds.length > 0) args.contactIds = linkedContactIds;
         await createEvent(args);
       }
       handleClose();
@@ -273,7 +298,11 @@ export default function TaskCreationFlow({
       Alert.alert('Error', e.message || 'Failed to create');
       setStep('manual');
     }
-  }, [mode, title, description, priority, dueDate, startTime, endTime, location, clientId, projectId, createTask, createEvent]);
+  }, [
+    mode, title, description, priority, dueDate, startTime, endTime, location,
+    clientId, projectId, attendeeIds, attendeeOptions, attachments,
+    assignedToIds, prefilledContactIds, createTask, createEvent,
+  ]);
 
   const clientName = useMemo(
     () => clients?.find((c: any) => c._id === clientId)?.name,
