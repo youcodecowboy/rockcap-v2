@@ -739,23 +739,51 @@ export default function ClientDetailScreen() {
         {activeTab === 'Projects' && (
           <View className="gap-2">
             {sortedProjects.length > 0 ? (
-              sortedProjects.map((p) => (
-                <Card key={p._id}>
-                  <View className="flex-row items-center justify-between mb-1">
-                    <Text className="text-sm font-medium text-m-text-primary flex-1 mr-2">{p.name}</Text>
-                    {p.status && (
-                      <StatusBadge
-                        status={p.status}
-                      />
-                    )}
-                  </View>
-                  {p.description ? (
-                    <Text className="text-sm text-m-text-secondary mt-1" numberOfLines={3}>
-                      {p.description}
-                    </Text>
-                  ) : null}
-                </Card>
-              ))
+              sortedProjects.map((p) => {
+                const projectDocs = folderCounts?.projectFolders?.[p._id] ?? {};
+                const docCount = Object.values(projectDocs).reduce(
+                  (s: number, c: any) => s + (c as number),
+                  0,
+                );
+                return (
+                  <TouchableOpacity
+                    key={p._id}
+                    onPress={() =>
+                      router.push(`/(tabs)/clients/${clientId}/projects/${p._id}` as any)
+                    }
+                  >
+                    <Card>
+                      <View className="flex-row items-center justify-between mb-1">
+                        <View className="flex-1 flex-row items-center gap-2 mr-2">
+                          <FolderOpen size={14} color={colors.accent} />
+                          <Text
+                            className="text-sm font-medium text-m-text-primary flex-1"
+                            numberOfLines={1}
+                          >
+                            {p.name}
+                          </Text>
+                        </View>
+                        {p.status && <StatusBadge status={p.status} />}
+                      </View>
+                      {p.description ? (
+                        <Text
+                          className="text-sm text-m-text-secondary mt-1"
+                          numberOfLines={2}
+                        >
+                          {p.description}
+                        </Text>
+                      ) : null}
+                      {/* Footer: doc count + chevron */}
+                      <View className="flex-row items-center justify-between mt-2 pt-2 border-t border-m-border-subtle">
+                        <Text className="text-xs text-m-text-tertiary">
+                          {docCount} {docCount === 1 ? 'document' : 'documents'}
+                        </Text>
+                        <ChevronRight size={14} color={colors.textTertiary} />
+                      </View>
+                    </Card>
+                  </TouchableOpacity>
+                );
+              })
             ) : (
               <EmptyState message="No projects" />
             )}
