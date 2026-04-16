@@ -12,6 +12,7 @@ import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
+import TaskDetailSheet from '@/components/TaskDetailSheet';
 
 // ── Date helpers ──────────────────────────────────────────────
 
@@ -106,6 +107,31 @@ export default function TasksScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+
+  // Client/project name lookups
+  const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
+  const projects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
+
+  const clientNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (clients) {
+      for (const c of clients) {
+        map[c._id] = c.name ?? c.company ?? c._id;
+      }
+    }
+    return map;
+  }, [clients]);
+
+  const projectNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (projects) {
+      for (const p of projects) {
+        map[p._id] = (p as any).name ?? (p as any).address ?? p._id;
+      }
+    }
+    return map;
+  }, [projects]);
 
   // Week dates
   const baseDate = useMemo(() => {
@@ -346,16 +372,21 @@ export default function TasksScreen() {
     </View>
   );
 
+  const handleOpenTask = useCallback((task: TaskItem) => {
+    // Find the full task data from the query results
+    const fullTask = tasks?.find((t) => t._id === task._id);
+    if (fullTask) {
+      setSelectedTask(fullTask);
+    }
+  }, [tasks]);
+
   const renderTaskItem = (task: TaskItem) => {
     const accent = getAccentColor(task);
     const dueLabel = task.dueDate ? getDueLabel(task.dueDate) : null;
     const isCompleted = task.status === 'completed';
 
     return (
-      <TouchableOpacity
-        activeOpacity={0.7}
-        className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row"
-      >
+      <View className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row">
         {/* Left accent border */}
         <View style={{ width: 3, backgroundColor: accent }} />
 
@@ -373,8 +404,8 @@ export default function TasksScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Content */}
-          <View className="flex-1">
+          {/* Content — tappable to open detail */}
+          <TouchableOpacity className="flex-1" activeOpacity={0.6} onPress={() => handleOpenTask(task)}>
             <Text
               className={`text-sm ${isCompleted ? 'text-m-text-tertiary line-through' : 'text-m-text-primary'}`}
               numberOfLines={1}
@@ -393,7 +424,7 @@ export default function TasksScreen() {
                 </Text>
               )}
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* Priority badge */}
           {task.priority === 'high' && (
@@ -407,7 +438,7 @@ export default function TasksScreen() {
             </View>
           )}
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -618,6 +649,18 @@ export default function TasksScreen() {
       >
         <Plus size={24} color={colors.textOnBrand} />
       </TouchableOpacity>
+
+      {/* Task detail sheet */}
+      {selectedTask && (
+        <TaskDetailSheet
+          key={selectedTask._id}
+          task={selectedTask}
+          clientName={selectedTask.clientId ? clientNameMap[selectedTask.clientId] : undefined}
+          projectName={selectedTask.projectId ? projectNameMap[selectedTask.projectId] : undefined}
+          visible={!!selectedTask}
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }

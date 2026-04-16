@@ -12,6 +12,7 @@ interface TaskListItemProps {
     clientName?: string;
   };
   onComplete: (taskId: string) => void;
+  onPress?: (taskId: string) => void;
 }
 
 function getDueLabel(dueDate: string): { text: string; color: string } {
@@ -40,7 +41,7 @@ function getAccentColor(task: { status: string; dueDate?: string }): string {
   return 'transparent';
 }
 
-export default function TaskListItem({ task, onComplete }: TaskListItemProps) {
+export default function TaskListItem({ task, onComplete, onPress }: TaskListItemProps) {
   const isCompleted = task.status === 'completed';
   const accent = getAccentColor(task);
   const dueLabel = task.dueDate ? getDueLabel(task.dueDate) : null;
@@ -64,8 +65,8 @@ export default function TaskListItem({ task, onComplete }: TaskListItemProps) {
           )}
         </TouchableOpacity>
 
-        {/* Content */}
-        <View className="flex-1">
+        {/* Content — tappable to open detail */}
+        <TouchableOpacity className="flex-1" activeOpacity={0.6} onPress={() => onPress?.(task._id)}>
           <Text
             className={`text-sm ${isCompleted ? 'text-m-text-tertiary line-through' : 'text-m-text-primary'}`}
             numberOfLines={1}
@@ -84,7 +85,7 @@ export default function TaskListItem({ task, onComplete }: TaskListItemProps) {
               </Text>
             )}
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Priority badge */}
         {task.priority === 'high' && (
