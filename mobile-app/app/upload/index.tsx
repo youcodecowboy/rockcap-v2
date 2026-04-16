@@ -25,6 +25,14 @@ import FolderSheet from '@/components/upload/FolderSheet';
 // Constants
 // ---------------------------------------------------------------------------
 
+// Gateway that runs the V4 AI pipeline server-side per uploaded item.
+// The Next.js server keeps the Anthropic key; mobile just fires-and-forgets
+// these requests so the batch screen can show reactive progress.
+const PROCESS_API_URL =
+  process.env.EXPO_PUBLIC_API_URL
+    ? `${process.env.EXPO_PUBLIC_API_URL}/api/mobile/bulk-upload/process`
+    : 'http://localhost:3000/api/mobile/bulk-upload/process';
+
 // Match the mobile web allow-list exactly so what works in browser works here.
 const ACCEPTED_MIME_TYPES = [
   'application/pdf',
@@ -512,6 +520,23 @@ export default function UploadScreen() {
             itemId: itemId as any,
             status: 'error',
             error: uploadError,
+          });
+        } else if (storageId) {
+          // Fire-and-forget the V4 analysis trigger. The server-side gateway
+          // owns all the state transitions (processing → ready_for_review);
+          // we just kick it off and let Convex's reactive subscription on
+          // the batch screen show live progress. Wrapping in a local try/catch
+          // so a network hiccup here doesn't abort the whole submit loop.
+          //
+          // NOTE: on native RN, in-flight fetches continue across screen
+          // transitions as long as the JS runtime is alive. The batch screen
+          // subscription picks up status updates as they land.
+          fetch(PROCESS_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId }),
+          }).catch((e) => {
+            console.warn(`[upload] failed to trigger analysis for ${f.name}:`, e);
           });
         }
       }
