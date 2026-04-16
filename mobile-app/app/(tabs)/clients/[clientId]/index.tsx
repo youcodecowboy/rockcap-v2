@@ -1498,7 +1498,7 @@ export default function ClientDetailScreen() {
                         <TouchableOpacity
                           key={doc._id}
                           onPress={() =>
-                            router.push(`/(tabs)/docs/viewer?id=${doc._id}` as any)
+                            router.push(`/(tabs)/docs/viewer?documentId=${doc._id}` as any)
                           }
                           className="flex-row items-center gap-2 py-1.5"
                         >
@@ -1778,7 +1778,21 @@ export default function ClientDetailScreen() {
                   {Object.entries(folderCounts.clientFolders).map(([folder, count]) => (
                     <TouchableOpacity
                       key={folder}
-                      onPress={() => router.push('/(tabs)/docs' as any)}
+                      // The mobile docs browser navigates client → project →
+                      // folder → documents. Client-level folders don't have
+                      // their own level yet, so we drop the user at the
+                      // projects list for this client (better context than
+                      // the global root). When a client-folder level is
+                      // added later, switch to passing folderType here.
+                      onPress={() =>
+                        router.push({
+                          pathname: '/(tabs)/docs',
+                          params: {
+                            clientId: clientId as string,
+                            clientName: client.name,
+                          },
+                        })
+                      }
                       className="flex-row items-center justify-between py-2"
                     >
                       <View className="flex-row items-center gap-2 flex-1">
@@ -1801,17 +1815,49 @@ export default function ClientDetailScreen() {
             {docsProjectFolders.length > 0 ? (
               docsProjectFolders.map((proj) => (
                 <Card key={proj.projectId}>
-                  <View className="flex-row items-center gap-2 mb-2">
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(tabs)/docs',
+                        params: {
+                          clientId: clientId as string,
+                          clientName: client.name,
+                          projectId: proj.projectId,
+                          projectName: proj.projectName,
+                        },
+                      })
+                    }
+                    className="flex-row items-center gap-2 mb-2"
+                  >
                     <FileText size={14} color={colors.accent} />
                     <Text className="text-sm font-semibold text-m-text-primary flex-1">{proj.projectName}</Text>
                     <Text className="text-xs text-m-text-tertiary">{proj.total} docs</Text>
-                  </View>
+                  </TouchableOpacity>
                   <View className="gap-0">
                     {Object.entries(proj.folders).map(([folder, count], idx) => (
                       <View key={folder}>
                         {idx > 0 && <View className="h-px bg-m-border-subtle" />}
                         <TouchableOpacity
-                          onPress={() => router.push('/(tabs)/docs' as any)}
+                          // Deep-link into /docs at the documents level for
+                          // this project/folder combo. `folder` here is the
+                          // folderType string (keys from getFolderCounts are
+                          // folderType, not _id — same gotcha as Bug 2).
+                          onPress={() =>
+                            router.push({
+                              pathname: '/(tabs)/docs',
+                              params: {
+                                clientId: clientId as string,
+                                clientName: client.name,
+                                projectId: proj.projectId,
+                                projectName: proj.projectName,
+                                folderType: folder,
+                                folderName:
+                                  folder === 'notes'
+                                    ? 'Notes'
+                                    : folder.replace(/_/g, ' '),
+                              },
+                            })
+                          }
                           className="flex-row items-center justify-between py-2 pl-5"
                         >
                           <View className="flex-row items-center gap-2 flex-1">

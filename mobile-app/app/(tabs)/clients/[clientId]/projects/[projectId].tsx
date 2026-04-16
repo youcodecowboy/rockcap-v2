@@ -371,12 +371,17 @@ export default function ProjectDetailScreen() {
   const totalDocs = documents?.length ?? 0;
 
   // Group docs by their stored folder for the Docs tab. Docs without a folder
-  // land in "General".
+  // land in "uncategorized".
+  //
+  // Note: the document's folder is stored as `doc.folderId` which, despite the
+  // name, holds the parent projectFolders row's `folderType` string (e.g.
+  // "background", "kyc"). Deep-linking into /docs uses this string as the
+  // `folderType` URL param.
   const docFolderCounts = useMemo(() => {
     if (!documents) return {} as Record<string, number>;
     const map: Record<string, number> = {};
     for (const d of documents) {
-      const folder = (d as any).folderKey || (d as any).folder || 'General';
+      const folder = (d as any).folderId || 'uncategorized';
       map[folder] = (map[folder] ?? 0) + 1;
     }
     return map;
@@ -856,7 +861,7 @@ export default function ProjectDetailScreen() {
                       {idx > 0 && <View className="h-px bg-m-border-subtle" />}
                       <TouchableOpacity
                         onPress={() =>
-                          router.push(`/(tabs)/docs/viewer?id=${doc._id}` as any)
+                          router.push(`/(tabs)/docs/viewer?documentId=${doc._id}` as any)
                         }
                         className="flex-row items-center gap-2 py-2"
                       >
@@ -932,7 +937,22 @@ export default function ProjectDetailScreen() {
                     <View key={folder}>
                       {idx > 0 && <View className="h-px bg-m-border-subtle" />}
                       <TouchableOpacity
-                        onPress={() => router.push('/(tabs)/docs' as any)}
+                        // Deep-link to /docs at the documents level for this
+                        // folder. `folder` is the folderType string, which
+                        // is what /docs expects as a URL param.
+                        onPress={() =>
+                          router.push({
+                            pathname: '/(tabs)/docs',
+                            params: {
+                              clientId: clientId as string,
+                              clientName: client?.name ?? '',
+                              projectId: projectId as string,
+                              projectName: project.name,
+                              folderType: folder,
+                              folderName: folder.replace(/_/g, ' '),
+                            },
+                          })
+                        }
                         className="flex-row items-center justify-between py-2"
                       >
                         <View className="flex-row items-center gap-2 flex-1">
@@ -962,7 +982,7 @@ export default function ProjectDetailScreen() {
                       {idx > 0 && <View className="h-px bg-m-border-subtle" />}
                       <TouchableOpacity
                         onPress={() =>
-                          router.push(`/(tabs)/docs/viewer?id=${d._id}` as any)
+                          router.push(`/(tabs)/docs/viewer?documentId=${d._id}` as any)
                         }
                         className="flex-row items-center gap-2 py-2"
                       >

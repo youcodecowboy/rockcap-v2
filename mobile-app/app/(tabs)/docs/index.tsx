@@ -1,6 +1,6 @@
 import { View, TouchableOpacity, Text, ScrollView, Alert, TextInput } from 'react-native';
 import { useState, useMemo } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import FolderBrowser from '@/components/FolderBrowser';
@@ -24,7 +24,52 @@ type DocTab = typeof TABS[number];
 export default function DocsScreen() {
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
-  const [nav, setNav] = useState<NavLevel>({ level: 'clients' });
+
+  // Deep-link params — other screens can push /docs?clientId=X&projectId=Y
+  // &folderType=Z to jump straight to a specific level. Names are optional
+  // (show "..." during the brief window before data loads) but clients usually
+  // have them on hand and pass them for instant breadcrumbs.
+  const params = useLocalSearchParams<{
+    clientId?: string;
+    clientName?: string;
+    projectId?: string;
+    projectName?: string;
+    folderType?: string;
+    folderName?: string;
+  }>();
+
+  const [nav, setNav] = useState<NavLevel>(() => {
+    // Lazy initializer runs once on mount. We build the deepest nav state
+    // the params support, falling back to the root clients list.
+    if (params.folderType && params.projectId && params.clientId) {
+      return {
+        level: 'documents',
+        clientId: params.clientId as Id<'clients'>,
+        clientName: params.clientName || '...',
+        projectId: params.projectId as Id<'projects'>,
+        projectName: params.projectName || '...',
+        folderType: params.folderType,
+        folderName: params.folderName || params.folderType,
+      };
+    }
+    if (params.projectId && params.clientId) {
+      return {
+        level: 'folders',
+        clientId: params.clientId as Id<'clients'>,
+        clientName: params.clientName || '...',
+        projectId: params.projectId as Id<'projects'>,
+        projectName: params.projectName || '...',
+      };
+    }
+    if (params.clientId) {
+      return {
+        level: 'projects',
+        clientId: params.clientId as Id<'clients'>,
+        clientName: params.clientName || '...',
+      };
+    }
+    return { level: 'clients' };
+  });
   const [activeTab, setActiveTab] = useState<DocTab>('Clients');
   const [search, setSearch] = useState('');
 
@@ -180,12 +225,16 @@ export default function DocsScreen() {
         });
       }
       case 'folders': {
+        // Important: `folderCounts.projectFolders[projectId]` is keyed by
+        // `folderType` (the string like "background"/"kyc"), not by `_id`.
+        // Documents store their folder as `doc.folderId = folderType`, and
+        // getFolderCounts mirrors that — so look up by folderType here.
         const projectCounts = folderCounts?.projectFolders?.[nav.projectId] ?? {};
         return (folders || []).map((f) => ({
           id: f._id,
           name: f.name,
           type: 'folder' as const,
-          documentCount: projectCounts[f._id] ?? 0,
+          documentCount: projectCounts[f.folderType] ?? 0,
         }));
       }
       case 'documents':
