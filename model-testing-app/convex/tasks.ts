@@ -68,6 +68,7 @@ export const create = mutation({
     clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
     assignedTo: v.optional(v.array(v.id("users"))), // Can assign to multiple users
+    attachmentIds: v.optional(v.array(v.id("documents"))), // Reference documents
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
@@ -88,6 +89,7 @@ export const create = mutation({
       clientId: args.clientId,
       projectId: args.projectId,
       reminderIds: [],
+      attachmentIds: args.attachmentIds || [],
       createdAt: now,
       updatedAt: now,
     });
@@ -135,6 +137,7 @@ export const update = mutation({
     clientId: v.optional(v.union(v.id("clients"), v.null())),
     projectId: v.optional(v.union(v.id("projects"), v.null())),
     assignedTo: v.optional(v.union(v.array(v.id("users")), v.null())),
+    attachmentIds: v.optional(v.union(v.array(v.id("documents")), v.null())),
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
@@ -162,6 +165,7 @@ export const update = mutation({
     if (patchData.clientId === null) patchData.clientId = undefined;
     if (patchData.projectId === null) patchData.projectId = undefined;
     if (patchData.assignedTo === null) patchData.assignedTo = undefined;
+    if (patchData.attachmentIds === null) patchData.attachmentIds = undefined;
     if (patchData.dueDate === null) patchData.dueDate = undefined;
 
     await ctx.db.patch(id, patchData);

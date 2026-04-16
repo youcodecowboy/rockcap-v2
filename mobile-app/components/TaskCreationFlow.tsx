@@ -7,11 +7,12 @@ import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { useUser } from '@clerk/clerk-expo';
 import { api } from '../../model-testing-app/convex/_generated/api';
 import {
-  X, Sparkles, ArrowUp, Calendar, Building, FolderOpen, User, Flag, Users,
+  X, Sparkles, ArrowUp, Calendar, Building, FolderOpen, User, Flag, Users, Paperclip, FileText,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import DateTimePicker from '@/components/DateTimePicker';
 import PeoplePicker, { type PersonOption } from '@/components/PeoplePicker';
+import DocumentPicker, { type AttachedDoc } from '@/components/DocumentPicker';
 
 const PARSE_API_URL =
   process.env.EXPO_PUBLIC_API_URL
@@ -68,6 +69,8 @@ export default function TaskCreationFlow({
   const [clientId, setClientId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<AttachedDoc[]>([]);
+  const [showDocPicker, setShowDocPicker] = useState(false);
   // Event-specific
   const [startTime, setStartTime] = useState(defaultMeetingStart);
   const [endTime, setEndTime] = useState(defaultMeetingEnd);
@@ -104,6 +107,7 @@ export default function TaskCreationFlow({
     setClientId(null);
     setProjectId(null);
     setAssignedToIds(currentUser ? [(currentUser as any)._id] : []);
+    setAttachments([]);
     setStartTime(defaultMeetingStart);
     setEndTime(defaultMeetingEnd);
     setLocation('');
@@ -221,6 +225,7 @@ export default function TaskCreationFlow({
         if (projectId) args.projectId = projectId;
         // assignedTo triggers notifications in convex/tasks.ts on anyone other than creator
         if (assignedToIds.length > 0) args.assignedTo = assignedToIds;
+        if (attachments.length > 0) args.attachmentIds = attachments.map(a => a.id);
         await createTask(args);
       } else {
         const start = new Date(startTime);
@@ -456,6 +461,44 @@ export default function TaskCreationFlow({
                 </FormRow>
               )}
 
+              {/* Attachments (task mode only — events have their own schema) */}
+              {mode === 'task' && (
+                <View className="mt-3 pt-3 border-t border-m-border-subtle">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center gap-2">
+                      <Paperclip size={14} color={colors.textTertiary} />
+                      <Text className="text-sm text-m-text-secondary">Attachments</Text>
+                      {attachments.length > 0 && (
+                        <Text className="text-xs text-m-text-tertiary">({attachments.length})</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity onPress={() => setShowDocPicker(true)}>
+                      <Text className="text-xs font-medium text-m-text-primary">
+                        {attachments.length === 0 ? '+ Add' : 'Manage'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {attachments.length > 0 && (
+                    <View className="gap-1">
+                      {attachments.map((att) => (
+                        <View key={att.id} className="flex-row items-center gap-2 bg-m-bg-subtle rounded-lg px-2.5 py-2">
+                          <FileText size={12} color={colors.textSecondary} />
+                          <Text className="text-xs text-m-text-primary flex-1" numberOfLines={1}>
+                            {att.name}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => setAttachments(attachments.filter(a => a.id !== att.id))}
+                            hitSlop={6}
+                          >
+                            <X size={11} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
               <TextInput
                 value={description}
                 onChangeText={setDescription}
@@ -493,6 +536,16 @@ export default function TaskCreationFlow({
             <Text className="text-sm text-m-text-tertiary mt-3">Creating...</Text>
           </View>
         )}
+
+        {/* Document picker — nested modal */}
+        <DocumentPicker
+          visible={showDocPicker}
+          onClose={() => setShowDocPicker(false)}
+          selectedIds={attachments.map(a => a.id)}
+          onChange={setAttachments}
+          contextClientId={clientId ?? undefined}
+          contextProjectId={projectId ?? undefined}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );

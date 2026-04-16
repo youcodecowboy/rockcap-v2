@@ -6,7 +6,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import {
-  Plus, Circle, CheckCircle2, ArrowRight, Calendar, AlertCircle, ChevronLeft, ChevronRight, Clock, MapPin, User,
+  Plus, Circle, CheckCircle2, ArrowRight, Calendar, AlertCircle, ChevronLeft, ChevronRight, Clock, MapPin, User, Paperclip,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
@@ -81,6 +81,7 @@ type TaskItem = {
   createdBy?: string;
   assignedTo?: string[];
   assignedByName?: string; // filled in when someone else assigned it
+  attachmentCount?: number;
 };
 
 type EventItem = {
@@ -275,6 +276,7 @@ export default function TasksScreen() {
         createdBy,
         assignedTo,
         assignedByName,
+        attachmentCount: ((t as any).attachmentIds || []).length,
       };
     });
 
@@ -481,6 +483,14 @@ export default function TasksScreen() {
                     {task.assignedTo.length === 1
                       ? `Assigned to ${userNameMap[task.assignedTo[0]] || 'team'}`
                       : `Assigned to ${task.assignedTo.length} people`}
+                  </Text>
+                </View>
+              )}
+              {task.attachmentCount !== undefined && task.attachmentCount > 0 && (
+                <View className="flex-row items-center gap-1 bg-m-bg-subtle rounded-full px-1.5 py-0.5">
+                  <Paperclip size={9} color={colors.textSecondary} />
+                  <Text className="text-[10px] font-medium text-m-text-secondary">
+                    {task.attachmentCount}
                   </Text>
                 </View>
               )}

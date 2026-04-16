@@ -1662,6 +1662,7 @@ export default defineSchema({
     clientId: v.optional(v.id("clients")), // Attached client
     projectId: v.optional(v.id("projects")), // Attached project
     reminderIds: v.optional(v.array(v.id("reminders"))), // Reminders linked to task
+    attachmentIds: v.optional(v.array(v.id("documents"))), // Reference docs attached to task
     createdAt: v.string(),
     updatedAt: v.string(),
   })

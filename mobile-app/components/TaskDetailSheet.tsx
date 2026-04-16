@@ -1,11 +1,12 @@
 import {
   View, Text, TextInput, TouchableOpacity, Modal, ScrollView, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { useState, useCallback } from 'react';
-import { useMutation } from 'convex/react';
+import { useState, useCallback, useMemo } from 'react';
+import { useMutation, useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../model-testing-app/convex/_generated/api';
-import { X, Trash2, Calendar } from 'lucide-react-native';
+import { X, Trash2, Calendar, Paperclip, FileText } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import DocumentPicker, { type AttachedDoc } from '@/components/DocumentPicker';
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ interface TaskDetailSheetProps {
     notes?: string;
     clientId?: string;
     projectId?: string;
+    attachmentIds?: string[];
   };
   clientName?: string;
   projectName?: string;
@@ -53,6 +55,24 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
   const [dueDate, setDueDate] = useState(task.dueDate ?? '');
   const [notes, setNotes] = useState(task.notes ?? '');
   const [saving, setSaving] = useState(false);
+  const [attachmentIds, setAttachmentIds] = useState<string[]>(task.attachmentIds ?? []);
+  const [showDocPicker, setShowDocPicker] = useState(false);
+
+  const { isAuthenticated } = useConvexAuth();
+  // Resolve attachment names. We query a broad set and pick out the matching ones.
+  const recentDocs = useQuery(
+    api.documents.getRecent,
+    isAuthenticated && attachmentIds.length > 0 ? { limit: 200 } : 'skip'
+  );
+  const attachedDocs: AttachedDoc[] = useMemo(() => {
+    if (!recentDocs) return attachmentIds.map(id => ({ id, name: 'Loading…' }));
+    const byId = new Map<string, any>();
+    (recentDocs as any[]).forEach((d) => byId.set(d._id, d));
+    return attachmentIds.map((id) => {
+      const d = byId.get(id);
+      return { id, name: d?.fileName || 'Document', fileType: d?.fileType };
+    });
+  }, [attachmentIds, recentDocs]);
 
   const updateTask = useMutation(api.tasks.update);
   const removeTask = useMutation(api.tasks.remove);
@@ -71,6 +91,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
         status,
         priority,
         notes: notes.trim() || undefined,
+        attachmentIds,
       };
       // Only send dueDate if it has a value, otherwise send null to clear
       if (dueDate.trim()) {
@@ -287,9 +308,47 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
             multiline
             numberOfLines={4}
             textAlignVertical="top"
-            className="bg-m-bg-card border border-m-border rounded-xl px-3 py-3 text-sm text-m-text-primary mb-6"
+            className="bg-m-bg-card border border-m-border rounded-xl px-3 py-3 text-sm text-m-text-primary mb-4"
             style={{ minHeight: 96 }}
           />
+
+          {/* Attachments */}
+          <View className="flex-row items-center justify-between mb-2">
+            <View className="flex-row items-center gap-1.5">
+              <Paperclip size={13} color={colors.textTertiary} />
+              <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wider">Attachments</Text>
+              {attachedDocs.length > 0 && (
+                <Text className="text-xs text-m-text-tertiary">({attachedDocs.length})</Text>
+              )}
+            </View>
+            <TouchableOpacity onPress={() => setShowDocPicker(true)}>
+              <Text className="text-xs font-medium text-m-text-primary">
+                {attachedDocs.length === 0 ? '+ Add' : 'Manage'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {attachedDocs.length > 0 ? (
+            <View className="gap-1.5 mb-6">
+              {attachedDocs.map((att) => (
+                <View key={att.id} className="flex-row items-center gap-2 bg-m-bg-card border border-m-border rounded-xl px-3 py-2.5">
+                  <FileText size={14} color={colors.textSecondary} />
+                  <Text className="text-sm text-m-text-primary flex-1" numberOfLines={1}>
+                    {att.name}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setAttachmentIds(attachmentIds.filter(i => i !== att.id))}
+                    hitSlop={8}
+                  >
+                    <X size={13} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View className="bg-m-bg-subtle rounded-xl px-3 py-3 mb-6">
+              <Text className="text-xs text-m-text-tertiary text-center">No attachments</Text>
+            </View>
+          )}
 
           {/* Save button */}
           <TouchableOpacity
@@ -312,6 +371,16 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
           </TouchableOpacity>
 
         </ScrollView>
+
+        {/* Document picker */}
+        <DocumentPicker
+          visible={showDocPicker}
+          onClose={() => setShowDocPicker(false)}
+          selectedIds={attachmentIds}
+          onChange={(docs) => setAttachmentIds(docs.map(d => d.id))}
+          contextClientId={task.clientId}
+          contextProjectId={task.projectId}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );
