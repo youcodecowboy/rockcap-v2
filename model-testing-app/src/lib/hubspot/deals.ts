@@ -1,18 +1,14 @@
 import { Client } from '@hubspot/api-client';
 import { HubSpotDeal } from './types';
 import { delay } from './utils';
+import { fetchEntitiesModifiedSince } from './incremental';
 
 /**
- * Fetch deals from HubSpot with pagination
- * Limits to 100 records initially as per requirements
+ * Property list requested from HubSpot for every deal sync.
+ * Exported so the incremental (search-based) path asks HubSpot for the
+ * same columns the full-list path returns.
  */
-export async function fetchDealsFromHubSpot(
-  client: Client,
-  limit: number = 100,
-  after?: string
-): Promise<{ deals: HubSpotDeal[]; nextAfter?: string }> {
-  try {
-    const properties = [
+export const DEAL_PROPERTIES = [
       'dealname',
       'amount',
       'dealstage',
@@ -47,7 +43,19 @@ export async function fetchDealsFromHubSpot(
       'spv_name',
       'hs_priority',
     ];
-    
+
+/**
+ * Fetch deals from HubSpot with pagination
+ * Limits to 100 records initially as per requirements
+ */
+export async function fetchDealsFromHubSpot(
+  client: Client,
+  limit: number = 100,
+  after?: string
+): Promise<{ deals: HubSpotDeal[]; nextAfter?: string }> {
+  try {
+    const properties = DEAL_PROPERTIES;
+
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
     // The SDK has serialization issues with deals API
     const apiKey = process.env.HUBSPOT_API_KEY;
@@ -235,15 +243,68 @@ export async function fetchDealsFromHubSpot(
 }
 
 /**
+ * Parse the mixed timestamp shapes HubSpot returns into ISO strings.
+ * Shared between list-endpoint and batch-read response mapping.
+ */
+function parseDealTimestamps(raw: any): { createdAt: string; updatedAt: string } {
+  const parse = (v: any, propFallback: any): string => {
+    if (v) {
+      if (typeof v === 'string') {
+        const d = new Date(v);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return v;
+      }
+      if (v instanceof Date) return v.toISOString();
+    }
+    if (propFallback) {
+      const ts = parseInt(String(propFallback), 10);
+      if (!isNaN(ts) && ts > 0) {
+        const d = ts < 946684800000 ? new Date(ts * 1000) : new Date(ts);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return d.toISOString();
+      }
+    }
+    return new Date().toISOString();
+  };
+  return {
+    createdAt: parse(raw.createdAt, raw.properties?.createdate),
+    updatedAt: parse(raw.updatedAt, raw.properties?.lastmodifieddate),
+  };
+}
+
+/**
  * Fetch all deals (with pagination handling)
  * Respects rate limits by adding delays
- * Returns deals and the last pagination token for continuing later
+ * Returns deals and the last pagination token for continuing later.
+ *
+ * When `options.since` is supplied, uses the HubSpot search API to fetch ONLY
+ * deals modified on or after that timestamp, then hydrates via batch-read.
+ * Pagination token is null in incremental mode (search returns the full set).
  */
 export async function fetchAllDealsFromHubSpot(
   client: Client,
   maxRecords: number = Number.POSITIVE_INFINITY,
-  startAfter?: string
+  startAfter?: string,
+  options: { since?: string } = {}
 ): Promise<{ deals: HubSpotDeal[]; nextAfter?: string }> {
+  if (options.since) {
+    console.log(`[HubSpot Deals] Incremental mode: fetching deals modified since ${options.since}`);
+    const raw = await fetchEntitiesModifiedSince(
+      'deals',
+      options.since,
+      DEAL_PROPERTIES,
+      ['contacts', 'companies']
+    );
+    const deals: HubSpotDeal[] = raw.map((r: any) => ({
+      id: r.id,
+      properties: r.properties || {},
+      associations: r.associations || {},
+      ...parseDealTimestamps(r),
+    }));
+    console.log(`[HubSpot Deals] Incremental fetch complete: ${deals.length} deals`);
+    return {
+      deals: maxRecords === Number.POSITIVE_INFINITY ? deals : deals.slice(0, maxRecords),
+      nextAfter: undefined,
+    };
+  }
   const allDeals: HubSpotDeal[] = [];
   let after: string | undefined = startAfter;
   let fetched = 0;

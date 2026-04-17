@@ -2,18 +2,14 @@ import { Client } from '@hubspot/api-client';
 import { HubSpotCompany } from './types';
 import { delay } from './utils';
 import { discoverProperties } from './properties';
+import { fetchEntitiesModifiedSince } from './incremental';
 
 /**
- * Fetch companies from HubSpot with pagination
- * Limits to 100 records initially as per requirements
+ * Property list requested from HubSpot for every company sync.
+ * Exported so the incremental (search-based) path can ask HubSpot for
+ * exactly the same columns the full-list path returns.
  */
-export async function fetchCompaniesFromHubSpot(
-  client: Client,
-  limit: number = 100,
-  after?: string
-): Promise<{ companies: HubSpotCompany[]; nextAfter?: string }> {
-  try {
-    const properties = [
+export const COMPANY_PROPERTIES = [
       'name',
       'domain',
       'website', // Website URL (separate from domain)
@@ -49,14 +45,26 @@ export async function fetchCompaniesFromHubSpot(
       'numberofemployees',
       'founded_year',
     ];
-    
+
+/**
+ * Fetch companies from HubSpot with pagination
+ * Limits to 100 records initially as per requirements
+ */
+export async function fetchCompaniesFromHubSpot(
+  client: Client,
+  limit: number = 100,
+  after?: string
+): Promise<{ companies: HubSpotCompany[]; nextAfter?: string }> {
+  try {
+    const properties = COMPANY_PROPERTIES;
+
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
     // The SDK has serialization issues with companies API
     const apiKey = process.env.HUBSPOT_API_KEY;
     if (!apiKey) {
       throw new Error('HUBSPOT_API_KEY not found in environment variables');
     }
-    
+
     const params = new URLSearchParams({
       limit: limit.toString(),
       properties: properties.join(','),
@@ -200,13 +208,65 @@ export async function fetchCompaniesFromHubSpot(
 }
 
 /**
+ * Parse the mixed timestamp shapes HubSpot returns (ISO strings, Date, or
+ * ms-epoch strings on properties.{createdate,lastmodifieddate}) into ISO.
+ * Shared between the list-endpoint response mapping and the batch-read
+ * response mapping used by the incremental path.
+ */
+function parseCompanyTimestamps(raw: any): { createdAt: string; updatedAt: string } {
+  const parse = (v: any, propFallback: any): string => {
+    if (v) {
+      if (typeof v === 'string') {
+        const d = new Date(v);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return v;
+      }
+      if (v instanceof Date) return v.toISOString();
+    }
+    if (propFallback) {
+      const timestamp = parseInt(String(propFallback), 10);
+      if (!isNaN(timestamp) && timestamp > 0) {
+        const d = timestamp < 946684800000 ? new Date(timestamp * 1000) : new Date(timestamp);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return d.toISOString();
+      }
+    }
+    return new Date().toISOString();
+  };
+  return {
+    createdAt: parse(raw.createdAt, raw.properties?.createdate),
+    updatedAt: parse(raw.updatedAt, raw.properties?.lastmodifieddate),
+  };
+}
+
+/**
  * Fetch all companies (with pagination handling)
- * Respects rate limits by adding delays
+ * Respects rate limits by adding delays.
+ *
+ * When `options.since` is supplied, uses the HubSpot search API to fetch ONLY
+ * companies modified on or after that timestamp, then hydrates them via
+ * batch-read. Dramatically reduces sync time for incremental runs.
  */
 export async function fetchAllCompaniesFromHubSpot(
   client: Client,
-  maxRecords: number = Number.POSITIVE_INFINITY
+  maxRecords: number = Number.POSITIVE_INFINITY,
+  options: { since?: string } = {}
 ): Promise<HubSpotCompany[]> {
+  if (options.since) {
+    console.log(`[HubSpot Companies] Incremental mode: fetching companies modified since ${options.since}`);
+    const raw = await fetchEntitiesModifiedSince(
+      'companies',
+      options.since,
+      COMPANY_PROPERTIES,
+      ['contacts', 'deals']
+    );
+    const companies: HubSpotCompany[] = raw.map((r: any) => ({
+      id: r.id,
+      properties: r.properties || {},
+      associations: r.associations || {},
+      ...parseCompanyTimestamps(r),
+    }));
+    console.log(`[HubSpot Companies] Incremental fetch complete: ${companies.length} companies`);
+    return maxRecords === Number.POSITIVE_INFINITY ? companies : companies.slice(0, maxRecords);
+  }
   const allCompanies: HubSpotCompany[] = [];
   let after: string | undefined;
   let fetched = 0;

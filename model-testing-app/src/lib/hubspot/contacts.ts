@@ -1,18 +1,14 @@
 import { Client } from '@hubspot/api-client';
 import { HubSpotContact } from './types';
 import { delay } from './utils';
+import { fetchEntitiesModifiedSince } from './incremental';
 
 /**
- * Fetch contacts from HubSpot with pagination
- * Limits to 100 records initially as per requirements
+ * Property list requested from HubSpot for every contact sync.
+ * Exported so the incremental (search-based) path can ask HubSpot for
+ * exactly the same columns the full-list path returns.
  */
-export async function fetchContactsFromHubSpot(
-  client: Client,
-  limit: number = 100,
-  after?: string
-): Promise<{ contacts: HubSpotContact[]; nextAfter?: string }> {
-  try {
-    const properties = [
+export const CONTACT_PROPERTIES = [
       'email',
       'firstname',
       'lastname',
@@ -57,7 +53,19 @@ export async function fetchContactsFromHubSpot(
       'notes_last_updated',
       'hublead_linkedin_public_identifier',
     ];
-    
+
+/**
+ * Fetch contacts from HubSpot with pagination
+ * Limits to 100 records initially as per requirements
+ */
+export async function fetchContactsFromHubSpot(
+  client: Client,
+  limit: number = 100,
+  after?: string
+): Promise<{ contacts: HubSpotContact[]; nextAfter?: string }> {
+  try {
+    const properties = CONTACT_PROPERTIES;
+
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
     // The SDK has serialization issues with contacts API
     const apiKey = process.env.HUBSPOT_API_KEY;
@@ -206,13 +214,63 @@ export async function fetchContactsFromHubSpot(
 }
 
 /**
+ * Parse the mixed timestamp shapes HubSpot returns into ISO strings.
+ * Shared between list-endpoint and batch-read response mapping.
+ */
+function parseContactTimestamps(raw: any): { createdAt: string; updatedAt: string } {
+  const parse = (v: any, propFallback: any): string => {
+    if (v) {
+      if (typeof v === 'string') {
+        const d = new Date(v);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return v;
+      }
+      if (v instanceof Date) return v.toISOString();
+    }
+    if (propFallback) {
+      const ts = parseInt(String(propFallback), 10);
+      if (!isNaN(ts) && ts > 0) {
+        const d = ts < 946684800000 ? new Date(ts * 1000) : new Date(ts);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) return d.toISOString();
+      }
+    }
+    return new Date().toISOString();
+  };
+  return {
+    createdAt: parse(raw.createdAt, raw.properties?.createdate),
+    updatedAt: parse(raw.updatedAt, raw.properties?.lastmodifieddate),
+  };
+}
+
+/**
  * Fetch all contacts (with pagination handling)
- * Respects rate limits by adding delays
+ * Respects rate limits by adding delays.
+ *
+ * When `options.since` is supplied, uses the HubSpot search API to fetch ONLY
+ * contacts modified on or after that timestamp, then hydrates them via
+ * batch-read.
  */
 export async function fetchAllContactsFromHubSpot(
   client: Client,
-  maxRecords: number = Number.POSITIVE_INFINITY
+  maxRecords: number = Number.POSITIVE_INFINITY,
+  options: { since?: string } = {}
 ): Promise<HubSpotContact[]> {
+  if (options.since) {
+    console.log(`[HubSpot Contacts] Incremental mode: fetching contacts modified since ${options.since}`);
+    const raw = await fetchEntitiesModifiedSince(
+      'contacts',
+      options.since,
+      CONTACT_PROPERTIES,
+      ['companies', 'deals']
+    );
+    const contacts: HubSpotContact[] = raw.map((r: any) => ({
+      id: r.id,
+      properties: r.properties || {},
+      associations: r.associations || {},
+      ...parseContactTimestamps(r),
+    }));
+    console.log(`[HubSpot Contacts] Incremental fetch complete: ${contacts.length} contacts`);
+    return maxRecords === Number.POSITIVE_INFINITY ? contacts : contacts.slice(0, maxRecords);
+  }
   const allContacts: HubSpotContact[] = [];
   let after: string | undefined;
   let fetched = 0;
