@@ -2,7 +2,8 @@ import { View, Text, TouchableOpacity, Modal, Pressable, Alert } from 'react-nat
 import { useRouter } from 'expo-router';
 import {
   LayoutDashboard, Building, File, Upload, Mail, Newspaper,
-  CheckSquare, FileText, Users, Settings, X
+  CheckSquare, FileText, Users, Settings, X,
+  Activity as ActivityIcon,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { label: 'Upload', icon: Upload, route: '/upload' },
   { label: 'Inbox', icon: Mail, route: '/inbox' },
   { label: 'Daily Brief', icon: Newspaper, route: '/brief' },
+  { label: 'Activity', icon: ActivityIcon, route: '/activity' },
   { label: 'Tasks', icon: CheckSquare, route: '/tasks' },
   { label: 'Notes', icon: FileText, route: '/notes' },
   { label: 'Contacts', icon: Users, route: '/contacts' },
