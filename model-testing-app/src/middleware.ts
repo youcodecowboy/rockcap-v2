@@ -16,7 +16,15 @@ const isPublicRoute = createRouteMatcher([
   '/api/mobile/(.*)',
 ])
 
-// Mobile route mapping: URL path → (mobile) route group path
+// Mobile route mapping: URL path → (mobile) route group path.
+//
+// Desktop routing (non-mobile UAs): when the middleware detects a non-mobile
+// request, it falls through (NextResponse.next()). The `/` request then
+// lands at src/app/(desktop)/page.tsx — the real desktop dashboard.
+// The previous src/app/page.tsx existed and unconditionally redirected to
+// /m-dashboard, which shadowed the (desktop) route group and caused desktop
+// traffic to see the mobile layout. It has been removed; do not reintroduce
+// a top-level page.tsx without mirroring this branching logic.
 const mobileRouteMap: Record<string, string> = {
   '/': '/m-dashboard',
   '/clients': '/m-clients',
