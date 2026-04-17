@@ -334,24 +334,37 @@ export async function POST(request: NextRequest) {
           try {
             const hubspotUrl = await generateHubSpotDealUrl(deal.id);
             const customProperties = extractCustomProperties(deal.properties);
-            
-            const associatedCompanyIds: string[] = [];
-            if (deal.associations?.companies?.results) {
-              associatedCompanyIds.push(...deal.associations.companies.results.map((c: any) => c.id));
-            }
-            
+
+            // Extract and dedupe association IDs from deal (mirrors company / contact patterns).
+            const companyIds = dedupeAssociationIds(
+              (deal as any).associations?.companies?.results ?? [],
+            );
+            const contactIds = dedupeAssociationIds(
+              (deal as any).associations?.contacts?.results ?? [],
+            );
+
             const amount = deal.properties.amount
               ? parseFloat(deal.properties.amount)
               : undefined;
 
+            // Name fallback — HubSpot allows empty-name deals (draft pipelines, auto-
+            // created from meetings). Mutation requires v.string().
+            const rawDealName = deal.properties.dealname;
+            const dealName = (typeof rawDealName === 'string' && rawDealName.trim())
+              ? rawDealName.trim()
+              : `(unnamed deal ${deal.id})`;
+
             const dealData: any = {
               hubspotDealId: deal.id,
-              name: deal.properties.dealname,
+              name: dealName,
               amount,
               stage: deal.properties.dealstage,
               pipeline: deal.properties.pipeline,
               closeDate: deal.properties.closedate,
-              associatedCompanyIds: associatedCompanyIds.length > 0 ? associatedCompanyIds : undefined,
+              dealType: deal.properties.dealtype,
+              hubspotOwnerId: deal.properties.hubspot_owner_id,
+              companyIds: companyIds.length > 0 ? companyIds : undefined,
+              contactIds: contactIds.length > 0 ? contactIds : undefined,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
             };
@@ -371,8 +384,10 @@ export async function POST(request: NextRequest) {
               dealData.isClosedWon = deal.properties.hs_is_closed_won === 'true' || deal.properties.hs_is_closed_won === true;
             }
 
-            await fetchMutation(api.hubspotSync.syncDealFromHubSpot as any, dealData) as any;
-            
+            // NB: call syncDealToDealsTable (writes to `deals` table) — NOT
+            // syncDealFromHubSpot (legacy, writes to `projects` table).
+            await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealData) as any;
+
             stats.dealsSynced++;
           } catch (error: any) {
             stats.errors++;
