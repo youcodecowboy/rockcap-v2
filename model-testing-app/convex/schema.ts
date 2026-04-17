@@ -534,6 +534,17 @@ export default defineSchema({
     metadata: v.optional(v.any()),
     createdAt: v.string(),
     updatedAt: v.string(),
+    // Extended fields for engagement timeline (added 2026-04-16 — HubSpot sync plan)
+    bodyPreview: v.optional(v.string()), // Stripped HTML preview, ~400 chars
+    bodyHtml: v.optional(v.string()), // Full HTML body (separate from existing `body`)
+    duration: v.optional(v.number()), // ms — for meetings and calls
+    fromEmail: v.optional(v.string()), // email sender (for EMAIL/INCOMING_EMAIL type)
+    toEmails: v.optional(v.array(v.string())), // email recipients
+    outcome: v.optional(v.string()), // meeting outcome
+    ownerName: v.optional(v.string()), // Resolved owner display name, cached at sync time
+    // Multi-association arrays — populated alongside the existing singular contactId/dealId
+    linkedContactIds: v.optional(v.array(v.id("contacts"))),
+    linkedDealIds: v.optional(v.array(v.id("deals"))),
   })
     .index("by_contact", ["contactId"])
     .index("by_company", ["companyId"])
