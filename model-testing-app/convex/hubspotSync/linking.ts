@@ -459,29 +459,49 @@ export const contactLinkageStats = mutation({
  * contacts synced since the cutoff. All scoped globally (no per-user /
  * per-client filtering) since the daily brief is a whole-org summary.
  *
- * Uses indexed/sort scans where possible but falls back to a full scan for
- * activities (no by-creation-time index — activityDate is stored as a string,
- * not a time index). Should still stay under the 16MB read limit because
- * 24h of activity is typically small.
+ * IMPORTANT: uses indexed `.take()` reads to stay under the 16MB per-function
+ * read limit. The activities table holds email bodyHtml blobs (tens of KB
+ * each) and 5k+ rows — a naive `.collect()` overflows fast. The daily brief
+ * only needs aggregate counts + 5 notable items, so capping reads to the
+ * most-recent 150 rows is plenty for a 24h window and keeps us bounded
+ * regardless of how big the table grows.
+ *
+ * Deals and contacts tables don't carry bodyHtml but still benefit from
+ * indexed reads — we use Convex's implicit `_creationTime` desc order
+ * to read the most recent 100 of each and filter in memory.
  */
 import { query as reQuery } from "../_generated/server";
+
+const RECENT_ACTIVITY_CAP = 150;
+const RECENT_DEAL_CONTACT_CAP = 100;
 
 export const dailyBriefSummary = reQuery({
   args: { sinceISO: v.string() },
   handler: async (ctx, args) => {
     const sinceMs = new Date(args.sinceISO).getTime();
 
-    // Activities — filter by activityDate >= since in memory. With the
-    // 16MB-limit fix on activities queries (Task D neighbour), we already
-    // have the per-company indexed path. For this global query we do
-    // need the full table, so scan but take only the light-weight fields.
-    const allActivities = await ctx.db.query("activities").collect();
-    const recentActivities = allActivities.filter((a) => {
+    // Activities — indexed read on by_activity_date, order desc, take the
+    // most recent N rows. Filter to the sinceISO window in memory. Bounded
+    // by RECENT_ACTIVITY_CAP so the read size can't blow 16MB even if the
+    // rows we fetch contain large email bodies.
+    const recentSlice = await ctx.db
+      .query("activities")
+      .withIndex("by_activity_date")
+      .order("desc")
+      .take(RECENT_ACTIVITY_CAP);
+    const recentActivities = recentSlice.filter((a) => {
       if (!a.activityDate) return false;
       return new Date(a.activityDate).getTime() >= sinceMs;
     });
 
     const byType: Record<string, number> = {};
+    for (const a of recentActivities) {
+      const type = (a.activityType ?? 'UNKNOWN').toUpperCase();
+      byType[type] = (byType[type] || 0) + 1;
+    }
+
+    // Notable items: top 5 most recent with a subject (recentSlice is
+    // already date-desc from the index, so we walk it in order).
     const notable: Array<{
       type: string;
       subject?: string;
@@ -489,17 +509,7 @@ export const dailyBriefSummary = reQuery({
       ownerName?: string;
       activityDate?: string;
     }> = [];
-
     for (const a of recentActivities) {
-      const type = (a.activityType ?? 'UNKNOWN').toUpperCase();
-      byType[type] = (byType[type] || 0) + 1;
-    }
-
-    // Notable items: top 5 most recent with a subject.
-    const sortedByDate = recentActivities
-      .slice()
-      .sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
-    for (const a of sortedByDate) {
       if (notable.length >= 5) break;
       if (!a.subject && !a.bodyPreview) continue;
       notable.push({
@@ -511,21 +521,30 @@ export const dailyBriefSummary = reQuery({
       });
     }
 
-    // Deals — stored ISO in `createdAt` or `_creationTime` (ms).
-    const allDeals = await ctx.db.query("deals").collect();
-    const newDeals = allDeals.filter((d) => {
+    // Deals — Convex default order is by _creationTime; desc + take gives
+    // us the most recently created. Filter in memory to the sinceISO
+    // window. Accepts `createdAt` string OR `_creationTime` ms for the
+    // check, same as the pre-fix logic.
+    const recentDealsSlice = await ctx.db
+      .query("deals")
+      .order("desc")
+      .take(RECENT_DEAL_CONTACT_CAP);
+    const newDeals = recentDealsSlice.filter((d) => {
       const ct = d.createdAt
         ? new Date(d.createdAt).getTime()
         : d._creationTime;
       return ct >= sinceMs;
     });
 
-    // Contacts.
-    const allContacts = await ctx.db
+    // Contacts — same pattern. Filter out soft-deleted inside the take
+    // loop via Convex's .filter — keeps the read bounded while still
+    // respecting the isDeleted flag.
+    const recentContactsSlice = await ctx.db
       .query("contacts")
+      .order("desc")
       .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
-    const newContacts = allContacts.filter((c) => {
+      .take(RECENT_DEAL_CONTACT_CAP);
+    const newContacts = recentContactsSlice.filter((c) => {
       const ct = c.createdAt
         ? new Date(c.createdAt).getTime()
         : c._creationTime;
