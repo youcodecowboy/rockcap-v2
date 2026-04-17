@@ -285,20 +285,74 @@ export default function DashboardScreen() {
         {/* Up Next */}
         <UpNextCard items={upNextItems} />
 
-        {/* Overdue */}
+        {/* Overdue — matches Up Next styling (icon + title + context · relative
+            time + OVERDUE badge + red left border) and taps through to the
+            specific task (/tasks?taskId=<id>) so the user lands on the
+            TaskDetailSheet instead of the generic task list. */}
         {overdueTasks && overdueTasks.length > 0 ? (
           <Card className="border-m-error/30">
-            <Text className="text-xs font-semibold text-m-error uppercase tracking-wide mb-2">
+            <Text className="text-xs font-semibold text-m-error uppercase tracking-wide mb-3">
               Overdue ({overdueTasks.length})
             </Text>
             <View className="gap-2">
-              {overdueTasks.slice(0, 3).map((task) => (
-                <TouchableOpacity key={task._id} onPress={() => router.push('/tasks')}>
-                  <Text className="text-sm text-m-text-primary" numberOfLines={1}>
-                    {task.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {overdueTasks.slice(0, 3).map((task) => {
+                const due = task.dueDate ? new Date(task.dueDate) : null;
+                const diffMs = due ? now.getTime() - due.getTime() : 0;
+                const days = Math.floor(diffMs / 86400000);
+                const hours = Math.floor(diffMs / 3600000);
+                const minutes = Math.floor(diffMs / 60000);
+                const ago =
+                  days > 0 ? `${days}d ago`
+                  : hours > 0 ? `${hours}h ago`
+                  : minutes > 0 ? `${minutes}m ago`
+                  : 'just now';
+                const clientName =
+                  (task.clientId && clientMap.get(task.clientId)) || 'No client';
+                return (
+                  <TouchableOpacity
+                    key={task._id}
+                    onPress={() =>
+                      router.push(`/tasks?taskId=${task._id}` as never)
+                    }
+                    className="flex-row items-start gap-3 pl-3 py-1.5"
+                    style={{
+                      borderLeftWidth: 3,
+                      borderLeftColor: colors.error,
+                    }}
+                  >
+                    <View className="mt-0.5">
+                      <ListTodo size={16} color={colors.error} />
+                    </View>
+                    <View className="flex-1 min-w-0">
+                      <View className="flex-row items-center justify-between gap-2">
+                        <Text
+                          className="text-sm font-semibold text-m-text-primary flex-1"
+                          numberOfLines={1}
+                        >
+                          {task.title}
+                        </Text>
+                        <View
+                          className="px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: '#fef2f2' }}
+                        >
+                          <Text
+                            className="text-[9px] font-semibold tracking-wide"
+                            style={{ color: '#991b1b' }}
+                          >
+                            OVERDUE
+                          </Text>
+                        </View>
+                      </View>
+                      <Text
+                        className="text-xs text-m-text-tertiary mt-0.5"
+                        numberOfLines={1}
+                      >
+                        {clientName} · Due {ago}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </Card>
         ) : null}

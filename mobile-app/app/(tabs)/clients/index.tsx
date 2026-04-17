@@ -1,8 +1,9 @@
-import { View, Text, FlatList, TextInput, ScrollView } from 'react-native';
+import { View, Text, FlatList, TextInput, ScrollView, TouchableOpacity } from 'react-native';
 import { useState, useMemo } from 'react';
 import { useQuery, useConvexAuth } from 'convex/react';
+import { useRouter } from 'expo-router';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
-import { Search, Building, Clock } from 'lucide-react-native';
+import { Search, Building, Clock, Plus } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
 import ClientListItem from '@/components/ClientListItem';
@@ -10,19 +11,30 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 
 export default function ClientsScreen() {
+  const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const allProjects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
   const clientDocCounts = useQuery(api.documents.getClientDocumentCounts, isAuthenticated ? {} : 'skip') as Record<string, number> | undefined;
   const [search, setSearch] = useState('');
 
-  // Build project counts per client
+  // Build project counts per client.
+  //
+  // Projects use `clientRoles: [{ clientId, role }]` (multi-client shape for
+  // borrower/lender/developer roles) — NOT a flat `clientId`. A legacy
+  // version of this screen read `p.clientId` directly, which is always
+  // undefined, so every client card showed "0 projects". Count via clientRoles.
   const projectCountMap = useMemo(() => {
     const map: Record<string, number> = {};
     if (allProjects) {
       for (const p of allProjects) {
-        if (p.clientId) {
-          map[p.clientId] = (map[p.clientId] || 0) + 1;
+        const roles = (p as any).clientRoles ?? [];
+        const seen = new Set<string>();
+        for (const r of roles) {
+          if (r?.clientId && !seen.has(r.clientId)) {
+            seen.add(r.clientId); // count each client once per project
+            map[r.clientId] = (map[r.clientId] || 0) + 1;
+          }
         }
       }
     }
@@ -49,8 +61,8 @@ export default function ClientsScreen() {
   return (
     <View className="flex-1 bg-m-bg">
       <MobileHeader />
-      <View className="px-4 py-2 bg-m-bg-card border-b border-m-border">
-        <View className="bg-m-bg-subtle rounded-lg flex-row items-center px-3 py-2">
+      <View className="px-4 py-2 bg-m-bg-card border-b border-m-border flex-row items-center gap-2">
+        <View className="flex-1 bg-m-bg-subtle rounded-lg flex-row items-center px-3 py-2">
           <Search size={16} color={colors.textTertiary} />
           <TextInput
             placeholder="Search clients..."
@@ -60,6 +72,14 @@ export default function ClientsScreen() {
             placeholderTextColor={colors.textTertiary}
           />
         </View>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/clients/new' as any)}
+          className="w-9 h-9 rounded-full bg-m-text-primary items-center justify-center"
+          accessibilityLabel="Create new client"
+          hitSlop={8}
+        >
+          <Plus size={16} color="#ffffff" strokeWidth={2.5} />
+        </TouchableOpacity>
       </View>
 
       {!clients ? (

@@ -1,4 +1,4 @@
-import { query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 /**
@@ -97,3 +97,84 @@ export const getPipelineTotal = query({
   },
 });
 
+// ---- Client-scoped queries (Plan 2 phase A) ----
+
+/**
+ * List all deals associated with a client, resolved via the companies
+ * that have been promoted to this client.
+ */
+export const listForClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const companies = await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+    if (companies.length === 0) return [];
+    const companyIds = new Set(companies.map((c) => c._id));
+    const allDeals = await ctx.db.query("deals").collect();
+    return allDeals.filter((d) =>
+      (d.linkedCompanyIds ?? []).some((id) => companyIds.has(id)),
+    );
+  },
+});
+
+/**
+ * List only OPEN deals (not closed-won/closed-lost) for a client.
+ * Used by the Overview hero "Open Deals" card.
+ */
+export const listOpenForClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const companies = await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+    if (companies.length === 0) return [];
+    const companyIds = new Set(companies.map((c) => c._id));
+    const allDeals = await ctx.db.query("deals").collect();
+    return allDeals.filter(
+      (d) =>
+        (d.linkedCompanyIds ?? []).some((id) => companyIds.has(id)) &&
+        d.isClosed !== true,
+    );
+  },
+});
+
+
+/**
+ * Update specific deal fields locally (does NOT round-trip to HubSpot).
+ *
+ * Used by the mobile Deal detail sheet's edit mode. The next HubSpot sync
+ * will overwrite any field HubSpot has a value for — consider this a
+ * display-level override until the sync back to HubSpot is built.
+ *
+ * Tracks who made the edit and when so we can surface a "locally edited"
+ * affordance in the UI and, eventually, replay edits back to HubSpot.
+ */
+export const updateLocalEdits = mutation({
+  args: {
+    dealId: v.id("deals"),
+    closeDate: v.optional(v.string()),
+    dealType: v.optional(v.string()),
+    stageName: v.optional(v.string()),
+    probability: v.optional(v.number()),
+    spvName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { dealId, ...fields } = args;
+    const patch: any = {
+      updatedAt: new Date().toISOString(),
+    };
+    // Only apply fields that were explicitly passed (undefined = untouched).
+    // Callers can pass empty strings to clear a field.
+    if (fields.closeDate !== undefined) patch.closeDate = fields.closeDate || undefined;
+    if (fields.dealType !== undefined) patch.dealType = fields.dealType || undefined;
+    if (fields.stageName !== undefined) patch.stageName = fields.stageName || undefined;
+    if (fields.probability !== undefined) patch.probability = fields.probability;
+    if (fields.spvName !== undefined) patch.spvName = fields.spvName || undefined;
+
+    await ctx.db.patch(dealId, patch);
+    return dealId;
+  },
+});

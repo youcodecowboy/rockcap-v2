@@ -28,8 +28,15 @@ export async function POST(request: NextRequest) {
       syncContacts = true,
       syncDeals = true,
       syncActivities = true,
+      // Incremental-sync controls:
+      //   mode='incremental' (default) → pass config.lastSyncAt as `since` to
+      //     each fetcher. The fetchers will use HubSpot's search API to pull
+      //     only records modified since that timestamp. First sync (no
+      //     lastSyncAt) falls back to a full fetch automatically.
+      //   mode='full' → ignore lastSyncAt and re-sync everything.
+      mode = 'incremental',
     } = await request.json().catch(() => ({}));
-    
+
     const client = getHubSpotClient();
     const stats = {
       companiesSynced: 0,
@@ -37,9 +44,29 @@ export async function POST(request: NextRequest) {
       dealsSynced: 0,
       errors: 0,
     };
-    
+
     const errorMessages: string[] = [];
-    
+
+    // Resolve `since` — the ISO timestamp we pass to each fetcher's
+    // incremental path. Only set when mode === 'incremental' AND a previous
+    // successful sync has recorded a lastSyncAt timestamp in config.
+    let since: string | undefined;
+    if (mode === 'incremental') {
+      try {
+        const config = await fetchQuery(api.hubspotSync.getSyncConfig as any, {}) as any;
+        if (config?.lastSyncAt) {
+          since = config.lastSyncAt;
+          console.log(`[sync-all] Incremental mode enabled: since=${since}`);
+        } else {
+          console.log(`[sync-all] Incremental mode requested but no lastSyncAt — falling back to full sync`);
+        }
+      } catch (e) {
+        console.warn(`[sync-all] Could not read lastSyncAt; doing full sync:`, e);
+      }
+    } else {
+      console.log(`[sync-all] Full sync requested (mode=full)`);
+    }
+
     // Update sync status to in_progress
     await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: 'in_progress',
@@ -55,7 +82,7 @@ export async function POST(request: NextRequest) {
     // Sync companies (to companies table, not clients)
     if (syncCompanies) {
       try {
-        const companies = await fetchAllCompaniesFromHubSpot(client, maxRecords);
+        const companies = await fetchAllCompaniesFromHubSpot(client, maxRecords, { since });
         
         for (const company of companies) {
           try {
@@ -141,7 +168,7 @@ export async function POST(request: NextRequest) {
     // Sync contacts
     if (syncContacts) {
       try {
-        const contacts = await fetchAllContactsFromHubSpot(client, maxRecords);
+        const contacts = await fetchAllContactsFromHubSpot(client, maxRecords, { since });
 
         for (const contact of contacts) {
           try {
@@ -231,7 +258,7 @@ export async function POST(request: NextRequest) {
         // Try to fetch deals, but don't fail the whole sync if it errors
         let deals: any[] = [];
         try {
-          const dealsResult = await fetchAllDealsFromHubSpot(client, maxRecords);
+          const dealsResult = await fetchAllDealsFromHubSpot(client, maxRecords, undefined, { since });
           deals = dealsResult.deals;
         } catch (dealsError: any) {
           console.error('Failed to fetch deals, skipping:', dealsError.message);

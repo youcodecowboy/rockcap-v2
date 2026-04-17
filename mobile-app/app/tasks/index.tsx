@@ -1,7 +1,7 @@
 import {
   View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView,
 } from 'react-native';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
@@ -106,7 +106,15 @@ type Section = {
 
 export default function TasksScreen() {
   const router = useRouter();
-  const { create } = useLocalSearchParams();
+  // Accepts:
+  //   ?create=true       → open the new-task modal immediately (pre-existing)
+  //   ?taskId=<id>       → open TaskDetailSheet for that task on mount.
+  //                        Used by the dashboard Overdue card to deep-link
+  //                        directly to a task's detail view.
+  const { create, taskId: taskIdParam } = useLocalSearchParams<{
+    create?: string;
+    taskId?: string;
+  }>();
   const { isAuthenticated } = useConvexAuth();
   const [showCreate, setShowCreate] = useState(create === 'true');
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -177,6 +185,21 @@ export default function TasksScreen() {
 
   // Data queries
   const tasks = useQuery(api.tasks.getByUser, isAuthenticated ? {} : 'skip');
+
+  // Deep-link: if the URL contained ?taskId=<id>, auto-open TaskDetailSheet
+  // once `tasks` resolves and we can find the matching doc. Tracks the last
+  // param we handled so repeated navigations to the same id (or subsequent
+  // param clears) don't re-trigger.
+  const [lastHandledTaskId, setLastHandledTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!taskIdParam || !tasks || selectedTask) return;
+    if (lastHandledTaskId === taskIdParam) return;
+    const match = tasks.find((t: any) => t._id === taskIdParam);
+    if (match) {
+      setSelectedTask(match);
+      setLastHandledTaskId(taskIdParam);
+    }
+  }, [taskIdParam, tasks, selectedTask, lastHandledTaskId]);
   const events = useQuery(
     api.events.getByDateRange,
     isAuthenticated ? { startDate: weekStart.toISOString(), endDate: weekEnd.toISOString() } : 'skip',

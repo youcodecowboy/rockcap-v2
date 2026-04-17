@@ -114,6 +114,17 @@ export const create = mutation({
 });
 
 /**
+ * Get multiple companies by an array of IDs (used to resolve contact.linkedCompanyIds).
+ */
+export const listByIds = query({
+  args: { ids: v.array(v.id("companies")) },
+  handler: async (ctx, args) => {
+    const results = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
+    return results.filter((c) => c !== null);
+  },
+});
+
+/**
  * List all companies that have a HubSpot ID linked.
  * Used by the sync-all engagement phase to iterate per-company.
  */
@@ -183,6 +194,54 @@ export const promoteToClient = mutation({
     });
 
     return clientId;
+  },
+});
+
+/**
+ * List all companies that have been promoted to a given client. Used by the
+ * mobile Overview tab to resolve HubSpot metadata (owner, sync time, URL,
+ * Beauhurst) for the client's primary linked company.
+ */
+export const listByPromotedClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+  },
+});
+
+/**
+ * Search companies by name (case-insensitive substring), unpromoted first.
+ * Returns top N for autocomplete UI.
+ */
+export const searchByName = query({
+  args: { query: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const q = args.query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const limit = args.limit ?? 8;
+
+    const all = await ctx.db.query("companies").collect();
+    const matches = all.filter((c) => c.name.toLowerCase().includes(q));
+
+    // Score: exact match > starts-with > contains, and unpromoted > promoted
+    const scored = matches
+      .map((c) => {
+        const n = c.name.toLowerCase();
+        let score = 0;
+        if (n === q) score += 100;
+        else if (n.startsWith(q)) score += 50;
+        else score += 10;
+        if (!c.promotedToClientId) score += 5; // prefer unpromoted (available to link)
+        return { company: c, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((s) => s.company);
+
+    return scored;
   },
 });
 

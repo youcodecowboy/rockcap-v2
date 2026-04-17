@@ -47,6 +47,24 @@ interface GenerateBody {
   recentDocs?: any[];       // documents.getRecent
   clients?: { _id: string; name: string; _creationTime?: number }[];
   projects?: { _id: string; name: string; _creationTime?: number }[];
+  // hubspotSync.dailyBriefSummary payload — new 2026-04-17. Gives the brief
+  // a "CRM pulse" section (activity counts by type, new deals/contacts,
+  // notable engagement subjects).
+  hubspot?: {
+    activitiesByType?: Record<string, number>;
+    activitiesTotal?: number;
+    notableActivities?: Array<{
+      type: string;
+      subject?: string;
+      preview?: string;
+      ownerName?: string;
+      activityDate?: string;
+    }>;
+    newDealsCount?: number;
+    newDealNames?: string[];
+    newContactsCount?: number;
+    newContactNames?: string[];
+  } | null;
   timeZone?: string;
 }
 
@@ -63,6 +81,7 @@ export async function POST(request: NextRequest) {
       recentDocs = [],
       clients = [],
       projects = [],
+      hubspot,
     } = body ?? {};
 
     const now = new Date();
@@ -151,6 +170,38 @@ ACTIVITY SINCE YESTERDAY:
 
 UPCOMING THIS WEEK:
 ${upcomingThisWeek.slice(0, 8).map((t: any) => `- "${t.title}" (${t.clientId ? resolveClient(t.clientId) : 'Personal'}) — due ${t.dueDate}`).join('\n') || 'Nothing upcoming'}
+
+HUBSPOT ACTIVITY (last 24h):
+- Total engagements: ${hubspot?.activitiesTotal ?? 0}${
+      hubspot?.activitiesByType
+        ? ' (' +
+          Object.entries(hubspot.activitiesByType)
+            .map(([type, n]) => `${String(type).toLowerCase()}: ${n}`)
+            .join(', ') +
+          ')'
+        : ''
+    }
+- New contacts synced: ${hubspot?.newContactsCount ?? 0}${
+      hubspot?.newContactNames && hubspot.newContactNames.length > 0
+        ? ' — ' + hubspot.newContactNames.join(', ')
+        : ''
+    }
+- New deals synced: ${hubspot?.newDealsCount ?? 0}${
+      hubspot?.newDealNames && hubspot.newDealNames.length > 0
+        ? ' — ' + hubspot.newDealNames.join(', ')
+        : ''
+    }
+${
+  hubspot?.notableActivities && hubspot.notableActivities.length > 0
+    ? '\nNotable engagements:\n' +
+      hubspot.notableActivities
+        .map(
+          (a) =>
+            `- [${a.type}]${a.ownerName ? ` ${a.ownerName}:` : ''} ${a.subject || a.preview || '(no subject)'}`,
+        )
+        .join('\n')
+    : ''
+}
 `;
 
     const scopeLine =

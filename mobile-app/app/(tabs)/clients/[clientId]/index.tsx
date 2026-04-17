@@ -41,12 +41,24 @@ import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ContactAvatar from '@/components/contacts/ContactAvatar';
 import ContactDetailModal from '@/components/contacts/ContactDetailModal';
+import SyncStrip from '@/components/client/SyncStrip';
+import OpenDealsCard from '@/components/client/OpenDealsCard';
+import RecentActivityCard from '@/components/client/RecentActivityCard';
+import BeauhurstMiniCard from '@/components/client/BeauhurstMiniCard';
+import ClassificationCard from '@/components/client/ClassificationCard';
+import LinkContactModal from '@/components/clients/LinkContactModal';
+import DealCard from '@/components/deals/DealCard';
+import DealDetailSheet from '@/components/deals/DealDetailSheet';
+import ActivityCard from '@/components/activity/ActivityCard';
+import BeauhurstIdentityCard from '@/components/intelligence/BeauhurstIdentityCard';
+import BeauhurstFinancialsCard from '@/components/intelligence/BeauhurstFinancialsCard';
+import BeauhurstSignalsCard from '@/components/intelligence/BeauhurstSignalsCard';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const TABS = ['Overview', 'Projects', 'Docs', 'Intelligence', 'Notes', 'Tasks', 'Checklist', 'Meetings', 'Flags'] as const;
+const TABS = ['Overview', 'Deals', 'Activity', 'Projects', 'Docs', 'Intelligence', 'Notes', 'Tasks', 'Checklist', 'Meetings', 'Flags'] as const;
 type TabName = (typeof TABS)[number];
 
 // ============================================================================
@@ -868,6 +880,289 @@ function CollapsibleSection({
   );
 }
 
+// DealsTab — inline tab for the 'Deals' view. Renders a summary strip
+// (Open / Won / Lost totals), a search field, an expandable Open list of
+// DealCards, and collapsed Won/Lost summary rows. Tapping a card opens the
+// DealDetailSheet.
+function DealsTab({ clientId }: { clientId: string }) {
+  const deals = useQuery(api.deals.listForClient, { clientId: clientId as any }) ?? [];
+  const [search, setSearch] = useState('');
+  const [selectedDeal, setSelectedDeal] = useState<any>(null);
+  const [openExpanded, setOpenExpanded] = useState(true);
+  // Closed Won / Closed Lost groups default collapsed — user taps to expand.
+  // Tracked as a Set so we can extend easily if we add more groups later.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (label: string) =>
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? deals.filter((d) => (d.name ?? '').toLowerCase().includes(q))
+    : deals;
+
+  const open = filtered.filter((d) => d.isClosed !== true);
+  const won = filtered.filter((d) => d.isClosedWon === true);
+  const lost = filtered.filter((d) => d.isClosed === true && d.isClosedWon !== true);
+
+  const sum = (arr: any[]) => arr.reduce((s, d) => s + (d.amount ?? 0), 0);
+  const fmt = (amount: number) =>
+    amount >= 1_000_000
+      ? `£${(amount / 1_000_000).toFixed(1)}M`
+      : amount >= 1_000
+        ? `£${Math.round(amount / 1_000)}K`
+        : `£${amount.toLocaleString()}`;
+
+  return (
+    <View className="gap-3">
+      {/* Summary strip */}
+      <View className="flex-row gap-2">
+        {[
+          { label: 'Open', total: sum(open), count: open.length, tone: '#0a0a0a' },
+          { label: 'Won', total: sum(won), count: won.length, tone: '#059669' },
+          { label: 'Lost', total: sum(lost), count: lost.length, tone: '#525252' },
+        ].map((s) => (
+          <View
+            key={s.label}
+            className="flex-1 bg-m-bg-card border border-m-border rounded-[12px] p-2.5 items-center"
+          >
+            <Text className="text-[9px] font-semibold text-m-text-tertiary uppercase">
+              {s.label}
+            </Text>
+            <Text className="text-[15px] font-bold mt-0.5" style={{ color: s.tone }}>
+              {fmt(s.total)}
+            </Text>
+            <Text className="text-[10px] text-m-text-tertiary">{s.count} deals</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Search */}
+      <View className="bg-m-bg-card rounded-[10px] border border-m-border flex-row items-center px-3">
+        <Search size={14} color={colors.textTertiary} />
+        <TextInput
+          placeholder="Search deals..."
+          placeholderTextColor={colors.textTertiary}
+          value={search}
+          onChangeText={setSearch}
+          className="flex-1 text-sm text-m-text-primary ml-2 py-2.5"
+        />
+      </View>
+
+      {/* Open section (expandable) */}
+      <TouchableOpacity
+        onPress={() => setOpenExpanded(!openExpanded)}
+        className="flex-row items-center gap-2 px-1"
+      >
+        <ChevronRight
+          size={14}
+          color={colors.textSecondary}
+          strokeWidth={2}
+          style={{ transform: [{ rotate: openExpanded ? '90deg' : '0deg' }] }}
+        />
+        <Text className="text-[10px] font-semibold text-m-text-secondary uppercase tracking-wide">
+          Open ({open.length})
+        </Text>
+      </TouchableOpacity>
+      {openExpanded ? (
+        <View className="gap-2">
+          {open.map((d) => (
+            <DealCard key={d._id} deal={d} onPress={() => setSelectedDeal(d)} />
+          ))}
+          {open.length === 0 ? (
+            <Text className="text-xs text-m-text-tertiary italic p-3">No open deals</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* Won/Lost groups — collapsible. Tap the header row to expand/collapse
+          the list of deals underneath. Previously the TouchableOpacity had no
+          onPress so taps were silently dropped. */}
+      {[
+        { label: 'Closed Won', deals: won, tone: colors.success ?? '#059669' },
+        { label: 'Closed Lost', deals: lost, tone: colors.textSecondary },
+      ].map((group) => {
+        const isExpanded = expandedGroups.has(group.label);
+        return (
+          <View key={group.label} className="gap-2">
+            <TouchableOpacity
+              onPress={() => toggleGroup(group.label)}
+              className="flex-row items-center gap-2 bg-m-bg-card border border-m-border rounded-[12px] px-3.5 py-2.5"
+              activeOpacity={0.7}
+            >
+              <ChevronRight
+                size={14}
+                color={colors.textSecondary}
+                strokeWidth={2}
+                style={{ transform: [{ rotate: isExpanded ? '90deg' : '0deg' }] }}
+              />
+              <Text className="text-xs font-semibold text-m-text-primary flex-1">
+                {group.label}
+              </Text>
+              <Text className="text-[11px] font-semibold" style={{ color: group.tone }}>
+                {fmt(sum(group.deals))}
+              </Text>
+              <Text className="text-[11px] text-m-text-tertiary">
+                · {group.deals.length} deals
+              </Text>
+            </TouchableOpacity>
+            {isExpanded ? (
+              <View className="gap-2">
+                {group.deals.map((d) => (
+                  <DealCard
+                    key={d._id}
+                    deal={d}
+                    onPress={() => setSelectedDeal(d)}
+                  />
+                ))}
+                {group.deals.length === 0 ? (
+                  <Text className="text-xs text-m-text-tertiary italic p-3">
+                    No {group.label.toLowerCase()} deals
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+
+      <DealDetailSheet
+        deal={selectedDeal}
+        visible={selectedDeal !== null}
+        onClose={() => setSelectedDeal(null)}
+      />
+    </View>
+  );
+}
+
+// ActivityTab — inline tab for the 'Activity' view. Renders filter chips
+// (All, Emails, Meetings, Notes, Calls, Tasks), groups the resulting
+// activities into Today / Yesterday / This week / Older buckets, and
+// renders each entry with ActivityCard.
+//
+// Hooks note: we call useQuery twice unconditionally — the second query
+// is skipped (via 'skip') unless the user has picked the EMAIL filter.
+// That keeps hook order stable across filter changes (rules-of-hooks).
+type ActivityFilter = 'all' | 'EMAIL' | 'MEETING' | 'NOTE' | 'CALL' | 'TASK';
+
+function ActivityTab({ clientId }: { clientId: string }) {
+  const [filter, setFilter] = useState<ActivityFilter>('all');
+
+  // Always query outgoing emails; query incoming only when the user picks EMAIL filter
+  const outboundOrAll = useQuery(
+    api.activities.listForClient,
+    filter === 'all'
+      ? { clientId: clientId as any, limit: 200 }
+      : {
+          clientId: clientId as any,
+          typeFilter: filter === 'EMAIL' ? 'EMAIL' : filter,
+          limit: 200,
+        },
+  ) ?? [];
+
+  const incomingEmails = useQuery(
+    api.activities.listForClient,
+    filter === 'EMAIL'
+      ? { clientId: clientId as any, typeFilter: 'INCOMING_EMAIL', limit: 200 }
+      : 'skip',
+  ) ?? [];
+
+  const fullList = filter === 'EMAIL' ? [...outboundOrAll, ...incomingEmails] : outboundOrAll;
+
+  const sorted = fullList
+    .slice()
+    .sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
+
+  // Group by date bucket
+  const now = Date.now();
+  type Bucket = 'Today' | 'Yesterday' | 'This week' | 'Older';
+  const bucketOf = (iso?: string): Bucket => {
+    if (!iso) return 'Older';
+    const days = Math.floor((now - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return 'This week';
+    return 'Older';
+  };
+
+  const grouped: Record<Bucket, typeof sorted> = {
+    Today: [],
+    Yesterday: [],
+    'This week': [],
+    Older: [],
+  };
+  for (const a of sorted) {
+    grouped[bucketOf(a.activityDate)].push(a);
+  }
+
+  const FILTERS: { key: ActivityFilter; label: string }[] = [
+    { key: 'all', label: `All · ${sorted.length}` },
+    { key: 'EMAIL', label: 'Emails' },
+    { key: 'MEETING', label: 'Meetings' },
+    { key: 'NOTE', label: 'Notes' },
+    { key: 'CALL', label: 'Calls' },
+    { key: 'TASK', label: 'Tasks' },
+  ];
+
+  return (
+    <View className="gap-3">
+      {/* Filter chips — horizontal scroll */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+      >
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <TouchableOpacity
+              key={f.key}
+              onPress={() => setFilter(f.key)}
+              className="px-2.5 py-1 rounded-full"
+              style={{
+                backgroundColor: active ? '#0a0a0a' : '#fafaf9',
+                borderWidth: active ? 0 : 1,
+                borderColor: colors.border,
+              }}
+            >
+              <Text
+                className="text-[11px] font-medium"
+                style={{ color: active ? '#ffffff' : colors.textSecondary }}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Timeline grouped */}
+      {(['Today', 'Yesterday', 'This week', 'Older'] as const).map((bucket) =>
+        grouped[bucket].length > 0 ? (
+          <View key={bucket} className="gap-2">
+            <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+              {bucket}
+            </Text>
+            {grouped[bucket].map((a) => (
+              <ActivityCard key={a._id} activity={a} />
+            ))}
+          </View>
+        ) : null,
+      )}
+
+      {sorted.length === 0 ? (
+        <Text className="text-sm text-m-text-tertiary italic text-center py-12">
+          No activity yet
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 // ============================================================================
 // Main Screen
 // ============================================================================
@@ -888,6 +1183,7 @@ export default function ClientDetailScreen() {
   // null = no sheet open. The ContactDetailModal is rendered once at the
   // bottom of the component; this just toggles its visibility.
   const [openContactId, setOpenContactId] = useState<string | null>(null);
+  const [showLinkContact, setShowLinkContact] = useState(false);
 
   // Notes form
   const [showNoteForm, setShowNoteForm] = useState(false);
@@ -927,6 +1223,15 @@ export default function ClientDetailScreen() {
     api.flags.getByClient,
     skip ? 'skip' : { clientId: clientId as any, status: flagFilter }
   );
+
+  // Resolve the primary linked company for this client (via promotedToClientId).
+  // Used by Overview to surface HubSpot owner, sync time, URL, and Beauhurst
+  // intel that live on the company record.
+  const promotedCompanies = useQuery(
+    api.companies.listByPromotedClient,
+    skip ? 'skip' : { clientId: clientId as any }
+  );
+  const primaryCompany = promotedCompanies?.[0];
 
   // Optional queries — may not exist
   let intelligence: any = undefined;
@@ -1270,6 +1575,47 @@ export default function ClientDetailScreen() {
             </View>
           ) : null}
         </View>
+
+        {/* HubSpot-enriched chip strip. Sourced from the promoted company
+            so we surface the CRM status (lifecycle stage), deal pipeline
+            activity signal, industry, and company type right in the
+            header — matches the original mockups. Only renders the chips
+            that have data; hidden entirely when no HubSpot chips exist. */}
+        {(() => {
+          const chips: { label: string; value: string }[] = [];
+          const stageName =
+            primaryCompany?.hubspotLifecycleStageName ??
+            primaryCompany?.hubspotLifecycleStage;
+          if (stageName) chips.push({ label: 'Lifecycle', value: stageName });
+          if (primaryCompany?.type)
+            chips.push({ label: 'Type', value: primaryCompany.type });
+          if (primaryCompany?.industry)
+            chips.push({ label: 'Industry', value: primaryCompany.industry });
+          // Owner makes the header feel more human — shows who in HubSpot
+          // is responsible for this company. Skip if not resolved.
+          if (primaryCompany?.ownerName)
+            chips.push({ label: 'Owner', value: primaryCompany.ownerName });
+          if (chips.length === 0) return null;
+          return (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6, paddingTop: 8 }}
+            >
+              {chips.map((c) => (
+                <View
+                  key={`${c.label}:${c.value}`}
+                  className="bg-white/12 border border-white/20 px-2 py-0.5 rounded-full"
+                >
+                  <Text className="text-[10px] text-m-text-on-brand/80 uppercase tracking-wide font-medium">
+                    <Text className="text-m-text-on-brand/55">{c.label} · </Text>
+                    {c.value}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          );
+        })()}
       </View>
 
       {/* Tab Bar */}
@@ -1306,6 +1652,42 @@ export default function ClientDetailScreen() {
             <StageNoteBanner
               value={client.stageNote || ''}
               onSave={handleSaveStageNote}
+            />
+
+            {/* HubSpot sync strip — owner chip + last-sync timestamp + open-in-HubSpot link.
+                Sourced from the primary linked company (promotedToClientId match). */}
+            {primaryCompany ? (
+              <SyncStrip
+                ownerName={primaryCompany.ownerName}
+                lastSync={primaryCompany.lastHubSpotSync}
+                hubspotUrl={primaryCompany.hubspotUrl}
+              />
+            ) : null}
+
+            {/* Open Deals summary — HubSpot deals linked to this client */}
+            <OpenDealsCard
+              clientId={clientId as any}
+              onViewAll={() => setActiveTab('Deals')}
+            />
+
+            {/* Recent Activity — notes / emails / meetings / calls / tasks */}
+            <RecentActivityCard
+              clientId={clientId as any}
+              onViewAll={() => setActiveTab('Activity')}
+            />
+
+            {/* Beauhurst intelligence snapshot — turnover / headcount / stage */}
+            <BeauhurstMiniCard
+              metadata={primaryCompany?.metadata}
+              onPressFullIntel={() => setActiveTab('Intelligence')}
+            />
+
+            {/* Classification chips — company type, lead source, industry, county */}
+            <ClassificationCard
+              companyType={primaryCompany?.metadata?.company_type}
+              leadSource={primaryCompany?.metadata?.lead_source}
+              industry={primaryCompany?.industry}
+              county={primaryCompany?.metadata?.company_county}
             />
 
             {/* Key Metrics — 4 colored tiles, wrap to 2x2 on narrow screens */}
@@ -1696,26 +2078,45 @@ export default function ClientDetailScreen() {
               </Card>
             )}
 
-            {/* Key Contacts */}
-            {contacts && contacts.length > 0 ? (
+            {/* Key Contacts — always rendered (even at 0) so the "+ Link"
+                entry point is reachable for clients with no contacts yet. */}
+            {contacts ? (
               <Card>
-                <View className="flex-row items-center mb-2">
+                <View className="flex-row items-center gap-2 mb-2">
                   <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide flex-1">
                     Key Contacts ({contacts.length})
                   </Text>
                   <TouchableOpacity
-                    onPress={() =>
-                      router.push(`/contacts?clientId=${clientId}` as any)
-                    }
-                    className="flex-row items-center"
+                    onPress={() => setShowLinkContact(true)}
+                    className="flex-row items-center gap-0.5 px-2 py-1 rounded-full bg-m-bg-subtle"
                     hitSlop={6}
+                    accessibilityLabel="Link existing contact"
                   >
-                    <Text className="text-xs text-m-text-tertiary mr-0.5">
-                      View all
+                    <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
+                    <Text className="text-[11px] font-medium text-m-text-primary">
+                      Link
                     </Text>
-                    <ChevronRight size={12} color={colors.textTertiary} />
                   </TouchableOpacity>
+                  {contacts.length > 0 ? (
+                    <TouchableOpacity
+                      onPress={() =>
+                        router.push(`/contacts?clientId=${clientId}` as any)
+                      }
+                      className="flex-row items-center"
+                      hitSlop={6}
+                    >
+                      <Text className="text-xs text-m-text-tertiary mr-0.5">
+                        View all
+                      </Text>
+                      <ChevronRight size={12} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
+                {contacts.length === 0 ? (
+                  <Text className="text-xs text-m-text-tertiary italic py-2">
+                    No contacts linked yet — tap Link to add one
+                  </Text>
+                ) : null}
                 <View className="gap-0">
                   {contacts.slice(0, 5).map((c: any, idx: number) => (
                     <View key={c._id}>
@@ -1781,6 +2182,16 @@ export default function ClientDetailScreen() {
             </Card>
           </>
         )}
+
+        {/* ================================================================ */}
+        {/* DEALS TAB */}
+        {/* ================================================================ */}
+        {activeTab === 'Deals' ? <DealsTab clientId={clientId as any} /> : null}
+
+        {/* ================================================================ */}
+        {/* ACTIVITY TAB */}
+        {/* ================================================================ */}
+        {activeTab === 'Activity' ? <ActivityTab clientId={clientId as any} /> : null}
 
         {/* ================================================================ */}
         {/* PROJECTS TAB */}
@@ -1928,6 +2339,30 @@ export default function ClientDetailScreen() {
         {/* ================================================================ */}
         {activeTab === 'Intelligence' && (
           <View className="gap-2">
+            {primaryCompany?.metadata ? (
+              <View className="gap-3">
+                <View className="flex-row items-center gap-1.5 px-1">
+                  <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                    Beauhurst intel
+                  </Text>
+                  <View className="bg-m-bg-subtle px-1.5 py-0.5 rounded">
+                    <Text className="text-[9px] font-semibold text-m-text-secondary uppercase">CRM</Text>
+                  </View>
+                </View>
+                <BeauhurstIdentityCard metadata={primaryCompany.metadata} companyName={primaryCompany.name} />
+                <BeauhurstFinancialsCard metadata={primaryCompany.metadata} />
+                <BeauhurstSignalsCard metadata={primaryCompany.metadata} />
+
+                {/* Divider */}
+                <View className="flex-row items-center gap-2.5 py-1">
+                  <View className="flex-1 h-px bg-m-border" />
+                  <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                    AI intel from docs
+                  </Text>
+                  <View className="flex-1 h-px bg-m-border" />
+                </View>
+              </View>
+            ) : null}
             {intelligence && Array.isArray(intelligence) && intelligence.length > 0 ? (
               Object.entries(intelligenceByCategory).map(([category, items]) => (
                 <CollapsibleSection key={category} title={category}>
@@ -2465,6 +2900,15 @@ export default function ClientDetailScreen() {
         visible={openContactId !== null}
         contactId={openContactId}
         onClose={() => setOpenContactId(null)}
+      />
+
+      {/* Link contact — opened from the Key Contacts "+" button */}
+      <LinkContactModal
+        visible={showLinkContact}
+        clientId={clientId as any}
+        clientName={client.name}
+        alreadyLinkedIds={(contacts ?? []).map((c: any) => c._id)}
+        onClose={() => setShowLinkContact(false)}
       />
     </View>
   );

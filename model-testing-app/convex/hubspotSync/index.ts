@@ -23,6 +23,9 @@ export {
   extractDatesFromMetadata,
   linkContactsToCompanies,
   linkDealsToContactsAndCompanies,
+  backfillContactClientLinks,
+  contactLinkageStats,
+  dailyBriefSummary,
 } from "./linking";
 
 // Export config mutations and queries

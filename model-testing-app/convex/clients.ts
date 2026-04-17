@@ -815,6 +815,48 @@ export const deletedCount = query({
   },
 });
 
+/**
+ * Create a new client AND link a HubSpot company to it (promotedToClientId).
+ * Used by the new-client autocomplete flow in the mobile app.
+ */
+export const createWithPromotion = mutation({
+  args: {
+    name: v.string(),
+    companyName: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    website: v.optional(v.string()),
+    address: v.optional(v.string()),
+    city: v.optional(v.string()),
+    country: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    status: v.optional(v.union(
+      v.literal("prospect"),
+      v.literal("active"),
+      v.literal("archived"),
+      v.literal("past"),
+    )),
+    type: v.optional(v.string()),
+    promoteFromCompanyId: v.optional(v.id("companies")),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    const { promoteFromCompanyId, ...clientFields } = args;
+
+    const clientId = await ctx.db.insert("clients", {
+      ...clientFields,
+      source: promoteFromCompanyId ? "hubspot" : "manual",
+      status: clientFields.status ?? "prospect",
+      createdAt: now,
+    });
+
+    if (promoteFromCompanyId) {
+      await ctx.db.patch(promoteFromCompanyId, { promotedToClientId: clientId });
+    }
+
+    return clientId;
+  },
+});
+
 export const permanentDelete = mutation({
   args: { id: v.id("clients") },
   handler: async (ctx, args) => {

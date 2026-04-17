@@ -321,3 +321,225 @@ export const linkDealsToContactsAndCompanies = mutation({
   },
 });
 
+
+/**
+ * Back-fill `contact.clientId` for contacts whose linked HubSpot companies
+ * have been promoted to Rockcap clients (via `companies.promotedToClientId`).
+ *
+ * Context: the HubSpot sync populates `contact.linkedCompanyIds` (HubSpot
+ * company → Convex company), and the Plan 1 back-link script populated
+ * `companies.promotedToClientId` (Convex company → Rockcap client). But the
+ * bridge — setting `contact.clientId` from those two — was missing, so the
+ * client profile's Key Contacts section appeared empty for HubSpot imports.
+ *
+ * Idempotent: only patches contacts where `clientId` is not already set.
+ */
+export const backfillContactClientLinks = mutation({
+  args: {},
+  handler: async (ctx) => {
+    let checked = 0;
+    let patched = 0;
+    let alreadyLinked = 0;
+    let noPromotedCompany = 0;
+
+    const contacts = await ctx.db
+      .query("contacts")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+
+    for (const contact of contacts) {
+      checked++;
+      if ((contact as any).clientId) {
+        alreadyLinked++;
+        continue;
+      }
+      const linkedCompanyIds = (contact as any).linkedCompanyIds ?? [];
+      if (linkedCompanyIds.length === 0) {
+        noPromotedCompany++;
+        continue;
+      }
+
+      // Find the first linked company that has a promotedToClientId.
+      let promotedClientId: any = undefined;
+      for (const cid of linkedCompanyIds) {
+        const c = await ctx.db.get(cid);
+        if (c && (c as any).promotedToClientId) {
+          promotedClientId = (c as any).promotedToClientId;
+          break;
+        }
+      }
+
+      if (!promotedClientId) {
+        noPromotedCompany++;
+        continue;
+      }
+
+      await ctx.db.patch(contact._id, { clientId: promotedClientId });
+      patched++;
+    }
+
+    return {
+      checked,
+      patched,
+      alreadyLinked,
+      noPromotedCompany,
+    };
+  },
+});
+
+/**
+ * Diagnostic: report counts on the contact↔company linkage state.
+ * Use this to answer "how many contacts are unlinked and why" without
+ * running mutations.
+ */
+export const contactLinkageStats = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const contacts = await ctx.db
+      .query("contacts")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+
+    let total = 0;
+    let withClientId = 0;
+    let withHubspotCompanyIds = 0;
+    let withLinkedCompanyIds = 0;
+    let withAnyLink = 0;
+    let fullyOrphan = 0;
+    let eligibleForBackfill = 0;
+
+    for (const c of contacts) {
+      total++;
+      const hasClientId = !!(c as any).clientId;
+      const hasHubspotCompanyIds =
+        Array.isArray((c as any).hubspotCompanyIds) &&
+        (c as any).hubspotCompanyIds.length > 0;
+      const hasLinkedCompanyIds =
+        Array.isArray((c as any).linkedCompanyIds) &&
+        (c as any).linkedCompanyIds.length > 0;
+
+      if (hasClientId) withClientId++;
+      if (hasHubspotCompanyIds) withHubspotCompanyIds++;
+      if (hasLinkedCompanyIds) withLinkedCompanyIds++;
+      if (hasClientId || hasLinkedCompanyIds) withAnyLink++;
+      if (!hasClientId && !hasLinkedCompanyIds && !hasHubspotCompanyIds) {
+        fullyOrphan++;
+      }
+
+      // Eligible for back-fill: no clientId, has linkedCompanyIds, and at
+      // least one of those companies has promotedToClientId.
+      if (!hasClientId && hasLinkedCompanyIds) {
+        for (const cid of (c as any).linkedCompanyIds) {
+          const co = await ctx.db.get(cid);
+          if (co && (co as any).promotedToClientId) {
+            eligibleForBackfill++;
+            break;
+          }
+        }
+      }
+    }
+
+    return {
+      total,
+      withClientId,
+      withHubspotCompanyIds,
+      withLinkedCompanyIds,
+      withAnyLink,
+      fullyOrphan,
+      eligibleForBackfill,
+    };
+  },
+});
+
+/**
+ * Aggregated HubSpot activity for the daily-brief generator. Answers:
+ * "What HubSpot stuff happened in the last N hours?"
+ *
+ * Returns counts by activity type + notable recent items, plus deals and
+ * contacts synced since the cutoff. All scoped globally (no per-user /
+ * per-client filtering) since the daily brief is a whole-org summary.
+ *
+ * Uses indexed/sort scans where possible but falls back to a full scan for
+ * activities (no by-creation-time index — activityDate is stored as a string,
+ * not a time index). Should still stay under the 16MB read limit because
+ * 24h of activity is typically small.
+ */
+import { query as reQuery } from "../_generated/server";
+
+export const dailyBriefSummary = reQuery({
+  args: { sinceISO: v.string() },
+  handler: async (ctx, args) => {
+    const sinceMs = new Date(args.sinceISO).getTime();
+
+    // Activities — filter by activityDate >= since in memory. With the
+    // 16MB-limit fix on activities queries (Task D neighbour), we already
+    // have the per-company indexed path. For this global query we do
+    // need the full table, so scan but take only the light-weight fields.
+    const allActivities = await ctx.db.query("activities").collect();
+    const recentActivities = allActivities.filter((a) => {
+      if (!a.activityDate) return false;
+      return new Date(a.activityDate).getTime() >= sinceMs;
+    });
+
+    const byType: Record<string, number> = {};
+    const notable: Array<{
+      type: string;
+      subject?: string;
+      preview?: string;
+      ownerName?: string;
+      activityDate?: string;
+    }> = [];
+
+    for (const a of recentActivities) {
+      const type = (a.activityType ?? 'UNKNOWN').toUpperCase();
+      byType[type] = (byType[type] || 0) + 1;
+    }
+
+    // Notable items: top 5 most recent with a subject.
+    const sortedByDate = recentActivities
+      .slice()
+      .sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
+    for (const a of sortedByDate) {
+      if (notable.length >= 5) break;
+      if (!a.subject && !a.bodyPreview) continue;
+      notable.push({
+        type: a.activityType ?? 'UNKNOWN',
+        subject: a.subject,
+        preview: a.bodyPreview?.slice(0, 120),
+        ownerName: a.ownerName,
+        activityDate: a.activityDate,
+      });
+    }
+
+    // Deals — stored ISO in `createdAt` or `_creationTime` (ms).
+    const allDeals = await ctx.db.query("deals").collect();
+    const newDeals = allDeals.filter((d) => {
+      const ct = d.createdAt
+        ? new Date(d.createdAt).getTime()
+        : d._creationTime;
+      return ct >= sinceMs;
+    });
+
+    // Contacts.
+    const allContacts = await ctx.db
+      .query("contacts")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+    const newContacts = allContacts.filter((c) => {
+      const ct = c.createdAt
+        ? new Date(c.createdAt).getTime()
+        : c._creationTime;
+      return ct >= sinceMs;
+    });
+
+    return {
+      activitiesByType: byType,
+      activitiesTotal: recentActivities.length,
+      notableActivities: notable,
+      newDealsCount: newDeals.length,
+      newDealNames: newDeals.slice(0, 5).map((d) => d.name),
+      newContactsCount: newContacts.length,
+      newContactNames: newContacts.slice(0, 5).map((c) => c.name),
+    };
+  },
+});

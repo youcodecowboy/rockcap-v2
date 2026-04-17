@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as activities from "../activities.js";
 import type * as authHelpers from "../authHelpers.js";
 import type * as bulkBackgroundProcessor from "../bulkBackgroundProcessor.js";
 import type * as bulkUpload from "../bulkUpload.js";
@@ -124,6 +125,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activities: typeof activities;
   authHelpers: typeof authHelpers;
   bulkBackgroundProcessor: typeof bulkBackgroundProcessor;
   bulkUpload: typeof bulkUpload;

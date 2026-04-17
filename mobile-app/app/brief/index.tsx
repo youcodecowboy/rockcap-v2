@@ -2,7 +2,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
   Animated, Easing,
 } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
@@ -460,6 +460,17 @@ export default function BriefScreen() {
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const projects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
 
+  // HubSpot activity for the last 24h — feeds the brief's "CRM pulse" section.
+  // Refreshed on mount, passed through to the generate endpoint below.
+  const hubspotSince = useMemo(
+    () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    [],
+  );
+  const hubspotSummary = useQuery(
+    api.hubspotSync.dailyBriefSummary,
+    isAuthenticated ? { sinceISO: hubspotSince } : 'skip',
+  );
+
   const saveBrief = useMutation(api.dailyBriefs.save);
 
   const [generating, setGenerating] = useState(false);
@@ -519,6 +530,7 @@ export default function BriefScreen() {
           recentDocs: recentDocs ?? [],
           clients: clients ?? [],
           projects: projects ?? [],
+          hubspot: hubspotSummary ?? null,
         }),
       });
       if (!res.ok) {

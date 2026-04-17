@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 //
 // Routes:
 //   index                              — client list
+//   new                                — create new client (HubSpot-aware autocomplete)
 //   [clientId]/index                   — client detail (9 tabs)
 //   [clientId]/projects/[projectId]    — project detail (6 tabs)
 //
@@ -13,6 +14,7 @@ export default function ClientsLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
+      <Stack.Screen name="new" />
       <Stack.Screen name="[clientId]/index" />
       <Stack.Screen name="[clientId]/projects/[projectId]" />
     </Stack>

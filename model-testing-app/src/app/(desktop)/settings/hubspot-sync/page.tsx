@@ -223,6 +223,11 @@ export default function HubSpotSyncPage() {
     useState<Record<StageId, StageState>>(INITIAL_STAGES);
   const [isRunning, setIsRunning] = useState(false);
   const [maxRecords, setMaxRecords] = useState<string>("");
+  // Incremental mode by default — syncs only records modified since
+  // `syncConfig.lastSyncAt`. Check "Force full resync" to ignore lastSyncAt
+  // and re-pull everything (useful after schema changes or to backfill
+  // records HubSpot silently mutated without touching lastmodifieddate).
+  const [forceFull, setForceFull] = useState(false);
   const [enabled, setEnabled] = useState<Record<StageId, boolean>>({
     companies: true,
     contacts: true,
@@ -241,6 +246,7 @@ export default function HubSpotSyncPage() {
         syncContacts: flagKey === "syncContacts",
         syncDeals: flagKey === "syncDeals",
         syncActivities: flagKey === "syncActivities",
+        mode: forceFull ? "full" : "incremental",
       };
       const parsed = parseInt(maxRecords, 10);
       if (Number.isFinite(parsed) && parsed > 0) body.maxRecords = parsed;
@@ -439,6 +445,26 @@ export default function HubSpotSyncPage() {
                 <span className="text-sm">{stage.label}</span>
               </label>
             ))}
+          </div>
+
+          <div className="pt-3 border-t border-border">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={forceFull}
+                onChange={(e) => setForceFull(e.target.checked)}
+                className="size-4 rounded border-gray-300 mt-0.5"
+                disabled={isRunning}
+              />
+              <span className="text-sm">
+                <span className="font-medium">Force full resync</span>
+                <span className="block text-xs text-muted-foreground mt-0.5">
+                  {syncConfig?.lastSyncAt
+                    ? `Default is incremental — only records modified since last sync (${new Date(syncConfig.lastSyncAt).toLocaleString()}). Check this to re-pull everything.`
+                    : "First sync (no lastSyncAt on record); this pulls everything by default."}
+                </span>
+              </span>
+            </label>
           </div>
         </CardContent>
       </Card>
