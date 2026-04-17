@@ -65,6 +65,19 @@ export default function CreateClientDrawer({
     notes: '',
   });
 
+  // HubSpot-autocomplete state for the Client form. When set, submission
+  // uses clients.createWithPromotion so the matched HubSpot company's
+  // promotedToClientId is set atomically alongside the new client.
+  const [promoteFromCompanyId, setPromoteFromCompanyId] =
+    useState<Id<'companies'> | null>(null);
+  const [nameFocused, setNameFocused] = useState(false);
+  const hubspotMatches = useQuery(
+    api.companies.searchByName,
+    !promoteFromCompanyId && clientForm.name.trim().length >= 2
+      ? { query: clientForm.name, limit: 6 }
+      : 'skip',
+  );
+
   // Company form state
   const [companyForm, setCompanyForm] = useState({
     name: '',
@@ -129,6 +142,11 @@ export default function CreateClientDrawer({
 
   // Mutations
   const createClient = useMutation(api.clients.create);
+  // `createWithPromotion` lets the HubSpot autocomplete below both create
+  // the client AND set `companies.promotedToClientId` on the selected
+  // HubSpot company in a single round-trip — so synced deals / contacts /
+  // activities immediately bind to the new client.
+  const createWithPromotion = useMutation(api.clients.createWithPromotion);
   const createCompany = useMutation(api.companies.create);
   const promoteToClient = useMutation(api.companies.promoteToClient);
 
@@ -197,24 +215,45 @@ export default function CreateClientDrawer({
 
     setIsSubmitting(true);
     try {
-      const clientId = await createClient({
-        name: clientForm.name.trim(),
-        type: clientForm.type.trim() || undefined,
-        status: clientForm.status,
-        companyName: clientForm.companyName.trim() || undefined,
-        address: clientForm.address.trim() || undefined,
-        city: clientForm.city.trim() || undefined,
-        state: clientForm.state.trim() || undefined,
-        zip: clientForm.zip.trim() || undefined,
-        country: clientForm.country.trim() || undefined,
-        phone: clientForm.phone.trim() || undefined,
-        email: clientForm.email.trim() || undefined,
-        website: clientForm.website.trim() || undefined,
-        industry: clientForm.industry.trim() || undefined,
-        tags: clientForm.tags.length > 0 ? clientForm.tags : undefined,
-        notes: clientForm.notes.trim() || undefined,
-      });
+      // If the user picked a HubSpot match from the autocomplete, use
+      // createWithPromotion so the company's promotedToClientId is set
+      // in the same mutation. Otherwise fall back to the plain create.
+      let clientId;
+      if (promoteFromCompanyId) {
+        clientId = await createWithPromotion({
+          name: clientForm.name.trim(),
+          companyName: clientForm.companyName.trim() || clientForm.name.trim(),
+          industry: clientForm.industry.trim() || undefined,
+          website: clientForm.website.trim() || undefined,
+          address: clientForm.address.trim() || undefined,
+          city: clientForm.city.trim() || undefined,
+          country: clientForm.country.trim() || undefined,
+          phone: clientForm.phone.trim() || undefined,
+          type: clientForm.type.trim() || undefined,
+          status: clientForm.status,
+          promoteFromCompanyId,
+        });
+      } else {
+        clientId = await createClient({
+          name: clientForm.name.trim(),
+          type: clientForm.type.trim() || undefined,
+          status: clientForm.status,
+          companyName: clientForm.companyName.trim() || undefined,
+          address: clientForm.address.trim() || undefined,
+          city: clientForm.city.trim() || undefined,
+          state: clientForm.state.trim() || undefined,
+          zip: clientForm.zip.trim() || undefined,
+          country: clientForm.country.trim() || undefined,
+          phone: clientForm.phone.trim() || undefined,
+          email: clientForm.email.trim() || undefined,
+          website: clientForm.website.trim() || undefined,
+          industry: clientForm.industry.trim() || undefined,
+          tags: clientForm.tags.length > 0 ? clientForm.tags : undefined,
+          notes: clientForm.notes.trim() || undefined,
+        });
+      }
       resetForms();
+      setPromoteFromCompanyId(null);
       onSuccess?.();
       handleClose();
       router.push(`/clients/${clientId}`);
@@ -410,14 +449,104 @@ export default function CreateClientDrawer({
             <TabsContent value="client" className="space-y-4 mt-0">
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="client-name">Client Name *</Label>
+                  <div className="space-y-2 relative">
+                    <Label htmlFor="client-name">
+                      Client Name *
+                      {promoteFromCompanyId ? (
+                        <span className="ml-2 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                          Linked to HubSpot
+                        </span>
+                      ) : null}
+                    </Label>
                     <Input
                       id="client-name"
                       placeholder="Acme Corp"
                       value={clientForm.name}
-                      onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
+                      onChange={(e) => {
+                        setClientForm({ ...clientForm, name: e.target.value });
+                        // If the user edits the name after selecting a match,
+                        // unlink — they're starting over.
+                        if (promoteFromCompanyId) setPromoteFromCompanyId(null);
+                      }}
+                      onFocus={() => setNameFocused(true)}
+                      onBlur={() => {
+                        // Delay so clicks on the dropdown items can fire first.
+                        setTimeout(() => setNameFocused(false), 150);
+                      }}
                     />
+                    {/* HubSpot autocomplete dropdown — shows matching
+                        synced companies when the user is typing a new
+                        client name. Selecting one pre-fills the form +
+                        marks promoteFromCompanyId so submit atomically
+                        links the company to the new client. */}
+                    {nameFocused &&
+                    hubspotMatches &&
+                    hubspotMatches.length > 0 &&
+                    !promoteFromCompanyId ? (
+                      <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
+                        <div className="px-3 py-1.5 bg-gray-50 border-b">
+                          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                            From HubSpot ({hubspotMatches.length})
+                          </p>
+                        </div>
+                        {hubspotMatches.map((c: any) => {
+                          const isExact =
+                            c.name.toLowerCase() === clientForm.name.trim().toLowerCase();
+                          return (
+                            <button
+                              key={c._id}
+                              type="button"
+                              onClick={() => {
+                                // Already promoted — navigate instead of creating.
+                                if (c.promotedToClientId) {
+                                  router.push(`/clients/${c.promotedToClientId}`);
+                                  return;
+                                }
+                                // Pre-fill form from HubSpot company data.
+                                setClientForm((prev) => ({
+                                  ...prev,
+                                  name: c.name,
+                                  companyName: c.name,
+                                  industry: c.industry ?? prev.industry,
+                                  website: c.website ?? c.domain ?? prev.website,
+                                  address: c.address ?? prev.address,
+                                  city: c.city ?? prev.city,
+                                  country: c.country ?? prev.country,
+                                  phone: c.phone ?? prev.phone,
+                                  type: c.type ?? prev.type,
+                                }));
+                                setPromoteFromCompanyId(c._id);
+                                setNameFocused(false);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-0"
+                            >
+                              <div className="w-8 h-8 rounded bg-blue-50 flex items-center justify-center shrink-0">
+                                <Building2 className="w-4 h-4 text-blue-600" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {c.name}
+                                </p>
+                                <p className="text-[11px] text-gray-500 truncate">
+                                  {[
+                                    c.domain,
+                                    c.hubspotLifecycleStageName ?? c.hubspotLifecycleStage,
+                                    c.promotedToClientId ? 'already a client' : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </p>
+                              </div>
+                              {isExact ? (
+                                <span className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                  Match
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="client-type">Type</Label>
