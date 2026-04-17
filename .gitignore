@@ -60,3 +60,6 @@ Thumbs.db
 # Git worktrees
 .worktrees/
 
+# Superpowers brainstorming artifacts (session-local mockups)
+.superpowers/
+
