@@ -97,3 +97,47 @@ export const getPipelineTotal = query({
   },
 });
 
+// ---- Client-scoped queries (Plan 2 phase A) ----
+
+/**
+ * List all deals associated with a client, resolved via the companies
+ * that have been promoted to this client.
+ */
+export const listForClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const companies = await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+    if (companies.length === 0) return [];
+    const companyIds = new Set(companies.map((c) => c._id));
+    const allDeals = await ctx.db.query("deals").collect();
+    return allDeals.filter((d) =>
+      (d.linkedCompanyIds ?? []).some((id) => companyIds.has(id)),
+    );
+  },
+});
+
+/**
+ * List only OPEN deals (not closed-won/closed-lost) for a client.
+ * Used by the Overview hero "Open Deals" card.
+ */
+export const listOpenForClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const companies = await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+    if (companies.length === 0) return [];
+    const companyIds = new Set(companies.map((c) => c._id));
+    const allDeals = await ctx.db.query("deals").collect();
+    return allDeals.filter(
+      (d) =>
+        (d.linkedCompanyIds ?? []).some((id) => companyIds.has(id)) &&
+        d.isClosed !== true,
+    );
+  },
+});
+
