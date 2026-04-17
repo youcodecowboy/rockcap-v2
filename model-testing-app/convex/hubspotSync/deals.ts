@@ -112,6 +112,10 @@ export const syncDealToDealsTable = mutation({
     customProperties: v.optional(v.any()),
     hubspotUrl: v.optional(v.string()),
     metadata: v.optional(v.any()), // Custom properties from HubSpot
+    probability: v.optional(v.number()),
+    spvName: v.optional(v.string()),
+    isClosed: v.optional(v.boolean()),
+    isClosedWon: v.optional(v.boolean()),
     createdAt: v.optional(v.string()),
     updatedAt: v.optional(v.string()),
   },
@@ -169,9 +173,13 @@ export const syncDealToDealsTable = mutation({
       if (cleanArgs.hubspotOwnerId) updateData.hubspotOwnerId = cleanArgs.hubspotOwnerId;
       if (cleanArgs.lastContactedDate) updateData.lastContactedDate = cleanArgs.lastContactedDate;
       if (cleanArgs.lastActivityDate) updateData.lastActivityDate = cleanArgs.lastActivityDate;
+      if (cleanArgs.probability !== undefined && cleanArgs.probability !== null) updateData.probability = cleanArgs.probability;
+      if (cleanArgs.spvName) updateData.spvName = cleanArgs.spvName;
+      if (cleanArgs.isClosed !== undefined) updateData.isClosed = cleanArgs.isClosed;
+      if (cleanArgs.isClosedWon !== undefined) updateData.isClosedWon = cleanArgs.isClosedWon;
       if (contactIds && contactIds.length > 0) updateData.contactIds = contactIds;
       if (companyIds && companyIds.length > 0) updateData.companyIds = companyIds;
-      
+
       await ctx.db.patch(existingDeal._id, updateData);
       
       // Link contacts and companies
@@ -211,9 +219,13 @@ export const syncDealToDealsTable = mutation({
     if (cleanArgs.hubspotOwnerId) dealDataClean.hubspotOwnerId = cleanArgs.hubspotOwnerId;
     if (cleanArgs.lastContactedDate) dealDataClean.lastContactedDate = cleanArgs.lastContactedDate;
     if (cleanArgs.lastActivityDate) dealDataClean.lastActivityDate = cleanArgs.lastActivityDate;
+    if (cleanArgs.probability !== undefined && cleanArgs.probability !== null) dealDataClean.probability = cleanArgs.probability;
+    if (cleanArgs.spvName) dealDataClean.spvName = cleanArgs.spvName;
+    if (cleanArgs.isClosed !== undefined) dealDataClean.isClosed = cleanArgs.isClosed;
+    if (cleanArgs.isClosedWon !== undefined) dealDataClean.isClosedWon = cleanArgs.isClosedWon;
     if (contactIds && contactIds.length > 0) dealDataClean.contactIds = contactIds;
     if (companyIds && companyIds.length > 0) dealDataClean.companyIds = companyIds;
-    
+
     const dealId = await ctx.db.insert("deals", dealDataClean);
     
     // Link contacts and companies
