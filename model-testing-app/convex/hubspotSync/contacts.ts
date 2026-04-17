@@ -90,6 +90,7 @@ export const syncContactFromHubSpot = mutation({
     clientId: v.optional(v.id("clients")),
     customProperties: v.optional(v.any()),
     hubspotUrl: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
     metadata: v.optional(v.any()), // Custom properties from HubSpot
     createdAt: v.optional(v.string()),
     updatedAt: v.optional(v.string()),
@@ -129,7 +130,8 @@ export const syncContactFromHubSpot = mutation({
       if (cleanArgs.phone) updateData.phone = cleanArgs.phone;
       if (cleanArgs.company) updateData.company = cleanArgs.company;
       if (cleanArgs.role) updateData.role = cleanArgs.role;
-      
+      if (cleanArgs.linkedinUrl) updateData.linkedinUrl = cleanArgs.linkedinUrl;
+
       // FIX: Ensure hubspotCompanyIds and hubspotDealIds are properly stored
       if (cleanArgs.hubspotCompanyIds && cleanArgs.hubspotCompanyIds.length > 0) {
         updateData.hubspotCompanyIds = cleanArgs.hubspotCompanyIds;
@@ -137,7 +139,7 @@ export const syncContactFromHubSpot = mutation({
       if (cleanArgs.hubspotDealIds && cleanArgs.hubspotDealIds.length > 0) {
         updateData.hubspotDealIds = cleanArgs.hubspotDealIds;
       }
-      
+
       // FIX: Merge metadata properly
       const metadata = mergeMetadata(
         existingByHubSpotId.metadata,
@@ -195,7 +197,8 @@ export const syncContactFromHubSpot = mutation({
         if (phone) updateData.phone = phone;
         if (company) updateData.company = company;
         if (role) updateData.role = role;
-        
+        if (cleanArgs.linkedinUrl) updateData.linkedinUrl = cleanArgs.linkedinUrl;
+
         // FIX: Store hubspotCompanyIds and hubspotDealIds
         if (cleanArgs.hubspotCompanyIds && cleanArgs.hubspotCompanyIds.length > 0) {
           updateData.hubspotCompanyIds = cleanArgs.hubspotCompanyIds;
@@ -203,7 +206,7 @@ export const syncContactFromHubSpot = mutation({
         if (cleanArgs.hubspotDealIds && cleanArgs.hubspotDealIds.length > 0) {
           updateData.hubspotDealIds = cleanArgs.hubspotDealIds;
         }
-        
+
         await ctx.db.patch(existingByEmail._id, updateData);
         
         // Link companies and deals
@@ -252,7 +255,8 @@ export const syncContactFromHubSpot = mutation({
       if (phone) updateData.phone = phone;
       if (company) updateData.company = company;
       if (role) updateData.role = role;
-      
+      if (cleanArgs.linkedinUrl) updateData.linkedinUrl = cleanArgs.linkedinUrl;
+
       // FIX: Store hubspotCompanyIds and hubspotDealIds
       if (cleanArgs.hubspotCompanyIds && cleanArgs.hubspotCompanyIds.length > 0) {
         updateData.hubspotCompanyIds = cleanArgs.hubspotCompanyIds;
@@ -260,7 +264,7 @@ export const syncContactFromHubSpot = mutation({
       if (cleanArgs.hubspotDealIds && cleanArgs.hubspotDealIds.length > 0) {
         updateData.hubspotDealIds = cleanArgs.hubspotDealIds;
       }
-      
+
       await ctx.db.patch(existingByName._id, updateData);
       
       // Link companies and deals
@@ -298,7 +302,8 @@ export const syncContactFromHubSpot = mutation({
     if (cleanArgs.hubspotOwnerId) contactDataClean.hubspotOwnerId = cleanArgs.hubspotOwnerId;
     if (cleanArgs.lastContactedDate) contactDataClean.lastContactedDate = cleanArgs.lastContactedDate;
     if (cleanArgs.lastActivityDate) contactDataClean.lastActivityDate = cleanArgs.lastActivityDate;
-    
+    if (cleanArgs.linkedinUrl) contactDataClean.linkedinUrl = cleanArgs.linkedinUrl;
+
     // FIX: Ensure hubspotCompanyIds and hubspotDealIds are properly stored
     if (cleanArgs.hubspotCompanyIds && cleanArgs.hubspotCompanyIds.length > 0) {
       contactDataClean.hubspotCompanyIds = cleanArgs.hubspotCompanyIds;

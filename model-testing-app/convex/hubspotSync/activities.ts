@@ -1,22 +1,129 @@
+import { v } from 'convex/values';
+import { mutation } from '../_generated/server';
+
 /**
- * Activities sync module (placeholder for future implementation)
- * 
- * This module will handle syncing HubSpot activities (calls, emails, meetings, notes, etc.)
- * to the unified activities table that can link to contacts, companies, and deals.
- * 
- * Activities can be associated with multiple entities:
- * - Contacts
- * - Companies
- * - Deals
- * 
- * Future implementation will:
- * 1. Fetch activities from HubSpot API
- * 2. Map activity types (call, email, meeting, note, task, etc.)
- * 3. Link activities to contacts, companies, and deals
- * 4. Store activity metadata and custom properties
- * 5. Handle activity deduplication
+ * Upsert a HubSpot engagement into the activities table.
+ * Deduplicates by hubspotActivityId — re-running sync is idempotent.
+ * Resolves HubSpot IDs (company, contact, deal) to Convex IDs at write time.
  */
+export const syncActivityFromHubSpot = mutation({
+  args: {
+    // Identity (maps fetcher's engagement.id → schema's hubspotActivityId)
+    hubspotActivityId: v.string(),
+    activityType: v.string(), // EMAIL | INCOMING_EMAIL | MEETING | CALL | NOTE | TASK | ...
+    activityDate: v.string(), // ISO
 
-// Placeholder exports - will be implemented later
-export const syncActivitiesFromHubSpot = null; // TODO: Implement activity sync mutation
+    // Content
+    subject: v.optional(v.string()),
+    body: v.optional(v.string()), // legacy; kept for back-compat
+    bodyPreview: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+    direction: v.optional(v.union(v.literal('inbound'), v.literal('outbound'))),
+    status: v.optional(v.string()),
+    duration: v.optional(v.number()),
+    fromEmail: v.optional(v.string()),
+    toEmails: v.optional(v.array(v.string())),
+    outcome: v.optional(v.string()),
+    metadata: v.optional(v.any()),
 
+    // Associations — these are HubSpot IDs; we resolve them here
+    hubspotCompanyId: v.optional(v.string()),
+    hubspotContactIds: v.optional(v.array(v.string())),
+    hubspotDealIds: v.optional(v.array(v.string())),
+
+    // Owner
+    hubspotOwnerId: v.optional(v.string()),
+    ownerName: v.optional(v.string()),
+    hubspotUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+
+    // Resolve HubSpot → Convex IDs via indexes
+    let companyId: any = undefined;
+    if (args.hubspotCompanyId) {
+      const company = await ctx.db
+        .query('companies')
+        .withIndex('by_hubspot_id', (q) => q.eq('hubspotCompanyId', args.hubspotCompanyId!))
+        .first();
+      companyId = company?._id;
+    }
+
+    const linkedContactIds: any[] = [];
+    const seenContactIds = new Set<string>();
+    for (const hsId of args.hubspotContactIds ?? []) {
+      if (seenContactIds.has(hsId)) continue;
+      seenContactIds.add(hsId);
+      const c = await ctx.db
+        .query('contacts')
+        .withIndex('by_hubspot_id', (q) => q.eq('hubspotContactId', hsId))
+        .first();
+      if (c && !linkedContactIds.some((id) => id === c._id)) linkedContactIds.push(c._id);
+    }
+
+    const linkedDealIds: any[] = [];
+    const seenDealIds = new Set<string>();
+    for (const hsId of args.hubspotDealIds ?? []) {
+      if (seenDealIds.has(hsId)) continue;
+      seenDealIds.add(hsId);
+      const d = await ctx.db
+        .query('deals')
+        .withIndex('by_hubspot_id', (q) => q.eq('hubspotDealId', hsId))
+        .first();
+      if (d && !linkedDealIds.some((id) => id === d._id)) linkedDealIds.push(d._id);
+    }
+
+    // Primary contact/deal for singular fields (first-resolved)
+    const primaryContactId = linkedContactIds[0];
+    const primaryDealId = linkedDealIds[0];
+
+    const fields = {
+      hubspotActivityId: args.hubspotActivityId,
+      activityType: args.activityType,
+      activityDate: args.activityDate,
+      subject: args.subject,
+      body: args.body,
+      bodyPreview: args.bodyPreview,
+      bodyHtml: args.bodyHtml,
+      direction: args.direction,
+      status: args.status,
+      duration: args.duration,
+      fromEmail: args.fromEmail,
+      toEmails: args.toEmails,
+      outcome: args.outcome,
+      metadata: args.metadata,
+      hubspotOwnerId: args.hubspotOwnerId,
+      ownerName: args.ownerName,
+      hubspotUrl: args.hubspotUrl,
+      // Singular associations (existing schema fields)
+      contactId: primaryContactId,
+      companyId: companyId,
+      dealId: primaryDealId,
+      // HubSpot ID arrays for reference
+      hubspotContactIds: args.hubspotContactIds,
+      hubspotCompanyIds: args.hubspotCompanyId ? [args.hubspotCompanyId] : undefined,
+      hubspotDealIds: args.hubspotDealIds,
+      // Multi-association arrays (new fields from Task 1.1)
+      linkedContactIds: linkedContactIds.length > 0 ? linkedContactIds : undefined,
+      linkedDealIds: linkedDealIds.length > 0 ? linkedDealIds : undefined,
+      lastHubSpotSync: now,
+      updatedAt: now,
+    };
+
+    // Upsert by hubspotActivityId
+    const existing = await ctx.db
+      .query('activities')
+      .withIndex('by_hubspot_id', (q) => q.eq('hubspotActivityId', args.hubspotActivityId))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, fields);
+      return existing._id;
+    }
+
+    return await ctx.db.insert('activities', {
+      ...fields,
+      createdAt: now,
+    });
+  },
+});

@@ -41,6 +41,11 @@ export async function fetchDealsFromHubSpot(
       'hs_campaign',
       'hs_analytics_first_touch_converting_campaign',
       'hs_analytics_last_touch_converting_campaign',
+      'hs_deal_stage_probability',
+      'hs_is_closed',
+      'hs_is_closed_won',
+      'spv_name',
+      'hs_priority',
     ];
     
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
@@ -236,7 +241,7 @@ export async function fetchDealsFromHubSpot(
  */
 export async function fetchAllDealsFromHubSpot(
   client: Client,
-  maxRecords: number = 100,
+  maxRecords: number = Number.POSITIVE_INFINITY,
   startAfter?: string
 ): Promise<{ deals: HubSpotDeal[]; nextAfter?: string }> {
   const allDeals: HubSpotDeal[] = [];
@@ -245,7 +250,7 @@ export async function fetchAllDealsFromHubSpot(
   let pageCount = 0;
   let lastNextAfter: string | undefined;
   
-  console.log(`[HubSpot Deals] Starting pagination fetch, maxRecords: ${maxRecords}${after ? `, starting after: ${after.substring(0, 20)}...` : ' (from beginning)'}`);
+  console.log(`[HubSpot Deals] Starting pagination fetch, maxRecords: ${maxRecords === Number.POSITIVE_INFINITY ? 'unlimited' : maxRecords}${after ? `, starting after: ${after.substring(0, 20)}...` : ' (from beginning)'}`);
   
   while (fetched < maxRecords) {
     pageCount++;
@@ -261,15 +266,6 @@ export async function fetchAllDealsFromHubSpot(
     );
     
     console.log(`[HubSpot Deals] Page ${pageCount}: Received ${deals.length} deals${nextAfter ? `, nextAfter: ${nextAfter.substring(0, 20)}...` : ', no more pages'}`);
-    
-    // Check for duplicate IDs (indicates pagination issue)
-    const newDealIds = new Set(deals.map(d => d.id));
-    const existingIds = new Set(allDeals.map(d => d.id));
-    const duplicates = deals.filter(d => existingIds.has(d.id));
-    if (duplicates.length > 0) {
-      console.warn(`[HubSpot Deals] WARNING: Found ${duplicates.length} duplicate deals on page ${pageCount}. This indicates a pagination issue.`);
-      console.warn(`[HubSpot Deals] Duplicate IDs: ${duplicates.slice(0, 5).map(d => d.id).join(', ')}`);
-    }
     
     allDeals.push(...deals);
     fetched += deals.length;

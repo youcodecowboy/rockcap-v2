@@ -53,6 +53,9 @@ export async function fetchContactsFromHubSpot(
       'num_notes_next_contact_date',
       'next_activity_date',
       'num_notes_last_contacted',
+      'notes_last_contacted',
+      'notes_last_updated',
+      'hublead_linkedin_public_identifier',
     ];
     
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
@@ -208,14 +211,14 @@ export async function fetchContactsFromHubSpot(
  */
 export async function fetchAllContactsFromHubSpot(
   client: Client,
-  maxRecords: number = 100
+  maxRecords: number = Number.POSITIVE_INFINITY
 ): Promise<HubSpotContact[]> {
   const allContacts: HubSpotContact[] = [];
   let after: string | undefined;
   let fetched = 0;
   let pageCount = 0;
   
-  console.log(`[HubSpot Contacts] Starting pagination fetch, maxRecords: ${maxRecords}`);
+  console.log(`[HubSpot Contacts] Starting pagination fetch, maxRecords: ${maxRecords === Number.POSITIVE_INFINITY ? 'unlimited' : maxRecords}`);
   
   while (fetched < maxRecords) {
     pageCount++;
@@ -231,15 +234,6 @@ export async function fetchAllContactsFromHubSpot(
     );
     
     console.log(`[HubSpot Contacts] Page ${pageCount}: Received ${contacts.length} contacts${nextAfter ? `, nextAfter: ${nextAfter.substring(0, 20)}...` : ', no more pages'}`);
-    
-    // Check for duplicate IDs (indicates pagination issue)
-    const newContactIds = new Set(contacts.map(c => c.id));
-    const existingIds = new Set(allContacts.map(c => c.id));
-    const duplicates = contacts.filter(c => existingIds.has(c.id));
-    if (duplicates.length > 0) {
-      console.warn(`[HubSpot Contacts] WARNING: Found ${duplicates.length} duplicate contacts on page ${pageCount}. This indicates a pagination issue.`);
-      console.warn(`[HubSpot Contacts] Duplicate IDs: ${duplicates.slice(0, 5).map(c => c.id).join(', ')}`);
-    }
     
     allContacts.push(...contacts);
     fetched += contacts.length;

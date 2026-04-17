@@ -50,6 +50,7 @@ export const updateSyncStatus = mutation({
       companiesSynced: v.number(),
       contactsSynced: v.number(),
       dealsSynced: v.number(),
+      activitiesSynced: v.optional(v.number()),
       errors: v.number(),
     })),
   },

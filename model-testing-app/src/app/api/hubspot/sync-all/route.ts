@@ -4,8 +4,12 @@ import { fetchAllCompaniesFromHubSpot } from '@/lib/hubspot/companies';
 import { fetchAllContactsFromHubSpot } from '@/lib/hubspot/contacts';
 import { fetchAllDealsFromHubSpot } from '@/lib/hubspot/deals';
 import { extractCustomProperties, generateHubSpotCompanyUrl, generateHubSpotContactUrl, generateHubSpotDealUrl } from '@/lib/hubspot/utils';
+import { discoverProperties, clearPropertiesCache } from '@/lib/hubspot/properties';
+import { clearOwnersCache, resolveOwnerName } from '@/lib/hubspot/owners';
+import { fetchEngagementsForCompany } from '@/lib/hubspot/activities';
+import { dedupeAssociationIds } from '@/lib/hubspot/normalize';
 import { api } from '../../../../../convex/_generated/api';
-import { fetchMutation } from 'convex/nextjs';
+import { fetchMutation, fetchQuery } from 'convex/nextjs';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 import { ErrorResponses } from '@/lib/api/errorResponse';
 
@@ -18,11 +22,12 @@ export async function POST(request: NextRequest) {
     } catch (authError) {
       return ErrorResponses.unauthenticated();
     }
-    const { 
-      maxRecords = 20, // Reduced for testing
+    const {
+      maxRecords = Number.POSITIVE_INFINITY,
       syncCompanies = true,
       syncContacts = true,
-      syncDeals = false, // Disabled - causing SDK errors and you have 0 deals anyway
+      syncDeals = true,
+      syncActivities = true,
     } = await request.json().catch(() => ({}));
     
     const client = getHubSpotClient();
@@ -39,7 +44,14 @@ export async function POST(request: NextRequest) {
     await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: 'in_progress',
     }) as any;
-    
+
+    // Warm property/owner caches at sync start so downstream fetchers don't re-discover per call
+    clearPropertiesCache();
+    clearOwnersCache();
+    await discoverProperties('companies');
+    await discoverProperties('contacts');
+    await discoverProperties('deals');
+
     // Sync companies (to companies table, not clients)
     if (syncCompanies) {
       try {
@@ -56,12 +68,31 @@ export async function POST(request: NextRequest) {
               return val != null && val !== '' && typeof val === 'string';
             };
             
+            // Name fallback — HubSpot allows empty-name companies; mutation
+            // requires v.string(). Use a sensible fallback so every company
+            // lands in Convex and can be linked to by its contacts/deals.
+            const rawName = company.properties.name;
+            const name = (typeof rawName === 'string' && rawName.trim())
+              ? rawName.trim()
+              : `(unnamed company ${company.id})`;
+
+            // Extract and dedupe association IDs so the mutation's linker
+            // can resolve contacts/deals back to this company.
+            const hubspotContactIdsFromAssoc = dedupeAssociationIds(
+              (company as any).associations?.contacts?.results ?? [],
+            );
+            const hubspotDealIdsFromAssoc = dedupeAssociationIds(
+              (company as any).associations?.deals?.results ?? [],
+            );
+
             const companyData: any = {
               hubspotCompanyId: company.id,
-              name: company.properties.name,
+              name,
               lifecycleStage: company.properties.lifecyclestage,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
+              hubspotContactIds: hubspotContactIdsFromAssoc.length > 0 ? hubspotContactIdsFromAssoc : undefined,
+              hubspotDealIds: hubspotDealIdsFromAssoc.length > 0 ? hubspotDealIdsFromAssoc : undefined,
             };
             
             // Only include fields that have actual non-null, non-empty string values
@@ -89,7 +120,10 @@ export async function POST(request: NextRequest) {
             if (hasValue(company.properties.industry)) {
               companyData.industry = company.properties.industry;
             }
-            
+            if (hasValue(company.properties.hubspot_owner_id)) {
+              companyData.ownerName = await resolveOwnerName(company.properties.hubspot_owner_id) ?? undefined;
+            }
+
             await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companyData) as any;
             
             stats.companiesSynced++;
@@ -124,26 +158,57 @@ export async function POST(request: NextRequest) {
               return val != null && val !== '' && typeof val === 'string';
             };
 
+            // Extract and dedupe HubSpot association IDs so the mutation can
+            // resolve them to Convex company/deal records. HubSpot returns both
+            // HUBSPOT_DEFINED and USER_DEFINED association entries for the same
+            // pair — dedupeAssociationIds collapses them.
+            const hubspotCompanyIds = dedupeAssociationIds(
+              (contact as any).associations?.companies?.results ?? [],
+            );
+            const hubspotDealIds = dedupeAssociationIds(
+              (contact as any).associations?.deals?.results ?? [],
+            );
+
             const contactData: any = {
               hubspotContactId: contact.id,
               name,
               lifecycleStage: contact.properties.lifecyclestage,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
+              // Always pass the HubSpot ID arrays — the mutation's linker will
+              // resolve them to Convex IDs when companies/deals are synced.
+              hubspotCompanyIds: hubspotCompanyIds.length > 0 ? hubspotCompanyIds : undefined,
+              hubspotDealIds: hubspotDealIds.length > 0 ? hubspotDealIds : undefined,
             };
 
             // Only include fields that have actual non-null, non-empty string values
             if (hasValue(contact.properties.email)) {
               contactData.email = contact.properties.email;
             }
+            // Phone: prefer primary; fall back to mobilephone when primary empty
             if (hasValue(contact.properties.phone)) {
               contactData.phone = contact.properties.phone;
+            } else if (hasValue(contact.properties.mobilephone)) {
+              contactData.phone = contact.properties.mobilephone;
             }
             if (hasValue(contact.properties.company)) {
               contactData.company = contact.properties.company;
             }
             if (hasValue(contact.properties.jobtitle)) {
               contactData.role = contact.properties.jobtitle;
+            }
+            // Activity dates — use tenant-populated `notes_last_*` fields
+            if (hasValue(contact.properties.notes_last_contacted)) {
+              contactData.lastContactedDate = contact.properties.notes_last_contacted;
+            } else if (hasValue(contact.properties.lastcontacteddate)) {
+              contactData.lastContactedDate = contact.properties.lastcontacteddate;
+            }
+            if (hasValue(contact.properties.notes_last_updated)) {
+              contactData.lastActivityDate = contact.properties.notes_last_updated;
+            }
+            const linkedinIdentifier = contact.properties.hublead_linkedin_public_identifier;
+            if (linkedinIdentifier && typeof linkedinIdentifier === 'string' && linkedinIdentifier.trim()) {
+              contactData.linkedinUrl = `https://www.linkedin.com/in/${linkedinIdentifier.trim()}`;
             }
 
             await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData) as any;
@@ -178,28 +243,65 @@ export async function POST(request: NextRequest) {
           try {
             const hubspotUrl = await generateHubSpotDealUrl(deal.id);
             const customProperties = extractCustomProperties(deal.properties);
-            
-            const associatedCompanyIds: string[] = [];
-            if (deal.associations?.companies?.results) {
-              associatedCompanyIds.push(...deal.associations.companies.results.map((c: any) => c.id));
-            }
-            
-            const amount = deal.properties.amount 
-              ? parseFloat(deal.properties.amount) 
+
+            // Extract and dedupe association IDs from deal (mirrors company / contact patterns).
+            const companyIds = dedupeAssociationIds(
+              (deal as any).associations?.companies?.results ?? [],
+            );
+            const contactIds = dedupeAssociationIds(
+              (deal as any).associations?.contacts?.results ?? [],
+            );
+
+            const amount = deal.properties.amount
+              ? parseFloat(deal.properties.amount)
               : undefined;
-            
-            await fetchMutation(api.hubspotSync.syncDealFromHubSpot as any, {
+
+            // Name fallback — HubSpot allows empty-name deals (draft pipelines, auto-
+            // created from meetings). Mutation requires v.string().
+            const rawDealName = deal.properties.dealname;
+            const dealName = (typeof rawDealName === 'string' && rawDealName.trim())
+              ? rawDealName.trim()
+              : `(unnamed deal ${deal.id})`;
+
+            // Convex v.optional(v.string()) accepts undefined but REJECTS null.
+            // HubSpot returns null for unset fields — coerce to undefined.
+            const optStr = (v: any): string | undefined =>
+              (typeof v === 'string' && v.trim()) ? v : undefined;
+
+            const dealData: any = {
               hubspotDealId: deal.id,
-              name: deal.properties.dealname,
+              name: dealName,
               amount,
-              stage: deal.properties.dealstage,
-              pipeline: deal.properties.pipeline,
-              closeDate: deal.properties.closedate,
-              associatedCompanyIds: associatedCompanyIds.length > 0 ? associatedCompanyIds : undefined,
+              stage: optStr(deal.properties.dealstage),
+              pipeline: optStr(deal.properties.pipeline),
+              closeDate: optStr(deal.properties.closedate),
+              dealType: optStr(deal.properties.dealtype),
+              hubspotOwnerId: optStr(deal.properties.hubspot_owner_id),
+              companyIds: companyIds.length > 0 ? companyIds : undefined,
+              contactIds: contactIds.length > 0 ? contactIds : undefined,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
-            }) as any;
-            
+            };
+
+            const probRaw = deal.properties.hs_deal_stage_probability;
+            if (probRaw != null && probRaw !== '') {
+              const n = parseFloat(String(probRaw));
+              if (Number.isFinite(n)) dealData.probability = n;
+            }
+            if (deal.properties.spv_name != null && deal.properties.spv_name !== '') {
+              dealData.spvName = deal.properties.spv_name;
+            }
+            if (deal.properties.hs_is_closed != null) {
+              dealData.isClosed = deal.properties.hs_is_closed === 'true' || deal.properties.hs_is_closed === true;
+            }
+            if (deal.properties.hs_is_closed_won != null) {
+              dealData.isClosedWon = deal.properties.hs_is_closed_won === 'true' || deal.properties.hs_is_closed_won === true;
+            }
+
+            // NB: call syncDealToDealsTable (writes to `deals` table) — NOT
+            // syncDealFromHubSpot (legacy, writes to `projects` table).
+            await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealData) as any;
+
             stats.dealsSynced++;
           } catch (error: any) {
             stats.errors++;
@@ -212,6 +314,63 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Engagement sync: per-company
+    if (syncActivities) {
+      try {
+        const convexCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
+        let engagementTotal = 0;
+        let engagementErrors = 0;
+
+        for (const company of convexCompanies) {
+          try {
+            const engagements = await fetchEngagementsForCompany(company.hubspotCompanyId);
+            for (const eng of engagements) {
+              try {
+                const normalizedDirection =
+                  eng.direction === 'inbound' || eng.direction === 'outbound' ? eng.direction : undefined;
+                const ownerName = eng.ownerId ? await resolveOwnerName(eng.ownerId) : null;
+
+                await fetchMutation(api.hubspotSync.activities.syncActivityFromHubSpot, {
+                  hubspotActivityId: eng.id,
+                  activityType: eng.type,
+                  activityDate: eng.timestamp,
+                  subject: eng.subject,
+                  bodyPreview: eng.bodyPreview,
+                  bodyHtml: eng.bodyHtml,
+                  direction: normalizedDirection,
+                  status: eng.status,
+                  duration: eng.duration,
+                  fromEmail: eng.fromEmail,
+                  toEmails: eng.toEmails,
+                  outcome: eng.outcome,
+                  metadata: eng.metadata,
+                  hubspotCompanyId: company.hubspotCompanyId,
+                  hubspotContactIds: eng.contactIds,
+                  hubspotDealIds: eng.dealIds,
+                  hubspotOwnerId: eng.ownerId,
+                  ownerName: ownerName ?? undefined,
+                });
+                engagementTotal++;
+              } catch (engErr) {
+                engagementErrors++;
+                console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
+              }
+            }
+          } catch (companyErr) {
+            engagementErrors++;
+            console.error(`[sync-all] engagements for company ${company.hubspotCompanyId} failed:`, companyErr);
+          }
+        }
+
+        console.log(`[sync-all] Engagements: ${engagementTotal} upserted, ${engagementErrors} errors`);
+        (stats as any).activitiesSynced = engagementTotal;
+      } catch (err) {
+        console.error('[sync-all] activity sync phase failed:', err);
+        stats.errors++;
+        errorMessages.push(`Activity sync failed: ${(err as Error).message}`);
+      }
+    }
+
     // Update sync status
     await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: stats.errors > 0 ? 'error' : 'success',
