@@ -87,6 +87,7 @@ export const syncCompanyFromHubSpot = mutation({
     lifecycleStage: v.optional(v.string()), // Lifecycle stage ID
     lifecycleStageName: v.optional(v.string()), // Lifecycle stage name (human-readable)
     hubspotOwnerId: v.optional(v.string()), // HubSpot owner/user ID
+    ownerName: v.optional(v.string()),
     hubspotContactIds: v.optional(v.array(v.string())), // HubSpot contact IDs (multiple contacts)
     hubspotDealIds: v.optional(v.array(v.string())), // HubSpot deal IDs (multiple deals)
     lastContactedDate: v.optional(v.string()),
@@ -133,6 +134,7 @@ export const syncCompanyFromHubSpot = mutation({
       // Only include fields that have actual values
       if (cleanedCompanyData.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
       if (cleanedCompanyData.hubspotOwnerId) cleanData.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;
+      if (cleanedCompanyData.ownerName) cleanData.ownerName = cleanedCompanyData.ownerName;
       if (cleanedCompanyData.lastContactedDate) cleanData.lastContactedDate = cleanedCompanyData.lastContactedDate;
       if (cleanedCompanyData.lastActivityDate) cleanData.lastActivityDate = cleanedCompanyData.lastActivityDate;
       if (cleanedCompanyData.phone) cleanData.phone = cleanedCompanyData.phone;
@@ -195,9 +197,10 @@ export const syncCompanyFromHubSpot = mutation({
       // Only include fields that have actual values
       if (cleanedCompanyData.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
       if (cleanedCompanyData.hubspotOwnerId) cleanData.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;
+      if (cleanedCompanyData.ownerName) cleanData.ownerName = cleanedCompanyData.ownerName;
       if (cleanedCompanyData.lastContactedDate) cleanData.lastContactedDate = cleanedCompanyData.lastContactedDate;
       if (cleanedCompanyData.lastActivityDate) cleanData.lastActivityDate = cleanedCompanyData.lastActivityDate;
-      
+
       // Merge with existing values
       const phone = cleanedCompanyData.phone || existingByName.phone;
       const website = cleanedCompanyData.website || existingByName.website;
@@ -258,6 +261,7 @@ export const syncCompanyFromHubSpot = mutation({
     // Only include fields that have actual values
     if (cleanedCompanyData.lifecycleStageName) companyDataClean.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
     if (cleanedCompanyData.hubspotOwnerId) companyDataClean.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;
+    if (cleanedCompanyData.ownerName) companyDataClean.ownerName = cleanedCompanyData.ownerName;
     if (cleanedCompanyData.lastContactedDate) companyDataClean.lastContactedDate = cleanedCompanyData.lastContactedDate;
     if (cleanedCompanyData.lastActivityDate) companyDataClean.lastActivityDate = cleanedCompanyData.lastActivityDate;
     if (cleanedCompanyData.phone) companyDataClean.phone = cleanedCompanyData.phone;
