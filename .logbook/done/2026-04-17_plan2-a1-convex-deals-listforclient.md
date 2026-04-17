@@ -1,7 +1,7 @@
-# Build mobile Deals tab with summary strip + grouped sections
+# Add Convex query deals.listForClient + listOpenForClient
 
 Created: 2026-04-17
-Status: queued
+Status: done
 Tags: plan-2, mobile-ui, hubspot
 Source: captured from conversation
 Priority: medium
@@ -10,4 +10,4 @@ Priority: medium
 
 Source spec: docs/superpowers/specs/2026-04-16-hubspot-sync-mobile-client-profile-design.md
 Source plan: docs/superpowers/plans/2026-04-16-hubspot-mobile-ui.md
-Phase: B.4
+Phase: A.1

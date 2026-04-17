@@ -1,7 +1,7 @@
-# Build mobile Activity tab with filter chips + date bucket grouping
+# Wire CompanyAutocomplete into mobile new-client creation flow
 
 Created: 2026-04-17
-Status: queued
+Status: done
 Tags: plan-2, mobile-ui, hubspot
 Source: captured from conversation
 Priority: medium
@@ -10,4 +10,4 @@ Priority: medium
 
 Source spec: docs/superpowers/specs/2026-04-16-hubspot-sync-mobile-client-profile-design.md
 Source plan: docs/superpowers/plans/2026-04-16-hubspot-mobile-ui.md
-Phase: C.2
+Phase: E.3
