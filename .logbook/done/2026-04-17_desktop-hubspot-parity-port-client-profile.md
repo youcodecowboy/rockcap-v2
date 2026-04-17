@@ -1,7 +1,7 @@
 # Desktop HubSpot parity port (client profile)
 
 Created: 2026-04-17
-Status: queued
+Status: done
 Tags: #desktop #feature #ux
 Source:
   - 2026-04-17 — desktop client profile: port mobile DealsTab — summary strip + DealCard list + slide-up detail sheet (uses existing deals.listForClient query)
@@ -15,3 +15,11 @@ Priority: medium
 
 ## Notes
 
+Shipped 2026-04-17 — 7 sub-items across 4 commits (d2ded02, 6ba4da3, b479991, 614f00c):
+- Sub 7 (Recent Activity dedup): renamed internal 'Recent Activity' to 'Recent work'.
+- Sub 3 (header HubSpot chips): lifecycle/type/industry/owner chips next to existing badges.
+- Sub 5 (Link contact dialog): new LinkContactDialog component wired into ClientContactsTab.
+- Sub 4 (Beauhurst Identity/Financials/Signals): new ClientBeauhurstCards component above IntelligenceTab content.
+- Sub 1 (DealsTab): new ClientDealsTab with summary strip + Open/Won/Lost sections + DealDetailDialog with edit mode.
+- Sub 2 (ActivityTab per-client): new ClientActivityTab with filter chips + date buckets + expandable rows.
+- Sub 6 (new-client HubSpot autocomplete): CreateClientDrawer Client Name field now shows HubSpot matches; picking one pre-fills the form + uses createWithPromotion.

@@ -4,15 +4,15 @@ Last updated: 2026-04-17
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
-| queued | 2026-04-17 | Desktop HubSpot parity port (client profile) | #desktop #feature #ux | queued/2026-04-17_desktop-hubspot-parity-port-client-profile.md |
-| queued | 2026-04-17 | Desktop /activity page — expandable activity cards | #desktop #ux | queued/2026-04-17_desktop-activity-expandable-cards.md |
-| queued | 2026-04-17 | Desktop Contacts section rework (list + detail + linkage) | #desktop #ux #refactor | queued/2026-04-17_desktop-contacts-section-rework.md |
-| queued | 2026-04-17 | Desktop ClientsSidebar — fix nested \<button\> hydration error | #desktop #bug | queued/2026-04-17_desktop-clients-sidebar-nested-button-fix.md |
-| queued | 2026-04-17 | Convex `hubspotSync.dailyBriefSummary` — fix 16MB read-limit overflow | #backend #perf #bug | queued/2026-04-17_convex-daily-brief-summary-16mb-fix.md |
-| queued | 2026-04-17 | Mobile DealDetailSheet — wire "view activity for this deal" link | #mobile #bug | queued/2026-04-17_mobile-deal-detail-view-activity-link.md |
-| queued | 2026-04-17 | Mobile global Activity stream page | #mobile #feature | queued/2026-04-17_mobile-global-activity-stream.md |
-| queued | 2026-04-17 | Client profile header hierarchy (RockCap brand chrome) | #ux | queued/2026-04-17_client-profile-header-hierarchy.md |
-| queued | 2026-04-17 | Exploration: Gmail integration with HubSpot contacts | #exploration #integration #feature | queued/2026-04-17_exploration-gmail-integration.md |
+| done | 2026-04-17 | Desktop HubSpot parity port (client profile) | #desktop #feature #ux | done/2026-04-17_desktop-hubspot-parity-port-client-profile.md |
+| done | 2026-04-17 | Desktop /activity page — expandable activity cards | #desktop #ux | done/2026-04-17_desktop-activity-expandable-cards.md |
+| done | 2026-04-17 | Desktop Contacts section rework (list + detail + linkage) | #desktop #ux #refactor | done/2026-04-17_desktop-contacts-section-rework.md |
+| done | 2026-04-17 | Desktop ClientsSidebar — fix nested \<button\> hydration error | #desktop #bug | done/2026-04-17_desktop-clients-sidebar-nested-button-fix.md |
+| done | 2026-04-17 | Convex `hubspotSync.dailyBriefSummary` — fix 16MB read-limit overflow | #backend #perf #bug | done/2026-04-17_convex-daily-brief-summary-16mb-fix.md |
+| done | 2026-04-17 | Mobile DealDetailSheet — wire "view activity for this deal" link | #mobile #bug | done/2026-04-17_mobile-deal-detail-view-activity-link.md |
+| done | 2026-04-17 | Mobile global Activity stream page | #mobile #feature | done/2026-04-17_mobile-global-activity-stream.md |
+| done | 2026-04-17 | Client profile header hierarchy (RockCap brand chrome) | #ux | done/2026-04-17_client-profile-header-hierarchy.md |
+| done | 2026-04-17 | Exploration: Gmail integration with HubSpot contacts | #exploration #integration #feature | done/2026-04-17_exploration-gmail-integration.md |
 | done | 2026-04-17 | Add Convex query deals.listForClient + listOpenForClient | #plan-2 #mobile-ui #hubspot | done/2026-04-17_plan2-a1-convex-deals-listforclient.md |
 | done | 2026-04-17 | Add Convex queries activities.listForClient + countForClient + listRecentForClient | #plan-2 #mobile-ui #hubspot | done/2026-04-17_plan2-a2-convex-activities-queries.md |
 | done | 2026-04-17 | Build mobile SyncStrip component (owner + sync time + HubSpot link) | #plan-2 #mobile-ui #hubspot | done/2026-04-17_plan2-a3-mobile-syncstrip.md |
