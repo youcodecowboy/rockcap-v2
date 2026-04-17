@@ -18,13 +18,23 @@ export default function ClientsScreen() {
   const clientDocCounts = useQuery(api.documents.getClientDocumentCounts, isAuthenticated ? {} : 'skip') as Record<string, number> | undefined;
   const [search, setSearch] = useState('');
 
-  // Build project counts per client
+  // Build project counts per client.
+  //
+  // Projects use `clientRoles: [{ clientId, role }]` (multi-client shape for
+  // borrower/lender/developer roles) — NOT a flat `clientId`. A legacy
+  // version of this screen read `p.clientId` directly, which is always
+  // undefined, so every client card showed "0 projects". Count via clientRoles.
   const projectCountMap = useMemo(() => {
     const map: Record<string, number> = {};
     if (allProjects) {
       for (const p of allProjects) {
-        if (p.clientId) {
-          map[p.clientId] = (map[p.clientId] || 0) + 1;
+        const roles = (p as any).clientRoles ?? [];
+        const seen = new Set<string>();
+        for (const r of roles) {
+          if (r?.clientId && !seen.has(r.clientId)) {
+            seen.add(r.clientId); // count each client once per project
+            map[r.clientId] = (map[r.clientId] || 0) + 1;
+          }
         }
       }
     }
