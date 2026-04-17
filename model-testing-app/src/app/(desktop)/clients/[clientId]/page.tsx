@@ -50,6 +50,8 @@ import {
   TrendingUp,
   Settings,
   Flag,
+  DollarSign,
+  Activity as ActivityIcon,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
@@ -69,10 +71,12 @@ import ClientTasksTab from './components/ClientTasksTab';
 import ClientThreadsTab from './components/ClientThreadsTab';
 import { ClientIntelligenceTab } from '@/components/IntelligenceTab';
 import ClientBeauhurstCards from './components/ClientBeauhurstCards';
+import ClientDealsTab from './components/ClientDealsTab';
+import ClientActivityTab from './components/ClientActivityTab';
 import ClientSettingsPanel from '@/components/ClientSettingsPanel';
 import { Brain, CheckSquare, Contact, Video, ListTodo } from 'lucide-react';
 
-type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads';
+type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads' | 'deals' | 'activity';
 
 function ClientProfileContent() {
   const params = useParams();
@@ -205,6 +209,8 @@ function ClientProfileContent() {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
+    { id: 'deals', label: 'Deals', icon: DollarSign },
+    { id: 'activity', label: 'Activity', icon: ActivityIcon },
     { id: 'documents', label: 'Documents', icon: FileText, count: documents.length },
     { id: 'projects', label: 'Projects', icon: FolderKanban, count: projects.length },
     { id: 'contacts', label: 'Contacts', icon: Contact, count: contacts.length },
@@ -461,6 +467,14 @@ function ClientProfileContent() {
             </div>
           </TabsContent>
 
+          <TabsContent value="deals" className="mt-0 flex-1 overflow-auto">
+            <ClientDealsTab clientId={clientId} />
+          </TabsContent>
+
+          <TabsContent value="activity" className="mt-0 flex-1 overflow-auto">
+            <ClientActivityTab clientId={clientId} />
+          </TabsContent>
+
           <TabsContent value="documents" className="mt-0 flex-1 overflow-hidden">
             <ClientDocumentLibrary
               clientId={clientId}
@@ -511,7 +525,7 @@ function ClientProfileContent() {
           </TabsContent>
 
           {/* Contained Tabs - With Max Width Container */}
-          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data', 'threads'].includes(activeTab) ? 'hidden' : ''}`}>
+          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data', 'threads', 'deals', 'activity'].includes(activeTab) ? 'hidden' : ''}`}>
             <div className="max-w-7xl mx-auto px-6 py-6">
 
               <TabsContent value="projects" className="mt-0">
