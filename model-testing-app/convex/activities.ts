@@ -97,3 +97,56 @@ export const listRecentForClient = query({
       .slice(0, n);
   },
 });
+
+/**
+ * Global recent activity feed — used by the /activity "pulse of the company"
+ * page (Task F). Returns the most recent N activities across the whole org,
+ * each hydrated with its linked company's name for display.
+ *
+ * Returns up to ~200 rows in one shot; clients typically render groups by
+ * date bucket. Uses a full-table scan + sort in memory — activities table is
+ * indexed for per-company lookups but not globally by date, and the activityDate
+ * field is stored as a string (ISO) so a Convex range scan isn't available.
+ * Acceptable for now; migrate to a by_activity_date index if we hit the
+ * 16MB limit as the table grows.
+ */
+export const listRecentGlobal = query({
+  args: {
+    limit: v.optional(v.number()),
+    typeFilter: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+    let rows = await ctx.db.query("activities").collect();
+    if (args.typeFilter) {
+      rows = rows.filter((a) => a.activityType === args.typeFilter);
+    }
+    rows.sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
+    rows = rows.slice(0, limit);
+
+    // Batch-fetch the linked companies so the UI can show the client/company
+    // name for each row without N+1 queries from the client.
+    const companyIds = Array.from(
+      new Set(rows.map((r) => r.companyId).filter(Boolean) as any[]),
+    );
+    const companyMap = new Map<string, any>();
+    await Promise.all(
+      companyIds.map(async (cid) => {
+        const c = await ctx.db.get(cid);
+        if (c) companyMap.set(String(cid), c);
+      }),
+    );
+
+    return rows.map((r) => {
+      const company = r.companyId ? companyMap.get(String(r.companyId)) : null;
+      return {
+        ...r,
+        companyName: company?.name ?? null,
+        // Promoted client id if the linked company has been promoted — so
+        // the UI can deep-link directly to the client profile instead of
+        // the raw company page.
+        clientId: company?.promotedToClientId ?? null,
+      };
+    });
+  },
+});

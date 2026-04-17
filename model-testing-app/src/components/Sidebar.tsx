@@ -18,6 +18,7 @@ import {
   CheckSquare,
   Calendar,
   Mail,
+  Activity,
   LucideIcon,
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
@@ -48,6 +49,7 @@ export default function Sidebar() {
     { href: '/tasks', label: 'Tasks', icon: CheckSquare },
     { href: '/calendar', label: 'Calendar', icon: Calendar },
     { href: '/inbox', label: 'Inbox', icon: Mail },
+    { href: '/activity', label: 'Activity', icon: Activity },
     { href: '/filing', label: 'Upload & File', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },
     { href: '/prospects', label: 'Prospects', icon: UserSearch },
