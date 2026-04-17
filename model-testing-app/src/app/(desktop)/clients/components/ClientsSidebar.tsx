@@ -345,13 +345,29 @@ function ClientList({
               }}
               className="px-2 py-1"
             >
-              <button
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   recordAccess({ clientId: client._id });
                   onClientSelect(client._id);
                 }}
+                onKeyDown={(e) => {
+                  // Match native button keyboard semantics — activate on
+                  // Enter or Space. Required because we can't use a real
+                  // <button> here: the row contains EditableClientTypeBadge
+                  // which renders a <SelectTrigger> (another button) and
+                  // nested buttons are an invalid HTML structure that
+                  // trips Next.js hydration errors.
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    recordAccess({ clientId: client._id });
+                    onClientSelect(client._id);
+                  }
+                }}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left",
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left cursor-pointer",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
                   isSelected
                     ? "bg-blue-600 text-white shadow-md"
                     : "hover:bg-white hover:shadow-sm text-gray-700 border border-transparent hover:border-gray-200",
@@ -406,7 +422,7 @@ function ClientList({
                   "w-4 h-4 flex-shrink-0",
                   isSelected ? "text-blue-200" : "text-gray-400"
                 )} />
-              </button>
+              </div>
             </div>
           );
         })}
