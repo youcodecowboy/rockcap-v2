@@ -41,12 +41,17 @@ import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import ContactAvatar from '@/components/contacts/ContactAvatar';
 import ContactDetailModal from '@/components/contacts/ContactDetailModal';
+import SyncStrip from '@/components/client/SyncStrip';
+import OpenDealsCard from '@/components/client/OpenDealsCard';
+import RecentActivityCard from '@/components/client/RecentActivityCard';
+import BeauhurstMiniCard from '@/components/client/BeauhurstMiniCard';
+import ClassificationCard from '@/components/client/ClassificationCard';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const TABS = ['Overview', 'Projects', 'Docs', 'Intelligence', 'Notes', 'Tasks', 'Checklist', 'Meetings', 'Flags'] as const;
+const TABS = ['Overview', 'Deals', 'Activity', 'Projects', 'Docs', 'Intelligence', 'Notes', 'Tasks', 'Checklist', 'Meetings', 'Flags'] as const;
 type TabName = (typeof TABS)[number];
 
 // ============================================================================
@@ -928,6 +933,15 @@ export default function ClientDetailScreen() {
     skip ? 'skip' : { clientId: clientId as any, status: flagFilter }
   );
 
+  // Resolve the primary linked company for this client (via promotedToClientId).
+  // Used by Overview to surface HubSpot owner, sync time, URL, and Beauhurst
+  // intel that live on the company record.
+  const promotedCompanies = useQuery(
+    api.companies.listByPromotedClient,
+    skip ? 'skip' : { clientId: clientId as any }
+  );
+  const primaryCompany = promotedCompanies?.[0];
+
   // Optional queries — may not exist
   let intelligence: any = undefined;
   try {
@@ -1306,6 +1320,42 @@ export default function ClientDetailScreen() {
             <StageNoteBanner
               value={client.stageNote || ''}
               onSave={handleSaveStageNote}
+            />
+
+            {/* HubSpot sync strip — owner chip + last-sync timestamp + open-in-HubSpot link.
+                Sourced from the primary linked company (promotedToClientId match). */}
+            {primaryCompany ? (
+              <SyncStrip
+                ownerName={primaryCompany.ownerName}
+                lastSync={primaryCompany.lastHubSpotSync}
+                hubspotUrl={primaryCompany.hubspotUrl}
+              />
+            ) : null}
+
+            {/* Open Deals summary — HubSpot deals linked to this client */}
+            <OpenDealsCard
+              clientId={clientId as any}
+              onViewAll={() => setActiveTab('Deals')}
+            />
+
+            {/* Recent Activity — notes / emails / meetings / calls / tasks */}
+            <RecentActivityCard
+              clientId={clientId as any}
+              onViewAll={() => setActiveTab('Activity')}
+            />
+
+            {/* Beauhurst intelligence snapshot — turnover / headcount / stage */}
+            <BeauhurstMiniCard
+              metadata={primaryCompany?.metadata}
+              onPressFullIntel={() => setActiveTab('Intelligence')}
+            />
+
+            {/* Classification chips — company type, lead source, industry, county */}
+            <ClassificationCard
+              companyType={primaryCompany?.metadata?.company_type}
+              leadSource={primaryCompany?.metadata?.lead_source}
+              industry={primaryCompany?.industry}
+              county={primaryCompany?.metadata?.company_county}
             />
 
             {/* Key Metrics — 4 colored tiles, wrap to 2x2 on narrow screens */}

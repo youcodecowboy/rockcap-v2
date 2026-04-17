@@ -197,3 +197,18 @@ export const promoteToClient = mutation({
   },
 });
 
+/**
+ * List all companies that have been promoted to a given client. Used by the
+ * mobile Overview tab to resolve HubSpot metadata (owner, sync time, URL,
+ * Beauhurst) for the client's primary linked company.
+ */
+export const listByPromotedClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+  },
+});
+
