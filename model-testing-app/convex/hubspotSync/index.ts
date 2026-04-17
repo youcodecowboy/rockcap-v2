@@ -43,3 +43,6 @@ export {
 // Export activity sync mutation
 export { syncActivityFromHubSpot } from "./activities";
 
+// Export back-link mutation
+export { backlinkCompanyToClient } from "./backlink";
+

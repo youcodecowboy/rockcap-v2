@@ -51,6 +51,7 @@ import type * as funnels from "../funnels.js";
 import type * as googleCalendar from "../googleCalendar.js";
 import type * as hubspotSync from "../hubspotSync.js";
 import type * as hubspotSync_activities from "../hubspotSync/activities.js";
+import type * as hubspotSync_backlink from "../hubspotSync/backlink.js";
 import type * as hubspotSync_companies from "../hubspotSync/companies.js";
 import type * as hubspotSync_config from "../hubspotSync/config.js";
 import type * as hubspotSync_contacts from "../hubspotSync/contacts.js";
@@ -166,6 +167,7 @@ declare const fullApi: ApiFromModules<{
   googleCalendar: typeof googleCalendar;
   hubspotSync: typeof hubspotSync;
   "hubspotSync/activities": typeof hubspotSync_activities;
+  "hubspotSync/backlink": typeof hubspotSync_backlink;
   "hubspotSync/companies": typeof hubspotSync_companies;
   "hubspotSync/config": typeof hubspotSync_config;
   "hubspotSync/contacts": typeof hubspotSync_contacts;
