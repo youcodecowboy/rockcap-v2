@@ -49,6 +49,9 @@ import ClassificationCard from '@/components/client/ClassificationCard';
 import DealCard from '@/components/deals/DealCard';
 import DealDetailSheet from '@/components/deals/DealDetailSheet';
 import ActivityCard from '@/components/activity/ActivityCard';
+import BeauhurstIdentityCard from '@/components/intelligence/BeauhurstIdentityCard';
+import BeauhurstFinancialsCard from '@/components/intelligence/BeauhurstFinancialsCard';
+import BeauhurstSignalsCard from '@/components/intelligence/BeauhurstSignalsCard';
 
 // ============================================================================
 // Constants
@@ -2231,6 +2234,30 @@ export default function ClientDetailScreen() {
         {/* ================================================================ */}
         {activeTab === 'Intelligence' && (
           <View className="gap-2">
+            {primaryCompany?.metadata ? (
+              <View className="gap-3">
+                <View className="flex-row items-center gap-1.5 px-1">
+                  <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                    Beauhurst intel
+                  </Text>
+                  <View className="bg-m-bg-subtle px-1.5 py-0.5 rounded">
+                    <Text className="text-[9px] font-semibold text-m-text-secondary uppercase">CRM</Text>
+                  </View>
+                </View>
+                <BeauhurstIdentityCard metadata={primaryCompany.metadata} companyName={primaryCompany.name} />
+                <BeauhurstFinancialsCard metadata={primaryCompany.metadata} />
+                <BeauhurstSignalsCard metadata={primaryCompany.metadata} />
+
+                {/* Divider */}
+                <View className="flex-row items-center gap-2.5 py-1">
+                  <View className="flex-1 h-px bg-m-border" />
+                  <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                    AI intel from docs
+                  </Text>
+                  <View className="flex-1 h-px bg-m-border" />
+                </View>
+              </View>
+            ) : null}
             {intelligence && Array.isArray(intelligence) && intelligence.length > 0 ? (
               Object.entries(intelligenceByCategory).map(([category, items]) => (
                 <CollapsibleSection key={category} title={category}>
