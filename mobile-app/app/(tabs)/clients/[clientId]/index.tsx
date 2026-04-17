@@ -888,6 +888,16 @@ function DealsTab({ clientId }: { clientId: string }) {
   const [search, setSearch] = useState('');
   const [selectedDeal, setSelectedDeal] = useState<any>(null);
   const [openExpanded, setOpenExpanded] = useState(true);
+  // Closed Won / Closed Lost groups default collapsed — user taps to expand.
+  // Tracked as a Set so we can extend easily if we add more groups later.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (label: string) =>
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
 
   const q = search.trim().toLowerCase();
   const filtered = q
@@ -968,23 +978,56 @@ function DealsTab({ clientId }: { clientId: string }) {
         </View>
       ) : null}
 
-      {/* Won/Lost collapsed summary rows */}
+      {/* Won/Lost groups — collapsible. Tap the header row to expand/collapse
+          the list of deals underneath. Previously the TouchableOpacity had no
+          onPress so taps were silently dropped. */}
       {[
         { label: 'Closed Won', deals: won, tone: colors.success ?? '#059669' },
         { label: 'Closed Lost', deals: lost, tone: colors.textSecondary },
-      ].map((group) => (
-        <TouchableOpacity
-          key={group.label}
-          className="flex-row items-center gap-2 bg-m-bg-card border border-m-border rounded-[12px] px-3.5 py-2.5"
-        >
-          <ChevronRight size={14} color={colors.textSecondary} strokeWidth={2} />
-          <Text className="text-xs font-semibold text-m-text-primary flex-1">{group.label}</Text>
-          <Text className="text-[11px] font-semibold" style={{ color: group.tone }}>
-            {fmt(sum(group.deals))}
-          </Text>
-          <Text className="text-[11px] text-m-text-tertiary">· {group.deals.length} deals</Text>
-        </TouchableOpacity>
-      ))}
+      ].map((group) => {
+        const isExpanded = expandedGroups.has(group.label);
+        return (
+          <View key={group.label} className="gap-2">
+            <TouchableOpacity
+              onPress={() => toggleGroup(group.label)}
+              className="flex-row items-center gap-2 bg-m-bg-card border border-m-border rounded-[12px] px-3.5 py-2.5"
+              activeOpacity={0.7}
+            >
+              <ChevronRight
+                size={14}
+                color={colors.textSecondary}
+                strokeWidth={2}
+                style={{ transform: [{ rotate: isExpanded ? '90deg' : '0deg' }] }}
+              />
+              <Text className="text-xs font-semibold text-m-text-primary flex-1">
+                {group.label}
+              </Text>
+              <Text className="text-[11px] font-semibold" style={{ color: group.tone }}>
+                {fmt(sum(group.deals))}
+              </Text>
+              <Text className="text-[11px] text-m-text-tertiary">
+                · {group.deals.length} deals
+              </Text>
+            </TouchableOpacity>
+            {isExpanded ? (
+              <View className="gap-2">
+                {group.deals.map((d) => (
+                  <DealCard
+                    key={d._id}
+                    deal={d}
+                    onPress={() => setSelectedDeal(d)}
+                  />
+                ))}
+                {group.deals.length === 0 ? (
+                  <Text className="text-xs text-m-text-tertiary italic p-3">
+                    No {group.label.toLowerCase()} deals
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
 
       <DealDetailSheet
         deal={selectedDeal}
