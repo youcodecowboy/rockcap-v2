@@ -32,6 +32,15 @@ export const getAll = query({
   },
 });
 
+// Query: Get contacts by a list of IDs (used by DealDetailSheet for linked contacts)
+export const listByIds = query({
+  args: { ids: v.array(v.id("contacts")) },
+  handler: async (ctx, args) => {
+    const results = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
+    return results.filter((c) => c !== null);
+  },
+});
+
 // Query: Get contact by ID with associated companies and deals
 export const get = query({
   args: { id: v.id("contacts") },
