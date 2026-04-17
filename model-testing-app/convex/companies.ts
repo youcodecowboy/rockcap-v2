@@ -212,3 +212,36 @@ export const listByPromotedClient = query({
   },
 });
 
+/**
+ * Search companies by name (case-insensitive substring), unpromoted first.
+ * Returns top N for autocomplete UI.
+ */
+export const searchByName = query({
+  args: { query: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const q = args.query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const limit = args.limit ?? 8;
+
+    const all = await ctx.db.query("companies").collect();
+    const matches = all.filter((c) => c.name.toLowerCase().includes(q));
+
+    // Score: exact match > starts-with > contains, and unpromoted > promoted
+    const scored = matches
+      .map((c) => {
+        const n = c.name.toLowerCase();
+        let score = 0;
+        if (n === q) score += 100;
+        else if (n.startsWith(q)) score += 50;
+        else score += 10;
+        if (!c.promotedToClientId) score += 5; // prefer unpromoted (available to link)
+        return { company: c, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((s) => s.company);
+
+    return scored;
+  },
+});
+
