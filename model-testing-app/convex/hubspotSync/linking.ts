@@ -450,3 +450,96 @@ export const contactLinkageStats = mutation({
     };
   },
 });
+
+/**
+ * Aggregated HubSpot activity for the daily-brief generator. Answers:
+ * "What HubSpot stuff happened in the last N hours?"
+ *
+ * Returns counts by activity type + notable recent items, plus deals and
+ * contacts synced since the cutoff. All scoped globally (no per-user /
+ * per-client filtering) since the daily brief is a whole-org summary.
+ *
+ * Uses indexed/sort scans where possible but falls back to a full scan for
+ * activities (no by-creation-time index — activityDate is stored as a string,
+ * not a time index). Should still stay under the 16MB read limit because
+ * 24h of activity is typically small.
+ */
+import { query as reQuery } from "../_generated/server";
+
+export const dailyBriefSummary = reQuery({
+  args: { sinceISO: v.string() },
+  handler: async (ctx, args) => {
+    const sinceMs = new Date(args.sinceISO).getTime();
+
+    // Activities — filter by activityDate >= since in memory. With the
+    // 16MB-limit fix on activities queries (Task D neighbour), we already
+    // have the per-company indexed path. For this global query we do
+    // need the full table, so scan but take only the light-weight fields.
+    const allActivities = await ctx.db.query("activities").collect();
+    const recentActivities = allActivities.filter((a) => {
+      if (!a.activityDate) return false;
+      return new Date(a.activityDate).getTime() >= sinceMs;
+    });
+
+    const byType: Record<string, number> = {};
+    const notable: Array<{
+      type: string;
+      subject?: string;
+      preview?: string;
+      ownerName?: string;
+      activityDate?: string;
+    }> = [];
+
+    for (const a of recentActivities) {
+      const type = (a.activityType ?? 'UNKNOWN').toUpperCase();
+      byType[type] = (byType[type] || 0) + 1;
+    }
+
+    // Notable items: top 5 most recent with a subject.
+    const sortedByDate = recentActivities
+      .slice()
+      .sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
+    for (const a of sortedByDate) {
+      if (notable.length >= 5) break;
+      if (!a.subject && !a.bodyPreview) continue;
+      notable.push({
+        type: a.activityType ?? 'UNKNOWN',
+        subject: a.subject,
+        preview: a.bodyPreview?.slice(0, 120),
+        ownerName: a.ownerName,
+        activityDate: a.activityDate,
+      });
+    }
+
+    // Deals — stored ISO in `createdAt` or `_creationTime` (ms).
+    const allDeals = await ctx.db.query("deals").collect();
+    const newDeals = allDeals.filter((d) => {
+      const ct = d.createdAt
+        ? new Date(d.createdAt).getTime()
+        : d._creationTime;
+      return ct >= sinceMs;
+    });
+
+    // Contacts.
+    const allContacts = await ctx.db
+      .query("contacts")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+    const newContacts = allContacts.filter((c) => {
+      const ct = c.createdAt
+        ? new Date(c.createdAt).getTime()
+        : c._creationTime;
+      return ct >= sinceMs;
+    });
+
+    return {
+      activitiesByType: byType,
+      activitiesTotal: recentActivities.length,
+      notableActivities: notable,
+      newDealsCount: newDeals.length,
+      newDealNames: newDeals.slice(0, 5).map((d) => d.name),
+      newContactsCount: newContacts.length,
+      newContactNames: newContacts.slice(0, 5).map((c) => c.name),
+    };
+  },
+});

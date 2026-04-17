@@ -13,8 +13,15 @@ export async function POST() {
     const convex = await getAuthenticatedConvexClient();
     await requireAuth(convex);
 
+    // Anchor "since" at 24h ago so the brief covers the past day of activity
+    // across both in-app work AND the HubSpot sync firehose.
+    const sinceISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
     // Gather all data in parallel
-    const [tasks, metrics, events, flags, notifications, recentDocs, clients, projects] = await Promise.all([
+    const [
+      tasks, metrics, events, flags, notifications, recentDocs,
+      clients, projects, hubspot,
+    ] = await Promise.all([
       convex.query(api.tasks.getByUser, { includeCreated: true, includeAssigned: true }),
       convex.query(api.tasks.getMetrics, {}),
       convex.query(api.events.getUpcoming, { days: 1 }),
@@ -23,6 +30,7 @@ export async function POST() {
       convex.query(api.documents.getRecent, { limit: 10 }),
       convex.query(api.clients.list, {}),
       convex.query(api.projects.list, {}),
+      convex.query(api.hubspotSync.dailyBriefSummary, { sinceISO }),
     ]);
 
     // Build context for Claude
@@ -112,6 +120,38 @@ ACTIVITY SINCE YESTERDAY:
 
 UPCOMING THIS WEEK:
 ${upcomingThisWeek.slice(0, 8).map((t: any) => `- "${t.title}" (${t.clientId ? resolveClient(t.clientId) : 'Personal'}) — due ${t.dueDate}`).join('\n') || 'Nothing upcoming'}
+
+HUBSPOT ACTIVITY (last 24h):
+- Total engagements: ${hubspot?.activitiesTotal ?? 0}${
+      hubspot?.activitiesByType
+        ? ' (' +
+          Object.entries(hubspot.activitiesByType)
+            .map(([type, n]) => `${String(type).toLowerCase()}: ${n}`)
+            .join(', ') +
+          ')'
+        : ''
+    }
+- New contacts synced: ${hubspot?.newContactsCount ?? 0}${
+      hubspot?.newContactNames && hubspot.newContactNames.length > 0
+        ? ' — ' + hubspot.newContactNames.join(', ')
+        : ''
+    }
+- New deals synced: ${hubspot?.newDealsCount ?? 0}${
+      hubspot?.newDealNames && hubspot.newDealNames.length > 0
+        ? ' — ' + hubspot.newDealNames.join(', ')
+        : ''
+    }
+${
+  hubspot?.notableActivities && hubspot.notableActivities.length > 0
+    ? '\nNotable engagements:\n' +
+      hubspot.notableActivities
+        .map(
+          (a: any) =>
+            `- [${a.type}]${a.ownerName ? ` ${a.ownerName}:` : ''} ${a.subject || a.preview || '(no subject)'}`,
+        )
+        .join('\n')
+    : ''
+}
 `;
 
     const systemPrompt = `You are a daily briefing assistant for a UK property finance team. Generate a structured daily brief from the data provided.
@@ -150,7 +190,7 @@ Respond with ONLY a JSON object (no markdown, no code fences) matching this exac
   "activityRecap": {
     "items": [
       {
-        "type": "documents" or "clients" or "projects" or "messages" or "flags" or "tasks",
+        "type": "documents" or "clients" or "projects" or "messages" or "flags" or "tasks" or "hubspot_activity" or "hubspot_contacts" or "hubspot_deals",
         "count": <number>,
         "summary": "Brief description of what happened"
       }
@@ -177,7 +217,12 @@ RULES:
 - If there are no items for a section, return an empty items array with a positive insight like "All clear — nothing urgent"
 - Sort attention items by urgency (high first)
 - Sort schedule items chronologically
-- Only include activity recap items with count > 0`;
+- Only include activity recap items with count > 0
+- The HUBSPOT ACTIVITY section tracks the CRM pulse (emails, meetings, calls,
+  notes on deals/contacts); surface standout engagements as activity recap
+  items (use types hubspot_activity / hubspot_contacts / hubspot_deals).
+  Note the "Notable engagements" list names specific subjects — prefer those
+  over bare counts when calling out attention.`;
 
     const response = await anthropic.messages.create({
       model: MODEL,
