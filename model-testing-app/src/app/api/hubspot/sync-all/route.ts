@@ -4,8 +4,11 @@ import { fetchAllCompaniesFromHubSpot } from '@/lib/hubspot/companies';
 import { fetchAllContactsFromHubSpot } from '@/lib/hubspot/contacts';
 import { fetchAllDealsFromHubSpot } from '@/lib/hubspot/deals';
 import { extractCustomProperties, generateHubSpotCompanyUrl, generateHubSpotContactUrl, generateHubSpotDealUrl } from '@/lib/hubspot/utils';
+import { discoverProperties, clearPropertiesCache } from '@/lib/hubspot/properties';
+import { clearOwnersCache, resolveOwnerName } from '@/lib/hubspot/owners';
+import { fetchEngagementsForCompany } from '@/lib/hubspot/activities';
 import { api } from '../../../../../convex/_generated/api';
-import { fetchMutation } from 'convex/nextjs';
+import { fetchMutation, fetchQuery } from 'convex/nextjs';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
 import { ErrorResponses } from '@/lib/api/errorResponse';
 
@@ -18,11 +21,12 @@ export async function POST(request: NextRequest) {
     } catch (authError) {
       return ErrorResponses.unauthenticated();
     }
-    const { 
-      maxRecords = 20, // Reduced for testing
+    const {
+      maxRecords = Number.POSITIVE_INFINITY,
       syncCompanies = true,
       syncContacts = true,
-      syncDeals = false, // Disabled - causing SDK errors and you have 0 deals anyway
+      syncDeals = true,
+      syncActivities = true,
     } = await request.json().catch(() => ({}));
     
     const client = getHubSpotClient();
@@ -40,7 +44,14 @@ export async function POST(request: NextRequest) {
     await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: 'in_progress',
     }) as any;
-    
+
+    // Warm property/owner caches at sync start so downstream fetchers don't re-discover per call
+    clearPropertiesCache();
+    clearOwnersCache();
+    await discoverProperties('companies');
+    await discoverProperties('contacts');
+    await discoverProperties('deals');
+
     // Sync companies (to companies table, not clients)
     if (syncCompanies) {
       try {
@@ -90,7 +101,10 @@ export async function POST(request: NextRequest) {
             if (hasValue(company.properties.industry)) {
               companyData.industry = company.properties.industry;
             }
-            
+            if (hasValue(company.properties.hubspot_owner_id)) {
+              companyData.ownerName = await resolveOwnerName(company.properties.hubspot_owner_id) ?? undefined;
+            }
+
             await fetchMutation(api.hubspotSync.syncCompanyFromHubSpot as any, companyData) as any;
             
             stats.companiesSynced++;
@@ -152,7 +166,11 @@ export async function POST(request: NextRequest) {
             if (hasValue(contact.properties.jobtitle)) {
               contactData.role = contact.properties.jobtitle;
             }
-            
+            const linkedinIdentifier = contact.properties.hublead_linkedin_public_identifier;
+            if (linkedinIdentifier && typeof linkedinIdentifier === 'string' && linkedinIdentifier.trim()) {
+              contactData.linkedinUrl = `https://www.linkedin.com/in/${linkedinIdentifier.trim()}`;
+            }
+
             // Always sync as contact first
             await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData) as any;
             
@@ -275,11 +293,11 @@ export async function POST(request: NextRequest) {
               associatedCompanyIds.push(...deal.associations.companies.results.map((c: any) => c.id));
             }
             
-            const amount = deal.properties.amount 
-              ? parseFloat(deal.properties.amount) 
+            const amount = deal.properties.amount
+              ? parseFloat(deal.properties.amount)
               : undefined;
-            
-            await fetchMutation(api.hubspotSync.syncDealFromHubSpot as any, {
+
+            const dealData: any = {
               hubspotDealId: deal.id,
               name: deal.properties.dealname,
               amount,
@@ -289,7 +307,24 @@ export async function POST(request: NextRequest) {
               associatedCompanyIds: associatedCompanyIds.length > 0 ? associatedCompanyIds : undefined,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
-            }) as any;
+            };
+
+            const probRaw = deal.properties.hs_deal_stage_probability;
+            if (probRaw != null && probRaw !== '') {
+              const n = parseFloat(String(probRaw));
+              if (Number.isFinite(n)) dealData.probability = n;
+            }
+            if (deal.properties.spv_name != null && deal.properties.spv_name !== '') {
+              dealData.spvName = deal.properties.spv_name;
+            }
+            if (deal.properties.hs_is_closed != null) {
+              dealData.isClosed = deal.properties.hs_is_closed === 'true' || deal.properties.hs_is_closed === true;
+            }
+            if (deal.properties.hs_is_closed_won != null) {
+              dealData.isClosedWon = deal.properties.hs_is_closed_won === 'true' || deal.properties.hs_is_closed_won === true;
+            }
+
+            await fetchMutation(api.hubspotSync.syncDealFromHubSpot as any, dealData) as any;
             
             stats.dealsSynced++;
           } catch (error: any) {
@@ -303,6 +338,63 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Engagement sync: per-company
+    if (syncActivities) {
+      try {
+        const convexCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
+        let engagementTotal = 0;
+        let engagementErrors = 0;
+
+        for (const company of convexCompanies) {
+          try {
+            const engagements = await fetchEngagementsForCompany(company.hubspotCompanyId);
+            for (const eng of engagements) {
+              try {
+                const normalizedDirection =
+                  eng.direction === 'inbound' || eng.direction === 'outbound' ? eng.direction : undefined;
+                const ownerName = eng.ownerId ? await resolveOwnerName(eng.ownerId) : null;
+
+                await fetchMutation(api.hubspotSync.activities.syncActivityFromHubSpot, {
+                  hubspotActivityId: eng.id,
+                  activityType: eng.type,
+                  activityDate: eng.timestamp,
+                  subject: eng.subject,
+                  bodyPreview: eng.bodyPreview,
+                  bodyHtml: eng.bodyHtml,
+                  direction: normalizedDirection,
+                  status: eng.status,
+                  duration: eng.duration,
+                  fromEmail: eng.fromEmail,
+                  toEmails: eng.toEmails,
+                  outcome: eng.outcome,
+                  metadata: eng.metadata,
+                  hubspotCompanyId: company.hubspotCompanyId,
+                  hubspotContactIds: eng.contactIds,
+                  hubspotDealIds: eng.dealIds,
+                  hubspotOwnerId: eng.ownerId,
+                  ownerName: ownerName ?? undefined,
+                });
+                engagementTotal++;
+              } catch (engErr) {
+                engagementErrors++;
+                console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
+              }
+            }
+          } catch (companyErr) {
+            engagementErrors++;
+            console.error(`[sync-all] engagements for company ${company.hubspotCompanyId} failed:`, companyErr);
+          }
+        }
+
+        console.log(`[sync-all] Engagements: ${engagementTotal} upserted, ${engagementErrors} errors`);
+        (stats as any).activitiesSynced = engagementTotal;
+      } catch (err) {
+        console.error('[sync-all] activity sync phase failed:', err);
+        stats.errors++;
+        errorMessages.push(`Activity sync failed: ${(err as Error).message}`);
+      }
+    }
+
     // Update sync status
     await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
       status: stats.errors > 0 ? 'error' : 'success',

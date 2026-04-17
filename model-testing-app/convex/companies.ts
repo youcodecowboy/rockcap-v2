@@ -114,6 +114,24 @@ export const create = mutation({
 });
 
 /**
+ * List all companies that have a HubSpot ID linked.
+ * Used by the sync-all engagement phase to iterate per-company.
+ */
+export const listWithHubspotId = query({
+  args: {},
+  handler: async (ctx) => {
+    const companies = await ctx.db.query('companies').collect();
+    return companies
+      .filter((c: any) => c.hubspotCompanyId && typeof c.hubspotCompanyId === 'string')
+      .map((c: any) => ({
+        _id: c._id,
+        hubspotCompanyId: c.hubspotCompanyId as string,
+        name: c.name,
+      }));
+  },
+});
+
+/**
  * Promote a company to a client
  * Creates a client record from the company data and links them
  */
