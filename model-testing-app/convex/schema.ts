@@ -462,6 +462,11 @@ export default defineSchema({
     dealType: v.optional(v.string()),
     // Next step
     nextStep: v.optional(v.string()),
+    probability: v.optional(v.number()), // hs_deal_stage_probability (0-1)
+    spvName: v.optional(v.string()), // Custom property: spv_name
+    isClosed: v.optional(v.boolean()), // hs_is_closed
+    isClosedWon: v.optional(v.boolean()), // hs_is_closed_won
+    linkedProjectId: v.optional(v.id("projects")), // Deferred: link deal to project (V2)
     // Associated contacts (from HubSpot associations)
     contactIds: v.optional(v.array(v.string())), // HubSpot contact IDs
     // Associated companies (from HubSpot associations)
