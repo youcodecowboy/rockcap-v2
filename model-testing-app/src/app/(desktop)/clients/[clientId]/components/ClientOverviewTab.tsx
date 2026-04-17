@@ -511,12 +511,18 @@ export default function ClientOverviewTab({
             </CardContent>
           </Card>
 
-          {/* Recent Activity - Combined Documents + Projects */}
+          {/* Recent internal work (documents + projects). Renamed from
+              'Recent Activity' because the new ClientHubSpotSection above
+              also has a 'Recent activity' card showing HubSpot engagements
+              — two things named the same thing was confusing (Task A sub-item
+              'dedup duplicate Recent Activity'). These two sections now have
+              distinct labels: 'Recent activity' (HubSpot) + 'Recent work'
+              (internal docs/projects). */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between py-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <TrendingUp className="w-4 h-4" />
-                Recent Activity
+                Recent work
               </CardTitle>
             </CardHeader>
             <CardContent>

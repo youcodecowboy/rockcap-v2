@@ -97,6 +97,11 @@ function ClientProfileContent() {
   const meetingsCount = useQuery(api.meetings.getCountByClient, { clientId }) || 0;
   const activeTasksCount = useQuery(api.tasks.getActiveCountByClient, { clientId }) || 0;
   const openFlagCount = useQuery(api.flags.getOpenCountByClient, { clientId }) || 0;
+  // Primary HubSpot company for this client — powers the header chip strip
+  // (Task A sub-item: desktop HubSpot chips in client header). Same query
+  // the mobile client profile + the ClientHubSpotSection use.
+  const promotedCompanies = useQuery(api.companies.listByPromotedClient, { clientId });
+  const primaryCompany = promotedCompanies?.[0];
 
   // Mutations
   const updateClientMutation = useUpdateClient();
@@ -249,6 +254,36 @@ function ClientProfileContent() {
                 customTypes={customTypes}
                 onAddCustomType={() => {}}
               />
+              {/* HubSpot chips — mirrors the mobile client-header chip strip.
+                  Only renders the chips that have data; empty strip if none. */}
+              {primaryCompany ? (
+                <>
+                  {primaryCompany.hubspotLifecycleStageName || primaryCompany.hubspotLifecycleStage ? (
+                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
+                      <span className="text-gray-400 mr-1">Lifecycle</span>
+                      {primaryCompany.hubspotLifecycleStageName ?? primaryCompany.hubspotLifecycleStage}
+                    </span>
+                  ) : null}
+                  {primaryCompany.type ? (
+                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
+                      <span className="text-gray-400 mr-1">HubSpot type</span>
+                      {primaryCompany.type}
+                    </span>
+                  ) : null}
+                  {primaryCompany.industry ? (
+                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
+                      <span className="text-gray-400 mr-1">Industry</span>
+                      {primaryCompany.industry}
+                    </span>
+                  ) : null}
+                  {primaryCompany.ownerName ? (
+                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
+                      <span className="text-gray-400 mr-1">Owner</span>
+                      {primaryCompany.ownerName}
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </div>
 
