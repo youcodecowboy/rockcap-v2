@@ -1573,6 +1573,47 @@ export default function ClientDetailScreen() {
             </View>
           ) : null}
         </View>
+
+        {/* HubSpot-enriched chip strip. Sourced from the promoted company
+            so we surface the CRM status (lifecycle stage), deal pipeline
+            activity signal, industry, and company type right in the
+            header — matches the original mockups. Only renders the chips
+            that have data; hidden entirely when no HubSpot chips exist. */}
+        {(() => {
+          const chips: { label: string; value: string }[] = [];
+          const stageName =
+            primaryCompany?.hubspotLifecycleStageName ??
+            primaryCompany?.hubspotLifecycleStage;
+          if (stageName) chips.push({ label: 'Lifecycle', value: stageName });
+          if (primaryCompany?.type)
+            chips.push({ label: 'Type', value: primaryCompany.type });
+          if (primaryCompany?.industry)
+            chips.push({ label: 'Industry', value: primaryCompany.industry });
+          // Owner makes the header feel more human — shows who in HubSpot
+          // is responsible for this company. Skip if not resolved.
+          if (primaryCompany?.ownerName)
+            chips.push({ label: 'Owner', value: primaryCompany.ownerName });
+          if (chips.length === 0) return null;
+          return (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6, paddingTop: 8 }}
+            >
+              {chips.map((c) => (
+                <View
+                  key={`${c.label}:${c.value}`}
+                  className="bg-white/12 border border-white/20 px-2 py-0.5 rounded-full"
+                >
+                  <Text className="text-[10px] text-m-text-on-brand/80 uppercase tracking-wide font-medium">
+                    <Text className="text-m-text-on-brand/55">{c.label} · </Text>
+                    {c.value}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          );
+        })()}
       </View>
 
       {/* Tab Bar */}
