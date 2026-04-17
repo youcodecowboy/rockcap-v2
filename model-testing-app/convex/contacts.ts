@@ -1,15 +1,58 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// Query: Get contacts by client
+/**
+ * Query: Get contacts associated with a client.
+ *
+ * A contact is associated with a client through EITHER of two links:
+ *   (1) `contact.clientId === clientId`                     (direct — manually linked)
+ *   (2) `contact.linkedCompanyIds[i] === company._id`        (HubSpot company link)
+ *       AND `company.promotedToClientId === clientId`         (company promoted to client)
+ *
+ * Historically only (1) was used, but the HubSpot sync populates (2) and most
+ * imported contacts only have the company-association path. This query returns
+ * the UNION so the client profile surfaces all relevant contacts — see the
+ * Plan 1/2 back-link work in docs/superpowers/plans/2026-04-16-hubspot-*.md.
+ */
 export const getByClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    // Path (1): direct clientId match (manually-linked, fast indexed path).
+    const direct = await ctx.db
       .query("contacts")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
+
+    // Path (2): via companies.promotedToClientId → contact.linkedCompanyIds.
+    const companies = await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+
+    if (companies.length === 0) return direct;
+
+    const companyIdSet = new Set(companies.map((c) => c._id));
+    const indirectByCompany: any[] = [];
+    // Per-company indexed scan would be ideal, but `linkedCompanyIds` is an
+    // array field with no compound index. Scanning `contacts` once and
+    // filtering in memory is acceptable here — contact docs are small and
+    // we're resolving a single client view, not the whole table.
+    const all = await ctx.db
+      .query("contacts")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+    for (const c of all) {
+      if ((c.linkedCompanyIds ?? []).some((id) => companyIdSet.has(id))) {
+        indirectByCompany.push(c);
+      }
+    }
+
+    // Deduplicate union of paths (a contact may satisfy both at once).
+    const byId = new Map<string, any>();
+    for (const c of direct) byId.set(String(c._id), c);
+    for (const c of indirectByCompany) byId.set(String(c._id), c);
+    return Array.from(byId.values());
   },
 });
 

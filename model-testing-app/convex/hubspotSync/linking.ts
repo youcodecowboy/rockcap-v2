@@ -321,3 +321,132 @@ export const linkDealsToContactsAndCompanies = mutation({
   },
 });
 
+
+/**
+ * Back-fill `contact.clientId` for contacts whose linked HubSpot companies
+ * have been promoted to Rockcap clients (via `companies.promotedToClientId`).
+ *
+ * Context: the HubSpot sync populates `contact.linkedCompanyIds` (HubSpot
+ * company → Convex company), and the Plan 1 back-link script populated
+ * `companies.promotedToClientId` (Convex company → Rockcap client). But the
+ * bridge — setting `contact.clientId` from those two — was missing, so the
+ * client profile's Key Contacts section appeared empty for HubSpot imports.
+ *
+ * Idempotent: only patches contacts where `clientId` is not already set.
+ */
+export const backfillContactClientLinks = mutation({
+  args: {},
+  handler: async (ctx) => {
+    let checked = 0;
+    let patched = 0;
+    let alreadyLinked = 0;
+    let noPromotedCompany = 0;
+
+    const contacts = await ctx.db
+      .query("contacts")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+
+    for (const contact of contacts) {
+      checked++;
+      if ((contact as any).clientId) {
+        alreadyLinked++;
+        continue;
+      }
+      const linkedCompanyIds = (contact as any).linkedCompanyIds ?? [];
+      if (linkedCompanyIds.length === 0) {
+        noPromotedCompany++;
+        continue;
+      }
+
+      // Find the first linked company that has a promotedToClientId.
+      let promotedClientId: any = undefined;
+      for (const cid of linkedCompanyIds) {
+        const c = await ctx.db.get(cid);
+        if (c && (c as any).promotedToClientId) {
+          promotedClientId = (c as any).promotedToClientId;
+          break;
+        }
+      }
+
+      if (!promotedClientId) {
+        noPromotedCompany++;
+        continue;
+      }
+
+      await ctx.db.patch(contact._id, { clientId: promotedClientId });
+      patched++;
+    }
+
+    return {
+      checked,
+      patched,
+      alreadyLinked,
+      noPromotedCompany,
+    };
+  },
+});
+
+/**
+ * Diagnostic: report counts on the contact↔company linkage state.
+ * Use this to answer "how many contacts are unlinked and why" without
+ * running mutations.
+ */
+export const contactLinkageStats = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const contacts = await ctx.db
+      .query("contacts")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+
+    let total = 0;
+    let withClientId = 0;
+    let withHubspotCompanyIds = 0;
+    let withLinkedCompanyIds = 0;
+    let withAnyLink = 0;
+    let fullyOrphan = 0;
+    let eligibleForBackfill = 0;
+
+    for (const c of contacts) {
+      total++;
+      const hasClientId = !!(c as any).clientId;
+      const hasHubspotCompanyIds =
+        Array.isArray((c as any).hubspotCompanyIds) &&
+        (c as any).hubspotCompanyIds.length > 0;
+      const hasLinkedCompanyIds =
+        Array.isArray((c as any).linkedCompanyIds) &&
+        (c as any).linkedCompanyIds.length > 0;
+
+      if (hasClientId) withClientId++;
+      if (hasHubspotCompanyIds) withHubspotCompanyIds++;
+      if (hasLinkedCompanyIds) withLinkedCompanyIds++;
+      if (hasClientId || hasLinkedCompanyIds) withAnyLink++;
+      if (!hasClientId && !hasLinkedCompanyIds && !hasHubspotCompanyIds) {
+        fullyOrphan++;
+      }
+
+      // Eligible for back-fill: no clientId, has linkedCompanyIds, and at
+      // least one of those companies has promotedToClientId.
+      if (!hasClientId && hasLinkedCompanyIds) {
+        for (const cid of (c as any).linkedCompanyIds) {
+          const co = await ctx.db.get(cid);
+          if (co && (co as any).promotedToClientId) {
+            eligibleForBackfill++;
+            break;
+          }
+        }
+      }
+    }
+
+    return {
+      total,
+      withClientId,
+      withHubspotCompanyIds,
+      withLinkedCompanyIds,
+      withAnyLink,
+      fullyOrphan,
+      eligibleForBackfill,
+    };
+  },
+});

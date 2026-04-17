@@ -35,7 +35,30 @@ async function linkContactAssociations(
         }
       }
       if (linkedCompanyIds.length > 0) {
-        await ctx.db.patch(contactId, { linkedCompanyIds: linkedCompanyIds as any });
+        // Also auto-populate contact.clientId if any of the linked companies
+        // has been promoted to a client. This bridges the two linkage paths
+        // (HubSpot company association ↔ internal promoted client) so the
+        // client profile's Key Contacts section surfaces HubSpot-imported
+        // contacts without requiring a manual client assignment.
+        let promotedClientId: any = undefined;
+        for (const cid of linkedCompanyIds) {
+          const c = await ctx.db.get(cid);
+          if (c && (c as any).promotedToClientId) {
+            promotedClientId = (c as any).promotedToClientId;
+            break;
+          }
+        }
+
+        const patch: any = { linkedCompanyIds: linkedCompanyIds as any };
+        if (promotedClientId) {
+          // Only set if the contact doesn't already have a clientId —
+          // a manually-assigned client wins over inferred linkage.
+          const existing = await ctx.db.get(contactId);
+          if (existing && !(existing as any).clientId) {
+            patch.clientId = promotedClientId;
+          }
+        }
+        await ctx.db.patch(contactId, patch);
       }
     } catch (linkError) {
       console.error('Error linking companies to contact:', linkError);
