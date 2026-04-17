@@ -43,6 +43,18 @@ export default function ContactDetailModal({ visible, contactId, onClose }: Prop
   );
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
 
+  // Resolve linked companies (HubSpot association) — only query if the
+  // contact actually has linkedCompanyIds. Falls back to the legacy
+  // `contact.company` string when no association is linked.
+  const linkedCompanies = useQuery(
+    api.companies.listByIds,
+    isAuthenticated && contact?.linkedCompanyIds?.length
+      ? { ids: contact.linkedCompanyIds as any }
+      : 'skip',
+  );
+  const companyName =
+    (contact as any)?.company || (linkedCompanies?.[0]?.name ?? null);
+
   // Related records — tasks and meetings that reference this contact via
   // their contactIds field. Guarded by isAuthenticated + contactId so we
   // don't fire queries when the modal is closed.
@@ -352,8 +364,28 @@ export default function ContactDetailModal({ visible, contactId, onClose }: Prop
                 editing={editing}
                 onChangeText={setEditRole}
                 placeholder="e.g. Solicitor, Broker"
-                isLast={!editing}
+                isLast={!editing && !companyName}
               />
+              {!editing && companyName ? (
+                <View
+                  className="px-3 py-2.5 flex-row items-center justify-between"
+                  style={{
+                    borderTopWidth: 1,
+                    borderTopColor: colors.borderSubtle,
+                  }}
+                >
+                  <Text className="text-[11px] text-m-text-tertiary uppercase tracking-wide">
+                    Company
+                  </Text>
+                  <Text
+                    className="text-sm font-medium text-m-text-primary text-right"
+                    style={{ flex: 1, marginLeft: 12 }}
+                    numberOfLines={1}
+                  >
+                    {companyName}
+                  </Text>
+                </View>
+              ) : null}
               {editing && (
                 <ClientRow
                   label="Client"

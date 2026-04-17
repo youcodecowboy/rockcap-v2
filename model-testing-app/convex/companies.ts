@@ -114,6 +114,17 @@ export const create = mutation({
 });
 
 /**
+ * Get multiple companies by an array of IDs (used to resolve contact.linkedCompanyIds).
+ */
+export const listByIds = query({
+  args: { ids: v.array(v.id("companies")) },
+  handler: async (ctx, args) => {
+    const results = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
+    return results.filter((c) => c !== null);
+  },
+});
+
+/**
  * List all companies that have a HubSpot ID linked.
  * Used by the sync-all engagement phase to iterate per-company.
  */
