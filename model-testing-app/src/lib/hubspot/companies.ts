@@ -1,6 +1,7 @@
 import { Client } from '@hubspot/api-client';
 import { HubSpotCompany } from './types';
 import { delay } from './utils';
+import { discoverProperties } from './properties';
 
 /**
  * Fetch companies from HubSpot with pagination
@@ -204,14 +205,14 @@ export async function fetchCompaniesFromHubSpot(
  */
 export async function fetchAllCompaniesFromHubSpot(
   client: Client,
-  maxRecords: number = 100
+  maxRecords: number = Number.POSITIVE_INFINITY
 ): Promise<HubSpotCompany[]> {
   const allCompanies: HubSpotCompany[] = [];
   let after: string | undefined;
   let fetched = 0;
   let pageCount = 0;
   
-  console.log(`[HubSpot Companies] Starting pagination fetch, maxRecords: ${maxRecords}`);
+  console.log(`[HubSpot Companies] Starting pagination fetch, maxRecords: ${maxRecords === Number.POSITIVE_INFINITY ? 'unlimited' : maxRecords}`);
   
   while (fetched < maxRecords) {
     pageCount++;
@@ -227,15 +228,6 @@ export async function fetchAllCompaniesFromHubSpot(
     );
     
     console.log(`[HubSpot Companies] Page ${pageCount}: Received ${companies.length} companies${nextAfter ? `, nextAfter: ${nextAfter.substring(0, 20)}...` : ', no more pages'}`);
-    
-    // Check for duplicate IDs (indicates pagination issue)
-    const newCompanyIds = new Set(companies.map(c => c.id));
-    const existingIds = new Set(allCompanies.map(c => c.id));
-    const duplicates = companies.filter(c => existingIds.has(c.id));
-    if (duplicates.length > 0) {
-      console.warn(`[HubSpot Companies] WARNING: Found ${duplicates.length} duplicate companies on page ${pageCount}. This indicates a pagination issue.`);
-      console.warn(`[HubSpot Companies] Duplicate IDs: ${duplicates.slice(0, 5).map(c => c.id).join(', ')}`);
-    }
     
     allCompanies.push(...companies);
     fetched += companies.length;
@@ -264,3 +256,43 @@ export async function fetchAllCompaniesFromHubSpot(
   return allCompanies;
 }
 
+/**
+ * Batch-read companies with ALL tenant properties (including Beauhurst + Hublead custom fields).
+ * Uses the /batch/read endpoint so property names live in POST body (no URL length limit).
+ */
+export async function batchReadCompaniesFull(
+  ids: string[],
+): Promise<HubSpotCompany[]> {
+  if (ids.length === 0) return [];
+
+  const apiKey = process.env.HUBSPOT_API_KEY;
+  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
+
+  const propertyDefs = await discoverProperties('companies');
+  const propertyNames = propertyDefs.map((p) => p.name);
+
+  const out: HubSpotCompany[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100);
+    const res = await fetch('https://api.hubapi.com/crm/v3/objects/companies/batch/read', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        properties: propertyNames,
+        inputs: batch.map((id) => ({ id })),
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HubSpot companies batch-read failed: ${res.status} ${await res.text()}`);
+    }
+
+    const data = (await res.json()) as { results?: HubSpotCompany[] };
+    out.push(...(data.results ?? []));
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return out;
+}
