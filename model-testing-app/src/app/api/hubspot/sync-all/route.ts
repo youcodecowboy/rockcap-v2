@@ -29,7 +29,6 @@ export async function POST(request: NextRequest) {
     const stats = {
       companiesSynced: 0,
       contactsSynced: 0,
-      leadsSynced: 0,
       dealsSynced: 0,
       errors: 0,
     };
@@ -105,32 +104,26 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Sync contacts and leads
+    // Sync contacts
     if (syncContacts) {
       try {
         const contacts = await fetchAllContactsFromHubSpot(client, maxRecords);
-        
+
         for (const contact of contacts) {
           try {
             const hubspotUrl = await generateHubSpotContactUrl(contact.id);
             const customProperties = extractCustomProperties(contact.properties);
-            
+
             const name = `${contact.properties.firstname || ''} ${contact.properties.lastname || ''}`.trim();
             if (!name) {
               continue;
             }
-            
-            const lifecycleStage = contact.properties.lifecyclestage?.toLowerCase();
-            const isLead = lifecycleStage === 'lead' || 
-                          lifecycleStage === 'opportunity' || 
-                          lifecycleStage === 'marketingqualifiedlead' || 
-                          lifecycleStage === 'salesqualifiedlead';
-            
+
             // Filter out null/undefined/empty values for contacts too
             const hasValue = (val: any): val is string => {
               return val != null && val !== '' && typeof val === 'string';
             };
-            
+
             const contactData: any = {
               hubspotContactId: contact.id,
               name,
@@ -138,7 +131,7 @@ export async function POST(request: NextRequest) {
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
             };
-            
+
             // Only include fields that have actual non-null, non-empty string values
             if (hasValue(contact.properties.email)) {
               contactData.email = contact.properties.email;
@@ -152,94 +145,10 @@ export async function POST(request: NextRequest) {
             if (hasValue(contact.properties.jobtitle)) {
               contactData.role = contact.properties.jobtitle;
             }
-            
-            // Always sync as contact first
+
             await fetchMutation(api.hubspotSync.syncContactFromHubSpot as any, contactData) as any;
-            
+
             stats.contactsSynced++;
-            
-            // If it's a lead lifecycle stage, also sync as lead
-            if (isLead && contact.properties.lifecyclestage) {
-              try {
-                // Try to find associated company from HubSpot
-                let hubspotCompanyUrl: string | undefined;
-                let hubspotCompanyId: string | undefined;
-                
-                // If contact has a company name, try to find the HubSpot company
-                if (contact.properties.company) {
-                  // We'll need to fetch associations or search by company name
-                  // For now, we'll sync the lead and link companies later if needed
-                  // The company name will be stored in the lead's companyName field
-                }
-                
-                // Use the same filtered contactData for leads
-                const leadData: any = {
-                  hubspotContactId: contact.id,
-                  name,
-                  lifecycleStage: contact.properties.lifecyclestage,
-                  hubspotCompanyId,
-                  hubspotCompanyUrl,
-                  customProperties,
-                  hubspotUrl: hubspotUrl || undefined,
-                };
-                
-                // Include date fields from HubSpot
-                // HubSpot createdate is a timestamp in milliseconds, convert to ISO string
-                if (contact.properties.createdate) {
-                  const createdTimestamp = parseInt(contact.properties.createdate);
-                  if (!isNaN(createdTimestamp)) {
-                    leadData.createdAt = new Date(createdTimestamp).toISOString();
-                    leadData.hubspotCreatedDate = contact.properties.createdate;
-                  }
-                } else if (contact.createdAt) {
-                  leadData.createdAt = contact.createdAt;
-                }
-                
-                // HubSpot lastmodifieddate is also a timestamp
-                if (contact.properties.lastmodifieddate) {
-                  const modifiedTimestamp = parseInt(contact.properties.lastmodifieddate);
-                  if (!isNaN(modifiedTimestamp)) {
-                    leadData.updatedAt = new Date(modifiedTimestamp).toISOString();
-                    leadData.hubspotModifiedDate = contact.properties.lastmodifieddate;
-                  }
-                } else if (contact.updatedAt) {
-                  leadData.updatedAt = contact.updatedAt;
-                }
-                
-                // lastcontacteddate might be a timestamp or date string
-                if (contact.properties.lastcontacteddate) {
-                  const contactedTimestamp = parseInt(contact.properties.lastcontacteddate);
-                  if (!isNaN(contactedTimestamp)) {
-                    leadData.lastContactDate = new Date(contactedTimestamp).toISOString();
-                  } else {
-                    leadData.lastContactDate = contact.properties.lastcontacteddate;
-                  }
-                }
-                
-                // Only include fields that have actual values
-                if (hasValue(contact.properties.email)) {
-                  leadData.email = contact.properties.email;
-                }
-                if (hasValue(contact.properties.phone)) {
-                  leadData.phone = contact.properties.phone;
-                }
-                if (hasValue(contact.properties.company)) {
-                  leadData.company = contact.properties.company;
-                }
-                if (hasValue(contact.properties.jobtitle)) {
-                  leadData.role = contact.properties.jobtitle;
-                }
-                
-                await fetchMutation(api.hubspotSync.syncLeadFromHubSpot as any, leadData) as any;
-                
-                // Track leads separately if needed
-                if (!stats.leadsSynced) stats.leadsSynced = 0;
-                stats.leadsSynced++;
-              } catch (leadError: any) {
-                // Don't fail the whole sync if lead creation fails
-                errorMessages.push(`Lead ${contact.id}: ${leadError.message}`);
-              }
-            }
           } catch (error: any) {
             stats.errors++;
             errorMessages.push(`Contact ${contact.id}: ${error.message}`);

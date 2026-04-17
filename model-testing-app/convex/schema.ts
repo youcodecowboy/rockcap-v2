@@ -1279,7 +1279,6 @@ export default defineSchema({
     lastSyncStats: v.optional(v.object({
       companiesSynced: v.number(),
       contactsSynced: v.number(),
-      leadsSynced: v.optional(v.number()),
       dealsSynced: v.number(),
       errors: v.number(),
     })),
