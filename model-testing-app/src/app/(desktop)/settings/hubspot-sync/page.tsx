@@ -12,30 +12,76 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, CheckCircle2, XCircle, Clock, Database } from "lucide-react";
+import {
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Database,
+  Loader2,
+  Building2,
+  User,
+  Briefcase,
+  Activity,
+} from "lucide-react";
+
+type StageStatus = "pending" | "running" | "success" | "error";
+
+type StageState = {
+  status: StageStatus;
+  stats?: Record<string, number>;
+  errorMessage?: string;
+};
 
 type SyncStats = {
-  companiesSynced: number;
-  contactsSynced: number;
-  dealsSynced: number;
+  companiesSynced?: number;
+  contactsSynced?: number;
+  dealsSynced?: number;
   activitiesSynced?: number;
   leadsSynced?: number;
-  errors: number;
+  errors?: number;
 };
 
-type SyncResult = {
-  success?: boolean;
-  stats?: SyncStats;
-  errorMessages?: string[];
-  error?: string;
-};
+const STAGES = [
+  {
+    id: "companies" as const,
+    label: "Companies",
+    icon: Building2,
+    flag: "syncCompanies" as const,
+    statKey: "companiesSynced",
+  },
+  {
+    id: "contacts" as const,
+    label: "Contacts",
+    icon: User,
+    flag: "syncContacts" as const,
+    statKey: "contactsSynced",
+  },
+  {
+    id: "deals" as const,
+    label: "Deals",
+    icon: Briefcase,
+    flag: "syncDeals" as const,
+    statKey: "dealsSynced",
+  },
+  {
+    id: "activities" as const,
+    label: "Engagements",
+    icon: Activity,
+    flag: "syncActivities" as const,
+    statKey: "activitiesSynced",
+  },
+] as const;
+
+type StageId = (typeof STAGES)[number]["id"];
+type StageFlag = (typeof STAGES)[number]["flag"];
 
 function formatDate(dateString?: string) {
   if (!dateString) return "Never";
   return new Date(dateString).toLocaleString();
 }
 
-function StatusBadge({ status }: { status?: string }) {
+function LastSyncBadge({ status }: { status?: string }) {
   if (!status) return null;
   if (status === "success")
     return (
@@ -61,27 +107,140 @@ function StatusBadge({ status }: { status?: string }) {
   return null;
 }
 
-export default function HubSpotSyncV2Page() {
+function StageStatusIcon({ status }: { status: StageStatus }) {
+  if (status === "pending")
+    return <Clock className="size-4 text-muted-foreground" />;
+  if (status === "running")
+    return <Loader2 className="size-4 text-blue-500 animate-spin" />;
+  if (status === "success")
+    return <CheckCircle2 className="size-4 text-green-500" />;
+  return <XCircle className="size-4 text-red-500" />;
+}
+
+function StageCard({
+  stage,
+  state,
+  enabled,
+  isRunning,
+  onRetry,
+}: {
+  stage: (typeof STAGES)[number];
+  state: StageState;
+  enabled: boolean;
+  isRunning: boolean;
+  onRetry: () => void;
+}) {
+  const Icon = stage.icon;
+  const synced = state.stats?.[stage.statKey];
+  const errors = state.stats?.errors;
+
+  return (
+    <div
+      className={`flex items-center gap-4 rounded-lg border px-4 py-3 transition-colors ${
+        !enabled
+          ? "opacity-40"
+          : state.status === "running"
+          ? "border-blue-200 bg-blue-50/50"
+          : state.status === "success"
+          ? "border-green-200 bg-green-50/50"
+          : state.status === "error"
+          ? "border-red-200 bg-red-50/50"
+          : "border-border"
+      }`}
+    >
+      {/* Stage icon */}
+      <div className="shrink-0">
+        <Icon
+          className={`size-5 ${
+            !enabled
+              ? "text-muted-foreground"
+              : state.status === "running"
+              ? "text-blue-500"
+              : state.status === "success"
+              ? "text-green-600"
+              : state.status === "error"
+              ? "text-red-600"
+              : "text-muted-foreground"
+          }`}
+        />
+      </div>
+
+      {/* Label + error message */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">{stage.label}</p>
+        {state.status === "error" && state.errorMessage && (
+          <p className="text-xs text-red-600 truncate mt-0.5">
+            {state.errorMessage}
+          </p>
+        )}
+      </div>
+
+      {/* Stats on success */}
+      {state.status === "success" && (
+        <div className="text-xs text-muted-foreground shrink-0">
+          {synced !== undefined && (
+            <span className="font-medium text-foreground">{synced} synced</span>
+          )}
+          {errors !== undefined && errors > 0 && (
+            <span className="text-red-500 ml-2">{errors} errors</span>
+          )}
+        </div>
+      )}
+
+      {/* Retry button on error */}
+      {state.status === "error" && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0 h-7 text-xs"
+          onClick={onRetry}
+          disabled={isRunning}
+        >
+          <RefreshCw className="size-3 mr-1" />
+          Retry
+        </Button>
+      )}
+
+      {/* Status icon */}
+      <div className="shrink-0">
+        <StageStatusIcon status={state.status} />
+      </div>
+    </div>
+  );
+}
+
+const INITIAL_STAGES: Record<StageId, StageState> = {
+  companies: { status: "pending" },
+  contacts: { status: "pending" },
+  deals: { status: "pending" },
+  activities: { status: "pending" },
+};
+
+export default function HubSpotSyncPage() {
   const syncConfig = useQuery(api.hubspotSync.getSyncConfig as any);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
-  // Form state
+  const [stages, setStages] =
+    useState<Record<StageId, StageState>>(INITIAL_STAGES);
+  const [isRunning, setIsRunning] = useState(false);
   const [maxRecords, setMaxRecords] = useState<string>("");
-  const [syncCompanies, setSyncCompanies] = useState(true);
-  const [syncContacts, setSyncContacts] = useState(true);
-  const [syncDeals, setSyncDeals] = useState(true);
-  const [syncActivities, setSyncActivities] = useState(true);
+  const [enabled, setEnabled] = useState<Record<StageId, boolean>>({
+    companies: true,
+    contacts: true,
+    deals: true,
+    activities: true,
+  });
 
-  const runSync = async () => {
-    setIsSyncing(true);
-    setSyncResult(null);
+  const runStage = async (
+    stageId: StageId,
+    flagKey: StageFlag
+  ): Promise<boolean> => {
+    setStages((s) => ({ ...s, [stageId]: { status: "running" } }));
     try {
       const body: Record<string, unknown> = {
-        syncCompanies,
-        syncContacts,
-        syncDeals,
-        syncActivities,
+        syncCompanies: flagKey === "syncCompanies",
+        syncContacts: flagKey === "syncContacts",
+        syncDeals: flagKey === "syncDeals",
+        syncActivities: flagKey === "syncActivities",
       };
       const parsed = parseInt(maxRecords, 10);
       if (Number.isFinite(parsed) && parsed > 0) body.maxRecords = parsed;
@@ -92,16 +251,71 @@ export default function HubSpotSyncV2Page() {
         body: JSON.stringify(body),
       });
       const result = await res.json();
-      setSyncResult(result);
+
+      if (!res.ok || result.error) {
+        setStages((s) => ({
+          ...s,
+          [stageId]: {
+            status: "error",
+            errorMessage: result.error || `HTTP ${res.status}`,
+          },
+        }));
+        return false;
+      }
+
+      setStages((s) => ({
+        ...s,
+        [stageId]: { status: "success", stats: result.stats },
+      }));
+      return true;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Sync failed";
-      setSyncResult({ error: message });
-    } finally {
-      setIsSyncing(false);
+      const message =
+        err instanceof Error ? err.message : "Unknown error";
+      setStages((s) => ({
+        ...s,
+        [stageId]: { status: "error", errorMessage: message },
+      }));
+      return false;
     }
   };
 
+  const runAllStages = async () => {
+    setIsRunning(true);
+    // Reset all enabled stages to pending
+    setStages((s) => {
+      const next = { ...s };
+      for (const stage of STAGES) {
+        if (enabled[stage.id]) next[stage.id] = { status: "pending" };
+      }
+      return next;
+    });
+
+    for (const stage of STAGES) {
+      if (!enabled[stage.id]) continue;
+      const ok = await runStage(stage.id, stage.flag);
+      if (!ok) break; // Stop chain on first error
+    }
+    setIsRunning(false);
+  };
+
+  const retryStage = async (stageId: StageId) => {
+    const stage = STAGES.find((s) => s.id === stageId);
+    if (!stage) return;
+    setIsRunning(true);
+    await runStage(stageId, stage.flag);
+    setIsRunning(false);
+  };
+
+  const toggleEnabled = (stageId: StageId, value: boolean) => {
+    setEnabled((e) => ({ ...e, [stageId]: value }));
+  };
+
   const lastStats = syncConfig?.lastSyncStats as SyncStats | undefined;
+
+  const anyError = STAGES.some((s) => stages[s.id].status === "error");
+  const allDone = STAGES.filter((s) => enabled[s.id]).every(
+    (s) => stages[s.id].status === "success"
+  );
 
   return (
     <div className="container mx-auto p-6 max-w-3xl space-y-6">
@@ -112,8 +326,9 @@ export default function HubSpotSyncV2Page() {
           HubSpot Sync
         </h1>
         <p className="text-muted-foreground text-sm">
-          V2 pipeline (Apr 2026): companies, contacts, deals, and full engagement
-          timeline. Replaces the legacy scoped sync buttons.
+          V2 pipeline (Apr 2026): runs as 4 sequential stages to prevent
+          timeouts. Companies → Contacts → Deals → Engagements. Each stage
+          can be retried independently.
         </p>
       </div>
 
@@ -121,7 +336,9 @@ export default function HubSpotSyncV2Page() {
       <Card>
         <CardHeader>
           <CardTitle>Last Sync</CardTitle>
-          <CardDescription>Status and stats from the most recent sync run</CardDescription>
+          <CardDescription>
+            Status and stats from the most recent sync run
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {syncConfig === undefined ? (
@@ -132,29 +349,39 @@ export default function HubSpotSyncV2Page() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Completed</span>
-                <span className="font-medium text-sm">{formatDate(syncConfig.lastSyncAt)}</span>
+                <span className="font-medium text-sm">
+                  {formatDate(syncConfig.lastSyncAt)}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Status</span>
-                <StatusBadge status={syncConfig.lastSyncStatus} />
+                <LastSyncBadge status={syncConfig.lastSyncStatus} />
               </div>
               {lastStats && (
                 <div className="pt-3 border-t grid grid-cols-2 gap-x-6 gap-y-1">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Companies</span>
-                    <span className="font-medium">{lastStats.companiesSynced ?? "—"}</span>
+                    <span className="font-medium">
+                      {lastStats.companiesSynced ?? "—"}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Contacts</span>
-                    <span className="font-medium">{lastStats.contactsSynced ?? "—"}</span>
+                    <span className="font-medium">
+                      {lastStats.contactsSynced ?? "—"}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Deals</span>
-                    <span className="font-medium">{lastStats.dealsSynced ?? "—"}</span>
+                    <span className="font-medium">
+                      {lastStats.dealsSynced ?? "—"}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Activities</span>
-                    <span className="font-medium">{lastStats.activitiesSynced ?? "—"}</span>
+                    <span className="font-medium">
+                      {lastStats.activitiesSynced ?? "—"}
+                    </span>
                   </div>
                   {(lastStats.errors ?? 0) > 0 && (
                     <div className="flex justify-between text-sm col-span-2 text-destructive">
@@ -173,11 +400,16 @@ export default function HubSpotSyncV2Page() {
       <Card>
         <CardHeader>
           <CardTitle>Sync Options</CardTitle>
-          <CardDescription>Configure what to include in the next sync run</CardDescription>
+          <CardDescription>
+            Configure what to include in the next sync run
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="text-sm font-medium block mb-1" htmlFor="maxRecords">
+            <label
+              className="text-sm font-medium block mb-1"
+              htmlFor="maxRecords"
+            >
               Max records per object
             </label>
             <input
@@ -191,24 +423,72 @@ export default function HubSpotSyncV2Page() {
             />
           </div>
           <div className="space-y-2">
-            <p className="text-sm font-medium">Include</p>
-            {[
-              { label: "Companies", value: syncCompanies, setter: setSyncCompanies },
-              { label: "Contacts", value: syncContacts, setter: setSyncContacts },
-              { label: "Deals", value: syncDeals, setter: setSyncDeals },
-              { label: "Activities (engagement timeline)", value: syncActivities, setter: setSyncActivities },
-            ].map(({ label, value, setter }) => (
-              <label key={label} className="flex items-center gap-2 cursor-pointer">
+            <p className="text-sm font-medium">Include stages</p>
+            {STAGES.map((stage) => (
+              <label
+                key={stage.id}
+                className="flex items-center gap-2 cursor-pointer"
+              >
                 <input
                   type="checkbox"
-                  checked={value}
-                  onChange={(e) => setter(e.target.checked)}
+                  checked={enabled[stage.id]}
+                  onChange={(e) => toggleEnabled(stage.id, e.target.checked)}
                   className="size-4 rounded border-gray-300"
+                  disabled={isRunning}
                 />
-                <span className="text-sm">{label}</span>
+                <span className="text-sm">{stage.label}</span>
               </label>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Stage progress cards */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Sync Progress</CardTitle>
+          <CardDescription>
+            Stages run sequentially. A stage failure stops the chain — use
+            Retry to resume from that stage.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {STAGES.map((stage) => (
+            <StageCard
+              key={stage.id}
+              stage={stage}
+              state={stages[stage.id]}
+              enabled={enabled[stage.id]}
+              isRunning={isRunning}
+              onRetry={() => retryStage(stage.id)}
+            />
+          ))}
+
+          {/* Final success banner */}
+          {allDone && !isRunning && (
+            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 mt-2">
+              <CheckCircle2 className="size-5 text-green-600 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-green-900">
+                  All stages completed
+                </p>
+                <p className="text-xs text-green-700">
+                  HubSpot sync finished successfully.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Error banner */}
+          {anyError && !isRunning && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 mt-2">
+              <XCircle className="size-5 text-red-600 shrink-0" />
+              <p className="text-sm text-red-800">
+                Sync stopped due to an error. Retry the failed stage or run the
+                full sync again.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -217,96 +497,27 @@ export default function HubSpotSyncV2Page() {
         <Button
           size="lg"
           className="w-full"
-          onClick={runSync}
-          disabled={isSyncing}
+          onClick={runAllStages}
+          disabled={isRunning}
         >
-          {isSyncing ? (
+          {isRunning ? (
             <>
-              <RefreshCw className="size-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
               Syncing...
             </>
           ) : (
             <>
               <RefreshCw className="size-4 mr-2" />
-              Run HubSpot Sync
+              Run Sync
             </>
           )}
         </Button>
-        {isSyncing && (
+        {isRunning && (
           <p className="text-xs text-center text-muted-foreground">
-            Syncing… this may take 15–30 min for a full sync.
+            Running stages sequentially — do not close this page.
           </p>
         )}
       </div>
-
-      {/* Result card */}
-      {syncResult && (
-        <Card className={syncResult.error || syncResult.success === false
-          ? "border-red-200 bg-red-50"
-          : "border-green-200 bg-green-50"
-        }>
-          <CardContent className="pt-5 space-y-3">
-            <div className="flex items-center gap-2">
-              {syncResult.error || syncResult.success === false ? (
-                <XCircle className="size-5 text-red-600" />
-              ) : (
-                <CheckCircle2 className="size-5 text-green-600" />
-              )}
-              <span className={`font-semibold ${
-                syncResult.error || syncResult.success === false
-                  ? "text-red-900"
-                  : "text-green-900"
-              }`}>
-                {syncResult.error || syncResult.success === false
-                  ? "Sync failed"
-                  : "Sync completed"}
-              </span>
-            </div>
-
-            {syncResult.error && (
-              <p className="text-sm text-red-700">{syncResult.error}</p>
-            )}
-
-            {syncResult.stats && (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 pt-2 border-t border-green-200">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Companies</span>
-                  <span className="font-medium">{syncResult.stats.companiesSynced}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Contacts</span>
-                  <span className="font-medium">{syncResult.stats.contactsSynced}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Deals</span>
-                  <span className="font-medium">{syncResult.stats.dealsSynced}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Activities</span>
-                  <span className="font-medium">{syncResult.stats.activitiesSynced ?? "—"}</span>
-                </div>
-                {(syncResult.stats.errors ?? 0) > 0 && (
-                  <div className="flex justify-between text-sm col-span-2 text-destructive">
-                    <span>Errors</span>
-                    <span className="font-medium">{syncResult.stats.errors}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {syncResult.errorMessages && syncResult.errorMessages.length > 0 && (
-              <div className="text-sm text-red-700">
-                <p className="font-medium mb-1">Error details:</p>
-                <ul className="list-disc list-inside space-y-1">
-                  {syncResult.errorMessages.slice(0, 5).map((msg, i) => (
-                    <li key={i}>{msg}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
