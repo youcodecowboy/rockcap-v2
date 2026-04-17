@@ -1034,6 +1034,13 @@ function DealsTab({ clientId }: { clientId: string }) {
         deal={selectedDeal}
         visible={selectedDeal !== null}
         onClose={() => setSelectedDeal(null)}
+        onViewAllActivity={() => {
+          // Close the sheet and jump to the client's Activity tab so the
+          // user can keep exploring activity in context. Currently shows
+          // all client activity — deal-scoped filtering is a follow-up.
+          setSelectedDeal(null);
+          setActiveTab('Activity');
+        }}
       />
     </View>
   );
