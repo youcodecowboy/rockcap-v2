@@ -7,6 +7,7 @@ import { extractCustomProperties, generateHubSpotCompanyUrl, generateHubSpotCont
 import { discoverProperties, clearPropertiesCache } from '@/lib/hubspot/properties';
 import { clearOwnersCache, resolveOwnerName } from '@/lib/hubspot/owners';
 import { fetchEngagementsForCompany } from '@/lib/hubspot/activities';
+import { dedupeAssociationIds } from '@/lib/hubspot/normalize';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
@@ -145,26 +146,53 @@ export async function POST(request: NextRequest) {
               return val != null && val !== '' && typeof val === 'string';
             };
             
+            // Extract and dedupe HubSpot association IDs so the mutation can
+            // resolve them to Convex company/deal records. HubSpot returns both
+            // HUBSPOT_DEFINED and USER_DEFINED association entries for the same
+            // pair — dedupeAssociationIds collapses them.
+            const hubspotCompanyIds = dedupeAssociationIds(
+              (contact as any).associations?.companies?.results ?? [],
+            );
+            const hubspotDealIds = dedupeAssociationIds(
+              (contact as any).associations?.deals?.results ?? [],
+            );
+
             const contactData: any = {
               hubspotContactId: contact.id,
               name,
               lifecycleStage: contact.properties.lifecyclestage,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
+              // Always pass the HubSpot ID arrays — the mutation's linker will
+              // resolve them to Convex IDs when companies/deals are synced.
+              hubspotCompanyIds: hubspotCompanyIds.length > 0 ? hubspotCompanyIds : undefined,
+              hubspotDealIds: hubspotDealIds.length > 0 ? hubspotDealIds : undefined,
             };
-            
+
             // Only include fields that have actual non-null, non-empty string values
             if (hasValue(contact.properties.email)) {
               contactData.email = contact.properties.email;
             }
+            // Phone: prefer primary; fall back to mobilephone when primary empty
             if (hasValue(contact.properties.phone)) {
               contactData.phone = contact.properties.phone;
+            } else if (hasValue(contact.properties.mobilephone)) {
+              contactData.phone = contact.properties.mobilephone;
             }
             if (hasValue(contact.properties.company)) {
               contactData.company = contact.properties.company;
             }
             if (hasValue(contact.properties.jobtitle)) {
               contactData.role = contact.properties.jobtitle;
+            }
+            // Activity dates — use tenant-populated `notes_last_*` fields
+            if (hasValue(contact.properties.notes_last_contacted)) {
+              contactData.lastContactedDate = contact.properties.notes_last_contacted;
+            } else if (hasValue(contact.properties.lastcontacteddate)) {
+              contactData.lastContactedDate = contact.properties.lastcontacteddate;
+            }
+            if (hasValue(contact.properties.notes_last_updated)) {
+              contactData.lastActivityDate = contact.properties.notes_last_updated;
             }
             const linkedinIdentifier = contact.properties.hublead_linkedin_public_identifier;
             if (linkedinIdentifier && typeof linkedinIdentifier === 'string' && linkedinIdentifier.trim()) {
