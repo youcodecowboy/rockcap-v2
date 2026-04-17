@@ -1,9 +1,27 @@
 # Logbook Index
 
-Last updated: 2026-04-16
+Last updated: 2026-04-17
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
+| queued | 2026-04-17 | Add Convex query deals.listForClient + listOpenForClient | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-a1-convex-deals-listforclient.md |
+| queued | 2026-04-17 | Add Convex queries activities.listForClient + countForClient + listRecentForClient | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-a2-convex-activities-queries.md |
+| queued | 2026-04-17 | Build mobile SyncStrip component (owner + sync time + HubSpot link) | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-a3-mobile-syncstrip.md |
+| queued | 2026-04-17 | Build mobile OpenDealsCard hero component for Overview | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-a4-mobile-opendealscard.md |
+| queued | 2026-04-17 | Build mobile RecentActivityCard hero component for Overview | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-a5-mobile-recentactivitycard.md |
+| queued | 2026-04-17 | Build BeauhurstMiniCard + ClassificationCard + add Company row to ContactDetailModal | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-a6-mobile-beauhurstmini-classification-contact.md |
+| queued | 2026-04-17 | Wire new Overview components into mobile client screen | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-a7-mobile-wire-overview.md |
+| queued | 2026-04-17 | Add deal stage category color lookup utility | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-b1-mobile-dealstagecolors.md |
+| queued | 2026-04-17 | Build mobile DealCard component with stage color + close date urgency | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-b2-mobile-dealcard.md |
+| queued | 2026-04-17 | Build mobile DealDetailSheet slide-up component | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-b3-mobile-dealdetailsheet.md |
+| queued | 2026-04-17 | Build mobile Deals tab with summary strip + grouped sections | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-b4-mobile-dealstab.md |
+| queued | 2026-04-17 | Build mobile ActivityCard component with type icons + inbound/outbound email badges | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-c1-mobile-activitycard.md |
+| queued | 2026-04-17 | Build mobile Activity tab with filter chips + date bucket grouping | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-c2-mobile-activitytab.md |
+| queued | 2026-04-17 | Build BeauhurstIdentityCard + BeauhurstFinancialsCard + BeauhurstSignalsCard | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-d1-mobile-beauhurst-cards.md |
+| queued | 2026-04-17 | Prepend Beauhurst section to mobile Intelligence tab with divider | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-d2-mobile-intelligence-extend.md |
+| queued | 2026-04-17 | Add Convex companies.searchByName + clients.createWithPromotion | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-e1-convex-search-and-create-promotion.md |
+| queued | 2026-04-17 | Build mobile CompanyAutocomplete component for new-client creation | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-e2-mobile-companyautocomplete.md |
+| queued | 2026-04-17 | Wire CompanyAutocomplete into mobile new-client creation flow | #plan-2 #mobile-ui #hubspot | queued/2026-04-17_plan2-e3-mobile-wire-new-client.md |
 | queued | 2026-04-16 | Merge 2 duplicate client records (Halo Living and Kinspire) |  | queued/2026-04-16_merge-duplicate-clients-halo-kinspire.md |
 | queued | 2026-04-16 | Add activities table and extend companies/contacts/deals schemas for HubSpot sync |  | queued/2026-04-16_add-activities-table-schema-extensions.md |
 | queued | 2026-04-16 | Rewrite HubSpot sync — dedupe associations, remove 500-cap, harvest custom properties, engagement sync via v1 endpoint |  | queued/2026-04-16_rewrite-hubspot-sync.md |
