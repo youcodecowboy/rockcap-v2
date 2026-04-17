@@ -40,6 +40,6 @@ export {
   updateDealsWithStageAndPipelineNames,
 } from "./pipelines";
 
-// Activities module is placeholder for now
-// export { syncActivitiesFromHubSpot } from "./activities";
+// Export activity sync mutation
+export { syncActivityFromHubSpot } from "./activities";
 
