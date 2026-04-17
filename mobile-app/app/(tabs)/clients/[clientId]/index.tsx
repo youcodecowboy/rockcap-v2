@@ -35,6 +35,7 @@ import {
   TrendingUp,
   Briefcase,
   Search,
+  Plus,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
@@ -46,6 +47,7 @@ import OpenDealsCard from '@/components/client/OpenDealsCard';
 import RecentActivityCard from '@/components/client/RecentActivityCard';
 import BeauhurstMiniCard from '@/components/client/BeauhurstMiniCard';
 import ClassificationCard from '@/components/client/ClassificationCard';
+import LinkContactModal from '@/components/clients/LinkContactModal';
 import DealCard from '@/components/deals/DealCard';
 import DealDetailSheet from '@/components/deals/DealDetailSheet';
 import ActivityCard from '@/components/activity/ActivityCard';
@@ -1182,6 +1184,7 @@ export default function ClientDetailScreen() {
   // null = no sheet open. The ContactDetailModal is rendered once at the
   // bottom of the component; this just toggles its visibility.
   const [openContactId, setOpenContactId] = useState<string | null>(null);
+  const [showLinkContact, setShowLinkContact] = useState(false);
 
   // Notes form
   const [showNoteForm, setShowNoteForm] = useState(false);
@@ -2076,26 +2079,45 @@ export default function ClientDetailScreen() {
               </Card>
             )}
 
-            {/* Key Contacts */}
-            {contacts && contacts.length > 0 ? (
+            {/* Key Contacts — always rendered (even at 0) so the "+ Link"
+                entry point is reachable for clients with no contacts yet. */}
+            {contacts ? (
               <Card>
-                <View className="flex-row items-center mb-2">
+                <View className="flex-row items-center gap-2 mb-2">
                   <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide flex-1">
                     Key Contacts ({contacts.length})
                   </Text>
                   <TouchableOpacity
-                    onPress={() =>
-                      router.push(`/contacts?clientId=${clientId}` as any)
-                    }
-                    className="flex-row items-center"
+                    onPress={() => setShowLinkContact(true)}
+                    className="flex-row items-center gap-0.5 px-2 py-1 rounded-full bg-m-bg-subtle"
                     hitSlop={6}
+                    accessibilityLabel="Link existing contact"
                   >
-                    <Text className="text-xs text-m-text-tertiary mr-0.5">
-                      View all
+                    <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
+                    <Text className="text-[11px] font-medium text-m-text-primary">
+                      Link
                     </Text>
-                    <ChevronRight size={12} color={colors.textTertiary} />
                   </TouchableOpacity>
+                  {contacts.length > 0 ? (
+                    <TouchableOpacity
+                      onPress={() =>
+                        router.push(`/contacts?clientId=${clientId}` as any)
+                      }
+                      className="flex-row items-center"
+                      hitSlop={6}
+                    >
+                      <Text className="text-xs text-m-text-tertiary mr-0.5">
+                        View all
+                      </Text>
+                      <ChevronRight size={12} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
+                {contacts.length === 0 ? (
+                  <Text className="text-xs text-m-text-tertiary italic py-2">
+                    No contacts linked yet — tap Link to add one
+                  </Text>
+                ) : null}
                 <View className="gap-0">
                   {contacts.slice(0, 5).map((c: any, idx: number) => (
                     <View key={c._id}>
@@ -2879,6 +2901,15 @@ export default function ClientDetailScreen() {
         visible={openContactId !== null}
         contactId={openContactId}
         onClose={() => setOpenContactId(null)}
+      />
+
+      {/* Link contact — opened from the Key Contacts "+" button */}
+      <LinkContactModal
+        visible={showLinkContact}
+        clientId={clientId as any}
+        clientName={client.name}
+        alreadyLinkedIds={(contacts ?? []).map((c: any) => c._id)}
+        onClose={() => setShowLinkContact(false)}
       />
     </View>
   );

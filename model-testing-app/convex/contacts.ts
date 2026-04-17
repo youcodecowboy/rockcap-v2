@@ -197,3 +197,46 @@ export const remove = mutation({
   },
 });
 
+
+/**
+ * Link an existing contact to a client. Used by the mobile "Link contact
+ * to client" modal. Sets contact.clientId directly — the reverse look-up
+ * (via linkedCompanyIds → promotedToClientId) still works, but a direct
+ * clientId is stronger (survives HubSpot data moves) and is what the web
+ * UI predominantly reads.
+ *
+ * Idempotent: if the contact is already linked to this client, it's a no-op.
+ */
+export const linkToClient = mutation({
+  args: {
+    contactId: v.id("contacts"),
+    clientId: v.id("clients"),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) throw new Error("Contact not found");
+    if ((contact as any).clientId === args.clientId) {
+      return { id: args.contactId, action: "already-linked" };
+    }
+    await ctx.db.patch(args.contactId, {
+      clientId: args.clientId,
+      updatedAt: new Date().toISOString(),
+    });
+    return { id: args.contactId, action: "linked" };
+  },
+});
+
+/**
+ * Unlink a contact from any client — sets clientId to undefined.
+ * Also usable as "unlink from current client" from the client profile.
+ */
+export const unlinkFromClient = mutation({
+  args: { contactId: v.id("contacts") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.contactId, {
+      clientId: undefined,
+      updatedAt: new Date().toISOString(),
+    });
+    return args.contactId;
+  },
+});
