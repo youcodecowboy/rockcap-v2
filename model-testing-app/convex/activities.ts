@@ -103,12 +103,15 @@ export const listRecentForClient = query({
  * page (Task F). Returns the most recent N activities across the whole org,
  * each hydrated with its linked company's name for display.
  *
- * Returns up to ~200 rows in one shot; clients typically render groups by
- * date bucket. Uses a full-table scan + sort in memory — activities table is
- * indexed for per-company lookups but not globally by date, and the activityDate
- * field is stored as a string (ISO) so a Convex range scan isn't available.
- * Acceptable for now; migrate to a by_activity_date index if we hit the
- * 16MB limit as the table grows.
+ * IMPORTANT: uses indexed reads with `.take()` so we only materialize the
+ * N rows we actually need. A full-table `.collect()` blows the 16MB
+ * per-function read limit on the activities table (emails have bodyHtml
+ * blobs that add up fast over 5k+ rows).
+ *
+ * - Default path: `by_activity_date` index, order desc, take N directly.
+ * - typeFilter path: `by_activity_type` with eq(type), take N * 3
+ *   (oversampled because this index orders by _creationTime within a type,
+ *   not activityDate — we re-sort in memory and slice down to N).
  */
 export const listRecentGlobal = query({
   args: {
@@ -117,11 +120,28 @@ export const listRecentGlobal = query({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 100;
-    let rows = await ctx.db.query("activities").collect();
+
+    let rows: any[];
     if (args.typeFilter) {
-      rows = rows.filter((a) => a.activityType === args.typeFilter);
+      const typeFilter = args.typeFilter;
+      rows = await ctx.db
+        .query("activities")
+        .withIndex("by_activity_type", (q) => q.eq("activityType", typeFilter))
+        .order("desc")
+        .take(limit * 3);
+    } else {
+      rows = await ctx.db
+        .query("activities")
+        .withIndex("by_activity_date")
+        .order("desc")
+        .take(limit);
     }
-    rows.sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
+
+    // In-memory sort by activityDate (ISO strings compare lexicographically
+    // for dates, so localeCompare-desc gives newest-first).
+    rows.sort((a, b) =>
+      (b.activityDate ?? "").localeCompare(a.activityDate ?? ""),
+    );
     rows = rows.slice(0, limit);
 
     // Batch-fetch the linked companies so the UI can show the client/company
