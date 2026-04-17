@@ -68,6 +68,7 @@ import ClientMeetingsTab from './components/ClientMeetingsTab';
 import ClientTasksTab from './components/ClientTasksTab';
 import ClientThreadsTab from './components/ClientThreadsTab';
 import { ClientIntelligenceTab } from '@/components/IntelligenceTab';
+import ClientBeauhurstCards from './components/ClientBeauhurstCards';
 import ClientSettingsPanel from '@/components/ClientSettingsPanel';
 import { Brain, CheckSquare, Contact, Video, ListTodo } from 'lucide-react';
 
@@ -445,13 +446,19 @@ function ClientProfileContent() {
             </div>
           </TabsContent>
 
-          <TabsContent value="intelligence" className="mt-0 flex-1 overflow-hidden">
-            <ClientIntelligenceTab
-              clientId={clientId}
-              clientName={client.name}
-              clientType={client.type}
-              projects={projects}
-            />
+          <TabsContent value="intelligence" className="mt-0 flex-1 overflow-auto">
+            <div className="space-y-6 p-6">
+              {/* Beauhurst CRM intel — sits above the existing AI doc
+                  intelligence so users see CRM-sourced company data first.
+                  Hidden if no HubSpot data exists for this client. */}
+              <ClientBeauhurstCards clientId={clientId} />
+              <ClientIntelligenceTab
+                clientId={clientId}
+                clientName={client.name}
+                clientType={client.type}
+                projects={projects}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="documents" className="mt-0 flex-1 overflow-hidden">
