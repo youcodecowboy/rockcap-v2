@@ -46,6 +46,8 @@ import OpenDealsCard from '@/components/client/OpenDealsCard';
 import RecentActivityCard from '@/components/client/RecentActivityCard';
 import BeauhurstMiniCard from '@/components/client/BeauhurstMiniCard';
 import ClassificationCard from '@/components/client/ClassificationCard';
+import DealCard from '@/components/deals/DealCard';
+import DealDetailSheet from '@/components/deals/DealDetailSheet';
 
 // ============================================================================
 // Constants
@@ -869,6 +871,122 @@ function CollapsibleSection({
         <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide">{title}</Text>
       </TouchableOpacity>
       {open && children}
+    </View>
+  );
+}
+
+// DealsTab — inline tab for the 'Deals' view. Renders a summary strip
+// (Open / Won / Lost totals), a search field, an expandable Open list of
+// DealCards, and collapsed Won/Lost summary rows. Tapping a card opens the
+// DealDetailSheet.
+function DealsTab({ clientId }: { clientId: string }) {
+  const deals = useQuery(api.deals.listForClient, { clientId: clientId as any }) ?? [];
+  const [search, setSearch] = useState('');
+  const [selectedDeal, setSelectedDeal] = useState<any>(null);
+  const [openExpanded, setOpenExpanded] = useState(true);
+
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? deals.filter((d) => (d.name ?? '').toLowerCase().includes(q))
+    : deals;
+
+  const open = filtered.filter((d) => d.isClosed !== true);
+  const won = filtered.filter((d) => d.isClosedWon === true);
+  const lost = filtered.filter((d) => d.isClosed === true && d.isClosedWon !== true);
+
+  const sum = (arr: any[]) => arr.reduce((s, d) => s + (d.amount ?? 0), 0);
+  const fmt = (amount: number) =>
+    amount >= 1_000_000
+      ? `£${(amount / 1_000_000).toFixed(1)}M`
+      : amount >= 1_000
+        ? `£${Math.round(amount / 1_000)}K`
+        : `£${amount.toLocaleString()}`;
+
+  return (
+    <View className="gap-3">
+      {/* Summary strip */}
+      <View className="flex-row gap-2">
+        {[
+          { label: 'Open', total: sum(open), count: open.length, tone: '#0a0a0a' },
+          { label: 'Won', total: sum(won), count: won.length, tone: '#059669' },
+          { label: 'Lost', total: sum(lost), count: lost.length, tone: '#525252' },
+        ].map((s) => (
+          <View
+            key={s.label}
+            className="flex-1 bg-m-bg-card border border-m-border rounded-[12px] p-2.5 items-center"
+          >
+            <Text className="text-[9px] font-semibold text-m-text-tertiary uppercase">
+              {s.label}
+            </Text>
+            <Text className="text-[15px] font-bold mt-0.5" style={{ color: s.tone }}>
+              {fmt(s.total)}
+            </Text>
+            <Text className="text-[10px] text-m-text-tertiary">{s.count} deals</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Search */}
+      <View className="bg-m-bg-card rounded-[10px] border border-m-border flex-row items-center px-3">
+        <Search size={14} color={colors.textTertiary} />
+        <TextInput
+          placeholder="Search deals..."
+          placeholderTextColor={colors.textTertiary}
+          value={search}
+          onChangeText={setSearch}
+          className="flex-1 text-sm text-m-text-primary ml-2 py-2.5"
+        />
+      </View>
+
+      {/* Open section (expandable) */}
+      <TouchableOpacity
+        onPress={() => setOpenExpanded(!openExpanded)}
+        className="flex-row items-center gap-2 px-1"
+      >
+        <ChevronRight
+          size={14}
+          color={colors.textSecondary}
+          strokeWidth={2}
+          style={{ transform: [{ rotate: openExpanded ? '90deg' : '0deg' }] }}
+        />
+        <Text className="text-[10px] font-semibold text-m-text-secondary uppercase tracking-wide">
+          Open ({open.length})
+        </Text>
+      </TouchableOpacity>
+      {openExpanded ? (
+        <View className="gap-2">
+          {open.map((d) => (
+            <DealCard key={d._id} deal={d} onPress={() => setSelectedDeal(d)} />
+          ))}
+          {open.length === 0 ? (
+            <Text className="text-xs text-m-text-tertiary italic p-3">No open deals</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* Won/Lost collapsed summary rows */}
+      {[
+        { label: 'Closed Won', deals: won, tone: colors.success ?? '#059669' },
+        { label: 'Closed Lost', deals: lost, tone: colors.textSecondary },
+      ].map((group) => (
+        <TouchableOpacity
+          key={group.label}
+          className="flex-row items-center gap-2 bg-m-bg-card border border-m-border rounded-[12px] px-3.5 py-2.5"
+        >
+          <ChevronRight size={14} color={colors.textSecondary} strokeWidth={2} />
+          <Text className="text-xs font-semibold text-m-text-primary flex-1">{group.label}</Text>
+          <Text className="text-[11px] font-semibold" style={{ color: group.tone }}>
+            {fmt(sum(group.deals))}
+          </Text>
+          <Text className="text-[11px] text-m-text-tertiary">· {group.deals.length} deals</Text>
+        </TouchableOpacity>
+      ))}
+
+      <DealDetailSheet
+        deal={selectedDeal}
+        visible={selectedDeal !== null}
+        onClose={() => setSelectedDeal(null)}
+      />
     </View>
   );
 }
@@ -1831,6 +1949,11 @@ export default function ClientDetailScreen() {
             </Card>
           </>
         )}
+
+        {/* ================================================================ */}
+        {/* DEALS TAB */}
+        {/* ================================================================ */}
+        {activeTab === 'Deals' ? <DealsTab clientId={clientId as any} /> : null}
 
         {/* ================================================================ */}
         {/* PROJECTS TAB */}
