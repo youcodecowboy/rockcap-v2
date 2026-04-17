@@ -93,6 +93,7 @@ export default defineSchema({
     hubspotLifecycleStage: v.optional(v.string()), // Lifecycle stage ID
     hubspotLifecycleStageName: v.optional(v.string()), // Lifecycle stage name (human-readable)
     hubspotOwnerId: v.optional(v.string()), // HubSpot owner/user ID
+    ownerName: v.optional(v.string()), // Resolved owner display name, cached at sync time
     // Multiple contact associations (a company can be linked to multiple contacts)
     linkedContactIds: v.optional(v.array(v.id("contacts"))), // Internal contact IDs
     hubspotContactIds: v.optional(v.array(v.string())), // HubSpot contact IDs
