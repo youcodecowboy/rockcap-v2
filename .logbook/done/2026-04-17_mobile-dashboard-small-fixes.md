@@ -1,7 +1,7 @@
 # Mobile dashboard small fixes (client list count + Overdue section styling)
 
 Created: 2026-04-17
-Status: queued
+Status: done
 Tags: #mobile #ux #bug
 Source:
   - - 2026-04-17 — mobile app client list: all clients show "0 projects" (project count broken)
@@ -10,3 +10,4 @@ Priority: medium
 
 ## Notes
 
+Shipped 2026-04-17 — commit 037fe11: fixed projectCountMap to iterate clientRoles (not flat p.clientId). Rebuilt Overdue section with UpNextCard-style rows + deep-link to /tasks?taskId=<id>. Added taskId query-param handler in app/tasks/index.tsx.
