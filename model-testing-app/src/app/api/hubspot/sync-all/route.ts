@@ -69,12 +69,31 @@ export async function POST(request: NextRequest) {
               return val != null && val !== '' && typeof val === 'string';
             };
             
+            // Name fallback — HubSpot allows empty-name companies; mutation
+            // requires v.string(). Use a sensible fallback so every company
+            // lands in Convex and can be linked to by its contacts/deals.
+            const rawName = company.properties.name;
+            const name = (typeof rawName === 'string' && rawName.trim())
+              ? rawName.trim()
+              : `(unnamed company ${company.id})`;
+
+            // Extract and dedupe association IDs so the mutation's linker
+            // can resolve contacts/deals back to this company.
+            const hubspotContactIdsFromAssoc = dedupeAssociationIds(
+              (company as any).associations?.contacts?.results ?? [],
+            );
+            const hubspotDealIdsFromAssoc = dedupeAssociationIds(
+              (company as any).associations?.deals?.results ?? [],
+            );
+
             const companyData: any = {
               hubspotCompanyId: company.id,
-              name: company.properties.name,
+              name,
               lifecycleStage: company.properties.lifecyclestage,
               customProperties,
               hubspotUrl: hubspotUrl || undefined,
+              hubspotContactIds: hubspotContactIdsFromAssoc.length > 0 ? hubspotContactIdsFromAssoc : undefined,
+              hubspotDealIds: hubspotDealIdsFromAssoc.length > 0 ? hubspotDealIdsFromAssoc : undefined,
             };
             
             // Only include fields that have actual non-null, non-empty string values
