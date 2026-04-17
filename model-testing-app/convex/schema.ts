@@ -1299,6 +1299,7 @@ export default defineSchema({
       contactsSynced: v.number(),
       leadsSynced: v.optional(v.number()),
       dealsSynced: v.number(),
+      activitiesSynced: v.optional(v.number()),
       errors: v.number(),
     })),
     syncIntervalHours: v.optional(v.number()), // Hours between syncs

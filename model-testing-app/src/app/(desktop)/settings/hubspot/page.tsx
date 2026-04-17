@@ -49,10 +49,11 @@ export default function HubSpotSettingsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          maxRecords: 20, // Reduced for testing
+          // maxRecords omitted → sync-all defaults to unlimited (Infinity)
           syncCompanies: true,
           syncContacts: true,
-          syncDeals: false, // Disabled - causing SDK errors
+          syncDeals: true, // Re-enabled — previous "SDK errors" were stale
+          syncActivities: true, // New: HubSpot engagement timeline
         }),
       });
 
