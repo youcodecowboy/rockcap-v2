@@ -354,15 +354,20 @@ export async function POST(request: NextRequest) {
               ? rawDealName.trim()
               : `(unnamed deal ${deal.id})`;
 
+            // Convex v.optional(v.string()) accepts undefined but REJECTS null.
+            // HubSpot returns null for unset fields — coerce to undefined.
+            const optStr = (v: any): string | undefined =>
+              (typeof v === 'string' && v.trim()) ? v : undefined;
+
             const dealData: any = {
               hubspotDealId: deal.id,
               name: dealName,
               amount,
-              stage: deal.properties.dealstage,
-              pipeline: deal.properties.pipeline,
-              closeDate: deal.properties.closedate,
-              dealType: deal.properties.dealtype,
-              hubspotOwnerId: deal.properties.hubspot_owner_id,
+              stage: optStr(deal.properties.dealstage),
+              pipeline: optStr(deal.properties.pipeline),
+              closeDate: optStr(deal.properties.closedate),
+              dealType: optStr(deal.properties.dealtype),
+              hubspotOwnerId: optStr(deal.properties.hubspot_owner_id),
               companyIds: companyIds.length > 0 ? companyIds : undefined,
               contactIds: contactIds.length > 0 ? contactIds : undefined,
               customProperties,
