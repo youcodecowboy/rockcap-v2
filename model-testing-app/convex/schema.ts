@@ -1299,6 +1299,9 @@ export default defineSchema({
       contactsSynced: v.number(),
       dealsSynced: v.number(),
       activitiesSynced: v.optional(v.number()),
+      // Legacy field from the old prospecting build (removed in PR #9).
+      // Kept as optional so existing stored documents pass validation.
+      leadsSynced: v.optional(v.number()),
       errors: v.number(),
     })),
     syncIntervalHours: v.optional(v.number()), // Hours between syncs
