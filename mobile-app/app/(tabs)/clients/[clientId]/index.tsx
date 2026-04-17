@@ -39,6 +39,7 @@ import {
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import MobileHeader from '@/components/MobileHeader';
 import ContactAvatar from '@/components/contacts/ContactAvatar';
 import ContactDetailModal from '@/components/contacts/ContactDetailModal';
 import SyncStrip from '@/components/client/SyncStrip';
@@ -1565,8 +1566,14 @@ export default function ClientDetailScreen() {
 
   return (
     <View className="flex-1 bg-m-bg">
-      {/* Header */}
-      <View className="bg-m-bg-brand pt-14 pb-4 px-4">
+      {/* App chrome (RockCap brand + nav). Matches every other top-level
+          screen so the client profile no longer looks like it jumps
+          straight into the client-branded banner with no RockCap context. */}
+      <MobileHeader />
+
+      {/* Client brand banner — still distinct from the app chrome, but now
+          visually nested UNDER the RockCap header for clear hierarchy. */}
+      <View className="bg-m-bg-brand pt-3 pb-4 px-4">
         <TouchableOpacity onPress={() => router.back()} className="flex-row items-center mb-2">
           <ArrowLeft size={20} color={colors.textOnBrand} />
           <Text className="text-m-text-on-brand/60 text-sm ml-1">Clients</Text>
