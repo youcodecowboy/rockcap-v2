@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useMutation } from 'convex/react';
+import { useState, useMemo } from 'react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
@@ -49,6 +49,15 @@ interface Contact {
   company?: string;
   notes?: string;
   createdAt: string;
+  // HubSpot enrichment fields — surfaced for Task C (Contacts rework).
+  hubspotContactId?: string;
+  hubspotUrl?: string;
+  hubspotLifecycleStageName?: string;
+  hubspotLifecycleStage?: string;
+  linkedinUrl?: string;
+  linkedCompanyIds?: Id<"companies">[];
+  lastContactedDate?: string;
+  lastActivityDate?: string;
 }
 
 interface ClientContactsTabProps {
@@ -71,6 +80,30 @@ export default function ClientContactsTab({
   const createContact = useMutation(api.contacts.create);
   const updateContact = useMutation(api.contacts.update);
   const removeContact = useMutation(api.contacts.remove);
+  const unlinkFromClient = useMutation(api.contacts.unlinkFromClient);
+
+  // Resolve the linked-company names for the entire card grid in one query
+  // so we can show 'Linked to <Company>' chips without N+1 fetches.
+  const allLinkedCompanyIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of contacts) {
+      for (const cid of c.linkedCompanyIds ?? []) ids.add(String(cid));
+    }
+    return Array.from(ids) as Id<'companies'>[];
+  }, [contacts]);
+  const companies = useQuery(
+    api.companies.listByIds,
+    allLinkedCompanyIds.length > 0 ? { ids: allLinkedCompanyIds } : 'skip',
+  );
+  const companyNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of companies ?? []) m.set(String((c as any)._id), (c as any).name);
+    return m;
+  }, [companies]);
+
+  const handleUnlink = async (contactId: Id<'contacts'>) => {
+    await unlinkFromClient({ contactId });
+  };
 
   const handleCopyEmail = async (email: string) => {
     try {
@@ -125,17 +158,25 @@ export default function ClientContactsTab({
       {/* Contact Cards Grid */}
       {contacts.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {contacts.map((contact) => (
-            <ContactCard
-              key={contact._id}
-              contact={contact}
-              onEdit={() => setEditingContact(contact)}
-              onDelete={() => handleDelete(contact._id)}
-              onCopyEmail={handleCopyEmail}
-              copiedEmail={copiedEmail}
-              isDeleting={isDeleting === contact._id}
-            />
-          ))}
+          {contacts.map((contact) => {
+            const linkedCompanyName =
+              (contact.linkedCompanyIds ?? [])
+                .map((id) => companyNameMap.get(String(id)))
+                .filter(Boolean)[0] ?? null;
+            return (
+              <ContactCard
+                key={contact._id}
+                contact={contact}
+                linkedCompanyName={linkedCompanyName}
+                onEdit={() => setEditingContact(contact)}
+                onDelete={() => handleDelete(contact._id)}
+                onUnlink={() => handleUnlink(contact._id)}
+                onCopyEmail={handleCopyEmail}
+                copiedEmail={copiedEmail}
+                isDeleting={isDeleting === contact._id}
+              />
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
@@ -181,18 +222,38 @@ export default function ClientContactsTab({
   );
 }
 
-// Contact Card Component
+/** Format a last-contacted/activity ISO into a short relative 'Nd ago' label. */
+function relativeDays(iso?: string): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return null;
+  const days = Math.floor((Date.now() - t) / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return '1d ago';
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+// Contact Card Component — reworked for Task C. Surfaces HubSpot origin,
+// linked-company context, lifecycle stage, last-contacted, and an 'Unlink
+// from client' action alongside Edit + Delete. Styling tightened for
+// consistency with the rest of the reworked desktop client profile.
 function ContactCard({
   contact,
+  linkedCompanyName,
   onEdit,
   onDelete,
+  onUnlink,
   onCopyEmail,
   copiedEmail,
   isDeleting,
 }: {
   contact: Contact;
+  linkedCompanyName: string | null;
   onEdit: () => void;
   onDelete: () => void;
+  onUnlink: () => void;
   onCopyEmail: (email: string) => void;
   copiedEmail: string | null;
   isDeleting: boolean;
@@ -204,20 +265,39 @@ function ContactCard({
     .toUpperCase()
     .slice(0, 2);
 
+  const fromHubSpot = !!contact.hubspotContactId;
+  const lifecycle =
+    contact.hubspotLifecycleStageName ?? contact.hubspotLifecycleStage ?? null;
+  const lastTouch = relativeDays(
+    contact.lastContactedDate ?? contact.lastActivityDate,
+  );
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md hover:border-gray-300 transition-all">
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-lg">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-lg shrink-0">
             {initials}
           </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">{contact.name}</h3>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h3 className="font-semibold text-gray-900 truncate">
+                {contact.name}
+              </h3>
+              {fromHubSpot ? (
+                <Badge
+                  variant="secondary"
+                  className="text-[9px] h-4 px-1.5 bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-50"
+                >
+                  HubSpot
+                </Badge>
+              ) : null}
+            </div>
             {contact.role && (
-              <p className="text-sm text-gray-500 flex items-center gap-1">
-                <Briefcase className="w-3 h-3" />
-                {contact.role}
+              <p className="text-sm text-gray-500 flex items-center gap-1 truncate">
+                <Briefcase className="w-3 h-3 shrink-0" />
+                <span className="truncate">{contact.role}</span>
               </p>
             )}
           </div>
@@ -233,8 +313,12 @@ function ContactCard({
               <Pencil className="w-4 h-4 mr-2" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={onDelete} 
+            <DropdownMenuItem onClick={onUnlink}>
+              <User className="w-4 h-4 mr-2" />
+              Unlink from client
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onDelete}
               className="text-red-600"
               disabled={isDeleting}
             >
@@ -244,6 +328,29 @@ function ContactCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* HubSpot enrichment chips — lifecycle + linked company + last-touch.
+          Only renders if any are available to keep non-HubSpot cards clean. */}
+      {lifecycle || linkedCompanyName || lastTouch ? (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {lifecycle ? (
+            <span className="text-[10px] font-medium text-gray-600 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">
+              {lifecycle}
+            </span>
+          ) : null}
+          {linkedCompanyName ? (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+              <Building2 className="w-2.5 h-2.5" />
+              {linkedCompanyName}
+            </span>
+          ) : null}
+          {lastTouch ? (
+            <span className="text-[10px] font-medium text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+              Last touch · {lastTouch}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Contact Info */}
       <div className="space-y-2 mb-4">
