@@ -261,6 +261,17 @@ export default function HubSpotSettingsPage() {
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
+      <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <h3 className="font-semibold text-blue-900">New sync interface available</h3>
+        <p className="text-sm text-blue-800 mt-1">
+          The unified HubSpot sync (V2) has moved to{" "}
+          <a href="/settings/hubspot-sync" className="underline font-medium">
+            /settings/hubspot-sync
+          </a>
+          . This legacy page has scoped sync buttons that pre-date the unified pipeline.
+        </p>
+      </div>
+
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2">HubSpot Integration</h1>
         <p className="text-muted-foreground">
