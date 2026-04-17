@@ -1,0 +1,21 @@
+# Logbook Inbox
+
+- 2026-04-16 — test capture
+- 2026-04-17 — ensure HubSpot sync job does not resync the entire library, only recents — original sync took 3+ hours and huge compute
+- 2026-04-17 — build a rate limitation system for HubSpot sync
+- 2026-04-17 — deal detail sheet (Deals tab on client profile): poor UI, lack of background, poor layout — needs polish pass
+- 2026-04-17 — plan edit functionality for deal detail: close date, linked contacts, deal type — even if edits don't all round-trip to HubSpot
+- 2026-04-17 — contacts still largely unlinked to companies — examine contact↔company ID linkage and ensure they connect (companies themselves now appear correctly)
+- 2026-04-17 — activity cards need tap-to-expand so you can open and read the full note/body
+- 2026-04-17 — activity cards show only time, no date — items from months ago are indistinguishable from today's
+- 2026-04-17 — pipe daily HubSpot updates (activities, new contacts, new deals, etc) into the org-wide daily brief
+- 2026-04-17 — Deals tab (client profile): Closed Won / Closed Lost collapsible rows don't open/close when tapped
+- 2026-04-17 — mobile app client list: all clients show "0 projects" (project count broken)
+- 2026-04-17 — add "new deal" modal so deals can be created from the mobile app (not just synced from HubSpot)
+- 2026-04-17 — audit desktop (web) UI for client profile — React Native side is now ahead UI-wise, desktop needs to catch up
+- 2026-04-17 — desktop web client pages don't surface HubSpot data (no deals/activity/Beauhurst) — port the mobile hero components to desktop
+- 2026-04-17 — web app home route always serves /m-dashboard — desktop traffic gets mobile layout; middleware needs to detect device type and route to desktop vs mobile dashboard accordingly
+- 2026-04-17 — surface HubSpot status slug / tags / activity slug / type chips in the client profile header (matches original mockups)
+- 2026-04-17 — add "link contact to client" flow: searchable modal over all contacts, updates both contact and client profile — needed on both desktop/web and React Native
+- 2026-04-17 — global activity stream page: merged feed of in-app + HubSpot activity across the org (a "pulse of the company" view) — desktop and mobile
+- 2026-04-17 — mobile dashboard Overdue section: plain text and unstyled — match Up Next card styling and make each row tappable → task detail
