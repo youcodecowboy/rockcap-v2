@@ -35,7 +35,6 @@ import {
   TrendingUp,
   Briefcase,
   Search,
-  Plus,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
