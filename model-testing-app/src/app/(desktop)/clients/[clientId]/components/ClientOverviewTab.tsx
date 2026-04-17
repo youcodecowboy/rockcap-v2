@@ -34,6 +34,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import MissingDocumentsCard from './MissingDocumentsCard';
+import ClientHubSpotSection from './ClientHubSpotSection';
 
 interface ClientOverviewTabProps {
   client: {
@@ -382,6 +383,12 @@ export default function ClientOverviewTab({
           </div>
         </div>
       </div>
+
+        {/* HubSpot parity section — desktop port of the mobile Overview hero
+            (SyncStrip + OpenDeals + RecentActivity + Beauhurst). Conditional
+            on the client having a promoted HubSpot company, so legacy
+            clients don't see an empty section. */}
+        <ClientHubSpotSection clientId={clientId} />
 
         {/* Main Content - Two Column Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
