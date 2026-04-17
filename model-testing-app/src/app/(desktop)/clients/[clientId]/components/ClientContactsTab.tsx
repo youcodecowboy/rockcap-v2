@@ -32,11 +32,13 @@ import {
   Pencil,
   Trash2,
   User,
+  UserPlus,
   Building2,
   MessageSquare,
   Briefcase,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import LinkContactDialog from './LinkContactDialog';
 
 interface Contact {
   _id: Id<"contacts">;
@@ -62,6 +64,7 @@ export default function ClientContactsTab({
 }: ClientContactsTabProps) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
@@ -103,10 +106,20 @@ export default function ClientContactsTab({
             {contacts.length} contact{contacts.length !== 1 ? 's' : ''} for {clientName}
           </p>
         </div>
-        <Button onClick={() => setIsAddModalOpen(true)} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Add Contact
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setIsLinkDialogOpen(true)}
+            variant="outline"
+            className="gap-2"
+          >
+            <UserPlus className="w-4 h-4" />
+            Link Existing
+          </Button>
+          <Button onClick={() => setIsAddModalOpen(true)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Add Contact
+          </Button>
+        </div>
       </div>
 
       {/* Contact Cards Grid */}
@@ -137,6 +150,15 @@ export default function ClientContactsTab({
           </Button>
         </div>
       )}
+
+      {/* Link existing contact — search modal */}
+      <LinkContactDialog
+        open={isLinkDialogOpen}
+        onOpenChange={setIsLinkDialogOpen}
+        clientId={clientId}
+        clientName={clientName}
+        alreadyLinkedIds={contacts.map((c) => String(c._id))}
+      />
 
       {/* Add/Edit Modal */}
       <ContactModal
