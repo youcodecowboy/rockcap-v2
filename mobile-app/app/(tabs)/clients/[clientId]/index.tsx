@@ -48,6 +48,7 @@ import BeauhurstMiniCard from '@/components/client/BeauhurstMiniCard';
 import ClassificationCard from '@/components/client/ClassificationCard';
 import DealCard from '@/components/deals/DealCard';
 import DealDetailSheet from '@/components/deals/DealDetailSheet';
+import ActivityCard from '@/components/activity/ActivityCard';
 
 // ============================================================================
 // Constants
@@ -987,6 +988,130 @@ function DealsTab({ clientId }: { clientId: string }) {
         visible={selectedDeal !== null}
         onClose={() => setSelectedDeal(null)}
       />
+    </View>
+  );
+}
+
+// ActivityTab — inline tab for the 'Activity' view. Renders filter chips
+// (All, Emails, Meetings, Notes, Calls, Tasks), groups the resulting
+// activities into Today / Yesterday / This week / Older buckets, and
+// renders each entry with ActivityCard.
+//
+// Hooks note: we call useQuery twice unconditionally — the second query
+// is skipped (via 'skip') unless the user has picked the EMAIL filter.
+// That keeps hook order stable across filter changes (rules-of-hooks).
+type ActivityFilter = 'all' | 'EMAIL' | 'MEETING' | 'NOTE' | 'CALL' | 'TASK';
+
+function ActivityTab({ clientId }: { clientId: string }) {
+  const [filter, setFilter] = useState<ActivityFilter>('all');
+
+  // Always query outgoing emails; query incoming only when the user picks EMAIL filter
+  const outboundOrAll = useQuery(
+    api.activities.listForClient,
+    filter === 'all'
+      ? { clientId: clientId as any, limit: 200 }
+      : {
+          clientId: clientId as any,
+          typeFilter: filter === 'EMAIL' ? 'EMAIL' : filter,
+          limit: 200,
+        },
+  ) ?? [];
+
+  const incomingEmails = useQuery(
+    api.activities.listForClient,
+    filter === 'EMAIL'
+      ? { clientId: clientId as any, typeFilter: 'INCOMING_EMAIL', limit: 200 }
+      : 'skip',
+  ) ?? [];
+
+  const fullList = filter === 'EMAIL' ? [...outboundOrAll, ...incomingEmails] : outboundOrAll;
+
+  const sorted = fullList
+    .slice()
+    .sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
+
+  // Group by date bucket
+  const now = Date.now();
+  type Bucket = 'Today' | 'Yesterday' | 'This week' | 'Older';
+  const bucketOf = (iso?: string): Bucket => {
+    if (!iso) return 'Older';
+    const days = Math.floor((now - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return 'This week';
+    return 'Older';
+  };
+
+  const grouped: Record<Bucket, typeof sorted> = {
+    Today: [],
+    Yesterday: [],
+    'This week': [],
+    Older: [],
+  };
+  for (const a of sorted) {
+    grouped[bucketOf(a.activityDate)].push(a);
+  }
+
+  const FILTERS: { key: ActivityFilter; label: string }[] = [
+    { key: 'all', label: `All · ${sorted.length}` },
+    { key: 'EMAIL', label: 'Emails' },
+    { key: 'MEETING', label: 'Meetings' },
+    { key: 'NOTE', label: 'Notes' },
+    { key: 'CALL', label: 'Calls' },
+    { key: 'TASK', label: 'Tasks' },
+  ];
+
+  return (
+    <View className="gap-3">
+      {/* Filter chips — horizontal scroll */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+      >
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <TouchableOpacity
+              key={f.key}
+              onPress={() => setFilter(f.key)}
+              className="px-2.5 py-1 rounded-full"
+              style={{
+                backgroundColor: active ? '#0a0a0a' : '#fafaf9',
+                borderWidth: active ? 0 : 1,
+                borderColor: colors.border,
+              }}
+            >
+              <Text
+                className="text-[11px] font-medium"
+                style={{ color: active ? '#ffffff' : colors.textSecondary }}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Timeline grouped */}
+      {(['Today', 'Yesterday', 'This week', 'Older'] as const).map((bucket) =>
+        grouped[bucket].length > 0 ? (
+          <View key={bucket} className="gap-2">
+            <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+              {bucket}
+            </Text>
+            {grouped[bucket].map((a) => (
+              <ActivityCard key={a._id} activity={a} />
+            ))}
+          </View>
+        ) : null,
+      )}
+
+      {sorted.length === 0 ? (
+        <Text className="text-sm text-m-text-tertiary italic text-center py-12">
+          No activity yet
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -1954,6 +2079,11 @@ export default function ClientDetailScreen() {
         {/* DEALS TAB */}
         {/* ================================================================ */}
         {activeTab === 'Deals' ? <DealsTab clientId={clientId as any} /> : null}
+
+        {/* ================================================================ */}
+        {/* ACTIVITY TAB */}
+        {/* ================================================================ */}
+        {activeTab === 'Activity' ? <ActivityTab clientId={clientId as any} /> : null}
 
         {/* ================================================================ */}
         {/* PROJECTS TAB */}
