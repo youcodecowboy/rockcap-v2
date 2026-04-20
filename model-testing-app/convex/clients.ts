@@ -78,6 +78,71 @@ const FALLBACK_CLIENT_FOLDERS = [
   { name: "Miscellaneous", folderKey: "miscellaneous", order: 4 },
 ];
 
+// Shared bootstrap path for a newly-inserted client: creates template folders,
+// schedules intelligence initialization, schedules checklist initialization.
+// Both `create` and `createWithPromotion` call this so a mobile-created client
+// gets the same base infrastructure as a web-created one.
+async function bootstrapNewClient(
+  ctx: any,
+  clientId: Id<"clients">,
+  type: string | undefined
+) {
+  const clientType = (type || "borrower").toLowerCase();
+  const now = new Date().toISOString();
+
+  const templates = await ctx.db
+    .query("folderTemplates")
+    .withIndex("by_client_type_level", (q: any) =>
+      q.eq("clientType", clientType).eq("level", "client")
+    )
+    .collect();
+
+  const folderTemplate =
+    templates.find((t: any) => t.isDefault) || templates[0];
+  const folders = folderTemplate?.folders || FALLBACK_CLIENT_FOLDERS;
+  const sortedFolders = [...folders].sort(
+    (a: any, b: any) => a.order - b.order
+  );
+
+  const folderIdMap: Record<string, any> = {};
+
+  // First pass: parent folders (no parentKey)
+  for (const folder of sortedFolders) {
+    if (!folder.parentKey) {
+      const folderId = await ctx.db.insert("clientFolders", {
+        clientId,
+        folderType: folder.folderKey as any,
+        name: folder.name,
+        createdAt: now,
+      });
+      folderIdMap[folder.folderKey] = folderId;
+    }
+  }
+
+  // Second pass: child folders (with parentKey)
+  for (const folder of sortedFolders) {
+    if (folder.parentKey && folderIdMap[folder.parentKey]) {
+      await ctx.db.insert("clientFolders", {
+        clientId,
+        folderType: folder.folderKey as any,
+        name: folder.name,
+        parentFolderId: folderIdMap[folder.parentKey],
+        createdAt: now,
+      });
+    }
+  }
+
+  await ctx.scheduler.runAfter(0, api.intelligence.initializeClientIntelligence, {
+    clientId,
+    clientType,
+  });
+
+  await ctx.scheduler.runAfter(0, api.knowledgeLibrary.initializeChecklistForClient, {
+    clientId,
+    clientType,
+  });
+}
+
 // Mutation: Create client
 export const create = mutation({
   args: {
@@ -113,9 +178,6 @@ export const create = mutation({
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    // Normalize client type for template lookup (default to "borrower")
-    const clientType = (args.type || "borrower").toLowerCase();
-    
     const clientId = await ctx.db.insert("clients", {
       name: args.name,
       type: args.type,
@@ -139,62 +201,7 @@ export const create = mutation({
       createdAt: new Date().toISOString(),
     });
 
-    // Look up folder template for this client type
-    const templates = await ctx.db
-      .query("folderTemplates")
-      .withIndex("by_client_type_level", (q: any) => 
-        q.eq("clientType", clientType).eq("level", "client")
-      )
-      .collect();
-    
-    // Use template folders or fallback
-    const folderTemplate = templates.find(t => t.isDefault) || templates[0];
-    const folders = folderTemplate?.folders || FALLBACK_CLIENT_FOLDERS;
-    
-    // Auto-create client folder structure from template
-    const now = new Date().toISOString();
-    const folderIdMap: Record<string, any> = {};
-    
-    // Sort folders by order
-    const sortedFolders = [...folders].sort((a, b) => a.order - b.order);
-    
-    // First pass: create parent folders (no parentKey)
-    for (const folder of sortedFolders) {
-      if (!folder.parentKey) {
-        const folderId = await ctx.db.insert("clientFolders", {
-          clientId,
-          folderType: folder.folderKey as any, // The schema will validate
-          name: folder.name,
-          createdAt: now,
-        });
-        folderIdMap[folder.folderKey] = folderId;
-      }
-    }
-    
-    // Second pass: create child folders (with parentKey)
-    for (const folder of sortedFolders) {
-      if (folder.parentKey && folderIdMap[folder.parentKey]) {
-        await ctx.db.insert("clientFolders", {
-          clientId,
-          folderType: folder.folderKey as any,
-          name: folder.name,
-          parentFolderId: folderIdMap[folder.parentKey],
-          createdAt: now,
-        });
-      }
-    }
-
-    // Initialize client intelligence
-    await ctx.scheduler.runAfter(0, api.intelligence.initializeClientIntelligence, {
-      clientId,
-      clientType,
-    });
-
-    // Initialize client checklist from template
-    await ctx.scheduler.runAfter(0, api.knowledgeLibrary.initializeChecklistForClient, {
-      clientId,
-      clientType,
-    });
+    await bootstrapNewClient(ctx, clientId, args.type);
 
     return clientId;
   },
@@ -852,6 +859,8 @@ export const createWithPromotion = mutation({
     if (promoteFromCompanyId) {
       await ctx.db.patch(promoteFromCompanyId, { promotedToClientId: clientId });
     }
+
+    await bootstrapNewClient(ctx, clientId, args.type);
 
     return clientId;
   },

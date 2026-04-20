@@ -1,9 +1,10 @@
 # Logbook Index
 
-Last updated: 2026-04-18
+Last updated: 2026-04-20
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
+| active | 2026-04-18 | [CRITICAL] Mobile new-client flow must bootstrap base folders + checklist | #bug #critical #data #mobile | active/2026-04-18_mobile-new-client-folder-checklist-bootstrap.md |
 | done | 2026-04-17 | Desktop HubSpot parity port (client profile) | #desktop #feature #ux | done/2026-04-17_desktop-hubspot-parity-port-client-profile.md |
 | done | 2026-04-17 | Desktop /activity page — expandable activity cards | #desktop #ux | done/2026-04-17_desktop-activity-expandable-cards.md |
 | done | 2026-04-17 | Desktop Contacts section rework (list + detail + linkage) | #desktop #ux #refactor | done/2026-04-17_desktop-contacts-section-rework.md |
@@ -54,7 +55,6 @@ Last updated: 2026-04-18
 | done | 2026-04-17 | HubSpot status / tag chips in client profile header | #ux #feature | done/2026-04-17_hubspot-status-chips-client-header.md |
 | done | 2026-04-17 | Link existing contact to client (searchable modal) | #feature | done/2026-04-17_link-contact-to-client-modal.md |
 | done | 2026-04-17 | Mobile dashboard small fixes (client list count + Overdue section styling) | #mobile #ux #bug | done/2026-04-17_mobile-dashboard-small-fixes.md |
-| queued | 2026-04-18 | [CRITICAL] Mobile new-client flow must bootstrap base folders + checklist | #bug #critical #data #mobile | queued/2026-04-18_mobile-new-client-folder-checklist-bootstrap.md |
 | queued | 2026-04-18 | Desktop client profile Activity tab — fix "Rendered more hooks" runtime error | #bug #web #frontend | queued/2026-04-18_desktop-activity-tab-hook-count-error.md |
 | queued | 2026-04-18 | Mobile notes broken — can't save AND can't type (merged) | #bug #mobile #data | queued/2026-04-18_mobile-notes-broken-save-and-type.md |
 | queued | 2026-04-18 | Mobile camera upload stuck at 0% — photos never process | #bug #mobile #perf | queued/2026-04-18_mobile-camera-upload-stuck-at-0.md |
