@@ -55,8 +55,8 @@ Last updated: 2026-04-20
 | done | 2026-04-17 | HubSpot status / tag chips in client profile header | #ux #feature | done/2026-04-17_hubspot-status-chips-client-header.md |
 | done | 2026-04-17 | Link existing contact to client (searchable modal) | #feature | done/2026-04-17_link-contact-to-client-modal.md |
 | done | 2026-04-17 | Mobile dashboard small fixes (client list count + Overdue section styling) | #mobile #ux #bug | done/2026-04-17_mobile-dashboard-small-fixes.md |
-| queued | 2026-04-18 | Desktop client profile Activity tab — fix "Rendered more hooks" runtime error | #bug #web #frontend | queued/2026-04-18_desktop-activity-tab-hook-count-error.md |
-| queued | 2026-04-18 | Mobile notes broken — can't save AND can't type (merged) | #bug #mobile #data | queued/2026-04-18_mobile-notes-broken-save-and-type.md |
+| done | 2026-04-18 | Mobile notes broken — can't save AND can't type (merged) | #bug #mobile #data | done/2026-04-18_mobile-notes-broken-save-and-type.md |
+| done | 2026-04-18 | Desktop client profile Activity tab — fix "Rendered more hooks" runtime error | #bug #web #frontend | done/2026-04-18_desktop-activity-tab-hook-count-error.md |
 | queued | 2026-04-18 | Mobile camera upload stuck at 0% — photos never process | #bug #mobile #perf | queued/2026-04-18_mobile-camera-upload-stuck-at-0.md |
 | queued | 2026-04-18 | Mobile top-level screens bypassing (tabs)/ layout — missing nav chrome | #bug #mobile #architecture #refactor | queued/2026-04-18_mobile-top-level-screens-bypass-tabs-layout.md |
 | queued | 2026-04-18 | Mobile client profile — rich creation flows (Notes / Tasks / Projects / Flags) | #mobile #ux #feature | queued/2026-04-18_mobile-client-profile-rich-creation-flows.md |
