@@ -1225,6 +1225,11 @@ export default function ClientDetailScreen() {
 
   const folderCounts = useQuery(api.documents.getFolderCounts, skip ? 'skip' : { clientId: clientId as any });
 
+  // Folder records (source of truth for which folders exist, including empty ones).
+  // folderCounts only has entries for folders with docs, so we can't use it alone —
+  // empty client-level folders would never render.
+  const foldersData = useQuery(api.folderStructure.getAllFoldersForClient, skip ? 'skip' : { clientId: clientId as any });
+
   const openFlagCount = useQuery(api.flags.getOpenCountByClient, skip ? 'skip' : { clientId: clientId as any });
 
   const clientFlags = useQuery(
@@ -2236,46 +2241,53 @@ export default function ClientDetailScreen() {
               </View>
             </Card>
 
-            {/* Client-level folders */}
-            {folderCounts && folderCounts.clientFolders && Object.keys(folderCounts.clientFolders).length > 0 ? (
-              <Card>
-                <SectionHeader title="Client Documents" />
-                <View className="gap-1">
-                  {Object.entries(folderCounts.clientFolders).map(([folder, count]) => (
-                    <TouchableOpacity
-                      key={folder}
-                      // The mobile docs browser navigates client → project →
-                      // folder → documents. Client-level folders don't have
-                      // their own level yet, so we drop the user at the
-                      // projects list for this client (better context than
-                      // the global root). When a client-folder level is
-                      // added later, switch to passing folderType here.
-                      onPress={() =>
-                        router.push({
-                          pathname: '/(tabs)/docs',
-                          params: {
-                            clientId: clientId as string,
-                            clientName: client.name,
-                          },
-                        })
-                      }
-                      className="flex-row items-center justify-between py-2"
-                    >
-                      <View className="flex-row items-center gap-2 flex-1">
-                        <FolderOpen size={14} color={colors.accent} />
-                        <Text className="text-sm text-m-text-primary capitalize">
-                          {folder.replace(/_/g, ' ')}
-                        </Text>
-                      </View>
-                      <View className="flex-row items-center gap-1">
-                        <Text className="text-xs text-m-text-tertiary">{count as number}</Text>
-                        <ChevronRight size={14} color={colors.textTertiary} />
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </Card>
-            ) : null}
+            {/* Client-level folders. Rendered from foldersData (actual folder
+                records) so empty folders still appear. Counts come from
+                folderCounts keyed by folderType. */}
+            {(() => {
+              const rootClientFolders = (foldersData?.clientFolders ?? []).filter(
+                (f: any) => !f.parentFolderId
+              );
+              if (rootClientFolders.length === 0) return null;
+              const counts = folderCounts?.clientFolders ?? {};
+              return (
+                <Card>
+                  <SectionHeader title="Client Documents" />
+                  <View className="gap-1">
+                    {rootClientFolders.map((folder: any) => {
+                      const count = (counts as Record<string, number>)[folder.folderType] ?? 0;
+                      return (
+                        <TouchableOpacity
+                          key={folder._id}
+                          // /docs route doesn't yet render a specific client-level
+                          // folder view, so drop the user at the client's docs
+                          // root. Pass folderType once that view exists.
+                          onPress={() =>
+                            router.push({
+                              pathname: '/(tabs)/docs',
+                              params: {
+                                clientId: clientId as string,
+                                clientName: client.name,
+                              },
+                            })
+                          }
+                          className="flex-row items-center justify-between py-2"
+                        >
+                          <View className="flex-row items-center gap-2 flex-1">
+                            <FolderOpen size={14} color={colors.accent} />
+                            <Text className="text-sm text-m-text-primary">{folder.name}</Text>
+                          </View>
+                          <View className="flex-row items-center gap-1">
+                            <Text className="text-xs text-m-text-tertiary">{count}</Text>
+                            <ChevronRight size={14} color={colors.textTertiary} />
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </Card>
+              );
+            })()}
 
             {/* Project folders */}
             {docsProjectFolders.length > 0 ? (
