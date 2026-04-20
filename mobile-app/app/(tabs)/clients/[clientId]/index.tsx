@@ -2242,32 +2242,36 @@ export default function ClientDetailScreen() {
             </Card>
 
             {/* Client-level folders. Rendered from foldersData (actual folder
-                records) so empty folders still appear. Counts come from
-                folderCounts keyed by folderType. */}
+                records) so empty folders still appear. Shown flat — parents and
+                children as peers — to match desktop's visible folder set in a
+                mobile list UI. Unfiled pseudo-row surfaces docs not matched to
+                any known folder (computed: clientTotal − sum(folder counts)). */}
             {(() => {
-              const rootClientFolders = (foldersData?.clientFolders ?? []).filter(
-                (f: any) => !f.parentFolderId
+              const allClientFolders = foldersData?.clientFolders ?? [];
+              const counts = (folderCounts?.clientFolders ?? {}) as Record<string, number>;
+              const filedSum = allClientFolders.reduce(
+                (sum: number, f: any) => sum + (counts[f.folderType] ?? 0),
+                0
               );
-              if (rootClientFolders.length === 0) return null;
-              const counts = folderCounts?.clientFolders ?? {};
+              const unfiledCount = Math.max(0, (folderCounts?.clientTotal ?? 0) - filedSum);
+              if (allClientFolders.length === 0 && unfiledCount === 0) return null;
               return (
                 <Card>
                   <SectionHeader title="Client Documents" />
                   <View className="gap-1">
-                    {rootClientFolders.map((folder: any) => {
-                      const count = (counts as Record<string, number>)[folder.folderType] ?? 0;
+                    {allClientFolders.map((folder: any) => {
+                      const count = counts[folder.folderType] ?? 0;
                       return (
                         <TouchableOpacity
                           key={folder._id}
-                          // /docs route doesn't yet render a specific client-level
-                          // folder view, so drop the user at the client's docs
-                          // root. Pass folderType once that view exists.
                           onPress={() =>
                             router.push({
                               pathname: '/(tabs)/docs',
                               params: {
                                 clientId: clientId as string,
                                 clientName: client.name,
+                                clientFolderType: folder.folderType,
+                                clientFolderName: folder.name,
                               },
                             })
                           }
@@ -2284,6 +2288,31 @@ export default function ClientDetailScreen() {
                         </TouchableOpacity>
                       );
                     })}
+                    {unfiledCount > 0 && (
+                      <TouchableOpacity
+                        onPress={() =>
+                          router.push({
+                            pathname: '/(tabs)/docs',
+                            params: {
+                              clientId: clientId as string,
+                              clientName: client.name,
+                              clientFolderType: 'unfiled',
+                              clientFolderName: 'Unfiled',
+                            },
+                          })
+                        }
+                        className="flex-row items-center justify-between py-2"
+                      >
+                        <View className="flex-row items-center gap-2 flex-1">
+                          <FolderOpen size={14} color={colors.textTertiary} />
+                          <Text className="text-sm text-m-text-primary italic">Unfiled</Text>
+                        </View>
+                        <View className="flex-row items-center gap-1">
+                          <Text className="text-xs text-m-text-tertiary">{unfiledCount}</Text>
+                          <ChevronRight size={14} color={colors.textTertiary} />
+                        </View>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </Card>
               );
