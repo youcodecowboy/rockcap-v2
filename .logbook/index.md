@@ -4,7 +4,7 @@ Last updated: 2026-04-20
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
-| active | 2026-04-18 | [CRITICAL] Mobile new-client flow must bootstrap base folders + checklist | #bug #critical #data #mobile | active/2026-04-18_mobile-new-client-folder-checklist-bootstrap.md |
+| done | 2026-04-18 | [CRITICAL] Mobile new-client flow must bootstrap base folders + checklist | #bug #critical #data #mobile | done/2026-04-18_mobile-new-client-folder-checklist-bootstrap.md |
 | done | 2026-04-17 | Desktop HubSpot parity port (client profile) | #desktop #feature #ux | done/2026-04-17_desktop-hubspot-parity-port-client-profile.md |
 | done | 2026-04-17 | Desktop /activity page — expandable activity cards | #desktop #ux | done/2026-04-17_desktop-activity-expandable-cards.md |
 | done | 2026-04-17 | Desktop Contacts section rework (list + detail + linkage) | #desktop #ux #refactor | done/2026-04-17_desktop-contacts-section-rework.md |
