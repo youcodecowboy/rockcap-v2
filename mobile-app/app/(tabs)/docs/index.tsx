@@ -16,7 +16,15 @@ type NavLevel =
   | { level: 'clients' }
   | { level: 'projects'; clientId: Id<'clients'>; clientName: string }
   | { level: 'folders'; clientId: Id<'clients'>; clientName: string; projectId: Id<'projects'>; projectName: string }
-  | { level: 'documents'; clientId: Id<'clients'>; clientName: string; projectId: Id<'projects'>; projectName: string; folderType: string; folderName: string };
+  | { level: 'documents'; clientId: Id<'clients'>; clientName: string; projectId: Id<'projects'>; projectName: string; folderType: string; folderName: string }
+  // Client-level docs — no project in the path. Reached by tapping a client
+  // folder (KYC / Background / Miscellaneous) from the projects level.
+  | { level: 'client-documents'; clientId: Id<'clients'>; clientName: string; folderType: string; folderName: string };
+
+// Prefix used on folder item ids at the projects level to mark client-level
+// folders (vs project ids). FolderBrowser uses a flat item list, so we carry
+// the discriminator in the id and decode it in handleFolderPress.
+const CLIENT_FOLDER_ID_PREFIX = 'cf:';
 
 const TABS = ['Clients', 'Internal', 'Personal'] as const;
 type DocTab = typeof TABS[number];
@@ -36,6 +44,10 @@ export default function DocsScreen() {
     projectName?: string;
     folderType?: string;
     folderName?: string;
+    // Client-level deep link (no projectId): drops user straight into a
+    // specific client folder's documents view.
+    clientFolderType?: string;
+    clientFolderName?: string;
   }>();
 
   const [nav, setNav] = useState<NavLevel>(() => {
@@ -59,6 +71,15 @@ export default function DocsScreen() {
         clientName: params.clientName || '...',
         projectId: params.projectId as Id<'projects'>,
         projectName: params.projectName || '...',
+      };
+    }
+    if (params.clientFolderType && params.clientId) {
+      return {
+        level: 'client-documents',
+        clientId: params.clientId as Id<'clients'>,
+        clientName: params.clientName || '...',
+        folderType: params.clientFolderType,
+        folderName: params.clientFolderName || params.clientFolderType,
       };
     }
     if (params.clientId) {
@@ -137,6 +158,16 @@ export default function DocsScreen() {
       : 'skip'
   );
 
+  // Client-level folders (source of truth for empty folders). Fetched at any
+  // level that needs them — projects view shows them as items, client-documents
+  // view uses them indirectly via folderCounts.
+  const clientFoldersData = useQuery(
+    api.folderStructure.getAllFoldersForClient,
+    isAuthenticated && nav.level !== 'clients'
+      ? { clientId: nav.clientId }
+      : 'skip'
+  );
+
   const folders = useQuery(
     api.projects.getProjectFolders,
     isAuthenticated && (nav.level === 'folders' || nav.level === 'documents')
@@ -146,14 +177,22 @@ export default function DocsScreen() {
 
   const documents = useQuery(
     api.documents.getByFolder,
-    isAuthenticated && nav.level === 'documents'
-      ? {
-          clientId: nav.clientId,
-          folderType: nav.folderType,
-          level: 'project' as const,
-          projectId: nav.projectId,
-        }
-      : 'skip'
+    !isAuthenticated
+      ? 'skip'
+      : nav.level === 'documents'
+        ? {
+            clientId: nav.clientId,
+            folderType: nav.folderType,
+            level: 'project' as const,
+            projectId: nav.projectId,
+          }
+        : nav.level === 'client-documents'
+          ? {
+              clientId: nav.clientId,
+              folderType: nav.folderType,
+              level: 'client' as const,
+            }
+          : 'skip'
   );
 
   // Folder counts for showing document counts on folders
@@ -184,6 +223,12 @@ export default function DocsScreen() {
     crumbs.push({ id: nav.clientId, name: nav.clientName });
     if (nav.level === 'projects') return crumbs;
 
+    // Client-level documents: client → folder (no project).
+    if (nav.level === 'client-documents') {
+      crumbs.push({ id: nav.folderType, name: nav.folderName });
+      return crumbs;
+    }
+
     crumbs.push({ id: nav.projectId, name: nav.projectName });
     if (nav.level === 'folders') return crumbs;
 
@@ -212,8 +257,35 @@ export default function DocsScreen() {
           type: 'folder' as const,
         }));
       case 'projects': {
+        // At client-scope browsing: show client-level folders first (drill
+        // into client docs), then projects. Previously this level was
+        // projects-only, which hid any client-level docs behind an empty
+        // state when the client had no projects.
+        const clientCounts = (folderCounts?.clientFolders ?? {}) as Record<string, number>;
+        const clientFolderList = clientFoldersData?.clientFolders ?? [];
+        const clientFiledSum = clientFolderList.reduce(
+          (sum: number, f: any) => sum + (clientCounts[f.folderType] ?? 0),
+          0
+        );
+        const clientUnfiledCount = Math.max(0, (folderCounts?.clientTotal ?? 0) - clientFiledSum);
+
+        const clientFolderItems = clientFolderList.map((f: any) => ({
+          id: `${CLIENT_FOLDER_ID_PREFIX}${f.folderType}|${f.name}`,
+          name: f.name,
+          type: 'folder' as const,
+          documentCount: clientCounts[f.folderType] ?? 0,
+        }));
+        if (clientUnfiledCount > 0) {
+          clientFolderItems.push({
+            id: `${CLIENT_FOLDER_ID_PREFIX}unfiled|Unfiled`,
+            name: 'Unfiled',
+            type: 'folder' as const,
+            documentCount: clientUnfiledCount,
+          });
+        }
+
         const pFolders = folderCounts?.projectFolders ?? {};
-        return (projects || []).map((p) => {
+        const projectItems = (projects || []).map((p) => {
           const projectCounts = pFolders[p._id] ?? {};
           const total = Object.values(projectCounts).reduce((sum: number, n: number) => sum + n, 0);
           return {
@@ -223,6 +295,8 @@ export default function DocsScreen() {
             documentCount: total,
           };
         });
+
+        return [...clientFolderItems, ...projectItems];
       }
       case 'folders': {
         // Important: `folderCounts.projectFolders[projectId]` is keyed by
@@ -238,6 +312,7 @@ export default function DocsScreen() {
         }));
       }
       case 'documents':
+      case 'client-documents':
         return (documents || []).map((d) => ({
           id: d._id,
           name: d.fileName || 'Untitled',
@@ -245,14 +320,15 @@ export default function DocsScreen() {
           fileType: d.fileType,
         }));
     }
-  }, [nav.level, clients, projects, folders, documents, folderCounts]);
+  }, [nav.level, clients, projects, folders, documents, folderCounts, clientFoldersData]);
 
   // Loading state
   const isLoading =
     (nav.level === 'clients' && !clients) ||
     (nav.level === 'projects' && !projects) ||
     (nav.level === 'folders' && !folders) ||
-    (nav.level === 'documents' && !documents);
+    (nav.level === 'documents' && !documents) ||
+    (nav.level === 'client-documents' && !documents);
 
   const handleFolderPress = (folderId: string, folderName: string) => {
     switch (nav.level) {
@@ -264,6 +340,19 @@ export default function DocsScreen() {
         });
         break;
       case 'projects':
+        // Client-level folder items carry the CLIENT_FOLDER_ID_PREFIX; decode
+        // the folderType out of the id and route to client-documents.
+        if (folderId.startsWith(CLIENT_FOLDER_ID_PREFIX)) {
+          const [folderType] = folderId.slice(CLIENT_FOLDER_ID_PREFIX.length).split('|');
+          setNav({
+            level: 'client-documents',
+            clientId: nav.clientId,
+            clientName: nav.clientName,
+            folderType,
+            folderName,
+          });
+          break;
+        }
         setNav({
           ...nav,
           level: 'folders',
@@ -292,7 +381,7 @@ export default function DocsScreen() {
   };
 
   const handleBreadcrumbPress = (index: number) => {
-    // index 0 = client level, 1 = project level, 2 = folder level
+    // index 0 = client level, 1 = project or client-folder, 2 = project-folder
     if (nav.level === 'clients') return;
 
     if (index === 0) {
@@ -312,7 +401,8 @@ export default function DocsScreen() {
         projectName: nav.projectName,
       });
     }
-    // index === 2 at documents level = tapped current folder, no-op
+    // At client-documents, index === 1 is the current folder = no-op.
+    // At documents, index === 2 is the current folder = no-op.
   };
 
   const handleBack = () => {
@@ -336,6 +426,13 @@ export default function DocsScreen() {
           clientName: nav.clientName,
           projectId: nav.projectId,
           projectName: nav.projectName,
+        });
+        break;
+      case 'client-documents':
+        setNav({
+          level: 'projects',
+          clientId: nav.clientId,
+          clientName: nav.clientName,
         });
         break;
     }
@@ -419,7 +516,7 @@ export default function DocsScreen() {
           icon={FileText}
           title={
             nav.level === 'clients' ? 'No clients' :
-            nav.level === 'projects' ? 'No projects' :
+            nav.level === 'projects' ? 'No folders or projects yet' :
             nav.level === 'folders' ? 'No folders' :
             'No documents'
           }
