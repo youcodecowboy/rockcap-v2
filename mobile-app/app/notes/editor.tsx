@@ -138,7 +138,14 @@ export default function NoteEditorScreen() {
     return items;
   }, [allUsers, allClients, allProjects, allContacts]);
 
-  const [initialEditorContent, setInitialEditorContent] = useState<any>(undefined);
+  // For new notes (no noteId) there's no server content to wait for, so seed
+  // initialContent with `null` — that flips RichTextEditor past its
+  // "still-loading" guard and triggers the Tiptap `init` message that
+  // actually constructs the editor. `undefined` means "waiting for fetch"
+  // and leaves the editor inert (nothing to type into).
+  const [initialEditorContent, setInitialEditorContent] = useState<any>(
+    noteId ? undefined : null
+  );
 
   // Load existing note data (once)
   const loadedRef = useRef(false);
@@ -208,7 +215,11 @@ export default function NoteEditorScreen() {
       setSaved(true);
       setSaving(false);
     } catch (error) {
-      Alert.alert('Error', 'Failed to save note');
+      // Surface the real error (auth failures, validation, etc.) so the next
+      // repro has a stack trace to work from instead of a generic alert.
+      const message =
+        error instanceof Error ? error.message : 'Failed to save note';
+      Alert.alert('Error', message);
       setSaving(false);
     }
   };
