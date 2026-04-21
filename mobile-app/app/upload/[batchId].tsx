@@ -12,6 +12,7 @@ import {
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
+import MiniTabBar from '@/components/MiniTabBar';
 import Card from '@/components/ui/Card';
 import CategorySheet from '@/components/upload/CategorySheet';
 import FolderSheet from '@/components/upload/FolderSheet';
@@ -404,6 +405,7 @@ export default function BatchDetailScreen() {
           )}
         </View>
       </ScrollView>
+      <MiniTabBar />
     </View>
   );
 }

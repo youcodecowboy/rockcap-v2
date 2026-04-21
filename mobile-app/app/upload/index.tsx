@@ -18,6 +18,7 @@ import {
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
+import MiniTabBar from '@/components/MiniTabBar';
 import ScopeToggle, { type UploadScope } from '@/components/upload/ScopeToggle';
 import PickerSheet, { type PickerItem } from '@/components/upload/PickerSheet';
 import FolderSheet from '@/components/upload/FolderSheet';
@@ -897,6 +898,8 @@ export default function UploadScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <MiniTabBar />
 
       {/* Pickers */}
       <PickerSheet

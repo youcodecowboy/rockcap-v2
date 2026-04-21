@@ -10,6 +10,7 @@ import {
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
+import MiniTabBar from '@/components/MiniTabBar';
 import ActivityCard from '@/components/activity/ActivityCard';
 
 /**
@@ -190,6 +191,7 @@ export default function GlobalActivityScreen() {
           )}
         </ScrollView>
       )}
+      <MiniTabBar />
     </View>
   );
 }

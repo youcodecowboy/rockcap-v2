@@ -6,6 +6,7 @@ import type { Doc } from '../../../../model-testing-app/convex/_generated/dataMo
 import { ChevronLeft } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import CompanyAutocomplete from '@/components/clients/CompanyAutocomplete';
+import MobileHeader from '@/components/MobileHeader';
 
 export default function NewClientScreen() {
   const createWithPromotion = useMutation(api.clients.createWithPromotion);
@@ -41,6 +42,7 @@ export default function NewClientScreen() {
   return (
     <SafeAreaView className="flex-1 bg-m-bg">
       <Stack.Screen options={{ headerShown: false }} />
+      <MobileHeader />
       <View className="flex-row items-center px-3 py-2 border-b border-m-border bg-m-bg-card">
         <TouchableOpacity
           onPress={() => router.back()}
