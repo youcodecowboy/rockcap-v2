@@ -117,7 +117,19 @@ export const syncActivityFromHubSpot = mutation({
       .first();
 
     if (existing) {
-      await ctx.db.patch(existing._id, fields);
+      // Strip undefined values before patching — Convex's db.patch treats
+      // `undefined` as "remove this field from the document," which would
+      // clobber good values on every re-sync when the current fetch path
+      // doesn't happen to populate a given optional field. Example: the
+      // new global `/engagements/recent/modified` path doesn't always
+      // surface owner info, so re-syncing an existing activity with
+      // ownerName: undefined was blanking the previously-resolved name
+      // and the UI fell back to "Someone" everywhere.
+      const patchFields: Record<string, any> = {};
+      for (const [k, v] of Object.entries(fields)) {
+        if (v !== undefined) patchFields[k] = v;
+      }
+      await ctx.db.patch(existing._id, patchFields);
       return existing._id;
     }
 
