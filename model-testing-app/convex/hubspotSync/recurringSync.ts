@@ -52,7 +52,14 @@ export const runRecurringSync = internalAction({
     }
 
     const startedAt = Date.now();
-    const url = `${apiBase.replace(/\/$/, "")}/api/hubspot/sync-all`;
+    // Normalize NEXT_APP_URL:
+    //   - auto-prepend https:// if the operator dropped the scheme
+    //     (Node's fetch throws "Invalid URL" on scheme-less inputs)
+    //   - strip trailing slash so template literal doesn't produce a //
+    const normalized = apiBase.match(/^https?:\/\//)
+      ? apiBase
+      : `https://${apiBase}`;
+    const url = `${normalized.replace(/\/$/, "")}/api/hubspot/sync-all`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
