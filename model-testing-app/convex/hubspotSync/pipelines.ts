@@ -84,6 +84,18 @@ export const getStageName = query({
 });
 
 /**
+ * List every synced pipeline with its stages. Used client-side to build
+ * a stageId → stageName lookup when deals are rendered before the
+ * `updateDealsWithStageAndPipelineNames` backfill has run (e.g. the mobile
+ * home screen). Small payload — typically 1-3 pipelines, 5-12 stages each.
+ */
+export const listAll = query({
+  handler: async (ctx) => {
+    return await ctx.db.query("hubspotPipelines").collect();
+  },
+});
+
+/**
  * Get pipeline name from pipeline ID
  */
 export const getPipelineName = query({

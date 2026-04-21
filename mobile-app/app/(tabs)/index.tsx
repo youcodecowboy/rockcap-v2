@@ -1189,6 +1189,15 @@ export default function DashboardScreen() {
   const brief = useQuery(api.dailyBriefs.getToday, isAuthenticated ? {} : 'skip');
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const deals = useQuery(api.deals.getAllDeals, isAuthenticated ? {} : 'skip');
+  // Pipeline definitions (stageId → stageName) so we can resolve stage
+  // labels client-side. `deal.stageName` is populated by a post-sync
+  // backfill mutation that only runs on demand, so fresh deals often have
+  // just the raw `stage` ID — we'd end up with every deal in "Unstaged"
+  // even though HubSpot clearly knows the stage names.
+  const pipelines = useQuery(
+    api.hubspotSync.pipelines.listAll,
+    isAuthenticated ? {} : 'skip',
+  );
   const activities = useQuery(
     api.activities.listRecentGlobal,
     // Ceiling generous enough that the activity stream's paginated
@@ -1248,14 +1257,29 @@ export default function DashboardScreen() {
     (d: any) => d.isClosed === true && d.isClosedWon !== true,
   );
 
-  // Group open deals by their HubSpot-resolved `stageName` (the
-  // human-readable label) — NOT `stage`, which is an internal stage ID
-  // like "1234567" or "appointmentscheduled" that keyword-matching can't
-  // turn into meaningful buckets across custom pipelines. Fall back to
-  // "Unstaged" only when stageName is genuinely missing.
+  // Build a stage-id → stage-name map from the synced pipeline
+  // definitions. Deals that have already been through the post-sync
+  // backfill expose `stageName` directly; fresh deals only have `stage`
+  // (the HubSpot stage ID) — resolving via this map makes the hero
+  // show real stage labels either way.
+  const stageIdToName = new Map<string, string>();
+  for (const p of pipelines ?? []) {
+    for (const s of (p as any).stages || []) {
+      stageIdToName.set(s.stageId, s.stageName);
+    }
+  }
+
+  // Group open deals by their resolved stage name. Prefer the deal's own
+  // `stageName` if the backfill populated it, otherwise look the `stage`
+  // ID up in our pipeline map. Only fall back to "Unstaged" when we
+  // genuinely have neither.
   const stageGroups = new Map<string, { label: string; value: number; count: number }>();
   for (const d of openDeals) {
-    const label = ((d as any).stageName as string) || 'Unstaged';
+    const stageId = (d as any).stage as string | undefined;
+    const label =
+      ((d as any).stageName as string | undefined) ||
+      (stageId && stageIdToName.get(stageId)) ||
+      'Unstaged';
     const existing = stageGroups.get(label);
     const amt = (d as any).amount || 0;
     if (existing) {
