@@ -263,7 +263,19 @@ export async function POST(request: NextRequest) {
 
     // ── 4. Write analysis back to Convex ──
     const doc = v4Data.documents[0];
-    const intelligenceFields = doc.intelligenceFields || [];
+    // V4 returns some optional string fields as `null` when the model had no
+    // value for them (e.g. pageReference on a document with no page refs).
+    // Convex's `v.optional(v.string())` validator accepts `undefined` but
+    // rejects `null`, so coerce nulls → undefined on the intelligence fields
+    // before handing them off.
+    const intelligenceFields = (doc.intelligenceFields || []).map((f: any) => ({
+      ...f,
+      sourceText: f.sourceText ?? undefined,
+      originalLabel: f.originalLabel ?? undefined,
+      matchedAlias: f.matchedAlias ?? undefined,
+      pageReference: f.pageReference ?? undefined,
+      scope: f.scope ?? undefined,
+    }));
 
     // Build updateItemAnalysis args. Mirrors bulkQueueProcessor's shape.
     // NOTE: some fields (duplicate detection, version bumps) need additional
