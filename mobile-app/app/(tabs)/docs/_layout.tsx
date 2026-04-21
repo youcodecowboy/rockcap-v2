@@ -1,19 +1,14 @@
 import { Stack } from 'expo-router';
-import { DocTabProvider } from '@/contexts/TabContext';
 
-// TabManager used to live here above the Stack, but each docs screen
-// renders its own <MobileHeader /> at the top — putting TabManager above
-// the Stack put it ABOVE the black RockCap header, where the iPhone
-// dynamic island cropped it. TabManager now renders inside each screen
-// directly below MobileHeader so it's always visible and inside the
-// screen's safe area.
+// DocTabProvider moved up to the root _layout.tsx so doc tabs persist
+// across the entire app (home, clients, inbox, etc.), not just within
+// the docs stack. TabManager is rendered by MobileHeader so it shows
+// wherever the header shows.
 export default function DocsLayout() {
   return (
-    <DocTabProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="viewer" />
-      </Stack>
-    </DocTabProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="viewer" />
+    </Stack>
   );
 }

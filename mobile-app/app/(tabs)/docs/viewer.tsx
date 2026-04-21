@@ -13,7 +13,6 @@ import { useDocTabs } from '@/contexts/TabContext';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DocumentRenderer from '@/components/DocumentRenderer';
 import MobileHeader from '@/components/MobileHeader';
-import TabManager from '@/components/TabManager';
 
 const TABS = ['Preview', 'Summary', 'Details', 'Intelligence', 'Notes'] as const;
 type TabKey = typeof TABS[number];
@@ -99,7 +98,6 @@ export default function ViewerScreen() {
   return (
     <View className="flex-1 bg-m-bg">
       <MobileHeader />
-      <TabManager />
 
       {/* Document sub-header */}
       <View className="bg-m-bg-card border-b border-m-border px-4 py-3 flex-row items-start">

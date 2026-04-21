@@ -6,6 +6,7 @@ import { ConvexReactClient } from 'convex/react';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { OfflineProvider, useOffline } from '@/contexts/OfflineContext';
+import { DocTabProvider } from '@/contexts/TabContext';
 import OfflineBanner from '@/components/ui/OfflineBanner';
 
 import '../global.css';
@@ -58,8 +59,10 @@ export default function RootLayout() {
       <ClerkLoaded>
         <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
           <OfflineProvider>
-            <StatusBar style="light" />
-            <AuthGate />
+            <DocTabProvider>
+              <StatusBar style="light" />
+              <AuthGate />
+            </DocTabProvider>
           </OfflineProvider>
         </ConvexProviderWithClerk>
       </ClerkLoaded>
