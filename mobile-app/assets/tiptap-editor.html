@@ -72,18 +72,44 @@
 </div>
 <div id="editor"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@tiptap/core@2.11.7/dist/index.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tiptap/starter-kit@2.11.7/dist/index.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tiptap/extension-underline@2.11.7/dist/index.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tiptap/extension-placeholder@2.11.7/dist/index.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tiptap/extension-mention@2.11.7/dist/index.umd.min.js"></script>
+<div id="status" style="padding:12px;color:#a3a3a3;font-family:-apple-system,monospace;font-size:11px;display:none;"></div>
+<script>
+  // Diagnostic surface — if module load fails, we show it on-screen and
+  // also post the error back to RN so device logs carry the cause.
+  window.__tiptapReport = function(err) {
+    var s = document.getElementById('status');
+    if (s) { s.style.display = 'block'; s.textContent = 'Editor load failed: ' + err; }
+    window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'error', error: String(err) }));
+  };
+  window.addEventListener('error', function(e) {
+    window.__tiptapReport(e.message || e.error || 'unknown');
+  });
+</script>
+<script type="module">
+  // esm.sh auto-resolves the @tiptap/pm/* peer dependencies that the UMD
+  // build silently required but never loaded — that's why the UMD approach
+  // left `window['@tiptap/core']` undefined and the editor never started.
+  try {
+    const core = await import('https://esm.sh/@tiptap/core@2.11.7');
+    const starter = await import('https://esm.sh/@tiptap/starter-kit@2.11.7');
+    const underline = await import('https://esm.sh/@tiptap/extension-underline@2.11.7');
+    const placeholder = await import('https://esm.sh/@tiptap/extension-placeholder@2.11.7');
+    const mention = await import('https://esm.sh/@tiptap/extension-mention@2.11.7');
+    window.__tiptap = {
+      Editor: core.Editor,
+      StarterKit: starter.default || starter.StarterKit,
+      Underline: underline.Underline || underline.default,
+      Placeholder: placeholder.Placeholder || placeholder.default,
+      Mention: mention.Mention || mention.default,
+    };
+    window.dispatchEvent(new Event('tiptap-ready'));
+  } catch (err) {
+    window.__tiptapReport(err?.message || err);
+  }
+</script>
 <script>
 (function() {
-  const { Editor } = window['@tiptap/core'];
-  const StarterKit = window['@tiptap/starter-kit'].StarterKit;
-  const Underline = window['@tiptap/extension-underline'].Underline;
-  const Placeholder = window['@tiptap/extension-placeholder'].Placeholder;
-  const Mention = window['@tiptap/extension-mention'].Mention;
+  let Editor, StarterKit, Underline, Placeholder, Mention;
 
   let editor;
 
@@ -164,8 +190,18 @@
     window.dispatchEvent(new MessageEvent('message', { data: e.data }));
   });
 
-  // Signal ready
-  window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'ready' }));
+  // Signal 'ready' only once the Tiptap module bundle has actually loaded —
+  // otherwise RN sends `init`, we try to `new Editor(...)` with Editor
+  // undefined, and the editor silently fails to attach.
+  function onTiptapReady() {
+    ({ Editor, StarterKit, Underline, Placeholder, Mention } = window.__tiptap);
+    window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'ready' }));
+  }
+  if (window.__tiptap) {
+    onTiptapReady();
+  } else {
+    window.addEventListener('tiptap-ready', onTiptapReady, { once: true });
+  }
 })();
 </script>
 </body>

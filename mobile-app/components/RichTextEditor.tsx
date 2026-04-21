@@ -82,6 +82,11 @@ export default function RichTextEditor({
       if (msg.type === 'content') {
         onChange?.(msg.data);
       }
+      if (msg.type === 'error') {
+        // Surface WebView-side failures (module load errors, Tiptap init
+        // errors) in the RN log so we stop chasing React-side ghosts.
+        console.warn('[RichTextEditor] WebView error:', msg.error);
+      }
     } catch {}
   }, [onChange, onReady]);
 
