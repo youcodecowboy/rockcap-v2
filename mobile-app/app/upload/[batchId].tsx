@@ -1,17 +1,21 @@
 import {
   View, Text, ScrollView, TouchableOpacity, ActivityIndicator,
-  Animated, Easing,
+  Animated, Easing, Alert,
 } from 'react-native';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery, useConvexAuth } from 'convex/react';
+import { useQuery, useConvexAuth, useMutation } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import {
   ArrowLeft, CheckCircle2, AlertCircle, Eye, FileText, Sparkles,
+  ChevronDown, FolderOpen, Tag, ListChecks,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
 import Card from '@/components/ui/Card';
+import CategorySheet from '@/components/upload/CategorySheet';
+import FolderSheet from '@/components/upload/FolderSheet';
+import type { UploadScope } from '@/components/upload/ScopeToggle';
 
 // ---------------------------------------------------------------------------
 // Batch detail / processing status screen (Phase 1)
@@ -138,7 +142,31 @@ export default function BatchDetailScreen() {
     );
   }
 
-  const status = batch.status as string;
+  // Derived status from actual item states. The backend sometimes lags
+  // updating batch.status behind per-item transitions (e.g. items all go
+  // ready_for_review but batch stays 'uploading'), which caused the
+  // "Uploading your files. Keep the app open..." banner to persist after
+  // processing was actually done.
+  const rawStatus = batch.status as string;
+  const totalItems = items.length;
+  const pendingCount = items.filter(
+    (i: any) => i.status === 'pending' || i.status === 'processing',
+  ).length;
+  const readyCount = items.filter((i: any) => i.status === 'ready_for_review').length;
+  const filedCount = items.filter((i: any) => i.status === 'filed').length;
+  const erroredCount = items.filter((i: any) => i.status === 'error').length;
+
+  const status =
+    totalItems === 0
+      ? rawStatus
+      : filedCount === totalItems
+        ? 'completed'
+        : pendingCount === 0 && readyCount > 0
+          ? 'review'
+          : pendingCount > 0
+            ? 'processing'
+            : rawStatus;
+
   const isUploading = status === 'uploading';
   const isProcessing = status === 'processing';
   const isReview = status === 'review';
@@ -156,14 +184,12 @@ export default function BatchDetailScreen() {
     ? `${batch.projectName}${batch.projectShortcode ? ` · ${batch.projectShortcode}` : ''}`
     : batch.internalFolderName || batch.personalFolderName || undefined;
 
-  // Aggregate counts
-  const total = items.length;
-  const ready = items.filter((i: any) => i.status === 'ready_for_review').length;
-  const filed = items.filter((i: any) => i.status === 'filed').length;
-  const errored = items.filter((i: any) => i.status === 'error').length;
-  const pending = items.filter(
-    (i: any) => i.status === 'pending' || i.status === 'processing',
-  ).length;
+  // Aliases for the JSX below (keep original names).
+  const total = totalItems;
+  const ready = readyCount;
+  const filed = filedCount;
+  const errored = erroredCount;
+  const pending = pendingCount;
 
   // Progress percentage (treat "filed" + "ready" + "error" as "done")
   const done = ready + filed + errored;
@@ -257,8 +283,8 @@ export default function BatchDetailScreen() {
           )}
         </Card>
 
-        {/* Review on desktop banner — Phase 1 only */}
-        {isReview && (
+        {/* Review helper banner */}
+        {isReview && ready > 0 && (
           <Card>
             <View className="flex-row items-start gap-2.5">
               <Eye size={16} color="#1d4ed8" style={{ marginTop: 2 }} />
@@ -267,13 +293,8 @@ export default function BatchDetailScreen() {
                   Ready to review
                 </Text>
                 <Text className="text-xs text-m-text-secondary mt-1 leading-5">
-                  All {total} {total === 1 ? 'document' : 'documents'} have been
-                  analysed. Open RockCap on desktop to review the AI
-                  classifications and file them.
-                </Text>
-                <Text className="text-[11px] text-m-text-tertiary mt-1.5 italic">
-                  Mobile review flow coming next — for now desktop is the
-                  fastest path to file.
+                  Tap any row below to adjust the AI's classification, folder,
+                  or checklist match, then file.
                 </Text>
               </View>
             </View>
@@ -308,42 +329,51 @@ export default function BatchDetailScreen() {
             </Text>
           ) : (
             <View>
-              {items.map((item: any, idx: number) => (
-                <View key={item._id}>
-                  {idx > 0 && <View className="h-px bg-m-border-subtle" />}
-                  <View className="flex-row items-center gap-2.5 py-2.5">
-                    <FileText size={15} color={colors.textTertiary} />
-                    <View className="flex-1 min-w-0">
-                      <Text
-                        className="text-sm text-m-text-primary"
-                        numberOfLines={1}
-                      >
-                        {item.fileName}
-                      </Text>
-                      {item.error ? (
+              {items.map((item: any, idx: number) =>
+                item.status === 'ready_for_review' ? (
+                  <ReviewItem
+                    key={item._id}
+                    item={item}
+                    batch={batch}
+                    isFirst={idx === 0}
+                  />
+                ) : (
+                  <View key={item._id}>
+                    {idx > 0 && <View className="h-px bg-m-border-subtle" />}
+                    <View className="flex-row items-center gap-2.5 py-2.5">
+                      <FileText size={15} color={colors.textTertiary} />
+                      <View className="flex-1 min-w-0">
                         <Text
-                          className="text-[11px] mt-0.5"
-                          style={{ color: colors.error }}
-                          numberOfLines={2}
-                        >
-                          {item.error}
-                        </Text>
-                      ) : item.category ? (
-                        <Text
-                          className="text-[11px] text-m-text-tertiary mt-0.5"
+                          className="text-sm text-m-text-primary"
                           numberOfLines={1}
                         >
-                          {item.category}
-                          {item.confidence
-                            ? ` · ${Math.round(item.confidence * 100)}%`
-                            : ''}
+                          {item.fileName}
                         </Text>
-                      ) : null}
+                        {item.error ? (
+                          <Text
+                            className="text-[11px] mt-0.5"
+                            style={{ color: colors.error }}
+                            numberOfLines={2}
+                          >
+                            {item.error}
+                          </Text>
+                        ) : item.category ? (
+                          <Text
+                            className="text-[11px] text-m-text-tertiary mt-0.5"
+                            numberOfLines={1}
+                          >
+                            {item.category}
+                            {item.confidence
+                              ? ` · ${Math.round(item.confidence * 100)}%`
+                              : ''}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <ItemStatusPill status={item.status} />
                     </View>
-                    <ItemStatusPill status={item.status} />
                   </View>
-                </View>
-              ))}
+                ),
+              )}
             </View>
           )}
         </Card>
@@ -374,6 +404,269 @@ export default function BatchDetailScreen() {
           )}
         </View>
       </ScrollView>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ReviewItem — inline per-doc review card for items in 'ready_for_review'.
+// Lets the user edit category/type, folder, and confirm checklist match
+// suggestions, then file via the existing Convex `fileItem` mutation.
+// ---------------------------------------------------------------------------
+
+function ReviewItem({
+  item, batch, isFirst,
+}: {
+  item: any;
+  batch: any;
+  isFirst: boolean;
+}) {
+  const [showCategorySheet, setShowCategorySheet] = useState(false);
+  const [showFolderSheet, setShowFolderSheet] = useState(false);
+  const [isFiling, setIsFiling] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  // Local checklist selection state — start with all AI suggestions checked
+  // (mirrors desktop default). User can un-toggle before filing.
+  const initialChecklistIds: string[] = Array.isArray(item.suggestedChecklistItems)
+    ? item.suggestedChecklistItems.map((m: any) => m.itemId).filter(Boolean)
+    : [];
+  const [selectedChecklistIds, setSelectedChecklistIds] = useState<string[]>(
+    Array.isArray(item.confirmedChecklistItemIds) && item.confirmedChecklistItemIds.length > 0
+      ? item.confirmedChecklistItemIds
+      : initialChecklistIds,
+  );
+
+  const updateItemDetails = useMutation(api.bulkUpload.updateItemDetails);
+  const fileItemMut = useMutation(api.bulkUpload.fileItem);
+
+  const confidencePct =
+    typeof item.confidence === 'number' ? Math.round(item.confidence * 100) : null;
+
+  const handleCategory = async (category: string, type: string) => {
+    setShowCategorySheet(false);
+    try {
+      await updateItemDetails({
+        itemId: item._id as any,
+        category,
+        fileTypeDetected: type,
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not update classification');
+    }
+  };
+
+  const handleFolder = async (
+    folderKey: string | null,
+    _folderName: string | null,
+    _folderLevel: 'client' | 'project' | null,
+  ) => {
+    setShowFolderSheet(false);
+    if (!folderKey) return;
+    try {
+      await updateItemDetails({
+        itemId: item._id as any,
+        targetFolder: folderKey,
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not update folder');
+    }
+  };
+
+  const toggleChecklist = (id: string) => {
+    setSelectedChecklistIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const handleFile = async () => {
+    setFileError(null);
+    setIsFiling(true);
+    try {
+      // Persist confirmed checklist matches before filing so they stick.
+      if (Array.isArray(item.suggestedChecklistItems) && item.suggestedChecklistItems.length > 0) {
+        await updateItemDetails({
+          itemId: item._id as any,
+          checklistItemIds: selectedChecklistIds as any,
+        });
+      }
+      await fileItemMut({
+        itemId: item._id as any,
+        uploaderInitials: batch?.uploaderInitials || 'XX',
+      });
+    } catch (e: any) {
+      setFileError(e?.message || 'Filing failed');
+      setIsFiling(false);
+    }
+  };
+
+  return (
+    <View>
+      {!isFirst && <View className="h-px bg-m-border-subtle my-2" />}
+      <View className="py-2.5">
+        {/* Filename header */}
+        <View className="flex-row items-start gap-2.5 mb-3">
+          <FileText size={15} color={colors.textTertiary} style={{ marginTop: 2 }} />
+          <View className="flex-1 min-w-0">
+            <Text className="text-sm font-medium text-m-text-primary" numberOfLines={1}>
+              {item.fileName}
+            </Text>
+            {item.generatedDocumentCode ? (
+              <Text className="text-[11px] text-m-text-tertiary mt-0.5" numberOfLines={1}>
+                {item.generatedDocumentCode}
+              </Text>
+            ) : null}
+          </View>
+          <StatusPill kind="info" label="Ready" />
+        </View>
+
+        {/* Type / Category row */}
+        <TouchableOpacity
+          onPress={() => setShowCategorySheet(true)}
+          className="flex-row items-center gap-2.5 px-3 py-2.5 rounded-[10px] bg-m-bg-subtle border border-m-border mb-2"
+        >
+          <Tag size={14} color={colors.textTertiary} />
+          <View className="flex-1 min-w-0">
+            <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+              Type
+            </Text>
+            <Text className="text-sm text-m-text-primary mt-0.5" numberOfLines={1}>
+              {item.category || 'Unknown'}
+              {item.fileTypeDetected && item.fileTypeDetected !== item.category
+                ? ` · ${item.fileTypeDetected}`
+                : ''}
+            </Text>
+          </View>
+          {confidencePct !== null && (
+            <Text className="text-[11px] text-m-text-tertiary mr-1">
+              {confidencePct}%
+            </Text>
+          )}
+          <ChevronDown size={14} color={colors.textTertiary} />
+        </TouchableOpacity>
+
+        {/* Folder row */}
+        <TouchableOpacity
+          onPress={() => setShowFolderSheet(true)}
+          className="flex-row items-center gap-2.5 px-3 py-2.5 rounded-[10px] bg-m-bg-subtle border border-m-border mb-2"
+        >
+          <FolderOpen size={14} color={colors.textTertiary} />
+          <View className="flex-1 min-w-0">
+            <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+              Folder
+            </Text>
+            <Text className="text-sm text-m-text-primary mt-0.5" numberOfLines={1}>
+              {item.targetFolder
+                ? String(item.targetFolder).replace(/_/g, ' ')
+                : 'Unfiled'}
+            </Text>
+          </View>
+          <ChevronDown size={14} color={colors.textTertiary} />
+        </TouchableOpacity>
+
+        {/* Checklist matches (if AI suggested any) */}
+        {Array.isArray(item.suggestedChecklistItems) &&
+          item.suggestedChecklistItems.length > 0 && (
+            <View className="px-3 py-2.5 rounded-[10px] bg-m-bg-subtle border border-m-border mb-2">
+              <View className="flex-row items-center gap-2 mb-2">
+                <ListChecks size={14} color={colors.textTertiary} />
+                <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                  Checklist Matches
+                </Text>
+              </View>
+              {item.suggestedChecklistItems.map((m: any) => {
+                const checked = selectedChecklistIds.includes(m.itemId);
+                return (
+                  <TouchableOpacity
+                    key={m.itemId}
+                    onPress={() => toggleChecklist(m.itemId)}
+                    className="flex-row items-start gap-2 py-1.5"
+                  >
+                    <View
+                      className="w-4 h-4 rounded border items-center justify-center mt-0.5"
+                      style={{
+                        backgroundColor: checked ? colors.accent : 'transparent',
+                        borderColor: checked ? colors.accent : colors.border,
+                      }}
+                    >
+                      {checked && <CheckCircle2 size={10} color="#fff" />}
+                    </View>
+                    <View className="flex-1 min-w-0">
+                      <Text className="text-[13px] text-m-text-primary" numberOfLines={1}>
+                        {m.itemName || 'Checklist item'}
+                      </Text>
+                      {m.category ? (
+                        <Text className="text-[11px] text-m-text-tertiary">
+                          {m.category}
+                          {typeof m.confidence === 'number'
+                            ? ` · ${Math.round(m.confidence * 100)}%`
+                            : ''}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+        {/* Summary (compact) */}
+        {item.summary ? (
+          <Text
+            className="text-[11px] text-m-text-secondary leading-5 px-1 mb-2"
+            numberOfLines={3}
+          >
+            {item.summary}
+          </Text>
+        ) : null}
+
+        {/* File error */}
+        {fileError && (
+          <Text className="text-[11px] mb-2" style={{ color: colors.error }}>
+            {fileError}
+          </Text>
+        )}
+
+        {/* File button */}
+        <TouchableOpacity
+          onPress={handleFile}
+          disabled={isFiling}
+          className="flex-row items-center justify-center gap-2 py-2.5 rounded-[10px]"
+          style={{
+            backgroundColor: colors.bgBrand,
+            opacity: isFiling ? 0.6 : 1,
+          }}
+        >
+          {isFiling ? (
+            <ActivityIndicator size="small" color={colors.textOnBrand} />
+          ) : (
+            <CheckCircle2 size={14} color={colors.textOnBrand} />
+          )}
+          <Text
+            className="text-sm font-semibold"
+            style={{ color: colors.textOnBrand }}
+          >
+            {isFiling ? 'Filing...' : 'File'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Sheets */}
+      <CategorySheet
+        visible={showCategorySheet}
+        currentCategory={item.category || ''}
+        currentType={item.fileTypeDetected || ''}
+        onSelect={handleCategory}
+        onClose={() => setShowCategorySheet(false)}
+      />
+      <FolderSheet
+        visible={showFolderSheet}
+        scope={(batch?.scope || 'client') as UploadScope}
+        clientId={batch?.clientId}
+        projectId={batch?.projectId}
+        selectedFolderKey={item.targetFolder || null}
+        onSelect={handleFolder}
+        onClose={() => setShowFolderSheet(false)}
+      />
     </View>
   );
 }
