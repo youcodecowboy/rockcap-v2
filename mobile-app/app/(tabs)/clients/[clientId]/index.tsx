@@ -885,7 +885,17 @@ function CollapsibleSection({
 // (Open / Won / Lost totals), a search field, an expandable Open list of
 // DealCards, and collapsed Won/Lost summary rows. Tapping a card opens the
 // DealDetailSheet.
-function DealsTab({ clientId }: { clientId: string }) {
+function DealsTab({
+  clientId,
+  onNavigateToActivity,
+}: {
+  clientId: string;
+  // Parent-supplied callback. The "View all activity" CTA inside the deal
+  // detail sheet calls this with the deal's id + name so ClientDetailScreen
+  // can (a) switch to the Activity tab and (b) pre-filter ActivityTab to
+  // just this deal's feed.
+  onNavigateToActivity?: (dealId: string, dealName: string) => void;
+}) {
   const deals = useQuery(api.deals.listForClient, { clientId: clientId as any }) ?? [];
   const [search, setSearch] = useState('');
   const [selectedDeal, setSelectedDeal] = useState<any>(null);
@@ -1036,11 +1046,15 @@ function DealsTab({ clientId }: { clientId: string }) {
         visible={selectedDeal !== null}
         onClose={() => setSelectedDeal(null)}
         onViewAllActivity={() => {
-          // Close the sheet and jump to the client's Activity tab so the
-          // user can keep exploring activity in context. Currently shows
-          // all client activity — deal-scoped filtering is a follow-up.
+          // Defer to the parent — it owns both the activeTab state and the
+          // deal-filter state that ActivityTab reads. Fixes a pre-existing
+          // out-of-scope `setActiveTab` reference here that was silently
+          // being TypeScript-error'd but never crashed because the code
+          // path requires tapping this CTA.
+          if (selectedDeal && onNavigateToActivity) {
+            onNavigateToActivity(String(selectedDeal._id), selectedDeal.name);
+          }
           setSelectedDeal(null);
-          setActiveTab('Activity');
         }}
       />
     </View>
@@ -1057,7 +1071,20 @@ function DealsTab({ clientId }: { clientId: string }) {
 // That keeps hook order stable across filter changes (rules-of-hooks).
 type ActivityFilter = 'all' | 'EMAIL' | 'MEETING' | 'NOTE' | 'CALL' | 'TASK';
 
-function ActivityTab({ clientId }: { clientId: string }) {
+function ActivityTab({
+  clientId,
+  dealFilter,
+  onClearDealFilter,
+}: {
+  clientId: string;
+  // Optional deal-scope filter. When set, the list is narrowed to
+  // activities whose `dealId` matches or whose `linkedDealIds` array
+  // includes this deal. The filter chip at the top of the tab lets the
+  // user clear back to the whole-client feed. Wired from
+  // DealDetailSheet → DealsTab → ClientDetailScreen.
+  dealFilter?: { id: string; name: string } | null;
+  onClearDealFilter?: () => void;
+}) {
   const [filter, setFilter] = useState<ActivityFilter>('all');
 
   // Always query outgoing emails; query incoming only when the user picks EMAIL filter
@@ -1081,7 +1108,19 @@ function ActivityTab({ clientId }: { clientId: string }) {
 
   const fullList = filter === 'EMAIL' ? [...outboundOrAll, ...incomingEmails] : outboundOrAll;
 
-  const sorted = fullList
+  // Apply optional deal-scope filter (from DealDetailSheet "View all
+  // activity"). Activities link to deals via `dealId` (single, primary
+  // association) and `linkedDealIds` (multi, for cases where one email or
+  // meeting touches several deals). Either matching is enough.
+  const dealScoped = dealFilter
+    ? fullList.filter((a: any) => {
+        if (a.dealId && String(a.dealId) === dealFilter.id) return true;
+        const linked: any[] = a.linkedDealIds || [];
+        return linked.some((id) => String(id) === dealFilter.id);
+      })
+    : fullList;
+
+  const sorted = dealScoped
     .slice()
     .sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? ''));
 
@@ -1118,6 +1157,60 @@ function ActivityTab({ clientId }: { clientId: string }) {
 
   return (
     <View className="gap-3">
+      {/* Deal-scope filter chip — only shown when a deal filter is active.
+          Dismissible X returns to the whole-client feed. */}
+      {dealFilter ? (
+        <View className="flex-row">
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingLeft: 10,
+              paddingRight: 4,
+              paddingVertical: 4,
+              borderRadius: 999,
+              backgroundColor: colors.bgBrand,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '600',
+                color: colors.textOnBrand,
+                maxWidth: 220,
+              }}
+              numberOfLines={1}
+            >
+              Deal: {dealFilter.name}
+            </Text>
+            <TouchableOpacity
+              onPress={onClearDealFilter}
+              hitSlop={8}
+              style={{
+                width: 18,
+                height: 18,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 9,
+                backgroundColor: 'rgba(255,255,255,0.2)',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  color: colors.textOnBrand,
+                  lineHeight: 11,
+                }}
+              >
+                ×
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
       {/* Filter chips — horizontal scroll */}
       <ScrollView
         horizontal
@@ -1180,6 +1273,12 @@ export default function ClientDetailScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const [activeTab, setActiveTab] = useState<TabName>('Overview');
+  // Active deal filter on the Activity tab. Set by the deal-detail sheet's
+  // "View all activity" CTA; cleared via the chip at the top of ActivityTab
+  // or by tapping a different deal's CTA (new filter replaces the old).
+  const [dealActivityFilter, setDealActivityFilter] = useState<
+    { id: string; name: string } | null
+  >(null);
 
   // ---------- State for interactive features ----------
   const [expandedFlags, setExpandedFlags] = useState<Set<string>>(new Set());
@@ -2214,12 +2313,26 @@ export default function ClientDetailScreen() {
         {/* ================================================================ */}
         {/* DEALS TAB */}
         {/* ================================================================ */}
-        {activeTab === 'Deals' ? <DealsTab clientId={clientId as any} /> : null}
+        {activeTab === 'Deals' ? (
+          <DealsTab
+            clientId={clientId as any}
+            onNavigateToActivity={(dealId, dealName) => {
+              setDealActivityFilter({ id: dealId, name: dealName });
+              setActiveTab('Activity');
+            }}
+          />
+        ) : null}
 
         {/* ================================================================ */}
         {/* ACTIVITY TAB */}
         {/* ================================================================ */}
-        {activeTab === 'Activity' ? <ActivityTab clientId={clientId as any} /> : null}
+        {activeTab === 'Activity' ? (
+          <ActivityTab
+            clientId={clientId as any}
+            dealFilter={dealActivityFilter}
+            onClearDealFilter={() => setDealActivityFilter(null)}
+          />
+        ) : null}
 
         {/* ================================================================ */}
         {/* PROJECTS TAB */}
