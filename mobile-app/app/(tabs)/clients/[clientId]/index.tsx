@@ -1576,42 +1576,51 @@ export default function ClientDetailScreen() {
           straight into the client-branded banner with no RockCap context. */}
       <MobileHeader />
 
-      {/* Client brand banner — still distinct from the app chrome, but now
-          visually nested UNDER the RockCap header for clear hierarchy. */}
-      <View className="bg-m-bg-brand pt-3 pb-4 px-4">
-        <TouchableOpacity onPress={() => router.back()} className="flex-row items-center mb-2">
-          <ArrowLeft size={20} color={colors.textOnBrand} />
-          <Text className="text-m-text-on-brand/60 text-sm ml-1">Clients</Text>
-        </TouchableOpacity>
-        <Text className="text-xl font-bold text-m-text-on-brand">{client.name}</Text>
-        <View className="flex-row items-center gap-2 mt-1">
-          {client.type ? (
-            <Text className="text-sm text-m-text-on-brand/50 capitalize">{client.type}</Text>
-          ) : null}
+      {/* Client brand banner — flattened from 4 stacked rows to 2:
+            row 1 = back arrow + name + status pill on one line
+            row 2 = single horizontal chip strip (type + HubSpot facets)
+          Previously: back, name, type+status, HubSpot chips = 4 rows.
+          Previous status was a pill rendered after the type text on its
+          own row; it now sits at the far right of the name row for
+          balance and to reclaim vertical space. */}
+      <View className="bg-m-bg-brand pt-2 pb-3 px-4">
+        <View className="flex-row items-center gap-2">
+          <TouchableOpacity
+            onPress={() => router.back()}
+            className="flex-row items-center -ml-1 pr-1"
+            hitSlop={8}
+          >
+            <ArrowLeft size={20} color={colors.textOnBrand} />
+          </TouchableOpacity>
+          <Text
+            className="flex-1 text-lg font-bold text-m-text-on-brand"
+            numberOfLines={1}
+          >
+            {client.name}
+          </Text>
           {client.status ? (
             <View className="bg-white/15 px-2 py-0.5 rounded-full">
-              <Text className="text-xs text-m-text-on-brand/70 capitalize">{client.status}</Text>
+              <Text className="text-[10px] text-m-text-on-brand/80 uppercase tracking-wide font-medium">
+                {client.status}
+              </Text>
             </View>
           ) : null}
         </View>
 
-        {/* HubSpot-enriched chip strip. Sourced from the promoted company
-            so we surface the CRM status (lifecycle stage), deal pipeline
-            activity signal, industry, and company type right in the
-            header — matches the original mockups. Only renders the chips
-            that have data; hidden entirely when no HubSpot chips exist. */}
+        {/* Unified chip strip: client type + HubSpot facets (lifecycle,
+            company type, industry, owner). Consolidates what used to be
+            a standalone type+status row AND a separate HubSpot chip row. */}
         {(() => {
           const chips: { label: string; value: string }[] = [];
+          if (client.type) chips.push({ label: 'Type', value: client.type });
           const stageName =
             primaryCompany?.hubspotLifecycleStageName ??
             primaryCompany?.hubspotLifecycleStage;
           if (stageName) chips.push({ label: 'Lifecycle', value: stageName });
-          if (primaryCompany?.type)
-            chips.push({ label: 'Type', value: primaryCompany.type });
+          if (primaryCompany?.type && primaryCompany.type !== client.type)
+            chips.push({ label: 'HS Type', value: primaryCompany.type });
           if (primaryCompany?.industry)
             chips.push({ label: 'Industry', value: primaryCompany.industry });
-          // Owner makes the header feel more human — shows who in HubSpot
-          // is responsible for this company. Skip if not resolved.
           if (primaryCompany?.ownerName)
             chips.push({ label: 'Owner', value: primaryCompany.ownerName });
           if (chips.length === 0) return null;
@@ -1619,7 +1628,7 @@ export default function ClientDetailScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 6, paddingTop: 8 }}
+              contentContainerStyle={{ gap: 6, paddingTop: 6 }}
             >
               {chips.map((c) => (
                 <View
