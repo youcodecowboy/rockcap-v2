@@ -100,7 +100,6 @@ export default function PickerSheet({
                 placeholder="Search..."
                 placeholderTextColor={colors.textTertiary}
                 className="flex-1 text-sm text-m-text-primary py-0"
-                autoFocus
               />
               {search.length > 0 && (
                 <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
@@ -129,6 +128,11 @@ export default function PickerSheet({
               keyExtractor={(item) => item.id}
               style={{ maxHeight: 400 }}
               contentContainerStyle={{ paddingBottom: 12 }}
+              // Without this, the FlatList swallows the first tap to dismiss
+              // the keyboard (when search has been used) and requires a
+              // second tap to actually select. 'handled' lets TouchableOpacity
+              // children respond to the first tap regardless of keyboard state.
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
                 const isSelected = item.id === selectedId;
                 return (
