@@ -213,7 +213,11 @@ export default function HubSpotSettingsPage() {
         },
         body: JSON.stringify({
           isRecurringSyncEnabled: !recurringSyncEnabled,
-          syncIntervalHours: 24,
+          // Informational only — the actual cron schedule is declared in
+          // convex/crons.ts at { hours: 6 }. Convex crons are static and
+          // don't read this value; keeping it in sync so any future UI
+          // that displays it stays truthful.
+          syncIntervalHours: 6,
         }),
       });
 
@@ -883,7 +887,7 @@ export default function HubSpotSettingsPage() {
                 <div className="font-medium">Recurring Sync</div>
                 <div className="text-sm text-muted-foreground">
                   {recurringSyncEnabled
-                    ? "Syncs every 24 hours"
+                    ? "Syncs every 6 hours (incremental — only changes since last sync)"
                     : "Currently disabled"}
                 </div>
               </div>
