@@ -1,22 +1,19 @@
-import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { DocTabProvider } from '@/contexts/TabContext';
-import TabManager from '@/components/TabManager';
 
+// TabManager used to live here above the Stack, but each docs screen
+// renders its own <MobileHeader /> at the top — putting TabManager above
+// the Stack put it ABOVE the black RockCap header, where the iPhone
+// dynamic island cropped it. TabManager now renders inside each screen
+// directly below MobileHeader so it's always visible and inside the
+// screen's safe area.
 export default function DocsLayout() {
-  // Render TabManager at the top of the docs Stack so tabs added via the
-  // viewer's "Add to tabs" button are actually visible. Previously the
-  // component existed but wasn't mounted anywhere — tapping the button
-  // pushed a tab into context that had no on-screen representation.
   return (
     <DocTabProvider>
-      <View style={{ flex: 1 }}>
-        <TabManager />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="viewer" />
-        </Stack>
-      </View>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="viewer" />
+      </Stack>
     </DocTabProvider>
   );
 }

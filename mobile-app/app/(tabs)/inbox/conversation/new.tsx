@@ -92,27 +92,20 @@ export default function NewConversationScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       className="flex-1 bg-m-bg"
     >
-      {/* Header */}
-      <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center justify-between">
-        <View className="flex-row items-center gap-3">
-          <TouchableOpacity onPress={() => router.back()} className="p-1">
-            <X size={20} color={colors.textOnBrand} />
-          </TouchableOpacity>
-          <Text className="text-lg font-semibold text-m-text-on-brand">New Conversation</Text>
-        </View>
-        <TouchableOpacity
-          onPress={handleCreate}
-          disabled={!title.trim() || selectedUserIds.length === 0 || creating}
-          className="bg-white/15 rounded-full px-3 py-1.5"
-          style={{ opacity: (!title.trim() || selectedUserIds.length === 0 || creating) ? 0.4 : 1 }}
-        >
-          <Text className="text-sm font-medium text-m-text-on-brand">
-            {creating ? 'Creating...' : 'Create'}
-          </Text>
+      {/* Header — action moved to the sticky bottom bar for reachability.
+          Previously had a small "Create" pill in the top-right corner which
+          was too easy to miss + out of thumb range. */}
+      <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center gap-3">
+        <TouchableOpacity onPress={() => router.back()} className="p-1">
+          <X size={20} color={colors.textOnBrand} />
         </TouchableOpacity>
+        <Text className="text-lg font-semibold text-m-text-on-brand">
+          New Conversation
+        </Text>
       </View>
 
       <FlatList
+        style={{ flex: 1 }}
         data={filteredUsers}
         keyExtractor={(item: any) => item._id}
         contentContainerStyle={{ paddingBottom: 40 }}
@@ -213,6 +206,41 @@ export default function NewConversationScreen() {
           </View>
         }
       />
+
+      {/* Sticky primary action — replaces the top-right Create pill so the
+          action sits in thumb range and is visually unmissable. Label
+          switches to "Send" when a doc is being attached because the user's
+          intent in that flow is "share this doc", not "start a thread". */}
+      <View
+        className="border-t border-m-border bg-m-bg px-4 pt-3"
+        style={{ paddingBottom: Platform.OS === 'ios' ? 32 : 16 }}
+      >
+        <TouchableOpacity
+          onPress={handleCreate}
+          disabled={!title.trim() || selectedUserIds.length === 0 || creating}
+          className="flex-row items-center justify-center gap-2 rounded-xl py-3"
+          style={{
+            backgroundColor: colors.bgBrand,
+            opacity:
+              !title.trim() || selectedUserIds.length === 0 || creating
+                ? 0.5
+                : 1,
+          }}
+        >
+          <Text
+            className="text-[15px] font-semibold"
+            style={{ color: colors.textOnBrand }}
+          >
+            {creating
+              ? attachDocId
+                ? 'Sending...'
+                : 'Creating...'
+              : attachDocId
+                ? 'Send'
+                : 'Create thread'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 }

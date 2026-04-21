@@ -13,11 +13,9 @@ import { colors } from '@/lib/theme';
 import DateTimePicker from '@/components/DateTimePicker';
 import PeoplePicker, { type PersonOption } from '@/components/PeoplePicker';
 import DocumentPicker, { type AttachedDoc } from '@/components/DocumentPicker';
+import { resolveApiBase } from '@/lib/apiBase';
 
-const PARSE_API_URL =
-  process.env.EXPO_PUBLIC_API_URL
-    ? `${process.env.EXPO_PUBLIC_API_URL}/api/mobile/tasks/parse`
-    : 'http://localhost:3000/api/mobile/tasks/parse';
+const PARSE_API_URL = `${resolveApiBase()}/api/mobile/tasks/parse`;
 
 interface TaskCreationFlowProps {
   visible: boolean;

@@ -10,7 +10,7 @@ import { api } from '../../../model-testing-app/convex/_generated/api';
 import * as ExpoDocumentPicker from 'expo-document-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
-import Constants from 'expo-constants';
+import { resolveApiBase } from '@/lib/apiBase';
 import {
   ArrowLeft, Upload, ChevronRight, ChevronDown, ChevronUp, Check, X,
   FileText, Table2, Image as ImageIcon, Mail, File as FileIcon, Plus,
@@ -30,28 +30,8 @@ import FolderSheet from '@/components/upload/FolderSheet';
 // Gateway that runs the V4 AI pipeline server-side per uploaded item.
 // The Next.js server keeps the Anthropic key; mobile just fires-and-forgets
 // these requests so the batch screen can show reactive progress.
-//
-// URL resolution rules:
-// - In dev, `localhost` is only reachable from the iOS simulator. On a real
-//   device, `localhost` is the phone itself, so we derive the Mac's LAN IP
-//   from Expo's bundler hostUri (e.g. "192.168.1.42:8081"). This matches the
-//   server that the JS bundle was fetched from, which is reachable.
-// - In prod, EXPO_PUBLIC_API_URL must be set to the deployed web origin.
-// - EXPO_PUBLIC_API_URL takes precedence when explicitly set so CI /
-//   tunnelled dev setups still work.
-function resolveApiBase(): string {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && !envUrl.includes('localhost')) return envUrl;
-  const hostUri = (Constants.expoConfig as any)?.hostUri
-    || (Constants as any).manifest2?.extra?.expoClient?.hostUri
-    || (Constants as any).manifest?.debuggerHost;
-  if (hostUri) {
-    const host = String(hostUri).split(':')[0];
-    return `http://${host}:3000`;
-  }
-  return envUrl || 'http://localhost:3000';
-}
-
+// URL resolution lives in `@/lib/apiBase` — see it for rules (simulator
+// vs physical device, prod env override).
 const PROCESS_API_URL = `${resolveApiBase()}/api/mobile/bulk-upload/process`;
 
 // Match the mobile web allow-list exactly so what works in browser works here.

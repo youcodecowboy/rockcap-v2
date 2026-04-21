@@ -5,6 +5,7 @@ import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import FolderBrowser from '@/components/FolderBrowser';
 import MobileHeader from '@/components/MobileHeader';
+import TabManager from '@/components/TabManager';
 import ClientListItem from '@/components/ClientListItem';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -443,6 +444,7 @@ export default function DocsScreen() {
   return (
     <View className="flex-1 bg-m-bg">
       <MobileHeader />
+      <TabManager />
 
       {nav.level !== 'clients' && (
         <View className="bg-m-bg-brand pb-2 px-4">

@@ -10,16 +10,17 @@ import { ArrowLeft, RefreshCw, Sparkles, User, Users } from 'lucide-react-native
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
 import MobileHeader from '@/components/MobileHeader';
+import { resolveApiBase } from '@/lib/apiBase';
 
 // ---------------------------------------------------------------------------
 // Gateway — server-side AI parser. Mobile app gathers data via Convex (with
 // its own Clerk auth) and POSTs it here; the Anthropic key stays server-side.
+// The hardcoded `http://localhost:3000` fallback was silently breaking brief
+// generation on physical devices ("Network request failed"). URL resolution
+// via `@/lib/apiBase` auto-derives the Mac's LAN IP from Expo's bundler.
 // ---------------------------------------------------------------------------
 
-const GENERATE_API_URL =
-  process.env.EXPO_PUBLIC_API_URL
-    ? `${process.env.EXPO_PUBLIC_API_URL}/api/mobile/daily-brief/generate`
-    : 'http://localhost:3000/api/mobile/daily-brief/generate';
+const GENERATE_API_URL = `${resolveApiBase()}/api/mobile/daily-brief/generate`;
 
 type BriefScope = 'personal' | 'organization';
 
