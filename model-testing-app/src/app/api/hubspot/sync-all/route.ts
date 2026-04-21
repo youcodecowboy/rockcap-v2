@@ -193,6 +193,17 @@ export async function POST(request: NextRequest) {
             if (hasValue(company.properties.industry)) {
               companyData.industry = company.properties.industry;
             }
+
+            // Activity timestamps — enable the incremental engagement sync
+            // to skip companies with no recent movement. Without these the
+            // filter would have nothing to key on and every company would
+            // be walked on every tick.
+            if (hasValue(company.properties.hs_last_activity_date)) {
+              companyData.lastActivityDate = company.properties.hs_last_activity_date;
+            }
+            if (hasValue(company.properties.hs_last_contacted_date)) {
+              companyData.lastContactedDate = company.properties.hs_last_contacted_date;
+            }
             if (hasValue(company.properties.hubspot_owner_id)) {
               companyData.ownerName = await resolveOwnerName(company.properties.hubspot_owner_id) ?? undefined;
             }
@@ -418,7 +429,7 @@ export async function POST(request: NextRequest) {
           `${since ? ` (filtered by lastActivityDate >= ${since})` : ' (full sweep)'}`,
         );
 
-        const upsertEngagement = async (eng: any, companyHubspotId: string) => {
+        const upsertEngagement = async (eng: any, hubspotCompanyId: string) => {
           const normalizedDirection =
             eng.direction === 'inbound' || eng.direction === 'outbound' ? eng.direction : undefined;
           const ownerName = eng.ownerId ? await resolveOwnerName(eng.ownerId) : null;
