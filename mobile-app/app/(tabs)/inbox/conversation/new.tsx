@@ -2,10 +2,10 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useState, useMemo } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../../model-testing-app/convex/_generated/api';
-import { X, Search, Check } from 'lucide-react-native';
+import { X, Search, Check, FileText } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 
 function getInitials(name: string): string {
@@ -15,8 +15,18 @@ function getInitials(name: string): string {
 export default function NewConversationScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
-  const [title, setTitle] = useState('');
-  const [firstMessage, setFirstMessage] = useState('');
+  // When launched from the doc viewer's Share button, these params carry
+  // the document to pre-attach to the first message.
+  const params = useLocalSearchParams<{
+    attachDocId?: string;
+    attachDocName?: string;
+  }>();
+  const attachDocId = params.attachDocId;
+  const attachDocName = params.attachDocName;
+  const [title, setTitle] = useState(attachDocName ? `Re: ${attachDocName}` : '');
+  const [firstMessage, setFirstMessage] = useState(
+    attachDocName ? `Sharing "${attachDocName}".` : '',
+  );
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [creating, setCreating] = useState(false);
@@ -52,11 +62,21 @@ export default function NewConversationScreen() {
         participantIds: selectedUserIds as any,
       } as any);
 
-      // Send first message if provided
-      if (firstMessage.trim()) {
+      // Send first message if provided. When the screen was launched with
+      // an attachDocId deep-link, attach the doc as a structured reference
+      // so the message renders a clickable doc card on both ends.
+      if (firstMessage.trim() || attachDocId) {
+        const references = attachDocId && attachDocName
+          ? [{
+              type: 'document' as const,
+              id: attachDocId,
+              name: attachDocName,
+            }]
+          : undefined;
         await sendMessage({
           conversationId: conversationId as any,
-          content: firstMessage.trim(),
+          content: firstMessage.trim() || `Sharing "${attachDocName}".`,
+          references,
         } as any);
       }
 
@@ -162,6 +182,22 @@ export default function NewConversationScreen() {
         }}
         ListFooterComponent={
           <View className="px-4 pt-4">
+            {/* Attached doc chip — visible cue that Share-from-viewer
+                brought a document along. User can't detach here; if they
+                want to send without the doc they can just go back. */}
+            {attachDocId && attachDocName ? (
+              <View className="mb-3 flex-row items-center gap-2 px-3 py-2 rounded-[10px] bg-m-bg-subtle border border-m-border">
+                <FileText size={14} color={colors.textTertiary} />
+                <View className="flex-1 min-w-0">
+                  <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
+                    Attaching
+                  </Text>
+                  <Text className="text-[13px] text-m-text-primary" numberOfLines={1}>
+                    {attachDocName}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
             <Text className="text-[11px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-1.5">
               First Message (optional)
             </Text>

@@ -39,6 +39,23 @@ export const getMyFlags = query({
   },
 });
 
+// Count of OPEN flags assigned to the current user. The dashboard's daily
+// brief was previously deriving this from getInboxItemsEnriched().length —
+// that query mixes flags + notifications and slice()s to 50, so users saw
+// "50 open flags" when they really had 3. This query returns a true count.
+export const getMyOpenCount = query({
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    const openFlags = await ctx.db
+      .query("flags")
+      .withIndex("by_assignedTo_status", (q: any) =>
+        q.eq("assignedTo", user._id).eq("status", "open")
+      )
+      .collect();
+    return openFlags.length;
+  },
+});
+
 // Get flags created by the current user
 export const getMyCreatedFlags = query({
   args: {

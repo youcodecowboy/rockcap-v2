@@ -72,6 +72,13 @@ export default function DashboardScreen() {
     api.flags.getInboxItemsEnriched,
     isAuthenticated ? {} : 'skip'
   );
+  // True count of open flags. getInboxItemsEnriched is slice()d to 50 and
+  // mixes flags + notifications, so its length was misrepresented as the
+  // "open flags" number in the daily brief.
+  const myOpenFlagCount = useQuery(
+    api.flags.getMyOpenCount,
+    isAuthenticated ? {} : 'skip'
+  );
   const conversations = useQuery(
     api.conversations.getMyConversations,
     isAuthenticated ? {} : 'skip'
@@ -180,7 +187,7 @@ export default function DashboardScreen() {
   }
   messagesAndFlags.sort((a, b) => b.timestamp - a.timestamp);
   const recentMessagesAndFlags = messagesAndFlags.slice(0, 5);
-  const openFlagCountForBrief = flags?.length ?? 0;
+  const openFlagCountForBrief = myOpenFlagCount ?? 0;
 
   return (
     <View className="flex-1 bg-m-bg">

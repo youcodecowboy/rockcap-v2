@@ -67,6 +67,20 @@ export default function ViewerScreen() {
     Alert.alert('Added', 'Document added to tabs');
   }, [documentId, docTitle, fileType, fileUrl, openTab, document]);
 
+  // Share opens the "new conversation" screen with this doc pre-attached
+  // as a reference (directMessages.send supports references → document).
+  // Previously the button fired an "Alert: Coming soon" stub.
+  const handleShare = useCallback(() => {
+    if (!documentId) return;
+    router.push({
+      pathname: '/(tabs)/inbox/conversation/new',
+      params: {
+        attachDocId: documentId as string,
+        attachDocName: docTitle,
+      },
+    } as any);
+  }, [router, documentId, docTitle]);
+
   const handleDownload = useCallback(() => {
     if (!fileUrl) { Alert.alert('Not ready', 'File still loading'); return; }
     Linking.openURL(fileUrl).catch(() => Alert.alert('Error', 'Could not open file'));
@@ -95,7 +109,7 @@ export default function ViewerScreen() {
             {[category, clientName].filter(Boolean).join(' · ') || ' '}
           </Text>
         </View>
-        <TouchableOpacity className="p-1 mr-2" onPress={() => Alert.alert('Share', 'Coming soon')}>
+        <TouchableOpacity className="p-1 mr-2" onPress={handleShare}>
           <Send size={18} color={colors.textSecondary} />
         </TouchableOpacity>
         <TouchableOpacity className="p-1" onPress={() => router.back()}>

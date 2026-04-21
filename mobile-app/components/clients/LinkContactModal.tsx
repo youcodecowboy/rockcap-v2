@@ -85,7 +85,13 @@ export default function LinkContactModal({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ maxHeight: '92%' }}
         >
-          <SafeAreaView className="bg-m-bg rounded-t-[20px] max-h-full overflow-hidden">
+          <SafeAreaView
+            className="bg-m-bg rounded-t-[20px] max-h-full overflow-hidden"
+            // Inline backgroundColor as a belt-and-braces fallback — some
+            // SafeAreaView / NativeWind combos drop the `bg-m-bg` class,
+            // leaving the sheet transparent over the underlying screen.
+            style={{ backgroundColor: '#ffffff' }}
+          >
             {/* Drag handle + header */}
             <View className="items-center pt-2 pb-1">
               <View className="w-10 h-1 rounded-full" style={{ backgroundColor: '#d4d4d4' }} />
