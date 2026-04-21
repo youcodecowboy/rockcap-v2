@@ -93,6 +93,8 @@ interface HeroProps {
   inProgressCount: number;
   pipelineTotal: number;
   pipelineCount: number;
+  wonCount: number;
+  lostCount: number;
   stages: { label: string; value: number; count: number }[];
   lastSyncAgo: string | null;
   onOpenPipeline: () => void;
@@ -303,8 +305,30 @@ function HeroCommandDeck(props: HeroProps) {
                 {formatMoney(props.pipelineTotal)}
               </Text>
               <Text style={{ fontSize: 11, color: muted }}>
-                · {props.pipelineCount} deals
+                · {props.pipelineCount} open
               </Text>
+            </View>
+            {/* Breakdown chip row — live count of Open / Won / Lost so the
+                big number above is unambiguously "active pipeline only". */}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: '#22c55e' }} />
+                <Text style={{ fontSize: 10, color: muted, letterSpacing: 0.2 }}>
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>{props.pipelineCount}</Text> open
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.6)' }} />
+                <Text style={{ fontSize: 10, color: muted, letterSpacing: 0.2 }}>
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>{props.wonCount}</Text> won
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: '#f87171' }} />
+                <Text style={{ fontSize: 10, color: muted, letterSpacing: 0.2 }}>
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>{props.lostCount}</Text> lost
+                </Text>
+              </View>
             </View>
           </View>
           <Svg width={76} height={32} viewBox="0 0 76 32">
@@ -893,8 +917,13 @@ interface ActivityProps {
   onViewAll: () => void;
 }
 
+const ACTIVITY_PAGE_SIZE = 15;
+
 function ActivityStream(props: ActivityProps) {
   const [filter, setFilter] = useState<string>('All');
+  // Paginated limit — resets whenever the filter changes so the user
+  // doesn't land on "Show more" with no rows visible for the new filter.
+  const [limit, setLimit] = useState<number>(ACTIVITY_PAGE_SIZE);
   const activeFilter = ACTIVITY_FILTERS.find((f) => f.label === filter)!;
 
   const filtered = useMemo(
@@ -905,8 +934,10 @@ function ActivityStream(props: ActivityProps) {
     [props.rows, activeFilter],
   );
 
+  const visible = filtered.slice(0, limit);
+  const hiddenCount = Math.max(0, filtered.length - limit);
+
   // Group by day (Today / Yesterday / Earlier)
-  const now = Date.now();
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const yesterdayStart = todayStart.getTime() - 86_400_000;
@@ -915,7 +946,7 @@ function ActivityStream(props: ActivityProps) {
     { label: 'Yesterday', rows: [] },
     { label: 'Earlier', rows: [] },
   ];
-  for (const r of filtered) {
+  for (const r of visible) {
     if (r.timestamp >= todayStart.getTime()) groups[0].rows.push(r);
     else if (r.timestamp >= yesterdayStart) groups[1].rows.push(r);
     else groups[2].rows.push(r);
@@ -978,7 +1009,10 @@ function ActivityStream(props: ActivityProps) {
           return (
             <TouchableOpacity
               key={f.label}
-              onPress={() => setFilter(f.label)}
+              onPress={() => {
+                setFilter(f.label);
+                setLimit(ACTIVITY_PAGE_SIZE);
+              }}
               style={{
                 paddingVertical: 4,
                 paddingHorizontal: 10,
@@ -1013,7 +1047,8 @@ function ActivityStream(props: ActivityProps) {
           No activity to show.
         </Text>
       ) : (
-        groups
+        <>
+          {groups
           .filter((g) => g.rows.length > 0)
           .map((group, gi, arr) => (
             <View
@@ -1104,7 +1139,34 @@ function ActivityStream(props: ActivityProps) {
                 })}
               </View>
             </View>
-          ))
+          ))}
+          {hiddenCount > 0 ? (
+            <TouchableOpacity
+              onPress={() => setLimit((l) => l + ACTIVITY_PAGE_SIZE)}
+              activeOpacity={0.75}
+              style={{
+                marginTop: 4,
+                paddingVertical: 9,
+                alignItems: 'center',
+                borderRadius: 8,
+                backgroundColor: '#fafaf9',
+                borderWidth: 1,
+                borderColor: '#f5f5f5',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '600',
+                  color: colors.textSecondary,
+                  letterSpacing: 0.2,
+                }}
+              >
+                Show more · {hiddenCount} hidden
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </>
       )}
     </View>
   );
@@ -1129,7 +1191,11 @@ export default function DashboardScreen() {
   const deals = useQuery(api.deals.getAllDeals, isAuthenticated ? {} : 'skip');
   const activities = useQuery(
     api.activities.listRecentGlobal,
-    isAuthenticated ? { limit: 30 } : 'skip',
+    // Ceiling generous enough that the activity stream's paginated
+    // "Show more" has meaningful room to iterate (page size 15). If a
+    // user actually clicks through 100 items, we'd add a proper cursor
+    // query; for now this is well under Convex's response-size limits.
+    isAuthenticated ? { limit: 100 } : 'skip',
   );
   const events = useQuery(
     api.events.getUpcoming,
@@ -1171,13 +1237,16 @@ export default function DashboardScreen() {
   );
 
   // Pipeline aggregate — open deals only, grouped into 4 stage tiers.
-  // HubSpot stages vary per pipeline; we bucket into Qualified → Proposal →
-  // Negotiation → Closing by keyword match against the stage string so the
-  // hero shows meaningful groupings regardless of custom pipeline labels.
-  const openDeals = (deals ?? []).filter((d: any) => {
-    const s = (d.stage || '').toString().toLowerCase();
-    return !s.includes('closedwon') && !s.includes('closedlost') && !s.includes('closed-won') && !s.includes('closed-lost') && !s.includes('lost') && !s.includes('won');
-  });
+  // HubSpot's canonical "deal is closed" flag is `isClosed` (hs_is_closed);
+  // that flips to true for both closed-won and closed-lost, so we filter on
+  // it directly rather than string-sniffing stage names. `isClosedWon`
+  // separates wins from losses for the breakdown chip row.
+  const allDeals = deals ?? [];
+  const openDeals = allDeals.filter((d: any) => d.isClosed !== true);
+  const wonDeals = allDeals.filter((d: any) => d.isClosedWon === true);
+  const lostDeals = allDeals.filter(
+    (d: any) => d.isClosed === true && d.isClosedWon !== true,
+  );
 
   type StageBucket = { label: string; value: number; count: number; keys: string[] };
   const stageBuckets: StageBucket[] = [
@@ -1358,6 +1427,8 @@ export default function DashboardScreen() {
           inProgressCount={inProgressTasks.length}
           pipelineTotal={pipelineTotal}
           pipelineCount={openDeals.length}
+          wonCount={wonDeals.length}
+          lostCount={lostDeals.length}
           stages={stagesForHero.map((s) => ({ label: s.label, value: s.value, count: s.count }))}
           lastSyncAgo={lastSyncAgo}
           onOpenPipeline={() => router.push('/prospects' as any)}
