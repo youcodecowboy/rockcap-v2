@@ -60,6 +60,7 @@ import type * as hubspotSync_deals from "../hubspotSync/deals.js";
 import type * as hubspotSync_index from "../hubspotSync/index.js";
 import type * as hubspotSync_linking from "../hubspotSync/linking.js";
 import type * as hubspotSync_pipelines from "../hubspotSync/pipelines.js";
+import type * as hubspotSync_recurringSync from "../hubspotSync/recurringSync.js";
 import type * as hubspotSync_utils from "../hubspotSync/utils.js";
 import type * as intelligence from "../intelligence.js";
 import type * as intelligenceHelpers from "../intelligenceHelpers.js";
@@ -80,6 +81,7 @@ import type * as migrations_clearLegacyData from "../migrations/clearLegacyData.
 import type * as migrations_fixChatSessionsUserId from "../migrations/fixChatSessionsUserId.js";
 import type * as migrations_fixClientRolesIds from "../migrations/fixClientRolesIds.js";
 import type * as migrations_flagSubtotals from "../migrations/flagSubtotals.js";
+import type * as migrations_mergeDuplicateClients from "../migrations/mergeDuplicateClients.js";
 import type * as migrations_migrateToKnowledgeItems from "../migrations/migrateToKnowledgeItems.js";
 import type * as migrations_resyncIntelligence from "../migrations/resyncIntelligence.js";
 import type * as migrations_seedAppraisalTemplate from "../migrations/seedAppraisalTemplate.js";
@@ -177,6 +179,7 @@ declare const fullApi: ApiFromModules<{
   "hubspotSync/index": typeof hubspotSync_index;
   "hubspotSync/linking": typeof hubspotSync_linking;
   "hubspotSync/pipelines": typeof hubspotSync_pipelines;
+  "hubspotSync/recurringSync": typeof hubspotSync_recurringSync;
   "hubspotSync/utils": typeof hubspotSync_utils;
   intelligence: typeof intelligence;
   intelligenceHelpers: typeof intelligenceHelpers;
@@ -197,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/fixChatSessionsUserId": typeof migrations_fixChatSessionsUserId;
   "migrations/fixClientRolesIds": typeof migrations_fixClientRolesIds;
   "migrations/flagSubtotals": typeof migrations_flagSubtotals;
+  "migrations/mergeDuplicateClients": typeof migrations_mergeDuplicateClients;
   "migrations/migrateToKnowledgeItems": typeof migrations_migrateToKnowledgeItems;
   "migrations/resyncIntelligence": typeof migrations_resyncIntelligence;
   "migrations/seedAppraisalTemplate": typeof migrations_seedAppraisalTemplate;

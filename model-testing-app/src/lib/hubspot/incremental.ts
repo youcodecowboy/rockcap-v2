@@ -170,5 +170,81 @@ export async function fetchEntitiesModifiedSince(
   return batchReadRecords(type, ids, properties, associations);
 }
 
+/**
+ * Companies whose `hs_last_activity_date` is on/after `since`. Distinct
+ * from `fetchModifiedIds('companies', since)` — the latter filters on
+ * `hs_lastmodifieddate` which updates on ANY change (property edits,
+ * re-syncs, etc.) while this one only triggers on real engagement
+ * activity (emails, meetings, calls, notes, tasks). That's exactly the
+ * set we want to walk for incremental engagement repair — companies
+ * that saw action in the window, nothing else.
+ */
+export async function fetchCompanyIdsWithActivitySince(
+  since: string,
+): Promise<string[]> {
+  const apiKey = process.env.HUBSPOT_API_KEY;
+  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
+
+  const sinceMs = /^\d+$/.test(since)
+    ? since
+    : String(new Date(since).getTime());
+
+  const ids: string[] = [];
+  let after: string | undefined;
+  let pageCount = 0;
+
+  while (true) {
+    pageCount++;
+    const body = {
+      filterGroups: [
+        {
+          filters: [
+            {
+              propertyName: 'hs_last_activity_date',
+              operator: 'GTE',
+              value: sinceMs,
+            },
+          ],
+        },
+      ],
+      sorts: [
+        { propertyName: 'hs_last_activity_date', direction: 'DESCENDING' },
+      ],
+      properties: ['hs_object_id'],
+      limit: SEARCH_LIMIT,
+      ...(after ? { after } : {}),
+    };
+
+    const res = await hubspotFetchJson<{
+      results?: { id: string }[];
+      paging?: { next?: { after?: string } };
+      total?: number;
+    }>(`${BASE}/crm/v3/objects/companies/search`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const page = res.results ?? [];
+    ids.push(...page.map((r) => r.id));
+
+    console.log(
+      `[HubSpot CompaniesWithActivity] search page ${pageCount}: ` +
+      `${page.length} ids (total so far: ${ids.length}` +
+      `${res.total !== undefined ? ` / reported total ${res.total}` : ''})`,
+    );
+
+    const nextAfter = res.paging?.next?.after;
+    if (!nextAfter || page.length === 0) break;
+    after = nextAfter;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  return ids;
+}
+
 // hubspotFetch is re-exported for convenience when callers only want the HTTP wrapper.
 export { hubspotFetch, hubspotFetchJson };
