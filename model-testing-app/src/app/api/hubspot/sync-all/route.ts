@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getHubSpotClient } from '@/lib/hubspot/client';
+
+// Full-account incremental syncs iterate through every company to fetch
+// engagements — on a ~500-company / 20K-engagement portal that regularly
+// runs 3–5 minutes. Vercel's default timeout (10s hobby, 60s pro) kills
+// the function mid-sweep. Pro supports up to 300s; Fluid supports 900s.
+// Bumping to 300s covers current account size with headroom; if we cross
+// the limit we'll need to shard (e.g. Convex scheduler per-company).
+export const maxDuration = 300;
 import { fetchAllCompaniesFromHubSpot } from '@/lib/hubspot/companies';
 import { fetchAllContactsFromHubSpot } from '@/lib/hubspot/contacts';
 import { fetchAllDealsFromHubSpot } from '@/lib/hubspot/deals';
@@ -368,14 +376,29 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Engagement sync: per-company
+    // Engagement sync: per-company. Progress logged every 25 companies
+    // so the Convex action's caller (and Vercel logs) can see it making
+    // progress on large accounts — otherwise a slow loop through 500+
+    // companies looks indistinguishable from a hung request.
     if (syncActivities) {
       try {
         const convexCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
         let engagementTotal = 0;
         let engagementErrors = 0;
+        const engagementStartedAt = Date.now();
+        console.log(
+          `[sync-all] engagements — scanning ${convexCompanies.length} companies${since ? ` since ${since}` : ' (full sweep)'}`,
+        );
 
-        for (const company of convexCompanies) {
+        for (let i = 0; i < convexCompanies.length; i++) {
+          const company = convexCompanies[i];
+          if (i > 0 && i % 25 === 0) {
+            const elapsedSec = Math.round((Date.now() - engagementStartedAt) / 1000);
+            console.log(
+              `[sync-all] engagements — progress ${i}/${convexCompanies.length} ` +
+              `(${engagementTotal} synced, ${engagementErrors} errors, ${elapsedSec}s elapsed)`,
+            );
+          }
           try {
             const engagements = await fetchEngagementsForCompany(
               company.hubspotCompanyId,
