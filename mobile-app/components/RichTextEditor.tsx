@@ -30,9 +30,16 @@ export default function RichTextEditor({
 }: RichTextEditorProps) {
   const webViewRef = useRef<WebView>(null);
   const [isReady, setIsReady] = useState(false);
-  const pendingInit = useRef<any>(null);
+  // Guard against double-init. The Tiptap HTML constructs a new Editor every
+  // time it receives an init message and doesn't destroy the previous one —
+  // constructing a second editor on the same <div> corrupts ProseMirror's
+  // DOM attachment and the editor silently becomes unresponsive.
+  const initSentRef = useRef(false);
 
   const sendInit = useCallback((content: any) => {
+    if (initSentRef.current) return;
+    initSentRef.current = true;
+
     // Normalize content: if it's a plain string that's not JSON, wrap it
     let normalized = content;
     if (typeof content === 'string') {
@@ -56,11 +63,12 @@ export default function RichTextEditor({
     webViewRef.current?.postMessage(msg);
   }, [placeholder]);
 
+  // Single init path. Fires when both the WebView is ready AND initialContent
+  // is known (i.e. not the `undefined` "still-fetching" sentinel). Handles
+  // both orderings: ready-before-fetch and fetch-before-ready.
   useEffect(() => {
     if (isReady && initialContent !== undefined) {
       sendInit(initialContent);
-    } else if (!isReady) {
-      pendingInit.current = initialContent;
     }
   }, [isReady, initialContent, sendInit]);
 
@@ -69,18 +77,13 @@ export default function RichTextEditor({
       const msg = JSON.parse(event.nativeEvent.data);
       if (msg.type === 'ready') {
         setIsReady(true);
-        if (pendingInit.current !== undefined) {
-          // Small delay to ensure editor is fully mounted
-          setTimeout(() => sendInit(pendingInit.current), 100);
-          pendingInit.current = null;
-        }
         onReady?.();
       }
       if (msg.type === 'content') {
         onChange?.(msg.data);
       }
     } catch {}
-  }, [onChange, onReady, sendInit]);
+  }, [onChange, onReady]);
 
   // Request content (for save)
   const getContent = useCallback(() => {

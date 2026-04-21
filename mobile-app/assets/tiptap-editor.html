@@ -88,6 +88,14 @@
   let editor;
 
   function init(content, placeholder) {
+    // Defensive: if a previous editor instance exists (double-init race
+    // from the RN side), destroy it before creating a new one — otherwise
+    // ProseMirror mounts over leftover DOM and the editor becomes
+    // unresponsive without throwing.
+    if (editor) {
+      editor.destroy();
+      document.getElementById('editor').innerHTML = '';
+    }
     editor = new Editor({
       element: document.getElementById('editor'),
       extensions: [
