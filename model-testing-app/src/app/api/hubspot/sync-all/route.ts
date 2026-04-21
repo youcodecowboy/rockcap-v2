@@ -68,6 +68,12 @@ export async function POST(request: NextRequest) {
       //     lastSyncAt) falls back to a full fetch automatically.
       //   mode='full' → ignore lastSyncAt and re-sync everything.
       mode = 'incremental',
+      // `sinceOverride` (ISO string) — when set, uses this value as the
+      // incremental cursor for THIS run only, without touching the stored
+      // config.lastSyncAt. Useful for targeted backdated repair runs
+      // ("re-sync the last 5 days") without disrupting the ongoing cron's
+      // normal incremental window.
+      sinceOverride,
     } = await request.json().catch(() => ({}));
 
     const client = getHubSpotClient();
@@ -80,11 +86,18 @@ export async function POST(request: NextRequest) {
 
     const errorMessages: string[] = [];
 
-    // Resolve `since` — the ISO timestamp we pass to each fetcher's
-    // incremental path. Only set when mode === 'incremental' AND a previous
-    // successful sync has recorded a lastSyncAt timestamp in config.
+    // Resolve `since`.
+    //   - sinceOverride (caller-supplied) wins. Used for one-off backdated
+    //     repair runs. The override is NOT written back to config, so the
+    //     regular cron's incremental cursor stays put.
+    //   - Otherwise, for incremental mode, use the stored lastSyncAt.
+    //   - Full mode ignores `since` entirely.
     let since: string | undefined;
-    if (mode === 'incremental') {
+    const overrideActive = typeof sinceOverride === 'string' && sinceOverride.length > 0;
+    if (overrideActive) {
+      since = sinceOverride;
+      console.log(`[sync-all] Override mode: since=${since} (config.lastSyncAt untouched)`);
+    } else if (mode === 'incremental') {
       try {
         const config = await fetchQuery(api.hubspotSync.getSyncConfig as any, {}) as any;
         if (config?.lastSyncAt) {
@@ -470,16 +483,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update sync status
-    await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
-      status: stats.errors > 0 ? 'error' : 'success',
-      stats,
-    }) as any;
-    
+    // Update sync status — but ONLY on regular (non-override) runs.
+    // Override runs are one-off repairs; writing `success` + a new
+    // lastSyncAt would clobber the cron's incremental cursor and make
+    // the next regular tick miss everything that happened during the
+    // override's window.
+    if (!overrideActive) {
+      await fetchMutation(api.hubspotSync.updateSyncStatus as any, {
+        status: stats.errors > 0 ? 'error' : 'success',
+        stats,
+      }) as any;
+    } else {
+      console.log('[sync-all] override run — skipping updateSyncStatus to preserve cron cursor');
+    }
+
     return NextResponse.json({
       success: true,
       stats,
       errorMessages: errorMessages.slice(0, 20), // Limit error messages
+      overrideActive,
     });
   } catch (error: any) {
     console.error('Sync error:', error);
