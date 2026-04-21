@@ -14,7 +14,10 @@ import { fetchAllDealsFromHubSpot } from '@/lib/hubspot/deals';
 import { extractCustomProperties, generateHubSpotCompanyUrl, generateHubSpotContactUrl, generateHubSpotDealUrl } from '@/lib/hubspot/utils';
 import { discoverProperties, clearPropertiesCache } from '@/lib/hubspot/properties';
 import { clearOwnersCache, resolveOwnerName } from '@/lib/hubspot/owners';
-import { fetchEngagementsForCompany } from '@/lib/hubspot/activities';
+import {
+  fetchEngagementsForCompany,
+  fetchRecentlyModifiedEngagements,
+} from '@/lib/hubspot/activities';
 import { dedupeAssociationIds } from '@/lib/hubspot/normalize';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
@@ -376,70 +379,98 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Engagement sync: per-company. Progress logged every 25 companies
-    // so the Convex action's caller (and Vercel logs) can see it making
-    // progress on large accounts — otherwise a slow loop through 500+
-    // companies looks indistinguishable from a hung request.
+    // Engagement sync has two modes:
+    //   - Incremental (`since` set): use HubSpot's global recently-modified
+    //     engagements endpoint. One paginated query across the whole portal
+    //     ordered by lastUpdated desc. On a typical 10-min cron window this
+    //     is a handful of API calls; it never iterates companies.
+    //   - Full sweep (no `since`): fall back to walking every company's
+    //     associated engagements. Slow but necessary for first-time syncs
+    //     to backfill everything.
     if (syncActivities) {
       try {
-        const convexCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
         let engagementTotal = 0;
         let engagementErrors = 0;
-        const engagementStartedAt = Date.now();
-        console.log(
-          `[sync-all] engagements — scanning ${convexCompanies.length} companies${since ? ` since ${since}` : ' (full sweep)'}`,
-        );
 
-        for (let i = 0; i < convexCompanies.length; i++) {
-          const company = convexCompanies[i];
-          if (i > 0 && i % 25 === 0) {
-            const elapsedSec = Math.round((Date.now() - engagementStartedAt) / 1000);
-            console.log(
-              `[sync-all] engagements — progress ${i}/${convexCompanies.length} ` +
-              `(${engagementTotal} synced, ${engagementErrors} errors, ${elapsedSec}s elapsed)`,
-            );
-          }
-          try {
-            const engagements = await fetchEngagementsForCompany(
-              company.hubspotCompanyId,
-              Number.POSITIVE_INFINITY,
-              since ? { since } : {},
-            );
-            for (const eng of engagements) {
-              try {
-                const normalizedDirection =
-                  eng.direction === 'inbound' || eng.direction === 'outbound' ? eng.direction : undefined;
-                const ownerName = eng.ownerId ? await resolveOwnerName(eng.ownerId) : null;
+        const upsertEngagement = async (eng: any, companyHubspotIdHint?: string) => {
+          const normalizedDirection =
+            eng.direction === 'inbound' || eng.direction === 'outbound' ? eng.direction : undefined;
+          const ownerName = eng.ownerId ? await resolveOwnerName(eng.ownerId) : null;
+          // For the global path, prefer the first company association on
+          // the engagement itself. The per-company path already knows
+          // which company it came from.
+          const hubspotCompanyId = companyHubspotIdHint ?? eng.companyIds?.[0];
+          await fetchMutation(api.hubspotSync.activities.syncActivityFromHubSpot, {
+            hubspotActivityId: eng.id,
+            activityType: eng.type,
+            activityDate: eng.timestamp,
+            subject: eng.subject,
+            bodyPreview: eng.bodyPreview,
+            bodyHtml: eng.bodyHtml,
+            direction: normalizedDirection,
+            status: eng.status,
+            duration: eng.duration,
+            fromEmail: eng.fromEmail,
+            toEmails: eng.toEmails,
+            outcome: eng.outcome,
+            metadata: eng.metadata,
+            hubspotCompanyId,
+            hubspotContactIds: eng.contactIds,
+            hubspotDealIds: eng.dealIds,
+            hubspotOwnerId: eng.ownerId,
+            ownerName: ownerName ?? undefined,
+          });
+        };
 
-                await fetchMutation(api.hubspotSync.activities.syncActivityFromHubSpot, {
-                  hubspotActivityId: eng.id,
-                  activityType: eng.type,
-                  activityDate: eng.timestamp,
-                  subject: eng.subject,
-                  bodyPreview: eng.bodyPreview,
-                  bodyHtml: eng.bodyHtml,
-                  direction: normalizedDirection,
-                  status: eng.status,
-                  duration: eng.duration,
-                  fromEmail: eng.fromEmail,
-                  toEmails: eng.toEmails,
-                  outcome: eng.outcome,
-                  metadata: eng.metadata,
-                  hubspotCompanyId: company.hubspotCompanyId,
-                  hubspotContactIds: eng.contactIds,
-                  hubspotDealIds: eng.dealIds,
-                  hubspotOwnerId: eng.ownerId,
-                  ownerName: ownerName ?? undefined,
-                });
-                engagementTotal++;
-              } catch (engErr) {
-                engagementErrors++;
-                console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
-              }
+        if (since) {
+          // Incremental: one global query for all recently-modified engagements.
+          console.log(`[sync-all] engagements — incremental global fetch since ${since}`);
+          const startedAt = Date.now();
+          const engagements = await fetchRecentlyModifiedEngagements(since);
+          console.log(
+            `[sync-all] engagements — fetched ${engagements.length} modified in ${Math.round((Date.now() - startedAt) / 1000)}s`,
+          );
+          for (const eng of engagements) {
+            try {
+              await upsertEngagement(eng);
+              engagementTotal++;
+            } catch (engErr) {
+              engagementErrors++;
+              console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
             }
-          } catch (companyErr) {
-            engagementErrors++;
-            console.error(`[sync-all] engagements for company ${company.hubspotCompanyId} failed:`, companyErr);
+          }
+        } else {
+          // Full sweep: per-company walk. Only used for first sync / full re-sync.
+          const convexCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
+          const startedAt = Date.now();
+          console.log(`[sync-all] engagements — full sweep over ${convexCompanies.length} companies`);
+          for (let i = 0; i < convexCompanies.length; i++) {
+            const company = convexCompanies[i];
+            if (i > 0 && i % 25 === 0) {
+              const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+              console.log(
+                `[sync-all] engagements — progress ${i}/${convexCompanies.length} ` +
+                `(${engagementTotal} synced, ${engagementErrors} errors, ${elapsedSec}s elapsed)`,
+              );
+            }
+            try {
+              const engagements = await fetchEngagementsForCompany(
+                company.hubspotCompanyId,
+                Number.POSITIVE_INFINITY,
+              );
+              for (const eng of engagements) {
+                try {
+                  await upsertEngagement(eng, company.hubspotCompanyId);
+                  engagementTotal++;
+                } catch (engErr) {
+                  engagementErrors++;
+                  console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
+                }
+              }
+            } catch (companyErr) {
+              engagementErrors++;
+              console.error(`[sync-all] engagements for company ${company.hubspotCompanyId} failed:`, companyErr);
+            }
           }
         }
 
