@@ -552,6 +552,11 @@ export default defineSchema({
     // Multi-association arrays — populated alongside the existing singular contactId/dealId
     linkedContactIds: v.optional(v.array(v.id("contacts"))),
     linkedDealIds: v.optional(v.array(v.id("deals"))),
+    // TASK-specific status from HubSpot (NOT_STARTED / IN_PROGRESS / COMPLETED
+    // / DEFERRED / WAITING). Top-level field because the sync mutation already
+    // args-validates it at the top level; also kept inside `metadata` for
+    // parity with the rest of the HubSpot payload.
+    status: v.optional(v.string()),
   })
     .index("by_contact", ["contactId"])
     .index("by_company", ["companyId"])
