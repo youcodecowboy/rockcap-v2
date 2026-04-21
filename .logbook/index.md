@@ -4,6 +4,7 @@ Last updated: 2026-04-20
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
+| done | 2026-04-18 | Mobile client profile header redesign — flatten stacked rows | #mobile #ux | done/2026-04-18_mobile-client-profile-header-redesign.md |
 | done | 2026-04-18 | Mobile top-level screens bypassing (tabs)/ layout — missing nav chrome | #bug #mobile #architecture #refactor | done/2026-04-18_mobile-top-level-screens-bypass-tabs-layout.md |
 | done | 2026-04-18 | [CRITICAL] Mobile new-client flow must bootstrap base folders + checklist | #bug #critical #data #mobile | done/2026-04-18_mobile-new-client-folder-checklist-bootstrap.md |
 | done | 2026-04-17 | Desktop HubSpot parity port (client profile) | #desktop #feature #ux | done/2026-04-17_desktop-hubspot-parity-port-client-profile.md |
@@ -59,12 +60,11 @@ Last updated: 2026-04-20
 | done | 2026-04-18 | Mobile notes broken — can't save AND can't type (merged) | #bug #mobile #data | done/2026-04-18_mobile-notes-broken-save-and-type.md |
 | done | 2026-04-18 | Desktop client profile Activity tab — fix "Rendered more hooks" runtime error | #bug #web #frontend | done/2026-04-18_desktop-activity-tab-hook-count-error.md |
 | done | 2026-04-18 | Mobile camera upload stuck at 0% — photos never process | #bug #mobile #perf | done/2026-04-18_mobile-camera-upload-stuck-at-0.md |
+| done | 2026-04-18 | Mobile small bugs batch (daily-brief count, LinkContactModal bg, add-to-tabs, Share attach) | #bug #mobile | done/2026-04-18_mobile-small-bugs-batch.md |
 | queued | 2026-04-18 | Mobile client profile — rich creation flows (Notes / Tasks / Projects / Flags) | #mobile #ux #feature | queued/2026-04-18_mobile-client-profile-rich-creation-flows.md |
 | queued | 2026-04-18 | HubSpot sync automation + completeness (cron + activities since-filter) | #hubspot #backend #feature | queued/2026-04-18_hubspot-sync-automation-completeness.md |
 | queued | 2026-04-18 | Google Calendar — mobile OAuth flow + fix events on Tasks list | #integration #google #mobile #bug | queued/2026-04-18_google-calendar-mobile-oauth-and-events-fix.md |
 | queued | 2026-04-18 | Mobile dashboard widgets — Deals overview + Recent Activity teaser | #mobile #ux #feature | queued/2026-04-18_mobile-dashboard-widgets-deals-and-activity.md |
-| queued | 2026-04-18 | Mobile client profile header redesign — flatten stacked rows | #mobile #ux | queued/2026-04-18_mobile-client-profile-header-redesign.md |
-| queued | 2026-04-18 | Mobile small bugs batch (daily-brief count, LinkContactModal bg, add-to-tabs, Share attach) | #bug #mobile | queued/2026-04-18_mobile-small-bugs-batch.md |
 | queued | 2026-04-18 | Mobile global search — port desktop cross-entity search UX | #mobile #feature | queued/2026-04-18_mobile-global-search.md |
 | queued | 2026-04-18 | Mobile main chat / AI agent integration (shared server-side agent) | #mobile #feature #ai | queued/2026-04-18_mobile-main-chat-agent-integration.md |
 | queued | 2026-04-17 | Mobile Activity tab — add deal-scoped filter | #mobile #feature | queued/2026-04-17_mobile-activity-deal-scoped-filter.md |
