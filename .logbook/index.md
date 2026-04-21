@@ -1,6 +1,6 @@
 # Logbook Index
 
-Last updated: 2026-04-21
+Last updated: 2026-04-20
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
@@ -61,14 +61,14 @@ Last updated: 2026-04-21
 | done | 2026-04-18 | Desktop client profile Activity tab — fix "Rendered more hooks" runtime error | #bug #web #frontend | done/2026-04-18_desktop-activity-tab-hook-count-error.md |
 | done | 2026-04-18 | Mobile camera upload stuck at 0% — photos never process | #bug #mobile #perf | done/2026-04-18_mobile-camera-upload-stuck-at-0.md |
 | done | 2026-04-18 | Mobile small bugs batch (daily-brief count, LinkContactModal bg, add-to-tabs, Share attach) | #bug #mobile | done/2026-04-18_mobile-small-bugs-batch.md |
+| done | 2026-04-17 | Mobile Activity tab — add deal-scoped filter | #mobile #feature | done/2026-04-17_mobile-activity-deal-scoped-filter.md |
 | queued | 2026-04-18 | Mobile client profile — rich creation flows (Notes / Tasks / Projects / Flags) | #mobile #ux #feature | queued/2026-04-18_mobile-client-profile-rich-creation-flows.md |
 | queued | 2026-04-18 | HubSpot sync automation + completeness (cron + activities since-filter) | #hubspot #backend #feature | queued/2026-04-18_hubspot-sync-automation-completeness.md |
 | queued | 2026-04-18 | Google Calendar — mobile OAuth flow + fix events on Tasks list | #integration #google #mobile #bug | queued/2026-04-18_google-calendar-mobile-oauth-and-events-fix.md |
 | done | 2026-04-18 | Mobile dashboard widgets — Deals overview + Recent Activity teaser | #mobile #ux #feature | done/2026-04-18_mobile-dashboard-widgets-deals-and-activity.md |
 | queued | 2026-04-18 | Mobile global search — port desktop cross-entity search UX | #mobile #feature | queued/2026-04-18_mobile-global-search.md |
 | queued | 2026-04-18 | Mobile main chat / AI agent integration (shared server-side agent) | #mobile #feature #ai | queued/2026-04-18_mobile-main-chat-agent-integration.md |
-| queued | 2026-04-17 | Mobile Activity tab — add deal-scoped filter | #mobile #feature | queued/2026-04-17_mobile-activity-deal-scoped-filter.md |
-| queued | 2026-04-16 | Merge 2 duplicate client records (Halo Living and Kinspire) |  | queued/2026-04-16_merge-duplicate-clients-halo-kinspire.md |
+| done | 2026-04-16 | Merge 2 duplicate client records (Halo Living and Kinspire) |  | done/2026-04-16_merge-duplicate-clients-halo-kinspire.md |
 | abandoned | 2026-04-16 | Verify changes with next build + commit |  | abandoned/2026-04-16_verify-changes-with-next-build-commit.md |
 | abandoned | 2026-04-16 | Task 2b: Handle empty state + preserve sort/filter in full inbox |  | abandoned/2026-04-16_task-2b-handle-empty-state-preserve-sortfilter-in-full-inbox.md |
 | abandoned | 2026-04-16 | Task 1b: Polish daily brief section |  | abandoned/2026-04-16_task-1b-polish-daily-brief-section.md |
