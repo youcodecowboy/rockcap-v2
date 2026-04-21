@@ -231,6 +231,10 @@ export default function FolderSheet({
             }}
             style={{ maxHeight: 500 }}
             contentContainerStyle={{ paddingBottom: 12 }}
+            // Without 'handled', the FlatList swallows the first tap to
+            // dismiss the keyboard when any TextInput has focus, forcing
+            // users to tap folders twice. Matches PickerSheet's fix.
+            keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {
               if (item.kind === 'section') return <SectionHeader label={item.label} />;
               if (item.kind === 'none') {

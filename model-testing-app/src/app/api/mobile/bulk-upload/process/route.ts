@@ -130,7 +130,28 @@ export async function POST(request: NextRequest) {
     }> = [];
     let checklistItems: any[] = [];
 
-    if (batch.scope === 'client' && batch.clientId) {
+    // Only send folders that match the batch's upload level. If the AI sees
+    // both client and project folders at once, it'll sometimes pick a
+    // client-level key (like "miscellaneous") for a project-scoped upload —
+    // the key doesn't exist at project level so the doc gets orphaned.
+    // Constraining the list prevents that class of mismatch entirely.
+    if (batch.projectId) {
+      try {
+        const projectFolders: any[] = await convex.query(
+          api.projects.getProjectFolders,
+          { projectId: batch.projectId },
+        );
+        for (const f of projectFolders || []) {
+          availableFolders.push({
+            folderKey: f.folderType,
+            name: f.name,
+            level: 'project',
+          });
+        }
+      } catch (e) {
+        console.warn('[mobile process] getProjectFolders failed:', e);
+      }
+    } else if (batch.scope === 'client' && batch.clientId) {
       try {
         const clientFolders: any[] = await convex.query(
           api.clients.getClientFolders,
@@ -148,22 +169,6 @@ export async function POST(request: NextRequest) {
       }
     }
     if (batch.projectId) {
-      try {
-        const projectFolders: any[] = await convex.query(
-          api.projects.getProjectFolders,
-          { projectId: batch.projectId },
-        );
-        for (const f of projectFolders || []) {
-          availableFolders.push({
-            folderKey: f.folderType,
-            name: f.name,
-            level: 'project',
-          });
-        }
-      } catch (e) {
-        console.warn('[mobile process] getProjectFolders failed:', e);
-      }
-
       try {
         const checklist: any[] = await convex.query(
           api.knowledgeLibrary.getChecklistByProject,

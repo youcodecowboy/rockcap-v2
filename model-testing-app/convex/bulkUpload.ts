@@ -1246,9 +1246,21 @@ export const fileItem = mutation({
     const now = new Date().toISOString();
     const scope = batch.scope || "client";
 
-    // Determine folder info based on scope
+    // Determine folder info based on scope.
+    // The AI's suggested folder key (item.targetFolder) often matches a key
+    // that only exists at ONE level — e.g. "miscellaneous" only exists on
+    // client folders, "terms_comparison" only on project folders. The old
+    // logic blindly set folderType="project" whenever the batch had a
+    // projectId, which meant client-level keys (like "miscellaneous")
+    // got written to documents with folderType="project" + no matching
+    // projectFolders row — the doc became invisible in both libraries.
+    //
+    // Now we resolve against the real folder tables: prefer project level
+    // when that's the upload context, fall back to project's "unfiled" /
+    // "background" if the AI's key doesn't exist at project level,
+    // and only drop to client level when there's no project context.
     let folderId = item.targetFolder;
-    let folderType: "client" | "project" | undefined = batch.projectId ? "project" : "client";
+    let folderType: "client" | "project" | undefined = undefined;
 
     if (scope === "internal") {
       folderId = batch.internalFolderId || item.targetFolder;
@@ -1256,6 +1268,83 @@ export const fileItem = mutation({
     } else if (scope === "personal") {
       folderId = batch.personalFolderId || item.targetFolder;
       folderType = undefined; // Personal folders don't use client/project folderType
+    } else if (batch.projectId) {
+      // Project-scoped upload — must land in a project folder.
+      folderType = "project";
+
+      const matchExact = item.targetFolder
+        ? await ctx.db
+            .query("projectFolders")
+            .withIndex("by_project_type", (q: any) =>
+              q.eq("projectId", batch.projectId!).eq("folderType", item.targetFolder!),
+            )
+            .first()
+        : null;
+
+      if (!matchExact) {
+        // Fallback order: unfiled → background → first folder we find.
+        const unfiled = await ctx.db
+          .query("projectFolders")
+          .withIndex("by_project_type", (q: any) =>
+            q.eq("projectId", batch.projectId!).eq("folderType", "unfiled"),
+          )
+          .first();
+        const background = unfiled
+          ? null
+          : await ctx.db
+              .query("projectFolders")
+              .withIndex("by_project_type", (q: any) =>
+                q.eq("projectId", batch.projectId!).eq("folderType", "background"),
+              )
+              .first();
+        const anyFolder = unfiled || background
+          ? null
+          : await ctx.db
+              .query("projectFolders")
+              .withIndex("by_project", (q: any) => q.eq("projectId", batch.projectId!))
+              .first();
+        const resolved = unfiled || background || anyFolder;
+        if (!resolved) {
+          throw new Error(
+            `Project ${batch.projectId} has no folders. Cannot file document.`,
+          );
+        }
+        folderId = resolved.folderType;
+      }
+    } else if (batch.clientId) {
+      // Client-scoped upload — must land in a client folder.
+      folderType = "client";
+
+      const matchExact = item.targetFolder
+        ? await ctx.db
+            .query("clientFolders")
+            .withIndex("by_client_type", (q: any) =>
+              q.eq("clientId", batch.clientId!).eq("folderType", item.targetFolder!),
+            )
+            .first()
+        : null;
+
+      if (!matchExact) {
+        const misc = await ctx.db
+          .query("clientFolders")
+          .withIndex("by_client_type", (q: any) =>
+            q.eq("clientId", batch.clientId!).eq("folderType", "miscellaneous"),
+          )
+          .first();
+        const anyFolder = misc
+          ? null
+          : await ctx.db
+              .query("clientFolders")
+              .withIndex("by_client", (q: any) => q.eq("clientId", batch.clientId!))
+              .first();
+        const resolved = misc || anyFolder;
+        if (!resolved) {
+          throw new Error(
+            `Client ${batch.clientId} has no folders. Cannot file document.`,
+          );
+        }
+        folderId = resolved.folderType;
+      }
     }
 
     // Create the document
