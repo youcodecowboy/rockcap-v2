@@ -189,6 +189,9 @@ export default function NoteEditorScreen() {
 
       const mentionedUserIds = contentJson ? extractMentionedUserIds(contentJson) : [];
 
+      // createdAt / updatedAt are set server-side by the mutations — they
+      // aren't in the validator schema, and passing them triggers a Convex
+      // ArgumentValidationError ("Object contains extra field `createdAt`").
       if (noteId) {
         await updateNote({
           id: noteId as any,
@@ -198,7 +201,6 @@ export default function NoteEditorScreen() {
           projectId: selectedProjectId || undefined,
           tags: tags,
           mentionedUserIds,
-          updatedAt: new Date().toISOString(),
         } as any);
       } else {
         await createNote({
@@ -208,8 +210,6 @@ export default function NoteEditorScreen() {
           projectId: selectedProjectId || undefined,
           tags: tags,
           mentionedUserIds,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
         } as any);
       }
       setSaved(true);
