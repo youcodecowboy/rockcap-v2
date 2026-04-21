@@ -106,18 +106,25 @@ export default function DealDetailSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(10,10,10,0.55)' }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ maxHeight: '92%' }}
+      {/* Pattern matches the working upload PickerSheet: KAV owns the full
+          screen so keyboard handling works; a tap-to-close backdrop takes
+          the slack above the panel; the panel is flex: 1 with maxHeight
+          to cap it at 92% of screen. Previous layout had KAV with only
+          `maxHeight` and no flex, which collapsed the sheet to header-only
+          height — the sheet looked like a thin strip at the bottom. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <TouchableOpacity
+          onPress={onClose}
+          activeOpacity={1}
+          style={{ flex: 1, backgroundColor: 'rgba(10,10,10,0.55)' }}
+        />
+        <SafeAreaView
+          className="rounded-t-[20px] overflow-hidden"
+          style={{ backgroundColor: '#f5f5f4', maxHeight: '92%' }}
         >
-          {/* Container uses a darker "inset" background so the card-based
-              content reads as distinct surfaces — previously the whole sheet
-              was white and the content cards had no visual separation. */}
-          <SafeAreaView
-            className="rounded-t-[20px] max-h-full overflow-hidden"
-            style={{ backgroundColor: '#f5f5f4' }}
-          >
             {/* Drag handle + header. Header gets its own bg-m-bg-card panel
                 so the title area reads as a chrome element, not a content card. */}
             <View className="bg-m-bg-card">
@@ -348,9 +355,8 @@ export default function DealDetailSheet({
                 <ChevronRight size={14} color={colors.textTertiary} strokeWidth={2} />
               </TouchableOpacity>
             </ScrollView>
-          </SafeAreaView>
-        </KeyboardAvoidingView>
-      </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

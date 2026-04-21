@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Linking, Modal, SafeAreaView } from 'react-native';
 import { useState, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
@@ -1074,18 +1074,29 @@ type ActivityFilter = 'all' | 'EMAIL' | 'MEETING' | 'NOTE' | 'CALL' | 'TASK';
 function ActivityTab({
   clientId,
   dealFilter,
+  onSetDealFilter,
   onClearDealFilter,
 }: {
   clientId: string;
   // Optional deal-scope filter. When set, the list is narrowed to
   // activities whose `dealId` matches or whose `linkedDealIds` array
   // includes this deal. The filter chip at the top of the tab lets the
-  // user clear back to the whole-client feed. Wired from
-  // DealDetailSheet → DealsTab → ClientDetailScreen.
+  // user clear back to the whole-client feed. Can be set either from
+  // DealDetailSheet's "View activity for this deal" deep-link OR from
+  // the in-tab "Filter by deal" picker.
   dealFilter?: { id: string; name: string } | null;
+  onSetDealFilter?: (deal: { id: string; name: string }) => void;
   onClearDealFilter?: () => void;
 }) {
   const [filter, setFilter] = useState<ActivityFilter>('all');
+  const [showDealPicker, setShowDealPicker] = useState(false);
+  // Load client's deals for the in-tab "Filter by deal" picker. Cheap —
+  // typically a handful per client — and the query is already used
+  // elsewhere on the client profile.
+  const clientDeals = useQuery(
+    api.deals.listForClient,
+    { clientId: clientId as any },
+  ) ?? [];
 
   // Always query outgoing emails; query incoming only when the user picks EMAIL filter
   const outboundOrAll = useQuery(
@@ -1157,10 +1168,11 @@ function ActivityTab({
 
   return (
     <View className="gap-3">
-      {/* Deal-scope filter chip — only shown when a deal filter is active.
-          Dismissible X returns to the whole-client feed. */}
-      {dealFilter ? (
-        <View className="flex-row">
+      {/* Deal-scope filter row — shows the active deal pill (dismissible)
+          or a "Filter by deal" trigger when no filter is set. Tapping the
+          trigger opens a picker of the client's deals. */}
+      <View className="flex-row">
+        {dealFilter ? (
           <View
             style={{
               flexDirection: 'row',
@@ -1178,7 +1190,7 @@ function ActivityTab({
                 fontSize: 11,
                 fontWeight: '600',
                 color: colors.textOnBrand,
-                maxWidth: 220,
+                maxWidth: 200,
               }}
               numberOfLines={1}
             >
@@ -1208,8 +1220,107 @@ function ActivityTab({
               </Text>
             </TouchableOpacity>
           </View>
+        ) : clientDeals.length > 0 ? (
+          <TouchableOpacity
+            onPress={() => setShowDealPicker(true)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.bgCard,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '600',
+                color: colors.textSecondary,
+              }}
+            >
+              Filter by deal
+            </Text>
+            <Text
+              style={{
+                fontSize: 9,
+                color: colors.textTertiary,
+                marginTop: 1,
+              }}
+            >
+              ▾
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {/* Deal picker modal */}
+      <Modal
+        visible={showDealPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDealPicker(false)}
+      >
+        <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(10,10,10,0.55)' }}>
+          <TouchableOpacity
+            onPress={() => setShowDealPicker(false)}
+            activeOpacity={1}
+            style={{ flex: 1 }}
+          />
+          <SafeAreaView
+            className="rounded-t-[20px] overflow-hidden"
+            style={{ backgroundColor: colors.bgCard, maxHeight: '70%' }}
+          >
+            <View className="items-center pt-2 pb-1">
+              <View className="w-10 h-1 rounded-full" style={{ backgroundColor: '#d4d4d4' }} />
+            </View>
+            <View
+              className="flex-row items-center justify-between px-4 pt-2 pb-3"
+              style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}
+            >
+              <Text className="text-[15px] font-semibold text-m-text-primary">
+                Filter by deal
+              </Text>
+              <TouchableOpacity onPress={() => setShowDealPicker(false)} hitSlop={8}>
+                <Text className="text-[18px] text-m-text-tertiary">×</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {clientDeals.map((d: any) => (
+                <TouchableOpacity
+                  key={d._id}
+                  onPress={() => {
+                    onSetDealFilter?.({ id: String(d._id), name: d.name });
+                    setShowDealPicker(false);
+                  }}
+                  className="flex-row items-center justify-between px-4 py-3"
+                  style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}
+                >
+                  <View className="flex-1 min-w-0">
+                    <Text
+                      className="text-sm font-medium text-m-text-primary"
+                      numberOfLines={1}
+                    >
+                      {d.name}
+                    </Text>
+                    <Text
+                      className="text-[11px] text-m-text-tertiary mt-0.5"
+                      numberOfLines={1}
+                    >
+                      {d.stageName || d.stage || 'Unstaged'}
+                      {d.amount ? ` · £${d.amount.toLocaleString()}` : ''}
+                    </Text>
+                  </View>
+                  <ChevronRight size={14} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </SafeAreaView>
         </View>
-      ) : null}
+      </Modal>
 
       {/* Filter chips — horizontal scroll */}
       <ScrollView
@@ -2330,6 +2441,7 @@ export default function ClientDetailScreen() {
           <ActivityTab
             clientId={clientId as any}
             dealFilter={dealActivityFilter}
+            onSetDealFilter={(deal) => setDealActivityFilter(deal)}
             onClearDealFilter={() => setDealActivityFilter(null)}
           />
         ) : null}
