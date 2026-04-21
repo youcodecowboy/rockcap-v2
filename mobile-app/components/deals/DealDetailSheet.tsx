@@ -106,24 +106,31 @@ export default function DealDetailSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      {/* Pattern matches the working upload PickerSheet: KAV owns the full
-          screen so keyboard handling works; a tap-to-close backdrop takes
-          the slack above the panel; the panel is flex: 1 with maxHeight
-          to cap it at 92% of screen. Previous layout had KAV with only
-          `maxHeight` and no flex, which collapsed the sheet to header-only
-          height — the sheet looked like a thin strip at the bottom. */}
+      {/* Sheet layout: KAV fills the modal (flex: 1), backdrop is
+          absolutely positioned so it covers the full modal without
+          taking flex space, and the SafeAreaView has an explicit
+          `height: '92%'` so the inner ScrollView's `flex: 1` actually
+          resolves to real pixels. Previous attempt used `maxHeight`
+          which let the container collapse to header height. */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
+        style={{ flex: 1, justifyContent: 'flex-end' }}
       >
         <TouchableOpacity
           onPress={onClose}
           activeOpacity={1}
-          style={{ flex: 1, backgroundColor: 'rgba(10,10,10,0.55)' }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(10,10,10,0.55)',
+          }}
         />
         <SafeAreaView
           className="rounded-t-[20px] overflow-hidden"
-          style={{ backgroundColor: '#f5f5f4', maxHeight: '92%' }}
+          style={{ backgroundColor: '#f5f5f4', height: '92%' }}
         >
             {/* Drag handle + header. Header gets its own bg-m-bg-card panel
                 so the title area reads as a chrome element, not a content card. */}

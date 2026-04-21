@@ -1097,6 +1097,18 @@ function ActivityTab({
     api.deals.listForClient,
     { clientId: clientId as any },
   ) ?? [];
+  // Hydrate the active deal's company associations so we can match
+  // activities by company as a fallback. HubSpot's v1 engagements
+  // endpoint doesn't reliably return deal associations, so activities
+  // often lack `dealId`/`linkedDealIds` even when they're genuinely
+  // tied to a deal via its company.
+  const selectedDealFull = useQuery(
+    api.deals.getDealById,
+    dealFilter ? { dealId: dealFilter.id as any } : 'skip',
+  );
+  const dealCompanyIdSet = new Set(
+    ((selectedDealFull as any)?.linkedCompanyIds ?? []).map((id: any) => String(id)),
+  );
 
   // Always query outgoing emails; query incoming only when the user picks EMAIL filter
   const outboundOrAll = useQuery(
@@ -1119,15 +1131,22 @@ function ActivityTab({
 
   const fullList = filter === 'EMAIL' ? [...outboundOrAll, ...incomingEmails] : outboundOrAll;
 
-  // Apply optional deal-scope filter (from DealDetailSheet "View all
-  // activity"). Activities link to deals via `dealId` (single, primary
-  // association) and `linkedDealIds` (multi, for cases where one email or
-  // meeting touches several deals). Either matching is enough.
+  // Apply optional deal-scope filter. Three match paths, any one is
+  // enough:
+  //   1. Explicit primary link (activity.dealId)
+  //   2. Multi-link (activity.linkedDealIds contains the deal)
+  //   3. Company fallback (activity.companyId is one of the deal's
+  //      linkedCompanyIds) — needed because the HubSpot v1 engagements
+  //      endpoint often doesn't return deal associations, so dealId +
+  //      linkedDealIds end up empty even when the activity is genuinely
+  //      about the deal.
   const dealScoped = dealFilter
     ? fullList.filter((a: any) => {
         if (a.dealId && String(a.dealId) === dealFilter.id) return true;
         const linked: any[] = a.linkedDealIds || [];
-        return linked.some((id) => String(id) === dealFilter.id);
+        if (linked.some((id) => String(id) === dealFilter.id)) return true;
+        if (a.companyId && dealCompanyIdSet.has(String(a.companyId))) return true;
+        return false;
       })
     : fullList;
 
