@@ -10,6 +10,7 @@ import { api } from '../../../model-testing-app/convex/_generated/api';
 import * as ExpoDocumentPicker from 'expo-document-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
+import Constants from 'expo-constants';
 import {
   ArrowLeft, Upload, ChevronRight, ChevronDown, ChevronUp, Check, X,
   FileText, Table2, Image as ImageIcon, Mail, File as FileIcon, Plus,
@@ -28,10 +29,29 @@ import FolderSheet from '@/components/upload/FolderSheet';
 // Gateway that runs the V4 AI pipeline server-side per uploaded item.
 // The Next.js server keeps the Anthropic key; mobile just fires-and-forgets
 // these requests so the batch screen can show reactive progress.
-const PROCESS_API_URL =
-  process.env.EXPO_PUBLIC_API_URL
-    ? `${process.env.EXPO_PUBLIC_API_URL}/api/mobile/bulk-upload/process`
-    : 'http://localhost:3000/api/mobile/bulk-upload/process';
+//
+// URL resolution rules:
+// - In dev, `localhost` is only reachable from the iOS simulator. On a real
+//   device, `localhost` is the phone itself, so we derive the Mac's LAN IP
+//   from Expo's bundler hostUri (e.g. "192.168.1.42:8081"). This matches the
+//   server that the JS bundle was fetched from, which is reachable.
+// - In prod, EXPO_PUBLIC_API_URL must be set to the deployed web origin.
+// - EXPO_PUBLIC_API_URL takes precedence when explicitly set so CI /
+//   tunnelled dev setups still work.
+function resolveApiBase(): string {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl && !envUrl.includes('localhost')) return envUrl;
+  const hostUri = (Constants.expoConfig as any)?.hostUri
+    || (Constants as any).manifest2?.extra?.expoClient?.hostUri
+    || (Constants as any).manifest?.debuggerHost;
+  if (hostUri) {
+    const host = String(hostUri).split(':')[0];
+    return `http://${host}:3000`;
+  }
+  return envUrl || 'http://localhost:3000';
+}
+
+const PROCESS_API_URL = `${resolveApiBase()}/api/mobile/bulk-upload/process`;
 
 // Match the mobile web allow-list exactly so what works in browser works here.
 const ACCEPTED_MIME_TYPES = [
@@ -525,19 +545,42 @@ export default function UploadScreen() {
           // Fire-and-forget the V4 analysis trigger. The server-side gateway
           // owns all the state transitions (processing → ready_for_review);
           // we just kick it off and let Convex's reactive subscription on
-          // the batch screen show live progress. Wrapping in a local try/catch
-          // so a network hiccup here doesn't abort the whole submit loop.
+          // the batch screen show live progress.
           //
           // NOTE: on native RN, in-flight fetches continue across screen
           // transitions as long as the JS runtime is alive. The batch screen
           // subscription picks up status updates as they land.
+          //
+          // If the trigger fails (server unreachable, wrong URL, etc.) we
+          // update the item to `error` so the batch UI stops showing 0%
+          // forever. Previously this was a silent console.warn — users just
+          // saw items stuck "pending" with no explanation.
           fetch(PROCESS_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ itemId }),
-          }).catch((e) => {
-            console.warn(`[upload] failed to trigger analysis for ${f.name}:`, e);
-          });
+          })
+            .then(async (res) => {
+              if (!res.ok) {
+                const body = await res.text().catch(() => '');
+                throw new Error(
+                  `HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`,
+                );
+              }
+            })
+            .catch(async (e: any) => {
+              console.warn(
+                `[upload] trigger failed for ${f.name} at ${PROCESS_API_URL}:`,
+                e,
+              );
+              try {
+                await updateItemStatus({
+                  itemId: itemId as any,
+                  status: 'error',
+                  error: `Failed to trigger processing: ${e?.message || 'network error'} (${PROCESS_API_URL})`,
+                });
+              } catch {}
+            });
         }
       }
 
