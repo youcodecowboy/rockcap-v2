@@ -138,6 +138,11 @@ export const listWithHubspotId = query({
         _id: c._id,
         hubspotCompanyId: c.hubspotCompanyId as string,
         name: c.name,
+        // Used by the incremental engagement sync to skip companies whose
+        // activity timeline hasn't moved since the last successful sync.
+        // On a 500-company portal with ~5% movement per 6h window, this
+        // turns 500 API calls into ~25.
+        lastActivityDate: c.lastActivityDate as string | undefined,
       }));
   },
 });

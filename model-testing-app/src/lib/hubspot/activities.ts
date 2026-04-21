@@ -158,88 +158,11 @@ export async function fetchEngagementsForCompany(
   return results;
 }
 
-/**
- * Fetch engagements modified since a given timestamp, across the entire
- * portal (not per-company). Uses HubSpot's `/engagements/v1/engagements/
- * recent/modified` endpoint which supports a native `since` param.
- *
- * This is dramatically more efficient than walking every company for an
- * incremental sync:
- *   - Per-company walk on a 500-company account = 500+ API calls,
- *     ~3-5 minutes even with early-exit.
- *   - Recent-modified walk on a 10-minute window = usually 1-5 API
- *     calls, seconds.
- *
- * Each engagement comes with its associations (companies, contacts,
- * deals), same shape as the per-company endpoint, so the downstream
- * upsert logic doesn't change.
- */
-export async function fetchRecentlyModifiedEngagements(
-  since: string,
-  opts: { maxRecords?: number } = {},
-): Promise<HubSpotEngagement[]> {
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
-
-  const sinceMs = new Date(since).getTime();
-  if (isNaN(sinceMs)) throw new Error(`Invalid since timestamp: ${since}`);
-
-  const maxRecords = opts.maxRecords ?? Number.POSITIVE_INFINITY;
-  const results: HubSpotEngagement[] = [];
-  let offset = 0;
-  const pageSize = 100;
-  let pageIndex = 0;
-  let totalRaw = 0;
-  let totalParsed = 0;
-
-  while (results.length < maxRecords) {
-    const url =
-      `${HUBSPOT_API_BASE}/engagements/v1/engagements/recent/modified` +
-      `?since=${sinceMs}&count=${pageSize}&offset=${offset}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(
-        `HubSpot recent-modified engagements fetch failed: ${res.status} ${text.slice(0, 200)}`,
-      );
-    }
-
-    const data = (await res.json()) as {
-      results?: any[];
-      hasMore?: boolean;
-      offset?: number;
-    };
-
-    const rawCount = (data.results ?? []).length;
-    const parsed = (data.results ?? [])
-      .map(parseEngagement)
-      .filter((e): e is HubSpotEngagement => e !== null);
-    totalRaw += rawCount;
-    totalParsed += parsed.length;
-
-    console.log(
-      `[HubSpot recent-modified] page ${pageIndex} — ` +
-      `sinceMs=${sinceMs} offset=${offset} ` +
-      `raw=${rawCount} parsed=${parsed.length} hasMore=${!!data.hasMore}`,
-    );
-
-    results.push(...parsed);
-
-    if (!data.hasMore || rawCount === 0) break;
-    offset = data.offset ?? offset + pageSize;
-    pageIndex += 1;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-
-  console.log(
-    `[HubSpot recent-modified] total — raw=${totalRaw} parsed=${totalParsed} returned=${results.length}`,
-  );
-
-  return results;
-}
+// NOTE: the global `/engagements/v1/engagements/recent/modified` endpoint
+// was briefly used as an incremental-sync shortcut (commit c57ce15) but
+// reverted — that endpoint returns email bodies as "[redacted]" template
+// text regardless of scope. Only the per-company associated endpoint
+// (`fetchEngagementsForCompany` above) returns real bodies with
+// sales-email-read. Incremental perf is now handled by filtering the
+// company list on `lastActivityDate` upstream in sync-all/route.ts
+// before iterating.

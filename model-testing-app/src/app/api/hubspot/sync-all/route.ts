@@ -14,10 +14,7 @@ import { fetchAllDealsFromHubSpot } from '@/lib/hubspot/deals';
 import { extractCustomProperties, generateHubSpotCompanyUrl, generateHubSpotContactUrl, generateHubSpotDealUrl } from '@/lib/hubspot/utils';
 import { discoverProperties, clearPropertiesCache } from '@/lib/hubspot/properties';
 import { clearOwnersCache, resolveOwnerName } from '@/lib/hubspot/owners';
-import {
-  fetchEngagementsForCompany,
-  fetchRecentlyModifiedEngagements,
-} from '@/lib/hubspot/activities';
+import { fetchEngagementsForCompany } from '@/lib/hubspot/activities';
 import { dedupeAssociationIds } from '@/lib/hubspot/normalize';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
@@ -377,27 +374,41 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Engagement sync has two modes:
-    //   - Incremental (`since` set): use HubSpot's global recently-modified
-    //     engagements endpoint. One paginated query across the whole portal
-    //     ordered by lastUpdated desc. On a typical 10-min cron window this
-    //     is a handful of API calls; it never iterates companies.
-    //   - Full sweep (no `since`): fall back to walking every company's
-    //     associated engagements. Slow but necessary for first-time syncs
-    //     to backfill everything.
+    // Engagement sync: always per-company (the only endpoint that returns
+    // full email bodies with the `sales-email-read` scope — the legacy v1
+    // `/recent/modified` global endpoint unconditionally redacts bodies).
+    //
+    // Incremental speedup: use each Convex company's cached
+    // `lastActivityDate` (synced from HubSpot's `hs_lastactivitydate`) to
+    // skip the walk for companies whose timeline hasn't moved since our
+    // last sync cursor. On a 500-company portal with ~5% movement per
+    // 6-hour window, that turns ~500 API calls into ~25.
+    //
+    // Companies with no `lastActivityDate` on record are included (can't
+    // prove they're quiet — safer to check).
     if (syncActivities) {
       try {
+        const allCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
+        const sinceMs = since ? new Date(since).getTime() : 0;
+        const candidates = since
+          ? allCompanies.filter((c) => {
+              const lad = c.lastActivityDate ? new Date(c.lastActivityDate).getTime() : null;
+              return lad === null || lad >= sinceMs;
+            })
+          : allCompanies;
+
         let engagementTotal = 0;
         let engagementErrors = 0;
+        const startedAt = Date.now();
+        console.log(
+          `[sync-all] engagements — walking ${candidates.length}/${allCompanies.length} companies` +
+          `${since ? ` (filtered by lastActivityDate >= ${since})` : ' (full sweep)'}`,
+        );
 
-        const upsertEngagement = async (eng: any, companyHubspotIdHint?: string) => {
+        const upsertEngagement = async (eng: any, companyHubspotId: string) => {
           const normalizedDirection =
             eng.direction === 'inbound' || eng.direction === 'outbound' ? eng.direction : undefined;
           const ownerName = eng.ownerId ? await resolveOwnerName(eng.ownerId) : null;
-          // For the global path, prefer the first company association on
-          // the engagement itself. The per-company path already knows
-          // which company it came from.
-          const hubspotCompanyId = companyHubspotIdHint ?? eng.companyIds?.[0];
           await fetchMutation(api.hubspotSync.activities.syncActivityFromHubSpot, {
             hubspotActivityId: eng.id,
             activityType: eng.type,
@@ -420,55 +431,33 @@ export async function POST(request: NextRequest) {
           });
         };
 
-        if (since) {
-          // Incremental: one global query for all recently-modified engagements.
-          console.log(`[sync-all] engagements — incremental global fetch since ${since}`);
-          const startedAt = Date.now();
-          const engagements = await fetchRecentlyModifiedEngagements(since);
-          console.log(
-            `[sync-all] engagements — fetched ${engagements.length} modified in ${Math.round((Date.now() - startedAt) / 1000)}s`,
-          );
-          for (const eng of engagements) {
-            try {
-              await upsertEngagement(eng);
-              engagementTotal++;
-            } catch (engErr) {
-              engagementErrors++;
-              console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
-            }
+        for (let i = 0; i < candidates.length; i++) {
+          const company = candidates[i];
+          if (i > 0 && i % 25 === 0) {
+            const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+            console.log(
+              `[sync-all] engagements — progress ${i}/${candidates.length} ` +
+              `(${engagementTotal} synced, ${engagementErrors} errors, ${elapsedSec}s elapsed)`,
+            );
           }
-        } else {
-          // Full sweep: per-company walk. Only used for first sync / full re-sync.
-          const convexCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
-          const startedAt = Date.now();
-          console.log(`[sync-all] engagements — full sweep over ${convexCompanies.length} companies`);
-          for (let i = 0; i < convexCompanies.length; i++) {
-            const company = convexCompanies[i];
-            if (i > 0 && i % 25 === 0) {
-              const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
-              console.log(
-                `[sync-all] engagements — progress ${i}/${convexCompanies.length} ` +
-                `(${engagementTotal} synced, ${engagementErrors} errors, ${elapsedSec}s elapsed)`,
-              );
-            }
-            try {
-              const engagements = await fetchEngagementsForCompany(
-                company.hubspotCompanyId,
-                Number.POSITIVE_INFINITY,
-              );
-              for (const eng of engagements) {
-                try {
-                  await upsertEngagement(eng, company.hubspotCompanyId);
-                  engagementTotal++;
-                } catch (engErr) {
-                  engagementErrors++;
-                  console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
-                }
+          try {
+            const engagements = await fetchEngagementsForCompany(
+              company.hubspotCompanyId,
+              Number.POSITIVE_INFINITY,
+              since ? { since } : {},
+            );
+            for (const eng of engagements) {
+              try {
+                await upsertEngagement(eng, company.hubspotCompanyId);
+                engagementTotal++;
+              } catch (engErr) {
+                engagementErrors++;
+                console.error(`[sync-all] engagement ${eng.id} failed:`, engErr);
               }
-            } catch (companyErr) {
-              engagementErrors++;
-              console.error(`[sync-all] engagements for company ${company.hubspotCompanyId} failed:`, companyErr);
             }
+          } catch (companyErr) {
+            engagementErrors++;
+            console.error(`[sync-all] engagements for company ${company.hubspotCompanyId} failed:`, companyErr);
           }
         }
 
