@@ -188,6 +188,9 @@ export async function fetchRecentlyModifiedEngagements(
   const results: HubSpotEngagement[] = [];
   let offset = 0;
   const pageSize = 100;
+  let pageIndex = 0;
+  let totalRaw = 0;
+  let totalParsed = 0;
 
   while (results.length < maxRecords) {
     const url =
@@ -213,16 +216,30 @@ export async function fetchRecentlyModifiedEngagements(
       offset?: number;
     };
 
+    const rawCount = (data.results ?? []).length;
     const parsed = (data.results ?? [])
       .map(parseEngagement)
       .filter((e): e is HubSpotEngagement => e !== null);
+    totalRaw += rawCount;
+    totalParsed += parsed.length;
+
+    console.log(
+      `[HubSpot recent-modified] page ${pageIndex} — ` +
+      `sinceMs=${sinceMs} offset=${offset} ` +
+      `raw=${rawCount} parsed=${parsed.length} hasMore=${!!data.hasMore}`,
+    );
 
     results.push(...parsed);
 
-    if (!data.hasMore || parsed.length === 0) break;
+    if (!data.hasMore || rawCount === 0) break;
     offset = data.offset ?? offset + pageSize;
+    pageIndex += 1;
     await new Promise((r) => setTimeout(r, 100));
   }
+
+  console.log(
+    `[HubSpot recent-modified] total — raw=${totalRaw} parsed=${totalParsed} returned=${results.length}`,
+  );
 
   return results;
 }

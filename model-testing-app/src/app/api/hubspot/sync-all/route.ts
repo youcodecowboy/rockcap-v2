@@ -37,20 +37,18 @@ export async function POST(request: NextRequest) {
       !!process.env.CRON_SECRET &&
       cronSecret === process.env.CRON_SECRET;
 
-    // Unconditional diagnostic for first-time operator setup. Logs
-    // presence of both sides + lengths (never the secrets themselves).
-    // `header_present=false` tells us the X-Cron-Secret header never
-    // arrived at the handler (most likely stripped by a proxy OR the
-    // Convex action didn't send it). `env_present=false` tells us the
-    // Vercel env var isn't set on Production.
-    console.log(
-      `[sync-all] auth-gate — cron_auth=${isAuthorisedCron} ` +
-      `header_present=${!!cronSecret} ` +
-      `env_present=${!!process.env.CRON_SECRET} ` +
-      `header_len=${cronSecret?.length ?? 0} ` +
-      `env_len=${process.env.CRON_SECRET?.length ?? 0} ` +
-      `lengths_match=${(process.env.CRON_SECRET?.length ?? -1) === (cronSecret?.length ?? -2)}`,
-    );
+    // Diagnostic only when auth fails. Logs presence + lengths without
+    // the secret values. Lets future secret-rotation / env-misconfig
+    // debugging stay self-service — healthy runs don't need the noise.
+    if (cronSecret && !isAuthorisedCron) {
+      console.warn(
+        `[sync-all] cron secret rejected — ` +
+        `env_present=${!!process.env.CRON_SECRET} ` +
+        `header_len=${cronSecret.length} ` +
+        `env_len=${process.env.CRON_SECRET?.length ?? 0} ` +
+        `lengths_match=${process.env.CRON_SECRET?.length === cronSecret.length}`,
+      );
+    }
 
     const convexClient = await getAuthenticatedConvexClient();
     if (!isAuthorisedCron) {
