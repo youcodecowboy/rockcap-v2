@@ -1236,7 +1236,7 @@ export default function DashboardScreen() {
       new Date((t as any).completedAt).toDateString() === now.toDateString(),
   );
 
-  // Pipeline aggregate — open deals only, grouped into 4 stage tiers.
+  // Pipeline aggregate — open deals only, grouped by actual stage name.
   // HubSpot's canonical "deal is closed" flag is `isClosed` (hs_is_closed);
   // that flips to true for both closed-won and closed-lost, so we filter on
   // it directly rather than string-sniffing stage names. `isClosedWon`
@@ -1248,24 +1248,39 @@ export default function DashboardScreen() {
     (d: any) => d.isClosed === true && d.isClosedWon !== true,
   );
 
-  type StageBucket = { label: string; value: number; count: number; keys: string[] };
-  const stageBuckets: StageBucket[] = [
-    { label: 'Qualified', value: 0, count: 0, keys: ['qualified', 'qualify', 'discovery'] },
-    { label: 'Proposal', value: 0, count: 0, keys: ['proposal', 'presented', 'term'] },
-    { label: 'Negotiation', value: 0, count: 0, keys: ['negotiation', 'negotiat'] },
-    { label: 'Closing', value: 0, count: 0, keys: ['closing', 'commit', 'contract', 'closewon'] },
-  ];
-  const otherBucket: StageBucket = { label: 'Other', value: 0, count: 0, keys: [] };
+  // Group open deals by their HubSpot-resolved `stageName` (the
+  // human-readable label) — NOT `stage`, which is an internal stage ID
+  // like "1234567" or "appointmentscheduled" that keyword-matching can't
+  // turn into meaningful buckets across custom pipelines. Fall back to
+  // "Unstaged" only when stageName is genuinely missing.
+  const stageGroups = new Map<string, { label: string; value: number; count: number }>();
   for (const d of openDeals) {
-    const stage = (d.stage || '').toString().toLowerCase();
+    const label = ((d as any).stageName as string) || 'Unstaged';
+    const existing = stageGroups.get(label);
     const amt = (d as any).amount || 0;
-    const bucket = stageBuckets.find((b) => b.keys.some((k) => stage.includes(k))) || otherBucket;
-    bucket.value += amt;
-    bucket.count += 1;
+    if (existing) {
+      existing.value += amt;
+      existing.count += 1;
+    } else {
+      stageGroups.set(label, { label, value: amt, count: 1 });
+    }
   }
-  const stagesForHero = stageBuckets.filter((b) => b.count > 0);
-  if (otherBucket.count > 0 && stagesForHero.length < 4) stagesForHero.push(otherBucket);
-  const pipelineTotal = openDeals.reduce((sum: number, d: any) => sum + ((d as any).amount || 0), 0);
+  // Top 4 by £ value; if there are more, collapse the tail into "Other".
+  const sortedStages = Array.from(stageGroups.values()).sort((a, b) => b.value - a.value);
+  const topStages = sortedStages.slice(0, 4);
+  const remainder = sortedStages.slice(4);
+  if (remainder.length > 0) {
+    topStages[topStages.length - 1] = {
+      label: 'Other',
+      value: remainder.reduce((s, r) => s + r.value, topStages[topStages.length - 1]?.value || 0),
+      count: remainder.reduce((s, r) => s + r.count, topStages[topStages.length - 1]?.count || 0),
+    };
+  }
+  const stagesForHero = topStages;
+  const pipelineTotal = openDeals.reduce(
+    (sum: number, d: any) => sum + ((d as any).amount || 0),
+    0,
+  );
 
   // Sync indicator — newest HubSpot sync timestamp across companies
   const latestSyncMs = (companies ?? []).reduce((latest: number, c: any) => {
