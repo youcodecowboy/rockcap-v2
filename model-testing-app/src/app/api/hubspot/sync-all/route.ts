@@ -26,6 +26,20 @@ export async function POST(request: NextRequest) {
       !!process.env.CRON_SECRET &&
       cronSecret === process.env.CRON_SECRET;
 
+    // Diagnostic log for first-time operator setup — logs whether each
+    // side of the match is present and their lengths WITHOUT logging the
+    // actual secret. Lets us distinguish "env missing" from "env set but
+    // values differ" in Vercel logs without leaking the secret.
+    if (cronSecret && !isAuthorisedCron) {
+      console.warn(
+        `[sync-all] cron secret header received but rejected — ` +
+        `env_present=${!!process.env.CRON_SECRET} ` +
+        `env_len=${process.env.CRON_SECRET?.length ?? 0} ` +
+        `header_len=${cronSecret.length} ` +
+        `lengths_match=${process.env.CRON_SECRET?.length === cronSecret.length}`,
+      );
+    }
+
     const convexClient = await getAuthenticatedConvexClient();
     if (!isAuthorisedCron) {
       try {
