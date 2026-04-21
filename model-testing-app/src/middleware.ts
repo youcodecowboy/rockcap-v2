@@ -20,6 +20,13 @@ const isPublicRoute = createRouteMatcher([
   // path with a silent HTTP 404. No user data is passed — it only runs AI
   // classification on the file URL + metadata it's given.
   '/api/v4-analyze(.*)',
+  // HubSpot sync-all is hit by both the browser (Clerk cookie present) and
+  // the Convex cron (no cookie, but carries an X-Cron-Secret header). The
+  // route handler enforces auth itself — Clerk session OR matching secret —
+  // but Clerk middleware was intercepting BEFORE the handler could check,
+  // returning its default 404 to the cron. Making the route public lets
+  // the request reach the handler's own auth gate.
+  '/api/hubspot/sync-all(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.
