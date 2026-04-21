@@ -14,6 +14,12 @@ const isPublicRoute = createRouteMatcher([
   // The mobile app authenticates separately via Clerk Expo for any sensitive operations
   // that touch user data; these endpoints only do AI text parsing and are safe to expose.
   '/api/mobile/(.*)',
+  // v4 pipeline is called server-to-server from /api/mobile/bulk-upload/process
+  // (no user cookie available) and from the browser's bulkQueueProcessor
+  // (works with or without auth). Protecting it with Clerk breaks the mobile
+  // path with a silent HTTP 404. No user data is passed — it only runs AI
+  // classification on the file URL + metadata it's given.
+  '/api/v4-analyze(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.
