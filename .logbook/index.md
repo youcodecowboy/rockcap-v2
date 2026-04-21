@@ -4,6 +4,7 @@ Last updated: 2026-04-20
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
+| done | 2026-04-18 | Mobile top-level screens bypassing (tabs)/ layout — missing nav chrome | #bug #mobile #architecture #refactor | done/2026-04-18_mobile-top-level-screens-bypass-tabs-layout.md |
 | done | 2026-04-18 | [CRITICAL] Mobile new-client flow must bootstrap base folders + checklist | #bug #critical #data #mobile | done/2026-04-18_mobile-new-client-folder-checklist-bootstrap.md |
 | done | 2026-04-17 | Desktop HubSpot parity port (client profile) | #desktop #feature #ux | done/2026-04-17_desktop-hubspot-parity-port-client-profile.md |
 | done | 2026-04-17 | Desktop /activity page — expandable activity cards | #desktop #ux | done/2026-04-17_desktop-activity-expandable-cards.md |
@@ -57,8 +58,7 @@ Last updated: 2026-04-20
 | done | 2026-04-17 | Mobile dashboard small fixes (client list count + Overdue section styling) | #mobile #ux #bug | done/2026-04-17_mobile-dashboard-small-fixes.md |
 | done | 2026-04-18 | Mobile notes broken — can't save AND can't type (merged) | #bug #mobile #data | done/2026-04-18_mobile-notes-broken-save-and-type.md |
 | done | 2026-04-18 | Desktop client profile Activity tab — fix "Rendered more hooks" runtime error | #bug #web #frontend | done/2026-04-18_desktop-activity-tab-hook-count-error.md |
-| queued | 2026-04-18 | Mobile camera upload stuck at 0% — photos never process | #bug #mobile #perf | queued/2026-04-18_mobile-camera-upload-stuck-at-0.md |
-| queued | 2026-04-18 | Mobile top-level screens bypassing (tabs)/ layout — missing nav chrome | #bug #mobile #architecture #refactor | queued/2026-04-18_mobile-top-level-screens-bypass-tabs-layout.md |
+| done | 2026-04-18 | Mobile camera upload stuck at 0% — photos never process | #bug #mobile #perf | done/2026-04-18_mobile-camera-upload-stuck-at-0.md |
 | queued | 2026-04-18 | Mobile client profile — rich creation flows (Notes / Tasks / Projects / Flags) | #mobile #ux #feature | queued/2026-04-18_mobile-client-profile-rich-creation-flows.md |
 | queued | 2026-04-18 | HubSpot sync automation + completeness (cron + activities since-filter) | #hubspot #backend #feature | queued/2026-04-18_hubspot-sync-automation-completeness.md |
 | queued | 2026-04-18 | Google Calendar — mobile OAuth flow + fix events on Tasks list | #integration #google #mobile #bug | queued/2026-04-18_google-calendar-mobile-oauth-and-events-fix.md |
