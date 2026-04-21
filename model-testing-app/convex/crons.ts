@@ -9,4 +9,16 @@ crons.daily(
   internal.dailyBriefs.cronTrigger,
 );
 
+// HubSpot recurring sync — every 6h, incremental only. The account has
+// ~20K entries across companies / contacts / deals / engagements; a full
+// sync on every tick would torch the HubSpot rate-limit budget. The
+// internal action reads config, skips if the toggle is off, and windows
+// the sync against `config.lastSyncAt` so each tick only pulls changes
+// since the previous successful run. See recurringSync.ts for env vars.
+crons.interval(
+  "hubspot-recurring-sync",
+  { hours: 6 },
+  internal.hubspotSync.recurringSync.runRecurringSync,
+);
+
 export default crons;

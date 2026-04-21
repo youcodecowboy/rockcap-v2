@@ -97,10 +97,18 @@ function parseEngagement(raw: any): HubSpotEngagement | null {
 export async function fetchEngagementsForCompany(
   companyId: string,
   maxRecords: number = Number.POSITIVE_INFINITY,
+  opts: { since?: string } = {},
 ): Promise<HubSpotEngagement[]> {
   const apiKey = process.env.HUBSPOT_API_KEY;
   if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
 
+  // Incremental window. The v1 engagements-associated-by-company endpoint
+  // doesn't accept a native `since` query param, but engagements come back
+  // newest-first — so we can still early-exit the paging loop once we hit
+  // a page where every engagement is older than the window. Skipping stale
+  // history on a 20K-engagement account is the difference between a
+  // 15-minute sync and a 5-second one.
+  const sinceMs = opts.since ? new Date(opts.since).getTime() : 0;
   const results: HubSpotEngagement[] = [];
   let offset = 0;
   const pageSize = 100;
@@ -129,7 +137,17 @@ export async function fetchEngagementsForCompany(
       .map(parseEngagement)
       .filter((e): e is HubSpotEngagement => e !== null);
 
-    results.push(...parsed);
+    if (sinceMs > 0) {
+      const fresh = parsed.filter(
+        (e) => new Date(e.timestamp).getTime() >= sinceMs,
+      );
+      results.push(...fresh);
+      // Page had rows but none were in the window → we've paged past the
+      // cutoff; stop rather than reading further history.
+      if (parsed.length > 0 && fresh.length === 0) break;
+    } else {
+      results.push(...parsed);
+    }
 
     if (!data.hasMore || parsed.length === 0) break;
     offset = data.offset ?? (offset + pageSize);

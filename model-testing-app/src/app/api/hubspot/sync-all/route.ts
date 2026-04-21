@@ -15,12 +15,24 @@ import { ErrorResponses } from '@/lib/api/errorResponse';
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
+    // Check authentication. The Convex cron path calls this endpoint
+    // without a Clerk session but with a shared-secret header, so we
+    // short-circuit requireAuth when the secret matches. No public
+    // exposure — the secret lives only in the Convex deployment's env
+    // and the Next.js deployment's env, both operator-controlled.
+    const cronSecret = request.headers.get('x-cron-secret');
+    const isAuthorisedCron =
+      !!cronSecret &&
+      !!process.env.CRON_SECRET &&
+      cronSecret === process.env.CRON_SECRET;
+
     const convexClient = await getAuthenticatedConvexClient();
-    try {
-      await requireAuth(convexClient);
-    } catch (authError) {
-      return ErrorResponses.unauthenticated();
+    if (!isAuthorisedCron) {
+      try {
+        await requireAuth(convexClient);
+      } catch (authError) {
+        return ErrorResponses.unauthenticated();
+      }
     }
     const {
       maxRecords = Number.POSITIVE_INFINITY,
@@ -350,7 +362,11 @@ export async function POST(request: NextRequest) {
 
         for (const company of convexCompanies) {
           try {
-            const engagements = await fetchEngagementsForCompany(company.hubspotCompanyId);
+            const engagements = await fetchEngagementsForCompany(
+              company.hubspotCompanyId,
+              Number.POSITIVE_INFINITY,
+              since ? { since } : {},
+            );
             for (const eng of engagements) {
               try {
                 const normalizedDirection =
