@@ -65,6 +65,7 @@ Last updated: 2026-04-22
 | active | 2026-04-18 | Mobile client profile — rich creation flows (Notes / Tasks / Projects / Flags) | #mobile #ux #feature | active/2026-04-18_mobile-client-profile-rich-creation-flows.md |
 | done | 2026-04-18 | HubSpot sync automation + completeness (cron + activities since-filter) | #hubspot #backend #feature | done/2026-04-18_hubspot-sync-automation-completeness.md |
 | done | 2026-04-18 | Google Calendar — mobile OAuth flow + fix events on Tasks list | #integration #google #mobile #bug | done/2026-04-18_google-calendar-mobile-oauth-and-events-fix.md |
+| done | 2026-04-22 | Google Calendar auto-sync architecture (webhook + cron + channel renewal) | #integration #google #convex #architecture #feature | done/2026-04-22_google-calendar-auto-sync-architecture.md |
 | done | 2026-04-18 | Mobile dashboard widgets — Deals overview + Recent Activity teaser | #mobile #ux #feature | done/2026-04-18_mobile-dashboard-widgets-deals-and-activity.md |
 | queued | 2026-04-18 | Mobile global search — port desktop cross-entity search UX | #mobile #feature | queued/2026-04-18_mobile-global-search.md |
 | queued | 2026-04-18 | Mobile main chat / AI agent integration (shared server-side agent) | #mobile #feature #ai | queued/2026-04-18_mobile-main-chat-agent-integration.md |
