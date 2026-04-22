@@ -102,14 +102,31 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
         >
           <View className="flex-1 bg-m-bg">
             {/* Header */}
-            <View className="flex-row items-center justify-between px-4 pt-14 pb-3 bg-m-bg-brand">
-              <View className="flex-row items-center gap-2">
+            <View className="px-4 pt-14 pb-3 bg-m-bg-brand gap-2">
+              <View className="flex-row items-center justify-between">
+                <TouchableOpacity
+                  onPress={handleClose}
+                  disabled={submitting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                >
+                  <Text className="text-base text-m-text-on-brand">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSubmit}
+                  disabled={!note.trim() || submitting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Create flag"
+                >
+                  <Text className={`text-base font-semibold ${(!note.trim() || submitting) ? 'text-m-text-on-brand/40' : 'text-m-text-on-brand'}`}>
+                    {submitting ? 'Creating…' : 'Create'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View className="flex-row items-center justify-center gap-2">
                 <Flag size={18} color={colors.textOnBrand} />
                 <Text className="text-lg font-medium text-m-text-on-brand">New Flag</Text>
               </View>
-              <TouchableOpacity onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close">
-                <X size={20} color={colors.textOnBrand} />
-              </TouchableOpacity>
             </View>
 
             <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, gap: 16 }}>
@@ -220,28 +237,6 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
                 </View>
               )}
             </ScrollView>
-
-            {/* Footer */}
-            <View className="flex-row gap-2 px-4 py-3 border-t border-m-border-subtle">
-              <TouchableOpacity
-                onPress={handleClose}
-                disabled={submitting}
-                className="bg-m-bg-subtle rounded-lg py-3 px-4 items-center"
-                accessibilityRole="button"
-              >
-                <Text className="text-sm text-m-text-secondary">Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleSubmit}
-                disabled={!note.trim() || submitting}
-                className={`flex-1 rounded-lg py-3 items-center ${(!note.trim() || submitting) ? 'bg-m-accent/50' : 'bg-m-accent'}`}
-                accessibilityRole="button"
-              >
-                <Text className="text-sm font-medium text-m-text-on-brand">
-                  {submitting ? 'Creating…' : 'Create Flag'}
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>

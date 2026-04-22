@@ -90,14 +90,31 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
       >
         <View className="flex-1 bg-m-bg">
           {/* Header */}
-          <View className="flex-row items-center justify-between px-4 pt-14 pb-3 bg-m-bg-brand">
-            <View className="flex-row items-center gap-2">
+          <View className="px-4 pt-14 pb-3 bg-m-bg-brand gap-2">
+            <View className="flex-row items-center justify-between">
+              <TouchableOpacity
+                onPress={handleClose}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text className="text-base text-m-text-on-brand">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={!name.trim() || submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Create project"
+              >
+                <Text className={`text-base font-semibold ${(!name.trim() || submitting) ? 'text-m-text-on-brand/40' : 'text-m-text-on-brand'}`}>
+                  {submitting ? 'Creating…' : 'Create'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View className="flex-row items-center justify-center gap-2">
               <FolderPlus size={18} color={colors.textOnBrand} />
               <Text className="text-lg font-medium text-m-text-on-brand">New Project</Text>
             </View>
-            <TouchableOpacity onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close">
-              <X size={20} color={colors.textOnBrand} />
-            </TouchableOpacity>
           </View>
 
           <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, gap: 16 }}>
@@ -130,7 +147,7 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
                 autoCapitalize="characters"
                 className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-3 font-mono"
               />
-              <Text className="text-xs text-m-text-tertiary mt-1">
+              <Text className="text-xs text-m-text-secondary mt-1">
                 Max 10 characters. Used for document naming.
               </Text>
             </View>
@@ -141,28 +158,6 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
               </View>
             )}
           </ScrollView>
-
-          {/* Footer */}
-          <View className="flex-row gap-2 px-4 py-3 border-t border-m-border-subtle">
-            <TouchableOpacity
-              onPress={handleClose}
-              disabled={submitting}
-              className="bg-m-bg-subtle rounded-lg py-3 px-4 items-center"
-              accessibilityRole="button"
-            >
-              <Text className="text-sm text-m-text-secondary">Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={!name.trim() || submitting}
-              className={`flex-1 rounded-lg py-3 items-center ${(!name.trim() || submitting) ? 'bg-m-accent/50' : 'bg-m-accent'}`}
-              accessibilityRole="button"
-            >
-              <Text className="text-sm font-medium text-m-text-on-brand">
-                {submitting ? 'Creating…' : 'Create Project'}
-              </Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
