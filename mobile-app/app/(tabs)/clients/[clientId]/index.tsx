@@ -1131,7 +1131,24 @@ function ActivityTab({
       : 'skip',
   ) ?? [];
 
-  const fullList = filter === 'EMAIL' ? [...outboundOrAll, ...incomingEmails] : outboundOrAll;
+  // When the user picks MEETING, also pull MEETING_NOTE (Fireflies transcripts)
+  // so both show up under the "Meetings" chip — matches the home tab's
+  // ACTIVITY_FILTERS match list `['meeting', 'meeting-note']` (commit f777d2e).
+  // Convex `typeFilter` is a single string, so we run a second query and merge
+  // rather than changing the server signature.
+  const meetingNotes = useQuery(
+    api.activities.listForClient,
+    filter === 'MEETING'
+      ? { clientId: clientId as any, typeFilter: 'MEETING_NOTE', limit: 200 }
+      : 'skip',
+  ) ?? [];
+
+  const fullList =
+    filter === 'EMAIL'
+      ? [...outboundOrAll, ...incomingEmails]
+      : filter === 'MEETING'
+        ? [...outboundOrAll, ...meetingNotes]
+        : outboundOrAll;
 
   // Apply optional deal-scope filter. Three match paths, any one is
   // enough:

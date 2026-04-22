@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Linking } from 'react-native';
 import {
-  StickyNote, Mail, Video, Phone, CheckSquare,
-  ArrowUpRight, ArrowDownLeft, ChevronDown, ChevronUp,
+  StickyNote, Mail, Video, Phone, CheckSquare, FileText,
+  ArrowUpRight, ArrowDownLeft, ChevronDown, ChevronUp, ExternalLink,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import type { Doc } from '../../../model-testing-app/convex/_generated/dataModel';
@@ -16,6 +16,10 @@ const TYPE_TILE = {
   EMAIL: { bg: '#ffedd5', tint: '#ea580c', Icon: Mail, label: 'Email' },
   INCOMING_EMAIL: { bg: '#dcfce7', tint: '#059669', Icon: Mail, label: 'Email' },
   MEETING: { bg: '#dbeafe', tint: '#2563eb', Icon: Video, label: 'Meeting' },
+  // Meeting transcripts (Fireflies.ai) — purple to distinguish from calendar
+  // meetings while staying in the "meetings" visual family. Matches the home
+  // tab's `meeting-note` ActivityKind tile colors (commit f777d2e).
+  MEETING_NOTE: { bg: '#ede9fe', tint: '#7c3aed', Icon: FileText, label: 'Meeting notes' },
   CALL: { bg: '#fef3c7', tint: '#d97706', Icon: Phone, label: 'Call' },
   TASK: { bg: '#ffedd5', tint: '#ea580c', Icon: CheckSquare, label: 'Task' },
 } as const;
@@ -99,6 +103,15 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
   const Icon = tile.Icon;
   const direction = activity.direction; // 'inbound' | 'outbound' | undefined
   const isEmail = typeKey === 'EMAIL' || typeKey === 'INCOMING_EMAIL';
+  // Fireflies.ai transcript affordances: small "FIREFLIES" pill next to the
+  // attribution line + an inline "Open transcript" link inside the expanded
+  // body. Only MEETING_NOTE activities carry `sourceIntegration === 'fireflies'`
+  // today, but we gate on the field itself so any future integration-tagged
+  // activity type renders the same badge.
+  const isFireflies =
+    (activity as any).sourceIntegration === 'fireflies';
+  const transcriptUrl: string | undefined =
+    (activity as any).transcriptUrl || undefined;
 
   // Expandable: if the activity has a full body (bodyHtml, or body, or a
   // bodyPreview longer than a one-liner), let the user tap to expand.
@@ -155,13 +168,29 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
 
       <View className="flex-1 min-w-0">
         <View className="flex-row justify-between items-baseline mb-0.5">
-          <Text
-            className="text-[11px] text-m-text-tertiary"
-            numberOfLines={1}
-            style={{ flex: 1 }}
-          >
-            {attribution}
-          </Text>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text
+              className="text-[11px] text-m-text-tertiary"
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {attribution}
+            </Text>
+            {isFireflies ? (
+              <View
+                style={{
+                  paddingHorizontal: 5,
+                  paddingVertical: 1,
+                  backgroundColor: '#ede9fe',
+                  borderRadius: 3,
+                }}
+              >
+                <Text style={{ fontSize: 9, fontWeight: '700', color: '#7c3aed', letterSpacing: 0.3 }}>
+                  FIREFLIES
+                </Text>
+              </View>
+            ) : null}
+          </View>
           <Text className="text-[10px] text-m-text-tertiary ml-2">
             {formatDateTime(activity.activityDate)}
           </Text>
@@ -184,6 +213,39 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
           <Text className="text-[11px] text-m-text-secondary mt-0.5" numberOfLines={2}>
             {previewBody}
           </Text>
+        ) : null}
+
+        {/* Fireflies transcript deep-link — shown only when expanded so it
+            doesn't add visual noise to collapsed rows. Tapping opens the
+            transcript in the user's browser via Linking.openURL. */}
+        {expanded && isFireflies && transcriptUrl ? (
+          <TouchableOpacity
+            onPress={(e) => {
+              // Prevent the parent TouchableOpacity (expand/collapse) from
+              // firing when the user taps the link itself.
+              e.stopPropagation();
+              Linking.openURL(transcriptUrl).catch(() => {
+                /* noop — URL may be malformed; silently ignore */
+              });
+            }}
+            hitSlop={6}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              alignSelf: 'flex-start',
+              marginTop: 6,
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 6,
+              backgroundColor: '#ede9fe',
+            }}
+          >
+            <ExternalLink size={11} color="#7c3aed" strokeWidth={2.2} />
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#7c3aed' }}>
+              Open transcript
+            </Text>
+          </TouchableOpacity>
         ) : null}
 
         {hasMoreContent ? (
