@@ -27,6 +27,15 @@ const isPublicRoute = createRouteMatcher([
   // returning its default 404 to the cron. Making the route public lets
   // the request reach the handler's own auth gate.
   '/api/hubspot/sync-all(.*)',
+  // HubSpot webhook receiver — signed with HMAC by HubSpot. The handler
+  // self-authenticates via signature verification. Public here so Clerk
+  // doesn't 404-reject the unauthenticated POST before it reaches the
+  // signature check.
+  '/api/hubspot/webhook(.*)',
+  // Bridge endpoint Convex actions call to run the webhook process logic
+  // in the Next app (HubSpot SDK + env access live here, not in Convex).
+  // Self-authenticates via X-Cron-Secret, same pattern as sync-all.
+  '/api/hubspot/webhook-process(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.
