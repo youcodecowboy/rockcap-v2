@@ -79,3 +79,77 @@ export const whichClientHasMeetingNotes = query({
     return results;
   },
 });
+
+/**
+ * Locate the 27 MEETING_NOTE activities and show where they actually
+ * live (which companyId they're linked to + the associated company's
+ * name + HubSpot ID). Tells us whether our fix needs to:
+ *   (a) expand the query to also match on `hubspotCompanyIds[]`
+ *   (b) re-link some activities to the right companyId
+ *   (c) both
+ */
+export const whereAreMeetingNotes = query({
+  args: {},
+  handler: async (ctx) => {
+    const meetingNotes = await ctx.db
+      .query('activities')
+      .withIndex('by_activity_type', (q) => q.eq('activityType', 'MEETING_NOTE'))
+      .collect();
+
+    const byCompany = new Map<
+      string,
+      { count: number; companyName: string | null; hubspotId: string | undefined; isBayfieldMentioned: boolean }
+    >();
+
+    for (const a of meetingNotes) {
+      const companyId = (a as any).companyId ? String((a as any).companyId) : '(none)';
+      const existing = byCompany.get(companyId);
+      if (existing) {
+        existing.count++;
+      } else {
+        let companyName: string | null = null;
+        let hubspotId: string | undefined;
+        if ((a as any).companyId) {
+          const c: any = await ctx.db.get((a as any).companyId);
+          companyName = c?.name ?? null;
+          hubspotId = c?.hubspotCompanyId;
+        }
+        // Check if Bayfield HubSpot ID (163259202780) appears in the
+        // activity's hubspotCompanyIds array — if yes, that means this
+        // activity SHOULD logically also show on the Bayfield profile.
+        const hubspotCompanyIds: string[] = (a as any).hubspotCompanyIds ?? [];
+        const isBayfieldMentioned = hubspotCompanyIds.includes('163259202780');
+        byCompany.set(companyId, {
+          count: 1,
+          companyName,
+          hubspotId,
+          isBayfieldMentioned,
+        });
+      }
+    }
+
+    return {
+      totalMeetingNotes: meetingNotes.length,
+      byCompany: Array.from(byCompany.entries()).map(([cid, info]) => ({
+        companyId: cid,
+        ...info,
+      })),
+      // Sample one full activity to see the full shape including
+      // hubspotCompanyIds array
+      sampleActivity: meetingNotes[0]
+        ? {
+            _id: String(meetingNotes[0]._id),
+            subject: meetingNotes[0].subject,
+            companyId: (meetingNotes[0] as any).companyId ? String((meetingNotes[0] as any).companyId) : null,
+            hubspotCompanyId: (meetingNotes[0] as any).hubspotCompanyId,
+            hubspotCompanyIds: (meetingNotes[0] as any).hubspotCompanyIds,
+            hubspotContactIds: (meetingNotes[0] as any).hubspotContactIds,
+            hubspotDealIds: (meetingNotes[0] as any).hubspotDealIds,
+            linkedContactIds: (meetingNotes[0] as any).linkedContactIds,
+            linkedDealIds: (meetingNotes[0] as any).linkedDealIds,
+            activityDate: meetingNotes[0].activityDate,
+          }
+        : null,
+    };
+  },
+});
