@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { api, internal } from '../../../../../convex/_generated/api';
 
@@ -46,6 +46,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
     } else {
+      // TODO (2026-05-01): remove this grace branch. Channels registered
+      // before Task 4 (2026-04-22) have no stored token. Google channels
+      // expire after ~7 days, so by this date all pre-migration channels
+      // will have been re-registered (with a token) during cron renewal.
       console.warn(
         `[google/webhook] channel ${channelId} has no stored token — pre-migration channel, allowing`,
       );
@@ -64,15 +68,21 @@ export async function POST(request: NextRequest) {
     const authedClient = new ConvexHttpClient(convexUrl);
     authedClient.setAuth(deployKey);
 
-    // Fire without await. Any throw here is logged by the catch below.
-    authedClient
-      .action(internal.googleCalendarSync.syncForUser, {
-        userId: channel.userId,
-        trigger: 'webhook' as const,
-      })
-      .catch((err) =>
-        console.error('[google/webhook] syncForUser rejected:', err),
-      );
+    // Run the sync after returning the response. `after()` tells Vercel's
+    // runtime to keep the container alive until this completes; without
+    // it, the fire-and-forget promise could be dropped when the container
+    // freezes post-response (cron would backfill, but we'd lose the
+    // low-latency fast path that's the whole point of push webhooks).
+    after(async () => {
+      try {
+        await authedClient.action(internal.googleCalendarSync.syncForUser, {
+          userId: channel.userId,
+          trigger: 'webhook' as const,
+        });
+      } catch (err) {
+        console.error('[google/webhook] syncForUser rejected:', err);
+      }
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
