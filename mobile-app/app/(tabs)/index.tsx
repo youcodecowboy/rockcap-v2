@@ -917,7 +917,11 @@ interface ActivityProps {
   onViewAll: () => void;
 }
 
-const ACTIVITY_PAGE_SIZE = 15;
+// Bumped from 15 → 30 on 2026-04-22 after a webhook-delivered Note wasn't
+// showing under "All" (presumably pushed below the fold by ~15 older
+// rows that happened to sort ahead). 30 gives comfortable headroom for
+// mixed-type activity while still paginating via "Show more."
+const ACTIVITY_PAGE_SIZE = 30;
 
 function ActivityStream(props: ActivityProps) {
   const [filter, setFilter] = useState<string>('All');
