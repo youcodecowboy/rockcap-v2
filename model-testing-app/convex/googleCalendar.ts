@@ -369,7 +369,7 @@ export const disconnect = action({
     // succeed.
     if (tokens && channel) {
       try {
-        await fetch("https://www.googleapis.com/calendar/v3/channels/stop", {
+        const res = await fetch("https://www.googleapis.com/calendar/v3/channels/stop", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${tokens.accessToken}`,
@@ -380,8 +380,11 @@ export const disconnect = action({
             resourceId: channel.resourceId,
           }),
         });
+        if (!res.ok) {
+          console.warn(`[disconnect] channels.stop returned ${res.status}`);
+        }
       } catch (err) {
-        console.warn("[disconnect] channels.stop failed:", err);
+        console.warn("[disconnect] channels.stop failed (network):", err);
       }
     }
 
@@ -589,6 +592,11 @@ export const replaceChannel = internalMutation({
 
 // Internal mutation used by the disconnect action after the Google
 // channels.stop call. Deletes both token and channel rows for the user.
+//
+// TRUST CONTRACT: userId is trusted here — the caller (disconnect action)
+// must validate identity and resolve the Clerk user BEFORE invoking this.
+// Do not expose publicly; do not call from contexts where userId comes
+// from untrusted input.
 export const disconnectCleanup = internalMutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
