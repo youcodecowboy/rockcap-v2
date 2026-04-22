@@ -63,6 +63,7 @@ import type * as hubspotSync_contacts from "../hubspotSync/contacts.js";
 import type * as hubspotSync_deals from "../hubspotSync/deals.js";
 import type * as hubspotSync_index from "../hubspotSync/index.js";
 import type * as hubspotSync_linking from "../hubspotSync/linking.js";
+import type * as hubspotSync_migrations from "../hubspotSync/migrations.js";
 import type * as hubspotSync_pipelines from "../hubspotSync/pipelines.js";
 import type * as hubspotSync_recurringSync from "../hubspotSync/recurringSync.js";
 import type * as hubspotSync_utils from "../hubspotSync/utils.js";
@@ -187,6 +188,7 @@ declare const fullApi: ApiFromModules<{
   "hubspotSync/deals": typeof hubspotSync_deals;
   "hubspotSync/index": typeof hubspotSync_index;
   "hubspotSync/linking": typeof hubspotSync_linking;
+  "hubspotSync/migrations": typeof hubspotSync_migrations;
   "hubspotSync/pipelines": typeof hubspotSync_pipelines;
   "hubspotSync/recurringSync": typeof hubspotSync_recurringSync;
   "hubspotSync/utils": typeof hubspotSync_utils;

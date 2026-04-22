@@ -36,6 +36,10 @@ const isPublicRoute = createRouteMatcher([
   // in the Next app (HubSpot SDK + env access live here, not in Convex).
   // Self-authenticates via X-Cron-Secret, same pattern as sync-all.
   '/api/hubspot/webhook-process(.*)',
+  // One-off migration bridge endpoint for the Fireflies backfill
+  // action. Self-authenticates via X-Cron-Secret, same pattern as
+  // webhook-process.
+  '/api/hubspot/fireflies-backfill(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.
