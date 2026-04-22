@@ -27,6 +27,10 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
 
   const createProject = useMutation(api.projects.create);
 
+  useEffect(() => {
+    if (!visible) reset();
+  }, [visible]);
+
   // Auto-suggest shortcode from name until the user manually edits the shortcode field.
   useEffect(() => {
     if (!userEditedShortcode) {
@@ -62,8 +66,8 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
         clientRoles: [{ clientId, role: 'primary' }],
       });
       reset();
-      onClose();
       onCreated?.(projectId as Id<'projects'>);
+      onClose();
       router.push(`/(tabs)/clients/${clientId}/projects/${projectId}` as any);
     } catch (e: any) {
       console.error('Failed to create project:', e);

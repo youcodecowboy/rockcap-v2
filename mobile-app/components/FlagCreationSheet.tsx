@@ -1,7 +1,7 @@
 import {
   View, Text, TextInput, TouchableOpacity, Modal, KeyboardAvoidingView, Platform, ScrollView, Alert,
 } from 'react-native';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useConvexAuth } from 'convex/react';
 import { X, Flag } from 'lucide-react-native';
 import { api } from '../../model-testing-app/convex/_generated/api';
@@ -50,6 +50,10 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
     const project = (clientProjects as any[]).find((p: any) => p._id === linkedProjectId);
     return project?.name ?? null;
   }, [linkedProjectId, clientProjects]);
+
+  useEffect(() => {
+    if (!visible) reset();
+  }, [visible]);
 
   const reset = () => {
     setNote('');
