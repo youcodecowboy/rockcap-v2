@@ -84,7 +84,7 @@ function PickerModal({
 }
 
 export default function NoteEditorScreen() {
-  const { noteId } = useLocalSearchParams<{ noteId?: string }>();
+  const { noteId, clientId: preselectedClientId } = useLocalSearchParams<{ noteId?: string; clientId?: string }>();
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const [title, setTitle] = useState('');
@@ -94,7 +94,7 @@ export default function NoteEditorScreen() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(preselectedClientId ?? null);
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
