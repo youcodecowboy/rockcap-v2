@@ -847,6 +847,7 @@ type ActivityKind =
   | 'email-in'
   | 'email-out'
   | 'meeting'
+  | 'meeting-note'
   | 'doc'
   | 'client'
   | 'note'
@@ -873,6 +874,10 @@ function tileFor(k: ActivityKind) {
       return { bg: '#ffedd5', tint: '#ea580c', Icon: ArrowUpRight };
     case 'meeting':
       return { bg: '#dbeafe', tint: '#2563eb', Icon: Video };
+    case 'meeting-note':
+      // Purple to distinguish transcripts from calendar meetings
+      // while staying in the "meetings" visual family.
+      return { bg: '#ede9fe', tint: '#7c3aed', Icon: FileText };
     case 'doc':
       return { bg: '#f3e8ff', tint: '#9333ea', Icon: FileText };
     case 'client':
@@ -894,6 +899,8 @@ function activityKindFromType(t: string | undefined, direction?: string | null):
       return 'email-in';
     case 'MEETING':
       return 'meeting';
+    case 'MEETING_NOTE':
+      return 'meeting-note';
     case 'NOTE':
       return 'note';
     case 'CALL':
@@ -906,7 +913,7 @@ function activityKindFromType(t: string | undefined, direction?: string | null):
 const ACTIVITY_FILTERS: { label: string; match: ActivityKind[] | null }[] = [
   { label: 'All', match: null },
   { label: 'Emails', match: ['email-in', 'email-out'] },
-  { label: 'Meetings', match: ['meeting'] },
+  { label: 'Meetings', match: ['meeting', 'meeting-note'] },
   { label: 'Calls', match: ['call'] },
   { label: 'Notes', match: ['note'] },
 ];
@@ -1430,11 +1437,13 @@ export default function DashboardScreen() {
           ? 'received an email'
           : kind === 'meeting'
             ? 'scheduled a meeting'
-            : kind === 'call'
-              ? 'logged a call'
-              : kind === 'note'
-                ? 'added a note'
-                : 'logged activity';
+            : kind === 'meeting-note'
+              ? 'recorded a meeting'
+              : kind === 'call'
+                ? 'logged a call'
+                : kind === 'note'
+                  ? 'added a note'
+                  : 'logged activity';
     const detail = a.subject || a.bodyPreview || '';
     const ts = a.activityDate ? new Date(a.activityDate).getTime() : 0;
     return {
