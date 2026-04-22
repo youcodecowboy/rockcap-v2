@@ -27,4 +27,20 @@ crons.daily(
   internal.hubspotSync.webhook.pruneWebhookEventLog,
 );
 
+// Google Calendar auto-sync — every 30 minutes. Iterates connected users
+// serially, falls back to cron-delivery when push webhooks are unreachable
+// (localhost dev, brief outages) and renews push channels within 24h of
+// expiration so push delivery never silently lapses.
+crons.interval(
+  "google-calendar-auto-sync",
+  { minutes: 30 },
+  internal.googleCalendarSync.autoSyncAll,
+);
+
+crons.daily(
+  "google-calendar-sync-log-prune",
+  { hourUTC: 3, minuteUTC: 30 },  // after HubSpot's prune at 3:15
+  internal.googleCalendarLog.pruneSyncLog,
+);
+
 export default crons;
