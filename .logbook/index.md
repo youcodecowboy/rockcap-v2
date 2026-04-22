@@ -66,12 +66,12 @@ Last updated: 2026-04-22
 | done | 2026-04-18 | HubSpot sync automation + completeness (cron + activities since-filter) | #hubspot #backend #feature | done/2026-04-18_hubspot-sync-automation-completeness.md |
 | done | 2026-04-18 | Google Calendar — mobile OAuth flow + fix events on Tasks list | #integration #google #mobile #bug | done/2026-04-18_google-calendar-mobile-oauth-and-events-fix.md |
 | done | 2026-04-22 | Google Calendar auto-sync architecture (webhook + cron + channel renewal) | #integration #google #convex #architecture #feature | done/2026-04-22_google-calendar-auto-sync-architecture.md |
+| done | 2026-04-22 | Calendar sync hardening | #calendar #convex #backend #observability | done/2026-04-22_calendar-sync-hardening.md |
+| done | 2026-04-22 | mobile-app/.env.local.example — document Calendar vs pre-existing vars | #docs #mobile #calendar | done/2026-04-22_mobile-env-local-example-calendar-docs.md |
+| done | 2026-04-22 | Homepage task tap opens edit modal — should default to view | #bug #mobile #ux | done/2026-04-22_homepage-task-tap-opens-view-not-edit.md |
+| done | 2026-04-22 | Backfill clientFolders for legacy mobile-created clients | #mobile #data #backfill | done/2026-04-22_backfill-clientfolders-legacy-clients.md |
 | done | 2026-04-18 | Mobile dashboard widgets — Deals overview + Recent Activity teaser | #mobile #ux #feature | done/2026-04-18_mobile-dashboard-widgets-deals-and-activity.md |
-| queued | 2026-04-22 | Calendar sync hardening | #calendar #convex #backend #observability | queued/2026-04-22_calendar-sync-hardening.md |
 | queued | 2026-04-22 | Calendar sync scale — indexed listActiveSyncUserIds | #calendar #perf #debt #scale | queued/2026-04-22_calendar-sync-scale-indexed-listactive.md |
-| queued | 2026-04-22 | mobile-app/.env.local.example — document Calendar vs pre-existing vars | #docs #mobile #calendar | queued/2026-04-22_mobile-env-local-example-calendar-docs.md |
-| queued | 2026-04-22 | Homepage task tap opens edit modal — should default to view | #bug #mobile #ux | queued/2026-04-22_homepage-task-tap-opens-view-not-edit.md |
-| queued | 2026-04-22 | Backfill clientFolders for legacy mobile-created clients | #mobile #data #backfill | queued/2026-04-22_backfill-clientfolders-legacy-clients.md |
 | queued | 2026-04-18 | Mobile global search — port desktop cross-entity search UX | #mobile #feature | queued/2026-04-18_mobile-global-search.md |
 | queued | 2026-04-18 | Mobile main chat / AI agent integration (shared server-side agent) | #mobile #feature #ai | queued/2026-04-18_mobile-main-chat-agent-integration.md |
 | done | 2026-04-16 | Merge 2 duplicate client records (Halo Living and Kinspire) |  | done/2026-04-16_merge-duplicate-clients-halo-kinspire.md |

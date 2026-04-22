@@ -10,3 +10,8 @@ Priority: low
 ## Notes
 
 Deferred: execute when telemetry shows approach to scale ceiling (~5K connected calendars). Not a pre-emptive fix.
+
+2026-04-22: Left queued after triage execution — intentionally deferred
+per the inbox-captured assessment ("Fine up to ~1-2K connected
+calendars; if we approach 5K+, add a by_needsReconnect index"). Pick up
+when connected-calendar telemetry crosses the threshold.
