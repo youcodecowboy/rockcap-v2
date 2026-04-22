@@ -1,0 +1,8 @@
+# HubSpot CLI transient state
+.hs-cache/
+.hs-builds/
+node_modules/
+*.log
+
+# Local dev config — don't commit if added later
+local.json
