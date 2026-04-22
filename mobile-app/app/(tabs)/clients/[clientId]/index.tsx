@@ -1422,11 +1422,6 @@ export default function ClientDetailScreen() {
   const [openContactId, setOpenContactId] = useState<string | null>(null);
   const [showLinkContact, setShowLinkContact] = useState(false);
 
-  // Notes form
-  const [showNoteForm, setShowNoteForm] = useState(false);
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteBody, setNoteBody] = useState('');
-
   // Tasks form
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
@@ -1549,7 +1544,6 @@ export default function ClientDetailScreen() {
   }
 
   // ---------- Mutations ----------
-  const createNote = useMutation(api.notes.create);
   const createTask = useMutation(api.tasks.create);
   const completeTask = useMutation(api.tasks.complete);
   const updateChecklistStatus = useMutation(api.knowledgeLibrary.updateItemStatus);
@@ -1692,22 +1686,6 @@ export default function ClientDetailScreen() {
   const handleSaveStageNote = async (next: string) => {
     if (!clientId) return;
     await updateStageNote({ id: clientId as any, stageNote: next });
-  };
-
-  const handleSaveNote = async () => {
-    if (!noteTitle.trim()) return;
-    try {
-      await createNote({
-        title: noteTitle.trim(),
-        content: noteBody.trim(),
-        clientId: clientId as any,
-      });
-      setNoteTitle('');
-      setNoteBody('');
-      setShowNoteForm(false);
-    } catch (e) {
-      console.error('Failed to create note:', e);
-    }
   };
 
   const handleSaveTask = async () => {
@@ -2730,48 +2708,12 @@ export default function ClientDetailScreen() {
         {activeTab === 'Notes' && (
           <View className="gap-2">
             <TouchableOpacity
-              onPress={() => setShowNoteForm(!showNoteForm)}
+              onPress={() => router.push({ pathname: '/notes/editor', params: { clientId: clientId as string } })}
               className="bg-m-accent rounded-lg py-2.5 items-center flex-row justify-center gap-2"
             >
               <Plus size={16} color={colors.textOnBrand} />
               <Text className="text-sm font-medium text-m-text-on-brand">Add Note</Text>
             </TouchableOpacity>
-
-            {showNoteForm && (
-              <Card>
-                <TextInput
-                  value={noteTitle}
-                  onChangeText={setNoteTitle}
-                  placeholder="Note title (required)"
-                  placeholderTextColor={colors.textPlaceholder}
-                  className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-2 mb-2"
-                />
-                <TextInput
-                  value={noteBody}
-                  onChangeText={setNoteBody}
-                  placeholder="Note content..."
-                  placeholderTextColor={colors.textPlaceholder}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                  className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-2 mb-3 min-h-[80px]"
-                />
-                <View className="flex-row gap-2">
-                  <TouchableOpacity
-                    onPress={handleSaveNote}
-                    className="bg-m-accent rounded-lg py-2 px-4 flex-1 items-center"
-                  >
-                    <Text className="text-sm font-medium text-m-text-on-brand">Save</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => { setShowNoteForm(false); setNoteTitle(''); setNoteBody(''); }}
-                    className="bg-m-bg-subtle rounded-lg py-2 px-4 items-center"
-                  >
-                    <Text className="text-sm text-m-text-secondary">Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </Card>
-            )}
 
             {notes && notes.length > 0 ? (
               notes.map((n: any) => {
@@ -2780,57 +2722,63 @@ export default function ClientDetailScreen() {
                 const noteDate = n.updatedAt ?? n.createdAt ?? n._creationTime;
 
                 return (
-                  <Card key={n._id}>
-                    <View className="flex-row items-start gap-2">
-                      {n.emoji ? (
-                        <Text className="text-lg">{n.emoji}</Text>
+                  <TouchableOpacity
+                    key={n._id}
+                    onPress={() => router.push({ pathname: '/notes/editor', params: { noteId: n._id } })}
+                    activeOpacity={0.7}
+                  >
+                    <Card>
+                      <View className="flex-row items-start gap-2">
+                        {n.emoji ? (
+                          <Text className="text-lg">{n.emoji}</Text>
+                        ) : null}
+                        <View className="flex-1">
+                          <Text className="text-sm font-medium text-m-text-primary">
+                            {n.title || 'Untitled'}
+                          </Text>
+                          {truncatedPreview ? (
+                            <Text className="text-xs text-m-text-secondary mt-1" numberOfLines={2}>
+                              {truncatedPreview}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+
+                      {/* Tags */}
+                      {n.tags && n.tags.length > 0 ? (
+                        <View className="flex-row flex-wrap gap-1 mt-2">
+                          {n.tags.map((tag: string, i: number) => (
+                            <View key={i} className="bg-m-accent/15 px-2 py-0.5 rounded-full">
+                              <Text className="text-[10px] font-medium text-m-accent">{tag}</Text>
+                            </View>
+                          ))}
+                        </View>
                       ) : null}
-                      <View className="flex-1">
-                        <Text className="text-sm font-medium text-m-text-primary">
-                          {n.title || 'Untitled'}
-                        </Text>
-                        {truncatedPreview ? (
-                          <Text className="text-xs text-m-text-secondary mt-1" numberOfLines={2}>
-                            {truncatedPreview}
+
+                      {/* Footer: date and word count */}
+                      <View className="flex-row items-center justify-between mt-2">
+                        {noteDate ? (
+                          <Text className="text-[10px] text-m-text-tertiary">
+                            {new Date(noteDate).toLocaleDateString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </Text>
+                        ) : <View />}
+                        {n.wordCount ? (
+                          <Text className="text-[10px] text-m-text-tertiary">
+                            {n.wordCount} words
                           </Text>
                         ) : null}
                       </View>
-                    </View>
-
-                    {/* Tags */}
-                    {n.tags && n.tags.length > 0 ? (
-                      <View className="flex-row flex-wrap gap-1 mt-2">
-                        {n.tags.map((tag: string, i: number) => (
-                          <View key={i} className="bg-m-accent/15 px-2 py-0.5 rounded-full">
-                            <Text className="text-[10px] font-medium text-m-accent">{tag}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    ) : null}
-
-                    {/* Footer: date and word count */}
-                    <View className="flex-row items-center justify-between mt-2">
-                      {noteDate ? (
-                        <Text className="text-[10px] text-m-text-tertiary">
-                          {new Date(noteDate).toLocaleDateString('en-GB', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric',
-                          })}
-                        </Text>
-                      ) : <View />}
-                      {n.wordCount ? (
-                        <Text className="text-[10px] text-m-text-tertiary">
-                          {n.wordCount} words
-                        </Text>
-                      ) : null}
-                    </View>
-                  </Card>
+                    </Card>
+                  </TouchableOpacity>
                 );
               })
-            ) : !showNoteForm ? (
+            ) : (
               <EmptyState message="No notes yet" />
-            ) : null}
+            )}
           </View>
         )}
 
