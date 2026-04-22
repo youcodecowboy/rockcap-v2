@@ -39,6 +39,34 @@ const TARGET_URI =
   process.env.HUBSPOT_WEBHOOK_TARGET_URI ??
   'https://rockcap-v2.vercel.app/api/hubspot/webhook';
 
+/**
+ * HubSpot has two wire formats for webhook payloads and they disagree on
+ * how the object type is encoded:
+ *
+ *   Legacy (what actually fires today): subscriptionType is e.g.
+ *     "deal.propertyChange" — object type is implicit in the prefix
+ *     and no objectTypeId field is sent.
+ *
+ *   New platform (accepted in config, but delivery not wired on this
+ *   account): subscriptionType is "object.propertyChange" and a separate
+ *   `objectTypeId` field ("0-1" | "0-2" | "0-3") is sent alongside.
+ *
+ * Downstream code (archive mutation, webhook-process dispatch) keys on
+ * the "0-N" IDs, so we normalize both formats to that here — derive from
+ * the subscriptionType prefix when the explicit field is absent.
+ */
+const LEGACY_OBJECT_TYPE_IDS: Record<string, string> = {
+  contact: '0-1',
+  company: '0-2',
+  deal: '0-3',
+};
+
+function resolveObjectType(event: HubSpotWebhookEvent): string {
+  if (event.objectTypeId) return event.objectTypeId;
+  const prefix = event.subscriptionType.split('.')[0];
+  return LEGACY_OBJECT_TYPE_IDS[prefix] ?? '';
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
 
@@ -78,7 +106,7 @@ export async function POST(request: NextRequest) {
     try {
       await fetchMutation(api.hubspotSync.webhook.enqueueWebhookEvent, {
         subscriptionType: event.subscriptionType,
-        objectType: event.objectTypeId,
+        objectType: resolveObjectType(event),
         objectId: String(event.objectId),
         propertyName: event.propertyName,
         eventId: String(event.eventId),
