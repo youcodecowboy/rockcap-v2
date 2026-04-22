@@ -84,7 +84,20 @@ export default function GoogleCalendarCard() {
         )}
 
         <div className="mt-3 space-y-2">
-          {syncStatus.isConnected ? (
+          {syncStatus.isConnected && syncStatus.needsReconnect ? (
+            <>
+              <div className="mb-2 px-3 py-2 rounded-lg text-[12px] font-medium bg-orange-50 text-orange-800">
+                Google Calendar disconnected — events no longer update. Reconnect
+                to resume sync.
+              </div>
+              <button
+                onClick={handleConnect}
+                className="w-full py-2 px-3 text-[13px] font-medium text-[var(--m-text-on-brand)] bg-[var(--m-bg-brand)] rounded-lg active:opacity-80"
+              >
+                Reconnect Google Calendar
+              </button>
+            </>
+          ) : syncStatus.isConnected ? (
             <>
               <button
                 onClick={async () => {

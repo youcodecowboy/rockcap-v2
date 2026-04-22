@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { useQuery, useAction, useMutation } from 'convex/react';
+import { useQuery, useAction } from 'convex/react';
 import { useAuth } from '@clerk/clerk-expo';
 import { useEffect, useState } from 'react';
 import { Calendar } from 'lucide-react-native';
@@ -11,7 +11,7 @@ import { colors } from '@/lib/theme';
 export default function GoogleCalendarCard() {
   const syncStatus = useQuery(api.googleCalendar.getSyncStatus, {});
   const exchangeMobileCode = useAction(api.googleCalendar.exchangeMobileCode);
-  const disconnect = useMutation(api.googleCalendar.disconnect);
+  const disconnect = useAction(api.googleCalendar.disconnect);
   const { getToken } = useAuth();
   const { request, response, promptAsync } = useGoogleCalendarAuth();
 
@@ -180,7 +180,9 @@ export default function GoogleCalendarCard() {
               Google Calendar
             </Text>
             <Text className="text-[12px] text-m-text-tertiary mt-0.5">
-              {syncStatus.isConnected
+              {syncStatus.isConnected && syncStatus.needsReconnect
+                ? `Reconnect ${syncStatus.connectedEmail} to resume sync`
+                : syncStatus.isConnected
                 ? `Connected as ${syncStatus.connectedEmail}`
                 : 'Sync your calendar events and add tasks to your schedule'}
             </Text>
@@ -204,7 +206,26 @@ export default function GoogleCalendarCard() {
         )}
 
         <View className="mt-3 gap-2">
-          {syncStatus.isConnected ? (
+          {syncStatus.isConnected && syncStatus.needsReconnect ? (
+            <>
+              <View className="px-3 py-2 rounded-lg bg-orange-50">
+                <Text className="text-[12px] font-medium text-orange-800">
+                  Google Calendar disconnected — events no longer update. Tap
+                  Reconnect to restore.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleConnect}
+                disabled={connecting || !request}
+                className="py-2 px-3 rounded-lg items-center bg-m-bg-brand active:opacity-80"
+                style={connecting || !request ? { opacity: 0.5 } : undefined}
+              >
+                <Text className="text-[13px] font-medium text-m-text-on-brand">
+                  {connecting ? 'Reconnecting...' : 'Reconnect Google Calendar'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : syncStatus.isConnected ? (
             <>
               <TouchableOpacity
                 onPress={handleSyncNow}
