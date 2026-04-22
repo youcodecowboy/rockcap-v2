@@ -171,15 +171,22 @@ export async function fetchEntitiesModifiedSince(
 }
 
 /**
- * Companies whose `hs_last_activity_date` is on/after `since`. Distinct
- * from `fetchModifiedIds('companies', since)` — the latter filters on
- * `hs_lastmodifieddate` which updates on ANY change (property edits,
- * re-syncs, etc.) while this one only triggers on real engagement
- * activity (emails, meetings, calls, notes, tasks). That's exactly the
- * set we want to walk for incremental engagement repair — companies
- * that saw action in the window, nothing else.
+ * Companies whose `notes_last_updated` is on/after `since`. This is the
+ * property HubSpot exposes for filter/sort in the search API — its sibling
+ * `hs_last_activity_date` is readable via GET but rejects with a generic
+ * HTTP 400 when used in a search filterGroup on this portal (confirmed via
+ * isolation tests: hs_lastmodifieddate works, hs_last_activity_date 400s
+ * with the same body, notes_last_updated works). Semantically it's the
+ * same signal — "most recent note/engagement on this company."
+ *
+ * Distinct from `fetchModifiedIds('companies', since)` — the latter filters
+ * on `hs_lastmodifieddate` which flips on ANY property edit (including our
+ * own sync writes), so it would return every company we touched last cycle.
+ * This one only triggers on real engagement activity (emails, meetings,
+ * calls, notes, tasks) — exactly the set we want to walk for incremental
+ * engagement repair.
  */
-export async function fetchCompanyIdsWithActivitySince(
+export async function fetchCompanyIdsWithNotesUpdatedSince(
   since: string,
 ): Promise<string[]> {
   const apiKey = process.env.HUBSPOT_API_KEY;
@@ -200,7 +207,7 @@ export async function fetchCompanyIdsWithActivitySince(
         {
           filters: [
             {
-              propertyName: 'hs_last_activity_date',
+              propertyName: 'notes_last_updated',
               operator: 'GTE',
               value: sinceMs,
             },
@@ -208,7 +215,7 @@ export async function fetchCompanyIdsWithActivitySince(
         },
       ],
       sorts: [
-        { propertyName: 'hs_last_activity_date', direction: 'DESCENDING' },
+        { propertyName: 'notes_last_updated', direction: 'DESCENDING' },
       ],
       properties: ['hs_object_id'],
       limit: SEARCH_LIMIT,
@@ -232,7 +239,7 @@ export async function fetchCompanyIdsWithActivitySince(
     ids.push(...page.map((r) => r.id));
 
     console.log(
-      `[HubSpot CompaniesWithActivity] search page ${pageCount}: ` +
+      `[HubSpot CompaniesWithNotesUpdated] search page ${pageCount}: ` +
       `${page.length} ids (total so far: ${ids.length}` +
       `${res.total !== undefined ? ` / reported total ${res.total}` : ''})`,
     );

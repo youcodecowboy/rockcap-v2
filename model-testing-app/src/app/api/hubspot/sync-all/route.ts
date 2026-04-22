@@ -15,7 +15,7 @@ import { extractCustomProperties, generateHubSpotCompanyUrl, generateHubSpotCont
 import { discoverProperties, clearPropertiesCache } from '@/lib/hubspot/properties';
 import { clearOwnersCache, resolveOwnerName } from '@/lib/hubspot/owners';
 import { fetchEngagementsForCompany } from '@/lib/hubspot/activities';
-import { fetchCompanyIdsWithActivitySince } from '@/lib/hubspot/incremental';
+import { fetchCompanyIdsWithNotesUpdatedSince } from '@/lib/hubspot/incremental';
 import { dedupeAssociationIds } from '@/lib/hubspot/normalize';
 import { api } from '../../../../../convex/_generated/api';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
@@ -405,10 +405,12 @@ export async function POST(request: NextRequest) {
     //
     // Incremental speedup: ask HubSpot directly which companies had
     // engagement activity in the window. A single search on
-    // `hs_last_activity_date >= since` across the whole portal returns
+    // `notes_last_updated >= since` across the whole portal returns
     // the exact set we need to walk — no dependency on any cached Convex
     // field. Turns "walk all 2600 companies" into "walk the 20 that
-    // actually had activity."
+    // actually had activity." (We use `notes_last_updated` instead of
+    // `hs_last_activity_date` because the latter 400s in search on this
+    // portal — see incremental.ts for the diagnostic notes.)
     //
     // Full sweep (no `since`) still walks every company in the Convex
     // table — that's the backfill path.
@@ -417,14 +419,14 @@ export async function POST(request: NextRequest) {
         const allCompanies = await fetchQuery(api.companies.listWithHubspotId, {}) as any[];
         let candidates: any[];
         if (since) {
-          const recentIds = await fetchCompanyIdsWithActivitySince(since);
+          const recentIds = await fetchCompanyIdsWithNotesUpdatedSince(since);
           const recentSet = new Set(recentIds);
           candidates = allCompanies.filter((c) =>
             recentSet.has(String(c.hubspotCompanyId)),
           );
           console.log(
             `[sync-all] engagements — HubSpot search reported ${recentIds.length} ` +
-            `companies with activity since ${since}; ${candidates.length} of those ` +
+            `companies with notes_last_updated >= ${since}; ${candidates.length} of those ` +
             `are in our Convex companies table (rest are un-synced HubSpot companies)`,
           );
         } else {
@@ -436,7 +438,7 @@ export async function POST(request: NextRequest) {
         const startedAt = Date.now();
         console.log(
           `[sync-all] engagements — walking ${candidates.length}/${allCompanies.length} companies` +
-          `${since ? ` (HubSpot-filtered by hs_last_activity_date >= ${since})` : ' (full sweep)'}`,
+          `${since ? ` (HubSpot-filtered by notes_last_updated >= ${since})` : ' (full sweep)'}`,
         );
 
         const upsertEngagement = async (eng: any, hubspotCompanyId: string) => {
