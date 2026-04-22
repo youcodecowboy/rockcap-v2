@@ -108,6 +108,8 @@ export const getByClientIncludingMeetingNotes = query({
     }>;
 
     if (companies.length > 0) {
+      // 2a. Direct match: MEETING_NOTE activities whose primary
+      // `companyId` points to one of this client's companies.
       const perCompany = await Promise.all(
         companies.map((c) =>
           ctx.db
@@ -116,10 +118,57 @@ export const getByClientIncludingMeetingNotes = query({
             .collect(),
         ),
       );
-      const flatActivities = perCompany.flat();
-      const meetingNotes = flatActivities.filter(
-        (a) => a.activityType === "MEETING_NOTE",
-      );
+      const directMatches = perCompany
+        .flat()
+        .filter((a) => a.activityType === "MEETING_NOTE");
+
+      // 2b. Contact-transitive match: MEETING_NOTE activities linked to
+      // contacts that belong to one of this client's companies. HubSpot
+      // associates an engagement with multiple companies+contacts, but our
+      // sync only captures ONE primary `companyId`. So an activity whose
+      // primary company is e.g. Falco (a counterparty) won't surface on
+      // the Bayfield Homes profile via direct lookup — even though one of
+      // its linked contacts (jbird@bayfieldhomes.co.uk) belongs to
+      // Bayfield. Walking linkedContactIds → contact.linkedCompanyIds
+      // catches those.
+      //
+      // Bounded scan: there's typically a small number of MEETING_NOTE
+      // activities (<100 expected), so filtering in-memory is fine. If
+      // this grows past a few thousand, switch to an index-backed path.
+      const companyConvexIdSet = new Set(companies.map((c) => String(c._id)));
+      const allMeetingNotes = await ctx.db
+        .query("activities")
+        .withIndex("by_activity_type", (q) =>
+          q.eq("activityType", "MEETING_NOTE"),
+        )
+        .collect();
+
+      const transitiveMatches: any[] = [];
+      for (const a of allMeetingNotes) {
+        // Skip if already found via direct lookup (dedupe by _id)
+        if (directMatches.some((d) => String(d._id) === String(a._id))) {
+          continue;
+        }
+        const linkedContactIds = (a as any).linkedContactIds ?? [];
+        if (linkedContactIds.length === 0) continue;
+
+        // Check each contact's linkedCompanyIds for overlap with this
+        // client's companies. Short-circuit on first hit.
+        for (const contactId of linkedContactIds) {
+          const contact: any = await ctx.db.get(contactId);
+          const contactCompanies: any[] = contact?.linkedCompanyIds ?? [];
+          if (
+            contactCompanies.some((cc: any) =>
+              companyConvexIdSet.has(String(cc)),
+            )
+          ) {
+            transitiveMatches.push(a);
+            break;
+          }
+        }
+      }
+
+      const meetingNotes = [...directMatches, ...transitiveMatches];
 
       for (const a of meetingNotes) {
         const attendees = (a.toEmails ?? []).map((email) => ({ name: email }));
