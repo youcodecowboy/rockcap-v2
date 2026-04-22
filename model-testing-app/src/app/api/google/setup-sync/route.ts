@@ -6,15 +6,19 @@ import { refreshAccessToken } from '@/lib/google/oauth';
 import { listEvents, watchCalendar } from '@/lib/google/calendar';
 import crypto from 'crypto';
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || '';
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
 
 async function getClientForRequest(request: Request): Promise<ConvexHttpClient> {
   const authHeader = request.headers.get('authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    if (!convexUrl) throw new Error('Missing NEXT_PUBLIC_CONVEX_URL');
+    const trimmed = token.trim();
+    if (!trimmed) {
+      // Bearer header present but empty — fall through to cookie auth
+      return getAuthenticatedConvexClient();
+    }
     const client = new ConvexHttpClient(convexUrl);
-    client.setAuth(token);
+    client.setAuth(trimmed);
     return client;
   }
   // Fallback: cookie-based auth (web)
