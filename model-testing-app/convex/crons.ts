@@ -21,4 +21,10 @@ crons.interval(
   internal.hubspotSync.recurringSync.runRecurringSync,
 );
 
+crons.daily(
+  "hubspot-webhook-log-prune",
+  { hourUTC: 3, minuteUTC: 15 },  // quiet hour
+  internal.hubspotSync.webhook.pruneWebhookEventLog,
+);
+
 export default crons;

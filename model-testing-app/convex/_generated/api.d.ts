@@ -63,6 +63,7 @@ import type * as hubspotSync_linking from "../hubspotSync/linking.js";
 import type * as hubspotSync_pipelines from "../hubspotSync/pipelines.js";
 import type * as hubspotSync_recurringSync from "../hubspotSync/recurringSync.js";
 import type * as hubspotSync_utils from "../hubspotSync/utils.js";
+import type * as hubspotSync_webhook from "../hubspotSync/webhook.js";
 import type * as intelligence from "../intelligence.js";
 import type * as intelligenceHelpers from "../intelligenceHelpers.js";
 import type * as internalDocuments from "../internalDocuments.js";
@@ -183,6 +184,7 @@ declare const fullApi: ApiFromModules<{
   "hubspotSync/pipelines": typeof hubspotSync_pipelines;
   "hubspotSync/recurringSync": typeof hubspotSync_recurringSync;
   "hubspotSync/utils": typeof hubspotSync_utils;
+  "hubspotSync/webhook": typeof hubspotSync_webhook;
   intelligence: typeof intelligence;
   intelligenceHelpers: typeof intelligenceHelpers;
   internalDocuments: typeof internalDocuments;
