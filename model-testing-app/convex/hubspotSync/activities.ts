@@ -25,6 +25,8 @@ export const syncActivityFromHubSpot = mutation({
     toEmails: v.optional(v.array(v.string())),
     outcome: v.optional(v.string()),
     metadata: v.optional(v.any()),
+    sourceIntegration: v.optional(v.string()),
+    transcriptUrl: v.optional(v.string()),
 
     // Associations — these are HubSpot IDs; we resolve them here
     hubspotCompanyId: v.optional(v.string()),
@@ -92,6 +94,8 @@ export const syncActivityFromHubSpot = mutation({
       toEmails: args.toEmails,
       outcome: args.outcome,
       metadata: args.metadata,
+      sourceIntegration: args.sourceIntegration,
+      transcriptUrl: args.transcriptUrl,
       hubspotOwnerId: args.hubspotOwnerId,
       ownerName: args.ownerName,
       hubspotUrl: args.hubspotUrl,
