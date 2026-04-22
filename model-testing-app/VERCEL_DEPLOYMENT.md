@@ -37,8 +37,9 @@ Make sure these are set in your Vercel project settings:
 - `NEXT_PUBLIC_CONVEX_URL` - Your Convex deployment URL (e.g., `https://your-deployment.convex.cloud`)
 
 #### Optional (if using these features)
-- `HUBSPOT_ACCESS_TOKEN` - For HubSpot integration
+- `HUBSPOT_API_KEY` - HubSpot Private App access token (format: `pat-eu1-...`). Required for CRM sync, pipelines, and engagements. The legacy `HUBSPOT_ACCESS_TOKEN` name is no longer read by the code.
 - `COMPANIES_HOUSE_API_KEY` - For Companies House API
+- `CRON_SECRET` - Shared secret for the Convex recurring-sync cron to authenticate against `/api/hubspot/sync-all`. Must be identical on Convex and Vercel for the cron to succeed.
 
 ### 2. Verify Build Success
 

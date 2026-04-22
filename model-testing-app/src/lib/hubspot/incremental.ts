@@ -21,7 +21,7 @@
  *     per page.
  */
 
-import { hubspotFetch, hubspotFetchJson } from './http';
+import { hubspotFetch, hubspotFetchJson, getHubspotApiKey } from './http';
 
 const BASE = 'https://api.hubapi.com';
 const SEARCH_LIMIT = 100; // HubSpot's max for search
@@ -37,8 +37,7 @@ export async function fetchModifiedIds(
   type: HubSpotEntityType,
   since: string,
 ): Promise<string[]> {
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
+  const apiKey = getHubspotApiKey();
 
   // HubSpot's search API wants ms-epoch as a string.
   const sinceMs = /^\d+$/.test(since)
@@ -111,8 +110,7 @@ export async function batchReadRecords(
   properties: string[],
   associations: ('companies' | 'contacts' | 'deals')[] = [],
 ): Promise<any[]> {
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
+  const apiKey = getHubspotApiKey();
 
   if (ids.length === 0) return [];
 
@@ -189,8 +187,7 @@ export async function fetchEntitiesModifiedSince(
 export async function fetchCompanyIdsWithNotesUpdatedSince(
   since: string,
 ): Promise<string[]> {
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
+  const apiKey = getHubspotApiKey();
 
   const sinceMs = /^\d+$/.test(since)
     ? since

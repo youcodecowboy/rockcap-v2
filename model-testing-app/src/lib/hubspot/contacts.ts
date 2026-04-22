@@ -2,6 +2,7 @@ import { Client } from '@hubspot/api-client';
 import { HubSpotContact } from './types';
 import { delay } from './utils';
 import { fetchEntitiesModifiedSince } from './incremental';
+import { getHubspotApiKey } from './http';
 
 /**
  * Property list requested from HubSpot for every contact sync.
@@ -68,11 +69,8 @@ export async function fetchContactsFromHubSpot(
 
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
     // The SDK has serialization issues with contacts API
-    const apiKey = process.env.HUBSPOT_API_KEY;
-    if (!apiKey) {
-      throw new Error('HUBSPOT_API_KEY not found in environment variables');
-    }
-    
+    const apiKey = getHubspotApiKey();
+
     const params = new URLSearchParams({
       limit: limit.toString(),
       properties: properties.join(','),

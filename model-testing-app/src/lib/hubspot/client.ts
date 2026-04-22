@@ -1,20 +1,17 @@
 import { Client } from '@hubspot/api-client';
+import { getHubspotApiKey } from './http';
 
 /**
  * Get HubSpot client using API key from environment
  * HubSpot private app access tokens should be used with accessToken parameter
  */
 export const getHubSpotClient = () => {
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error('HUBSPOT_API_KEY not found in environment variables');
-  }
-  
+  const apiKey = getHubspotApiKey();
+
   // HubSpot private app access tokens (format: eu1-xxx or us1-xxx) use accessToken
   // For SDK v13+, we need to use accessToken for private app tokens
   const client = new Client({ accessToken: apiKey });
-  
+
   return client;
 };
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getHubSpotClient } from '@/lib/hubspot/client';
+import { getHubspotApiKey } from '@/lib/hubspot/http';
 import { extractCustomProperties, generateHubSpotCompanyUrl, generateHubSpotContactUrl, generateHubSpotDealUrl } from '@/lib/hubspot/utils';
 import { getLifecycleStageName } from '@/lib/hubspot/lifecycleStages';
 import { createStageIdToNameMap } from '@/lib/hubspot/pipelines';
@@ -18,13 +19,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const contactId = body.contactId || '223385175264'; // Default to the provided contact ID
     
-    const apiKey = process.env.HUBSPOT_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({
-        success: false,
-        error: 'HUBSPOT_API_KEY not found',
-      }, { status: 500 });
-    }
+    const apiKey = getHubspotApiKey();
 
     const results: any = {
       contact: null,

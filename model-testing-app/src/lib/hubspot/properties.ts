@@ -3,6 +3,8 @@
  * for this tenant. Used at sync start to harvest the full property payload.
  */
 
+import { getHubspotApiKey } from './http';
+
 export type PropertyDef = {
   name: string;
   label: string;
@@ -26,10 +28,7 @@ export async function discoverProperties(
     return cache.get(objectType)!;
   }
 
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) {
-    throw new Error('HUBSPOT_API_KEY not set');
-  }
+  const apiKey = getHubspotApiKey();
 
   const res = await fetch(`https://api.hubapi.com/crm/v3/properties/${objectType}`, {
     headers: {

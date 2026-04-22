@@ -3,6 +3,8 @@
  * we resolve to a display name at sync time and cache the result for the sync run.
  */
 
+import { getHubspotApiKey } from './http';
+
 const cache = new Map<string, string | null>();
 
 export function clearOwnersCache(): void {
@@ -15,13 +17,11 @@ export async function resolveOwnerName(
   if (!ownerId) return null;
   if (cache.has(ownerId)) return cache.get(ownerId)!;
 
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) {
-    cache.set(ownerId, null);
-    return null;
-  }
-
   try {
+    // If the key is missing, getHubspotApiKey throws — caught below and
+    // we fall back to null so one missing credential doesn't kill the
+    // whole engagement sync.
+    const apiKey = getHubspotApiKey();
     const res = await fetch(`https://api.hubapi.com/crm/v3/owners/${ownerId}`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,

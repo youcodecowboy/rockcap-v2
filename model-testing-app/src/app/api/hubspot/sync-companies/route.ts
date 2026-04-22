@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getHubSpotClient } from '@/lib/hubspot/client';
+import { getHubspotApiKey } from '@/lib/hubspot/http';
 import { fetchAllCompaniesFromHubSpot } from '@/lib/hubspot/companies';
 import { extractCustomProperties, generateHubSpotCompanyUrl } from '@/lib/hubspot/utils';
 import { getLifecycleStageName } from '@/lib/hubspot/lifecycleStages';
@@ -18,18 +19,13 @@ export async function POST(request: NextRequest) {
       return ErrorResponses.unauthenticated();
     }
     const { maxRecords = 500 } = await request.json().catch(() => ({}));
-    
-    // Verify API key is available
-    const apiKey = process.env.HUBSPOT_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({
-        success: false,
-        error: 'HUBSPOT_API_KEY not found in environment variables. Please restart your Next.js server after adding it to .env.local',
-      }, { status: 500 });
-    }
-    
+
+    // Verify API key is available — chokepoint throws on missing key;
+    // the outer catch in this handler turns that into a 500.
+    const apiKey = getHubspotApiKey();
+
     console.log('[HubSpot Sync] API key found, length:', apiKey.length);
-    
+
     const client = getHubSpotClient();
     const companies = await fetchAllCompaniesFromHubSpot(client, maxRecords);
     

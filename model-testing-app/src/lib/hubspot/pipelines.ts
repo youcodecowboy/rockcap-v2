@@ -3,6 +3,8 @@
  * This allows us to map stage IDs to stage names
  */
 
+import { getHubspotApiKey } from './http';
+
 const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 
 export interface HubSpotPipelineStage {
@@ -23,10 +25,7 @@ export interface HubSpotPipeline {
  * Fetch all deal pipelines and their stages
  */
 export async function fetchDealPipelines(): Promise<HubSpotPipeline[]> {
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) {
-    throw new Error('HUBSPOT_API_KEY not found in environment variables');
-  }
+  const apiKey = getHubspotApiKey();
 
   try {
     const response = await fetch(

@@ -9,10 +9,30 @@
  * Auth, JSON encoding, and error shaping are kept minimal on purpose — callers
  * still read the response body themselves so existing fetchers can continue to
  * do their own error formatting.
+ *
+ * Also exposes `getHubspotApiKey()` — the single chokepoint every HubSpot
+ * caller should use to read the credential. Centralising it means there's
+ * exactly one line in the codebase that reads `process.env.HUBSPOT_API_KEY`,
+ * which is easy to audit and easy to swap if we ever rotate the env-var name.
  */
 
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BACKOFF_MS = 1000;
+
+/**
+ * The single read site for the HubSpot credential. Every outbound HubSpot
+ * call — across lib/, api routes, etc. — must route through this helper.
+ * That guarantees one place to audit "which env var are we actually using"
+ * and one place to rotate if we ever change the var name.
+ *
+ * Throws if unset so the caller fails fast with a clear message instead of
+ * silently sending `Authorization: Bearer undefined` and getting a 401.
+ */
+export function getHubspotApiKey(): string {
+  const key = process.env.HUBSPOT_API_KEY;
+  if (!key) throw new Error('HUBSPOT_API_KEY not set');
+  return key;
+}
 
 export interface HubSpotFetchOptions extends RequestInit {
   /** Max retry attempts for 429/5xx. Default 3. */

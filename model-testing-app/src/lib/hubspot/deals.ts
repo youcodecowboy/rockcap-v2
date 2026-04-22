@@ -2,6 +2,7 @@ import { Client } from '@hubspot/api-client';
 import { HubSpotDeal } from './types';
 import { delay } from './utils';
 import { fetchEntitiesModifiedSince } from './incremental';
+import { getHubspotApiKey } from './http';
 
 /**
  * Property list requested from HubSpot for every deal sync.
@@ -58,11 +59,8 @@ export async function fetchDealsFromHubSpot(
 
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
     // The SDK has serialization issues with deals API
-    const apiKey = process.env.HUBSPOT_API_KEY;
-    if (!apiKey) {
-      throw new Error('HUBSPOT_API_KEY not found in environment variables');
-    }
-    
+    const apiKey = getHubspotApiKey();
+
     const params = new URLSearchParams({
       limit: limit.toString(),
       properties: properties.join(','),

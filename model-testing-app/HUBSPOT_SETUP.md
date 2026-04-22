@@ -5,7 +5,7 @@ This guide will help you set up the HubSpot CRM integration for syncing contacts
 ## Prerequisites
 
 - HubSpot account with API access
-- HubSpot API key (you have: `eu1-4571-f136-45e4-8555-d1154712b07f`)
+- A HubSpot **Private App** access token (format: `pat-eu1-...` for EU portals or `pat-na1-...` for US). Create via HubSpot → Settings → Integrations → Private Apps. Do **not** paste your token into this file or any other committed doc.
 
 ## Environment Variables
 
@@ -13,11 +13,13 @@ Create a `.env.local` file in the root of the project (if it doesn't exist) and 
 
 ```bash
 # HubSpot API Configuration
-HUBSPOT_API_KEY=eu1-4571-f136-45e4-8555-d1154712b07f
+HUBSPOT_API_KEY=pat-eu1-your-private-app-token-here
 
 # Optional: HubSpot Portal ID (will be auto-detected if not provided)
 # HUBSPOT_PORTAL_ID=your_portal_id_here
 ```
+
+> **Legacy note:** older versions of this project referenced `HUBSPOT_ACCESS_TOKEN` and a hardcoded OAuth client-credentials flow. Both are gone. The only credential the code reads today is `HUBSPOT_API_KEY`, via the single chokepoint `getHubspotApiKey()` in `src/lib/hubspot/http.ts`.
 
 ## Getting Your HubSpot Portal ID (Optional)
 

@@ -5,6 +5,8 @@
  * sales-email-read (which we have) and returns all engagement types unified.
  */
 
+import { getHubspotApiKey } from './http';
+
 const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 
 export type EngagementType =
@@ -99,8 +101,7 @@ export async function fetchEngagementsForCompany(
   maxRecords: number = Number.POSITIVE_INFINITY,
   opts: { since?: string } = {},
 ): Promise<HubSpotEngagement[]> {
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
+  const apiKey = getHubspotApiKey();
 
   // Incremental window. The v1 engagements-associated-by-company endpoint
   // doesn't accept a native `since` query param, but engagements come back

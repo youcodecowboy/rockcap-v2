@@ -9,14 +9,10 @@ import { fetchMutation } from 'convex/nextjs';
  */
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.HUBSPOT_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({
-        success: false,
-        error: 'HUBSPOT_API_KEY not found in environment variables',
-      }, { status: 500 });
-    }
-    
+    // Key presence is enforced inside fetchDealPipelines via the
+    // getHubspotApiKey() chokepoint — a missing key throws and the
+    // outer catch below returns the 500.
+
     // Fetch pipelines from HubSpot
     const pipelines = await fetchDealPipelines();
     

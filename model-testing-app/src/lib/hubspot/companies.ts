@@ -3,6 +3,7 @@ import { HubSpotCompany } from './types';
 import { delay } from './utils';
 import { discoverProperties } from './properties';
 import { fetchEntitiesModifiedSince } from './incremental';
+import { getHubspotApiKey } from './http';
 
 /**
  * Property list requested from HubSpot for every company sync.
@@ -60,10 +61,7 @@ export async function fetchCompaniesFromHubSpot(
 
     // Use direct API calls instead of SDK to avoid "data is not iterable" errors
     // The SDK has serialization issues with companies API
-    const apiKey = process.env.HUBSPOT_API_KEY;
-    if (!apiKey) {
-      throw new Error('HUBSPOT_API_KEY not found in environment variables');
-    }
+    const apiKey = getHubspotApiKey();
 
     const params = new URLSearchParams({
       limit: limit.toString(),
@@ -325,8 +323,7 @@ export async function batchReadCompaniesFull(
 ): Promise<HubSpotCompany[]> {
   if (ids.length === 0) return [];
 
-  const apiKey = process.env.HUBSPOT_API_KEY;
-  if (!apiKey) throw new Error('HUBSPOT_API_KEY not set');
+  const apiKey = getHubspotApiKey();
 
   const propertyDefs = await discoverProperties('companies');
   const propertyNames = propertyDefs.map((p) => p.name);
