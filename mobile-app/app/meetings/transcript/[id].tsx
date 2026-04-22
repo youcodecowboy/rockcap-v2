@@ -5,6 +5,7 @@ import { api } from '../../../../model-testing-app/convex/_generated/api';
 import type { Id } from '../../../../model-testing-app/convex/_generated/dataModel';
 import { ArrowLeft, Calendar, Clock, Users, ExternalLink, FileText } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import MobileHeader from '@/components/MobileHeader';
 import {
   parseFirefliesBody,
   type FirefliesBullet,
@@ -28,8 +29,9 @@ export default function TranscriptDetail() {
 
   if (!activity) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, padding: 16 }}>
-        <TopBar onBack={() => router.back()} />
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <MobileHeader />
+        <TitleBar onBack={() => router.back()} title="Meeting transcript" />
         <Text style={{ marginTop: 40, textAlign: 'center', color: colors.textTertiary }}>
           Loading…
         </Text>
@@ -48,7 +50,8 @@ export default function TranscriptDetail() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <TopBar onBack={() => router.back()} />
+      <MobileHeader />
+      <TitleBar onBack={() => router.back()} title="Meeting transcript" />
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 48, gap: 16 }}
       >
@@ -259,34 +262,39 @@ export default function TranscriptDetail() {
   );
 }
 
-function TopBar({ onBack }: { onBack: () => void }) {
+/**
+ * Sub-nav row below the MobileHeader — matches the client-profile
+ * brand banner pattern (dark background, back arrow + title on one
+ * row). Keeps visual consistency with the rest of the app and sits
+ * safely below the status bar / Dynamic Island because MobileHeader
+ * already consumed the safe-area inset above it.
+ */
+function TitleBar({ onBack, title }: { onBack: () => void; title: string }) {
   return (
     <View
+      className="bg-m-bg-brand"
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e5e5',
-        backgroundColor: '#fff',
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 12,
+        gap: 8,
       }}
     >
       <TouchableOpacity
         onPress={onBack}
-        style={{ padding: 6, marginRight: 4 }}
         hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+        style={{ marginLeft: -4, paddingRight: 4 }}
       >
-        <ArrowLeft size={20} color={colors.textPrimary} />
+        <ArrowLeft size={20} color={colors.textOnBrand} />
       </TouchableOpacity>
       <Text
-        style={{
-          fontSize: 15,
-          fontWeight: '600',
-          color: colors.textPrimary,
-        }}
+        className="text-lg font-bold text-m-text-on-brand"
+        numberOfLines={1}
+        style={{ flex: 1 }}
       >
-        Meeting transcript
+        {title}
       </Text>
     </View>
   );
