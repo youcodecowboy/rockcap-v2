@@ -48,6 +48,7 @@ import RecentActivityCard from '@/components/client/RecentActivityCard';
 import BeauhurstMiniCard from '@/components/client/BeauhurstMiniCard';
 import ClassificationCard from '@/components/client/ClassificationCard';
 import LinkContactModal from '@/components/clients/LinkContactModal';
+import TaskCreationFlow from '@/components/TaskCreationFlow';
 import DealCard from '@/components/deals/DealCard';
 import DealDetailSheet from '@/components/deals/DealDetailSheet';
 import ActivityCard from '@/components/activity/ActivityCard';
@@ -1422,10 +1423,8 @@ export default function ClientDetailScreen() {
   const [openContactId, setOpenContactId] = useState<string | null>(null);
   const [showLinkContact, setShowLinkContact] = useState(false);
 
-  // Tasks form
-  const [showTaskForm, setShowTaskForm] = useState(false);
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskDueDate, setTaskDueDate] = useState('');
+  // Tasks creation modal
+  const [showTaskCreation, setShowTaskCreation] = useState(false);
 
   // Flags form
   const [showFlagForm, setShowFlagForm] = useState(false);
@@ -1544,7 +1543,6 @@ export default function ClientDetailScreen() {
   }
 
   // ---------- Mutations ----------
-  const createTask = useMutation(api.tasks.create);
   const completeTask = useMutation(api.tasks.complete);
   const updateChecklistStatus = useMutation(api.knowledgeLibrary.updateItemStatus);
   const createFlag = useMutation(api.flags.create);
@@ -1686,22 +1684,6 @@ export default function ClientDetailScreen() {
   const handleSaveStageNote = async (next: string) => {
     if (!clientId) return;
     await updateStageNote({ id: clientId as any, stageNote: next });
-  };
-
-  const handleSaveTask = async () => {
-    if (!taskTitle.trim()) return;
-    try {
-      await createTask({
-        title: taskTitle.trim(),
-        clientId: clientId as any,
-        dueDate: taskDueDate || undefined,
-      });
-      setTaskTitle('');
-      setTaskDueDate('');
-      setShowTaskForm(false);
-    } catch (e) {
-      console.error('Failed to create task:', e);
-    }
   };
 
   const handleCompleteTask = async (taskId: string) => {
@@ -2788,45 +2770,12 @@ export default function ClientDetailScreen() {
         {activeTab === 'Tasks' && (
           <View className="gap-2">
             <TouchableOpacity
-              onPress={() => setShowTaskForm(!showTaskForm)}
+              onPress={() => setShowTaskCreation(true)}
               className="bg-m-accent rounded-lg py-2.5 items-center flex-row justify-center gap-2"
             >
               <Plus size={16} color={colors.textOnBrand} />
               <Text className="text-sm font-medium text-m-text-on-brand">New Task</Text>
             </TouchableOpacity>
-
-            {showTaskForm && (
-              <Card>
-                <TextInput
-                  value={taskTitle}
-                  onChangeText={setTaskTitle}
-                  placeholder="Task title"
-                  placeholderTextColor={colors.textPlaceholder}
-                  className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-2 mb-2"
-                />
-                <TextInput
-                  value={taskDueDate}
-                  onChangeText={setTaskDueDate}
-                  placeholder="Due date (YYYY-MM-DD)"
-                  placeholderTextColor={colors.textPlaceholder}
-                  className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-2 mb-3"
-                />
-                <View className="flex-row gap-2">
-                  <TouchableOpacity
-                    onPress={handleSaveTask}
-                    className="bg-m-accent rounded-lg py-2 px-4 flex-1 items-center"
-                  >
-                    <Text className="text-sm font-medium text-m-text-on-brand">Save</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => { setShowTaskForm(false); setTaskTitle(''); setTaskDueDate(''); }}
-                    className="bg-m-bg-subtle rounded-lg py-2 px-4 items-center"
-                  >
-                    <Text className="text-sm text-m-text-secondary">Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </Card>
-            )}
 
             {taskGroups.overdue.length > 0 && (
               <>
@@ -2900,7 +2849,7 @@ export default function ClientDetailScreen() {
               </>
             )}
 
-            {tasks && tasks.length === 0 && !showTaskForm && <EmptyState message="No tasks" />}
+            {tasks && tasks.length === 0 && <EmptyState message="No tasks" />}
           </View>
         )}
 
@@ -3165,6 +3114,12 @@ export default function ClientDetailScreen() {
         clientName={client.name}
         alreadyLinkedIds={(contacts ?? []).map((c: any) => c._id)}
         onClose={() => setShowLinkContact(false)}
+      />
+
+      <TaskCreationFlow
+        visible={showTaskCreation}
+        onClose={() => setShowTaskCreation(false)}
+        prefilledClientId={clientId as any}
       />
     </View>
   );
