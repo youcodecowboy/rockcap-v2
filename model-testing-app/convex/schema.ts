@@ -3461,8 +3461,15 @@ export default defineSchema({
 
   // Auto-sync run log — one row per sync invocation (webhook, cron, or manual).
   // Pruned daily by internal.googleCalendarLog.pruneSyncLog (rows > 14 days).
+  //
+  // Two row shapes live in this table:
+  //   1. Per-user rows (userId set) — from webhook / cron / manual sync per user
+  //   2. Tick-summary rows (userId undefined, usersProcessed/userErrors set) —
+  //      from autoSyncAll, one per cron invocation. Lets operators see tick
+  //      health without fanning out over per-user rows.
   googleCalendarSyncLog: defineTable({
-    userId: v.id("users"),
+    // Optional — absent on tick-summary rows written by autoSyncAll.
+    userId: v.optional(v.id("users")),
     ranAt: v.string(),     // ISO timestamp
     trigger: v.union(
       v.literal("webhook"),
@@ -3477,6 +3484,10 @@ export default defineSchema({
     eventsSynced: v.optional(v.number()),
     durationMs: v.optional(v.number()),
     error: v.optional(v.string()),
+    // Tick-summary-only fields. Set by insertTickSummaryLog, absent on
+    // per-user rows.
+    usersProcessed: v.optional(v.number()),
+    userErrors: v.optional(v.number()),
   })
     .index("by_user_ran_at", ["userId", "ranAt"])
     .index("by_ran_at", ["ranAt"]),

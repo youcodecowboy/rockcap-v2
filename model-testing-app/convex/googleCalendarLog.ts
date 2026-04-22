@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation } from "./_generated/server";
+import { internalAction, internalMutation, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 // Cap error strings at this length before write — guards against 1 MiB
@@ -46,6 +46,62 @@ export const pruneOlderThan = internalMutation({
       await ctx.db.delete(row._id);
     }
     return { deleted: stale.length };
+  },
+});
+
+// Tick-summary row written by autoSyncAll at the end of each cron tick.
+// Distinguishable from per-user rows by absence of userId + presence of
+// usersProcessed/userErrors. One row per tick gives operators quick
+// top-level health without scanning all per-user rows.
+export const insertTickSummaryLog = internalMutation({
+  args: {
+    ranAt: v.string(),
+    usersProcessed: v.number(),
+    userErrors: v.number(),
+    durationMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db.insert("googleCalendarSyncLog", {
+      ranAt: args.ranAt,
+      trigger: "cron" as const,
+      status: args.userErrors > 0 ? ("error" as const) : ("ok" as const),
+      usersProcessed: args.usersProcessed,
+      userErrors: args.userErrors,
+      durationMs: args.durationMs,
+      error:
+        args.userErrors > 0
+          ? `${args.userErrors} of ${args.usersProcessed} user(s) errored this tick`
+          : undefined,
+    });
+  },
+});
+
+// Public mutation the webhook route calls when it can't reach internal
+// mutations — specifically the CONVEX_DEPLOY_KEY-missing branch, where
+// the webhook uses an unauthenticated ConvexHttpClient. Gated on
+// channelId existing in our DB; channelIds are 128-bit random UUIDs
+// known only to Google + us, which gives weak-but-sufficient abuse
+// protection without requiring a proper auth surface from a Next route
+// that by definition can't hold a Convex auth token in this branch.
+export const recordWebhookBootstrapError = mutation({
+  args: {
+    channelId: v.string(),
+    ranAt: v.string(),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_channel", (q: any) => q.eq("channelId", args.channelId))
+      .first();
+    if (!channel) return null; // silently drop unknown channelIds
+    return ctx.db.insert("googleCalendarSyncLog", {
+      userId: channel.userId,
+      ranAt: args.ranAt,
+      trigger: "webhook" as const,
+      status: "error" as const,
+      error: args.error.slice(0, ERROR_TRUNCATE_AT),
+    });
   },
 });
 

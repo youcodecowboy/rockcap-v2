@@ -132,21 +132,6 @@ export const getChannelByChannelId = query({
   },
 });
 
-export const updateSyncToken = mutation({
-  args: {
-    channelId: v.string(),
-    syncToken: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const channel = await ctx.db
-      .query("googleCalendarChannels")
-      .withIndex("by_channel", (q: any) => q.eq("channelId", args.channelId))
-      .first();
-    if (!channel) throw new Error("Channel not found");
-    await ctx.db.patch(channel._id, { syncToken: args.syncToken });
-  },
-});
-
 export const deleteChannel = mutation({
   args: {},
   handler: async (ctx) => {
@@ -327,7 +312,10 @@ export const upsertGoogleEvent = internalMutation({
 
 // ── Delete synced event (cancelled on Google) ────────────────
 
-export const deleteByGoogleEventId = mutation({
+// Internal — called from syncForUser when Google signals an event was
+// cancelled. Converted from a public mutation (2026-04-22) to reflect
+// the actual call surface; no external callers existed.
+export const deleteByGoogleEventId = internalMutation({
   args: { googleEventId: v.string() },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -544,9 +532,9 @@ export const getChannelByUserIdInternal = internalQuery({
   },
 });
 
-// Internal update for the sync action — bypasses per-user identity
-// check (which the existing updateSyncToken mutation doesn't do
-// either, but at least this version makes the intent explicit).
+// Internal update for the sync action — runs in cron/webhook contexts
+// where no Clerk session exists, so uses internalMutation rather than
+// mutation + identity check.
 export const updateChannelSyncToken = internalMutation({
   args: {
     channelId: v.string(),

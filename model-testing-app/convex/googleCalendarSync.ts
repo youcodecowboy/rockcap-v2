@@ -107,12 +107,26 @@ export const syncForUser = internalAction({
       }
     }
 
-    // Upsert events (idempotent by googleEventId)
+    // Upsert events (idempotent by googleEventId). Google signals
+    // deletions by echoing an event with status="cancelled" in the
+    // incremental feed; those arrive *without* a summary, so the
+    // cancelled-check must come BEFORE the !summary skip, otherwise we'd
+    // drop the deletion and leave a tombstone row in Convex.
     let syncedCount = 0;
+    let deletedCount = 0;
     const now = new Date();
     for (const gEvent of eventsResponse.items ?? []) {
-      if (!gEvent.id || !gEvent.summary) continue;
+      if (!gEvent.id) continue;
       try {
+        if (gEvent.status === "cancelled") {
+          await ctx.runMutation(
+            internal.googleCalendar.deleteByGoogleEventId,
+            { googleEventId: gEvent.id },
+          );
+          deletedCount++;
+          continue;
+        }
+        if (!gEvent.summary) continue;
         await ctx.runMutation(internal.googleCalendar.upsertGoogleEvent, {
           userId: args.userId,
           googleEventId: gEvent.id,
@@ -131,8 +145,11 @@ export const syncForUser = internalAction({
         });
         syncedCount++;
       } catch (err) {
-        console.warn(`[syncForUser] upsert failed for event ${gEvent.id}:`, err);
+        console.warn(`[syncForUser] upsert/delete failed for event ${gEvent.id}:`, err);
       }
+    }
+    if (deletedCount > 0) {
+      console.log(`[syncForUser] deleted ${deletedCount} cancelled event(s) for user ${args.userId}`);
     }
 
     // Update syncToken on channel row
@@ -295,6 +312,8 @@ async function fullResyncWithWindow(
 export const autoSyncAll = internalAction({
   args: {},
   handler: async (ctx): Promise<{ processed: number; errors: number }> => {
+    const tickStartedAt = Date.now();
+    const tickRanAt = new Date(tickStartedAt).toISOString();
     const userIds: Id<"users">[] = await ctx.runQuery(
       internal.googleCalendar.listActiveSyncUserIds,
       {},
@@ -318,6 +337,16 @@ export const autoSyncAll = internalAction({
       processed++;
     }
     console.log(`[autoSyncAll] done: processed=${processed}, errors=${errors}`);
+    // Tick-level summary row — one per cron invocation so operators can
+    // see tick health without grepping through per-user rows. Written
+    // with no userId (schema: userId is optional on syncLog rows) and
+    // fills in usersProcessed / userErrors instead.
+    await ctx.runMutation(internal.googleCalendarLog.insertTickSummaryLog, {
+      ranAt: tickRanAt,
+      usersProcessed: processed,
+      userErrors: errors,
+      durationMs: Date.now() - tickStartedAt,
+    });
     return { processed, errors };
   },
 });

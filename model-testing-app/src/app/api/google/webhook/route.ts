@@ -60,7 +60,31 @@ export async function POST(request: NextRequest) {
     // our action can take longer. The action writes its own log row so
     // failures are still visible.
     if (!deployKey) {
-      console.error('[google/webhook] CONVEX_DEPLOY_KEY is not set');
+      console.error(
+        '[google/webhook] CONVEX_DEPLOY_KEY is not set — fast-path sync disabled, relying on cron tick',
+      );
+      // Write a sync-log row so operators can see (via the DB) that
+      // webhooks are silently no-op'ing. Internal mutations are out of
+      // reach in this branch (no deploy key), so we call the narrow
+      // public `recordWebhookBootstrapError` endpoint gated on the
+      // channelId. Best-effort: if this also fails, we still fall
+      // through to 200 below.
+      try {
+        await convex.mutation(
+          api.googleCalendarLog.recordWebhookBootstrapError,
+          {
+            channelId,
+            ranAt: new Date().toISOString(),
+            error:
+              'CONVEX_DEPLOY_KEY not configured — webhook cannot invoke internal sync action',
+          },
+        );
+      } catch (logErr) {
+        console.error(
+          '[google/webhook] also failed to write bootstrap-error log row:',
+          logErr,
+        );
+      }
       // Fall through to 200 — returning 5xx would cause Google to retry;
       // we'd rather drop the event and let the next cron tick catch up.
       return NextResponse.json({ ok: true });
