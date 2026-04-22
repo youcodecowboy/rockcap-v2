@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, action } from "./_generated/server";
+import { api } from "./_generated/api";
 
 // ── Auth helper ──────────────────────────────────────────────
 async function getAuthenticatedUser(ctx: any) {
@@ -345,5 +346,84 @@ export const disconnect = mutation({
       .first();
     if (channel) await ctx.db.delete(channel._id);
     return { success: true };
+  },
+});
+
+// ── Mobile OAuth: server-side code exchange ──────────────────
+
+export const exchangeMobileCode = action({
+  args: {
+    code: v.string(),
+    codeVerifier: v.string(),
+    redirectUri: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; email: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("Google OAuth env vars missing in Convex");
+    }
+
+    // Exchange authorization code for tokens (PKCE)
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: args.code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: args.redirectUri,
+        grant_type: "authorization_code",
+        code_verifier: args.codeVerifier,
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      const errText = await tokenRes.text();
+      throw new Error(`Google token exchange failed: ${errText}`);
+    }
+
+    const tokens: {
+      access_token: string;
+      refresh_token?: string;
+      expires_in: number;
+      scope: string;
+      token_type: string;
+    } = await tokenRes.json();
+
+    // Google only returns refresh_token on first consent (prompt=consent forces it).
+    // If missing (re-consent by same account), look up existing and preserve it.
+    let refreshToken = tokens.refresh_token;
+    if (!refreshToken) {
+      const existing = await ctx.runQuery(api.googleCalendar.getTokens, {});
+      refreshToken = existing?.refreshToken;
+      if (!refreshToken) {
+        throw new Error(
+          "Google did not return a refresh_token. Revoke app access in Google account settings and retry.",
+        );
+      }
+    }
+
+    // Fetch the connected email
+    const userRes = await fetch(
+      "https://www.googleapis.com/oauth2/v2/userinfo",
+      { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+    );
+    if (!userRes.ok) throw new Error("Failed to fetch Google user info");
+    const { email } = (await userRes.json()) as { email: string };
+
+    // Persist to Convex via existing mutation
+    await ctx.runMutation(api.googleCalendar.saveTokens, {
+      accessToken: tokens.access_token,
+      refreshToken,
+      expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+      scope: tokens.scope,
+      connectedEmail: email,
+    });
+
+    return { success: true, email };
   },
 });
