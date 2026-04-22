@@ -6,6 +6,7 @@
  */
 
 import { getHubspotApiKey } from './http';
+import { isFirefliesTranscript, parseFirefliesTranscript } from './fireflies';
 
 const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 
@@ -13,6 +14,7 @@ export type EngagementType =
   | 'EMAIL'
   | 'INCOMING_EMAIL'
   | 'MEETING'
+  | 'MEETING_NOTE'
   | 'CALL'
   | 'NOTE'
   | 'TASK';
@@ -35,6 +37,8 @@ export interface HubSpotEngagement {
   companyIds: string[];
   contactIds: string[];
   dealIds: string[];
+  sourceIntegration?: 'fireflies';
+  transcriptUrl?: string;
 }
 
 function stripHtml(html: string): string {
@@ -82,8 +86,28 @@ function parseEngagement(raw: any): HubSpotEngagement | null {
     base.status = md.status;
     base.bodyPreview = md.body ? stripHtml(md.body).slice(0, 400) : undefined;
   } else if (type === 'NOTE') {
-    base.bodyHtml = md.body;
-    base.bodyPreview = md.body ? stripHtml(md.body).slice(0, 400) : undefined;
+    const body = md.body;
+    // Detect Fireflies.ai-generated call transcripts by content
+    // signature (HubSpot doesn't attach integration source metadata —
+    // see fireflies.ts for rationale).
+    if (isFirefliesTranscript(body)) {
+      const parsed = parseFirefliesTranscript(body);
+      // Reclassify: this activity becomes a MEETING_NOTE — same
+      // activity record, different type. Downstream (UI, filters)
+      // treats it as a meeting-related artefact rather than a note.
+      base.type = 'MEETING_NOTE';
+      base.subject = parsed.title ?? 'Call transcript';
+      base.bodyHtml = body;
+      base.bodyPreview = body ? stripHtml(body).slice(0, 400) : undefined;
+      base.duration = parsed.duration;
+      base.toEmails = parsed.participantEmails;
+      base.sourceIntegration = 'fireflies';
+      base.transcriptUrl = parsed.transcriptUrl;
+    } else {
+      // Plain human note — unchanged from before.
+      base.bodyHtml = body;
+      base.bodyPreview = body ? stripHtml(body).slice(0, 400) : undefined;
+    }
   } else if (type === 'TASK') {
     base.subject = md.subject;
     base.status = md.status;
