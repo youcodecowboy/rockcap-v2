@@ -1,0 +1,40 @@
+{
+  "uid": "rockcap-webhooks",
+  "type": "webhooks",
+  "config": {
+    "settings": {
+      "targetUrl": "https://rockcap-v2.vercel.app/api/hubspot/webhook",
+      "maxConcurrentRequests": 10
+    },
+    "subscriptions": {
+      "crmObjects": [
+        { "subscriptionType": "object.creation", "objectType": "company", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "notes_last_updated", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "name", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "lifecyclestage", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "hs_pipeline", "active": true },
+        { "subscriptionType": "object.deletion", "objectType": "company", "active": true },
+
+        { "subscriptionType": "object.creation", "objectType": "contact", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "email", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "firstname", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "lastname", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "lifecyclestage", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "jobtitle", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "hubspot_owner_id", "active": true },
+        { "subscriptionType": "object.deletion", "objectType": "contact", "active": true },
+
+        { "subscriptionType": "object.creation", "objectType": "deal", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "dealstage", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "amount", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "closedate", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "dealname", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "pipeline", "active": true },
+        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "hubspot_owner_id", "active": true },
+        { "subscriptionType": "object.deletion", "objectType": "deal", "active": true }
+      ],
+      "legacyCrmObjects": [],
+      "hubEvents": []
+    }
+  }
+}
