@@ -569,6 +569,15 @@ export default defineSchema({
     // args-validates it at the top level; also kept inside `metadata` for
     // parity with the rest of the HubSpot payload.
     status: v.optional(v.string()),
+    // Set on Fireflies.ai-detected transcripts (and potentially other
+    // integrations in the future). Mainly used by UI to show a source
+    // badge; not used for filtering or routing.
+    sourceIntegration: v.optional(v.string()),
+    // Direct link out to the source integration's canonical view
+    // (e.g. https://app.fireflies.ai/view/{id}). Nullable; only present
+    // when the engagement came from an integration that has such a
+    // public URL.
+    transcriptUrl: v.optional(v.string()),
   })
     .index("by_contact", ["contactId"])
     .index("by_company", ["companyId"])
