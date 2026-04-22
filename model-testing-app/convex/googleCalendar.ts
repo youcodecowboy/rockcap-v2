@@ -195,7 +195,7 @@ export const getSyncStatus = query({
 
 // ── Internal: Token lookup by userId (for webhook — no user auth) ─
 
-export const getTokensByUserId = internalMutation({
+export const getTokensByUserId = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     return ctx.db
@@ -493,5 +493,36 @@ export const updateAccessTokenByUserId = internalMutation({
       accessToken: args.accessToken,
       expiresAt: args.expiresAt,
     });
+  },
+});
+
+// Internal channel lookup by userId — sync action uses this because
+// it already has userId from the iteration, and the public
+// getSyncStatus does identity-lookup work we don't need here.
+export const getChannelByUserIdInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+  },
+});
+
+// Internal update for the sync action — bypasses per-user identity
+// check (which the existing updateSyncToken mutation doesn't do
+// either, but at least this version makes the intent explicit).
+export const updateChannelSyncToken = internalMutation({
+  args: {
+    channelId: v.string(),
+    syncToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_channel", (q: any) => q.eq("channelId", args.channelId))
+      .first();
+    if (!channel) throw new Error("channel not found");
+    await ctx.db.patch(channel._id, { syncToken: args.syncToken });
   },
 });
