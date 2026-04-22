@@ -186,7 +186,8 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
                 </Text>
                 <TouchableOpacity
                   onPress={() => {
-                    if (!clientProjects || (clientProjects as any[]).length === 0) {
+                    if (clientProjects === undefined) return; // still loading — ignore tap
+                    if ((clientProjects as any[]).length === 0) {
                       Alert.alert('No projects', 'This client has no projects yet.');
                       return;
                     }
