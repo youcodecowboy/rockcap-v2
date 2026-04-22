@@ -301,9 +301,6 @@ export async function POST(request: NextRequest) {
           });
         }
         const props: any = deal.properties ?? {};
-        const ownerName = props.hubspot_owner_id
-          ? await resolveOwnerName(props.hubspot_owner_id)
-          : null;
         const customProperties = extractCustomProperties(props);
         const hubspotUrl = await generateHubSpotDealUrl(String(deal.id));
 
@@ -356,10 +353,6 @@ export async function POST(request: NextRequest) {
           dealData.isClosedWon =
             props.hs_is_closed_won === 'true' || props.hs_is_closed_won === true;
         }
-        if (ownerName && dealData.hubspotOwnerId) {
-          (dealData as any).ownerName = ownerName;
-        }
-
         // NB: syncDealToDealsTable (writes to `deals` table), NOT
         // syncDealFromHubSpot (legacy, writes to `projects` table).
         await fetchMutation(api.hubspotSync.syncDealToDealsTable as any, dealData);
