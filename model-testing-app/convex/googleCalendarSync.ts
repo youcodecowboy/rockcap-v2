@@ -81,13 +81,18 @@ export const syncForUser = internalAction({
     let syncToken = channel?.syncToken || "";
 
     // Incremental fetch (or full window if no syncToken)
-    let eventsResponse;
+    let eventsResponse: ListEventsResult | null = null;
+    let fallbackReason: string | undefined = undefined;
     try {
       eventsResponse = await listEventsSafe(accessToken, syncToken);
+      if (eventsResponse === null) {
+        fallbackReason = "fallback: no syncToken stored, using 30-day window";
+        eventsResponse = await fullResyncWithWindow(accessToken);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("(410)")) {
-        // syncToken invalid; fall back to full window
+        fallbackReason = "fallback: syncToken invalid (410), using 30-day window";
         eventsResponse = await fullResyncWithWindow(accessToken);
       } else {
         await ctx.runMutation(internal.googleCalendarLog.insertSyncLog, {
@@ -146,6 +151,7 @@ export const syncForUser = internalAction({
       status: "ok",
       eventsSynced: syncedCount,
       durationMs: Date.now() - startedAt,
+      error: fallbackReason,
     });
     return { ok: true, eventsSynced: syncedCount };
   },
@@ -173,7 +179,14 @@ async function refreshAccessTokenOrFlag(
   if (!res.ok) {
     const body = await res.text();
     // Specifically detect invalid_grant — user revoked app access
-    if (body.includes("invalid_grant")) {
+    let isInvalidGrant = false;
+    try {
+      const parsed = JSON.parse(body);
+      isInvalidGrant = parsed?.error === "invalid_grant";
+    } catch {
+      // body isn't JSON — fall through, treat as generic error
+    }
+    if (isInvalidGrant) {
       await ctx.runMutation(internal.googleCalendar.markNeedsReconnect, { userId });
       await ctx.runMutation(internal.googleCalendarLog.insertSyncLog, {
         userId,
@@ -195,28 +208,70 @@ interface ListEventsResult {
   nextPageToken?: string;
 }
 
+interface PageQueryOpts {
+  syncToken?: string;
+  timeMin?: string;
+  timeMax?: string;
+}
+
+async function paginatedListEvents(
+  accessToken: string,
+  opts: PageQueryOpts,
+): Promise<ListEventsResult> {
+  const base = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+  const accumulated: any[] = [];
+  let nextPageToken: string | undefined = undefined;
+  let nextSyncToken: string | undefined = undefined;
+
+  // Cap at 10 pages (2,500 events) to avoid runaway loops — realistic calendars
+  // have far fewer changes in a 30-day window, and incremental sync should never
+  // approach this. If we hit it, the next run's syncToken will pick up where we
+  // left off.
+  const MAX_PAGES = 10;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const params = new URLSearchParams();
+    if (opts.syncToken && !nextPageToken) {
+      params.set("syncToken", opts.syncToken);
+    } else if (!opts.syncToken) {
+      if (opts.timeMin) params.set("timeMin", opts.timeMin);
+      if (opts.timeMax) params.set("timeMax", opts.timeMax);
+      params.set("singleEvents", "true");
+      params.set("orderBy", "startTime");
+    }
+    if (nextPageToken) params.set("pageToken", nextPageToken);
+    params.set("maxResults", "250");
+
+    const res = await fetch(`${base}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      throw new Error(`Google Calendar API error (${res.status}): ${await res.text()}`);
+    }
+    const data = (await res.json()) as ListEventsResult;
+    if (data.items) accumulated.push(...data.items);
+    if (data.nextSyncToken) nextSyncToken = data.nextSyncToken;
+    nextPageToken = data.nextPageToken;
+    if (!nextPageToken) break;
+  }
+
+  if (nextPageToken) {
+    console.warn(
+      `[paginatedListEvents] hit MAX_PAGES cap; more events remain. nextPageToken=${nextPageToken.slice(0, 20)}...`,
+    );
+  }
+
+  return { items: accumulated, nextSyncToken };
+}
+
 async function listEventsSafe(
   accessToken: string,
   syncToken: string,
-): Promise<ListEventsResult> {
-  const base = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
-  const params = new URLSearchParams();
-  if (syncToken) {
-    params.set("syncToken", syncToken);
-  } else {
-    // No stored syncToken — defer to fullResyncWithWindow by throwing 410-like error
-    // so the caller's 410 fallback path kicks in. Cleaner than duplicating the
-    // window logic here.
-    throw new Error("Google Calendar API error (410): no syncToken");
+): Promise<ListEventsResult | null> {
+  if (!syncToken) {
+    // No stored syncToken — caller should use fullResyncWithWindow instead.
+    return null;
   }
-  params.set("maxResults", "250");
-  const res = await fetch(`${base}?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Google Calendar API error (${res.status}): ${await res.text()}`);
-  }
-  return res.json();
+  return paginatedListEvents(accessToken, { syncToken });
 }
 
 async function fullResyncWithWindow(
@@ -224,19 +279,12 @@ async function fullResyncWithWindow(
 ): Promise<ListEventsResult> {
   const now = new Date();
   const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const base = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
-  const params = new URLSearchParams({
+  const result = await paginatedListEvents(accessToken, {
     timeMin: now.toISOString(),
     timeMax: thirtyDaysOut.toISOString(),
-    singleEvents: "true",
-    orderBy: "startTime",
-    maxResults: "250",
   });
-  const res = await fetch(`${base}?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Google Calendar window sync failed (${res.status}): ${await res.text()}`);
+  if (result === null) {
+    throw new Error("paginatedListEvents returned null for window query");
   }
-  return res.json();
+  return result;
 }
