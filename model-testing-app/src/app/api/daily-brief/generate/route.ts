@@ -223,6 +223,13 @@ Respond with ONLY a JSON object (no markdown, no code fences) matching this exac
 }
 
 RULES:
+- CRITICAL: If the input begins with a ⚠️ GOOGLE CALENDAR DISCONNECTED block,
+  you MUST emit an attentionNeeded.items entry with type "flag", title
+  "Reconnect Google Calendar", context "Calendar sync is paused · reconnect
+  in Settings", and urgency "high". Lead the attentionNeeded.insight with a
+  reminder to reconnect before the day's meetings drift out of sync. This
+  is non-negotiable — the user depends on this warning to know their
+  calendar sync is broken.
 - Keep items concise — one line each
 - Maximum 5 items per section
 - Insights should connect information across sections when possible
@@ -235,12 +242,7 @@ RULES:
   notes on deals/contacts); surface standout engagements as activity recap
   items (use types hubspot_activity / hubspot_contacts / hubspot_deals).
   Note the "Notable engagements" list names specific subjects — prefer those
-  over bare counts when calling out attention.
-- If the input begins with a ⚠️ GOOGLE CALENDAR DISCONNECTED block, include a
-  high-urgency item in attentionNeeded.items with type "flag", title
-  "Reconnect Google Calendar", context "Calendar sync is paused · reconnect
-  in Settings", and urgency "high". Lead the attentionNeeded.insight with a
-  reminder to reconnect before the day's meetings drift out of sync.`;
+  over bare counts when calling out attention.`;
 
     const response = await anthropic.messages.create({
       model: MODEL,
@@ -262,6 +264,40 @@ RULES:
     }
 
     const briefContent = JSON.parse(jsonStr);
+
+    // Server-side safety net: Haiku is reliable but not deterministic, and a
+    // silently-dropped reconnect warning means the user never learns their
+    // calendar is broken. If the LLM omits the reconnect item despite the
+    // ⚠️ block in the input, inject it here before persistence.
+    if (calendarNeedsReconnect) {
+      briefContent.attentionNeeded = briefContent.attentionNeeded ?? {};
+      briefContent.attentionNeeded.items = briefContent.attentionNeeded.items ?? [];
+      const hasReconnectItem = briefContent.attentionNeeded.items.some(
+        (it: any) => it?.title === 'Reconnect Google Calendar',
+      );
+      if (!hasReconnectItem) {
+        console.warn(
+          '[daily-brief] LLM did not include reconnect item; injecting server-side',
+        );
+        briefContent.attentionNeeded.items.unshift({
+          type: 'flag',
+          title: 'Reconnect Google Calendar',
+          context: 'Calendar sync is paused · reconnect in Settings',
+          urgency: 'high',
+        });
+        // Preserve the "lead with reconnect" contract on the insight line.
+        const reconnectLead = 'Reconnect Google Calendar to resume event sync. ';
+        const existingInsight = briefContent.attentionNeeded.insight;
+        if (typeof existingInsight === 'string' && existingInsight.length > 0) {
+          if (!existingInsight.startsWith('Reconnect')) {
+            briefContent.attentionNeeded.insight = reconnectLead + existingInsight;
+          }
+        } else {
+          briefContent.attentionNeeded.insight =
+            reconnectLead.trim() + ' Meetings and calendar items will drift out of sync until you do.';
+        }
+      }
+    }
 
     // Store in Convex
     await convex.mutation(api.dailyBriefs.save, {
