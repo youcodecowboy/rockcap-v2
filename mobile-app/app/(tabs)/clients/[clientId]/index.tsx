@@ -50,6 +50,7 @@ import ClassificationCard from '@/components/client/ClassificationCard';
 import LinkContactModal from '@/components/clients/LinkContactModal';
 import TaskCreationFlow from '@/components/TaskCreationFlow';
 import FlagCreationSheet from '@/components/FlagCreationSheet';
+import ProjectCreationSheet from '@/components/ProjectCreationSheet';
 import DealCard from '@/components/deals/DealCard';
 import DealDetailSheet from '@/components/deals/DealDetailSheet';
 import ActivityCard from '@/components/activity/ActivityCard';
@@ -1447,6 +1448,9 @@ export default function ClientDetailScreen() {
   // Flags creation sheet
   const [showFlagSheet, setShowFlagSheet] = useState(false);
 
+  // Project creation sheet
+  const [showProjectSheet, setShowProjectSheet] = useState(false);
+
   // ---------- Queries ----------
   const skip = !isAuthenticated || !clientId;
 
@@ -2426,16 +2430,27 @@ export default function ClientDetailScreen() {
         {/* PROJECTS TAB */}
         {/* ================================================================ */}
         {activeTab === 'Projects' && (
-          <ProjectsList
-            clientId={clientId as string}
-            projects={sortedProjects}
-            folderCounts={folderCounts}
-            projectSearch={projectSearch}
-            setProjectSearch={setProjectSearch}
-            onOpenProject={(pid) =>
-              router.push(`/(tabs)/clients/${clientId}/projects/${pid}` as any)
-            }
-          />
+          <View className="gap-2">
+            <TouchableOpacity
+              onPress={() => setShowProjectSheet(true)}
+              className="bg-m-accent rounded-lg py-2.5 items-center flex-row justify-center gap-2"
+              accessibilityRole="button"
+            >
+              <Plus size={16} color={colors.textOnBrand} />
+              <Text className="text-sm font-medium text-m-text-on-brand">New Project</Text>
+            </TouchableOpacity>
+
+            <ProjectsList
+              clientId={clientId as string}
+              projects={sortedProjects}
+              folderCounts={folderCounts}
+              projectSearch={projectSearch}
+              setProjectSearch={setProjectSearch}
+              onOpenProject={(pid) =>
+                router.push(`/(tabs)/clients/${clientId}/projects/${pid}` as any)
+              }
+            />
+          </View>
         )}
 
         {/* ================================================================ */}
@@ -3074,6 +3089,12 @@ export default function ClientDetailScreen() {
       <FlagCreationSheet
         visible={showFlagSheet}
         onClose={() => setShowFlagSheet(false)}
+        clientId={clientId as any}
+      />
+
+      <ProjectCreationSheet
+        visible={showProjectSheet}
+        onClose={() => setShowProjectSheet(false)}
         clientId={clientId as any}
       />
     </View>
