@@ -35,6 +35,7 @@ import {
   TrendingUp,
   Briefcase,
   Search,
+  ExternalLink,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 import Card from '@/components/ui/Card';
@@ -1520,8 +1521,12 @@ export default function ClientDetailScreen() {
 
   let meetings: any = undefined;
   try {
+    // Merged feed: native `meetings` table rows + MEETING_NOTE activities
+    // (e.g. Fireflies transcripts). Each row carries `source: 'native' | 'fireflies'`
+    // so the UI can render a purple FIREFLIES badge + transcript link for the
+    // fireflies variant. See convex/meetings.ts.
     meetings = useQuery(
-      api.meetings.getByClient,
+      api.meetings.getByClientIncludingMeetingNotes,
       skip ? 'skip' : { clientId: clientId as any }
     );
   } catch {
@@ -2927,14 +2932,53 @@ export default function ClientDetailScreen() {
             ) : meetings && meetings.length > 0 ? (
               meetings.map((m: any) => {
                 const isExpanded = expandedMeetings.has(m._id);
+                const isFireflies = m.source === 'fireflies';
+                // Strip HTML tags for the expanded transcript view. Cheap/naive but
+                // matches ActivityCard's approach — fine for plain-text rendering.
+                const strippedFullBody: string | undefined =
+                  isFireflies && typeof m.fullBody === 'string'
+                    ? m.fullBody
+                        .replace(/<br\s*\/?>(?=\s|$)/gi, '\n')
+                        .replace(/<\/?p[^>]*>/gi, '\n')
+                        .replace(/<[^>]+>/g, '')
+                        .replace(/&nbsp;/g, ' ')
+                        .replace(/&amp;/g, '&')
+                        .replace(/&lt;/g, '<')
+                        .replace(/&gt;/g, '>')
+                        .replace(/\n{3,}/g, '\n\n')
+                        .trim()
+                    : undefined;
                 return (
                   <Card key={m._id}>
                     <TouchableOpacity onPress={() => toggleMeetingExpanded(m._id)}>
                       <View className="flex-row items-start justify-between">
                         <View className="flex-1 mr-2">
-                          <Text className="text-sm font-medium text-m-text-primary">
-                            {m.title || 'Meeting'}
-                          </Text>
+                          <View className="flex-row items-center gap-2 flex-wrap">
+                            <Text className="text-sm font-medium text-m-text-primary">
+                              {m.title || 'Meeting'}
+                            </Text>
+                            {isFireflies ? (
+                              <View
+                                style={{
+                                  paddingHorizontal: 5,
+                                  paddingVertical: 1,
+                                  backgroundColor: '#ede9fe',
+                                  borderRadius: 3,
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontSize: 9,
+                                    fontWeight: '700',
+                                    color: '#7c3aed',
+                                    letterSpacing: 0.3,
+                                  }}
+                                >
+                                  FIREFLIES
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
                           <View className="flex-row items-center gap-3 mt-1">
                             <Text className="text-xs text-m-text-tertiary">
                               {new Date(m.meetingDate).toLocaleDateString('en-GB', {
@@ -2943,11 +2987,16 @@ export default function ClientDetailScreen() {
                                 year: 'numeric',
                               })}
                             </Text>
-                            {m.attendees && (
+                            {m.attendees && m.attendees.length > 0 && (
                               <Text className="text-xs text-m-text-tertiary">
                                 {m.attendees.length} attendee{m.attendees.length !== 1 ? 's' : ''}
                               </Text>
                             )}
+                            {isFireflies && typeof m.durationMinutes === 'number' && m.durationMinutes > 0 ? (
+                              <Text className="text-xs text-m-text-tertiary">
+                                {m.durationMinutes} min
+                              </Text>
+                            ) : null}
                           </View>
                         </View>
                         {isExpanded ? (
@@ -2960,47 +3009,95 @@ export default function ClientDetailScreen() {
 
                     {isExpanded && (
                       <View className="mt-3 pt-3 border-t border-m-border-subtle gap-3">
-                        {m.summary ? (
-                          <View>
-                            <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Summary</Text>
-                            <Text className="text-sm text-m-text-secondary leading-5">{m.summary}</Text>
-                          </View>
-                        ) : null}
-                        {m.keyPoints && m.keyPoints.length > 0 ? (
-                          <View>
-                            <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Key Points</Text>
-                            {m.keyPoints.map((point: string, i: number) => (
-                              <View key={i} className="flex-row gap-2 mb-1">
-                                <Text className="text-sm text-m-text-tertiary">-</Text>
-                                <Text className="text-sm text-m-text-secondary flex-1">{point}</Text>
+                        {isFireflies ? (
+                          <>
+                            {strippedFullBody ? (
+                              <View>
+                                <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Transcript</Text>
+                                <Text className="text-sm text-m-text-secondary leading-5">
+                                  {strippedFullBody}
+                                </Text>
                               </View>
-                            ))}
-                          </View>
-                        ) : null}
-                        {m.actionItems && m.actionItems.length > 0 ? (
-                          <View>
-                            <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Action Items</Text>
-                            {m.actionItems.map((ai: any) => (
-                              <View key={ai.id} className="flex-row items-start gap-2 mb-1.5">
-                                <View
-                                  className={`w-3 h-3 rounded-full mt-1 ${
-                                    ai.status === 'completed'
-                                      ? 'bg-m-success'
-                                      : ai.status === 'cancelled'
-                                        ? 'bg-m-text-tertiary'
-                                        : 'bg-m-warning'
-                                  }`}
-                                />
-                                <View className="flex-1">
-                                  <Text className="text-sm text-m-text-secondary">{ai.description}</Text>
-                                  {ai.assignee ? (
-                                    <Text className="text-[10px] text-m-text-tertiary">{ai.assignee}</Text>
-                                  ) : null}
-                                </View>
+                            ) : m.bodyPreview ? (
+                              <View>
+                                <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Preview</Text>
+                                <Text className="text-sm text-m-text-secondary leading-5">
+                                  {m.bodyPreview}
+                                </Text>
                               </View>
-                            ))}
-                          </View>
-                        ) : null}
+                            ) : null}
+                            {m.transcriptUrl ? (
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  Linking.openURL(m.transcriptUrl).catch(() => {
+                                    /* noop — URL may be malformed */
+                                  });
+                                }}
+                                hitSlop={6}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  alignSelf: 'flex-start',
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 4,
+                                  borderRadius: 6,
+                                  backgroundColor: '#ede9fe',
+                                }}
+                              >
+                                <ExternalLink size={11} color="#7c3aed" strokeWidth={2.2} />
+                                <Text style={{ fontSize: 11, fontWeight: '600', color: '#7c3aed' }}>
+                                  Open transcript
+                                </Text>
+                              </TouchableOpacity>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
+                            {m.summary ? (
+                              <View>
+                                <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Summary</Text>
+                                <Text className="text-sm text-m-text-secondary leading-5">{m.summary}</Text>
+                              </View>
+                            ) : null}
+                            {m.keyPoints && m.keyPoints.length > 0 ? (
+                              <View>
+                                <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Key Points</Text>
+                                {m.keyPoints.map((point: string, i: number) => (
+                                  <View key={i} className="flex-row gap-2 mb-1">
+                                    <Text className="text-sm text-m-text-tertiary">-</Text>
+                                    <Text className="text-sm text-m-text-secondary flex-1">{point}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            ) : null}
+                            {m.actionItems && m.actionItems.length > 0 ? (
+                              <View>
+                                <Text className="text-xs font-semibold text-m-text-tertiary mb-1">Action Items</Text>
+                                {m.actionItems.map((ai: any) => (
+                                  <View key={ai.id} className="flex-row items-start gap-2 mb-1.5">
+                                    <View
+                                      className={`w-3 h-3 rounded-full mt-1 ${
+                                        ai.status === 'completed'
+                                          ? 'bg-m-success'
+                                          : ai.status === 'cancelled'
+                                            ? 'bg-m-text-tertiary'
+                                            : 'bg-m-warning'
+                                      }`}
+                                    />
+                                    <View className="flex-1">
+                                      <Text className="text-sm text-m-text-secondary">{ai.description}</Text>
+                                      {ai.assignee ? (
+                                        <Text className="text-[10px] text-m-text-tertiary">{ai.assignee}</Text>
+                                      ) : null}
+                                    </View>
+                                  </View>
+                                ))}
+                              </View>
+                            ) : null}
+                          </>
+                        )}
                       </View>
                     )}
                   </Card>

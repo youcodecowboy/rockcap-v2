@@ -39,6 +39,141 @@ export const getByClient = query({
 });
 
 /**
+ * Get all meetings for a client, merged with MEETING_NOTE activities (e.g. Fireflies
+ * transcripts synced from HubSpot). Each row carries a `source` discriminator:
+ *   - 'native'    → row from the `meetings` table (full structured shape)
+ *   - 'fireflies' → derived from an MEETING_NOTE activity (adapted to meeting-row shape)
+ *
+ * Fireflies-derived rows use synthetic `_id` values prefixed with `activity-` so the
+ * client can still key lists by `_id` without colliding with real meeting doc IDs.
+ * Server-side sort by date desc is correct regardless of origin.
+ *
+ * Kept separate from `getByClient` so other callers that expect only native meetings
+ * (e.g. unverified-meetings flows) are unaffected.
+ */
+export const getByClientIncludingMeetingNotes = query({
+  args: {
+    clientId: v.id("clients"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // 1. Native meetings (existing behaviour)
+    const nativeMeetings = await ctx.db
+      .query("meetings")
+      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    const nativeRows = nativeMeetings.map((m) => ({
+      ...m,
+      source: "native" as const,
+    }));
+
+    // 2. MEETING_NOTE activities — resolve via companies promoted to this client,
+    //    then pull activities keyed to each company via the `by_company` index.
+    const companies = await ctx.db
+      .query("companies")
+      .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
+      .collect();
+
+    const activityRows = [] as Array<{
+      _id: string;
+      _creationTime: number;
+      source: "fireflies";
+      clientId: typeof args.clientId;
+      projectId: undefined;
+      title: string;
+      meetingDate: string;
+      meetingType: undefined;
+      attendees: Array<{ name: string }>;
+      summary: string;
+      keyPoints: never[];
+      decisions: never[];
+      actionItems: never[];
+      sourceDocumentId: undefined;
+      sourceDocumentName: undefined;
+      extractionConfidence: undefined;
+      verified: boolean;
+      createdBy: undefined;
+      tags: undefined;
+      notes: undefined;
+      createdAt: string;
+      updatedAt: string;
+      // Fireflies-specific passthroughs
+      transcriptUrl: string | undefined;
+      fullBody: string | undefined;
+      bodyPreview: string | undefined;
+      durationMinutes: number | undefined;
+      sourceIntegration: string | undefined;
+      activityId: string;
+    }>;
+
+    if (companies.length > 0) {
+      const perCompany = await Promise.all(
+        companies.map((c) =>
+          ctx.db
+            .query("activities")
+            .withIndex("by_company", (q) => q.eq("companyId", c._id))
+            .collect(),
+        ),
+      );
+      const flatActivities = perCompany.flat();
+      const meetingNotes = flatActivities.filter(
+        (a) => a.activityType === "MEETING_NOTE",
+      );
+
+      for (const a of meetingNotes) {
+        const attendees = (a.toEmails ?? []).map((email) => ({ name: email }));
+        activityRows.push({
+          _id: `activity-${String(a._id)}`,
+          _creationTime: a._creationTime,
+          source: "fireflies",
+          clientId: args.clientId,
+          projectId: undefined,
+          title: a.subject || "Call transcript",
+          meetingDate: a.activityDate,
+          meetingType: undefined,
+          attendees,
+          summary: a.bodyPreview ?? "",
+          keyPoints: [],
+          decisions: [],
+          actionItems: [],
+          sourceDocumentId: undefined,
+          sourceDocumentName: undefined,
+          extractionConfidence: undefined,
+          verified: true,
+          createdBy: undefined,
+          tags: undefined,
+          notes: undefined,
+          createdAt: a.createdAt,
+          updatedAt: a.updatedAt,
+          // Fireflies-specific passthroughs
+          transcriptUrl: a.transcriptUrl,
+          fullBody: a.bodyHtml,
+          bodyPreview: a.bodyPreview,
+          durationMinutes:
+            typeof a.duration === "number" && a.duration > 0
+              ? Math.round(a.duration / 60000)
+              : undefined,
+          sourceIntegration: a.sourceIntegration,
+          activityId: String(a._id),
+        });
+      }
+    }
+
+    // 3. Merge + sort newest-first by meetingDate
+    const merged = [...nativeRows, ...activityRows] as Array<
+      typeof nativeRows[number] | typeof activityRows[number]
+    >;
+    merged.sort(
+      (a, b) =>
+        new Date(b.meetingDate).getTime() - new Date(a.meetingDate).getTime(),
+    );
+
+    return args.limit ? merged.slice(0, args.limit) : merged;
+  },
+});
+
+/**
  * Get all meetings for a project, sorted by date (newest first)
  */
 export const getByProject = query({
