@@ -53,6 +53,7 @@ import type * as googleCalendar from "../googleCalendar.js";
 import type * as googleCalendarLog from "../googleCalendarLog.js";
 import type * as googleCalendarSync from "../googleCalendarSync.js";
 import type * as hubspotSync from "../hubspotSync.js";
+import type * as hubspotSync__debug from "../hubspotSync/_debug.js";
 import type * as hubspotSync_activities from "../hubspotSync/activities.js";
 import type * as hubspotSync_archive from "../hubspotSync/archive.js";
 import type * as hubspotSync_backlink from "../hubspotSync/backlink.js";
@@ -176,6 +177,7 @@ declare const fullApi: ApiFromModules<{
   googleCalendarLog: typeof googleCalendarLog;
   googleCalendarSync: typeof googleCalendarSync;
   hubspotSync: typeof hubspotSync;
+  "hubspotSync/_debug": typeof hubspotSync__debug;
   "hubspotSync/activities": typeof hubspotSync_activities;
   "hubspotSync/archive": typeof hubspotSync_archive;
   "hubspotSync/backlink": typeof hubspotSync_backlink;
