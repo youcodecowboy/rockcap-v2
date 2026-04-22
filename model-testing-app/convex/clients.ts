@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
@@ -142,6 +142,66 @@ async function bootstrapNewClient(
     clientType,
   });
 }
+
+// ── Backfill (one-off) ──────────────────────────────────────────
+//
+// Mobile-created clients from before commit 0b52853 (2026-04-20) were
+// inserted via createWithPromotion without hitting the bootstrap helper,
+// so they have no rows in clientFolders (and no intelligence / checklist
+// init). These two functions power scripts/backfill-client-folders.ts —
+// the query enumerates candidates, the mutation safely re-runs bootstrap
+// for one client at a time.
+
+export const listMissingFolders = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    // Pull all live clients first; join against clientFolders rather
+    // than doing N queries. Table size is small (~hundreds), so
+    // .collect() on both is fine for a one-off backfill.
+    const allClients = await ctx.db
+      .query("clients")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+    const allFolders = await ctx.db.query("clientFolders").collect();
+    const clientsWithFolders = new Set(
+      allFolders.map((f) => String(f.clientId)),
+    );
+    return allClients
+      .filter((c) => !clientsWithFolders.has(String(c._id)))
+      .map((c) => ({
+        clientId: c._id,
+        name: c.name,
+        type: c.type ?? "borrower",
+        status: c.status ?? "unknown",
+        createdAt: c.createdAt,
+        hubspotCompanyId: (c as any).hubspotCompanyId,
+      }));
+  },
+});
+
+export const backfillClientBootstrap = internalMutation({
+  args: { clientId: v.id("clients") },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    | { bootstrapped: true }
+    | { skipped: "not_found" | "folders_exist" | "deleted" }
+  > => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return { skipped: "not_found" };
+    if ((client as any).isDeleted === true) return { skipped: "deleted" };
+    // Idempotency: if any folders already exist for this client, treat
+    // it as already-bootstrapped. Prevents duplicate inserts on re-run.
+    const anyFolder = await ctx.db
+      .query("clientFolders")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .first();
+    if (anyFolder) return { skipped: "folders_exist" };
+    await bootstrapNewClient(ctx, args.clientId, client.type);
+    return { bootstrapped: true };
+  },
+});
 
 // Mutation: Create client
 export const create = mutation({
