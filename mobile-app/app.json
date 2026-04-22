@@ -22,6 +22,9 @@
         "NSLocationWhenInUseUsageDescription": "RockCap uses your location to tag site photos with GPS coordinates"
       }
     },
+    "android": {
+      "package": "com.rockcap.mobile"
+    },
     "plugins": [
       "expo-router",
       "expo-secure-store",
