@@ -1,7 +1,7 @@
 # Mobile client profile — rich creation flows (Notes / Tasks / Projects / Flags)
 
 Created: 2026-04-18
-Status: queued
+Status: active
 Tags: #mobile #ux #feature
 Source:
   - - 2026-04-18 — Notes tab on client profile pages is just a small text input, not the real Notion-style rich editor — tapping should open a full note in the proper editor experience
