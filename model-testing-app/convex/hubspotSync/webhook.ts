@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { internal } from '../_generated/api';
-import { internalAction, internalMutation } from '../_generated/server';
+import { internalAction, internalMutation, mutation } from '../_generated/server';
 
 /**
  * HubSpot webhook event processing.
@@ -42,8 +42,13 @@ function dispatchFor(
  * Thin mutation called by the webhook handler. Writes an event-log row
  * (dedupe-keyed on eventId so HubSpot redeliveries no-op) and schedules
  * the action to run immediately.
+ *
+ * Exported as `mutation` (not `internalMutation`) because it's invoked via
+ * fetchMutation from the Next.js /api/hubspot/webhook route — HubSpot's
+ * signature check gates access, so no Convex-side auth needed. All other
+ * functions in this file remain internal.
  */
-export const enqueueWebhookEvent = internalMutation({
+export const enqueueWebhookEvent = mutation({
   args: {
     subscriptionType: v.string(),
     objectType: v.string(),
