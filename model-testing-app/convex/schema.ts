@@ -3424,6 +3424,10 @@ export default defineSchema({
     scope: v.string(),
     connectedAt: v.string(),
     connectedEmail: v.string(),
+    // Set to true when a refresh returns invalid_grant. Sync skips the user;
+    // card surfaces a "Reconnect Google Calendar" state. Cleared on next
+    // successful saveTokens (i.e., on re-connect).
+    needsReconnect: v.optional(v.boolean()),
   })
     .index("by_user", ["userId"]),
 
@@ -3434,9 +3438,39 @@ export default defineSchema({
     resourceId: v.string(),
     expiration: v.string(),
     syncToken: v.string(),
+    // Per-channel opaque token (32-byte hex). Generated at watchCalendar
+    // time and passed to Google's channels.watch `token` field. Google
+    // returns it in every webhook as `x-goog-channel-token`. The webhook
+    // route compares the incoming header to this stored value to
+    // authenticate the callback. Optional so existing channels registered
+    // pre-change keep reading; those users just need to reconnect (or wait
+    // for the natural ~7-day expiration) to gain auth.
+    token: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
     .index("by_channel", ["channelId"]),
+
+  // Auto-sync run log — one row per sync invocation (webhook, cron, or manual).
+  // Pruned daily by internal.googleCalendarLog.pruneSyncLog (rows > 14 days).
+  googleCalendarSyncLog: defineTable({
+    userId: v.id("users"),
+    ranAt: v.string(),     // ISO timestamp
+    trigger: v.union(
+      v.literal("webhook"),
+      v.literal("cron"),
+      v.literal("manual"),
+    ),
+    status: v.union(
+      v.literal("ok"),
+      v.literal("error"),
+      v.literal("skipped"),
+    ),
+    eventsSynced: v.optional(v.number()),
+    durationMs: v.optional(v.number()),
+    error: v.optional(v.string()),
+  })
+    .index("by_user_ran_at", ["userId", "ranAt"])
+    .index("by_ran_at", ["ranAt"]),
 
   // Daily AI-generated briefings — one per user per day
   dailyBriefs: defineTable({
