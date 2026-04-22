@@ -49,6 +49,7 @@ import BeauhurstMiniCard from '@/components/client/BeauhurstMiniCard';
 import ClassificationCard from '@/components/client/ClassificationCard';
 import LinkContactModal from '@/components/clients/LinkContactModal';
 import TaskCreationFlow from '@/components/TaskCreationFlow';
+import FlagCreationSheet from '@/components/FlagCreationSheet';
 import DealCard from '@/components/deals/DealCard';
 import DealDetailSheet from '@/components/deals/DealDetailSheet';
 import ActivityCard from '@/components/activity/ActivityCard';
@@ -1426,10 +1427,8 @@ export default function ClientDetailScreen() {
   // Tasks creation modal
   const [showTaskCreation, setShowTaskCreation] = useState(false);
 
-  // Flags form
-  const [showFlagForm, setShowFlagForm] = useState(false);
-  const [flagNote, setFlagNote] = useState('');
-  const [flagPriority, setFlagPriority] = useState<'normal' | 'urgent'>('normal');
+  // Flags creation sheet
+  const [showFlagSheet, setShowFlagSheet] = useState(false);
 
   // ---------- Queries ----------
   const skip = !isAuthenticated || !clientId;
@@ -1545,7 +1544,6 @@ export default function ClientDetailScreen() {
   // ---------- Mutations ----------
   const completeTask = useMutation(api.tasks.complete);
   const updateChecklistStatus = useMutation(api.knowledgeLibrary.updateItemStatus);
-  const createFlag = useMutation(api.flags.create);
   const replyToFlag = useMutation(api.flags.reply);
   const updateStageNote = useMutation(api.clients.updateStageNote);
 
@@ -1705,24 +1703,6 @@ export default function ClientDetailScreen() {
       await updateChecklistStatus({ checklistItemId: itemId as any, status: next });
     } catch (e) {
       console.error('Failed to update checklist status:', e);
-    }
-  };
-
-  const handleCreateFlag = async () => {
-    if (!flagNote.trim()) return;
-    try {
-      await createFlag({
-        entityType: 'client',
-        entityId: clientId!,
-        note: flagNote.trim(),
-        priority: flagPriority,
-        clientId: clientId as any,
-      });
-      setFlagNote('');
-      setFlagPriority('normal');
-      setShowFlagForm(false);
-    } catch (e) {
-      console.error('Failed to create flag:', e);
     }
   };
 
@@ -3027,60 +3007,12 @@ export default function ClientDetailScreen() {
 
             {/* New Flag button */}
             <TouchableOpacity
-              onPress={() => setShowFlagForm(!showFlagForm)}
+              onPress={() => setShowFlagSheet(true)}
               className="bg-m-accent rounded-lg py-2.5 items-center flex-row justify-center gap-2"
             >
               <Flag size={16} color={colors.textOnBrand} />
               <Text className="text-sm font-medium text-m-text-on-brand">New Flag</Text>
             </TouchableOpacity>
-
-            {showFlagForm && (
-              <Card>
-                <TextInput
-                  value={flagNote}
-                  onChangeText={setFlagNote}
-                  placeholder="Describe the flag..."
-                  placeholderTextColor={colors.textPlaceholder}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                  className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-2 mb-2 min-h-[60px]"
-                />
-                <View className="flex-row items-center gap-2 mb-3">
-                  <Text className="text-xs text-m-text-tertiary">Priority:</Text>
-                  <TouchableOpacity
-                    onPress={() => setFlagPriority('normal')}
-                    className={`px-3 py-1 rounded-full ${flagPriority === 'normal' ? 'bg-m-accent' : 'bg-m-bg-subtle'}`}
-                  >
-                    <Text className={`text-xs ${flagPriority === 'normal' ? 'text-m-text-on-brand' : 'text-m-text-secondary'}`}>
-                      Normal
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setFlagPriority('urgent')}
-                    className={`px-3 py-1 rounded-full ${flagPriority === 'urgent' ? 'bg-m-error' : 'bg-m-bg-subtle'}`}
-                  >
-                    <Text className={`text-xs ${flagPriority === 'urgent' ? 'text-white' : 'text-m-text-secondary'}`}>
-                      Urgent
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <View className="flex-row gap-2">
-                  <TouchableOpacity
-                    onPress={handleCreateFlag}
-                    className="bg-m-accent rounded-lg py-2 px-4 flex-1 items-center"
-                  >
-                    <Text className="text-sm font-medium text-m-text-on-brand">Create Flag</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => { setShowFlagForm(false); setFlagNote(''); setFlagPriority('normal'); }}
-                    className="bg-m-bg-subtle rounded-lg py-2 px-4 items-center"
-                  >
-                    <Text className="text-sm text-m-text-secondary">Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </Card>
-            )}
 
             {clientFlags && clientFlags.length > 0 ? (
               clientFlags.map((f: any) => (
@@ -3120,6 +3052,12 @@ export default function ClientDetailScreen() {
         visible={showTaskCreation}
         onClose={() => setShowTaskCreation(false)}
         prefilledClientId={clientId as any}
+      />
+
+      <FlagCreationSheet
+        visible={showFlagSheet}
+        onClose={() => setShowFlagSheet(false)}
+        clientId={clientId as any}
       />
     </View>
   );
