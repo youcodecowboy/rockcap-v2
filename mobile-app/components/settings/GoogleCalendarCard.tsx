@@ -74,12 +74,23 @@ export default function GoogleCalendarCard() {
     if (!apiBase) return;
     try {
       const token = await getToken({ template: 'convex' });
-      await fetch(`${apiBase}/api/google/setup-sync`, {
+      const res = await fetch(`${apiBase}/api/google/setup-sync`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (!res.ok) {
+        console.warn('Initial sync failed with status', res.status);
+        setStatusMessage({
+          kind: 'error',
+          text: 'Connected, but initial sync failed — tap Sync Now to retry',
+        });
+      }
     } catch (err) {
       console.warn('Initial sync failed:', err);
+      setStatusMessage({
+        kind: 'error',
+        text: 'Connected, but initial sync failed — tap Sync Now to retry',
+      });
     }
   }
 
