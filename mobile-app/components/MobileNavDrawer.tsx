@@ -23,7 +23,7 @@ const NAV_ITEMS = [
   { label: 'Tasks', icon: CheckSquare, route: '/tasks' },
   { label: 'Notes', icon: FileText, route: '/notes' },
   { label: 'Contacts', icon: Users, route: '/contacts' },
-  { label: 'Settings', icon: Settings, route: null },
+  { label: 'Settings', icon: Settings, route: '/settings' },
 ];
 
 export default function MobileNavDrawer({ visible, onClose }: NavDrawerProps) {
