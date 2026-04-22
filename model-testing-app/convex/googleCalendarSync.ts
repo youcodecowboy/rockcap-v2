@@ -343,7 +343,16 @@ async function renewChannelIfExpiring(ctx: any, userId: Id<"users">) {
     internal.googleCalendar.getTokensByUserId,
     { userId },
   );
-  if (!tokens) return;
+  if (!tokens) {
+    await ctx.runMutation(internal.googleCalendarLog.insertSyncLog, {
+      userId,
+      ranAt: new Date().toISOString(),
+      trigger: "cron" as const,
+      status: "error" as const,
+      error: "channel_renewal: no tokens row (user may have disconnected)",
+    });
+    return;
+  }
 
   const accessToken = tokens.accessToken;
   // Best-effort stop of the expiring channel — ignore errors
@@ -394,9 +403,17 @@ async function renewChannelIfExpiring(ctx: any, userId: Id<"users">) {
     },
   );
   if (!watchRes.ok) {
+    const errText = await watchRes.text();
     console.warn(
-      `[renewChannel] watchCalendar failed for user ${userId}: ${await watchRes.text()}`,
+      `[renewChannel] watchCalendar failed for user ${userId}: ${errText}`,
     );
+    await ctx.runMutation(internal.googleCalendarLog.insertSyncLog, {
+      userId,
+      ranAt: new Date().toISOString(),
+      trigger: "cron" as const,
+      status: "error" as const,
+      error: `channel_renewal: watch failed (${watchRes.status}): ${errText}`.slice(0, 500),
+    });
     return;
   }
   const watch: { resourceId: string; expiration: string } = await watchRes.json();
