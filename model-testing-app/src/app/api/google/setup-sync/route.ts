@@ -1,13 +1,29 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedConvexClient, requireAuth } from '@/lib/auth';
+import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../../convex/_generated/api';
 import { refreshAccessToken } from '@/lib/google/oauth';
 import { listEvents, watchCalendar } from '@/lib/google/calendar';
 import crypto from 'crypto';
 
-export async function POST() {
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || '';
+
+async function getClientForRequest(request: Request): Promise<ConvexHttpClient> {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    if (!convexUrl) throw new Error('Missing NEXT_PUBLIC_CONVEX_URL');
+    const client = new ConvexHttpClient(convexUrl);
+    client.setAuth(token);
+    return client;
+  }
+  // Fallback: cookie-based auth (web)
+  return getAuthenticatedConvexClient();
+}
+
+export async function POST(request: Request) {
   try {
-    const convex = await getAuthenticatedConvexClient();
+    const convex = await getClientForRequest(request);
     await requireAuth(convex);
 
     const tokens = await convex.query(api.googleCalendar.getTokens, {});
