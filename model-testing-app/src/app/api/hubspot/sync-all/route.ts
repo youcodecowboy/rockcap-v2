@@ -459,6 +459,8 @@ export async function POST(request: NextRequest) {
             toEmails: eng.toEmails,
             outcome: eng.outcome,
             metadata: eng.metadata,
+            sourceIntegration: eng.sourceIntegration,
+            transcriptUrl: eng.transcriptUrl,
             hubspotCompanyId,
             hubspotContactIds: eng.contactIds,
             hubspotDealIds: eng.dealIds,
