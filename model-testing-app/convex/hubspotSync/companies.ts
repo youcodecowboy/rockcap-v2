@@ -129,8 +129,11 @@ export const syncCompanyFromHubSpot = mutation({
         lastHubSpotSync: new Date().toISOString(),
         metadata,
         updatedAt: updatedAtDate,
+        // Clear archive flag if HubSpot restored this record. undefined in
+        // a Convex patch removes the field.
+        archivedAt: undefined,
       };
-      
+
       // Only include fields that have actual values
       if (cleanedCompanyData.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
       if (cleanedCompanyData.hubspotOwnerId) cleanData.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;
@@ -154,7 +157,7 @@ export const syncCompanyFromHubSpot = mutation({
       if (cleanedCompanyData.hubspotDealIds && cleanedCompanyData.hubspotDealIds.length > 0) {
         cleanData.hubspotDealIds = cleanedCompanyData.hubspotDealIds;
       }
-      
+
       await ctx.db.patch(existingByHubSpotId._id, cleanData);
       
       // Link contacts and deals
@@ -192,8 +195,11 @@ export const syncCompanyFromHubSpot = mutation({
         lastHubSpotSync: new Date().toISOString(),
         metadata,
         updatedAt: updatedAtDate,
+        // Clear archive flag if HubSpot restored this record. undefined in
+        // a Convex patch removes the field.
+        archivedAt: undefined,
       };
-      
+
       // Only include fields that have actual values
       if (cleanedCompanyData.lifecycleStageName) cleanData.hubspotLifecycleStageName = cleanedCompanyData.lifecycleStageName;
       if (cleanedCompanyData.hubspotOwnerId) cleanData.hubspotOwnerId = cleanedCompanyData.hubspotOwnerId;

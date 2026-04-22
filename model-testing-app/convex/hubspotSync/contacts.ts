@@ -141,8 +141,11 @@ export const syncContactFromHubSpot = mutation({
         hubspotUrl: cleanArgs.hubspotUrl,
         lastHubSpotSync: new Date().toISOString(),
         updatedAt: updatedAtDate,
+        // Clear archive flag if HubSpot restored this record. undefined in
+        // a Convex patch removes the field.
+        archivedAt: undefined,
       };
-      
+
       // Only include fields that have actual values
       if (cleanArgs.lifecycleStage) updateData.hubspotLifecycleStage = cleanArgs.lifecycleStage;
       if (cleanArgs.lifecycleStageName) updateData.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
@@ -204,6 +207,9 @@ export const syncContactFromHubSpot = mutation({
           hubspotUrl: cleanArgs.hubspotUrl,
           lastHubSpotSync: new Date().toISOString(),
           updatedAt: updatedAtDate,
+          // Clear archive flag if HubSpot restored this record. undefined in
+          // a Convex patch removes the field.
+          archivedAt: undefined,
         };
         
         // Only include fields that have actual values
@@ -260,8 +266,11 @@ export const syncContactFromHubSpot = mutation({
         hubspotUrl: cleanArgs.hubspotUrl,
         lastHubSpotSync: new Date().toISOString(),
         updatedAt: updatedAtDate,
+        // Clear archive flag if HubSpot restored this record. undefined in
+        // a Convex patch removes the field.
+        archivedAt: undefined,
       };
-      
+
       // Only include fields that have actual values
       if (cleanArgs.lifecycleStage) updateData.hubspotLifecycleStage = cleanArgs.lifecycleStage;
       if (cleanArgs.lifecycleStageName) updateData.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
@@ -403,13 +412,16 @@ export const syncLeadFromHubSpot = mutation({
         name: cleanArgs.name,
         hubspotUrl: cleanArgs.hubspotUrl,
         lastHubSpotSync: new Date().toISOString(),
+        // Clear archive flag if HubSpot restored this record. undefined in
+        // a Convex patch removes the field.
+        archivedAt: undefined,
       };
-      
+
       if (cleanArgs.email) updateData.email = cleanArgs.email;
       if (cleanArgs.phone) updateData.phone = cleanArgs.phone;
       if (cleanArgs.company) updateData.company = cleanArgs.company;
       if (cleanArgs.role) updateData.role = cleanArgs.role;
-      
+
       await ctx.db.patch(existingContact._id, updateData);
       contactId = existingContact._id;
     } else {
@@ -427,8 +439,11 @@ export const syncLeadFromHubSpot = mutation({
             email: cleanArgs.email,
             hubspotUrl: cleanArgs.hubspotUrl,
             lastHubSpotSync: new Date().toISOString(),
+            // Clear archive flag if HubSpot restored this record. undefined in
+            // a Convex patch removes the field.
+            archivedAt: undefined,
           };
-          
+
           const phone = cleanArgs.phone || existingByEmail.phone;
           const company = cleanArgs.company || existingByEmail.company;
           const role = cleanArgs.role || existingByEmail.role;
@@ -455,8 +470,11 @@ export const syncLeadFromHubSpot = mutation({
             name: cleanArgs.name,
             hubspotUrl: cleanArgs.hubspotUrl,
             lastHubSpotSync: new Date().toISOString(),
+            // Clear archive flag if HubSpot restored this record. undefined in
+            // a Convex patch removes the field.
+            archivedAt: undefined,
           };
-          
+
           const email = cleanArgs.email || existingByName.email;
           const phone = cleanArgs.phone || existingByName.phone;
           const company = cleanArgs.company || existingByName.company;

@@ -157,8 +157,11 @@ export const syncDealToDealsTable = mutation({
         lastHubSpotSync: new Date().toISOString(),
         metadata,
         updatedAt: updatedAtDate,
+        // Clear archive flag if HubSpot restored this record. undefined in
+        // a Convex patch removes the field.
+        archivedAt: undefined,
       };
-      
+
       // Only include fields that have actual values
       if (cleanArgs.amount !== undefined && cleanArgs.amount !== null && !isNaN(cleanArgs.amount)) {
         updateData.amount = cleanArgs.amount;
