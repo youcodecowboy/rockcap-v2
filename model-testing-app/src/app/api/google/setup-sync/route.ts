@@ -85,12 +85,13 @@ export async function POST(request: Request) {
     const syncToken = eventsResponse.nextSyncToken || '';
 
     const channelId = crypto.randomUUID();
+    const channelToken = crypto.randomBytes(32).toString('hex');
     const webhookUrl = `${process.env.GOOGLE_OAUTH_REDIRECT_URI?.replace('/api/google/callback', '')}/api/google/webhook`;
 
     let resourceId = '';
     let expiration = '';
     try {
-      const watchResponse = await watchCalendar(accessToken, webhookUrl, channelId);
+      const watchResponse = await watchCalendar(accessToken, webhookUrl, channelId, channelToken);
       resourceId = watchResponse.resourceId;
       expiration = watchResponse.expiration;
     } catch (err) {
@@ -103,6 +104,7 @@ export async function POST(request: Request) {
         resourceId,
         expiration,
         syncToken,
+        token: channelToken,
       });
     }
 

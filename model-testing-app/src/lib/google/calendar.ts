@@ -105,6 +105,7 @@ export async function watchCalendar(
   accessToken: string,
   webhookUrl: string,
   channelId: string,
+  token: string,
 ): Promise<WatchResponse> {
   const res = await calendarFetch('/calendars/primary/events/watch', accessToken, {
     method: 'POST',
@@ -112,6 +113,7 @@ export async function watchCalendar(
       id: channelId,
       type: 'web_hook',
       address: webhookUrl,
+      token,  // Google passes this back as `x-goog-channel-token` on every webhook
     }),
   });
   return res.json();
