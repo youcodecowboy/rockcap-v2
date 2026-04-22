@@ -1,4 +1,5 @@
 import { View, Text, ScrollView } from 'react-native';
+import GoogleCalendarCard from '@/components/settings/GoogleCalendarCard';
 
 export default function SettingsScreen() {
   return (
@@ -7,7 +8,7 @@ export default function SettingsScreen() {
         <Text className="text-xs text-m-text-tertiary font-semibold uppercase mb-3">
           Integrations
         </Text>
-        {/* GoogleCalendarCard inserted in Task 6 */}
+        <GoogleCalendarCard />
       </View>
     </ScrollView>
   );
