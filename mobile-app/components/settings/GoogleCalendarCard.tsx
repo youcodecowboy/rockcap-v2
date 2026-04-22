@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Calendar } from 'lucide-react-native';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { useGoogleCalendarAuth } from '@/lib/googleCalendarAuth';
+import { resolveApiBase } from '@/lib/apiBase';
 import { colors } from '@/lib/theme';
 
 export default function GoogleCalendarCard() {
@@ -68,11 +69,9 @@ export default function GoogleCalendarCard() {
     return () => clearTimeout(t);
   }, [statusMessage]);
 
-  const apiBase = process.env.EXPO_PUBLIC_API_BASE_URL;
-
   async function triggerInitialSync() {
-    if (!apiBase) return;
     try {
+      const apiBase = resolveApiBase();
       const token = await getToken({ template: 'convex' });
       const res = await fetch(`${apiBase}/api/google/setup-sync`, {
         method: 'POST',
@@ -110,13 +109,10 @@ export default function GoogleCalendarCard() {
   }
 
   async function handleSyncNow() {
-    if (!apiBase) {
-      setStatusMessage({ kind: 'error', text: 'API base URL not configured' });
-      return;
-    }
     setSyncing(true);
     setStatusMessage(null);
     try {
+      const apiBase = resolveApiBase();
       const token = await getToken({ template: 'convex' });
       const res = await fetch(`${apiBase}/api/google/setup-sync`, {
         method: 'POST',
