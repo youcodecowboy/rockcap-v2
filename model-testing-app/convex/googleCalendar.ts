@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation, action } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { api } from "./_generated/api";
 
 // ── Auth helper ──────────────────────────────────────────────
@@ -33,6 +33,9 @@ export const saveTokens = mutation({
     if (existing) {
       await ctx.db.delete(existing._id);
     }
+    // Inserting a new row without needsReconnect effectively clears the flag
+    // on re-connect — the old row (including any lingering flag) was deleted
+    // above and the new one omits the field.
     return ctx.db.insert("googleCalendarTokens", {
       userId: user._id,
       accessToken: args.accessToken,
@@ -97,6 +100,7 @@ export const saveChannel = mutation({
     resourceId: v.string(),
     expiration: v.string(),
     syncToken: v.string(),
+    token: v.string(),  // per-channel auth token (32-byte hex)
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
@@ -113,6 +117,7 @@ export const saveChannel = mutation({
       resourceId: args.resourceId,
       expiration: args.expiration,
       syncToken: args.syncToken,
+      token: args.token,
     });
   },
 });
@@ -167,7 +172,12 @@ export const getSyncStatus = query({
       .withIndex("by_user", (q: any) => q.eq("userId", user._id))
       .first();
     if (!tokens) {
-      return { isConnected: false, connectedEmail: null, connectedAt: null };
+      return {
+        isConnected: false,
+        connectedEmail: null,
+        connectedAt: null,
+        needsReconnect: false,
+      };
     }
     const channel = await ctx.db
       .query("googleCalendarChannels")
@@ -178,6 +188,7 @@ export const getSyncStatus = query({
       connectedEmail: tokens.connectedEmail,
       connectedAt: tokens.connectedAt,
       channelExpiration: channel?.expiration ?? null,
+      needsReconnect: tokens.needsReconnect === true,
     };
   },
 });
@@ -434,5 +445,53 @@ export const exchangeMobileCode = action({
     });
 
     return { success: true, email };
+  },
+});
+
+// Flag a user's tokens row as needing reconnect. Called by the sync action
+// when a refresh_token exchange returns invalid_grant.
+export const markNeedsReconnect = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+    if (!tokens) return;
+    await ctx.db.patch(tokens._id, { needsReconnect: true });
+  },
+});
+
+// Internal query for the cron — returns all userIds with a connected calendar
+// that is NOT flagged needsReconnect. Called from autoSyncAll.
+export const listActiveSyncUserIds = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("googleCalendarTokens").collect();
+    return rows
+      .filter((r: any) => r.needsReconnect !== true)
+      .map((r: any) => r.userId as any);
+  },
+});
+
+// Internal variant of updateAccessToken that accepts userId directly.
+// Used by syncForUser — the action runs from cron/webhook contexts
+// without a Clerk identity, so the identity-based variant can't be used.
+export const updateAccessTokenByUserId = internalMutation({
+  args: {
+    userId: v.id("users"),
+    accessToken: v.string(),
+    expiresAt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+    if (!tokens) throw new Error("No Google Calendar connection found");
+    await ctx.db.patch(tokens._id, {
+      accessToken: args.accessToken,
+      expiresAt: args.expiresAt,
+    });
   },
 });
