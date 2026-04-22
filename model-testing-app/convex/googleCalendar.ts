@@ -383,7 +383,16 @@ export const exchangeMobileCode = action({
 
     if (!tokenRes.ok) {
       const errText = await tokenRes.text();
-      throw new Error(`Google token exchange failed: ${errText}`);
+      console.error("Google token exchange failed:", errText);
+      let message = "Google token exchange failed";
+      try {
+        const errJson = JSON.parse(errText) as { error?: string; error_description?: string };
+        if (errJson.error_description) message = `Google token exchange failed: ${errJson.error_description}`;
+        else if (errJson.error) message = `Google token exchange failed: ${errJson.error}`;
+      } catch {
+        // non-JSON body — keep the generic message
+      }
+      throw new Error(message);
     }
 
     const tokens: {
