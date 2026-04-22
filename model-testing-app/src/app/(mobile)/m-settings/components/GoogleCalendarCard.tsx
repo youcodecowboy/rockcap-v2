@@ -61,7 +61,11 @@ export default function GoogleCalendarCard() {
             <div className="text-[14px] font-semibold text-[var(--m-text-primary)]">
               Google Calendar
             </div>
-            {syncStatus.isConnected ? (
+            {syncStatus.isConnected && syncStatus.needsReconnect ? (
+              <div className="text-[12px] text-[var(--m-text-tertiary)] mt-0.5">
+                Reconnect {syncStatus.connectedEmail} to resume sync
+              </div>
+            ) : syncStatus.isConnected ? (
               <div className="text-[12px] text-[var(--m-text-tertiary)] mt-0.5">
                 Connected as {syncStatus.connectedEmail}
               </div>
