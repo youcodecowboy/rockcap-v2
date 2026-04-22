@@ -1,0 +1,24 @@
+{
+  "uid": "rockcap-webhooks-app",
+  "type": "app",
+  "config": {
+    "name": "RockCap Webhooks",
+    "description": "Owns webhook subscriptions that power real-time CRM + activity sync into the RockCap Next.js app. API calls are handled by a separate Service Key — this app only receives events.",
+    "distribution": "private",
+    "auth": {
+      "type": "static",
+      "requiredScopes": [
+        "crm.objects.companies.read",
+        "crm.objects.contacts.read",
+        "crm.objects.deals.read"
+      ],
+      "optionalScopes": [],
+      "conditionallyRequiredScopes": []
+    },
+    "permittedUrls": {
+      "fetch": [],
+      "iframe": [],
+      "img": []
+    }
+  }
+}
