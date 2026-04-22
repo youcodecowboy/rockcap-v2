@@ -23,6 +23,7 @@
         { "subscriptionType": "contact.propertyChange", "propertyName": "lifecyclestage", "active": true },
         { "subscriptionType": "contact.propertyChange", "propertyName": "jobtitle", "active": true },
         { "subscriptionType": "contact.propertyChange", "propertyName": "hubspot_owner_id", "active": true },
+        { "subscriptionType": "contact.propertyChange", "propertyName": "notes_last_updated", "active": true },
         { "subscriptionType": "contact.deletion", "active": true },
 
         { "subscriptionType": "deal.creation", "active": true },
@@ -32,6 +33,11 @@
         { "subscriptionType": "deal.propertyChange", "propertyName": "dealname", "active": true },
         { "subscriptionType": "deal.propertyChange", "propertyName": "pipeline", "active": true },
         { "subscriptionType": "deal.propertyChange", "propertyName": "hubspot_owner_id", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "notes_last_updated", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "description", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "hs_priority", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "hs_deal_stage_probability", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "hs_next_step", "active": true },
         { "subscriptionType": "deal.deletion", "active": true }
       ],
       "hubEvents": []
