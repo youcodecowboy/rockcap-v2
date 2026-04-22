@@ -18,7 +18,7 @@ export async function POST() {
       }
     }
 
-    await convex.mutation(api.googleCalendar.disconnect, {});
+    await convex.action(api.googleCalendar.disconnect, {});
 
     return NextResponse.json({ success: true });
   } catch (error) {

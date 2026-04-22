@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 // ── Auth helper ──────────────────────────────────────────────
 async function getAuthenticatedUser(ctx: any) {
@@ -342,20 +342,52 @@ export const deleteByGoogleEventId = mutation({
 
 // ── Disconnect ───────────────────────────────────────────────
 
-export const disconnect = mutation({
+// Disconnect is an action (not a mutation) so it can call Google's
+// channels.stop HTTP endpoint before deleting local rows. Tells Google to
+// stop pushing webhooks to our endpoint; prevents the week-long tail of
+// rejected-by-401 webhook deliveries that the old mutation-only version
+// leaked.
+export const disconnect = action({
   args: {},
-  handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
-    const tokens = await ctx.db
-      .query("googleCalendarTokens")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
-      .first();
-    if (tokens) await ctx.db.delete(tokens._id);
-    const channel = await ctx.db
-      .query("googleCalendarChannels")
-      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
-      .first();
-    if (channel) await ctx.db.delete(channel._id);
+  handler: async (ctx): Promise<{ success: boolean }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    // Resolve userId + load tokens + channel BEFORE delete (so we can
+    // hit Google's channels.stop).
+    const lookup = await ctx.runQuery(
+      internal.googleCalendar.loadDisconnectContext,
+      {},
+    );
+    if (!lookup) {
+      return { success: true };
+    }
+    const { userId, tokens, channel } = lookup;
+
+    // Best-effort stop of the push channel — fire-and-forget. If it fails
+    // (network, 410, token expired) we still want the local disconnect to
+    // succeed.
+    if (tokens && channel) {
+      try {
+        await fetch("https://www.googleapis.com/calendar/v3/channels/stop", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${tokens.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: channel.channelId,
+            resourceId: channel.resourceId,
+          }),
+        });
+      } catch (err) {
+        console.warn("[disconnect] channels.stop failed:", err);
+      }
+    }
+
+    await ctx.runMutation(internal.googleCalendar.disconnectCleanup, {
+      userId,
+    });
     return { success: true };
   },
 });
@@ -552,5 +584,48 @@ export const replaceChannel = internalMutation({
       syncToken: args.syncToken,
       token: args.token,
     });
+  },
+});
+
+// Internal mutation used by the disconnect action after the Google
+// channels.stop call. Deletes both token and channel rows for the user.
+export const disconnectCleanup = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+    if (tokens) await ctx.db.delete(tokens._id);
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+    if (channel) await ctx.db.delete(channel._id);
+    return { success: true };
+  },
+});
+
+// Internal query used ONLY by the disconnect action to grab everything
+// it needs in one hop (identity + tokens + channel).
+export const loadDisconnectContext = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) return null;
+    const tokens = await ctx.db
+      .query("googleCalendarTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    const channel = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    return { userId: user._id, tokens, channel };
   },
 });
