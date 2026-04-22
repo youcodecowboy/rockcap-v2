@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
-import { api } from '../../../../../convex/_generated/api';
+import { api, internal } from '../../../../../convex/_generated/api';
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
+const deployKey = process.env.CONVEX_DEPLOY_KEY;
+
+// One long-lived client for queries. The internal-action invocation
+// constructs its own client below so the auth surface is explicit.
+const convex = new ConvexHttpClient(convexUrl);
 
 export async function POST(request: NextRequest) {
   const channelId = request.headers.get('x-goog-channel-id');
+  const channelToken = request.headers.get('x-goog-channel-token');
   const resourceState = request.headers.get('x-goog-resource-state');
 
+  // Initial handshake ping — Google sends this right after watchCalendar.
+  // Return 200 immediately; nothing to sync yet.
   if (resourceState === 'sync') {
     return NextResponse.json({ ok: true });
   }
@@ -17,16 +25,59 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const channel = await convex.query(api.googleCalendar.getChannelByChannelId, { channelId });
+    const channel = await convex.query(
+      api.googleCalendar.getChannelByChannelId,
+      { channelId },
+    );
     if (!channel) {
+      // Channel row has been deleted (e.g., user disconnected). Return 404
+      // so Google stops retrying.
       return NextResponse.json({ error: 'Unknown channel' }, { status: 404 });
     }
 
-    console.log(`Webhook received for channel ${channelId}, state: ${resourceState}`);
+    // Per-channel token authentication. Channels registered before this
+    // change won't have a `token` field; accept them for a grace period
+    // but log so we can track the migration.
+    if (channel.token) {
+      if (!channelToken || channelToken !== channel.token) {
+        console.warn(
+          `[google/webhook] channel-token mismatch for ${channelId}`,
+        );
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    } else {
+      console.warn(
+        `[google/webhook] channel ${channelId} has no stored token — pre-migration channel, allowing`,
+      );
+    }
+
+    // Fire-and-forget: build a deploy-key client and invoke the internal
+    // sync action. Don't await — Google's webhook has a 10s timeout, and
+    // our action can take longer. The action writes its own log row so
+    // failures are still visible.
+    if (!deployKey) {
+      console.error('[google/webhook] CONVEX_DEPLOY_KEY is not set');
+      // Fall through to 200 — returning 5xx would cause Google to retry;
+      // we'd rather drop the event and let the next cron tick catch up.
+      return NextResponse.json({ ok: true });
+    }
+    const authedClient = new ConvexHttpClient(convexUrl);
+    authedClient.setAuth(deployKey);
+
+    // Fire without await. Any throw here is logged by the catch below.
+    authedClient
+      .action(internal.googleCalendarSync.syncForUser, {
+        userId: channel.userId,
+        trigger: 'webhook' as const,
+      })
+      .catch((err) =>
+        console.error('[google/webhook] syncForUser rejected:', err),
+      );
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error('Webhook error:', err);
+    console.error('[google/webhook] error:', err);
+    // Still return 200 so Google doesn't retry — the cron will catch up.
     return NextResponse.json({ ok: true });
   }
 }
