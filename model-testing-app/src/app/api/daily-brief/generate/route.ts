@@ -20,7 +20,7 @@ export async function POST() {
     // Gather all data in parallel
     const [
       tasks, metrics, events, flags, notifications, recentDocs,
-      clients, projects, hubspot,
+      clients, projects, hubspot, calendarStatus,
     ] = await Promise.all([
       convex.query(api.tasks.getByUser, { includeCreated: true, includeAssigned: true }),
       convex.query(api.tasks.getMetrics, {}),
@@ -31,7 +31,14 @@ export async function POST() {
       convex.query(api.clients.list, {}),
       convex.query(api.projects.list, {}),
       convex.query(api.hubspotSync.dailyBriefSummary, { sinceISO }),
+      convex.query(api.googleCalendar.getSyncStatus, {}),
     ]);
+
+    // Google Calendar reconnect warning — surfaces as a high-urgency
+    // attention item in the brief (see system prompt reconnect rule below).
+    const calendarNeedsReconnect =
+      calendarStatus?.isConnected === true &&
+      calendarStatus?.needsReconnect === true;
 
     // Build context for Claude
     const now = new Date();
@@ -77,7 +84,13 @@ export async function POST() {
     const clientMap = new Map((clients || []).map((c: any) => [c._id, c.name]));
     const resolveClient = (id: string) => clientMap.get(id) || 'Unknown';
 
-    const dataContext = `
+    const calendarWarningBlock = calendarNeedsReconnect
+      ? `⚠️ GOOGLE CALENDAR DISCONNECTED — the user's Google Calendar connection has expired. Event sync is paused until they reconnect in Settings → Integrations. This MUST appear as a high-urgency item in attentionNeeded.
+
+`
+      : '';
+
+    const dataContext = `${calendarWarningBlock}
 TODAY: ${todayStr}
 
 TASK METRICS:
@@ -222,7 +235,12 @@ RULES:
   notes on deals/contacts); surface standout engagements as activity recap
   items (use types hubspot_activity / hubspot_contacts / hubspot_deals).
   Note the "Notable engagements" list names specific subjects — prefer those
-  over bare counts when calling out attention.`;
+  over bare counts when calling out attention.
+- If the input begins with a ⚠️ GOOGLE CALENDAR DISCONNECTED block, include a
+  high-urgency item in attentionNeeded.items with type "flag", title
+  "Reconnect Google Calendar", context "Calendar sync is paused · reconnect
+  in Settings", and urgency "high". Lead the attentionNeeded.insight with a
+  reminder to reconnect before the day's meetings drift out of sync.`;
 
     const response = await anthropic.messages.create({
       model: MODEL,

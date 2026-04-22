@@ -65,6 +65,10 @@ interface GenerateBody {
     newContactsCount?: number;
     newContactNames?: string[];
   } | null;
+  // Google Calendar reconnect flag — mobile client derives this from
+  // api.googleCalendar.getSyncStatus and passes it in. Older clients that
+  // don't send this field simply skip the warning (safe fallback).
+  calendarNeedsReconnect?: boolean;
   timeZone?: string;
 }
 
@@ -82,6 +86,7 @@ export async function POST(request: NextRequest) {
       clients = [],
       projects = [],
       hubspot,
+      calendarNeedsReconnect = false,
     } = body ?? {};
 
     const now = new Date();
@@ -126,7 +131,13 @@ export async function POST(request: NextRequest) {
     const clientMap = new Map(clients.map((c: any) => [c._id, c.name]));
     const resolveClient = (id: string) => clientMap.get(id) || 'Unknown';
 
-    const dataContext = `
+    const calendarWarningBlock = calendarNeedsReconnect
+      ? `⚠️ GOOGLE CALENDAR DISCONNECTED — the user's Google Calendar connection has expired. Event sync is paused until they reconnect in Settings → Integrations. This MUST appear as a high-urgency item in attentionNeeded.
+
+`
+      : '';
+
+    const dataContext = `${calendarWarningBlock}
 TODAY: ${todayStr}
 SCOPE: ${scope}
 
@@ -274,7 +285,12 @@ RULES:
 - If there are no items for a section, return an empty items array with a positive insight like "All clear — nothing urgent"
 - Sort attention items by urgency (high first)
 - Sort schedule items chronologically
-- Only include activity recap items with count > 0`;
+- Only include activity recap items with count > 0
+- If the input begins with a ⚠️ GOOGLE CALENDAR DISCONNECTED block, include a
+  high-urgency item in attentionNeeded.items with type "flag", title
+  "Reconnect Google Calendar", context "Calendar sync is paused · reconnect
+  in Settings", and urgency "high". Lead the attentionNeeded.insight with a
+  reminder to reconnect before the day's meetings drift out of sync.`;
 
     const response = await anthropic.messages.create({
       model: MODEL,
