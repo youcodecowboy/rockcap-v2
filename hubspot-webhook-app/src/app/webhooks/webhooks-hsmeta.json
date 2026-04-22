@@ -7,33 +7,33 @@
       "maxConcurrentRequests": 10
     },
     "subscriptions": {
-      "crmObjects": [
-        { "subscriptionType": "object.creation", "objectType": "company", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "notes_last_updated", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "name", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "lifecyclestage", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "company", "propertyName": "hs_pipeline", "active": true },
-        { "subscriptionType": "object.deletion", "objectType": "company", "active": true },
+      "crmObjects": [],
+      "legacyCrmObjects": [
+        { "subscriptionType": "company.creation", "active": true },
+        { "subscriptionType": "company.propertyChange", "propertyName": "notes_last_updated", "active": true },
+        { "subscriptionType": "company.propertyChange", "propertyName": "name", "active": true },
+        { "subscriptionType": "company.propertyChange", "propertyName": "lifecyclestage", "active": true },
+        { "subscriptionType": "company.propertyChange", "propertyName": "hs_pipeline", "active": true },
+        { "subscriptionType": "company.deletion", "active": true },
 
-        { "subscriptionType": "object.creation", "objectType": "contact", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "email", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "firstname", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "lastname", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "lifecyclestage", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "jobtitle", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "contact", "propertyName": "hubspot_owner_id", "active": true },
-        { "subscriptionType": "object.deletion", "objectType": "contact", "active": true },
+        { "subscriptionType": "contact.creation", "active": true },
+        { "subscriptionType": "contact.propertyChange", "propertyName": "email", "active": true },
+        { "subscriptionType": "contact.propertyChange", "propertyName": "firstname", "active": true },
+        { "subscriptionType": "contact.propertyChange", "propertyName": "lastname", "active": true },
+        { "subscriptionType": "contact.propertyChange", "propertyName": "lifecyclestage", "active": true },
+        { "subscriptionType": "contact.propertyChange", "propertyName": "jobtitle", "active": true },
+        { "subscriptionType": "contact.propertyChange", "propertyName": "hubspot_owner_id", "active": true },
+        { "subscriptionType": "contact.deletion", "active": true },
 
-        { "subscriptionType": "object.creation", "objectType": "deal", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "dealstage", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "amount", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "closedate", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "dealname", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "pipeline", "active": true },
-        { "subscriptionType": "object.propertyChange", "objectType": "deal", "propertyName": "hubspot_owner_id", "active": true },
-        { "subscriptionType": "object.deletion", "objectType": "deal", "active": true }
+        { "subscriptionType": "deal.creation", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "dealstage", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "amount", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "closedate", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "dealname", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "pipeline", "active": true },
+        { "subscriptionType": "deal.propertyChange", "propertyName": "hubspot_owner_id", "active": true },
+        { "subscriptionType": "deal.deletion", "active": true }
       ],
-      "legacyCrmObjects": [],
       "hubEvents": []
     }
   }
