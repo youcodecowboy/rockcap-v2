@@ -94,6 +94,10 @@ export default defineSchema({
     hubspotLifecycleStageName: v.optional(v.string()), // Lifecycle stage name (human-readable)
     hubspotOwnerId: v.optional(v.string()), // HubSpot owner/user ID
     ownerName: v.optional(v.string()), // Resolved owner display name, cached at sync time
+    // Set by webhook handler on HubSpot `*.deletion` events. Cleared
+    // (patched to undefined → removed) on next `syncCompanyFromHubSpot`
+    // upsert if HubSpot restores the record.
+    archivedAt: v.optional(v.string()),
     // Multiple contact associations (a company can be linked to multiple contacts)
     linkedContactIds: v.optional(v.array(v.id("contacts"))), // Internal contact IDs
     hubspotContactIds: v.optional(v.array(v.string())), // HubSpot contact IDs
@@ -413,6 +417,10 @@ export default defineSchema({
     hubspotLifecycleStageName: v.optional(v.string()), // Lifecycle stage name (human-readable)
     hubspotOwnerId: v.optional(v.string()), // HubSpot owner/user ID
     linkedinUrl: v.optional(v.string()), // Derived from hublead_linkedin_public_identifier
+    // Set by webhook handler on HubSpot `*.deletion` events. Cleared
+    // (patched to undefined → removed) on next `syncContactFromHubSpot`
+    // upsert if HubSpot restores the record.
+    archivedAt: v.optional(v.string()),
     // Multiple company associations (a contact can be linked to multiple companies)
     linkedCompanyIds: v.optional(v.array(v.id("companies"))), // Internal company IDs
     hubspotCompanyIds: v.optional(v.array(v.string())), // HubSpot company IDs
@@ -498,6 +506,10 @@ export default defineSchema({
     hubspotDealId: v.string(),
     hubspotUrl: v.optional(v.string()),
     lastHubSpotSync: v.optional(v.string()),
+    // Set by webhook handler on HubSpot `*.deletion` events. Cleared
+    // (patched to undefined → removed) on next `syncDealFromHubSpot`
+    // upsert if HubSpot restores the record.
+    archivedAt: v.optional(v.string()),
     // Custom properties from HubSpot
     metadata: v.optional(v.any()),
     createdAt: v.string(),
@@ -3450,5 +3462,33 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_token", ["token"]),
+
+  /**
+   * Audit log + dedup for inbound HubSpot webhook events.
+   *
+   * Each row represents ONE delivery of ONE event from HubSpot. Indexed by
+   * eventId so a redelivery (HubSpot will retry on 5xx) is idempotent —
+   * the enqueue mutation skips if the eventId is already present.
+   *
+   * Retention: pruned daily to last 30d via Convex cron.
+   */
+  webhookEventLog: defineTable({
+    eventId: v.string(),
+    subscriptionType: v.string(),
+    objectType: v.string(),           // "0-1" | "0-2" | "0-3"
+    objectId: v.string(),
+    propertyName: v.optional(v.string()),
+    occurredAt: v.number(),            // ms epoch from HubSpot
+    receivedAt: v.string(),            // ISO when Next.js received the POST
+    status: v.union(
+      v.literal('scheduled'),
+      v.literal('completed'),
+      v.literal('failed'),
+    ),
+    stats: v.optional(v.any()),        // action return value on completion
+    error: v.optional(v.string()),     // set on status=failed
+  })
+    .index('by_event_id', ['eventId'])
+    .index('by_status', ['status', 'receivedAt']),
 });
 
