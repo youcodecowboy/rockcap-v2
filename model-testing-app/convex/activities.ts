@@ -170,3 +170,16 @@ export const listRecentGlobal = query({
     });
   },
 });
+
+/**
+ * Fetch a single activity by _id. Used by the mobile transcript detail
+ * screen to load a Fireflies meeting-note's full body.
+ *
+ * Returns null if the id doesn't resolve (invalid id or doc deleted).
+ */
+export const getById = query({
+  args: { id: v.id("activities") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});

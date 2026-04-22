@@ -1761,6 +1761,17 @@ export default function ClientDetailScreen() {
     });
   };
 
+  // Fireflies rows route to a dedicated detail screen with parsed transcript
+  // formatting. Native meetings keep the existing inline expand-toggle
+  // behaviour (rendered inside the same Card below).
+  const handleMeetingTap = (m: any) => {
+    if (m.source === 'fireflies' && m.activityId) {
+      router.push(`/meetings/transcript/${m.activityId}` as any);
+      return;
+    }
+    toggleMeetingExpanded(m._id);
+  };
+
   // ---------- Render ----------
   if (!client) return <LoadingSpinner message="Loading client..." />;
 
@@ -2950,7 +2961,7 @@ export default function ClientDetailScreen() {
                     : undefined;
                 return (
                   <Card key={m._id}>
-                    <TouchableOpacity onPress={() => toggleMeetingExpanded(m._id)}>
+                    <TouchableOpacity onPress={() => handleMeetingTap(m)}>
                       <View className="flex-row items-start justify-between">
                         <View className="flex-1 mr-2">
                           <View className="flex-row items-center gap-2 flex-wrap">
