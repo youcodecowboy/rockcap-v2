@@ -26,6 +26,15 @@ export const maxDuration = 10;   // handler should finish in <500ms; 10s is the 
  * intentional, not a leak.
  */
 
+/**
+ * HubSpot signs every webhook against the exact URL it was configured to
+ * POST to — so our signature verification must use the SAME URL string,
+ * byte-for-byte. If this deployment ever moves to a custom domain or a
+ * non-default preview URL (and HubSpot's Target URL changes to match),
+ * set HUBSPOT_WEBHOOK_TARGET_URI on that deployment's env to the new URL.
+ * Mismatch = silent 401 for every webhook. Default here matches the
+ * current production URL configured in the HubSpot Private App.
+ */
 const TARGET_URI =
   process.env.HUBSPOT_WEBHOOK_TARGET_URI ??
   'https://rockcap-v2.vercel.app/api/hubspot/webhook';
