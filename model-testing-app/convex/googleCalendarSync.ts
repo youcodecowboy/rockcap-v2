@@ -288,3 +288,128 @@ async function fullResyncWithWindow(
   }
   return result;
 }
+
+// Cron entry point — runs every 30 minutes. Iterates users serially
+// (simpler and safe up to a few hundred users; revisit if we scale up).
+// Catches per-user errors so one bad user doesn't break the tick.
+export const autoSyncAll = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ processed: number; errors: number }> => {
+    const userIds: Id<"users">[] = await ctx.runQuery(
+      internal.googleCalendar.listActiveSyncUserIds,
+      {},
+    );
+    let processed = 0;
+    let errors = 0;
+    for (const userId of userIds) {
+      try {
+        const result = await ctx.runAction(
+          internal.googleCalendarSync.syncForUser,
+          { userId, trigger: "cron" as const },
+        );
+        if (!result.ok) errors++;
+        // Channel renewal check runs AFTER sync so we use the freshest
+        // access_token written by syncForUser.
+        await renewChannelIfExpiring(ctx, userId);
+      } catch (err) {
+        errors++;
+        console.error(`[autoSyncAll] failed for userId ${userId}:`, err);
+      }
+      processed++;
+    }
+    console.log(`[autoSyncAll] done: processed=${processed}, errors=${errors}`);
+    return { processed, errors };
+  },
+});
+
+async function renewChannelIfExpiring(ctx: any, userId: Id<"users">) {
+  const channel = await ctx.runQuery(
+    internal.googleCalendar.getChannelByUserIdInternal,
+    { userId },
+  );
+  if (!channel) return;
+
+  // `expiration` from Google is a ms-since-epoch string (per channels.watch docs).
+  // Our storage is v.string() so it's safe to Number(). Defensively handle ISO strings too.
+  const expMs =
+    /^\d+$/.test(channel.expiration)
+      ? Number(channel.expiration)
+      : new Date(channel.expiration).getTime();
+  const msUntilExpiry = expMs - Date.now();
+  if (msUntilExpiry > 24 * 60 * 60 * 1000) return;
+
+  // Load tokens to call stopChannel + watchCalendar
+  const tokens = await ctx.runQuery(
+    internal.googleCalendar.getTokensByUserId,
+    { userId },
+  );
+  if (!tokens) return;
+
+  const accessToken = tokens.accessToken;
+  // Best-effort stop of the expiring channel — ignore errors
+  try {
+    await fetch("https://www.googleapis.com/calendar/v3/channels/stop", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: channel.channelId,
+        resourceId: channel.resourceId,
+      }),
+    });
+  } catch (err) {
+    console.warn(`[renewChannel] stopChannel failed for user ${userId}:`, err);
+  }
+
+  // Register a fresh channel with a new token + uuid. Use Web Crypto
+  // (available in Convex V8 runtime) rather than node:crypto so we don't
+  // have to add `"use node";` to the whole file.
+  const newChannelId = crypto.randomUUID();
+  const tokenBytes = new Uint8Array(32);
+  crypto.getRandomValues(tokenBytes);
+  const newToken = Array.from(tokenBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  const webhookUrl =
+    process.env.GOOGLE_OAUTH_REDIRECT_URI?.replace(
+      "/api/google/callback",
+      "/api/google/webhook",
+    ) ?? "";
+  const watchRes = await fetch(
+    "https://www.googleapis.com/calendar/v3/calendars/primary/events/watch",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: newChannelId,
+        type: "web_hook",
+        address: webhookUrl,
+        token: newToken,
+      }),
+    },
+  );
+  if (!watchRes.ok) {
+    console.warn(
+      `[renewChannel] watchCalendar failed for user ${userId}: ${await watchRes.text()}`,
+    );
+    return;
+  }
+  const watch: { resourceId: string; expiration: string } = await watchRes.json();
+
+  // Overwrite the channel row (delete old, insert new) while PRESERVING the
+  // existing syncToken so we don't lose incremental-sync state.
+  await ctx.runMutation(internal.googleCalendar.replaceChannel, {
+    userId,
+    channelId: newChannelId,
+    resourceId: watch.resourceId,
+    expiration: watch.expiration,
+    syncToken: channel.syncToken,
+    token: newToken,
+  });
+  console.log(`[renewChannel] renewed channel for user ${userId}`);
+}

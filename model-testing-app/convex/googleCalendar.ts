@@ -526,3 +526,31 @@ export const updateChannelSyncToken = internalMutation({
     await ctx.db.patch(channel._id, { syncToken: args.syncToken });
   },
 });
+
+// Internal mutation used by channel renewal — atomically delete existing
+// channel row for user and insert replacement with provided fields.
+export const replaceChannel = internalMutation({
+  args: {
+    userId: v.id("users"),
+    channelId: v.string(),
+    resourceId: v.string(),
+    expiration: v.string(),
+    syncToken: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("googleCalendarChannels")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+    if (existing) await ctx.db.delete(existing._id);
+    return ctx.db.insert("googleCalendarChannels", {
+      userId: args.userId,
+      channelId: args.channelId,
+      resourceId: args.resourceId,
+      expiration: args.expiration,
+      syncToken: args.syncToken,
+      token: args.token,
+    });
+  },
+});
