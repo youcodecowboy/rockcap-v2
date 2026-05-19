@@ -169,6 +169,11 @@ export default defineSchema({
       v.literal("post_credit"),
       v.literal("completed")
     )),
+    // Predecessor link for re-engagement. When a deal closes lost and the
+    // same person or organisation returns with a new transaction attempt,
+    // the new project points back to the previous one. Per BL-1.1 and
+    // ADR-0001 (projects is the operational Deal table).
+    predecessorProjectId: v.optional(v.id("projects")),
     createdAt: v.string(),
     // Soft delete
     isDeleted: v.optional(v.boolean()),
@@ -180,7 +185,8 @@ export default defineSchema({
     .index("by_client", ["clientRoles"])
     .index("by_hubspot_id", ["hubspotDealId"])
     .index("by_shortcode", ["projectShortcode"])
-    .index("by_deal_phase", ["dealPhase"]),
+    .index("by_deal_phase", ["dealPhase"])
+    .index("by_predecessor", ["predecessorProjectId"]),
 
   // Documents table - stores file references and analysis results
   documents: defineTable({
