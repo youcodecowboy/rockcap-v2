@@ -2407,6 +2407,25 @@ export default defineSchema({
       v.literal("pending_review"),
       v.literal("fulfilled")
     ),
+    // Graded InformationRequest extension (BL-1.5).
+    // isBlocking signals whether the deal cannot proceed without this item.
+    // rockcapStatus tracks RockCap-side workflow (where the item is in our process).
+    // lenderStatus tracks lender-side acceptance (where the item is from the lender's
+    // perspective). All optional for backwards compatibility; existing rows fall back
+    // to the simpler `status` and `priority` fields above.
+    isBlocking: v.optional(v.boolean()),
+    rockcapStatus: v.optional(v.union(
+      v.literal("not_started"),
+      v.literal("in_progress"),
+      v.literal("complete")
+    )),
+    lenderStatus: v.optional(v.union(
+      v.literal("not_requested"),
+      v.literal("requested"),
+      v.literal("received"),
+      v.literal("accepted"),
+      v.literal("rejected")
+    )),
     // Custom item flags
     isCustom: v.boolean(), // True if user/LLM added (not from template)
     customSource: v.optional(v.union(
@@ -3550,5 +3569,244 @@ export default defineSchema({
   })
     .index('by_event_id', ['eventId'])
     .index('by_status', ['status', 'receivedAt']),
+
+  // ---------------------------------------------------------------------------
+  // New entities from BL-1 schema extensions. Added as additive tables only;
+  // see docs/SCHEMA_MIGRATIONS.md for the migration playbook and
+  // docs/DECISIONS/0001-deal-vs-project-naming.md for the naming rationale
+  // (projects is the operational Deal table; new entities hang off projects).
+  // ---------------------------------------------------------------------------
+
+  // LenderApproach (BL-1.4) - per-lender per-deal child of projects.
+  // Tracks the engagement with each lender approached for a given deal,
+  // including indicative terms, final terms, and behavioural signals that
+  // feed the lender intelligence layer (see appetiteSignals).
+  lenderApproaches: defineTable({
+    projectId: v.id("projects"),               // the operational deal
+    lenderClientId: v.id("clients"),           // the lender; client.type should be "lender"
+    status: v.union(
+      v.literal("identified"),
+      v.literal("approached"),
+      v.literal("indicative_received"),
+      v.literal("submitted_for_credit"),
+      v.literal("credit_approved"),
+      v.literal("credit_declined"),
+      v.literal("withdrawn"),
+      v.literal("closed_won"),
+      v.literal("closed_lost")
+    ),
+    approachedAt: v.optional(v.string()),         // ISO timestamp first reached out
+    indicativeReceivedAt: v.optional(v.string()),
+    submittedForCreditAt: v.optional(v.string()),
+    decisionAt: v.optional(v.string()),
+    indicativeTerms: v.optional(v.any()),         // facility size, rate, fees, LTV, term, conditions
+    finalTerms: v.optional(v.any()),              // populated post-credit-approval
+    internalScore: v.optional(v.number()),        // RockCap ranking 0-100
+    declineReason: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    primaryBdmContactId: v.optional(v.id("contacts")),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_lender", ["lenderClientId"])
+    .index("by_status", ["status"])
+    .index("by_project_status", ["projectId", "status"]),
+
+  // Milestone (BL-1.6) - timeline events on a deal with dependency graph.
+  // Used for timeline management, daily triage of at-risk deals, and
+  // chaser drafting in both directions (client and lender).
+  milestones: defineTable({
+    projectId: v.id("projects"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    kind: v.union(
+      v.literal("kickoff"),
+      v.literal("indicative_offer"),
+      v.literal("term_sheet"),
+      v.literal("ic_submission"),
+      v.literal("ic_decision"),
+      v.literal("drawdown"),
+      v.literal("monitoring_milestone"),
+      v.literal("custom")
+    ),
+    targetDate: v.optional(v.string()),                // ISO date "2026-06-15"
+    actualDate: v.optional(v.string()),
+    dependencyMilestoneIds: v.optional(v.array(v.id("milestones"))),
+    status: v.union(
+      v.literal("upcoming"),
+      v.literal("in_progress"),
+      v.literal("complete"),
+      v.literal("missed"),
+      v.literal("cancelled")
+    ),
+    chaseState: v.optional(v.union(
+      v.literal("on_track"),
+      v.literal("at_risk"),
+      v.literal("blocked")
+    )),
+    chaseAssignedTo: v.optional(v.id("users")),
+    chaseDirection: v.optional(v.union(
+      v.literal("client"),
+      v.literal("lender"),
+      v.literal("professional"),
+      v.literal("internal")
+    )),
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_status", ["status"])
+    .index("by_target_date", ["targetDate"])
+    .index("by_project_status", ["projectId", "status"])
+    .index("by_chase_state", ["chaseState"]),
+
+  // Cadence (BL-1.7) - scheduled-touch records keyed by contact + type + next-due.
+  // Consumed by the cadence scheduling engine (BL-5.8). Seven canonical
+  // cadence types plus custom. contactId points at contacts today; when the
+  // Person table lands (BL-1.2), an optional personId is added and backfilled.
+  cadences: defineTable({
+    contactId: v.id("contacts"),
+    cadenceType: v.union(
+      v.literal("prospect_followup"),           // default 3-month re-touch on cold prospects
+      v.literal("warm_lead_chase"),             // "ask me in Q3" parked leads
+      v.literal("execution_chaser"),            // mid-deal chasers during execution
+      v.literal("client_checkin"),              // periodic existing-client check-ins
+      v.literal("bdm_relationship"),            // lender BDM relationship maintenance
+      v.literal("monitoring_ask"),              // monitoring document asks
+      v.literal("post_lost_re_engagement"),     // lost-deal re-entry
+      v.literal("custom")
+    ),
+    scheduleConfig: v.object({
+      intervalDays: v.optional(v.number()),     // simple recurring (e.g., 90 for quarterly)
+      anchorDate: v.optional(v.string()),       // ISO date the schedule anchors to
+      customSchedule: v.optional(v.any()),      // flexible config for non-trivial cadences
+    }),
+    nextDueAt: v.string(),                      // ISO timestamp; indexed for cron queries
+    lastFiredAt: v.optional(v.string()),
+    lastResult: v.optional(v.union(
+      v.literal("sent"),
+      v.literal("skipped_paused"),
+      v.literal("skipped_holiday"),
+      v.literal("skipped_user_opted_out"),
+      v.literal("failed")
+    )),
+    isActive: v.boolean(),                      // pause without deleting
+    pauseUntil: v.optional(v.string()),         // ISO; auto-resume after this date
+    relatedClientId: v.optional(v.id("clients")),
+    relatedProjectId: v.optional(v.id("projects")),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_contact", ["contactId"])
+    .index("by_next_due", ["nextDueAt"])
+    .index("by_active_next_due", ["isActive", "nextDueAt"])
+    .index("by_related_project", ["relatedProjectId"])
+    .index("by_related_client", ["relatedClientId"]),
+
+  // AppetiteSignal (BL-1.8) - atomic lender intelligence with provenance and
+  // timestamp. Three-layer LenderProfile model: static fields stay on
+  // clientIntelligence; live appetite data lives here with as-of dates;
+  // behavioural data derives from lenderApproaches history.
+  appetiteSignals: defineTable({
+    lenderClientId: v.id("clients"),            // lender; client.type should be "lender"
+    fieldPath: v.string(),                      // e.g., "dealSize.min", "propertyType.allowed", "ltv.maximum"
+    value: v.any(),                             // typed via valueType
+    valueType: v.union(
+      v.literal("number"),
+      v.literal("currency"),
+      v.literal("percentage"),
+      v.literal("string"),
+      v.literal("array"),
+      v.literal("boolean"),
+      v.literal("date")
+    ),
+    sourceType: v.union(
+      v.literal("bdm_meeting"),
+      v.literal("lender_doc"),
+      v.literal("publication"),
+      v.literal("deal_behaviour"),              // derived from lenderApproaches history
+      v.literal("manual")
+    ),
+    sourceRef: v.optional(v.string()),          // meeting id, document id, free reference
+    asOfDate: v.string(),                       // ISO date; the brief's as_of_date
+    confidence: v.optional(v.number()),         // 0-1 confidence
+    isCurrent: v.boolean(),                     // true if latest value for (lender, fieldPath)
+    supersededBy: v.optional(v.id("appetiteSignals")),
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+  })
+    .index("by_lender", ["lenderClientId"])
+    .index("by_lender_field", ["lenderClientId", "fieldPath"])
+    .index("by_lender_current", ["lenderClientId", "isCurrent"])
+    .index("by_as_of", ["asOfDate"]),
+
+  // Approval (BL-1.9) - cross-cutting staged draft surface.
+  // Every output that leaves the building (Gmail send, HubSpot write,
+  // lender outreach, IC paper publication) routes through here when
+  // originated by a skill or background job. Direct user-initiated
+  // actions from web UI may bypass approval.
+  approvals: defineTable({
+    entityType: v.union(
+      v.literal("gmail_send"),
+      v.literal("hubspot_write"),
+      v.literal("document_publish"),
+      v.literal("lender_outreach"),
+      v.literal("client_communication"),
+      v.literal("skill_action"),
+      v.literal("cadence_fire"),
+      v.literal("other")
+    ),
+    entityRefId: v.optional(v.string()),         // id of the entity this approval acts on, if any
+    summary: v.string(),                         // 1-line description for UI
+    draftPayload: v.any(),                       // JSON describing what would be done on approval
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("expired"),
+      v.literal("executed"),
+      v.literal("execution_failed"),
+      v.literal("cancelled")
+    ),
+    requestedBy: v.id("users"),
+    requestedAt: v.string(),
+    requestSource: v.optional(v.union(
+      v.literal("skill"),
+      v.literal("background_job"),
+      v.literal("cadence"),
+      v.literal("manual")
+    )),
+    requestSourceName: v.optional(v.string()),   // e.g., "prospect-intel", "cadence-fire"
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.string()),
+    rejectedReason: v.optional(v.string()),
+    executedAt: v.optional(v.string()),
+    executionResult: v.optional(v.any()),        // provider response (e.g., Gmail message id)
+    executionError: v.optional(v.string()),
+    expiresAt: v.optional(v.string()),           // auto-expire stale approvals
+    relatedClientId: v.optional(v.id("clients")),
+    relatedProjectId: v.optional(v.id("projects")),
+    relatedContactId: v.optional(v.id("contacts")),
+    relatedCadenceId: v.optional(v.id("cadences")),
+  })
+    .index("by_status", ["status"])
+    .index("by_requested_by", ["requestedBy"])
+    .index("by_status_requested_by", ["status", "requestedBy"])
+    .index("by_related_project", ["relatedProjectId"])
+    .index("by_related_client", ["relatedClientId"])
+    .index("by_related_cadence", ["relatedCadenceId"])
+    .index("by_expires_at", ["expiresAt"]),
 });
 
