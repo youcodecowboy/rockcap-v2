@@ -1,0 +1,65 @@
+#!/bin/bash
+# RockCap pre-commit hook
+# Install with: git config core.hooksPath .githooks
+
+set -e
+
+# Get list of files staged for commit
+staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+errors=0
+
+# Rule 1: skills/ must not import from app code
+skills_files=$(echo "$staged_files" | grep -E '^skills/' || true)
+if [ -n "$skills_files" ]; then
+  bad_imports=$(echo "$skills_files" | xargs -I{} grep -lE "^(import|from).*(model-testing-app|mobile-app|\.\./convex|\.\./src/lib|\.\./src/v4)" {} 2>/dev/null || true)
+  if [ -n "$bad_imports" ]; then
+    echo "ERROR: skills/ files contain imports from app code (boundary rule violation):"
+    echo "$bad_imports" | sed 's/^/  - /'
+    echo ""
+    echo "Skills must not import from app code. Use the MCP server to invoke app behaviour."
+    echo "See: skills/README.md, docs/CONTRIBUTING.md"
+    errors=$((errors + 1))
+  fi
+fi
+
+# Rule 2: no env files committed
+env_files=$(echo "$staged_files" | grep -E '(^|/)\.env($|\.|\..+)' || true)
+if [ -n "$env_files" ]; then
+  echo "ERROR: env files staged for commit:"
+  echo "$env_files" | sed 's/^/  - /'
+  echo ""
+  echo "Env files are never committed. Set values in Vercel/Convex env configs."
+  echo "See: docs/ENV_VARS.md"
+  errors=$((errors + 1))
+fi
+
+# Rule 3: scan for obvious secret patterns
+# Match the prefix followed by 20+ alphanumeric chars (real-key shape),
+# not just the prefix alone (which appears in documentation).
+secret_patterns='(sk_live_|pk_live_|hubspot-private-app-|sk-proj-|sk-ant-)[A-Za-z0-9_-]{20,}'
+for f in $staged_files; do
+  if [ -f "$f" ]; then
+    matches=$(grep -lE "$secret_patterns" "$f" 2>/dev/null || true)
+    if [ -n "$matches" ]; then
+      echo "ERROR: real-key-shaped secret pattern in: $f"
+      echo "  If this is a deliberate placeholder template, override with: git commit --no-verify"
+      errors=$((errors + 1))
+    fi
+  fi
+done
+
+# Rule 4: commit prefix convention (only when run via commit-msg, this is just a reminder for pre-commit)
+# The actual prefix enforcement happens at PR review time per docs/CONTRIBUTING.md
+
+if [ "$errors" -gt 0 ]; then
+  echo ""
+  echo "Commit blocked by $errors issue(s). Fix above, or override with: git commit --no-verify"
+  exit 1
+fi
+
+exit 0
