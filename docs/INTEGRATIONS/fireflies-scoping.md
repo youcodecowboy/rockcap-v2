@@ -24,40 +24,43 @@ Direct API integration eliminates all three. Transcripts arrive from Fireflies w
 - **Webhook support**: Fireflies offers webhooks for new meeting completion events. Recommended over polling.
 - **Rate limits**: not well documented publicly; assume conservative (60 req/min) until proven otherwise.
 
-## Open questions for the user
+## Confirmed decisions
 
-These shape the scope before any code lands.
+The scoping questions are now resolved:
 
-1. **Auth model**. Does Fireflies offer an OAuth flow for partner apps, or is the integration a per-user API token paste? Either works; the choice affects BL-3.1 (`firefliesTokens` table shape) and BL-3.2 (whether `/api/fireflies/auth` + `/api/fireflies/callback` exist or we just have a settings page that accepts a token).
-2. **Per-user or org-shared**. Is each RockCap user expected to connect their own Fireflies account, or does the firm have one Fireflies account that everyone reads from? Affects token table cardinality and the kill switch shape.
-3. **Backfill window**. When the API integration goes live, how far back do we pull historical meetings? Last 90 days is a reasonable default; confirm with the operator.
-4. **Existing pattern-detected meetings**. The `meetings` table has rows tagged `sourceIntegration='fireflies'` from the current detector. BL-3.8 re-sources these via the API where possible. If a meeting exists in RockCap but not in Fireflies (e.g., the user deleted it from Fireflies but the HubSpot note remains), do we keep the existing row or mark it as orphaned?
-5. **What we sync**. Meeting metadata, action items, attendees, transcript URL: yes. Full transcript text: large blobs, useful for skills but heavy on storage. Recommend storing the transcript URL and fetching transcript text on-demand into a separate `meetingTranscripts` table (or Convex file storage) only when a skill needs it.
+1. **Auth model**: per-user API token paste. No OAuth flow. Each user generates a personal API token in the Fireflies dashboard and pastes it into RockCap settings. Simpler integration, no OAuth partner app registration required, no token-refresh dance. Trade-off: tokens are long-lived; reconnection is manual when a user rotates their Fireflies token.
+2. **Per-user or org-shared**: per-user. Each RockCap user connects their own Fireflies account. The `firefliesTokens` table is keyed by `userId` with one row per user. Meetings synced under one user's account stay private to that user unless explicitly shared via the existing meeting visibility model.
+3. **Backfill window**: 365 days. On first connection, pull every meeting from the last 12 months. Larger than the default 90-day window but bounded.
+4. **Existing pattern-detected meetings without a Fireflies API match**: flag them for operator review. Do not delete, do not silently keep, do not assume they are orphaned. Surface in a one-off review queue (could be a `meetings.reviewState` field or a temporary view). Operator decides per-row.
+5. **Full transcript ingestion**: yes. Transcripts are fetched and stored, not URL-only. Skills need full transcript text as context for cadence skills (extracting commitments and follow-ups), classification skills, and deal-status briefings. Storage cost is acceptable given Convex Premium.
 
-## Proposed shape (subject to open questions)
+## Proposed shape
 
 ### Schema additions
 
 ```typescript
-// New table
+// New table - per-user token paste, no OAuth
 firefliesTokens: defineTable({
   userId: v.id("users"),
-  accessToken: v.string(),
-  refreshToken: v.optional(v.string()),
-  tokenType: v.union(v.literal("oauth"), v.literal("user_provided")),
-  expiresAt: v.optional(v.number()),
-  scope: v.optional(v.string()),
-  connectedEmail: v.optional(v.string()),
+  apiToken: v.string(),                  // raw Fireflies API token, encrypted at rest
+  connectedEmail: v.optional(v.string()), // resolved from Fireflies /me on connect
   needsReconnect: v.boolean(),
   lastSyncAt: v.optional(v.number()),
   createdAt: v.number(),
 }).index("by_user", ["userId"]),
 
-// Optional new table; alternative is extending `meetings` with optional transcript field
+// New table - full transcripts stored, not URL-only
 meetingTranscripts: defineTable({
   meetingId: v.id("meetings"),
-  fileStorageId: v.id("_storage"),
+  fileStorageId: v.id("_storage"),       // raw transcript stored in Convex file storage
   source: v.union(v.literal("fireflies"), v.literal("manual"), v.literal("zoom")),
+  speakerSegments: v.optional(v.array(v.object({
+    speaker: v.string(),
+    startMs: v.number(),
+    endMs: v.number(),
+    text: v.string(),
+  }))),
+  fullTextSummary: v.optional(v.string()), // optional condensed version for fast skill lookups
   fetchedAt: v.number(),
 }).index("by_meeting", ["meetingId"]),
 ```
@@ -70,14 +73,13 @@ Additive only. New optional fields:
 - `sourceIntegration` (already exists; values extend to include direct API source)
 - `transcriptFetchedAt` (optional number)
 - `actionItemsSourceFidelity` (optional union: "pattern_detected", "api_synced", "manual")
+- `reviewState` (optional union: "needs_review", "confirmed_keep", "confirmed_remove") for the backfill flagging in confirmed-decision 4
 
 ### Routes
 
-- `POST /api/fireflies/auth` (initiates OAuth, if available)
-- `GET /api/fireflies/callback` (OAuth callback, if available)
-- `POST /api/fireflies/connect-token` (user-provided token path, if OAuth unavailable)
+- `POST /api/fireflies/connect-token` (user pastes API token; server resolves connected email via Fireflies `/me`, stores token, marks connected)
 - `POST /api/fireflies/disconnect`
-- `POST /api/fireflies/webhook` (signature-verified inbound from Fireflies)
+- `POST /api/fireflies/webhook` (signature-verified inbound from Fireflies if webhooks are available; otherwise omitted)
 - `POST /api/fireflies/sync` (manual on-demand sync; cron calls this internally)
 
 ### Cron
@@ -95,19 +97,19 @@ Settings page (web): connect/disconnect Fireflies, show connected email, last-sy
 ## Migration plan from detector to API
 
 1. Stand up direct API integration (BL-3.1 through BL-3.7) with kill switch defaulted off.
-2. Operator flips the kill switch on for one user as a canary. Verify transcripts arrive correctly and `meetings` rows get enriched (not duplicated) for the same source meeting.
-3. Run BL-3.8 backfill: for every existing `sourceIntegration='fireflies'` meeting, look up the Fireflies record by URL or title-and-date heuristic. Where matched, enrich the existing row with API data. Log unmatched rows for review.
+2. Operator flips the kill switch on for one user as a canary. Verify transcripts arrive correctly, full text ingests into `meetingTranscripts`, and `meetings` rows get enriched (not duplicated) for the same source meeting.
+3. Run BL-3.8 backfill against the 365-day window: for every existing `sourceIntegration='fireflies'` meeting, look up the Fireflies record by URL or title-and-date heuristic. Where matched, enrich the existing row with API data and ingest transcript. Where unmatched, set `reviewState='needs_review'` (per confirmed-decision 4) and surface in an operator review queue.
 4. After 7 days of stable dual-running (detector AND API both active), disable the detector via the activity-sync code path. Pattern-detection code stays in place for one more week as belt-and-braces.
-5. BL-3.9: delete pattern-detection code, remove the activity-sync hook, prune dead imports.
+5. BL-3.9: delete pattern-detection code, remove the activity-sync hook, prune dead imports. Resolve any remaining `needs_review` rows through the operator queue.
 
 ## Risks
 
-- **API quota**: if Fireflies' rate limit turns out to be tighter than 60/min, backfill batching needs care. Mitigate with exponential backoff and bounded concurrency.
-- **Webhook reliability**: if Fireflies webhooks are unreliable, the 30min cron is the safety net. Same pattern as Google Calendar.
-- **Account vs personal data**: if Fireflies meetings are personal to each user, an org-shared sync model would surface private meetings to other operators. Per-user token model (option 2 in open questions) avoids this. Need confirmation before building.
+- **API quota**: if Fireflies' rate limit turns out to be tighter than 60/min, the 365-day backfill needs care. Mitigate with exponential backoff and bounded concurrency (e.g., 10 concurrent transcript fetches max).
+- **Transcript storage cost**: full transcript ingestion means non-trivial storage growth. Convex Premium covers the envelope but the order of magnitude should be sized once we see real usage (one user with 100 meetings/month at ~50KB per transcript = ~5MB/user/month, manageable).
+- **Token rotation by users**: per-user API token model means if a user rotates their Fireflies token, RockCap silently stops syncing for them until they paste the new token. Mitigate with a daily "last sync was N days ago" check that surfaces a reconnect prompt after 48h of no sync.
+- **Webhook reliability**: if Fireflies webhooks are unavailable or unreliable, the 30min cron is the safety net. Same pattern as Google Calendar.
 
 ## What we are not doing in v1
 
-- Full transcript ingestion into RockCap storage. Transcripts are fetched on-demand by skills (BL-6.x), not pre-cached.
 - Bidirectional sync. We read from Fireflies; we do not push back into Fireflies.
 - Replacing Zoom or other recording tools. Fireflies is the single transcription source for v1.

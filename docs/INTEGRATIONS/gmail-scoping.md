@@ -19,19 +19,15 @@ Both are foundational. Send-only is not enough because reply handling drives sta
 - Approval-gated send by default (BL-4.4). Hard rule: every Gmail send originating from a skill routes through the `Approval` table (BL-1.9). Direct user-initiated sends from a web UI compose box can bypass approval if the user is the sender; skills cannot.
 - Touchpoint capture (BL-4.9). Inbound and outbound emails write to a unified `Touchpoint` table, not to the HubSpot-shaped `activities` table.
 
-## Open questions for the user
+## Confirmed decisions
 
-1. **Scope choice**. The cleanest Gmail scopes for our use cases:
-   - `https://www.googleapis.com/auth/gmail.send` for outbound
-   - `https://www.googleapis.com/auth/gmail.readonly` for inbound read
-   - Optional: `https://www.googleapis.com/auth/gmail.labels` if we want to label processed emails server-side
-   Confirm: send + readonly (recommended), or send + modify (lets us mark emails read, apply labels, archive)? Modify is more powerful but the consent screen wording is scarier to users.
-2. **Inbox filtering**. Do we want to sync all inbound mail, or only mail to/from contacts already in RockCap? Filtering at sync time is more privacy-respectful but means new contacts surface late.
-3. **Reply threading**. When a skill sends an email and a reply comes in, should we auto-promote the reply to a deal touchpoint? Conservative answer: only if the original send was tied to a project; otherwise the reply goes to the contact's touchpoint history without project linkage.
-4. **Send-from identity**. Does the sender appear as the RockCap user (their own Gmail address) or as a shared `outreach@rockcap.co.uk` address? Per-user send-from is more authentic for relationship-building outreach; shared is easier to administer.
-5. **Calendar token coexistence**. Currently `googleCalendarTokens.scope` is calendar-only. If we add a separate Gmail client, the two tokens are independent. Confirm: disconnecting Gmail does NOT disconnect Calendar (and vice versa)?
+1. **Scope choice**: `send + modify`. Specifically `https://www.googleapis.com/auth/gmail.send` plus `https://www.googleapis.com/auth/gmail.modify`. Modify is broader than readonly; it lets us mark messages read, apply labels, archive, and move between mailboxes. The consent screen will warn users about these capabilities; user-facing copy in the connect flow should explain why we need them (label sent skills emails, mark replies as processed, archive after touchpoint capture).
+2. **Inbox filtering**: sync all inbound. No contact-based filtering at sync time. Everything inbound enters the Touchpoint capture layer; contact resolution happens after the fact. This gives skills a richer base of context and surfaces new prospects automatically.
+3. **Reply threading**: thread-based attribution. If the original outbound was tied to a project, the reply inherits the project link. Otherwise, the reply records as a touchpoint against the contact alone. This was already the recommended approach in the initial scoping and is confirmed.
+4. **Send-from identity**: per-user Gmail address. Emails go out from the connected user's own Gmail. No shared `outreach@rockcap.co.uk` for v1. Authentic relationship-building outreach over administrative convenience.
+5. **Calendar token coexistence**: separate. Disconnecting Gmail does not disconnect Calendar and vice versa. Per the earlier BL-4.1 decision, separate OAuth clients with separate tokens tables (`googleGmailTokens` vs `googleCalendarTokens`).
 
-## Proposed shape (subject to open questions)
+## Proposed shape
 
 ### Schema additions
 
@@ -98,6 +94,15 @@ Users sending email manually (from a Gmail compose UI in the app, not from a ski
 Per-user `googleGmailTokens.needsReconnect` plus a global `gmailSendEnabled` flag in a settings table. Default: send disabled, read enabled (after first connection). Operator explicitly enables send per user.
 
 This is stricter than Fireflies because outbound email has higher consequence. A bug that sends 1000 prospect emails because of a cadence misfire is much worse than a bug that reads transcripts twice.
+
+### Inbound scope (all-inbound implication)
+
+Per confirmed-decision 2, all inbound mail is synced; we do not filter to known contacts. This means:
+
+- New prospects (people who reply to outreach but were not yet in the system) surface automatically.
+- Personal email content (non-work-related) also enters the touchpoint layer. RockCap operators should connect a work-only Gmail account, not a personal one. Surface this clearly in the connect flow.
+- The Touchpoint table will be larger than the contact-filtered alternative. Index plan: by `personEmail` (resolved string), by `dealId` (when threaded), by `occurredAt` (for time-range queries). The volume is the price of richer context.
+- Skills that query touchpoints filter at read time, not sync time.
 
 ## Risks
 

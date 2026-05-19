@@ -39,29 +39,19 @@ Phase B (additive build-out): unblock the three "build V4 first" items by creati
 
 Then proceed with caller migrations per route (BL-2.1 through BL-2.11 in the existing backlog).
 
-## The two design-call items
-
-These need an architectural decision before any code lands.
+## Design-call decisions (now locked in)
 
 ### Codify-extraction (`/api/codify-extraction`)
 
-**The question**: is data codification (mapping extracted financial figures to canonical item codes via Fast Pass alias lookup plus Smart Pass LLM mapping) still in scope for V4, or does V4 collapse codification into the consolidated-intelligence flow?
+**Decision (confirmed)**: keep codification. Rebuild on V4. Fast Pass alias lookup stays as-is (deterministic, cheap, no LLM); Smart Pass LLM mapping switches from Llama 70B to Claude. This preserves the contracts of the six call sites (no caller-side changes required when the route is migrated).
 
-**Why it matters**: codification is a six-caller V3 surface. Six call sites need a story. If V4 keeps codification but routes it differently, this is a build-V4-then-migrate task. If V4 retires the concept, the call sites need replacement workflows.
-
-**Initial position**: keep codification. The Fast Pass alias lookup is fast, deterministic, and cheap; the Smart Pass LLM mapping is where V4 should take over. Recommend rebuilding the codify route on V4 with Fast Pass unchanged and Smart Pass switched to Claude. This preserves the call sites' contracts.
-
-**Decision needed before**: BL-2.6 (the codify-extraction migration item in the existing backlog).
+**Implementation note**: the codify route may eventually fold into the unified `document.extract(targetSchema, sourceDocumentRef)` primitive (BL-5.5) where the target schema is the canonical-codes catalogue. For v1 of WS-2, keep the dedicated `/api/v4-codify-extraction` route to minimise caller-side churn; consolidate into the unified primitive in a later iteration if the shape proves to be the same.
 
 ### Process-intelligence-queue (`/api/process-intelligence-queue`)
 
-**The question**: should batch intelligence extraction processing be an HTTP route, or a Convex scheduled action consuming the `intelligenceExtractionJobs` table?
+**Decision (confirmed)**: convert to a Convex scheduled internal action. Drop the HTTP route. The `intelligenceExtractionJobs` table already exists and tracks job status; the consumer becomes a new `crons.ts` entry (e.g., `intelligence-queue-processor` every 1-5 minutes) that calls an `internalAction` to process pending jobs in batches.
 
-**Why it matters**: the existing route has no detectable callers, suggesting the queue processor was always meant to be cron-triggered. The MCP architecture (BL-5.1) pushes work into Convex; an HTTP route here is the wrong shape.
-
-**Initial position**: convert to a Convex scheduled internal action. Drop the HTTP route. The `intelligenceExtractionJobs` table already exists and tracks status; the consumer becomes a `crons.ts` entry that processes pending jobs.
-
-**Decision needed before**: BL-2.4.
+**Implementation note**: this aligns with the Convex-hosted MCP architecture (BL-5.1) where batch work lives inside Convex rather than as Next.js HTTP routes. Since the existing route has no callers, no caller migration is needed; the work is purely (a) build the internal action, (b) add the cron entry, (c) delete the HTTP route.
 
 ## Deletion criteria
 
