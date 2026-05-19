@@ -200,8 +200,8 @@ The MCP server is the skills layer's connection point to the app. Without it, no
 
 | ID | Item | Risk | Size | Notes |
 |---|---|---|---|---|
-| BL-5.1 | Stand up MCP server inside `model-testing-app/` (Next.js route or separate Node service) | medium | L | Anthropic MCP spec. HTTPS endpoint, per-user auth, tool discovery, tool invocation. |
-| BL-5.2 | Per-user MCP auth: Clerk JWT or signed token; sessions scoped to a single Clerk user | high | M | Identity proven by Clerk. The MCP server impersonates the authenticated user for Convex calls. |
+| BL-5.1 | Stand up MCP server as Convex HTTP actions (decision confirmed; see "Confirmed decisions") | medium | L | Anthropic MCP spec implemented as Convex HTTP endpoints. No Next.js bridge, no Vercel function timeouts, direct access to Convex queries/mutations, auth via existing Clerk integration. |
+| BL-5.2 | Per-user MCP auth: Clerk-issued token (CLI flow), validated by Convex on every request | high | M | Each RockCap user runs Claude Code on their laptop. The MCP server validates a per-user token (Clerk-issued via a small auth bootstrap flow) and impersonates that user for all Convex calls. |
 | BL-5.3 | Tool exposure: every public tool in `src/lib/tools/domains/*.tools.ts` is callable via MCP | medium | M | Read tools immediate; write tools queue an `Approval` (per BL-1.9) before executing. |
 | BL-5.4 | `deal.get_full_context(dealId)` coarse-grained primitive | low | M | Composes `projects.get` + `intelligence.getProjectIntelligence` + checklist + recent docs + recent touchpoints + milestones + lender approaches. One round trip. |
 | BL-5.5 | `document.extract(targetSchema, sourceDocumentRef)` primitive | medium | L | Parameterised over a target schema. Unifies V4 deep extract, intelligence extract, meeting extract, term-sheet extract. Replaces five overlapping routes. |
@@ -251,17 +251,34 @@ Items the brief flags but explicitly defers, or that surface post-build. Tracked
 | BL-8.4 | Skill registry / discovery improvements in the chat assistant | low | M | After several skills exist. |
 | BL-8.5 | Repository split: extract `skills/` into its own repo via `git subtree split` | medium | M | Trigger conditions per `skills/inventory/06-monorepo-discipline.md`. Not urgent. |
 
-## Open questions for the next design conversation
+## Confirmed decisions
 
-These are decisions the backlog cannot resolve. They sit in front of items that depend on them.
+These were the open questions from the first backlog draft. Locked in here so downstream items can proceed.
 
-1. **Deal versus Project naming (BL-1.0).** Recommend keeping both: `projects` becomes the operational "Deal" by extension; `deals` stays as the HubSpot projection. Confirmation needed before BL-1.1 onwards.
-2. **Person table promotion timing (BL-1.2).** Two-step is safer (add Person, backfill from contacts, keep contacts working) but doubles the work. Single-step (deprecate contacts, promote to Person+Role) is cleaner but riskier. Recommend two-step.
-3. **Gmail OAuth combine versus separate (BL-4.1).** Combining with Google Calendar token means one consent screen but coupled disconnect. Separate is cleaner but means two consent screens for users. Recommend separate.
-4. **Critic-agent destination (BL-2.10 / BL-6.5).** Port to V4 pipeline (stays in app, easier) versus lift to a skill (matches the brief's judgement-carrying rule, more flexible long-term). Recommend skill.
-5. **MCP server hosting (BL-5.1).** Inside the Next.js app as a route, or separate Node service. Inside-the-app is simpler; separate is more scalable and isolates failure modes. Recommend in-app for v1.
-6. **Approval queue scope (BL-5.7).** Just web, or web plus mobile from day one? Mobile is the brief's "every meaningful output persists across devices" rule. Recommend web first, mobile-fast-follow.
-7. **prospect-intel skill source material.** The brief refers to an existing prospect-intel SKILL.md as canonical. This file is not in the repo. Either it lives elsewhere (point me to it) or BL-6.1 builds it from scratch using the brief's description.
+1. **Deal versus Project naming (BL-1.0): keep both.** `projects` is the operational "Deal" by extension; `deals` stays as the HubSpot projection. All WS-1 schema extensions hang off `projects`.
+2. **Person table promotion (BL-1.2): two-step.** Step one introduces the Person table and backfills from contacts. Step two (out of v1 scope) deprecates `contacts` once every consumer reads from Person.
+3. **Gmail OAuth (BL-4.1): separate from Calendar token.** Two consent screens for users, cleaner disconnect semantics. New `googleGmailTokens` table mirrors `googleCalendarTokens`.
+4. **Critic-agent destination (BL-2.10 / BL-6.5): lift to a skill.** Decision logic moves to a `classification-critic` skill (WS-6.5). The V4 pipeline keeps its plumbing; the override rules become operator-tweakable in the skills tree.
+5. **MCP server hosting (BL-5.1): Convex HTTP actions.** Skills are markdown files that clone to each user's laptop and execute through Claude Code; the MCP endpoint is the only server-side component the skills need. Hosting in Convex avoids the Next.js-to-Convex bridge, inherits the Clerk auth integration, and avoids Vercel function timeouts on composite tool calls. Convex Premium covers the quota envelope.
+6. **Approval queue scope (BL-5.7): web first, mobile fast-follow.** Web UI built against the `Approval` table in v1. Mobile read-and-approve surface added as the next iteration, before any cadence-driven send goes live.
+7. **prospect-intel skill source (BL-6.1): build from scratch.** The brief's canonical file is not in this repo. BL-6.1 builds it using the brief's description and the in-app prospecting context (`convex/prospecting.ts`, `convex/prospects.ts`, planning + Companies House data) as the substrate.
+
+## Implications of the Claude Code distribution model
+
+The interface is Claude Code on each user's laptop, not a custom web chat. Skills live in a cloned git repo on the local filesystem. This shapes a few items below:
+
+- **MCP server is multi-tenant from day one.** Every request authenticates a specific Clerk user. There is no shared "service account" mode.
+- **Per-user MCP credential issuance needs a flow.** Likely a small CLI command or web page that exchanges a Clerk session for a long-lived MCP token. Captured as BL-5.2.
+- **Skills repo distribution.** Operators clone `rockcap-skills` (eventual name) and configure Claude Code's MCP client to point at the deployed Convex MCP endpoint. Updates propagate via `git pull`. No app deploy needed for skill updates.
+- **Onboarding doc needed.** A `skills/SETUP.md` walks a new user through: clone repo, configure Claude Code, obtain MCP token, test connection. Captured as new item BL-6.7.
+
+Added items reflecting this:
+
+| ID | Item | Risk | Size | Notes |
+|---|---|---|---|---|
+| BL-5.9 | Per-user MCP token issuance flow (CLI command or `/settings/mcp-token` page that mints a Clerk-backed long-lived token) | high | M | Token rotation and revocation surface in settings. |
+| BL-6.7 | `skills/SETUP.md` operator onboarding: clone, configure Claude Code, test, troubleshoot | low | S | Written once the MCP server is live and stable. |
+| BL-6.8 | Skills repo distribution mechanics: README on update flow (`git pull`), versioning convention, breaking-change communication | low | S | Lightweight. Probably just a section in `skills/README.md`. |
 
 ## How to use this backlog
 
