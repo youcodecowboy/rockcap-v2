@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator, Mic } from 'lucide-react';
+import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator, Mic, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -21,6 +21,13 @@ const settingsSections = [
     description: 'Connect your Fireflies account to sync meeting transcripts and action items',
     icon: Mic,
     href: '/settings/fireflies',
+  },
+  {
+    id: 'gmail',
+    title: 'Gmail Integration',
+    description: 'Connect your Gmail account for inbound capture and approval-gated outbound send',
+    icon: Mail,
+    href: '/settings/gmail',
   },
   {
     id: 'file-summary-agent',

@@ -149,13 +149,33 @@ export const updateHistoryId = internalMutation({
 export const setSendEnabledForUser = mutation({
   args: { userId: v.id("users"), enabled: v.boolean() },
   handler: async (ctx, args) => {
-    // Only an authenticated user can flip the flag (operator action).
+    // TODO: add admin role check. Today any authenticated user could
+    // flip this flag for any other user. v1 of the settings UI uses
+    // setMySendEnabled below for self-service. Admin-driven enable for
+    // another user goes through this mutation; an admin-role guard
+    // should be added before it is exposed to the UI.
     await getAuthenticatedUser(ctx);
     const row = await ctx.db
       .query("googleGmailTokens")
       .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
       .first();
     if (!row) throw new Error("Target user has no Gmail connection");
+    await ctx.db.patch(row._id, { sendEnabled: args.enabled });
+  },
+});
+
+// Self-service toggle: the current user opts their own account in or
+// out of skill-originated outbound send. The global gmailSendConfig
+// must also be on for any send to actually leave the building.
+export const setMySendEnabled = mutation({
+  args: { enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    const row = await ctx.db
+      .query("googleGmailTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", user._id))
+      .first();
+    if (!row) throw new Error("Connect Gmail before toggling send");
     await ctx.db.patch(row._id, { sendEnabled: args.enabled });
   },
 });
