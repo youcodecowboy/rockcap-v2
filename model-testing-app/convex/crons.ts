@@ -43,4 +43,15 @@ crons.daily(
   internal.googleCalendarLog.pruneSyncLog,
 );
 
+// Fireflies auto-sync (BL-3.4). Every 30 minutes. Iterates connected
+// users serially. The internal action self-skips when the global
+// firefliesSyncConfig.isEnabled flag is off (default), so this cron
+// is safe to enable from day one; it does nothing until the operator
+// flips the switch.
+crons.interval(
+  "fireflies-auto-sync",
+  { minutes: 30 },
+  internal.firefliesSync.autoSyncAll,
+);
+
 export default crons;
