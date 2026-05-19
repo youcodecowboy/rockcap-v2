@@ -3293,11 +3293,36 @@ export default defineSchema({
     notes: v.optional(v.string()),
     createdAt: v.string(),
     updatedAt: v.string(),
+    // Fireflies integration (BL-3.x). Set when meeting originated from
+    // Fireflies API sync. The reviewState supports the backfill flagging
+    // workflow: existing pattern-detected rows that have no Fireflies
+    // API match get reviewState='needs_review' for operator triage.
+    firefliesId: v.optional(v.string()),
+    sourceIntegration: v.optional(v.union(
+      v.literal("pattern_detector"),
+      v.literal("fireflies_api"),
+      v.literal("manual"),
+      v.literal("zoom"),
+      v.literal("other")
+    )),
+    transcriptFetchedAt: v.optional(v.string()),
+    actionItemsSourceFidelity: v.optional(v.union(
+      v.literal("pattern_detected"),
+      v.literal("api_synced"),
+      v.literal("manual")
+    )),
+    reviewState: v.optional(v.union(
+      v.literal("needs_review"),
+      v.literal("confirmed_keep"),
+      v.literal("confirmed_remove")
+    )),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_client_date", ["clientId", "meetingDate"])
-    .index("by_source_document", ["sourceDocumentId"]),
+    .index("by_source_document", ["sourceDocumentId"])
+    .index("by_fireflies_id", ["firefliesId"])
+    .index("by_review_state", ["reviewState"]),
 
   // Meeting Extraction Jobs - async queue for extracting meetings from documents
   meetingExtractionJobs: defineTable({
@@ -3808,5 +3833,151 @@ export default defineSchema({
     .index("by_related_client", ["relatedClientId"])
     .index("by_related_cadence", ["relatedCadenceId"])
     .index("by_expires_at", ["expiresAt"]),
+
+  // ---------------------------------------------------------------------------
+  // Integration tables (Fireflies BL-3, Gmail BL-4, Touchpoint BL-4.9).
+  // All additive; existing integrations are not touched.
+  // ---------------------------------------------------------------------------
+
+  // firefliesTokens (BL-3.1) - per-user API token paste model.
+  // Per confirmed decision in docs/INTEGRATIONS/fireflies-scoping.md,
+  // Fireflies uses a token-paste flow (no OAuth). Each user generates a
+  // personal API token in the Fireflies dashboard and pastes it here.
+  // TODO: encrypt apiToken at rest in a future hardening pass.
+  firefliesTokens: defineTable({
+    userId: v.id("users"),
+    apiToken: v.string(),
+    connectedEmail: v.optional(v.string()),
+    needsReconnect: v.optional(v.boolean()),
+    lastSyncAt: v.optional(v.string()),
+    lastSyncStatus: v.optional(v.union(
+      v.literal("success"),
+      v.literal("error"),
+      v.literal("in_progress")
+    )),
+    lastSyncError: v.optional(v.string()),
+    connectedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // firefliesSyncConfig (BL-3.x) - global kill switch and defaults.
+  // Singleton row; default isEnabled=false until explicitly turned on.
+  firefliesSyncConfig: defineTable({
+    isEnabled: v.boolean(),
+    defaultBackfillDays: v.optional(v.number()),  // 365 per confirmed decision
+    syncIntervalMinutes: v.optional(v.number()),  // cron cadence; 30 is default
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["isEnabled"]),
+
+  // meetingTranscripts (BL-3.5/3.7) - full transcript ingestion.
+  // Per confirmed decision, transcripts are stored not URL-only so skills
+  // can use them as context. fileStorageId points at the raw transcript
+  // in Convex file storage; speakerSegments offers a queryable view.
+  meetingTranscripts: defineTable({
+    meetingId: v.id("meetings"),
+    fileStorageId: v.optional(v.id("_storage")),
+    source: v.union(
+      v.literal("fireflies"),
+      v.literal("manual"),
+      v.literal("zoom"),
+      v.literal("other")
+    ),
+    speakerSegments: v.optional(v.array(v.object({
+      speaker: v.string(),
+      startMs: v.number(),
+      endMs: v.number(),
+      text: v.string(),
+    }))),
+    fullTextSummary: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    language: v.optional(v.string()),
+    fetchedAt: v.string(),
+    createdBy: v.optional(v.id("users")),
+  })
+    .index("by_meeting", ["meetingId"])
+    .index("by_source", ["source"]),
+
+  // googleGmailTokens (BL-4.1) - separate from googleCalendarTokens per
+  // confirmed decision. Gmail and Calendar use independent OAuth clients;
+  // disconnecting one does not disconnect the other.
+  googleGmailTokens: defineTable({
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    scope: v.string(),
+    connectedEmail: v.string(),
+    needsReconnect: v.optional(v.boolean()),
+    lastSyncAt: v.optional(v.string()),
+    historyId: v.optional(v.string()),    // Gmail's incremental sync watermark
+    // Per-user send enable flag. Default off until explicitly enabled per
+    // BL-4.4 (approval-gated send default). Global kill switch lives on
+    // gmailSendConfig.
+    sendEnabled: v.optional(v.boolean()),
+    connectedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // gmailSendConfig (BL-4.x) - global send kill switch.
+  // Singleton row. isEnabled gates outbound for the whole org; per-user
+  // sendEnabled on googleGmailTokens layers on top. Both must be true.
+  gmailSendConfig: defineTable({
+    isEnabled: v.boolean(),
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["isEnabled"]),
+
+  // touchpoints (BL-4.9) - unified exchange ledger across all integrations.
+  // Provider-agnostic. Gmail inbound and outbound, Fireflies meetings,
+  // HubSpot activities, and manual entries all write here. Skills query
+  // this for "recent history with this person/deal" without caring which
+  // integration delivered the event.
+  touchpoints: defineTable({
+    provider: v.union(
+      v.literal("gmail"),
+      v.literal("hubspot"),
+      v.literal("fireflies"),
+      v.literal("calendar"),
+      v.literal("manual"),
+      v.literal("other")
+    ),
+    direction: v.union(
+      v.literal("inbound"),
+      v.literal("outbound"),
+      v.literal("internal")
+    ),
+    kind: v.union(
+      v.literal("email"),
+      v.literal("call"),
+      v.literal("meeting"),
+      v.literal("note"),
+      v.literal("message"),
+      v.literal("event"),
+      v.literal("other")
+    ),
+    contactId: v.optional(v.id("contacts")),
+    participantEmails: v.optional(v.array(v.string())),
+    relatedClientId: v.optional(v.id("clients")),
+    relatedProjectId: v.optional(v.id("projects")),
+    occurredAt: v.string(),
+    payloadRef: v.optional(v.string()),    // Gmail message id, Fireflies meeting id, HubSpot activity id
+    payloadType: v.optional(v.string()),   // "gmail.message", "fireflies.meeting", "hubspot.activity"
+    subject: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    bodyExcerpt: v.optional(v.string()),   // first ~500 chars
+    providerEnrichment: v.optional(v.any()),
+    threadId: v.optional(v.string()),
+    capturedBy: v.optional(v.id("users")),
+    createdAt: v.string(),
+  })
+    .index("by_contact", ["contactId"])
+    .index("by_provider_payload", ["provider", "payloadRef"])
+    .index("by_related_project", ["relatedProjectId"])
+    .index("by_related_client", ["relatedClientId"])
+    .index("by_occurred_at", ["occurredAt"])
+    .index("by_thread", ["threadId"]),
 });
 
