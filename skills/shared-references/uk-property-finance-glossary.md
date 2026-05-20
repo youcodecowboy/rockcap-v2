@@ -110,9 +110,63 @@ Shared reference loaded by skills that need consistent vocabulary. The definitio
 
 ## Document types
 
-These are the most common documents in a deal's filing structure. The classification system in the app uses these names.
+These are the canonical RockCap document types, sourced from the app's `fileTypeDefinitions` taxonomy (seeded in `convex/migrations/seedFileTypeDefinitions.ts`). Skills classifying, filing, or referencing documents use these names exactly. Eight categories, 28 types.
 
-**Asset Management Plan**, **Business Plan**, **Cashflow**, **Comparables Pack**, **Construction Programme**, **Cost-to-Complete**, **Development Appraisal**, **Drawdown Report**, **Funding Statement**, **Heads of Terms**, **ID&V Pack** (identity and verification), **Insurance Schedule**, **Loan Agreement**, **Monitoring Report**, **Personal Guarantee**, **Planning Pack**, **PSC Register**, **Red Book Valuation**, **Sales Update**, **Site Photos**, **Sponsor Bio**, **Statement of Affairs**, **Tender Pack**, **Title Pack**.
+### Appraisals
+- **Appraisal** — generic property valuation by a qualified appraiser
+- **RedBook Valuation** — RICS-qualified Red Book Global Standards valuation
+- **Cashflow** — DCF-style projected income for a property or scheme
+
+### Plans
+- **Floor Plans** — horizontal building layouts; GIA, NIA, sqm
+- **Elevations** — external vertical face drawings (N/S/E/W)
+- **Sections** — cross-sections; ceiling heights, vertical organisation
+- **Site Plans** — building arrangement on land; parking, landscaping
+- **Location Plans** — Ordnance Survey 1:1250 wider context maps
+
+### Inspections
+- **Initial Monitoring Report** — pre-funding monitoring surveyor due diligence
+- **Interim Monitoring Report** — monthly construction progress and draw certification
+
+### Professional Reports
+- **Planning Documentation** — LPA decision notices, S106, CIL
+- **Contract Sum Analysis** — element/trade cost breakdown (BoQ, cost plan)
+- **Comparables** — market evidence pack (rental and sale comps)
+
+### KYC
+- **Passport** — government-issued identity travel document
+- **Driving License** — DVLA photo card
+- **Utility Bill** — proof of address (electricity, gas, council tax)
+- **Bank Statement** — periodic account activity from a financial institution
+- **Application Form** — structured customer information capture
+- **Assets & Liabilities Statement** — personal net-worth/balance-sheet statement
+
+### Loan Terms
+- **Indicative Terms** — preliminary, non-binding offer (heads of terms with LTGDV, LGDV)
+- **Credit Backed Terms** — credit-committee-approved offer (committed terms)
+
+### Legal Documents
+- **Facility Letter** — binding loan agreement / credit agreement
+- **Personal Guarantee** — director or individual PG
+- **Corporate Guarantee** — parent-company guarantee
+- **Terms & Conditions** — standard baseline conditions
+- **Shareholders Agreement** — JV / drag-along / governance agreement
+- **Share Charge** — pledge over company shares as security
+- **Debenture** — fixed/floating charge document creating security over company assets
+- **Corporate Authorisations** — board resolutions, board minutes, certificate of incumbency
+
+### Project Documents
+- **Accommodation Schedule** — unit breakdown / unit mix specification
+- **Build Programme** — construction timeline (Gantt chart, sequencing)
+
+### Financial Documents
+- **Loan Statement** — current facility position
+- **Redemption Statement** — payoff / settlement figure
+- **Completion Statement** — property transaction settlement / apportionment
+
+When a skill needs document context for a deal, it queries by these exact category and type names. The taxonomy lives in `fileTypeDefinitions`; skills do not invent new types. If a real-world document does not fit, the skill flags it for operator review rather than coining a new label.
+
+The checklist of which documents are required, when (by deal phase), and at what priority is in `../shared-references/document-checklist-canon.md`. The folder structure for filing them is there too.
 
 ## Numbers and conventions
 
