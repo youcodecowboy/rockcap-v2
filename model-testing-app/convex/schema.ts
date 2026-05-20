@@ -3979,5 +3979,21 @@ export default defineSchema({
     .index("by_related_client", ["relatedClientId"])
     .index("by_occurred_at", ["occurredAt"])
     .index("by_thread", ["threadId"]),
+
+  // mcpTokens (BL-5.9) - per-user MCP tokens for Claude Code authentication.
+  // Tokens are minted via a settings UI; the plaintext is shown to the user
+  // once and never persisted. The server stores only a SHA-256 hash plus a
+  // display prefix for UI listing.
+  mcpTokens: defineTable({
+    userId: v.id("users"),
+    tokenHash: v.string(),        // sha-256 hex of the plaintext token
+    tokenPrefix: v.string(),      // first 12 chars for display, e.g. "rcp_aBc123"
+    name: v.string(),             // user-given label ("My MacBook", "Office desktop")
+    createdAt: v.string(),
+    lastUsedAt: v.optional(v.string()),
+    revokedAt: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_token_hash", ["tokenHash"]),
 });
 
