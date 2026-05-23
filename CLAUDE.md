@@ -14,6 +14,15 @@
 - `docs/` — project docs, specs, audits
 - `.logbook/` — task tracking (see below)
 
+### Skill execution
+
+When invoking a skill from `skills/skills/`:
+
+1. **Always call `skillRun.start` first** with `skillName`, `input`, `trigger` (if known), and (if the skill's `SKILL.md` has a `## Dedup` section) `dedupKey` plus `dedupWindowDays`. Use the returned `runId` for the rest of the workflow.
+2. **Honour the dedup response.** On `status: "duplicate_found"`, surface the prior brief to the operator and ask before continuing.
+3. **Always call `skillRun.complete` at the end** with status, brief, and links to created or updated entities. Never leave a run in `status: "running"`.
+4. **Log gaps as you find them.** Missing MCP tools, thin references, app UI gaps: capture in the `gaps` array on `skillRun.complete` and (in parallel) `/jot` them into the logbook for triage.
+
 ---
 
 ## Task Tracking — Logbook Plugin

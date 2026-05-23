@@ -23,6 +23,17 @@ Optional but useful:
 - `triggerContext` (string): why we're looking at this prospect now. A planning hit, a referral, a charge filing, a press mention.
 - `relatedDealContext` (string): if the operator already has a deal context to colour the analysis.
 
+## Dedup
+
+- **dedupKey**: the resolved `companiesHouseNumber` (set after step 1 of the workflow).
+- **dedupWindowDays**: 7
+- **On duplicate**: surface the prior run's brief and ask the operator
+  "refresh (re-run from scratch) or open prior?". Default action is "open prior"
+  unless the operator explicitly asks for a refresh.
+- **Why 7 days**: Companies House charge filings can land any day; a new filing
+  often justifies a fresh DNA analysis. Shorter than 7 risks blocking legitimate
+  refreshes; longer leaves stale conclusions live.
+
 ## Outputs
 
 Persisted to Convex:
@@ -41,7 +52,7 @@ What it does not do:
 
 ## High-level workflow
 
-1. **Resolve the company**. If a Companies House number was given, fetch the company profile directly. If a name was given, search Companies House for matches and disambiguate. If multiple plausible matches, surface them and ask.
+1. **Resolve the company**. If a Companies House number was given, fetch the company profile directly. If a name was given, search Companies House for matches and disambiguate. If multiple plausible matches, surface them and ask. At this point the canonical `companiesHouseNumber` is available; call `skillRun.start` with `dedupKey: companiesHouseNumber`, `dedupWindowDays: 7` per the `## Dedup` section above. If the response is `duplicate_found`, surface the prior brief and ask the operator before continuing.
 2. **Fetch Companies House data**. Profile, charges, officers, PSCs. Capture each into the relevant Convex tables (`companiesHouseCompanies`, `companiesHouseCharges`, `companiesHouseOfficers`, `companiesHousePSC`).
 3. **Check for existing prospect or client**. If a `clients` row already references this company number, this is an update flow, not a new-prospect flow. Update the existing row's intelligence; do not create a duplicate.
 4. **Run Lender DNA analysis**. Load `references/lender-dna-from-charges.md` and follow it. The output is a section of structured findings: which lenders the company has used, which are current, which patterns the charge book reveals.
