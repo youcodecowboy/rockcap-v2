@@ -13,6 +13,7 @@ import type * as approvals from "../approvals.js";
 import type * as authHelpers from "../authHelpers.js";
 import type * as bulkBackgroundProcessor from "../bulkBackgroundProcessor.js";
 import type * as bulkUpload from "../bulkUpload.js";
+import type * as cadenceDispatcher from "../cadenceDispatcher.js";
 import type * as cadences from "../cadences.js";
 import type * as categorySettings from "../categorySettings.js";
 import type * as changelog from "../changelog.js";
@@ -150,6 +151,7 @@ declare const fullApi: ApiFromModules<{
   authHelpers: typeof authHelpers;
   bulkBackgroundProcessor: typeof bulkBackgroundProcessor;
   bulkUpload: typeof bulkUpload;
+  cadenceDispatcher: typeof cadenceDispatcher;
   cadences: typeof cadences;
   categorySettings: typeof categorySettings;
   changelog: typeof changelog;

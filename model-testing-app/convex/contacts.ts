@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 
 /**
  * Query: Get contacts associated with a client.
@@ -238,5 +238,14 @@ export const unlinkFromClient = mutation({
       updatedAt: new Date().toISOString(),
     });
     return args.contactId;
+  },
+});
+
+// Internal query: direct single-row lookup by id.
+// Used by cadenceDispatcher for opt-out checks and email resolution.
+export const getInternal = internalQuery({
+  args: { contactId: v.id("contacts") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.contactId);
   },
 });
