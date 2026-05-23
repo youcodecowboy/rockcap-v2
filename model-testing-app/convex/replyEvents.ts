@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 
 // Internal API for the replyEvents table. Written by the Gmail push webhook
 // and the HubSpot sync sweep. Idempotency guard is the (source, externalId)
@@ -123,6 +123,18 @@ export const appendErrorInternal = internalMutation({
 // ── Get one row by id ────────────────────────────────────────────────
 
 export const getInternal = internalQuery({
+  args: { replyEventId: v.id("replyEvents") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.replyEventId);
+  },
+});
+
+// ── Public get by id (used by /api/meeting-prep-respond) ─────────────
+// Called from a Next.js route via ConvexHttpClient (no user session).
+// Intentionally public — the route is already protected by
+// x-convex-internal-secret; the data it reads is not user-sensitive.
+
+export const getById = query({
   args: { replyEventId: v.id("replyEvents") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.replyEventId);
