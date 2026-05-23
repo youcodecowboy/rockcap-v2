@@ -46,6 +46,57 @@ Returns to the operator inline (no Convex writes):
 7. If the contact is a lender BDM, pull `appetiteSignals` for that lender; recent signals lead the brief.
 8. Compose the brief in the shape above. Stop at 1 page of content; longer briefs go unread.
 
+## Responder mode (v1.1)
+
+Meeting-prep has two modes of invocation:
+
+1. **Pre-call brief mode** (the original purpose, sections above): operator invokes before a meeting; output is the inline brief.
+
+2. **Responder mode** (v1.1, added 2026-05-23): the reply event processor invokes the `/api/meeting-prep-respond` route when a `book_meeting` reply intent is detected. Input is a `replyEventId` plus the reply body and the cancelled cadence context. Output is a drafted availability response — the email we'd send back to confirm the meeting.
+
+### Responder mode workflow
+
+When invoked via `/api/meeting-prep-respond`:
+
+1. Load the reply event row + the matched contact + any related client/project.
+2. Optionally load the prior cadence touches that were cancelled by this reply (to thread the response naturally — referring back to the original outreach).
+3. Propose 3 availability slots. For v1.1 these are operator-judgement defaults — next 3 business days at 10am UK time, or whatever the operator's typical pattern is — NOT live Google Calendar lookups (which defer to v1.2 once the calendar integration is wired into the route).
+4. Compose a short, warm reply: thank for the response, confirm interest, propose the 3 slots, ask which works best.
+
+### Responder mode output contract
+
+Return ONLY a JSON object — no prose, no code fence:
+
+```json
+{
+  "draftReplySubject": "Re: <original subject>",
+  "draftReplyBody": "Plain-text reply body, no signature (the operator's email client adds it).",
+  "draftReplyBodyHtml": "HTML version of the body for the approval payload.",
+  "suggestedSlots": [
+    { "iso": "2026-05-26T09:00:00Z", "display": "Tuesday 26 May, 10:00 UK time" },
+    { "iso": "2026-05-27T13:00:00Z", "display": "Wednesday 27 May, 14:00 UK time" },
+    { "iso": "2026-05-28T09:00:00Z", "display": "Thursday 28 May, 10:00 UK time" }
+  ]
+}
+```
+
+Or if a meeting reply is not appropriate (e.g., the reply was misclassified):
+
+```json
+{
+  "escalate": true,
+  "reason": "reply does not actually accept a meeting; recommend operator review"
+}
+```
+
+### Responder mode style
+
+Same `## Style rules` as pre-call brief mode, plus:
+
+- **Tone match.** Read the reply's tone; mirror it in the response. A formal "happy to discuss" reply gets a formal response; a casual "sure let's chat" gets a warmer response.
+- **Don't over-pitch.** The prospect already said yes to a meeting; the response confirms and proposes times. No marketing, no qualification questions in the body.
+- **Single ask.** One question: which time works? Don't add multiple questions about agenda, attendees, video link.
+
 ## Style rules
 
 All CONVENTIONS apply. Two that matter most:
@@ -61,6 +112,12 @@ All CONVENTIONS apply. Two that matter most:
 - `milestone.getByProject`
 - `appetite.getCurrentForLender` (when contact is a BDM)
 - `intelligence.queryIntelligence`
+
+For responder mode (`/api/meeting-prep-respond`):
+
+- `replyEvents.getById` (public query landing alongside the route in v1.1)
+- All the brief-mode tools above (for relationship context)
+- (v1.2: `calendar.getAvailability` for real free/busy lookup; v1.1 uses operator-default slots)
 
 ## What goes wrong
 
