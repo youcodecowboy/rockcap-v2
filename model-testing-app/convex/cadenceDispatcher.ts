@@ -38,14 +38,14 @@ export const tick = internalAction({
         continue;
       }
 
-      // Skip: paused
+      // Skip: paused.
+      // Don't advance state — leave nextDueAt and lastFireKey unchanged so the
+      // next tick re-polls and re-evaluates against pauseUntil. The pauseUntil
+      // field itself is the audit trail; we lose the "skipped_paused" history
+      // value here in exchange for correct package-member behaviour (a paused
+      // package member would otherwise deactivate, since computeNextDueAt
+      // returns undefined for package members).
       if (row.pauseUntil && nowIso < row.pauseUntil) {
-        await ctx.runMutation(internal.cadences.advanceAfterFireInternal, {
-          cadenceId: row._id,
-          fireKey,
-          lastResult: "skipped_paused",
-          nextDueAt: computeNextDueAt(row),
-        });
         skipped++;
         continue;
       }
@@ -67,7 +67,14 @@ export const tick = internalAction({
 
       // Branch on drafting mode
       if (row.preDraftedTouch) {
-        // Pre-drafted: create the approval row directly
+        // Pre-drafted: create the approval row first. If that fails, record
+        // a failure and move on. If it succeeds, advance state in a separate
+        // try so a failure to advance doesn't trigger another failure handler
+        // (which would log a misleading error message; we already created
+        // the approval). A failure to advance leaves lastFireKey unset, so
+        // the next tick would re-fire and create a duplicate — log the
+        // condition so it's visible if it happens.
+        let approvalCreated = false;
         try {
           await ctx.runMutation(internal.approvals.internalCreate, {
             entityType: "gmail_send",
@@ -86,13 +93,7 @@ export const tick = internalAction({
             relatedContactId: row.contactId,
             relatedCadenceId: row._id,
           });
-          await ctx.runMutation(internal.cadences.advanceAfterFireInternal, {
-            cadenceId: row._id,
-            fireKey,
-            lastResult: "sent",
-            nextDueAt: computeNextDueAt(row),
-          });
-          fired++;
+          approvalCreated = true;
         } catch (err) {
           await ctx.runMutation(internal.cadences.recordFailureInternal, {
             cadenceId: row._id,
@@ -100,6 +101,27 @@ export const tick = internalAction({
             message: err instanceof Error ? err.message : String(err),
           });
           failed++;
+        }
+        if (approvalCreated) {
+          try {
+            await ctx.runMutation(internal.cadences.advanceAfterFireInternal, {
+              cadenceId: row._id,
+              fireKey,
+              lastResult: "sent",
+              nextDueAt: computeNextDueAt(row),
+            });
+            fired++;
+          } catch (err) {
+            // Approval was created but state advance failed. The lastFireKey
+            // was not written, so the next tick may re-fire and create a
+            // duplicate. Log so it's visible. Worth alerting on if this
+            // ever appears in production logs.
+            console.error(
+              `[cadence-fire] approval created but advanceAfterFire failed for cadence ${row._id}; next tick may duplicate`,
+              err,
+            );
+            failed++;
+          }
         }
       } else {
         // Dynamic-compose: v1.1 will route here. v1 marks failed.
