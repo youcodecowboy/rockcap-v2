@@ -451,6 +451,64 @@ const TOOLS: McpTool[] = [
       return asText({ status: "created", runId });
     },
   },
+
+  {
+    name: "skillRun.complete",
+    description:
+      "Close a skill execution. Sets status (complete / complete_with_gaps / failed / cancelled), persists the narrative brief, records linked entities and the structured gaps + errors arrays. Sets completedAt and computes durationMs. Validates that the runId belongs to the calling user.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "The runId returned by skillRun.start" },
+        status: {
+          type: "string",
+          description: "complete / complete_with_gaps / failed / cancelled",
+        },
+        brief: { type: "string", description: "Two-paragraph narrative summary, per CONVENTIONS voice rules" },
+        linkedClientId: { type: "string" },
+        linkedProjectId: { type: "string" },
+        linkedApprovalIds: { type: "array", items: { type: "string" } },
+        gaps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", description: "missing_tool / thin_reference / ui_gap / schema_gap / other" },
+              description: { type: "string" },
+              suggestedFix: { type: "string" },
+            },
+            required: ["kind", "description"],
+          },
+        },
+        errors: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              step: { type: "string" },
+              message: { type: "string" },
+            },
+            required: ["step", "message"],
+          },
+        },
+      },
+      required: ["runId", "status"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.skillRuns.completeInternal, {
+        runId: args.runId,
+        userId,
+        status: args.status,
+        brief: args.brief,
+        linkedClientId: args.linkedClientId,
+        linkedProjectId: args.linkedProjectId,
+        linkedApprovalIds: args.linkedApprovalIds,
+        gaps: args.gaps,
+        errors: args.errors,
+      });
+      return asText(result);
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(
