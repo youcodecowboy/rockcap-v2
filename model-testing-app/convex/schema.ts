@@ -444,6 +444,13 @@ export default defineSchema({
     deletedAt: v.optional(v.string()),
     deletedBy: v.optional(v.id("users")),
     deletedReason: v.optional(v.string()),
+
+    // Opt-out (cadence-fire v1) - set by reply handler on not_interested
+    // intent classification. Cadence dispatcher checks this before firing;
+    // prospect-intel and other cadence-producing skills should also check
+    // before queueing new cadences.
+    optedOutAt: v.optional(v.string()),                              // ISO
+    optedOutByReplyEventId: v.optional(v.id("replyEvents")),         // audit
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -3732,12 +3739,43 @@ export default defineSchema({
     createdBy: v.id("users"),
     createdAt: v.string(),
     updatedAt: v.string(),
+
+    // Packaging (gauntlet feature: groups linked touches drafted as one batch)
+    packageId: v.optional(v.string()),
+    packageOrder: v.optional(v.number()),
+
+    // Drafting mode (gauntlet feature: pre-drafted touch composed at queue time)
+    preDraftedTouch: v.optional(v.object({
+      subject: v.string(),
+      bodyText: v.string(),
+      bodyHtml: v.string(),
+      dynamicVars: v.optional(v.any()),
+    })),
+
+    // Cancellation audit (set when an inbound reply cancels this cadence)
+    cancelledReason: v.optional(v.string()),
+    cancelledByEventId: v.optional(v.id("replyEvents")),
+
+    // Idempotency (the dispatcher computes `${_id}:${nextDueAt}` and skips if matches)
+    lastFireKey: v.optional(v.string()),
+
+    // Failure tracking (incremented on retryable errors; reset on next success)
+    consecutiveFailures: v.optional(v.number()),
+    errors: v.optional(v.array(v.object({
+      at: v.string(),
+      step: v.string(),
+      message: v.string(),
+    }))),
+
+    // Origin (which skill run drafted this cadence)
+    sourceSkillRunId: v.optional(v.id("skillRuns")),
   })
     .index("by_contact", ["contactId"])
     .index("by_next_due", ["nextDueAt"])
     .index("by_active_next_due", ["isActive", "nextDueAt"])
     .index("by_related_project", ["relatedProjectId"])
-    .index("by_related_client", ["relatedClientId"]),
+    .index("by_related_client", ["relatedClientId"])
+    .index("by_package", ["packageId"]),
 
   // AppetiteSignal (BL-1.8) - atomic lender intelligence with provenance and
   // timestamp. Three-layer LenderProfile model: static fields stay on
@@ -3995,6 +4033,32 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_token_hash", ["tokenHash"]),
+
+  // ReplyEvents (cadence-fire v1) - audit trail for inbound replies that
+  // cancelled active cadences. Source is "gmail_push" for real-time webhook
+  // delivery; "hubspot_sync" for the 6h safety-net sweep. The (source,
+  // externalId) pair is the idempotency key — same message arriving via
+  // both paths processes once.
+  replyEvents: defineTable({
+    source: v.union(v.literal("gmail_push"), v.literal("hubspot_sync")),
+    externalId: v.string(),                    // Gmail Message-ID header or `hubspot:engagement:${id}`
+    contactId: v.optional(v.id("contacts")),
+    receivedAt: v.string(),                    // ISO; when the inbound was sent (per provider), not when we processed
+    rawMessageRef: v.optional(v.string()),     // Gmail thread URL or HubSpot engagement URL for debugging
+    classifiedIntent: v.optional(v.string()),  // one of the 6 buckets, or "unknown"
+    classifiedConfidence: v.optional(v.number()),
+    classifierEvidence: v.optional(v.string()),
+    cadencesCancelled: v.optional(v.array(v.id("cadences"))),
+    dispatchedTo: v.optional(v.string()),      // "meeting-prep" | "long-term-monitor" | "qualify-and-draft" | "opt_out_marker" | "operator_review" | "restored_cadences"
+    dispatchedSkillRunId: v.optional(v.id("skillRuns")),
+    processed: v.boolean(),
+    errors: v.optional(v.array(v.string())),
+    userId: v.id("users"),                     // owner of the cadences cancelled; needed for downstream user-scoped queries
+  })
+    .index("by_source_externalId", ["source", "externalId"])
+    .index("by_contact", ["contactId"])
+    .index("by_processed", ["processed"])
+    .index("by_user", ["userId"]),
 
   skillRuns: defineTable({
     // Identity
