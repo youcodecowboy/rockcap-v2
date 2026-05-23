@@ -401,6 +401,56 @@ const TOOLS: McpTool[] = [
       return asText({ approvalId, message: "Approval created. Awaits human review in /approvals." });
     },
   },
+
+  // Skill execution lifecycle (BL-5.x; see spec
+  // docs/superpowers/specs/2026-05-23-prospect-intel-level-a-hardening-design.md)
+  {
+    name: "skillRun.start",
+    description:
+      "Begin a skill execution. Creates a skillRuns row, returns runId. If dedupKey + dedupWindowDays are provided and a prior complete/complete_with_gaps run exists within the window for the same skill+dedupKey, returns status=duplicate_found with the prior run summary so the caller can surface it to the operator before continuing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skillName: { type: "string", description: "e.g., 'prospect-intel'" },
+        input: { type: "object", description: "Raw args the skill received" },
+        trigger: { type: "string", description: "Free-form context, e.g., 'planning hit on Mulberry'" },
+        dedupKey: { type: "string", description: "Normalised identifier per the skill's ## Dedup section (e.g., a resolved Companies House number)" },
+        dedupWindowDays: { type: "number" },
+      },
+      required: ["skillName", "input"],
+    },
+    handler: async (ctx, userId, args) => {
+      // Dedup check (only if both key + window supplied AND key is non-empty)
+      if (args.dedupKey && args.dedupWindowDays) {
+        const windowMs = args.dedupWindowDays * 24 * 60 * 60 * 1000;
+        const cutoffMs = Date.now() - windowMs;
+        const priorRun = await ctx.runQuery(internal.skillRuns.findRecentByDedupKeyInternal, {
+          skillName: args.skillName,
+          dedupKey: args.dedupKey,
+          cutoffMs,
+        });
+        if (priorRun) {
+          const ageHours = (Date.now() - priorRun._creationTime) / (1000 * 60 * 60);
+          return asText({
+            status: "duplicate_found",
+            priorRunId: priorRun._id,
+            priorRunBrief: priorRun.brief ?? "",
+            priorRunAgeHours: Math.round(ageHours * 10) / 10,
+          });
+        }
+      }
+      const runId = await ctx.runMutation(internal.skillRuns.createInternal, {
+        skillName: args.skillName,
+        userId,
+        input: args.input,
+        trigger: args.trigger,
+        dedupKey: args.dedupKey,
+        dedupWindowDays: args.dedupWindowDays,
+        status: "running",
+      });
+      return asText({ status: "created", runId });
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(

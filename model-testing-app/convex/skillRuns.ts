@@ -40,15 +40,16 @@ export const findRecentByDedupKeyInternal = internalQuery({
     cutoffMs: v.number(),
   },
   handler: async (ctx, args) => {
+    if (!args.dedupKey) return null;
     const rows = await ctx.db
       .query("skillRuns")
       .withIndex("by_skill_and_dedup_key", (q) =>
         q.eq("skillName", args.skillName).eq("dedupKey", args.dedupKey),
       )
+      .filter((q) => q.gte(q.field("_creationTime"), args.cutoffMs))
       .order("desc")
-      .take(20);
+      .take(100);
     for (const row of rows) {
-      if (row._creationTime < args.cutoffMs) break;
       if (row.status === "complete" || row.status === "complete_with_gaps") {
         return row;
       }
