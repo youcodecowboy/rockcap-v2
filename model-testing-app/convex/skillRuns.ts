@@ -41,6 +41,10 @@ export const findRecentByDedupKeyInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     if (!args.dedupKey) return null;
+    // take(100) is a safety cap; in practice the (skillName, dedupKey) pair
+    // limits how many rows can exist. If a single key ever accumulates 100+
+    // non-terminal runs in the window, dedup will fail open and a fresh run
+    // is created — acceptable at current scale, revisit if batch-10 lands.
     const rows = await ctx.db
       .query("skillRuns")
       .withIndex("by_skill_and_dedup_key", (q) =>
@@ -49,6 +53,8 @@ export const findRecentByDedupKeyInternal = internalQuery({
       .filter((q) => q.gte(q.field("_creationTime"), args.cutoffMs))
       .order("desc")
       .take(100);
+    // Successful-terminal statuses; keep in sync with the skillRuns schema's
+    // status union and with completeInternal's allowed input statuses.
     for (const row of rows) {
       if (row.status === "complete" || row.status === "complete_with_gaps") {
         return row;

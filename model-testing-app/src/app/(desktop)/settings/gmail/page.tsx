@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
@@ -17,7 +17,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Loader2, AlertTriangle, Mail } from "
 // - Approval-gated send default (BL-4.4): per-user sendEnabled defaults
 //   off; global gmailSendConfig.isEnabled defaults off. Both must be on.
 
-export default function GmailSettingsPage() {
+function GmailSettingsInner() {
   const status = useQuery(api.gmailTokens.getConnectionStatus as any);
   const sendConfig = useQuery(api.gmailTokens.getSendConfig as any);
   const setMySendEnabled = useMutation(api.gmailTokens.setMySendEnabled as any);
@@ -293,5 +293,13 @@ export default function GmailSettingsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function GmailSettingsPage() {
+  return (
+    <Suspense fallback={<div>Loading…</div>}>
+      <GmailSettingsInner />
+    </Suspense>
   );
 }

@@ -9,6 +9,7 @@
  */
 
 import type * as activities from "../activities.js";
+import type * as approvals from "../approvals.js";
 import type * as authHelpers from "../authHelpers.js";
 import type * as bulkBackgroundProcessor from "../bulkBackgroundProcessor.js";
 import type * as bulkUpload from "../bulkUpload.js";
@@ -45,13 +46,18 @@ import type * as fileQueue from "../fileQueue.js";
 import type * as fileTypeDefinitions from "../fileTypeDefinitions.js";
 import type * as files from "../files.js";
 import type * as filingFeedback from "../filingFeedback.js";
+import type * as fireflies from "../fireflies.js";
+import type * as firefliesSync from "../firefliesSync.js";
 import type * as flags from "../flags.js";
 import type * as folderStructure from "../folderStructure.js";
 import type * as folderTemplates from "../folderTemplates.js";
 import type * as funnels from "../funnels.js";
+import type * as gmailSend from "../gmailSend.js";
+import type * as gmailTokens from "../gmailTokens.js";
 import type * as googleCalendar from "../googleCalendar.js";
 import type * as googleCalendarLog from "../googleCalendarLog.js";
 import type * as googleCalendarSync from "../googleCalendarSync.js";
+import type * as http from "../http.js";
 import type * as hubspotSync from "../hubspotSync.js";
 import type * as hubspotSync__debug from "../hubspotSync/_debug.js";
 import type * as hubspotSync_activities from "../hubspotSync/activities.js";
@@ -78,6 +84,8 @@ import type * as keywordLearning from "../keywordLearning.js";
 import type * as knowledgeBank from "../knowledgeBank.js";
 import type * as knowledgeLibrary from "../knowledgeLibrary.js";
 import type * as leads from "../leads.js";
+import type * as mcp from "../mcp.js";
+import type * as mcpTokens from "../mcpTokens.js";
 import type * as meetingExtractionJobs from "../meetingExtractionJobs.js";
 import type * as meetings from "../meetings.js";
 import type * as migrations_addDocumentCodes from "../migrations/addDocumentCodes.js";
@@ -119,10 +127,12 @@ import type * as reminders from "../reminders.js";
 import type * as scenarioResults from "../scenarioResults.js";
 import type * as scenarios from "../scenarios.js";
 import type * as search from "../search.js";
+import type * as skillRuns from "../skillRuns.js";
 import type * as tasks from "../tasks.js";
 import type * as templateDefinitions from "../templateDefinitions.js";
 import type * as templateSheets from "../templateSheets.js";
 import type * as templates from "../templates.js";
+import type * as touchpoints from "../touchpoints.js";
 import type * as userTags from "../userTags.js";
 import type * as users from "../users.js";
 
@@ -134,6 +144,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   activities: typeof activities;
+  approvals: typeof approvals;
   authHelpers: typeof authHelpers;
   bulkBackgroundProcessor: typeof bulkBackgroundProcessor;
   bulkUpload: typeof bulkUpload;
@@ -170,13 +181,18 @@ declare const fullApi: ApiFromModules<{
   fileTypeDefinitions: typeof fileTypeDefinitions;
   files: typeof files;
   filingFeedback: typeof filingFeedback;
+  fireflies: typeof fireflies;
+  firefliesSync: typeof firefliesSync;
   flags: typeof flags;
   folderStructure: typeof folderStructure;
   folderTemplates: typeof folderTemplates;
   funnels: typeof funnels;
+  gmailSend: typeof gmailSend;
+  gmailTokens: typeof gmailTokens;
   googleCalendar: typeof googleCalendar;
   googleCalendarLog: typeof googleCalendarLog;
   googleCalendarSync: typeof googleCalendarSync;
+  http: typeof http;
   hubspotSync: typeof hubspotSync;
   "hubspotSync/_debug": typeof hubspotSync__debug;
   "hubspotSync/activities": typeof hubspotSync_activities;
@@ -203,6 +219,8 @@ declare const fullApi: ApiFromModules<{
   knowledgeBank: typeof knowledgeBank;
   knowledgeLibrary: typeof knowledgeLibrary;
   leads: typeof leads;
+  mcp: typeof mcp;
+  mcpTokens: typeof mcpTokens;
   meetingExtractionJobs: typeof meetingExtractionJobs;
   meetings: typeof meetings;
   "migrations/addDocumentCodes": typeof migrations_addDocumentCodes;
@@ -244,10 +262,12 @@ declare const fullApi: ApiFromModules<{
   scenarioResults: typeof scenarioResults;
   scenarios: typeof scenarios;
   search: typeof search;
+  skillRuns: typeof skillRuns;
   tasks: typeof tasks;
   templateDefinitions: typeof templateDefinitions;
   templateSheets: typeof templateSheets;
   templates: typeof templates;
+  touchpoints: typeof touchpoints;
   userTags: typeof userTags;
   users: typeof users;
 }>;
