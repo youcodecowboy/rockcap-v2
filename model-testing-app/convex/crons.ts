@@ -54,4 +54,15 @@ crons.interval(
   internal.firefliesSync.autoSyncAll,
 );
 
+// Cadence dispatcher (cadence-fire v1). Every 5 minutes. Polls due
+// cadences (isActive + nextDueAt past), fires pre-drafted touches into
+// the approval queue, advances state. Dynamic-compose types defer to
+// v1.1 (composer not yet built). Cap of 100 rows per tick prevents
+// runaway under backlog conditions.
+crons.interval(
+  "cadence-dispatcher",
+  { minutes: 5 },
+  internal.cadenceDispatcher.tick,
+);
+
 export default crons;
