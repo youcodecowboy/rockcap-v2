@@ -128,7 +128,9 @@ export const advanceAfterFireInternal = internalMutation({
       v.literal("skipped_paused"),
       v.literal("skipped_holiday"),
       v.literal("skipped_user_opted_out"),
-      v.literal("failed"),
+      // "failed" intentionally excluded here. Failures must use
+      // recordFailureInternal so the consecutiveFailures counter increments
+      // and the auto-deactivate-at-3 guard fires correctly.
     ),
     nextDueAt: v.optional(v.string()),  // undefined means one-shot complete → set isActive: false
   },
