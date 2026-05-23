@@ -2,6 +2,16 @@
 
 The skill the cadence scheduling engine (BL-5.8) fires when a scheduled-touch event comes due. Handles all seven cadence types: prospect follow-ups, warm-lead chases, execution chasers, client check-ins, BDM relationship maintenance, monitoring asks, and lost-deal re-engagement.
 
+## v1 contract (2026-05-23)
+
+The autonomy engine substrate is live: cadences table, 5-min dispatcher cron, Gmail push webhook (Pub/Sub setup pending), HubSpot sync sweep safety net, classify-reply-intent sub-skill, intent dispatch to four destinations.
+
+**v1 supports pre-drafted touches only.** Skills that produce cadences (prospect-intel today; others in coming weeks) must populate the `preDraftedTouch` field on each `cadences.create` call. Dynamic-compose cadence types (where this skill's per-type composition logic runs at fire time) **defer to v1.1** once the `/api/cadence-compose` route is built.
+
+The per-cadence-type sections below describe the target composition behaviour; in v1 the dispatcher logs a failure for any row without `preDraftedTouch` and the operator handles fallback manually.
+
+See `docs/superpowers/specs/2026-05-23-cadence-fire-autonomy-engine-design.md` for the full design.
+
 ## Trigger
 
 Invoke automatically when a `cadences` row's `nextDueAt` lapses and the cron-driven cadence engine schedules this skill against it. Not typically invoked by an operator directly; operators interact with the staged approvals that this skill produces.

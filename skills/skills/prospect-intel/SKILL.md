@@ -34,6 +34,25 @@ Optional but useful:
   often justifies a fresh DNA analysis. Shorter than 7 risks blocking legitimate
   refreshes; longer leaves stale conclusions live.
 
+## Cadence package
+
+When the workflow produces a draft outreach (step 7), it does NOT stop at the initial message. Instead it produces a **cadence package**: the initial outreach plus 3 follow-ups, all pre-drafted at queue time, with sequential send dates.
+
+**Why upfront drafting:** the follow-ups reference the initial pitch and intel. Drafting them at queue time keeps the narrative coherent (each follow-up builds on the prior); deferring composition to fire-time loses that thread. Operator approves the full package once.
+
+**Package shape (4 rows in `cadences`, all sharing a `packageId`):**
+
+| Order | Type | nextDueAt offset from now | Content angle |
+|---|---|---|---|
+| 1 | `prospect_followup` | +0 days (immediate) | The cold outreach itself (drawn from template-mapped-reachout reference) |
+| 2 | `prospect_followup` | +5 days | Soft nudge referencing the initial; new angle (one fresh piece of intel) |
+| 3 | `prospect_followup` | +12 days | Stronger close referencing a specific scheme or charge filing |
+| 4 | `prospect_followup` | +30 days | Final touch with a "should I stop reaching out?" close |
+
+**Implementation:** in workflow step 7, after composing the four messages, call `cadence.create` four times (one per row). Same `packageId` (a UUID generated at step start). `packageOrder` 1-4. Each row carries `preDraftedTouch: { subject, bodyText, bodyHtml }`. `isActive: true`. `sourceSkillRunId` set to the current runId.
+
+If a reply arrives at any point, the cadence engine cancels all remaining package members automatically (via the by_contact_active index lookup). No skill action needed.
+
 ## Outputs
 
 Persisted to Convex:
@@ -58,7 +77,7 @@ What it does not do:
 4. **Run Lender DNA analysis**. Load `references/lender-dna-from-charges.md` and follow it. The output is a section of structured findings: which lenders the company has used, which are current, which patterns the charge book reveals.
 5. **Classify the developer type**. Load `references/bridging-vs-developer.md` and follow it. The classification is one of: bridging-suitable, development-finance-suitable, term-loan-suitable, unclassifiable. The classification colours the reachout angle and the lender match.
 6. **Persist intelligence**. Write the findings to `clientIntelligence` and any specific data points to `knowledgeItems`. Cite sources (Companies House filing numbers, charge IDs, document IDs).
-7. **If a reachout is appropriate, draft it**. Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables, stage an `approvals` row. If a reachout is not appropriate (no contact, no trigger reason, recent contact already made), say so and stop.
+7. **If a reachout is appropriate, draft it**. Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables, stage an `approvals` row. If a reachout is not appropriate (no contact, no trigger reason, recent contact already made), say so and stop. After composing, queue the full cadence package via `cadence.create` per the `## Cadence package` section above. Operator approves the package; the engine fires the initial touch immediately and the follow-ups on schedule.
 8. **Return a brief**. Two paragraphs maximum. What we found, what we recommend doing about it. Hand the operator the structured intelligence link and the staged approval link.
 
 ## Style rules
