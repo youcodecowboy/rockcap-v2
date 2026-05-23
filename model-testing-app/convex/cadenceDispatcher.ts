@@ -124,14 +124,126 @@ export const tick = internalAction({
           }
         }
       } else {
-        // Dynamic-compose: v1.1 will route here. v1 marks failed.
-        await ctx.runMutation(internal.cadences.recordFailureInternal, {
-          cadenceId: row._id,
-          step: "dynamic_compose_unavailable",
-          message:
-            "v1 ships pre-drafted only; dynamic compose deferred to v1.1. Add preDraftedTouch to cadence row or wait for v1.1 composer.",
-        });
-        failed++;
+        // Dynamic-compose (v1.1): fetch from /api/cadence-compose, then
+        // create the approval row from the composed touch.
+        const appUrl = process.env.NEXT_APP_URL;
+        if (!appUrl) {
+          await ctx.runMutation(internal.cadences.recordFailureInternal, {
+            cadenceId: row._id,
+            step: "compose_no_app_url",
+            message: "NEXT_APP_URL env var not set; cannot reach composer",
+          });
+          failed++;
+          continue;
+        }
+
+        let composeResult:
+          | { touch: { subject: string; bodyText: string; bodyHtml: string } }
+          | { skip: true; reason: string }
+          | { error: string }
+          | null = null;
+        try {
+          const res = await fetch(`${appUrl}/api/cadence-compose`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-convex-internal-secret": process.env.CONVEX_INTERNAL_SECRET ?? "",
+            },
+            body: JSON.stringify({ cadenceId: row._id }),
+          });
+          if (!res.ok) {
+            composeResult = { error: `composer returned ${res.status}` };
+          } else {
+            composeResult = await res.json();
+          }
+        } catch (err) {
+          composeResult = {
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+
+        if (composeResult && "error" in composeResult) {
+          await ctx.runMutation(internal.cadences.recordFailureInternal, {
+            cadenceId: row._id,
+            step: "compose_call",
+            message: composeResult.error,
+          });
+          failed++;
+          continue;
+        }
+
+        if (composeResult && "skip" in composeResult) {
+          // Composer's evidence-or-skip rule: advance nextDueAt so the cadence
+          // comes around again next interval, recording skipped_paused.
+          await ctx.runMutation(internal.cadences.advanceAfterFireInternal, {
+            cadenceId: row._id,
+            fireKey,
+            lastResult: "skipped_paused",
+            nextDueAt: computeNextDueAt(row),
+          });
+          skipped++;
+          continue;
+        }
+
+        if (!composeResult || !("touch" in composeResult)) {
+          await ctx.runMutation(internal.cadences.recordFailureInternal, {
+            cadenceId: row._id,
+            step: "compose_invalid_response",
+            message: "composer returned an unexpected shape",
+          });
+          failed++;
+          continue;
+        }
+
+        // Create approval + advance, using the same two-try pattern as the
+        // pre-drafted branch. Approval creation and state advance are separate
+        // try scopes so a failure to advance doesn't log a misleading error
+        // for the already-created approval.
+        let approvalCreated = false;
+        try {
+          await ctx.runMutation(internal.approvals.internalCreate, {
+            entityType: "gmail_send",
+            summary: composeResult.touch.subject.slice(0, 200),
+            draftPayload: {
+              to: contact?.email ?? "(no email on contact)",
+              subject: composeResult.touch.subject,
+              bodyText: composeResult.touch.bodyText,
+              bodyHtml: composeResult.touch.bodyHtml,
+            },
+            requestedBy: row.createdBy,
+            requestSource: "cadence",
+            requestSourceName: "cadence-fire (composed)",
+            relatedClientId: row.relatedClientId,
+            relatedProjectId: row.relatedProjectId,
+            relatedContactId: row.contactId,
+            relatedCadenceId: row._id,
+          });
+          approvalCreated = true;
+        } catch (err) {
+          await ctx.runMutation(internal.cadences.recordFailureInternal, {
+            cadenceId: row._id,
+            step: "create_approval_composed",
+            message: err instanceof Error ? err.message : String(err),
+          });
+          failed++;
+        }
+        if (approvalCreated) {
+          try {
+            await ctx.runMutation(internal.cadences.advanceAfterFireInternal, {
+              cadenceId: row._id,
+              fireKey,
+              lastResult: "sent",
+              nextDueAt: computeNextDueAt(row),
+            });
+            fired++;
+          } catch (err) {
+            console.error(
+              `[cadence-fire] composed approval created but advanceAfterFire failed for cadence ${row._id}; next tick may duplicate`,
+              err,
+            );
+            failed++;
+          }
+        }
       }
     }
 

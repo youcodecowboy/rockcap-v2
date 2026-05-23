@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 
 // Internal API for the cadences table. The MCP tools cadence.create and
 // cadence.cancel wrap these (see convex/mcp.ts). The cron dispatcher in
@@ -189,6 +189,18 @@ export const recordFailureInternal = internalMutation({
 // ── Get one cadence by id ────────────────────────────────────────────
 
 export const getInternal = internalQuery({
+  args: { cadenceId: v.id("cadences") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.cadenceId);
+  },
+});
+
+// ── Public query for the composer route ─────────────────────────────
+// Returns a cadence row by id. Used by /api/cadence-compose which
+// authenticates the caller via CONVEX_INTERNAL_SECRET but needs to
+// read cadence data to compose its touch. Public (not internal) so
+// the route's ConvexHttpClient can call it without user-auth tokens.
+export const getById = query({
   args: { cadenceId: v.id("cadences") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.cadenceId);
