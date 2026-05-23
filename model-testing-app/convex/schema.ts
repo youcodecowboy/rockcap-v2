@@ -3995,5 +3995,60 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_token_hash", ["tokenHash"]),
+
+  skillRuns: defineTable({
+    // Identity
+    skillName: v.string(),
+    userId: v.id("users"),
+
+    // Input
+    input: v.any(),
+    trigger: v.optional(v.string()),
+
+    // Dedup
+    dedupKey: v.optional(v.string()),
+    dedupWindowDays: v.optional(v.number()),
+
+    // Status
+    status: v.union(
+      v.literal("running"),
+      v.literal("complete"),
+      v.literal("complete_with_gaps"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+
+    // Output
+    brief: v.optional(v.string()),
+
+    // Linked entities (denormalised for quick UI render)
+    linkedClientId: v.optional(v.id("clients")),
+    linkedProjectId: v.optional(v.id("projects")),
+    linkedApprovalIds: v.optional(v.array(v.id("approvals"))),
+
+    // Gaps surfaced during the run (punch list)
+    gaps: v.optional(v.array(v.object({
+      kind: v.string(),
+      description: v.string(),
+      suggestedFix: v.optional(v.string()),
+    }))),
+
+    // Errors encountered
+    errors: v.optional(v.array(v.object({
+      step: v.string(),
+      message: v.string(),
+    }))),
+
+    // Audit
+    completedAt: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+
+    // Batch (future)
+    parentBatchId: v.optional(v.id("bulkUploadBatches")),
+  })
+    .index("by_user", ["userId"])
+    .index("by_skill_and_dedup_key", ["skillName", "dedupKey"])
+    .index("by_status", ["status"])
+    .index("by_skill_and_user", ["skillName", "userId"]),
 });
 
