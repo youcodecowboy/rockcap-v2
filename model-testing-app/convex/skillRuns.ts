@@ -44,7 +44,7 @@ export const findRecentByDedupKeyInternal = internalQuery({
     // take(100) is a safety cap; in practice the (skillName, dedupKey) pair
     // limits how many rows can exist. If a single key ever accumulates 100+
     // non-terminal runs in the window, dedup will fail open and a fresh run
-    // is created — acceptable at current scale, revisit if batch-10 lands.
+    // is created. Acceptable at current scale; revisit if batch-10 lands.
     const rows = await ctx.db
       .query("skillRuns")
       .withIndex("by_skill_and_dedup_key", (q) =>
