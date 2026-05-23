@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { mcpHandler } from "./mcp";
+import { pushWebhook } from "./gmailWatch";
 
 // Convex HTTP router. Skills layer (Claude Code on operator laptops)
 // connects to /mcp here, authenticated by per-user bearer tokens minted
@@ -31,6 +32,12 @@ http.route({
       },
     });
   },
+});
+
+http.route({
+  path: "/webhooks/gmail-push",
+  method: "POST",
+  handler: pushWebhook,
 });
 
 export default http;
