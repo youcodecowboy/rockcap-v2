@@ -2,15 +2,34 @@
 
 The skill the cadence scheduling engine (BL-5.8) fires when a scheduled-touch event comes due. Handles all seven cadence types: prospect follow-ups, warm-lead chases, execution chasers, client check-ins, BDM relationship maintenance, monitoring asks, and lost-deal re-engagement.
 
-## v1 contract (2026-05-23)
+## Runtime contract (v1.1, 2026-05-23)
 
 The autonomy engine substrate is live: cadences table, 5-min dispatcher cron, Gmail push webhook (Pub/Sub setup pending), HubSpot sync sweep safety net, classify-reply-intent sub-skill, intent dispatch to four destinations.
 
-**v1 supports pre-drafted touches only.** Skills that produce cadences (prospect-intel today; others in coming weeks) must populate the `preDraftedTouch` field on each `cadences.create` call. Dynamic-compose cadence types (where this skill's per-type composition logic runs at fire time) **defer to v1.1** once the `/api/cadence-compose` route is built.
+**v1.1 supports both pre-drafted and dynamic-compose touches.**
 
-The per-cadence-type sections below describe the target composition behaviour; in v1 the dispatcher logs a failure for any row without `preDraftedTouch` and the operator handles fallback manually.
+- **Pre-drafted touches** (`preDraftedTouch` field populated): the dispatcher fires them directly. Used by skills that produce cadence packages (today: prospect-intel; coming: qualify-and-draft, lender-intel). Approval shape is the composed touch.
 
-See `docs/superpowers/specs/2026-05-23-cadence-fire-autonomy-engine-design.md` for the full design.
+- **Dynamic-compose touches** (`preDraftedTouch` absent): the dispatcher calls `/api/cadence-compose` which loads this SKILL.md as system prompt, exposes a focused atomic-tool subset (see Tool surface below), runs an agentic loop, returns the composed touch or a skip decision. Used at fire time when the touch needs fresh evidence (a new charge, a recent monitoring period, the latest appetite signal). The per-cadence-type composition sections below describe what the composer should do per type.
+
+The composer respects the "evidence or skip" rule: if no fresh evidence is available to ground the touch, the composer returns `{ skip: true, reason: ... }` and the dispatcher advances `nextDueAt` with `lastResult: "skipped_paused"`. This prevents content-free check-ins.
+
+### Tool surface (v1.1)
+
+The composer can call these atomic tools at fire time:
+
+- `getContact`, `getClient`, `getProject` — entity reads
+- `queryIntelligence`, `getClientIntelligence`, `getProjectIntelligence` — historical intelligence reads (lender DNA, prior analysis, captured charge summaries)
+
+The composer does NOT yet have direct access to:
+
+- **Touchpoint history** (`touchpoint.getByContact` not exposed as a tool). Recent inbound/outbound is not directly queryable; the "did the contact reply since lastFiredAt?" check is handled at the dispatcher level via the existing skip rules, not via the composer. Until a `touchpoint` tool domain lands, the composer infers history from `getClientIntelligence` if relevant intel was captured.
+- **Live Companies House data** (`companies-house.getCharges` not exposed). Fresh charge filings are not directly fetchable by the composer; it must rely on whatever was already captured into `clientIntelligence` by prospect-intel or other workflows.
+- **Live appetite signals** (`appetite.getCurrentForLender` not exposed). `bdm_relationship` cadences cannot read live appetite data; the composer either uses historical signals from `getClientIntelligence` or skips with `reason: "no_fresh_appetite_signal"` until the tool lands.
+
+These gaps are tracked for v1.2 once the corresponding atomic tools are added to `src/lib/tools/domains/`. Until then, dynamic-compose cadences that depend on these data sources should produce skip decisions rather than fabricated content.
+
+See `docs/superpowers/specs/2026-05-23-cadence-fire-autonomy-engine-design.md` for the full design and `docs/superpowers/plans/2026-05-23-cadence-fire-v1.1-composer-and-meeting-prep.md` for the v1.1 implementation.
 
 ## Trigger
 
