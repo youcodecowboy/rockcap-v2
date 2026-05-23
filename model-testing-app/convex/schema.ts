@@ -3775,7 +3775,9 @@ export default defineSchema({
     .index("by_active_next_due", ["isActive", "nextDueAt"])
     .index("by_related_project", ["relatedProjectId"])
     .index("by_related_client", ["relatedClientId"])
-    .index("by_package", ["packageId"]),
+    .index("by_package", ["packageId"])
+    .index("by_contact_active", ["contactId", "isActive"])
+    .index("by_created_by", ["createdBy"]),
 
   // AppetiteSignal (BL-1.8) - atomic lender intelligence with provenance and
   // timestamp. Three-layer LenderProfile model: static fields stay on
@@ -4045,11 +4047,26 @@ export default defineSchema({
     contactId: v.optional(v.id("contacts")),
     receivedAt: v.string(),                    // ISO; when the inbound was sent (per provider), not when we processed
     rawMessageRef: v.optional(v.string()),     // Gmail thread URL or HubSpot engagement URL for debugging
-    classifiedIntent: v.optional(v.string()),  // one of the 6 buckets, or "unknown"
+    classifiedIntent: v.optional(v.union(
+      v.literal("book_meeting"),
+      v.literal("defer_long_term"),
+      v.literal("not_interested"),
+      v.literal("info_question"),
+      v.literal("out_of_office"),
+      v.literal("unknown"),
+    )),
     classifiedConfidence: v.optional(v.number()),
     classifierEvidence: v.optional(v.string()),
     cadencesCancelled: v.optional(v.array(v.id("cadences"))),
-    dispatchedTo: v.optional(v.string()),      // "meeting-prep" | "long-term-monitor" | "qualify-and-draft" | "opt_out_marker" | "operator_review" | "restored_cadences"
+    dispatchedTo: v.optional(v.union(
+      v.literal("meeting-prep"),
+      v.literal("long-term-monitor"),
+      v.literal("qualify-and-draft"),
+      v.literal("opt_out_marker"),
+      v.literal("operator_review"),
+      v.literal("restored_cadences"),
+      v.literal("no_contact_match"),
+    )),
     dispatchedSkillRunId: v.optional(v.id("skillRuns")),
     processed: v.boolean(),
     errors: v.optional(v.array(v.string())),
