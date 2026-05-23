@@ -37,6 +37,37 @@ type ClassifiedIntent =
   | "out_of_office"
   | "unknown";
 
+// ── Shared helpers ───────────────────────────────────────────────────
+
+async function createOperatorReviewApproval(
+  ctx: any,
+  args: {
+    intent: string;
+    replyEventId: Id<"replyEvents">;
+    contactId: Id<"contacts">;
+    userId: Id<"users">;
+    replyBody?: string;
+    replySubject?: string;
+  },
+  reason: string,
+): Promise<void> {
+  await ctx.runMutation(internal.approvals.internalCreate, {
+    entityType: "client_communication",
+    summary: `Reply needs operator review (intent: ${args.intent}, reason: ${reason})`,
+    draftPayload: {
+      intent: args.intent,
+      reason,
+      replyBody: args.replyBody ?? "(no body — HubSpot sweep path)",
+      replySubject: args.replySubject ?? "",
+      replyEventId: args.replyEventId,
+    },
+    requestedBy: args.userId,
+    requestSource: "background_job",
+    requestSourceName: "cadence-fire/reply-router",
+    relatedContactId: args.contactId,
+  });
+}
+
 // ── Entry point: Gmail push ──────────────────────────────────────────
 
 export const ingestFromGmailPush = internalAction({
@@ -279,26 +310,113 @@ async function dispatchByIntent(
       }
       return { destination: "restored_cadences" };
     }
-    case "book_meeting":
-    case "info_question":
-    case "unknown":
-    default: {
-      // Create an operator-review approval.
-      // Uses approvals.internalCreate (existing function).
-      await ctx.runMutation(internal.approvals.internalCreate, {
-        entityType: "client_communication",
-        summary: `Reply needs operator review (intent: ${args.intent})`,
-        draftPayload: {
-          intent: args.intent,
-          replyBody: args.replyBody ?? "(no body — HubSpot sweep path)",
-          replySubject: args.replySubject ?? "",
+    case "book_meeting": {
+      // v1.1: call meeting-prep-respond route to draft an availability reply.
+      const appUrl = process.env.NEXT_APP_URL;
+      const internalSecret = process.env.CONVEX_INTERNAL_SECRET;
+
+      if (!appUrl || !internalSecret) {
+        await createOperatorReviewApproval(
+          ctx,
+          args,
+          "no_app_url_or_secret_for_responder",
+        );
+        return { destination: "operator_review" };
+      }
+
+      let respondResult:
+        | {
+            draftReplySubject?: string;
+            draftReplyBody?: string;
+            draftReplyBodyHtml?: string;
+            suggestedSlots?: Array<{ iso: string; display: string }>;
+            escalate?: boolean;
+            reason?: string;
+            error?: string;
+          }
+        | null = null;
+      try {
+        const res = await fetch(`${appUrl}/api/meeting-prep-respond`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-convex-internal-secret": internalSecret,
+          },
+          body: JSON.stringify({ replyEventId: args.replyEventId }),
+        });
+        if (!res.ok) {
+          respondResult = { error: `responder returned ${res.status}` };
+        } else {
+          respondResult = await res.json();
+        }
+      } catch (err) {
+        respondResult = {
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+
+      if (respondResult?.error) {
+        await ctx.runMutation(internal.replyEvents.appendErrorInternal, {
           replyEventId: args.replyEventId,
+          message: `meeting-prep-respond call failed: ${respondResult.error}`,
+        });
+        await createOperatorReviewApproval(ctx, args, "responder_failure");
+        return { destination: "operator_review" };
+      }
+
+      if (respondResult?.escalate) {
+        await createOperatorReviewApproval(
+          ctx,
+          args,
+          respondResult.reason ?? "responder_escalated",
+        );
+        return { destination: "operator_review" };
+      }
+
+      if (
+        !respondResult?.draftReplySubject ||
+        !respondResult?.draftReplyBody
+      ) {
+        await ctx.runMutation(internal.replyEvents.appendErrorInternal, {
+          replyEventId: args.replyEventId,
+          message: "responder returned unexpected shape",
+        });
+        await createOperatorReviewApproval(
+          ctx,
+          args,
+          "responder_invalid_shape",
+        );
+        return { destination: "operator_review" };
+      }
+
+      // Stage an approval with the drafted reply.
+      await ctx.runMutation(internal.approvals.internalCreate, {
+        entityType: "gmail_send",
+        summary: `Drafted availability reply: ${respondResult.draftReplySubject.slice(0, 150)}`,
+        draftPayload: {
+          to: undefined,  // operator fills in the to-address on send
+          subject: respondResult.draftReplySubject,
+          bodyText: respondResult.draftReplyBody,
+          bodyHtml:
+            respondResult.draftReplyBodyHtml ??
+            `<p>${respondResult.draftReplyBody}</p>`,
+          suggestedSlots: respondResult.suggestedSlots ?? [],
+          replyEventId: args.replyEventId,
+          intent: args.intent,
         },
         requestedBy: args.userId,
         requestSource: "background_job",
-        requestSourceName: "cadence-fire/reply-router",
+        requestSourceName: "cadence-fire/meeting-prep-respond",
         relatedContactId: args.contactId,
       });
+      return { destination: "meeting-prep" };
+    }
+
+    case "info_question":
+    case "unknown":
+    default: {
+      // Operator-review approval (existing fallback for not-yet-hardened skills).
+      await createOperatorReviewApproval(ctx, args, args.intent);
       return { destination: "operator_review" };
     }
   }
