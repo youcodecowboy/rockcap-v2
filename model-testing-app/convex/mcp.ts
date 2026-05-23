@@ -509,6 +509,88 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+
+  // Cadence lifecycle (cadence-fire v1; see spec
+  // docs/superpowers/specs/2026-05-23-cadence-fire-autonomy-engine-design.md)
+  {
+    name: "cadence.create",
+    description:
+      "Queue a cadence row that the dispatcher will fire at nextDueAt. For gauntlet-mode pre-drafted packages (prospect-intel uses this), set packageId + packageOrder + preDraftedTouch together. For recurring cadences (e.g., BDM relationship maintenance), set scheduleConfig.intervalDays and omit preDraftedTouch (v1 ships pre-drafted only; recurring composition lands in v1.1).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "Convex id of the target contact" },
+        cadenceType: {
+          type: "string",
+          description: "prospect_followup | warm_lead_chase | execution_chaser | client_checkin | bdm_relationship | monitoring_ask | post_lost_re_engagement | custom",
+        },
+        nextDueAt: { type: "string", description: "ISO timestamp; when the dispatcher should consider this due" },
+        scheduleConfig: {
+          type: "object",
+          properties: {
+            intervalDays: { type: "number" },
+            anchorDate: { type: "string" },
+            customSchedule: { type: "object" },
+          },
+        },
+        isActive: { type: "boolean", description: "Usually true on creation" },
+        relatedClientId: { type: "string" },
+        relatedProjectId: { type: "string" },
+        packageId: { type: "string", description: "If part of a multi-touch package (gauntlet pattern), use the same packageId for all members" },
+        packageOrder: { type: "number", description: "1-indexed position in the package (1, 2, 3, ...)" },
+        preDraftedTouch: {
+          type: "object",
+          description: "If supplied, the dispatcher fires this content directly without invoking the composer",
+          properties: {
+            subject: { type: "string" },
+            bodyText: { type: "string" },
+            bodyHtml: { type: "string" },
+            dynamicVars: { type: "object", description: "Optional placeholders to refresh at fire time" },
+          },
+          required: ["subject", "bodyText", "bodyHtml"],
+        },
+        sourceSkillRunId: { type: "string", description: "If queued by a skill run, the runId for audit linkage" },
+      },
+      required: ["contactId", "cadenceType", "nextDueAt", "scheduleConfig", "isActive"],
+    },
+    handler: async (ctx, userId, args) => {
+      const cadenceId = await ctx.runMutation(internal.cadences.createInternal, {
+        contactId: args.contactId,
+        cadenceType: args.cadenceType,
+        scheduleConfig: args.scheduleConfig,
+        nextDueAt: args.nextDueAt,
+        isActive: args.isActive,
+        relatedClientId: args.relatedClientId,
+        relatedProjectId: args.relatedProjectId,
+        packageId: args.packageId,
+        packageOrder: args.packageOrder,
+        preDraftedTouch: args.preDraftedTouch,
+        sourceSkillRunId: args.sourceSkillRunId,
+        createdBy: userId,
+      });
+      return asText({ status: "created", cadenceId });
+    },
+  },
+  {
+    name: "cadence.cancel",
+    description:
+      "Set a cadence's isActive to false with a reason. Used by operators for manual cancellation. Reply-event-driven cancellation goes through the webhook handler, not this tool.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        reason: { type: "string", description: "Free-form reason; will be stored in cancelledReason" },
+      },
+      required: ["cadenceId", "reason"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.cancelInternal, {
+        cadenceId: args.cadenceId,
+        reason: args.reason,
+      });
+      return asText(result);
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(
