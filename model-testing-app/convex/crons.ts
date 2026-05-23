@@ -65,4 +65,14 @@ crons.interval(
   internal.cadenceDispatcher.tick,
 );
 
+// Gmail watch renewal (cadence-fire v1). Daily. Re-issues users.watch
+// API call for any user whose watch expires within 2 days. Same pattern
+// as Calendar push channel renewal. Stub until Pub/Sub topic is
+// configured; the cron runs harmlessly today.
+crons.daily(
+  "gmail-watch-renewal",
+  { hourUTC: 4, minuteUTC: 0 },  // before daily-brief-trigger at 5:00
+  internal.gmailWatch.renewWatchesInternal,
+);
+
 export default crons;
