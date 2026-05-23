@@ -1,0 +1,305 @@
+import { v } from "convex/values";
+import { internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+
+// Reply event processor (cadence-fire v1).
+//
+// Called from two paths:
+//  - ingestFromGmailPush: from the Gmail push webhook (real-time)
+//  - ingestFromHubspot: from the HubSpot 6h sync sweep (safety net)
+//
+// Both paths converge on processReplyEvent which:
+//  1. Idempotency check by (source, externalId)
+//  2. Contact match by email
+//  3. Cancel active cadences for the contact
+//  4. Call the classifier (Next.js API route) to get intent label
+//  5. Dispatch by intent
+//  6. Mark replyEvent.processed
+
+const CLASSIFIER_URL_ENV = "NEXT_APP_URL";
+const CLASSIFIER_CONFIDENCE_THRESHOLD = 0.7;
+
+type DispatchDestination =
+  | "meeting-prep"
+  | "long-term-monitor"
+  | "qualify-and-draft"
+  | "opt_out_marker"
+  | "operator_review"
+  | "restored_cadences"
+  | "no_contact_match";
+
+type ClassifiedIntent =
+  | "book_meeting"
+  | "defer_long_term"
+  | "not_interested"
+  | "info_question"
+  | "out_of_office"
+  | "unknown";
+
+// ── Entry point: Gmail push ──────────────────────────────────────────
+
+export const ingestFromGmailPush = internalAction({
+  args: { emailAddress: v.string(), historyId: v.string() },
+  handler: async (_ctx, _args) => {
+    // STUB for v1: real implementation calls users.history.list since
+    // last-known historyId, fetches each new message, then for each
+    // message dispatches to processReplyEvent with source: "gmail_push"
+    // and externalId: <Message-ID header>.
+    //
+    // Wired functionally when Pub/Sub setup completes (see gmailWatch.ts
+    // stubs). The webhook route exists, the dispatch path exists, the
+    // OAuth tokens exist; the missing piece is the operator's Pub/Sub
+    // topic provisioning.
+    return { status: "stub" as const, processed: 0 };
+  },
+});
+
+// ── Entry point: HubSpot sync sweep ──────────────────────────────────
+
+export const ingestFromHubspot = internalAction({
+  args: {
+    engagementId: v.string(),
+    contactEmail: v.optional(v.string()),
+    receivedAt: v.string(),
+    rawMessageRef: v.optional(v.string()),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    return await processReplyEvent(ctx, {
+      source: "hubspot_sync",
+      externalId: `hubspot:engagement:${args.engagementId}`,
+      contactEmail: args.contactEmail,
+      receivedAt: args.receivedAt,
+      rawMessageRef: args.rawMessageRef,
+      userId: args.userId,
+      replyBody: undefined,
+      replySubject: undefined,
+    });
+  },
+});
+
+// ── Shared processing logic ──────────────────────────────────────────
+
+async function processReplyEvent(
+  ctx: {
+    runQuery: (ref: unknown, args: unknown) => Promise<unknown>;
+    runMutation: (ref: unknown, args: unknown) => Promise<unknown>;
+  },
+  args: {
+    source: "gmail_push" | "hubspot_sync";
+    externalId: string;
+    contactEmail?: string;
+    receivedAt: string;
+    rawMessageRef?: string;
+    userId: Id<"users">;
+    replyBody?: string;
+    replySubject?: string;
+  },
+) {
+  // Step 1: Idempotency
+  const existing = await ctx.runQuery(
+    internal.replyEvents.findBySourceExternalIdInternal,
+    { source: args.source, externalId: args.externalId },
+  ) as Doc<"replyEvents"> | null;
+  if (existing) {
+    return { status: "duplicate" as const, replyEventId: existing._id };
+  }
+
+  // Step 2: Contact match
+  let contactId: Id<"contacts"> | undefined = undefined;
+  if (args.contactEmail) {
+    const contact = await ctx.runQuery(
+      internal.contacts.findByEmailInternal,
+      { email: args.contactEmail },
+    ) as Doc<"contacts"> | null;
+    contactId = contact?._id;
+  }
+
+  // Step 3: Create the event row
+  const replyEventId = await ctx.runMutation(
+    internal.replyEvents.createInternal,
+    {
+      source: args.source,
+      externalId: args.externalId,
+      contactId,
+      receivedAt: args.receivedAt,
+      rawMessageRef: args.rawMessageRef,
+      userId: args.userId,
+    },
+  ) as Id<"replyEvents">;
+
+  // If no contact matched, record but do not act
+  if (!contactId) {
+    await ctx.runMutation(internal.replyEvents.markProcessedInternal, {
+      replyEventId,
+      dispatchedTo: "no_contact_match" as const,
+    });
+    return { status: "no_contact_match" as const, replyEventId };
+  }
+
+  // Step 4: Cancel active cadences
+  const activeCadences = await ctx.runQuery(
+    internal.cadences.findActiveByContactInternal,
+    { contactId },
+  ) as Doc<"cadences">[];
+  const cancelledIds: Id<"cadences">[] = [];
+  for (const cad of activeCadences) {
+    await ctx.runMutation(internal.cadences.cancelInternal, {
+      cadenceId: cad._id,
+      reason: "inbound_received",
+      replyEventId,
+    });
+    cancelledIds.push(cad._id);
+  }
+  if (cancelledIds.length > 0) {
+    await ctx.runMutation(internal.replyEvents.patchCancelledInternal, {
+      replyEventId,
+      cadencesCancelled: cancelledIds,
+    });
+  }
+
+  // Step 5: Call classifier (Next.js API)
+  let intent: ClassifiedIntent = "unknown";
+  let confidence = 0.0;
+  let evidence: string | undefined = undefined;
+  try {
+    const appUrl = process.env[CLASSIFIER_URL_ENV];
+    if (appUrl && args.replyBody) {
+      const res = await fetch(`${appUrl}/api/classify-reply-intent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          replyBody: args.replyBody,
+          replySubject: args.replySubject ?? "",
+          contactId,
+          cancelledCadenceIds: cancelledIds,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json() as {
+          intent?: ClassifiedIntent;
+          confidence?: number;
+          evidence?: string;
+        };
+        intent = data.intent ?? "unknown";
+        confidence = data.confidence ?? 0;
+        evidence = data.evidence;
+      }
+    }
+  } catch (err) {
+    await ctx.runMutation(internal.replyEvents.appendErrorInternal, {
+      replyEventId,
+      message: `classifier call failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+
+  // Force unknown if low confidence
+  if (confidence < CLASSIFIER_CONFIDENCE_THRESHOLD) {
+    intent = "unknown";
+  }
+
+  await ctx.runMutation(internal.replyEvents.patchClassificationInternal, {
+    replyEventId,
+    classifiedIntent: intent,
+    classifiedConfidence: confidence,
+    classifierEvidence: evidence,
+  });
+
+  // Step 6: Dispatch by intent
+  const dispatch = await dispatchByIntent(ctx, {
+    intent,
+    replyEventId,
+    contactId,
+    cancelledCadences: activeCadences,
+    userId: args.userId,
+    replyBody: args.replyBody,
+    replySubject: args.replySubject,
+  });
+
+  await ctx.runMutation(internal.replyEvents.markProcessedInternal, {
+    replyEventId,
+    dispatchedTo: dispatch.destination,
+  });
+
+  return { status: "processed" as const, replyEventId, intent, dispatch };
+}
+
+async function dispatchByIntent(
+  ctx: {
+    runMutation: (ref: unknown, args: unknown) => Promise<unknown>;
+  },
+  args: {
+    intent: ClassifiedIntent;
+    replyEventId: Id<"replyEvents">;
+    contactId: Id<"contacts">;
+    cancelledCadences: Doc<"cadences">[];
+    userId: Id<"users">;
+    replyBody?: string;
+    replySubject?: string;
+  },
+): Promise<{ destination: DispatchDestination }> {
+  switch (args.intent) {
+    case "not_interested": {
+      await ctx.runMutation(internal.contacts.markOptedOutInternal, {
+        contactId: args.contactId,
+        replyEventId: args.replyEventId,
+      });
+      return { destination: "opt_out_marker" };
+    }
+    case "defer_long_term": {
+      // Queue 3-month and 6-month wakeup cadences
+      const now = Date.now();
+      const threeMonths = new Date(now + 90 * 86_400_000).toISOString();
+      const sixMonths = new Date(now + 180 * 86_400_000).toISOString();
+      const packageId = `longterm-${args.replyEventId}`;
+      const dueAts = [threeMonths, sixMonths];
+      for (let idx = 0; idx < dueAts.length; idx++) {
+        await ctx.runMutation(internal.cadences.createInternal, {
+          contactId: args.contactId,
+          cadenceType: "post_lost_re_engagement",
+          scheduleConfig: {},
+          nextDueAt: dueAts[idx],
+          isActive: true,
+          packageId,
+          packageOrder: idx + 1,
+          createdBy: args.userId,
+        });
+      }
+      return { destination: "long-term-monitor" };
+    }
+    case "out_of_office": {
+      // Restore the cancelled cadences with a 7-day pause
+      const pauseUntil = new Date(Date.now() + 7 * 86_400_000).toISOString();
+      for (const cad of args.cancelledCadences) {
+        await ctx.runMutation(internal.cadences.restoreInternal, {
+          cadenceId: cad._id,
+          pauseUntil,
+        });
+      }
+      return { destination: "restored_cadences" };
+    }
+    case "book_meeting":
+    case "info_question":
+    case "unknown":
+    default: {
+      // Create an operator-review approval.
+      // Uses approvals.internalCreate (existing function).
+      await ctx.runMutation(internal.approvals.internalCreate, {
+        entityType: "client_communication",
+        summary: `Reply needs operator review (intent: ${args.intent})`,
+        draftPayload: {
+          intent: args.intent,
+          replyBody: args.replyBody ?? "(no body — HubSpot sweep path)",
+          replySubject: args.replySubject ?? "",
+          replyEventId: args.replyEventId,
+        },
+        requestedBy: args.userId,
+        requestSource: "background_job",
+        requestSourceName: "cadence-fire/reply-router",
+        relatedContactId: args.contactId,
+      });
+      return { destination: "operator_review" };
+    }
+  }
+}

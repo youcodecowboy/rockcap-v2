@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { httpAction, internalAction } from "./_generated/server";
-// internal imported here for Group 8 when scheduler dispatch is uncommented:
-// import { internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 
 // Gmail push notifications (cadence-fire v1).
 //
@@ -47,14 +46,12 @@ export const pushWebhook = httpAction(async (ctx, request) => {
   }
 
   // Dispatch async; do not await.
-  // TODO (Group 8): uncomment once replyEventProcessor.ingestFromGmailPush exists.
-  // await ctx.scheduler.runAfter(
-  //   0,
-  //   internal.replyEventProcessor.ingestFromGmailPush,
-  //   { emailAddress, historyId },
-  // );
-  void emailAddress; void historyId; // referenced above once Group 8 lands
-  console.log(`[gmailWatch] push received emailAddress=${emailAddress} historyId=${historyId} — dispatch stubbed pending Group 8`);
+  await ctx.scheduler.runAfter(
+    0,
+    internal.replyEventProcessor.ingestFromGmailPush,
+    { emailAddress, historyId },
+  );
+  console.log(`[gmailWatch] push received emailAddress=${emailAddress} historyId=${historyId} — dispatched to replyEventProcessor`);
 
   return new Response("ok", { status: 200 });
 });

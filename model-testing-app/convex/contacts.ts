@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 
 /**
  * Query: Get contacts associated with a client.
@@ -247,5 +247,33 @@ export const getInternal = internalQuery({
   args: { contactId: v.id("contacts") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.contactId);
+  },
+});
+
+// Internal query: look up a contact by email address.
+// Used by replyEventProcessor to match inbound replies to a known contact.
+export const findByEmailInternal = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("contacts")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
+
+// Internal mutation: mark a contact as opted-out.
+// Sets optedOutAt and audit trail back to the triggering replyEvent.
+export const markOptedOutInternal = internalMutation({
+  args: {
+    contactId: v.id("contacts"),
+    replyEventId: v.id("replyEvents"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.contactId, {
+      optedOutAt: new Date().toISOString(),
+      optedOutByReplyEventId: args.replyEventId,
+    });
+    return { ok: true };
   },
 });
