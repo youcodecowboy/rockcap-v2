@@ -913,3 +913,135 @@ export const permanentDelete = mutation({
     await ctx.db.delete(args.id);
   },
 });
+
+// ── v1.3 Sprint E: project.getDeepContext ──
+//
+// Sister to prospect.getDeepContext / client.getDeepContext but scoped to a
+// PROJECT (a scheme / deal). Returns: the project + projectIntelligence
+// row + linked clients (via clientRoles) + project-scoped meetings +
+// project-scoped documents + project-scoped checklist + project-scoped
+// cadences + recent skillRuns + linked deals.
+//
+// The summary block includes counts for the project-specific scope so
+// Claude Code can answer "where are we at with Comberton?" in one call.
+//
+// Implementation note: the clients table doesn't currently have a back-link
+// table to projects; we rely on the project.clientRoles[].clientId for
+// resolving linked clients.
+
+export const getDeepContext = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return null;
+
+    // 1. Project intelligence
+    const projectIntelligence = await ctx.db
+      .query("projectIntelligence")
+      .filter((q) => q.eq(q.field("projectId"), args.projectId))
+      .first();
+
+    // 2. Linked clients via clientRoles
+    const clientRoles = (project as any).clientRoles ?? [];
+    const linkedClients: Array<{ role: string; client: any }> = [];
+    for (const cr of clientRoles) {
+      const client = await ctx.db.get(cr.clientId);
+      if (client) linkedClients.push({ role: cr.role, client });
+    }
+
+    // 3. Meetings scoped to this project
+    const allMeetings = await ctx.db.query("meetings").collect();
+    const meetings = allMeetings.filter((m: any) => m.projectId === args.projectId);
+    const nowIso = new Date().toISOString();
+    const meetingsUpcoming = meetings
+      .filter((m: any) => m.meetingDate >= nowIso)
+      .sort((a: any, b: any) => a.meetingDate.localeCompare(b.meetingDate));
+    const meetingsPast = meetings
+      .filter((m: any) => m.meetingDate < nowIso)
+      .sort((a: any, b: any) => b.meetingDate.localeCompare(a.meetingDate))
+      .slice(0, 10);
+
+    // 4. Documents scoped to this project
+    const documents = await ctx.db
+      .query("documents")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+
+    // 5. Checklist items scoped to this project
+    const checklist = await ctx.db
+      .query("knowledgeChecklistItems")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+    const checklistByStatus = {
+      missing: checklist.filter((c: any) => c.status === "missing"),
+      pending_review: checklist.filter((c: any) => c.status === "pending_review"),
+      fulfilled: checklist.filter((c: any) => c.status === "fulfilled"),
+    };
+
+    // 6. Cadences scoped to this project (relatedProjectId field on cadences)
+    const allCadences = await ctx.db.query("cadences").collect();
+    const cadences = allCadences.filter((c: any) => c.relatedProjectId === args.projectId);
+
+    // 7. Recent skillRuns for this project (via linkedProjectId)
+    const allSkillRuns = await ctx.db.query("skillRuns").order("desc").collect();
+    const recentSkillRuns = allSkillRuns
+      .filter((r: any) => r.linkedProjectId === args.projectId)
+      .slice(0, 10);
+
+    // 8. Deals linked to this project (deals.projectId)
+    const allDeals = await ctx.db.query("deals").collect();
+    const deals = allDeals.filter((d: any) => d.projectId === args.projectId);
+
+    // 9. Touchpoints scoped to this project
+    const allTouchpoints = await ctx.db.query("touchpoints").collect();
+    const touchpoints = allTouchpoints
+      .filter((t: any) => t.projectId === args.projectId)
+      .sort((a: any, b: any) => (b.occurredAt ?? "").localeCompare(a.occurredAt ?? ""))
+      .slice(0, 20);
+
+    // 10. Pending approvals related to this project
+    const allApprovals = await ctx.db
+      .query("approvals")
+      .withIndex("by_related_project", (q: any) => q.eq("relatedProjectId", args.projectId))
+      .collect();
+    const pendingApprovals = allApprovals.filter((a: any) => a.status === "pending");
+
+    // Compose summary
+    const summary = {
+      name: (project as any).name,
+      shortcode: (project as any).projectShortcode,
+      status: (project as any).status,
+      city: (project as any).city,
+      country: (project as any).country,
+      linkedClientsCount: linkedClients.length,
+      linkedClientsRoles: linkedClients.map((lc) => `${lc.role}: ${lc.client.name}`),
+      meetingsUpcoming: meetingsUpcoming.length,
+      meetingsPast: meetingsPast.length,
+      documentsTotal: documents.length,
+      checklistTotal: checklist.length,
+      checklistMissing: checklistByStatus.missing.length,
+      checklistPendingReview: checklistByStatus.pending_review.length,
+      checklistFulfilled: checklistByStatus.fulfilled.length,
+      cadencesActive: cadences.filter((c: any) => c.isActive).length,
+      dealsCount: deals.length,
+      pendingApprovals: pendingApprovals.length,
+      touchpointsCount: touchpoints.length,
+      hasProjectIntelligence: !!projectIntelligence,
+    };
+
+    return {
+      summary,
+      project,
+      projectIntelligence,
+      linkedClients,
+      meetings: { upcoming: meetingsUpcoming, past: meetingsPast },
+      documents,
+      checklist: { all: checklist, byStatus: checklistByStatus },
+      cadences,
+      recentSkillRuns,
+      deals,
+      touchpoints,
+      pendingApprovals,
+    };
+  },
+});
