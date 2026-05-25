@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 
 // Internal API for the cadences table. The MCP tools cadence.create and
 // cadence.cancel wrap these (see convex/mcp.ts). The cron dispatcher in
@@ -239,6 +239,18 @@ export const listByContact = query({
   },
 });
 
+// ── Public query: list cadences by related client (prospect detail page) ──
+
+export const listByClient = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("cadences")
+      .withIndex("by_related_client", (q) => q.eq("relatedClientId", args.clientId))
+      .collect();
+  },
+});
+
 // ── Update a single cadence (operator edit; called by cadence.update MCP) ──
 
 export const updateInternal = internalMutation({
@@ -368,5 +380,85 @@ export const markApprovedForMigrationInternal = internalMutation({
       updatedAt: new Date().toISOString(),
     });
     return { ok: true };
+  },
+});
+
+// ── Public mutation wrappers for the prospects CRM (v1.2) ──────────────────
+// These wrap the internal mutations with auth resolution. They resolve userId
+// by querying the first user row — safe for the single-tenant RockCap setup.
+
+export const approvePackage = mutation({
+  args: { packageId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    const now = new Date().toISOString();
+    for (const row of rows) {
+      await ctx.db.patch(row._id, {
+        packageApprovalStatus: "approved",
+        approvedBy: userId,
+        approvedAt: now,
+        updatedAt: now,
+      });
+    }
+    return { ok: true, patched: rows.length };
+  },
+});
+
+export const denyPackage = mutation({
+  args: { packageId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    const now = new Date().toISOString();
+    for (const row of rows) {
+      await ctx.db.patch(row._id, {
+        packageApprovalStatus: "denied",
+        isActive: false,
+        cancelledReason: "operator_denied_package",
+        updatedAt: now,
+      });
+    }
+    return { ok: true, patched: rows.length };
+  },
+});
+
+export const requestRevision = mutation({
+  args: { packageId: v.string(), revisionNote: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    const now = new Date().toISOString();
+    for (const row of rows) {
+      await ctx.db.patch(row._id, {
+        revisionRequested: true,
+        revisionNote: args.revisionNote,
+        revisionRequestedBy: userId,
+        revisionRequestedAt: now,
+        updatedAt: now,
+      });
+    }
+    return { ok: true, patched: rows.length };
   },
 });
