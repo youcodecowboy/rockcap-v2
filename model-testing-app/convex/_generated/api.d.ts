@@ -9,6 +9,7 @@
  */
 
 import type * as activities from "../activities.js";
+import type * as apollo from "../apollo.js";
 import type * as approvals from "../approvals.js";
 import type * as authHelpers from "../authHelpers.js";
 import type * as bulkBackgroundProcessor from "../bulkBackgroundProcessor.js";
@@ -149,6 +150,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   activities: typeof activities;
+  apollo: typeof apollo;
   approvals: typeof approvals;
   authHelpers: typeof authHelpers;
   bulkBackgroundProcessor: typeof bulkBackgroundProcessor;

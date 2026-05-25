@@ -110,6 +110,67 @@ export const ingestFromHubspot = internalAction({
   },
 });
 
+// v1.3 manual ingest path — operator pastes a reply they received via
+// channel that doesn't auto-sync (WhatsApp, text, forwarded email). Also
+// the primary testing surface for the reply-handling backbone before the
+// Gmail Pub/Sub topic is provisioned.
+//
+// Reuses processReplyEvent so manual replies go through the SAME flow as
+// automated ones: cadence cancellation → intent classification → dispatch.
+// The only difference: source is recorded as "hubspot_sync" (closest
+// existing enum value; v1.4 could add "manual_paste" as a third source if
+// we want to distinguish them in analytics).
+export const ingestManualInternal = internalAction({
+  args: {
+    contactEmail: v.string(),
+    subject: v.string(),
+    body: v.string(),
+    receivedAt: v.optional(v.string()), // ISO; defaults to now
+    rawMessageRef: v.optional(v.string()), // e.g., WhatsApp screenshot URL or forwarded-email subject
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    const now = new Date().toISOString();
+    // Synthesise an externalId that's unique-enough for idempotency.
+    // Format: manual:<email>:<receivedAt>:<bodyHash>. If operator pastes
+    // the same reply twice with the same receivedAt, the second one
+    // dedups via processReplyEvent's source+externalId check.
+    const bodyHash = simpleHash(args.body).toString(16);
+    const receivedAt = args.receivedAt ?? now;
+    const externalId = `manual:${args.contactEmail}:${receivedAt}:${bodyHash}`;
+
+    const result: any = await processReplyEvent(ctx, {
+      source: "hubspot_sync" as const, // closest existing enum; v1.4 may add "manual_paste"
+      externalId,
+      contactEmail: args.contactEmail,
+      receivedAt,
+      rawMessageRef: args.rawMessageRef ?? `manual paste @ ${now}`,
+      userId: args.userId,
+      replyBody: args.body,
+      replySubject: args.subject,
+    });
+
+    // Mark the manual-ingest provenance on the row (above call already created it)
+    if (result.replyEventId) {
+      await ctx.runMutation(internal.replyEvents.patchManualIngestInternal, {
+        replyEventId: result.replyEventId,
+        ingestedManuallyByUserId: args.userId,
+        ingestedManuallyAt: now,
+      });
+    }
+
+    return result;
+  },
+});
+
+function simpleHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
 // ── Shared processing logic ──────────────────────────────────────────
 
 async function processReplyEvent(
@@ -137,14 +198,19 @@ async function processReplyEvent(
     return { status: "duplicate" as const, replyEventId: existing._id };
   }
 
-  // Step 2: Contact match
+  // Step 2: Contact match + client denormalisation
   let contactId: Id<"contacts"> | undefined = undefined;
+  let linkedClientId: Id<"clients"> | undefined = undefined;
   if (args.contactEmail) {
     const contact = await ctx.runQuery(
       internal.contacts.findByEmailInternal,
       { email: args.contactEmail },
     ) as Doc<"contacts"> | null;
     contactId = contact?._id;
+    // v1.3: denormalise the contact's clientId onto the replyEvent so the
+    // by_linked_client index serves prospect-detail-page reads without
+    // requiring a contact->client JOIN.
+    linkedClientId = contact?.clientId;
   }
 
   // Step 3: Create the event row
@@ -157,6 +223,10 @@ async function processReplyEvent(
       receivedAt: args.receivedAt,
       rawMessageRef: args.rawMessageRef,
       userId: args.userId,
+      // v1.3 — persist body + subject + client link at insert time
+      replyBodyText: args.replyBody,
+      replySubject: args.replySubject,
+      linkedClientId,
     },
   ) as Id<"replyEvents">;
 
@@ -195,7 +265,13 @@ async function processReplyEvent(
   let confidence = 0.0;
   let evidence: string | undefined = undefined;
   try {
-    const appUrl = process.env[CLASSIFIER_URL_ENV];
+    const rawAppUrl = process.env[CLASSIFIER_URL_ENV];
+    // v1.3: env may carry the URL without protocol (e.g.,
+    // "rockcap-v2.vercel.app"). Normalise to https:// scheme so the
+    // fetch URL is well-formed regardless of how the env was set.
+    const appUrl = rawAppUrl
+      ? (rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`)
+      : undefined;
     if (appUrl && args.replyBody) {
       const res = await fetch(`${appUrl}/api/classify-reply-intent`, {
         method: "POST",
@@ -312,7 +388,11 @@ async function dispatchByIntent(
     }
     case "book_meeting": {
       // v1.1: call meeting-prep-respond route to draft an availability reply.
-      const appUrl = process.env.NEXT_APP_URL;
+      const rawAppUrl = process.env.NEXT_APP_URL;
+      // v1.3: same URL normalisation as above — env may be missing scheme
+      const appUrl = rawAppUrl
+        ? (rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`)
+        : undefined;
       const internalSecret = process.env.CONVEX_INTERNAL_SECRET;
 
       if (!appUrl || !internalSecret) {

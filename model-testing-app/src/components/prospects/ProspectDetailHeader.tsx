@@ -8,13 +8,14 @@ interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "people" | "ch" | "outreach" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "outreach" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "activity") => void;
   peopleCount?: number;
   chargesCount?: number;
+  repliesCount?: number;
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
 
@@ -75,13 +76,14 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "people", "ch", "outreach", "activity"] as const).map((tab) => {
+          {(["overview", "intel", "people", "ch", "outreach", "replies", "activity"] as const).map((tab) => {
             const labelMap: Record<typeof tab, string> = {
               overview: "Overview",
               intel: "Intel",
               people: "People",
               ch: "Companies House",
               outreach: "Outreach",
+              replies: "Replies",
               activity: "Activity",
             };
             return (
@@ -104,6 +106,9 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               )}
               {tab === "ch" && chargesCount !== undefined && chargesCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{chargesCount}</span>
+              )}
+              {tab === "replies" && repliesCount !== undefined && repliesCount > 0 && (
+                <span style={{ color: colors.text.dim, marginLeft: 4 }}>{repliesCount}</span>
               )}
             </div>
             );

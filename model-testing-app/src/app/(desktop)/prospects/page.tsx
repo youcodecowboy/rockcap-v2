@@ -10,6 +10,7 @@ import { NeedsReviewSection } from "@/components/prospects/sections/NeedsReviewS
 import { NeedsRevisionSection } from "@/components/prospects/sections/NeedsRevisionSection";
 import { ActiveSection } from "@/components/prospects/sections/ActiveSection";
 import { RepliedSection } from "@/components/prospects/sections/RepliedSection";
+import { RepliesAwaitingTriageSection } from "@/components/prospects/sections/RepliesAwaitingTriageSection";
 import { SimpleSection } from "@/components/prospects/sections/SimpleSection";
 
 export default function ProspectsPage() {
@@ -32,6 +33,10 @@ export default function ProspectsPage() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
         />
+
+        {/* v1.3 — Replies awaiting triage: top of the morning queue.
+            Auto-expands when rows are present. */}
+        <RepliesAwaitingTriageSection />
 
         {/* Action-item sections — expanded by default */}
         <CandidatesSection />

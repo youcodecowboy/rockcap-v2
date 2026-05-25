@@ -652,6 +652,118 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.3 — THE central operator workflow tool. Returns a one-shot snapshot
+  // of everything about a prospect so Claude Code can answer "where are we
+  // at with X?" without 10 separate reads.
+  {
+    name: "prospect.getDeepContext",
+    description:
+      "Returns a comprehensive snapshot of a prospect: the clients row, all linked contacts, all cadences (active/fired/queued split), all reply events (newest first), the latest prospect-intel skillRun, recent meetings (upcoming + past), the Companies House profile + charges if synced, the clientIntelligence row, and recent touchpoints. Includes a `summary` block with at-a-glance counts (cadencesActive, repliesReceived, repliesAwaitingTriage, meetingsUpcoming, chargesActive, etc.) so the operator-agent can compose an answer immediately. Use this as the FIRST tool call when an operator asks about a specific prospect. Subsequent narrower tool calls (reply.get, cadence.update, etc.) operate on data already in scope from the deep context return.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the clients row (the prospect)" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.prospects.getDeepContext, {
+        clientId: args.clientId,
+      });
+      if (!result) return asText({ error: "prospect_not_found", clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  // v1.3 reply handling: list + read + reclassify
+  {
+    name: "reply.listByClient",
+    description:
+      "List reply events linked to a specific clients row (newest first). Use this to see what inbound replies a prospect has sent. Each row carries the classified intent + confidence + dispatch destination. The body text is in replyBodyText when persisted.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        limit: { type: "number", description: "Default 50" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.replyEvents.listByClient, {
+        clientId: args.clientId,
+        limit: args.limit ?? 50,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "reply.listUnrouted",
+    description:
+      "List reply events where the classifier dispatched to 'operator_review' (didn't auto-route to a downstream skill). This is the operator's morning triage queue — replies that need a human decision before action. Each row carries the classified intent + evidence so the operator can see why the classifier flagged it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Default 50" },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.replyEvents.listUnrouted, {
+        limit: args.limit ?? 50,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "reply.get",
+    description:
+      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: { type: "string" },
+      },
+      required: ["replyEventId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.replyEvents.getInternal, {
+        replyEventId: args.replyEventId,
+      });
+      if (!result) return asText({ error: "reply_event_not_found", replyEventId: args.replyEventId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "reply.ingestManual",
+    description:
+      "Operator pasted a reply they received via a channel that doesn't auto-sync (WhatsApp, text, forwarded email). Routes through the SAME flow as automated ingest: cancels active cadences for the matched contact, runs the intent classifier, dispatches to a downstream skill (or operator_review). Returns the same {status, replyEventId} shape as ingestFromGmailPush / ingestFromHubspot. Also useful for testing the reply-handling backbone before the Gmail Pub/Sub topic is provisioned. Errors: no_contact_match (the contactEmail doesn't resolve to any RockCap contact) — the reply event is still created but no cadence cancellation or dispatch happens.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contactEmail: { type: "string", description: "Email address of the person who replied (used to look up the contact)" },
+        subject: { type: "string", description: "Subject of the reply" },
+        body: { type: "string", description: "Plain-text body of the reply" },
+        receivedAt: { type: "string", description: "ISO timestamp; defaults to now" },
+        rawMessageRef: { type: "string", description: "Optional URL/reference to the original message (e.g., WhatsApp screenshot URL or forwarded-email reference)" },
+      },
+      required: ["contactEmail", "subject", "body"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.replyEventProcessor.ingestManualInternal, {
+        contactEmail: args.contactEmail,
+        subject: args.subject,
+        body: args.body,
+        receivedAt: args.receivedAt,
+        rawMessageRef: args.rawMessageRef,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2 prospects CRM — state transition
   {
     name: "prospect.transitionState",

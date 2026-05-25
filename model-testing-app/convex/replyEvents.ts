@@ -32,6 +32,15 @@ export const createInternal = internalMutation({
     receivedAt: v.string(),
     rawMessageRef: v.optional(v.string()),
     userId: v.id("users"),
+    // v1.3 — optional content + linkage fields. Body + subject persist the
+    // raw reply for UI display + Claude Code. linkedClientId is denormalised
+    // at ingest from contact.clientId so the by_linked_client index serves
+    // direct prospect-detail-page reads without a JOIN.
+    replyBodyText: v.optional(v.string()),
+    replySubject: v.optional(v.string()),
+    linkedClientId: v.optional(v.id("clients")),
+    ingestedManuallyByUserId: v.optional(v.id("users")),
+    ingestedManuallyAt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("replyEvents", {
@@ -120,6 +129,23 @@ export const appendErrorInternal = internalMutation({
   },
 });
 
+// ── v1.3: stamp manual-ingest provenance after processReplyEvent runs ──
+
+export const patchManualIngestInternal = internalMutation({
+  args: {
+    replyEventId: v.id("replyEvents"),
+    ingestedManuallyByUserId: v.id("users"),
+    ingestedManuallyAt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.replyEventId, {
+      ingestedManuallyByUserId: args.ingestedManuallyByUserId,
+      ingestedManuallyAt: args.ingestedManuallyAt,
+    });
+    return { ok: true };
+  },
+});
+
 // ── Get one row by id ────────────────────────────────────────────────
 
 export const getInternal = internalQuery({
@@ -138,5 +164,63 @@ export const getById = query({
   args: { replyEventId: v.id("replyEvents") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.replyEventId);
+  },
+});
+
+// ── v1.3 public queries: power the Replies tab + operator-review queue ──
+
+// List replies for a contact, newest first. Used by the prospect-detail
+// Replies tab when a single contact is the focus.
+export const listByContact = query({
+  args: { contactId: v.id("contacts"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_contact", (q) => q.eq("contactId", args.contactId))
+      .order("desc")
+      .take(args.limit ?? 50);
+    return rows;
+  },
+});
+
+// List replies for a client (via the denormalised linkedClientId). Used by
+// the prospect-detail Replies tab as the primary query — covers all contacts
+// linked to this client in one read.
+export const listByClient = query({
+  args: { clientId: v.id("clients"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_linked_client", (q) => q.eq("linkedClientId", args.clientId))
+      .order("desc")
+      .take(args.limit ?? 50);
+    return rows;
+  },
+});
+
+// List unrouted replies (dispatchedTo === "operator_review"). Powers the
+// "Replies awaiting triage" section on the /prospects home page — the
+// operator's morning queue of replies the classifier didn't auto-route.
+export const listUnrouted = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "operator_review"))
+      .order("desc")
+      .take(args.limit ?? 50);
+    return rows;
+  },
+});
+
+// Count of unrouted replies — for the home-page badge.
+export const countUnrouted = query({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "operator_review"))
+      .collect();
+    return rows.length;
   },
 });

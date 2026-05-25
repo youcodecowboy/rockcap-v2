@@ -266,6 +266,151 @@ export const getById = query({
   },
 });
 
+// ── v1.3 — prospect.getDeepContext: the central "where are we at?" tool ──
+//
+// One-shot snapshot of EVERYTHING about a prospect. Designed so Claude Code
+// can answer operator questions like "where are we at with Mccarthy?" with
+// a single tool call instead of 8-12 separate reads.
+//
+// Returns a structured payload covering: the prospect itself, all linked
+// contacts, all cadences (active + completed), all reply events, the
+// prospect-intel skillRun, all meetings, the CH profile (if synced),
+// pending approvals (not yet implemented — placeholder), and the
+// clientIntelligence row.
+//
+// Each section is best-effort: missing data returns null/empty rather than
+// erroring, so Claude Code can synthesise even partial answers. The cost
+// is one query call per prospect — acceptable given operator-driven usage
+// pattern (a few calls per session, not a hot loop).
+
+export const getDeepContext = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    // 1. Prospect itself
+    const prospect = await ctx.db.get(args.clientId);
+    if (!prospect) return null;
+
+    // 2. Contacts linked to this client
+    const contacts = await ctx.db
+      .query("contacts")
+      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .collect();
+
+    // 3. Cadences — split by state for easier consumption
+    const cadencesAll = await ctx.db
+      .query("cadences")
+      .withIndex("by_related_client", (q) => q.eq("relatedClientId", args.clientId))
+      .collect();
+    const cadencesActive = cadencesAll.filter((c) => c.isActive);
+    const cadencesFired = cadencesAll.filter((c) => c.lastFiredAt);
+    const cadencesQueued = cadencesAll.filter((c) => c.isActive && !c.lastFiredAt);
+
+    // 4. Reply events linked to this client
+    const replyEvents = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_linked_client", (q) => q.eq("linkedClientId", args.clientId))
+      .order("desc")
+      .take(20);
+
+    // 5. Latest prospect-intel skillRun
+    const latestProspectIntel = await ctx.db
+      .query("skillRuns")
+      .filter((q) => q.eq(q.field("linkedClientId"), args.clientId))
+      .order("desc")
+      .take(5);
+    const latestIntelRun = latestProspectIntel.find(
+      (r: any) => r.skillName === "prospect-intel",
+    );
+
+    // 6. Meetings — both upcoming and past
+    const meetingsAll = (await ctx.db
+      .query("meetings")
+      .collect()).filter((m: any) => m.clientId === args.clientId);
+    const nowIso = new Date().toISOString();
+    const meetingsUpcoming = meetingsAll
+      .filter((m: any) => m.scheduledAt && m.scheduledAt >= nowIso)
+      .sort((a: any, b: any) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""));
+    const meetingsPast = meetingsAll
+      .filter((m: any) => !m.scheduledAt || m.scheduledAt < nowIso)
+      .sort((a: any, b: any) => (b.scheduledAt ?? "").localeCompare(a.scheduledAt ?? ""))
+      .slice(0, 10);
+
+    // 7. CH profile if synced
+    let chProfile: any = null;
+    const chNumber =
+      (prospect as any).companiesHouseNumber ??
+      (latestIntelRun as any)?.dedupKey;
+    if (chNumber) {
+      const ch = await ctx.db
+        .query("companiesHouseCompanies")
+        .withIndex("by_company_number", (q) => q.eq("companyNumber", chNumber))
+        .first();
+      if (ch) {
+        const charges = await ctx.db
+          .query("companiesHouseCharges")
+          .filter((q) => q.eq(q.field("companyId"), ch._id))
+          .collect();
+        chProfile = { ...ch, charges };
+      }
+    }
+
+    // 8. Client intelligence row (richer structured intel)
+    const clientIntelligence = await ctx.db
+      .query("clientIntelligence")
+      .filter((q) => q.eq(q.field("clientId"), args.clientId))
+      .first();
+
+    // 9. Touchpoints (any logged outreach activity)
+    const touchpoints = (await ctx.db
+      .query("touchpoints")
+      .collect())
+      .filter((t: any) => t.clientId === args.clientId)
+      .sort((a: any, b: any) => (b.occurredAt ?? "").localeCompare(a.occurredAt ?? ""))
+      .slice(0, 20);
+
+    // Compose a synthesis-friendly summary block. Claude Code can use this
+    // for a quick "headline" answer, then drill into the structured fields.
+    const summary = {
+      name: (prospect as any).name,
+      companiesHouseNumber: chNumber,
+      prospectState: (prospect as any).prospectState ?? "n/a",
+      prospectStateChangedAt: (prospect as any).prospectStateChangedAt,
+      contactsCount: contacts.length,
+      contactsWithEmail: contacts.filter((c: any) => c.email).length,
+      cadencesActive: cadencesActive.length,
+      cadencesFired: cadencesFired.length,
+      cadencesQueued: cadencesQueued.length,
+      repliesReceived: replyEvents.length,
+      repliesAwaitingTriage: replyEvents.filter((r: any) => r.dispatchedTo === "operator_review").length,
+      latestIntelRunStatus: latestIntelRun?.status ?? "no_run",
+      latestIntelRunCompletedAt: latestIntelRun?.completedAt,
+      meetingsUpcoming: meetingsUpcoming.length,
+      meetingsPast: meetingsPast.length,
+      chargesActive: chProfile?.charges?.filter((c: any) => c.chargeStatus === "outstanding").length ?? 0,
+      chargesTotal: chProfile?.charges?.length ?? 0,
+    };
+
+    return {
+      summary,
+      prospect,
+      contacts,
+      cadences: {
+        all: cadencesAll,
+        active: cadencesActive,
+        fired: cadencesFired,
+        queued: cadencesQueued,
+      },
+      replyEvents,
+      latestIntelRun,
+      recentSkillRuns: latestProspectIntel,
+      meetings: { upcoming: meetingsUpcoming, past: meetingsPast },
+      chProfile,
+      clientIntelligence,
+      touchpoints,
+    };
+  },
+});
+
 // ── Internal: get for MCP-side reads (no auth gate; trusted caller) ──
 
 export const getInternal = internalQuery({

@@ -4138,11 +4138,33 @@ export default defineSchema({
     processed: v.boolean(),
     errors: v.optional(v.array(v.string())),
     userId: v.id("users"),                     // owner of the cadences cancelled; needed for downstream user-scoped queries
+
+    // v1.3 — persist the raw reply so the UI Replies tab and Claude Code
+    // can display what was actually said, not just the classifier verdict.
+    // body is plain text (HTML stripped) for portability; subject is the
+    // email subject line. Both optional because the HubSpot-sweep path
+    // doesn't always carry the body content.
+    replyBodyText: v.optional(v.string()),
+    replySubject: v.optional(v.string()),
+
+    // v1.3 — direct link to the clients row when the contact resolves to
+    // one. Speeds up reply.listByClient + the operator-review queue's
+    // grouping. Denormalised from contact.clientId at ingest time so
+    // queries don't need to JOIN every read.
+    linkedClientId: v.optional(v.id("clients")),
+
+    // v1.3 — manual paste ingest provenance (operator pasted a reply they
+    // got over WhatsApp/text/forwarded email). Distinct from `source` enum
+    // which captures the automated provider when present.
+    ingestedManuallyByUserId: v.optional(v.id("users")),
+    ingestedManuallyAt: v.optional(v.string()),
   })
     .index("by_source_externalId", ["source", "externalId"])
     .index("by_contact", ["contactId"])
     .index("by_processed", ["processed"])
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .index("by_linked_client", ["linkedClientId"])
+    .index("by_dispatched_to", ["dispatchedTo"]),
 
   skillRuns: defineTable({
     // Identity
