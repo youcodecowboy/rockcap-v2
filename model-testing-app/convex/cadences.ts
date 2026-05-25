@@ -350,3 +350,23 @@ export const requestRevisionInternal = internalMutation({
     return { ok: true, patched };
   },
 });
+
+// ── Migration helpers (used once by the v1.2 migration action) ────────
+
+export const findAllForMigrationInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("cadences").collect();
+  },
+});
+
+export const markApprovedForMigrationInternal = internalMutation({
+  args: { cadenceId: v.id("cadences") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.cadenceId, {
+      packageApprovalStatus: "approved",
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true };
+  },
+});

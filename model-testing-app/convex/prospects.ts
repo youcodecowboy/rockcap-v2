@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 /**
  * Create a prospect from a company number
@@ -266,5 +267,28 @@ export const getInternal = internalQuery({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.clientId);
+  },
+});
+
+// ── One-shot migration: backfill packageApprovalStatus=approved ──────
+// Any pre-existing cadences (from v1/v1.1 smoke tests or the early
+// prospect-intel runs) need packageApprovalStatus = "approved" so the
+// new dispatcher filter doesn't silently stop firing them.
+// Idempotent — run once, then leave.
+
+export const migrateExistingCadencesToApprovedInternal = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const allRows = await ctx.runQuery(internal.cadences.findAllForMigrationInternal, {});
+    let patched = 0;
+    for (const row of allRows) {
+      if (row.packageApprovalStatus === undefined) {
+        await ctx.runMutation(internal.cadences.markApprovedForMigrationInternal, {
+          cadenceId: row._id,
+        });
+        patched++;
+      }
+    }
+    return { ok: true, patched, total: allRows.length };
   },
 });
