@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 72 tools across 19 domains as of v1.3 Sprint G.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 75 tools across 19 domains as of v1.4 Sprint H.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -157,7 +157,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `meeting.listUpcoming({limit?})` | Upcoming meetings across all clients, soonest first. Operator's "what calls do I have" surface. |
 | (`meeting.listByClient` removed in catalogue cleanup — use `meeting.getByClient`) | — |
 
-### `document.*` — Document discovery + linkage (6)
+### `document.*` — Document discovery + linkage + classification fixes (7)
 
 | Tool | Purpose |
 |---|---|
@@ -167,8 +167,9 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `document.search({query, clientId?})` | Substring search by fileName / summary / fileTypeDetected. |
 | `document.linkToProject({documentId, projectId?})` | Re-file a document: assign to a project (sets isBaseDocument=false) or unlink (pass projectId=null). |
 | `document.createFromGeneration({fileName, fileTypeDetected, category, summary, clientId?, projectId?, ...})` | Persist a skill-generated artefact (lender brief, IC paper, terms comparison, meeting notes) into documents. Content lives inline in `summary` as markdown — no file storage needed. Appears in the standard documents UI. For file UPLOADS use the regular `documents.create` flow. |
+| `document.updateClassification({documentId, category?, fileTypeDetected?, summary?, reasoning?})` | Patch a document's classification fields — for correcting V4 ingestion classifier mistakes. Does NOT re-run V4, strictly a metadata patch. All fields optional; pass only what to change. Recommend always passing `reasoning` for audit trail. |
 
-### `checklist.*` — Requirements tracking (4)
+### `checklist.*` — Requirements tracking + link fixes (6)
 
 | Tool | Purpose |
 |---|---|
@@ -176,6 +177,8 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `checklist.getByProject({projectId})` | Project-scoped checklist items. |
 | `checklist.updateStatus({checklistItemId, status})` | Flip status: missing / pending_review / fulfilled. |
 | `checklist.createCustomItem({clientId, projectId?, name, category, ...})` | Add a one-off custom item (non-template). Defaults: phaseRequired=indicative_terms, priority=required, status=missing. |
+| `checklist.linkDocument({checklistItemId, documentId})` | Attach a document to a checklist item. First link becomes primary + sets status=fulfilled. Subsequent links are non-primary supporting docs. Idempotent. Use when V4 failed to auto-link an obviously-fulfilling doc. |
+| `checklist.unlinkDocument({checklistItemId, documentId})` | Remove a document link. If the unlinked doc was primary AND other links remain, oldest remaining is promoted. If no links remain, status reverts to 'missing'. Use when V4 wrongly linked a non-matching doc. |
 
 ### `approval.*` — Operator approval queue (4)
 
@@ -310,6 +313,21 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 2. lender.recordAppetite × N — one per appetite dimension from the BDM call
    Standard fieldPaths per references/appetite-signal-catalogue.md
 3. lender.getDeepContext({lenderClientId}) — verify the appetite picture is recorded
+```
+
+### Pattern: Fix a misclassified document
+
+```
+1. project.getDeepContext({projectId}) — surfaces checklist with linked docs
+2. Spot a mis-link: checklist item X shows primaryDocument that doesn't match the
+   requirement (e.g., "Planning Decision Notice" linked to a HoTs Comparison xlsx)
+3. checklist.unlinkDocument({checklistItemId, documentId}) — clears the bad link;
+   status reverts to 'missing' (or promotes the next link if any)
+4. (optional) document.updateClassification({documentId, category, fileTypeDetected,
+   reasoning}) — fix the doc itself so it doesn't keep getting auto-linked to the
+   wrong requirement
+5. (optional) checklist.linkDocument({checklistItemId, documentId: <correct doc>}) —
+   if you find the right doc that SHOULD fulfill this requirement, link it explicitly
 ```
 
 ## What's NOT yet MCP-exposed (deferred)
