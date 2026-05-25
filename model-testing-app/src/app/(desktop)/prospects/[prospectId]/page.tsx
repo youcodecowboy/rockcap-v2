@@ -25,12 +25,6 @@ export default function ProspectDetailPage() {
   const [showRevisionModal, setShowRevisionModal] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
-  const intelRun = useQuery(
-    api.skillRuns.latestByDedupKey,
-    prospect !== undefined && prospect !== null
-      ? { skillName: "prospect-intel", dedupKey: (prospect as any)?.hubspotCompanyId ?? "" }
-      : "skip",
-  );
   const cadencesRaw = useQuery(
     api.cadences.listByClient,
     prospect !== undefined && prospect !== null
@@ -38,6 +32,16 @@ export default function ProspectDetailPage() {
       : "skip",
   );
   const cadences = (cadencesRaw as any[]) ?? [];
+
+  // Derive the intel run via the cadences' sourceSkillRunId — far more
+  // robust than dedupKey lookup. The cadences carry the link between
+  // a clients row and the skill output that produced them, regardless
+  // of whether the clients row has hubspotCompanyId populated.
+  const intelRunId = cadences[0]?.sourceSkillRunId as Id<"skillRuns"> | undefined;
+  const intelRun = useQuery(
+    api.skillRuns.getById,
+    intelRunId ? { runId: intelRunId } : "skip",
+  );
 
   const approvePackage = useMutation(api.cadences.approvePackage);
   const denyPackage = useMutation(api.cadences.denyPackage);

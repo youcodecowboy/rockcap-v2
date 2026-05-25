@@ -383,6 +383,24 @@ export const markApprovedForMigrationInternal = internalMutation({
   },
 });
 
+// Companion to linkExistingCadencesToClientInternal in prospects.ts —
+// patches a single cadence to set relatedClientId, used when a clients
+// row is manually promoted from a HubSpot company whose cadences pre-date
+// the v1.2 promotion flow.
+export const setRelatedClientForLinkInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    clientId: v.id("clients"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.cadenceId, {
+      relatedClientId: args.clientId,
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true };
+  },
+});
+
 // ── Public mutation wrappers for the prospects CRM (v1.2) ──────────────────
 // These wrap the internal mutations with auth resolution. They resolve userId
 // by querying the first user row — safe for the single-tenant RockCap setup.

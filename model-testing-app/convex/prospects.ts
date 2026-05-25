@@ -298,6 +298,37 @@ export const migrateExistingCadencesToApprovedInternal = internalAction({
   },
 });
 
+// One-shot admin tool: link an existing cadence package to a clients row.
+// Used when a clients row is manually promoted from a HubSpot company that
+// already had a prospect-intel skillRun + cadences (the cadences were
+// created against just a contact, with no relatedClientId yet). The CRM
+// detail page reads cadences via api.cadences.listByClient, so this link
+// is the join that makes the Outreach tab populate.
+//
+// Idempotent: only patches rows where relatedClientId is unset OR
+// differs from the target.
+export const linkExistingCadencesToClientInternal = internalAction({
+  args: {
+    clientId: v.id("clients"),
+    packageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const allRows = await ctx.runQuery(internal.cadences.findAllForMigrationInternal, {});
+    const matching = allRows.filter((r: any) => r.packageId === args.packageId);
+    let patched = 0;
+    for (const row of matching) {
+      if (row.relatedClientId !== args.clientId) {
+        await ctx.runMutation(internal.cadences.setRelatedClientForLinkInternal, {
+          cadenceId: row._id,
+          clientId: args.clientId,
+        });
+        patched++;
+      }
+    }
+    return { ok: true, patched, total: matching.length };
+  },
+});
+
 // HubSpot lifecycle + lead status mapping per spec section 2.8
 const HUBSPOT_MAPPING: Record<string, { lifecycleStage: string; hs_lead_status: string }> = {
   drafted: { lifecycleStage: "lead", hs_lead_status: "open" },
