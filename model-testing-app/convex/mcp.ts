@@ -701,6 +701,104 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.3 Sprint B — qualify-and-draft helper tools. Skill-friendly surface
+  // for the "operator wants to draft a reply" workflow. Wraps approvals.create
+  // with the right shape for email drafts + links the approval back to the
+  // triggering reply event (when present) and the skillRun (always present
+  // for skill-invoked drafts).
+  {
+    name: "outreach.draftReply",
+    description:
+      "Stage a drafted email reply as a pending approval. Use this from qualify-and-draft (or any draft-an-email skill) to surface the draft to the operator for review BEFORE it sends. The approval will appear on the prospect-detail Overview's 'Pending approvals' card AND in /approvals. Once approved, the existing approval-execution path triggers the actual send (Gmail or whichever provider is wired). Required: contactId + clientId (so the draft surfaces in both contact-scoped and client-scoped views) + subject + bodyText + bodyHtml. Optional: replyToReplyEventId (when drafting in response to a tracked inbound reply — links the approval back to the reply for cross-navigation) + skillRunId (audit linkage) + reasoning (1-2 sentence summary of why the draft says what it says, for the operator's quick-review).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "Convex id of the recipient contact" },
+        clientId: { type: "string", description: "Convex id of the client this reply concerns" },
+        subject: { type: "string" },
+        bodyText: { type: "string", description: "Plain text email body" },
+        bodyHtml: { type: "string", description: "HTML email body (paragraph-wrapped at minimum)" },
+        replyToReplyEventId: { type: "string", description: "Optional: the replyEvents id this draft is responding to" },
+        skillRunId: { type: "string", description: "Optional: the skillRun id that produced this draft (audit linkage)" },
+        reasoning: { type: "string", description: "1-2 sentence summary of why the draft says what it says (operator-facing quick-review)" },
+        threadId: { type: "string", description: "Optional: Gmail thread id if continuing a thread" },
+        inReplyTo: { type: "string", description: "Optional: original Gmail Message-ID for proper threading" },
+      },
+      required: ["contactId", "clientId", "subject", "bodyText", "bodyHtml"],
+    },
+    handler: async (ctx, userId, args) => {
+      const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
+        entityType: "client_communication" as const,
+        summary: args.reasoning
+          ? `Reply draft (${args.subject.slice(0, 60)}) — ${args.reasoning.slice(0, 120)}`
+          : `Reply draft: ${args.subject.slice(0, 80)}`,
+        draftPayload: {
+          kind: "email_reply" as const,
+          contactId: args.contactId,
+          subject: args.subject,
+          bodyText: args.bodyText,
+          bodyHtml: args.bodyHtml,
+          threadId: args.threadId,
+          inReplyTo: args.inReplyTo,
+          reasoning: args.reasoning,
+        },
+        requestedBy: userId,
+        requestSource: "skill" as const,
+        requestSourceName: "qualify-and-draft",
+        relatedClientId: args.clientId,
+        relatedContactId: args.contactId,
+        relatedReplyEventId: args.replyToReplyEventId,
+        relatedSkillRunId: args.skillRunId,
+      });
+      return asText({
+        status: "draft_staged",
+        approvalId,
+        viewAt: `/approvals/${approvalId}`,
+        note: "Approval is pending operator review. The operator can approve in the CRM (/approvals) or you can call approval.get to monitor status.",
+      });
+    },
+  },
+
+  {
+    name: "approval.listPendingByClient",
+    description:
+      "List pending approvals for a specific client. Use to check whether qualify-and-draft or any other skill has staged drafts awaiting operator review. Returns the same approval rows as the Overview tab's 'Pending approvals' card. Includes all entity types (client_communication, gmail_send, lender_outreach, etc).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        limit: { type: "number", description: "Default 20" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.approvals.listPendingByClient, {
+        clientId: args.clientId,
+        limit: args.limit ?? 20,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "approval.listByReplyEvent",
+    description:
+      "List approvals (any status) linked to a specific reply event. Typically returns 0 or 1 row — the qualify-and-draft or meeting-prep-respond output. Use to check whether a reply has been drafted for yet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: { type: "string" },
+      },
+      required: ["replyEventId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.approvals.listByReplyEvent, {
+        replyEventId: args.replyEventId,
+      });
+      return asText(rows);
+    },
+  },
+
   // v1.3 reply handling: list + read + reclassify
   {
     name: "reply.listByClient",

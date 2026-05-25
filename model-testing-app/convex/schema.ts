@@ -3932,6 +3932,14 @@ export default defineSchema({
     relatedProjectId: v.optional(v.id("projects")),
     relatedContactId: v.optional(v.id("contacts")),
     relatedCadenceId: v.optional(v.id("cadences")),
+    // v1.3 — link an approval back to the reply event that triggered it.
+    // Used by qualify-and-draft + meeting-prep responder so the Replies tab
+    // can show "draft pending review" inline, and so the operator can
+    // navigate from approvals back to the originating reply.
+    relatedReplyEventId: v.optional(v.id("replyEvents")),
+    // v1.3 — link to the skillRun that produced this approval (audit trail
+    // + lets gaps/errors flow into the approvals UI).
+    relatedSkillRunId: v.optional(v.id("skillRuns")),
   })
     .index("by_status", ["status"])
     .index("by_requested_by", ["requestedBy"])
@@ -3939,6 +3947,7 @@ export default defineSchema({
     .index("by_related_project", ["relatedProjectId"])
     .index("by_related_client", ["relatedClientId"])
     .index("by_related_cadence", ["relatedCadenceId"])
+    .index("by_related_reply_event", ["relatedReplyEventId"])
     .index("by_expires_at", ["expiresAt"]),
 
   // ---------------------------------------------------------------------------

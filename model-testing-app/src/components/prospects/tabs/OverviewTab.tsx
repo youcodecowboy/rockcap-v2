@@ -1,7 +1,9 @@
 "use client";
 
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { TrendingUp, AlertCircle, Plus } from "lucide-react";
+import { TrendingUp, AlertCircle, Plus, Mail, CheckCircle2, ExternalLink } from "lucide-react";
 
 interface OverviewTabProps {
   prospect: any;
@@ -84,6 +86,15 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
   const rec = parseRecommendation(intelRun?.intelMarkdown);
   const hasIntel = !!intelRun?.intelMarkdown;
   const cadencesEmpty = cadences.length === 0;
+
+  // v1.3 Sprint B — pending approvals for this client. Surfaces drafts
+  // staged by qualify-and-draft, meeting-prep-respond, lender-outreach,
+  // and any other client_communication / gmail_send / lender_outreach
+  // approval type. Operator can click through to /approvals to review.
+  const pendingApprovals = useQuery(
+    api.approvals.listPendingByClient,
+    prospect ? { clientId: prospect._id, limit: 10 } : "skip",
+  ) ?? [];
 
   return (
     <div>
@@ -256,6 +267,135 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
           <a onClick={onJumpToOutreach} style={{ color: "#78350f", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
             Jump to outreach →
           </a>
+        </div>
+      )}
+
+      {/* v1.3 Sprint B — Pending Approvals card. Surfaces drafts staged by
+          qualify-and-draft, meeting-prep-respond, etc. Shown above the
+          cadence-nudge so it's the first action item the operator sees. */}
+      {pendingApprovals.length > 0 && (
+        <div
+          style={{
+            border: `1px solid ${colors.border.default}`,
+            borderTop: `3px solid ${colors.accent.green}`,
+            borderRadius: 4,
+            background: colors.bg.card,
+            marginBottom: 18,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 16px",
+              background: colors.bg.light,
+              borderBottom: `1px solid ${colors.border.default}`,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <CheckCircle2 size={14} color={colors.accent.green} />
+              <span
+                style={{
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: colors.text.primary,
+                  fontWeight: 500,
+                }}
+              >
+                Pending operator review · {pendingApprovals.length}
+              </span>
+            </div>
+            <a
+              href="/approvals"
+              style={{ color: colors.accent.blue, fontSize: 10, textDecoration: "none" }}
+            >
+              Open /approvals →
+            </a>
+          </div>
+          <div>
+            {pendingApprovals.map((a: any, i: number) => (
+              <a
+                key={a._id}
+                href={`/approvals/${a._id}`}
+                style={{
+                  display: "block",
+                  padding: "10px 16px",
+                  borderTop: i === 0 ? "none" : `1px solid ${colors.border.light}`,
+                  textDecoration: "none",
+                  color: colors.text.primary,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <Mail size={12} color={colors.text.muted} />
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontFamily: "ui-monospace, monospace",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          color: colors.text.muted,
+                        }}
+                      >
+                        {a.entityType.replace(/_/g, " ")}
+                      </span>
+                      {a.requestSourceName && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontFamily: "ui-monospace, monospace",
+                            color: colors.accent.purple,
+                            background: `${colors.accent.purple}15`,
+                            padding: "1px 6px",
+                            borderRadius: 2,
+                            border: `1px solid ${colors.accent.purple}40`,
+                          }}
+                        >
+                          via {a.requestSourceName}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: colors.text.primary, fontWeight: 500 }}>
+                      {a.summary}
+                    </div>
+                    {a.draftPayload?.subject && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: colors.text.secondary,
+                          marginTop: 4,
+                          fontStyle: "italic",
+                        }}
+                      >
+                        Subject: {a.draftPayload.subject}
+                      </div>
+                    )}
+                    {a.draftPayload?.reasoning && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: colors.text.muted,
+                          marginTop: 4,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {a.draftPayload.reasoning}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: colors.text.muted, fontFamily: "ui-monospace, monospace", whiteSpace: "nowrap" as const }}>
+                    {a.requestedAt?.slice(0, 16)}
+                    <ExternalLink size={10} />
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
         </div>
       )}
 

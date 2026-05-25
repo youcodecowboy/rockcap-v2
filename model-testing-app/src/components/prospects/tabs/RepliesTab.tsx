@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import { useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { MessageSquare, Mail, Clock, ArrowRight, ExternalLink } from "lucide-react";
+import { MessageSquare, Mail, Clock, ArrowRight, ExternalLink, AlertCircle, Copy, Check } from "lucide-react";
 
 interface RepliesTabProps {
   prospect: any;
@@ -92,6 +93,29 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
   const confidencePct = reply.classifiedConfidence
     ? Math.round(reply.classifiedConfidence * 100)
     : null;
+
+  // v1.3 Sprint B — check whether an approval has been staged for this reply
+  // (qualify-and-draft / meeting-prep-respond output). Drives the
+  // "operator action needed" hint when no approval exists yet and the
+  // dispatch destination expects one.
+  const linkedApprovals = useQuery(api.approvals.listByReplyEvent, {
+    replyEventId: reply._id,
+  }) ?? [];
+  const hasPendingDraft = linkedApprovals.some((a: any) => a.status === "pending");
+  const draftStaged = linkedApprovals.length > 0;
+
+  // Intents that need a human-drafted response (vs lost/OOO which don't)
+  const needsResponseIntents = new Set(["book_meeting", "info_question", "unknown", "defer_long_term"]);
+  const needsResponse = needsResponseIntents.has(reply.classifiedIntent ?? "unknown");
+  const showOperatorActionHint = needsResponse && !draftStaged;
+
+  const [copied, setCopied] = useState(false);
+  function copyPrompt() {
+    const prompt = `Run qualify-and-draft on reply ${reply._id} for client ${reply.linkedClientId}`;
+    navigator.clipboard.writeText(prompt);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   return (
     <div
@@ -242,6 +266,86 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
             </a>
           )}
         </div>
+
+        {/* v1.3 Sprint B — operator action hint OR draft-pending badge */}
+        {draftStaged ? (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              background: `${colors.accent.green}10`,
+              border: `1px solid ${colors.accent.green}40`,
+              borderRadius: 4,
+              fontSize: 11,
+              color: colors.text.primary,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Mail size={12} color={colors.accent.green} />
+              <strong>{hasPendingDraft ? "Draft pending operator review" : "Draft handled"}</strong>
+              {linkedApprovals.length > 0 && (
+                <span style={{ color: colors.text.muted, fontSize: 10 }}>
+                  · {linkedApprovals[0].requestSourceName ?? "skill"}
+                </span>
+              )}
+            </div>
+            {linkedApprovals.length > 0 && (
+              <a
+                href={`/approvals/${linkedApprovals[0]._id}`}
+                style={{ color: colors.accent.blue, fontSize: 10, textDecoration: "underline" }}
+              >
+                Open approval →
+              </a>
+            )}
+          </div>
+        ) : showOperatorActionHint ? (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              background: "#fef3c7",
+              border: `1px solid ${colors.accent.yellow}`,
+              borderRadius: 4,
+              fontSize: 11,
+              color: "#78350f",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <AlertCircle size={12} />
+              <strong>Operator action needed.</strong> No draft staged yet for this reply.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10 }}>In Claude Code:</span>
+              <code style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, background: "#fbf4d4", padding: "2px 6px", borderRadius: 2, border: "1px solid #fcd34d" }}>
+                Run qualify-and-draft on reply {reply._id.slice(-8)}…
+              </code>
+              <button
+                onClick={copyPrompt}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 8px",
+                  background: "#78350f",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 2,
+                  fontSize: 9,
+                  cursor: "pointer",
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                {copied ? <Check size={9} /> : <Copy size={9} />}
+                {copied ? "copied" : "copy prompt"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Errors if any */}
         {reply.errors && reply.errors.length > 0 && (
