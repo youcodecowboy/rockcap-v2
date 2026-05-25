@@ -85,6 +85,10 @@ export const completeInternal = internalMutation({
       v.literal("cancelled"),
     ),
     brief: v.optional(v.string()),
+    // v1.2 hardened skills: full markdown intel report. Rendered by the
+    // /prospects/[id] Intel tab. Separate from `brief` (which stays as the
+    // 2-paragraph operator-facing summary).
+    intelMarkdown: v.optional(v.string()),
     linkedClientId: v.optional(v.id("clients")),
     linkedProjectId: v.optional(v.id("projects")),
     linkedApprovalIds: v.optional(v.array(v.id("approvals"))),
@@ -109,6 +113,7 @@ export const completeInternal = internalMutation({
     await ctx.db.patch(args.runId, {
       status: args.status,
       brief: args.brief,
+      intelMarkdown: args.intelMarkdown,
       linkedClientId: args.linkedClientId,
       linkedProjectId: args.linkedProjectId,
       linkedApprovalIds: args.linkedApprovalIds,
