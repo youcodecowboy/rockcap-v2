@@ -745,6 +745,38 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.2.3 prospect-intel hardening: Apollo email discovery
+  {
+    name: "apollo.findEmail",
+    description:
+      "Find a person's email address via Apollo's people-match API. Pass firstName + lastName + ideally companyName or companyDomain for disambiguation. Returns {ok, found, email, emailStatus, title, linkedinUrl, photoUrl, apolloPersonId, organization}. emailStatus values: 'verified' (safe for outreach), 'unverified' (needs manual confirmation), 'questionable' (do not use), 'unavailable' (Apollo has no email for this person). The cadence engine should refuse to fire on non-verified emails. Cost: 1 Apollo credit per successful reveal. Errors: APOLLO_API_KEY not set, apollo_auth_error, apollo_rate_limit, apollo_http_<status>.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        firstName: { type: "string", description: "Person's first name (e.g., 'Shane')" },
+        lastName: { type: "string", description: "Person's surname (e.g., 'Gordon')" },
+        companyName: {
+          type: "string",
+          description: "Optional but strongly recommended — the company name to disambiguate (e.g., 'Opulence Property Group Ltd')",
+        },
+        companyDomain: {
+          type: "string",
+          description: "Optional — the company's website domain (e.g., 'opulencepropertygroup.co.uk'). Used as fallback disambiguator if companyName is ambiguous.",
+        },
+      },
+      required: ["firstName", "lastName"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.apollo.findPersonInternal, {
+        firstName: args.firstName,
+        lastName: args.lastName,
+        companyName: args.companyName,
+        companyDomain: args.companyDomain,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2 prospects CRM — operator-side read of an approval row
   {
     name: "approval.get",

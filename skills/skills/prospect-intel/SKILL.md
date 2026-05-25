@@ -93,7 +93,11 @@ What it does not do:
 
 7. **Company-level web search**. Load `references/web-research-playbook.md` and follow Phase A (7 company-level queries). Output populates section 2 (news mentions), section 5 (partnerships), section 6 (recent signals).
 
-8. **Director-level web search**. Load `references/web-research-playbook.md` and follow Phase B (4 queries × top 2 directors). Output populates section 3 (Key People).
+8. **Director-level web search + email discovery**. Load `references/web-research-playbook.md` and follow Phase B (5 queries × top 2 directors). For each director, ALSO call `apollo.findEmail({firstName, lastName, companyName})` — Apollo's people-match API returns business email + status + LinkedIn URL faster and more reliably than web search. Capture the email + status in section 3 of the report. **Email status semantics:**
+    - `verified`: safe for outreach. Use as the cadence's target email.
+    - `unverified`: present in Apollo's index but not SMTP-verified. Note in section 3; cadence engine should refuse to fire on this — operator must manually verify before approving the package.
+    - `questionable` / `spam_trap`: do NOT use; flag as risk in section 7.
+    - `unavailable` or `not found`: Apollo has no email; fall back to web research (LinkedIn personal profile, company website contact page) and surface as a gap if still unfindable. Without an email, the cadence package CANNOT be created — surface the gap loudly so the operator knows outreach is blocked.
 
 9. **Cross-reference checks**. Follow `references/web-research-playbook.md` Phase C — Convex intelligence lookups for prior connections, address cross-check, sister entity check. Output enriches sections 3 and 4.
 
@@ -130,6 +134,9 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 - `contact.get`, `contact.getByClient` — for step 11 contact resolution
 - `approval.create` — for step 11 (staged reachout)
 - `cadence.create` — for step 11 (cadence package, 4 calls)
+- `apollo.findEmail` — for step 8 (per-director email discovery; the v1.2.3 capability)
+- `companies.syncCompaniesHouse` — for step 2 (CH profile + charges sync)
+- `contact.getByClient` — for step 11 (resolve the prospect's contact for cadence wiring)
 - `skillRun.start` (with dedup) — for step 1
 - `skillRun.complete` (with intelMarkdown) — for step 12
 

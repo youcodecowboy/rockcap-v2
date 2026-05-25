@@ -1,15 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { ExternalLink, UserPlus, Search } from "lucide-react";
+import { ExternalLink, UserPlus, Search, Mail, Loader2 } from "lucide-react";
 
 interface PeopleTabProps {
   prospect: any;
   intelRun?: any;
   chProfile?: any;
+}
+
+interface ApolloLookup {
+  loading: boolean;
+  result?: {
+    found: boolean;
+    email?: string;
+    emailStatus?: string;
+    title?: string;
+    linkedinUrl?: string;
+    photoUrl?: string;
+    organization?: { name?: string; domain?: string };
+  };
+  error?: string;
 }
 
 // Parse all directors/PSCs from intelMarkdown section 3 (Key People).
@@ -61,22 +75,72 @@ function parseKeyPeople(intelMarkdown?: string): ParsedPerson[] {
 export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
   const colors = useColors();
   const createContact = useMutation(api.contacts.create);
+  const findEmailApollo = useAction(api.apollo.findPerson);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [added, setAdded] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [apolloByPerson, setApolloByPerson] = useState<Record<string, ApolloLookup>>({});
 
   const people = parseKeyPeople(intelRun?.intelMarkdown);
   const chNumber = chProfile?.companyNumber ?? (intelRun as any)?.dedupKey;
+  const companyName = prospect?.companyName ?? prospect?.name;
+
+  function splitName(fullName: string): { firstName: string; lastName: string } {
+    // Handle "Surname, Forenames" (CH common) and "Forenames Surname" (web common).
+    if (fullName.includes(",")) {
+      const [surname, rest] = fullName.split(",").map((s) => s.trim());
+      const restParts = rest.split(/\s+/);
+      return { firstName: restParts[0] ?? "", lastName: surname };
+    }
+    const parts = fullName.trim().split(/\s+/);
+    return {
+      firstName: parts[0] ?? "",
+      lastName: parts.length > 1 ? parts[parts.length - 1] : "",
+    };
+  }
+
+  async function handleFindEmail(person: ParsedPerson) {
+    const { firstName, lastName } = splitName(person.name);
+    if (!firstName || !lastName) {
+      setApolloByPerson((p) => ({
+        ...p,
+        [person.name]: { loading: false, error: `Could not parse name: ${person.name}` },
+      }));
+      return;
+    }
+    setApolloByPerson((p) => ({ ...p, [person.name]: { loading: true } }));
+    try {
+      const res = await findEmailApollo({ firstName, lastName, companyName });
+      if (res.ok) {
+        setApolloByPerson((p) => ({
+          ...p,
+          [person.name]: { loading: false, result: res },
+        }));
+      } else {
+        setApolloByPerson((p) => ({
+          ...p,
+          [person.name]: { loading: false, error: `${res.error}${res.detail ? `: ${res.detail}` : ""}` },
+        }));
+      }
+    } catch (e: any) {
+      setApolloByPerson((p) => ({
+        ...p,
+        [person.name]: { loading: false, error: e?.message ?? String(e) },
+      }));
+    }
+  }
 
   async function handleAddContact(person: ParsedPerson) {
     setAddingId(person.name);
     setError(null);
+    const apolloFor = apolloByPerson[person.name]?.result;
     try {
       const id = await createContact({
         name: person.name,
-        role: person.bullets["ch role + appointment"]?.split(",")[0] ?? person.roleNote ?? "Director",
-        company: prospect?.companyName ?? prospect?.name,
-        notes: `Imported from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.`,
+        role: apolloFor?.title ?? person.bullets["ch role + appointment"]?.split(",")[0] ?? person.roleNote ?? "Director",
+        email: apolloFor?.email,
+        company: companyName,
+        notes: `Imported from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.${apolloFor?.email ? ` Email via Apollo (${apolloFor.emailStatus ?? "unknown status"}).` : ""}${apolloFor?.linkedinUrl ? ` LinkedIn: ${apolloFor.linkedinUrl}.` : ""}`,
         clientId: prospect?._id,
       });
       setAdded((prev) => ({ ...prev, [person.name]: String(id) }));
@@ -221,6 +285,15 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
               ))}
             </div>
 
+            {/* Apollo email discovery block. Renders inline; when result lands,
+                shows the email + verification status; the add-contact button
+                automatically uses the found email. */}
+            <ApolloEmailBlock
+              lookup={apolloByPerson[person.name]}
+              onFind={() => handleFindEmail(person)}
+              colors={colors}
+            />
+
             {/* Contact discovery actions */}
             <div
               style={{
@@ -229,6 +302,7 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
                 paddingTop: 10,
                 borderTop: `1px solid ${colors.border.light}`,
                 fontSize: 11,
+                flexWrap: "wrap",
               }}
             >
               <DiscoveryButton
@@ -303,5 +377,239 @@ function DiscoveryButton({
       {icon}
       {label}
     </a>
+  );
+}
+
+function emailStatusColor(status: string | undefined, colors: any): { bg: string; fg: string; border: string } {
+  const s = (status ?? "").toLowerCase();
+  if (s === "verified") return { bg: "#dcfce7", fg: "#166534", border: "#86efac" };
+  if (s === "unverified" || s === "guessed") return { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" };
+  if (s === "questionable" || s === "spam_trap") return { bg: "#fee2e2", fg: "#7f1d1d", border: "#fca5a5" };
+  return { bg: colors.bg.cardAlt, fg: colors.text.muted, border: colors.border.default };
+}
+
+function ApolloEmailBlock({
+  lookup,
+  onFind,
+  colors,
+}: {
+  lookup?: ApolloLookup;
+  onFind: () => void;
+  colors: any;
+}) {
+  // Initial state — no lookup yet
+  if (!lookup) {
+    return (
+      <div
+        style={{
+          padding: "10px 12px",
+          background: colors.bg.cardAlt,
+          border: `1px dashed ${colors.border.default}`,
+          borderRadius: 4,
+          marginBottom: 14,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: colors.text.muted }}>
+          <Mail size={12} />
+          No email on file. Apollo can search for one.
+        </div>
+        <button
+          onClick={onFind}
+          style={{
+            padding: "5px 10px",
+            background: colors.accent.purple,
+            color: "#ffffff",
+            border: "none",
+            borderRadius: 3,
+            fontSize: 10,
+            fontWeight: 500,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
+          <Search size={10} />
+          Find email via Apollo
+        </button>
+      </div>
+    );
+  }
+
+  if (lookup.loading) {
+    return (
+      <div
+        style={{
+          padding: "10px 12px",
+          background: colors.bg.cardAlt,
+          border: `1px solid ${colors.border.default}`,
+          borderRadius: 4,
+          marginBottom: 14,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontSize: 11,
+          color: colors.text.muted,
+        }}
+      >
+        <Loader2 size={12} className="animate-spin" />
+        Searching Apollo…
+      </div>
+    );
+  }
+
+  if (lookup.error) {
+    return (
+      <div
+        style={{
+          padding: "10px 12px",
+          background: "#fef2f2",
+          border: `1px solid ${colors.accent.red}`,
+          borderRadius: 4,
+          marginBottom: 14,
+          fontSize: 11,
+          color: "#7f1d1d",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <span><strong>Apollo error:</strong> {lookup.error}</span>
+        <button
+          onClick={onFind}
+          style={{
+            padding: "4px 10px",
+            background: colors.accent.red,
+            color: "#ffffff",
+            border: "none",
+            borderRadius: 3,
+            fontSize: 10,
+            cursor: "pointer",
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const r = lookup.result;
+  if (!r) return null;
+
+  if (!r.found) {
+    return (
+      <div
+        style={{
+          padding: "10px 12px",
+          background: colors.bg.cardAlt,
+          border: `1px solid ${colors.border.default}`,
+          borderRadius: 4,
+          marginBottom: 14,
+          fontSize: 11,
+          color: colors.text.muted,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <span>
+          <Mail size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: 5 }} />
+          Apollo: no match for this person + company combination.
+        </span>
+        <button
+          onClick={onFind}
+          style={{
+            padding: "4px 10px",
+            background: colors.bg.card,
+            color: colors.text.secondary,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 3,
+            fontSize: 10,
+            cursor: "pointer",
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // Found! Show structured result
+  const pill = emailStatusColor(r.emailStatus, colors);
+  return (
+    <div
+      style={{
+        padding: "12px 14px",
+        background: `${colors.accent.purple}08`,
+        border: `1px solid ${colors.accent.purple}40`,
+        borderRadius: 4,
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 10, color: colors.accent.purple, fontFamily: "ui-monospace, monospace", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 500 }}>
+        <Mail size={11} />
+        Found via Apollo
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: "5px 12px", fontSize: 11 }}>
+        {r.email && (
+          <>
+            <div style={{ color: colors.text.muted }}>Email</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ color: colors.text.primary, fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{r.email}</span>
+              {r.emailStatus && (
+                <span
+                  style={{
+                    padding: "1px 6px",
+                    background: pill.bg,
+                    color: pill.fg,
+                    border: `1px solid ${pill.border}`,
+                    borderRadius: 2,
+                    fontFamily: "ui-monospace, monospace",
+                    fontSize: 9,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    fontWeight: 500,
+                  }}
+                >
+                  {r.emailStatus}
+                </span>
+              )}
+            </div>
+          </>
+        )}
+        {r.title && (
+          <>
+            <div style={{ color: colors.text.muted }}>Title</div>
+            <div style={{ color: colors.text.primary }}>{r.title}</div>
+          </>
+        )}
+        {r.linkedinUrl && (
+          <>
+            <div style={{ color: colors.text.muted }}>LinkedIn</div>
+            <div>
+              <a
+                href={r.linkedinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: colors.accent.blue, textDecoration: "underline", fontSize: 10, wordBreak: "break-all" }}
+              >
+                {r.linkedinUrl.replace(/^https?:\/\/(www\.)?/, "")}
+              </a>
+            </div>
+          </>
+        )}
+        {r.organization?.domain && (
+          <>
+            <div style={{ color: colors.text.muted }}>Org domain</div>
+            <div style={{ color: colors.text.primary, fontFamily: "ui-monospace, monospace", fontSize: 10 }}>
+              {r.organization.domain}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

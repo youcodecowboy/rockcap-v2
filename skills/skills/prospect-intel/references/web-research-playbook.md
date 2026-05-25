@@ -37,6 +37,22 @@ These findings feed into section 2 (Online Presence — news mentions), section 
 
 Identify the top 2 directors by CH appointment recency. (If only 1 director, do 1. If more than 2 are functionally the same person — e.g., husband and wife founders — pick the most prominent.)
 
+### Phase B0 — Apollo lookup (do this FIRST, before any web search)
+
+For each director, call `apollo.findEmail({firstName, lastName, companyName})` BEFORE running the web queries below. Apollo's people-match returns business email + status + LinkedIn URL + title in one call — faster and cheaper than 5 web searches per person.
+
+Capture the response:
+- `email` + `emailStatus` (verified / unverified / questionable / unavailable) → goes into section 3 of the intel report
+- `linkedinUrl` → captured directly (skip Phase B query #3 if Apollo returns it)
+- `title` → cross-check against CH role; flag discrepancies
+- `apolloPersonId` → save for future enrichment calls
+
+If `emailStatus === "verified"`: the cadence package is unblocked.
+If `emailStatus === "unverified"`: capture but flag in section 7 — operator must manually verify before approving cadence.
+If `apollo.findEmail` returns `found: false` OR errors: fall back to web queries below to find email via LinkedIn personal profile or company contact page. Surface as a gap. **The cadence package CANNOT be created without an email.**
+
+### Phase B1-B5 — Web queries (after Apollo, OR for email-not-found fallback)
+
 For each director, run these 5 queries:
 
 | # | Query template | What we're hunting | Capture |
