@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 
 // Internal API for the skillRuns table. Exposed via MCP through convex/mcp.ts
 // (skillRun.start, skillRun.complete). Not directly callable by the chat
@@ -40,24 +40,23 @@ export const findRecentByDedupKeyInternal = internalQuery({
     cutoffMs: v.number(),
   },
   handler: async (ctx, args) => {
-    if (!args.dedupKey) return null;
-    // take(100) is a safety cap; in practice the (skillName, dedupKey) pair
-    // limits how many rows can exist. If a single key ever accumulates 100+
-    // non-terminal runs in the window, dedup will fail open and a fresh run
-    // is created. Acceptable at current scale; revisit if batch-10 lands.
     const rows = await ctx.db
       .query("skillRuns")
       .withIndex("by_skill_and_dedup_key", (q) =>
         q.eq("skillName", args.skillName).eq("dedupKey", args.dedupKey),
       )
-      .filter((q) => q.gte(q.field("_creationTime"), args.cutoffMs))
       .order("desc")
-      .take(100);
-    // Successful-terminal statuses; keep in sync with the skillRuns schema's
-    // status union and with completeInternal's allowed input statuses.
+      .take(20);
+    // v1.2: detect both completed and in-flight runs. Caller (skillRun.start
+    // MCP tool) decides what to do based on the status returned.
     for (const row of rows) {
+      if (row._creationTime < args.cutoffMs) break;
       if (row.status === "complete" || row.status === "complete_with_gaps") {
-        return row;
+        return { kind: "completed" as const, row };
+      }
+      if (row.status === "running") {
+        // In-flight detection — race prevention
+        return { kind: "in_flight" as const, row };
       }
     }
     return null;
@@ -119,5 +118,63 @@ export const completeInternal = internalMutation({
       durationMs,
     });
     return { ok: true, durationMs };
+  },
+});
+
+// ── Public read for the prospect detail page Intel + Activity tabs ──
+
+export const getById = query({
+  args: { runId: v.id("skillRuns") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.runId);
+  },
+});
+
+// ── Public query: latest run for a given dedup key (e.g., a CH number) ──
+// Used by detail page when navigating directly to a prospect without a runId
+
+export const latestByDedupKey = query({
+  args: { skillName: v.string(), dedupKey: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("skillRuns")
+      .withIndex("by_skill_and_dedup_key", (q) =>
+        q.eq("skillName", args.skillName).eq("dedupKey", args.dedupKey),
+      )
+      .order("desc")
+      .take(1);
+    return rows[0] ?? null;
+  },
+});
+
+// ── Stale-run sweep (called by the daily cron in Group 7) ──
+
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+export const sweepStaleRunningRunsInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - SIX_HOURS_MS;
+    const stales = await ctx.db
+      .query("skillRuns")
+      .withIndex("by_status", (q) => q.eq("status", "running"))
+      .collect();
+    let swept = 0;
+    for (const row of stales) {
+      if (row._creationTime < cutoff) {
+        const now = new Date().toISOString();
+        await ctx.db.patch(row._id, {
+          status: "failed" as const,
+          completedAt: now,
+          durationMs: Date.now() - row._creationTime,
+          errors: [
+            ...(row.errors ?? []),
+            { step: "stale_runtime", message: "runtime exceeded 6h threshold; auto-marked failed by sweep" },
+          ],
+        });
+        swept++;
+      }
+    }
+    return { ok: true, swept, totalRunning: stales.length };
   },
 });
