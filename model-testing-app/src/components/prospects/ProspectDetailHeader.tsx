@@ -8,11 +8,13 @@ interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "outreach" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "outreach" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "outreach" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "outreach" | "activity") => void;
+  peopleCount?: number;
+  chargesCount?: number;
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
 
@@ -73,7 +75,16 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "outreach", "activity"] as const).map((tab) => (
+          {(["overview", "intel", "people", "ch", "outreach", "activity"] as const).map((tab) => {
+            const labelMap: Record<typeof tab, string> = {
+              overview: "Overview",
+              intel: "Intel",
+              people: "People",
+              ch: "Companies House",
+              outreach: "Outreach",
+              activity: "Activity",
+            };
+            return (
             <div
               key={tab}
               onClick={() => onTabChange(tab)}
@@ -82,15 +93,21 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
                 color: tab === activeTab ? colors.text.primary : colors.text.muted,
                 borderBottom: `2px solid ${tab === activeTab ? colors.entityTypes.prospect : "transparent"}`,
                 fontWeight: tab === activeTab ? 500 : 400,
-                textTransform: "capitalize",
               }}
             >
-              {tab}
+              {labelMap[tab]}
               {tab === "outreach" && touchCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{touchCount}</span>
               )}
+              {tab === "people" && peopleCount !== undefined && peopleCount > 0 && (
+                <span style={{ color: colors.text.dim, marginLeft: 4 }}>{peopleCount}</span>
+              )}
+              {tab === "ch" && chargesCount !== undefined && chargesCount > 0 && (
+                <span style={{ color: colors.text.dim, marginLeft: 4 }}>{chargesCount}</span>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </>

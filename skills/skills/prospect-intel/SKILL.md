@@ -117,6 +117,7 @@ All voice and output rules from `../../CONVENTIONS.md` apply. The four that matt
 - **No fabrication.** If a charge name is ambiguous, qualify it ("possibly a security agent for a syndicate") rather than guessing the underlying lender. If a director's LinkedIn is not findable, say so — do not link to a similar-named profile. If a press mention can't be found in 4 queries, say "no press mentions found in N queries", not "low public profile" (the inference is fine; the confidence label conveys it).
 - **No padding.** The report can be short. If a section has no findings, write "No findings (queries tried: ...)" rather than padding with speculation. Section 9 (gaps) is the legitimate way to record what couldn't be found.
 - **UK English throughout.** No em dashes. No rule-of-three. GBP currency. ISO date format `YYYY-MM-DD` for dates in evidence; longer prose dates OK in narrative ("filed in March 2025").
+- **Report-as-standalone-artefact.** Never reference another prospect, client, lender, or prior skillRun in this report. No "materially stronger than X", no "unlike Y", no "similar to Z's pattern". The report is shown to lenders, attached to credit memos, sometimes shared with the prospect. State findings on their own merits with evidence; use ARCHETYPE language for patterns ("textbook bridge-to-term") not COMPARISON language ("matches X's pattern"). See `references/intel-report-template.md` for full rule.
 
 ## Tool dependencies
 

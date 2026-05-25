@@ -13,6 +13,21 @@ The report has nine sections in this order. Sections that produce no findings ar
 - Confidence levels: HIGH (multiple independent sources), MED (single source corroborated by context), LOW (single source, no corroboration).
 - Heading levels: `#` for the title, `##` for the nine sections, `###` for sub-headings.
 
+### Report-as-standalone-artefact rule
+
+**Never reference another prospect, client, lender, or skillRun in this report.** The report is shown to lenders, attached to credit memos, sometimes shared with the prospect themselves. A line like "materially stronger than {other company}" or "similar to {other prospect}'s pattern" leaks one entity's data into another's artefact, creates a confidentiality breach in any of those settings, and makes the report context-dependent rather than standalone.
+
+Patterns to avoid:
+- "Materially stronger / weaker than {other prospect name}" — even when comparing to another prospect of yours
+- "Unlike {other company}" — even as a stylistic device
+- "Similar bridge-to-term pattern to {other entity}" — even when the comparison is technically apt
+- Referring to a different skillRun's findings or version ("v2 of this report said X")
+
+What to do instead:
+- State the finding on its own merits with evidence ("11 outstanding charges across 6 properties" stands on its own)
+- Use ARCHETYPE language for patterns ("textbook bridge-to-term refinance pattern" not "matches Mccarthy's pattern")
+- If you want to flag versioning context, put it in the front-matter blockquote only, never in the body sections
+
 ## Template (copy this skeleton; fill each section per the playbooks)
 
 ```markdown

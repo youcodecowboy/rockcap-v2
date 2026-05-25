@@ -9,6 +9,8 @@ import { ProspectDetailHeader } from "@/components/prospects/ProspectDetailHeade
 import { ProspectDetailAside } from "@/components/prospects/ProspectDetailAside";
 import { OverviewTab } from "@/components/prospects/tabs/OverviewTab";
 import { IntelTab } from "@/components/prospects/tabs/IntelTab";
+import { PeopleTab } from "@/components/prospects/tabs/PeopleTab";
+import { CompaniesHouseTab } from "@/components/prospects/tabs/CompaniesHouseTab";
 import { OutreachTab } from "@/components/prospects/tabs/OutreachTab";
 import { ActivityTab } from "@/components/prospects/tabs/ActivityTab";
 import { StickyApprovalFooter } from "@/components/prospects/StickyApprovalFooter";
@@ -21,7 +23,7 @@ export default function ProspectDetailPage() {
   const params = useParams();
   const prospectId = params.prospectId as Id<"clients">;
 
-  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "outreach" | "activity">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "outreach" | "activity">("overview");
   const [showRevisionModal, setShowRevisionModal] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
@@ -78,6 +80,8 @@ export default function ProspectDetailPage() {
         cadences={cadences}
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        peopleCount={countKeyPeople((intelRun as any)?.intelMarkdown)}
+        chargesCount={(chProfile as any)?.charges?.length ?? 0}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 1, background: colors.border.default, paddingBottom: 80 }}>
@@ -88,9 +92,16 @@ export default function ProspectDetailPage() {
               intelRun={intelRun}
               cadences={cadences}
               onJumpToOutreach={() => setActiveTab("outreach")}
+              onJumpToIntel={() => setActiveTab("intel")}
             />
           )}
           {activeTab === "intel" && <IntelTab intelRun={intelRun} />}
+          {activeTab === "people" && (
+            <PeopleTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} />
+          )}
+          {activeTab === "ch" && (
+            <CompaniesHouseTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} />
+          )}
           {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
           {activeTab === "activity" && (
             <ActivityTab prospect={prospect} intelRun={intelRun} cadences={cadences} />
@@ -135,4 +146,15 @@ export default function ProspectDetailPage() {
       )}
     </>
   );
+}
+
+// Count how many "### {Name}" headings live under section 3 (Key People)
+// of the intelMarkdown. Used for the tab count badge. The PeopleTab does
+// the same parse with full extraction; this is just a fast count for the
+// nav.
+function countKeyPeople(intelMarkdown?: string): number {
+  if (!intelMarkdown) return 0;
+  const sec3 = intelMarkdown.match(/##\s*3\.\s*Key People([\s\S]*?)(?=##\s*\d|$)/i);
+  if (!sec3) return 0;
+  return (sec3[1].match(/^###\s+/gm) ?? []).length;
 }

@@ -37,24 +37,51 @@ These findings feed into section 2 (Online Presence — news mentions), section 
 
 Identify the top 2 directors by CH appointment recency. (If only 1 director, do 1. If more than 2 are functionally the same person — e.g., husband and wife founders — pick the most prominent.)
 
-For each director, run these 4 queries:
+For each director, run these 5 queries:
 
 | # | Query template | What we're hunting | Capture |
 |---|---|---|---|
 | 1 | `"{Director Full Name}" "{Legal Name}"` | Direct co-occurrence in press | Press quotes, profile pages, interviews |
 | 2 | `"{Director Full Name}" property developer OR director` | Independent profile pages | LinkedIn URL, profile bios, prior roles |
-| 3 | `"{Director Full Name}" site:linkedin.com` | LinkedIn specifically | LinkedIn profile URL only (don't try to scrape behind the wall) |
-| 4 | `"{Director Full Name}" director companies house` | Other directorships beyond what CH officer search shows | Cross-reference any other companies named |
+| 3 | `"{Director Full Name}" site:linkedin.com/in` | Personal LinkedIn profile (note `/in` path filters out company pages) | Personal LinkedIn URL; verify by location + headline matches what we know |
+| 4 | `"{Director Full Name}" site:linkedin.com/company` | Company pages they're tagged on | Companies they work at, role descriptions |
+| 5 | `"{Director Full Name}" director companies house` | Other directorships beyond what CH officer search shows | Cross-reference any other companies named |
 
 Same capture format as Phase A. These feed into section 3 (Key People) per director sub-section.
 
+**Personal LinkedIn — what to capture even without scraping behind the wall:**
+
+LinkedIn search result snippets typically include:
+- Profile title (e.g., "Director at Acme Property Group")
+- Location (e.g., "Greater London, England, United Kingdom")
+- Connection count (rough indicator of network density: <100 / 500+ / 5000+)
+- Top company association from headline
+
+Capture these from the SERP snippet — no need to follow the link into the paywall. Format:
+```
+LINKEDIN: https://linkedin.com/in/{slug}
+TITLE (from SERP): "Director at Acme Property Group"
+LOCATION (from SERP): Greater London, England
+NETWORK SIZE (rough): 500+
+```
+
+If the LinkedIn URL slug doesn't match the director's full name, log it in the gaps section — it might be a different person, or it might be a stylised handle ("shanepropertyguy" instead of "shane-gordon-1988"). Verify by cross-matching the SERP-visible location + title against CH-known facts before treating it as the right profile.
+
 ## Phase C — Cross-reference checks
 
-After Phases A + B, run 2-3 targeted cross-reference queries:
+After Phases A + B, run targeted cross-reference queries:
 
 1. **Connection check.** For each director, see if they've co-directed with anyone in the RockCap intelligence base. Run a Convex query: `intelligence.searchPeople({name: directorName})` to find existing records.
 2. **Address cross-check.** Search the registered address: `"{registered address}" property` to see if other property entities share the address (multi-SPV pattern).
-3. **Sister entity check.** If the company name contains a distinctive identifier (e.g., "Mccarthy Property Developments"), search `"Mccarthy Property" companies house` to find sister entities under similar branding.
+3. **Sister entity check.** If the company name contains a distinctive identifier (e.g., a unique surname-based group name), search `"{distinctive identifier}" companies house` to find sister entities under similar branding.
+4. **Duplicate-identity disambiguation.** If the CH officer search at Phase B returned multiple entries for the same name + DOB combination at DIFFERENT correspondence addresses, you must disambiguate:
+    - For each duplicate entry: WebFetch its CH appointment page (`https://find-and-update.company-information.service.gov.uk/officers/{officer-id}/appointments`) and read the company name(s)
+    - Cross-match: does the address on the duplicate appear in our target's known associations (e.g., is "1066 London Road, Leigh-on-Sea" mentioned in any of our target's charged properties, registered addresses, or web findings)?
+    - Verdict:
+      - **Same person, multiple addresses:** capture the OTHER company as a "related entity" finding in section 3 with `connection_signal: same_director_at_other_company`
+      - **Different person with same name+DOB:** note in section 3 as `disambiguation: candidate ruled out — no address overlap; treating as separate individual`
+      - **Inconclusive:** log as a gap with `kind: "thin_evidence"` and surface the ambiguity to the operator
+    - Statistically: same name + same DOB at different addresses is plausible (UK has many "John Smith"s born any given month) but worth ~5-10 minutes of disambiguation given the operational consequence of treating a different person's track record as our target's.
 
 These feed into section 3 (connection signal) and section 4 (lender DNA patterns).
 

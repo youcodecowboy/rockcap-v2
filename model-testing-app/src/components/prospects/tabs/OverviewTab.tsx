@@ -1,32 +1,287 @@
 "use client";
 
 import { useColors } from "@/lib/useColors";
+import { TrendingUp, AlertCircle, Plus } from "lucide-react";
 
 interface OverviewTabProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
   onJumpToOutreach: () => void;
+  onJumpToIntel?: () => void;
 }
 
-export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach }: OverviewTabProps) {
+// Parse the Recommended Approach section (#7) into structured fields for
+// the prominent Recommendation card. The template (intel-report-template.md)
+// uses fixed labels under section 7: "Classification:", "Estimated deal size",
+// "Best initial angle:", "Touch 1 anchor:", "Risk flags:".
+interface ParsedRecommendation {
+  classification?: string;
+  classificationReasoning?: string;
+  dealSize?: string;
+  angle?: string;
+  touch1Anchor?: string;
+  riskFlags?: string[];
+}
+
+function parseRecommendation(intelMarkdown?: string): ParsedRecommendation | null {
+  if (!intelMarkdown) return null;
+  const sec7 = intelMarkdown.match(/##\s*7\.\s*Recommend(ed|ation)[\s\S]*?(?=##\s*\d|$)/i);
+  if (!sec7) return null;
+  const body = sec7[0];
+
+  const findBullet = (label: string): string | undefined => {
+    // Match "- **Label:** value" until next bullet or section
+    const re = new RegExp(
+      `^-\\s+\\*\\*${label}[:.]\\*\\*\\s+([\\s\\S]*?)(?=^-\\s+\\*\\*|^##\\s+|$)`,
+      "im",
+    );
+    const m = body.match(re);
+    return m?.[1]?.trim().replace(/\n+/g, " ").replace(/\s+/g, " ");
+  };
+
+  // Classification is its own bullet; reasoning is the sub-bullet directly under it
+  const classRaw = findBullet("Classification");
+  let classification: string | undefined;
+  let classificationReasoning: string | undefined;
+  if (classRaw) {
+    // The classification value might be wrapped in ** **; reasoning typically begins after
+    const reasoningMatch = classRaw.match(/Reasoning:\s*(.+?)(?=\s*-\s|$)/i);
+    classificationReasoning = reasoningMatch?.[1]?.trim();
+    // Just the first line of classRaw is the classification itself
+    classification = classRaw.split(/-\s+Reasoning/i)[0]?.trim().replace(/\*\*/g, "");
+  }
+
+  const dealSize = findBullet("Estimated deal size( \\+ timing)?");
+  const angle = findBullet("Best initial angle");
+  const touch1Anchor = findBullet("Touch 1 anchor");
+  const riskFlagsRaw = findBullet("Risk flags");
+  const riskFlags = riskFlagsRaw
+    ? riskFlagsRaw
+        .split(/\s*-\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
+
+  if (!classification && !dealSize && !angle && !touch1Anchor) return null;
+  return { classification, classificationReasoning, dealSize, angle, touch1Anchor, riskFlags };
+}
+
+function classificationColor(text: string | undefined, colors: any): string {
+  if (!text) return colors.text.muted;
+  const t = text.toLowerCase();
+  if (t.includes("bridging") && t.includes("term")) return colors.accent.cyan;
+  if (t.includes("bridging")) return colors.accent.orange;
+  if (t.includes("development")) return colors.accent.indigo;
+  if (t.includes("term")) return colors.accent.green;
+  if (t.includes("unclassif")) return colors.text.muted;
+  return colors.accent.blue;
+}
+
+export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, onJumpToIntel }: OverviewTabProps) {
   const colors = useColors();
   const state = prospect?.prospectState ?? "drafted";
+  const rec = parseRecommendation(intelRun?.intelMarkdown);
+  const hasIntel = !!intelRun?.intelMarkdown;
+  const cadencesEmpty = cadences.length === 0;
 
   return (
     <div>
-      {state === "drafted" && (
-        <div style={{
-          background: "#fef3c7", borderLeft: `3px solid ${colors.accent.yellow}`,
-          padding: "10px 14px", borderRadius: "0 4px 4px 0",
-          fontSize: 11, color: "#78350f", marginBottom: 16,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <div><strong>Package awaiting approval.</strong> Review intel + {cadences.length} emails. Click Approve below to release the schedule.</div>
-          <a onClick={onJumpToOutreach} style={{ color: "#78350f", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>Jump to outreach →</a>
+      {/* Recommendation card — TOP PRIORITY card. Surfaces classification +
+          deal sizing + Touch 1 anchor from intel section 7 so the operator
+          sees the answer first, then can dig into evidence. */}
+      {rec && (
+        <div
+          style={{
+            border: `1px solid ${colors.border.default}`,
+            borderTop: `3px solid ${classificationColor(rec.classification, colors)}`,
+            borderRadius: 4,
+            background: colors.bg.card,
+            marginBottom: 18,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 16px",
+              background: colors.bg.light,
+              borderBottom: `1px solid ${colors.border.default}`,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <TrendingUp size={14} color={classificationColor(rec.classification, colors)} />
+              <span
+                style={{
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: colors.text.primary,
+                  fontWeight: 500,
+                }}
+              >
+                Recommendation
+              </span>
+            </div>
+            {onJumpToIntel && (
+              <a
+                onClick={onJumpToIntel}
+                style={{ color: colors.accent.blue, fontSize: 10, cursor: "pointer", textDecoration: "none" }}
+              >
+                See full reasoning →
+              </a>
+            )}
+          </div>
+          <div style={{ padding: 16 }}>
+            {rec.classification && (
+              <div style={{ marginBottom: 12 }}>
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: colors.text.muted,
+                    fontFamily: "ui-monospace, monospace",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: 4,
+                  }}
+                >
+                  Classification
+                </div>
+                <div
+                  style={{
+                    fontSize: 17,
+                    fontWeight: 500,
+                    color: classificationColor(rec.classification, colors),
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {rec.classification}
+                </div>
+                {rec.classificationReasoning && (
+                  <div style={{ fontSize: 11, color: colors.text.secondary, marginTop: 4, lineHeight: 1.5 }}>
+                    {rec.classificationReasoning}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: rec.touch1Anchor ? 12 : 0 }}>
+              {rec.dealSize && (
+                <CardField label="Deal size + timing" value={rec.dealSize} colors={colors} />
+              )}
+              {rec.angle && (
+                <CardField label="Best initial angle" value={rec.angle} colors={colors} />
+              )}
+            </div>
+
+            {rec.touch1Anchor && (
+              <div
+                style={{
+                  background: colors.bg.cardAlt,
+                  borderLeft: `3px solid ${colors.accent.purple}`,
+                  padding: "10px 14px",
+                  borderRadius: "0 3px 3px 0",
+                  marginTop: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: colors.text.muted,
+                    fontFamily: "ui-monospace, monospace",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: 4,
+                  }}
+                >
+                  Touch 1 anchor
+                </div>
+                <div style={{ fontSize: 12, color: colors.text.primary, fontStyle: "italic", lineHeight: 1.5 }}>
+                  {rec.touch1Anchor}
+                </div>
+              </div>
+            )}
+
+            {rec.riskFlags && rec.riskFlags.length > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${colors.border.light}` }}>
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: colors.text.muted,
+                    fontFamily: "ui-monospace, monospace",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: 6,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                  }}
+                >
+                  <AlertCircle size={11} color={colors.accent.yellow} />
+                  Risk flags
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: colors.text.secondary }}>
+                  {rec.riskFlags.slice(0, 5).map((rf, i) => (
+                    <li key={i} style={{ marginBottom: 3, lineHeight: 1.4 }}>{rf}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
+      {/* State-driven callouts */}
+      {state === "drafted" && cadences.length > 0 && (
+        <div
+          style={{
+            background: "#fef3c7",
+            borderLeft: `3px solid ${colors.accent.yellow}`,
+            padding: "10px 14px",
+            borderRadius: "0 4px 4px 0",
+            fontSize: 11,
+            color: "#78350f",
+            marginBottom: 16,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <strong>Package awaiting approval.</strong> Review intel + {cadences.length} emails. Click Approve below to release the schedule.
+          </div>
+          <a onClick={onJumpToOutreach} style={{ color: "#78350f", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
+            Jump to outreach →
+          </a>
+        </div>
+      )}
+
+      {/* Cadence-creation nudge — when prospect has intel but no cadences yet */}
+      {hasIntel && cadencesEmpty && (
+        <div
+          style={{
+            background: `${colors.accent.blue}10`,
+            border: `1px solid ${colors.accent.blue}40`,
+            borderRadius: 4,
+            padding: "12px 14px",
+            marginBottom: 16,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontSize: 11, color: colors.text.primary, lineHeight: 1.5 }}>
+            <Plus size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: 4, color: colors.accent.blue }} />
+            <strong>Intel ready; no cadence package yet.</strong> Run the prospect-intel skill's step 11
+            in Claude Code to compose 4 touches per the cadence-package spec — or create touches manually.
+          </div>
+        </div>
+      )}
+
+      {/* Intel summary panel */}
       {intelRun?.brief && (
         <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, marginBottom: 16, background: colors.bg.card }}>
           <div style={{ padding: "10px 14px", borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.light, fontFamily: "ui-monospace, monospace", fontSize: 11, textTransform: "uppercase" as const, color: colors.text.primary, fontWeight: 500 }}>
@@ -38,10 +293,15 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach }: 
         </div>
       )}
 
+      {/* Outreach package preview */}
       <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, marginBottom: 16, background: colors.bg.card }}>
         <div style={{ padding: "10px 14px", borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.light, fontFamily: "ui-monospace, monospace", fontSize: 11, textTransform: "uppercase" as const, color: colors.text.primary, fontWeight: 500, display: "flex", justifyContent: "space-between" }}>
           <span>Outreach Package ({cadences.length} touches)</span>
-          <a onClick={onJumpToOutreach} style={{ color: colors.accent.blue, fontSize: 10, cursor: "pointer" }}>Edit all →</a>
+          {cadences.length > 0 && (
+            <a onClick={onJumpToOutreach} style={{ color: colors.accent.blue, fontSize: 10, cursor: "pointer" }}>
+              Edit all →
+            </a>
+          )}
         </div>
         <div>
           {cadences.length === 0 && (
@@ -62,6 +322,26 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach }: 
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CardField({ label, value, colors }: { label: string; value: string; colors: any }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 9,
+          color: colors.text.muted,
+          fontFamily: "ui-monospace, monospace",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 12, color: colors.text.primary, lineHeight: 1.5 }}>{value}</div>
     </div>
   );
 }
