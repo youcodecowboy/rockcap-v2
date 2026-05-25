@@ -255,7 +255,10 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 3. prospect.getDeepContext({clientId: reply.linkedClientId}) — load full context
 4. (skill: qualify-and-draft) — compose reply per references/qualifying-draft-playbook.md
 5. outreach.draftReply({contactId, clientId, subject, bodyText, bodyHtml, replyToReplyEventId})
-6. skillRun.complete with linkedApprovalIds set
+6. intelligence.addKnowledgeItem({clientId, fieldPath: "qualification.open_questions",
+   value: <list of gaps the reply asks about>, ...}) — so the next inbound's run
+   can check which gaps closed
+7. skillRun.complete with linkedApprovalIds set
 ```
 
 ### Pattern: Match lenders for a deal
@@ -266,7 +269,13 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 2. lender.matchForDeal({criteria, limit: 10})
 3. Format result into tiers: optimal (score ≥8) / viable (3-7) / stretch (0-2) / uninformed / incompatible
 4. Operator picks shortlist
-5. Per chosen lender: outreach.draftToLender({lenderClientId, contactId, subject, body, projectId, attachedDocumentIds?})
+5. Per chosen lender: project.addLenderRole({projectId, clientId: lenderId})
+   — attach to project's clientRoles (idempotent)
+6. (skill: terms-package-build) — generate the brief artefact
+7. document.createFromGeneration({fileName, fileTypeDetected: "Lender Brief Package",
+   category: "Lender outreach", summary: <markdown>, projectId, sourceSkillRunId})
+8. Per chosen lender: outreach.draftToLender({lenderClientId, contactId, subject, body,
+   projectId, attachedDocumentIds: [briefDocId]})
 ```
 
 ### Pattern: Capture a meeting
@@ -276,9 +285,14 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 2. prospect.getDeepContext({clientId}) — load relationship context
 3. (skill: meeting-capture) — extract summary + keyPoints + decisions + actionItems per references/capture-extraction-template.md
 4. For each client-side action item: checklist.createCustomItem
-5. For each follow-up email: outreach.draftFreshEmail OR outreach.draftToLender
-6. meeting.update({meetingId, summary, keyPoints, decisions, actionItems, attendees, verified: true})
-7. skillRun.complete
+5. For each RockCap-side action item: task.create({title, clientId, projectId?,
+   priority, tags: ["meeting-followup"]})
+6. For each fact mined from transcript (GDV / TDC / units / preferences):
+   intelligence.addKnowledgeItem({clientId or projectId, fieldPath, value,
+   valueType, sourceType: "ai_extraction", context: "from transcript <meetingId>"})
+7. For each follow-up email: outreach.draftFreshEmail OR outreach.draftToLender
+8. meeting.update({meetingId, summary, keyPoints, decisions, actionItems, attendees, verified: true})
+9. skillRun.complete
 ```
 
 ### Pattern: Pause a cadence + resume later
