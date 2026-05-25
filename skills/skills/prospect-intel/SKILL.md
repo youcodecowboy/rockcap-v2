@@ -76,8 +76,12 @@ What it does not do:
 
 1. **Resolve the company**. If a Companies House number was given, fetch the company profile directly. If a name was given, search Companies House for matches and disambiguate. If multiple plausible matches, surface them and ask. At this point the canonical `companiesHouseNumber` is available; call `skillRun.start` with `dedupKey: companiesHouseNumber`, `dedupWindowDays: 7`, `skillName: "prospect-intel"`. If the response is `duplicate_found`, surface the prior brief + intelMarkdown and ask. If `already_running`, surface the in-flight run and ask before competing. Otherwise proceed with the returned runId.
 
-2. **Fetch Companies House data**. Profile, charges, officers, PSCs. Capture each into the relevant Convex tables (`companiesHouseCompanies`, `companiesHouseCharges`, `companiesHouseOfficers`, `companiesHousePSC`).
-   - **Iteration 1 reality:** the CH sync trigger is not yet an MCP tool. Check `companiesHouse:getCompanyByNumber({companyNumber})` to see if data is present. If not, surface a gap: `kind: "missing_data", description: "CH data not yet synced for {chNumber}; operator should manually trigger sync via UI or run npx convex run companiesHouse:syncCompanyData ...", suggestedFix: "v1.2.1 add companies.syncCompaniesHouse MCP tool"`. Continue with whatever CH data IS available — partial report is better than no report.
+2. **Fetch Companies House data.** Call `companies.syncCompaniesHouse({chNumber})` (added v1.2.1) — fetches profile + charges directly from the CH API and persists into `companiesHouseCompanies` + `companiesHouseCharges`. Idempotent: safe to call even if data exists; tool upserts. Verify after via `companiesHouse:getCompanyByNumber({companyNumber})`.
+   - **Why this comes BEFORE web research:** the structured charges data from CH is more complete than what the company's public CH profile page shows (the website summary doesn't surface the charges sub-page contents). The validation walkthrough on Mccarthy proved this: web-only research returned "no charges"; the CH API returned 2 outstanding charges with specific lender names + a charged property address. **Skipping this step risks producing wrong lender DNA conclusions.**
+   - **Officers + PSCs:** the v1.2.1 sync tool does NOT persist these (data-shape adapter not yet built). Fetch them via WebFetch on the CH public site as needed for section 3 of the intel report. Pattern from the validation walkthrough:
+     - `WebFetch https://find-and-update.company-information.service.gov.uk/company/{N}/officers` → director list
+     - `WebFetch https://find-and-update.company-information.service.gov.uk/company/{N}/persons-with-significant-control` → PSC list
+   - **If the tool errors** (`company_not_found_on_companies_house` or `COMPANIES_HOUSE_API_KEY not set`): surface as a gap with `kind: "missing_data"` and continue with web-research-only flow. The report will be sparse but still useful.
 
 3. **Check for existing prospect or client**. If a `clients` row already references this company number, this is an update flow, not a new-prospect flow. Update the existing row's intelligence; do not create a duplicate.
 
@@ -147,16 +151,16 @@ The most common failure modes the skill is built to handle:
 6. **Website not findable (v2).** Phases 1-4 of the website scrape playbook fail. Section 2 is short, gap is recorded, web research in Phase A relies on press / planning queries alone.
 7. **Director name doesn't match real-person searches (v2).** Common for very common names or pseudonyms. Phase B logs "Not found in N queries" and moves on. Section 3 is sparse, gap recorded.
 8. **All web queries return promotional/SEO results.** Filter rules in the web research playbook discard these. If 5+ queries all hit only SEO spam, the report notes this in section 2 ("Web research returned only promotional results; possibly indicates a low-profile entity OR strong SEO content marketing — operator judgment required").
-9. **CH data not synced (v2 known gap).** Per workflow step 2, the skill surfaces this as a gap and continues with partial data. Until the CH sync MCP tool lands in v1.2.1, this gap will appear regularly for new prospects.
+9. **CH data not synced.** Workflow step 2 calls `companies.syncCompaniesHouse({chNumber})` (added v1.2.1) which fetches + persists profile + charges from the CH API directly. The tool may error with `company_not_found_on_companies_house` (CH 404 — verify the number) or `COMPANIES_HOUSE_API_KEY not set` (Convex env misconfig). On either, surface as a `missing_data` gap and continue with web-research-only flow.
 10. **WebFetch hits a paywall.** The playbook documents the URL with a "[paywall]" tag and moves on. Don't try to bypass.
 
 ## References
 
 Loaded on demand during the workflow:
 
-- `references/lender-dna-from-charges.md` — how to extract lender DNA from the charge book and what patterns to look for. (Step 4.)
-- `references/bridging-vs-developer.md` — classification rules. (Step 5.)
-- `references/template-mapped-reachout.md` — reachout templates per classification. (Step 11.)
+- `references/lender-dna-from-charges.md` — how to extract lender DNA from the charge book and what patterns to look for. (Step 4.) Authored.
+- `references/bridging-vs-developer.md` — classification rules with signal-weighting table. (Step 5.) Authored.
+- `references/template-mapped-reachout.md` — reachout templates per classification with operating principles + tone rules. (Step 11.) Authored.
 - **`references/intel-report-template.md`** (v2) — full markdown structure for the `intelMarkdown` field. (Step 10.)
 - **`references/website-scrape-playbook.md`** (v2) — URL discovery + page fetching + extraction format. (Step 6.)
 - **`references/web-research-playbook.md`** (v2) — exact queries for company-level + director-level + cross-reference research. (Steps 7, 8, 9.)

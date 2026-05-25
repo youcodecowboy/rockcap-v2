@@ -722,6 +722,29 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.2 prospect-intel hardening: trigger CH sync for a single company
+  {
+    name: "companies.syncCompaniesHouse",
+    description:
+      "Fetch a Companies House company by number (profile + charges + officers + PSCs) via the CH API and persist into RockCap's companiesHouseCompanies / Charges / Officers / PSC tables. Idempotent: re-running upserts existing rows. Called by prospect-intel skill workflow step 2 to ensure CH data is present before running lender-DNA analysis. Returns summary counts. Common errors: company_not_found_on_companies_house (CH returned 404 — verify the number) or COMPANIES_HOUSE_API_KEY not set (Convex env config gap).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        chNumber: {
+          type: "string",
+          description: "Companies House number. 8 digits or 6 digits prefixed by SC/NI/OC etc. Will be normalised to uppercase + trimmed.",
+        },
+      },
+      required: ["chNumber"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.companiesHouse.syncOneCompanyFromCHInternal, {
+        companyNumber: args.chNumber,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2 prospects CRM — operator-side read of an approval row
   {
     name: "approval.get",
