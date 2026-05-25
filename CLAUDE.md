@@ -14,6 +14,27 @@
 - `docs/` — project docs, specs, audits
 - `.logbook/` — task tracking (see below)
 
+### Skill execution
+
+When invoking a skill from `skills/skills/`:
+
+1. **Always call `skillRun.start` first** with `skillName`, `input`, `trigger` (if known), and (if the skill's `SKILL.md` has a `## Dedup` section) `dedupKey` plus `dedupWindowDays`. Use the returned `runId` for the rest of the workflow.
+2. **Honour the dedup response.** On `status: "duplicate_found"`, surface the prior brief to the operator and ask before continuing.
+3. **Always call `skillRun.complete` at the end** with status, brief, and links to created or updated entities. Never leave a run in `status: "running"`.
+4. **Log gaps as you find them.** On any gap surfaced during the run (see the `kind` enum on `skillRun.complete`), capture the entry in the `gaps` array and (in parallel) `/jot` it into the logbook for triage.
+
+### Event-driven skills
+
+Some skills are not invoked by an operator; they are triggered by events (a cron tick, an inbound reply webhook, a state change). These skills follow a different runtime contract:
+
+1. **Skills that produce cadences** (today: prospect-intel; coming: qualify-and-draft, meeting-prep, lender-intel) must include a `## Cadence package` section in their SKILL.md analogous to the `## Dedup` section pattern. The section specifies the package shape, the cadence types used, the send-date offsets, and any dynamicVars the dispatcher may refresh.
+
+2. **The dispatcher fires pre-drafted touches autonomously.** v1 supports `preDraftedTouch` only. Skills that need fire-time composition (dynamic content based on fresh evidence) must wait for v1.1's `/api/cadence-compose` route. Until then, document the intended dynamic behaviour in SKILL.md but produce pre-drafted touches at queue time.
+
+3. **Reply events cancel cadences.** Any inbound reply from a contact with active cadences automatically cancels those cadences and routes to the intent classifier. Skills do not need to handle this directly. The classifier dispatches to the right next skill (or to an operator-review approval if the destination skill is not yet hardened).
+
+4. **No autonomous external action.** Every output that leaves the system (Gmail send, HubSpot write, lender outreach) routes through an `approvals` row. The operator approves before the action fires. This rule does not change as autonomy increases; the approval is the trust gate.
+
 ---
 
 ## Task Tracking — Logbook Plugin

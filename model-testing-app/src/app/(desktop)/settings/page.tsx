@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator } from 'lucide-react';
+import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator, Mic, Mail, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -14,6 +14,27 @@ const settingsSections = [
     description: 'Sync contacts, companies, and deals from HubSpot',
     icon: Link2,
     href: '/settings/hubspot',
+  },
+  {
+    id: 'fireflies',
+    title: 'Fireflies Integration',
+    description: 'Connect your Fireflies account to sync meeting transcripts and action items',
+    icon: Mic,
+    href: '/settings/fireflies',
+  },
+  {
+    id: 'gmail',
+    title: 'Gmail Integration',
+    description: 'Connect your Gmail account for inbound capture and approval-gated outbound send',
+    icon: Mail,
+    href: '/settings/gmail',
+  },
+  {
+    id: 'mcp-token',
+    title: 'MCP Tokens',
+    description: 'Generate per-device tokens so Claude Code on your laptop can connect to the RockCap MCP server',
+    icon: Key,
+    href: '/settings/mcp-token',
   },
   {
     id: 'file-summary-agent',

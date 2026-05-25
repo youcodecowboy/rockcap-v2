@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 
 /**
  * Query: Get contacts associated with a client.
@@ -115,6 +115,12 @@ export const create = mutation({
     name: v.string(),
     role: v.optional(v.string()),
     email: v.optional(v.string()),
+    // v1.2.4 — email verification metadata. When email is sourced from
+    // Apollo, pass the emailStatus + "apollo" as emailSource. When manually
+    // entered, leave both undefined (cadence guard treats undefined as
+    // "operator-entered, presumed valid").
+    emailStatus: v.optional(v.string()),
+    emailSource: v.optional(v.string()),
     phone: v.optional(v.string()),
     company: v.optional(v.string()),
     notes: v.optional(v.string()),
@@ -128,6 +134,9 @@ export const create = mutation({
       name: args.name,
       role: args.role,
       email: args.email,
+      emailStatus: args.emailStatus,
+      emailSource: args.emailSource,
+      emailVerifiedAt: args.emailStatus === "verified" ? new Date().toISOString() : undefined,
       phone: args.phone,
       company: args.company,
       notes: args.notes,
@@ -238,5 +247,42 @@ export const unlinkFromClient = mutation({
       updatedAt: new Date().toISOString(),
     });
     return args.contactId;
+  },
+});
+
+// Internal query: direct single-row lookup by id.
+// Used by cadenceDispatcher for opt-out checks and email resolution.
+export const getInternal = internalQuery({
+  args: { contactId: v.id("contacts") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.contactId);
+  },
+});
+
+// Internal query: look up a contact by email address.
+// Used by replyEventProcessor to match inbound replies to a known contact.
+export const findByEmailInternal = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("contacts")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
+
+// Internal mutation: mark a contact as opted-out.
+// Sets optedOutAt and audit trail back to the triggering replyEvent.
+export const markOptedOutInternal = internalMutation({
+  args: {
+    contactId: v.id("contacts"),
+    replyEventId: v.id("replyEvents"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.contactId, {
+      optedOutAt: new Date().toISOString(),
+      optedOutByReplyEventId: args.replyEventId,
+    });
+    return { ok: true };
   },
 });

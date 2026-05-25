@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import { internal } from '../_generated/api';
 import { mutation } from '../_generated/server';
 
 /**
@@ -137,9 +138,35 @@ export const syncActivityFromHubSpot = mutation({
       return existing._id;
     }
 
-    return await ctx.db.insert('activities', {
+    const newId = await ctx.db.insert('activities', {
       ...fields,
       createdAt: now,
     });
+
+    // Cadence-fire v1: surface new inbound replies to the reply event processor
+    // as a safety net for missed Gmail push webhooks. Idempotency on
+    // (source, externalId) on replyEvents means double-fires are safe.
+    if (args.activityType === 'INCOMING_EMAIL') {
+      // Look up any user to attribute the system-level sync event. The sync
+      // runs without a specific authenticated user (cron path), so we resolve
+      // the first available user. If the table is empty we skip the hook
+      // rather than throw — the processor requires a valid userId foreign key.
+      const syncUser = await ctx.db.query('users').first();
+      if (syncUser) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.replyEventProcessor.ingestFromHubspot,
+          {
+            engagementId: args.hubspotActivityId,
+            contactEmail: args.fromEmail,
+            receivedAt: args.activityDate,
+            rawMessageRef: args.hubspotUrl,
+            userId: syncUser._id,
+          },
+        );
+      }
+    }
+
+    return newId;
   },
 });

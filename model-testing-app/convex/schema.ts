@@ -62,12 +62,37 @@ export default defineSchema({
     deletedAt: v.optional(v.string()),
     deletedBy: v.optional(v.id("users")),
     deletedReason: v.optional(v.string()),
+    // Prospect state machine (v1.2 prospects CRM)
+    prospectState: v.optional(v.union(
+      v.literal("drafted"),
+      v.literal("needs_revision"),
+      v.literal("active"),
+      v.literal("replied"),
+      v.literal("engaged"),
+      v.literal("promoted"),
+      v.literal("parked"),
+      v.literal("lost"),
+    )),
+    prospectStateChangedAt: v.optional(v.string()),
+    prospectStateChangedBy: v.optional(v.id("users")),
+
+    // v1.2.4 — structured prospect facts populated by the prospect-intel skill
+    // workflow step 10 via clients.setProspectFacts. Promoted out of
+    // template-locked regex extraction in intelMarkdown so the aside /
+    // PeopleTab / OverviewTab can read directly and survive template drift.
+    // Note: `website` already exists on this table above; setProspectFacts
+    // patches the existing field rather than adding a duplicate.
+    companiesHouseNumber: v.optional(v.string()),
+    primaryDirectorName: v.optional(v.string()),
+    primaryContactId: v.optional(v.id("contacts")),
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])
     .index("by_name", ["name"])
     .index("by_hubspot_id", ["hubspotCompanyId"])
-    .index("by_last_accessed", ["lastAccessedAt"]),
+    .index("by_last_accessed", ["lastAccessedAt"])
+    .index("by_prospect_state", ["prospectState"])
+    .index("by_companies_house_number", ["companiesHouseNumber"]),
 
   // Companies table - HubSpot companies (prospects, separate from clients)
   // Companies can be promoted to clients when they become active
@@ -169,6 +194,11 @@ export default defineSchema({
       v.literal("post_credit"),
       v.literal("completed")
     )),
+    // Predecessor link for re-engagement. When a deal closes lost and the
+    // same person or organisation returns with a new transaction attempt,
+    // the new project points back to the previous one. Per BL-1.1 and
+    // ADR-0001 (projects is the operational Deal table).
+    predecessorProjectId: v.optional(v.id("projects")),
     createdAt: v.string(),
     // Soft delete
     isDeleted: v.optional(v.boolean()),
@@ -180,7 +210,8 @@ export default defineSchema({
     .index("by_client", ["clientRoles"])
     .index("by_hubspot_id", ["hubspotDealId"])
     .index("by_shortcode", ["projectShortcode"])
-    .index("by_deal_phase", ["dealPhase"]),
+    .index("by_deal_phase", ["dealPhase"])
+    .index("by_predecessor", ["predecessorProjectId"]),
 
   // Documents table - stores file references and analysis results
   documents: defineTable({
@@ -403,6 +434,15 @@ export default defineSchema({
     name: v.string(),
     role: v.optional(v.string()),
     email: v.optional(v.string()),
+    // v1.2.4 — email verification status. Populated when email is sourced
+    // from Apollo (uses Apollo's verification field) or set manually after
+    // SMTP verification. Used as the cadence-engine gating signal:
+    // cadence.create refuses to create cadences for contacts where email
+    // is present but emailStatus is "questionable" or "spam_trap".
+    // Undefined or "verified" allow cadence creation.
+    emailStatus: v.optional(v.string()),
+    emailVerifiedAt: v.optional(v.string()),
+    emailSource: v.optional(v.string()), // "apollo" | "manual" | "hubspot" | etc.
     phone: v.optional(v.string()),
     company: v.optional(v.string()), // @deprecated - use linkedCompanyIds instead. Kept for backward compatibility.
     notes: v.optional(v.string()),
@@ -438,6 +478,13 @@ export default defineSchema({
     deletedAt: v.optional(v.string()),
     deletedBy: v.optional(v.id("users")),
     deletedReason: v.optional(v.string()),
+
+    // Opt-out (cadence-fire v1) - set by reply handler on not_interested
+    // intent classification. Cadence dispatcher checks this before firing;
+    // prospect-intel and other cadence-producing skills should also check
+    // before queueing new cadences.
+    optedOutAt: v.optional(v.string()),                              // ISO
+    optedOutByReplyEventId: v.optional(v.id("replyEvents")),         // audit
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -2401,6 +2448,25 @@ export default defineSchema({
       v.literal("pending_review"),
       v.literal("fulfilled")
     ),
+    // Graded InformationRequest extension (BL-1.5).
+    // isBlocking signals whether the deal cannot proceed without this item.
+    // rockcapStatus tracks RockCap-side workflow (where the item is in our process).
+    // lenderStatus tracks lender-side acceptance (where the item is from the lender's
+    // perspective). All optional for backwards compatibility; existing rows fall back
+    // to the simpler `status` and `priority` fields above.
+    isBlocking: v.optional(v.boolean()),
+    rockcapStatus: v.optional(v.union(
+      v.literal("not_started"),
+      v.literal("in_progress"),
+      v.literal("complete")
+    )),
+    lenderStatus: v.optional(v.union(
+      v.literal("not_requested"),
+      v.literal("requested"),
+      v.literal("received"),
+      v.literal("accepted"),
+      v.literal("rejected")
+    )),
     // Custom item flags
     isCustom: v.boolean(), // True if user/LLM added (not from template)
     customSource: v.optional(v.union(
@@ -3268,11 +3334,36 @@ export default defineSchema({
     notes: v.optional(v.string()),
     createdAt: v.string(),
     updatedAt: v.string(),
+    // Fireflies integration (BL-3.x). Set when meeting originated from
+    // Fireflies API sync. The reviewState supports the backfill flagging
+    // workflow: existing pattern-detected rows that have no Fireflies
+    // API match get reviewState='needs_review' for operator triage.
+    firefliesId: v.optional(v.string()),
+    sourceIntegration: v.optional(v.union(
+      v.literal("pattern_detector"),
+      v.literal("fireflies_api"),
+      v.literal("manual"),
+      v.literal("zoom"),
+      v.literal("other")
+    )),
+    transcriptFetchedAt: v.optional(v.string()),
+    actionItemsSourceFidelity: v.optional(v.union(
+      v.literal("pattern_detected"),
+      v.literal("api_synced"),
+      v.literal("manual")
+    )),
+    reviewState: v.optional(v.union(
+      v.literal("needs_review"),
+      v.literal("confirmed_keep"),
+      v.literal("confirmed_remove")
+    )),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_client_date", ["clientId", "meetingDate"])
-    .index("by_source_document", ["sourceDocumentId"]),
+    .index("by_source_document", ["sourceDocumentId"])
+    .index("by_fireflies_id", ["firefliesId"])
+    .index("by_review_state", ["reviewState"]),
 
   // Meeting Extraction Jobs - async queue for extracting meetings from documents
   meetingExtractionJobs: defineTable({
@@ -3544,5 +3635,577 @@ export default defineSchema({
   })
     .index('by_event_id', ['eventId'])
     .index('by_status', ['status', 'receivedAt']),
+
+  // ---------------------------------------------------------------------------
+  // New entities from BL-1 schema extensions. Added as additive tables only;
+  // see docs/SCHEMA_MIGRATIONS.md for the migration playbook and
+  // docs/DECISIONS/0001-deal-vs-project-naming.md for the naming rationale
+  // (projects is the operational Deal table; new entities hang off projects).
+  // ---------------------------------------------------------------------------
+
+  // LenderApproach (BL-1.4) - per-lender per-deal child of projects.
+  // Tracks the engagement with each lender approached for a given deal,
+  // including indicative terms, final terms, and behavioural signals that
+  // feed the lender intelligence layer (see appetiteSignals).
+  lenderApproaches: defineTable({
+    projectId: v.id("projects"),               // the operational deal
+    lenderClientId: v.id("clients"),           // the lender; client.type should be "lender"
+    status: v.union(
+      v.literal("identified"),
+      v.literal("approached"),
+      v.literal("indicative_received"),
+      v.literal("submitted_for_credit"),
+      v.literal("credit_approved"),
+      v.literal("credit_declined"),
+      v.literal("withdrawn"),
+      v.literal("closed_won"),
+      v.literal("closed_lost")
+    ),
+    approachedAt: v.optional(v.string()),         // ISO timestamp first reached out
+    indicativeReceivedAt: v.optional(v.string()),
+    submittedForCreditAt: v.optional(v.string()),
+    decisionAt: v.optional(v.string()),
+    indicativeTerms: v.optional(v.any()),         // facility size, rate, fees, LTV, term, conditions
+    finalTerms: v.optional(v.any()),              // populated post-credit-approval
+    internalScore: v.optional(v.number()),        // RockCap ranking 0-100
+    declineReason: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    primaryBdmContactId: v.optional(v.id("contacts")),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_lender", ["lenderClientId"])
+    .index("by_status", ["status"])
+    .index("by_project_status", ["projectId", "status"]),
+
+  // Milestone (BL-1.6) - timeline events on a deal with dependency graph.
+  // Used for timeline management, daily triage of at-risk deals, and
+  // chaser drafting in both directions (client and lender).
+  milestones: defineTable({
+    projectId: v.id("projects"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    kind: v.union(
+      v.literal("kickoff"),
+      v.literal("indicative_offer"),
+      v.literal("term_sheet"),
+      v.literal("ic_submission"),
+      v.literal("ic_decision"),
+      v.literal("drawdown"),
+      v.literal("monitoring_milestone"),
+      v.literal("custom")
+    ),
+    targetDate: v.optional(v.string()),                // ISO date "2026-06-15"
+    actualDate: v.optional(v.string()),
+    dependencyMilestoneIds: v.optional(v.array(v.id("milestones"))),
+    status: v.union(
+      v.literal("upcoming"),
+      v.literal("in_progress"),
+      v.literal("complete"),
+      v.literal("missed"),
+      v.literal("cancelled")
+    ),
+    chaseState: v.optional(v.union(
+      v.literal("on_track"),
+      v.literal("at_risk"),
+      v.literal("blocked")
+    )),
+    chaseAssignedTo: v.optional(v.id("users")),
+    chaseDirection: v.optional(v.union(
+      v.literal("client"),
+      v.literal("lender"),
+      v.literal("professional"),
+      v.literal("internal")
+    )),
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_status", ["status"])
+    .index("by_target_date", ["targetDate"])
+    .index("by_project_status", ["projectId", "status"])
+    .index("by_chase_state", ["chaseState"]),
+
+  // v1.2.4 — Apollo email-lookup cache. Prevents double-charging Apollo
+  // credits on repeat clicks of "Find email via Apollo" for the same
+  // person + company combination. 30-day TTL (rows older than 30 days
+  // are stale enough that Apollo's index has probably refreshed).
+  // Indexed by composite key for direct lookup; cleanup is currently
+  // operator-driven (no auto-expiry cron yet).
+  apolloLookups: defineTable({
+    firstName: v.string(),
+    lastName: v.string(),
+    companyKey: v.string(), // normalised companyName or "" if not provided
+    result: v.any(), // the full ApolloPersonResult / ApolloErrorResult shape
+    fetchedAt: v.string(), // ISO timestamp
+  }).index("by_lookup_key", ["firstName", "lastName", "companyKey"]),
+
+  // Cadence (BL-1.7) - scheduled-touch records keyed by contact + type + next-due.
+  // Consumed by the cadence scheduling engine (BL-5.8). Seven canonical
+  // cadence types plus custom. contactId points at contacts today; when the
+  // Person table lands (BL-1.2), an optional personId is added and backfilled.
+  cadences: defineTable({
+    contactId: v.id("contacts"),
+    cadenceType: v.union(
+      v.literal("prospect_followup"),           // default 3-month re-touch on cold prospects
+      v.literal("warm_lead_chase"),             // "ask me in Q3" parked leads
+      v.literal("execution_chaser"),            // mid-deal chasers during execution
+      v.literal("client_checkin"),              // periodic existing-client check-ins
+      v.literal("bdm_relationship"),            // lender BDM relationship maintenance
+      v.literal("monitoring_ask"),              // monitoring document asks
+      v.literal("post_lost_re_engagement"),     // lost-deal re-entry
+      v.literal("custom")
+    ),
+    scheduleConfig: v.object({
+      intervalDays: v.optional(v.number()),     // simple recurring (e.g., 90 for quarterly)
+      anchorDate: v.optional(v.string()),       // ISO date the schedule anchors to
+      customSchedule: v.optional(v.any()),      // flexible config for non-trivial cadences
+    }),
+    nextDueAt: v.string(),                      // ISO timestamp; indexed for cron queries
+    lastFiredAt: v.optional(v.string()),
+    lastResult: v.optional(v.union(
+      v.literal("sent"),
+      v.literal("skipped_paused"),
+      v.literal("skipped_holiday"),
+      v.literal("skipped_user_opted_out"),
+      v.literal("failed")
+    )),
+    isActive: v.boolean(),                      // pause without deleting
+    pauseUntil: v.optional(v.string()),         // ISO; auto-resume after this date
+    relatedClientId: v.optional(v.id("clients")),
+    relatedProjectId: v.optional(v.id("projects")),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+
+    // Packaging (gauntlet feature: groups linked touches drafted as one batch)
+    packageId: v.optional(v.string()),
+    packageOrder: v.optional(v.number()),
+
+    // Drafting mode (gauntlet feature: pre-drafted touch composed at queue time)
+    preDraftedTouch: v.optional(v.object({
+      subject: v.string(),
+      bodyText: v.string(),
+      bodyHtml: v.string(),
+      dynamicVars: v.optional(v.any()),
+    })),
+
+    // Cancellation audit (set when an inbound reply cancels this cadence)
+    cancelledReason: v.optional(v.string()),
+    cancelledByEventId: v.optional(v.id("replyEvents")),
+
+    // Idempotency (the dispatcher computes `${_id}:${nextDueAt}` and skips if matches)
+    lastFireKey: v.optional(v.string()),
+
+    // Failure tracking (incremented on retryable errors; reset on next success)
+    consecutiveFailures: v.optional(v.number()),
+    errors: v.optional(v.array(v.object({
+      at: v.string(),
+      step: v.string(),
+      message: v.string(),
+    }))),
+
+    // Origin (which skill run drafted this cadence)
+    sourceSkillRunId: v.optional(v.id("skillRuns")),
+
+    // Package-level approval gate (v1.2)
+    packageApprovalStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("denied"),
+    )),
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.string()),
+
+    // Operator edit + revision tracking (v1.2)
+    editedByOperator: v.optional(v.boolean()),
+    editedAt: v.optional(v.string()),
+    editedBy: v.optional(v.id("users")),
+    revisionRequested: v.optional(v.boolean()),
+    revisionNote: v.optional(v.string()),
+    revisionRequestedBy: v.optional(v.id("users")),
+    revisionRequestedAt: v.optional(v.string()),
+  })
+    .index("by_contact", ["contactId"])
+    .index("by_next_due", ["nextDueAt"])
+    .index("by_active_next_due", ["isActive", "nextDueAt"])
+    .index("by_related_project", ["relatedProjectId"])
+    .index("by_related_client", ["relatedClientId"])
+    .index("by_package", ["packageId"])
+    .index("by_package_approval_status", ["packageId", "packageApprovalStatus"])
+    .index("by_contact_active", ["contactId", "isActive"])
+    .index("by_created_by", ["createdBy"]),
+
+  // AppetiteSignal (BL-1.8) - atomic lender intelligence with provenance and
+  // timestamp. Three-layer LenderProfile model: static fields stay on
+  // clientIntelligence; live appetite data lives here with as-of dates;
+  // behavioural data derives from lenderApproaches history.
+  appetiteSignals: defineTable({
+    lenderClientId: v.id("clients"),            // lender; client.type should be "lender"
+    fieldPath: v.string(),                      // e.g., "dealSize.min", "propertyType.allowed", "ltv.maximum"
+    value: v.any(),                             // typed via valueType
+    valueType: v.union(
+      v.literal("number"),
+      v.literal("currency"),
+      v.literal("percentage"),
+      v.literal("string"),
+      v.literal("array"),
+      v.literal("boolean"),
+      v.literal("date")
+    ),
+    sourceType: v.union(
+      v.literal("bdm_meeting"),
+      v.literal("lender_doc"),
+      v.literal("publication"),
+      v.literal("deal_behaviour"),              // derived from lenderApproaches history
+      v.literal("manual")
+    ),
+    sourceRef: v.optional(v.string()),          // meeting id, document id, free reference
+    asOfDate: v.string(),                       // ISO date; the brief's as_of_date
+    confidence: v.optional(v.number()),         // 0-1 confidence
+    isCurrent: v.boolean(),                     // true if latest value for (lender, fieldPath)
+    supersededBy: v.optional(v.id("appetiteSignals")),
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+  })
+    .index("by_lender", ["lenderClientId"])
+    .index("by_lender_field", ["lenderClientId", "fieldPath"])
+    .index("by_lender_current", ["lenderClientId", "isCurrent"])
+    .index("by_as_of", ["asOfDate"]),
+
+  // Approval (BL-1.9) - cross-cutting staged draft surface.
+  // Every output that leaves the building (Gmail send, HubSpot write,
+  // lender outreach, IC paper publication) routes through here when
+  // originated by a skill or background job. Direct user-initiated
+  // actions from web UI may bypass approval.
+  approvals: defineTable({
+    entityType: v.union(
+      v.literal("gmail_send"),
+      v.literal("hubspot_write"),
+      v.literal("document_publish"),
+      v.literal("lender_outreach"),
+      v.literal("client_communication"),
+      v.literal("skill_action"),
+      v.literal("cadence_fire"),
+      v.literal("other")
+    ),
+    entityRefId: v.optional(v.string()),         // id of the entity this approval acts on, if any
+    summary: v.string(),                         // 1-line description for UI
+    draftPayload: v.any(),                       // JSON describing what would be done on approval
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("expired"),
+      v.literal("executed"),
+      v.literal("execution_failed"),
+      v.literal("cancelled")
+    ),
+    requestedBy: v.id("users"),
+    requestedAt: v.string(),
+    requestSource: v.optional(v.union(
+      v.literal("skill"),
+      v.literal("background_job"),
+      v.literal("cadence"),
+      v.literal("manual")
+    )),
+    requestSourceName: v.optional(v.string()),   // e.g., "prospect-intel", "cadence-fire"
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.string()),
+    rejectedReason: v.optional(v.string()),
+    executedAt: v.optional(v.string()),
+    executionResult: v.optional(v.any()),        // provider response (e.g., Gmail message id)
+    executionError: v.optional(v.string()),
+    expiresAt: v.optional(v.string()),           // auto-expire stale approvals
+    relatedClientId: v.optional(v.id("clients")),
+    relatedProjectId: v.optional(v.id("projects")),
+    relatedContactId: v.optional(v.id("contacts")),
+    relatedCadenceId: v.optional(v.id("cadences")),
+  })
+    .index("by_status", ["status"])
+    .index("by_requested_by", ["requestedBy"])
+    .index("by_status_requested_by", ["status", "requestedBy"])
+    .index("by_related_project", ["relatedProjectId"])
+    .index("by_related_client", ["relatedClientId"])
+    .index("by_related_cadence", ["relatedCadenceId"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  // ---------------------------------------------------------------------------
+  // Integration tables (Fireflies BL-3, Gmail BL-4, Touchpoint BL-4.9).
+  // All additive; existing integrations are not touched.
+  // ---------------------------------------------------------------------------
+
+  // firefliesTokens (BL-3.1) - per-user API token paste model.
+  // Per confirmed decision in docs/INTEGRATIONS/fireflies-scoping.md,
+  // Fireflies uses a token-paste flow (no OAuth). Each user generates a
+  // personal API token in the Fireflies dashboard and pastes it here.
+  // TODO: encrypt apiToken at rest in a future hardening pass.
+  firefliesTokens: defineTable({
+    userId: v.id("users"),
+    apiToken: v.string(),
+    connectedEmail: v.optional(v.string()),
+    needsReconnect: v.optional(v.boolean()),
+    lastSyncAt: v.optional(v.string()),
+    lastSyncStatus: v.optional(v.union(
+      v.literal("success"),
+      v.literal("error"),
+      v.literal("in_progress")
+    )),
+    lastSyncError: v.optional(v.string()),
+    connectedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // firefliesSyncConfig (BL-3.x) - global kill switch and defaults.
+  // Singleton row; default isEnabled=false until explicitly turned on.
+  firefliesSyncConfig: defineTable({
+    isEnabled: v.boolean(),
+    defaultBackfillDays: v.optional(v.number()),  // 365 per confirmed decision
+    syncIntervalMinutes: v.optional(v.number()),  // cron cadence; 30 is default
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["isEnabled"]),
+
+  // meetingTranscripts (BL-3.5/3.7) - full transcript ingestion.
+  // Per confirmed decision, transcripts are stored not URL-only so skills
+  // can use them as context. fileStorageId points at the raw transcript
+  // in Convex file storage; speakerSegments offers a queryable view.
+  meetingTranscripts: defineTable({
+    meetingId: v.id("meetings"),
+    fileStorageId: v.optional(v.id("_storage")),
+    source: v.union(
+      v.literal("fireflies"),
+      v.literal("manual"),
+      v.literal("zoom"),
+      v.literal("other")
+    ),
+    speakerSegments: v.optional(v.array(v.object({
+      speaker: v.string(),
+      startMs: v.number(),
+      endMs: v.number(),
+      text: v.string(),
+    }))),
+    fullTextSummary: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    language: v.optional(v.string()),
+    fetchedAt: v.string(),
+    createdBy: v.optional(v.id("users")),
+  })
+    .index("by_meeting", ["meetingId"])
+    .index("by_source", ["source"]),
+
+  // googleGmailTokens (BL-4.1) - separate from googleCalendarTokens per
+  // confirmed decision. Gmail and Calendar use independent OAuth clients;
+  // disconnecting one does not disconnect the other.
+  googleGmailTokens: defineTable({
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    scope: v.string(),
+    connectedEmail: v.string(),
+    needsReconnect: v.optional(v.boolean()),
+    lastSyncAt: v.optional(v.string()),
+    historyId: v.optional(v.string()),    // Gmail's incremental sync watermark
+    // Per-user send enable flag. Default off until explicitly enabled per
+    // BL-4.4 (approval-gated send default). Global kill switch lives on
+    // gmailSendConfig.
+    sendEnabled: v.optional(v.boolean()),
+    connectedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // gmailSendConfig (BL-4.x) - global send kill switch.
+  // Singleton row. isEnabled gates outbound for the whole org; per-user
+  // sendEnabled on googleGmailTokens layers on top. Both must be true.
+  gmailSendConfig: defineTable({
+    isEnabled: v.boolean(),
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["isEnabled"]),
+
+  // touchpoints (BL-4.9) - unified exchange ledger across all integrations.
+  // Provider-agnostic. Gmail inbound and outbound, Fireflies meetings,
+  // HubSpot activities, and manual entries all write here. Skills query
+  // this for "recent history with this person/deal" without caring which
+  // integration delivered the event.
+  touchpoints: defineTable({
+    provider: v.union(
+      v.literal("gmail"),
+      v.literal("hubspot"),
+      v.literal("fireflies"),
+      v.literal("calendar"),
+      v.literal("manual"),
+      v.literal("other")
+    ),
+    direction: v.union(
+      v.literal("inbound"),
+      v.literal("outbound"),
+      v.literal("internal")
+    ),
+    kind: v.union(
+      v.literal("email"),
+      v.literal("call"),
+      v.literal("meeting"),
+      v.literal("note"),
+      v.literal("message"),
+      v.literal("event"),
+      v.literal("other")
+    ),
+    contactId: v.optional(v.id("contacts")),
+    participantEmails: v.optional(v.array(v.string())),
+    relatedClientId: v.optional(v.id("clients")),
+    relatedProjectId: v.optional(v.id("projects")),
+    occurredAt: v.string(),
+    payloadRef: v.optional(v.string()),    // Gmail message id, Fireflies meeting id, HubSpot activity id
+    payloadType: v.optional(v.string()),   // "gmail.message", "fireflies.meeting", "hubspot.activity"
+    subject: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    bodyExcerpt: v.optional(v.string()),   // first ~500 chars
+    providerEnrichment: v.optional(v.any()),
+    threadId: v.optional(v.string()),
+    capturedBy: v.optional(v.id("users")),
+    createdAt: v.string(),
+  })
+    .index("by_contact", ["contactId"])
+    .index("by_provider_payload", ["provider", "payloadRef"])
+    .index("by_related_project", ["relatedProjectId"])
+    .index("by_related_client", ["relatedClientId"])
+    .index("by_occurred_at", ["occurredAt"])
+    .index("by_thread", ["threadId"]),
+
+  // mcpTokens (BL-5.9) - per-user MCP tokens for Claude Code authentication.
+  // Tokens are minted via a settings UI; the plaintext is shown to the user
+  // once and never persisted. The server stores only a SHA-256 hash plus a
+  // display prefix for UI listing.
+  mcpTokens: defineTable({
+    userId: v.id("users"),
+    tokenHash: v.string(),        // sha-256 hex of the plaintext token
+    tokenPrefix: v.string(),      // first 12 chars for display, e.g. "rcp_aBc123"
+    name: v.string(),             // user-given label ("My MacBook", "Office desktop")
+    createdAt: v.string(),
+    lastUsedAt: v.optional(v.string()),
+    revokedAt: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_token_hash", ["tokenHash"]),
+
+  // ReplyEvents (cadence-fire v1) - audit trail for inbound replies that
+  // cancelled active cadences. Source is "gmail_push" for real-time webhook
+  // delivery; "hubspot_sync" for the 6h safety-net sweep. The (source,
+  // externalId) pair is the idempotency key — same message arriving via
+  // both paths processes once.
+  replyEvents: defineTable({
+    source: v.union(v.literal("gmail_push"), v.literal("hubspot_sync")),
+    externalId: v.string(),                    // Gmail Message-ID header or `hubspot:engagement:${id}`
+    contactId: v.optional(v.id("contacts")),
+    receivedAt: v.string(),                    // ISO; when the inbound was sent (per provider), not when we processed
+    rawMessageRef: v.optional(v.string()),     // Gmail thread URL or HubSpot engagement URL for debugging
+    classifiedIntent: v.optional(v.union(
+      v.literal("book_meeting"),
+      v.literal("defer_long_term"),
+      v.literal("not_interested"),
+      v.literal("info_question"),
+      v.literal("out_of_office"),
+      v.literal("unknown"),
+    )),
+    classifiedConfidence: v.optional(v.number()),
+    classifierEvidence: v.optional(v.string()),
+    cadencesCancelled: v.optional(v.array(v.id("cadences"))),
+    dispatchedTo: v.optional(v.union(
+      v.literal("meeting-prep"),
+      v.literal("long-term-monitor"),
+      v.literal("qualify-and-draft"),
+      v.literal("opt_out_marker"),
+      v.literal("operator_review"),
+      v.literal("restored_cadences"),
+      v.literal("no_contact_match"),
+    )),
+    dispatchedSkillRunId: v.optional(v.id("skillRuns")),
+    processed: v.boolean(),
+    errors: v.optional(v.array(v.string())),
+    userId: v.id("users"),                     // owner of the cadences cancelled; needed for downstream user-scoped queries
+  })
+    .index("by_source_externalId", ["source", "externalId"])
+    .index("by_contact", ["contactId"])
+    .index("by_processed", ["processed"])
+    .index("by_user", ["userId"]),
+
+  skillRuns: defineTable({
+    // Identity
+    skillName: v.string(),
+    userId: v.id("users"),
+
+    // Input
+    input: v.any(),
+    trigger: v.optional(v.string()),
+
+    // Dedup
+    dedupKey: v.optional(v.string()),
+    dedupWindowDays: v.optional(v.number()),
+
+    // Status
+    status: v.union(
+      v.literal("running"),
+      v.literal("complete"),
+      v.literal("complete_with_gaps"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+
+    // Output
+    brief: v.optional(v.string()),
+
+    // Linked entities (denormalised for quick UI render)
+    linkedClientId: v.optional(v.id("clients")),
+    linkedProjectId: v.optional(v.id("projects")),
+    linkedApprovalIds: v.optional(v.array(v.id("approvals"))),
+
+    // Gaps surfaced during the run (punch list)
+    gaps: v.optional(v.array(v.object({
+      kind: v.string(),
+      description: v.string(),
+      suggestedFix: v.optional(v.string()),
+    }))),
+
+    // Errors encountered
+    errors: v.optional(v.array(v.object({
+      step: v.string(),
+      message: v.string(),
+    }))),
+
+    // Audit
+    completedAt: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+
+    // Batch (future)
+    parentBatchId: v.optional(v.id("bulkUploadBatches")),
+
+    // Rich intel report (v1.2) — companion to `brief`, full markdown
+    intelMarkdown: v.optional(v.string()),
+
+    // Revision linking (v1.2) — set when a skillRun is a re-run after request_revision
+    parentRunId: v.optional(v.id("skillRuns")),
+    revisionRequestedAt: v.optional(v.string()),
+    revisionNote: v.optional(v.string()),
+    revisionRequestedBy: v.optional(v.id("users")),
+  })
+    .index("by_user", ["userId"])
+    .index("by_skill_and_dedup_key", ["skillName", "dedupKey"])
+    .index("by_status", ["status"])
+    .index("by_skill_and_user", ["skillName", "userId"]),
 });
 

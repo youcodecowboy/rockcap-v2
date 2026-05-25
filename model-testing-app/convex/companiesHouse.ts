@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalAction } from "./_generated/server";
+import { api } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 
 /**
@@ -1165,3 +1166,111 @@ export const uploadChargePdf = mutation({
   },
 });
 
+// ── v1.2 prospect-intel hardening: single-company sync from CH API ──────────
+// Called by the new companies.syncCompaniesHouse MCP tool to fetch + persist
+// profile + charges + officers + PSCs for a single CH number. Replaces the
+// "operator triggers sync manually" gap that bites every new prospect run.
+//
+// Architecture choice: this is a Convex action calling CH API directly via
+// fetch (not via the Next /api/companies-house route). Requires
+// COMPANIES_HOUSE_API_KEY in Convex env. The Next route is for batch sync;
+// this is for single-company on-demand. Independent of NEXT_APP_URL.
+//
+// Auth to CH API: HTTP Basic with the API key as the username, empty password.
+
+const CH_BASE_URL = "https://api.company-information.service.gov.uk";
+
+async function chFetch<T>(path: string, apiKey: string): Promise<T | null> {
+  const auth = btoa(`${apiKey}:`);
+  const res = await fetch(`${CH_BASE_URL}${path}`, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`CH API error ${res.status} on ${path}: ${await res.text()}`);
+  }
+  return (await res.json()) as T;
+}
+
+export const syncOneCompanyFromCHInternal = internalAction({
+  args: { companyNumber: v.string() },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
+    if (!apiKey) {
+      throw new Error("COMPANIES_HOUSE_API_KEY not set in Convex env");
+    }
+
+    const num = args.companyNumber.trim().toUpperCase();
+
+    // Profile (canonical source of name, status, SIC codes, address)
+    const profile = await chFetch<any>(`/company/${num}`, apiKey);
+    if (!profile) {
+      return {
+        ok: false,
+        companyNumber: num,
+        reason: "company_not_found_on_companies_house",
+      };
+    }
+
+    // Fetch charges only. Officers + PSCs are deferred to a later iteration:
+    // the existing saveOfficer / savePSC mutations expect a transformed shape
+    // (companyId resolved, specific field names) that this action doesn't
+    // yet adapt. For now the prospect-intel skill's web-research playbook
+    // covers officers + PSCs via WebFetch on the public CH pages — slower
+    // but unblocking.
+    const chargesData = await chFetch<any>(`/company/${num}/charges?items_per_page=100`, apiKey);
+    const officersData: any = null;
+    const pscData: any = null;
+
+    // Build the charges payload in the shape syncCompanyData expects
+    const charges = (chargesData?.items ?? []).map((c: any) => ({
+      chargeId: c.id ?? c.charge_number?.toString() ?? "",
+      chargeNumber: typeof c.charge_number === "number" ? c.charge_number : undefined,
+      chargeDate: c.delivered_on ?? c.created_on,
+      chargeDescription: c.particulars?.description ?? c.classification?.description,
+      chargeStatus: c.status,
+      chargeeName: (c.persons_entitled ?? [])
+        .map((p: any) => p.name)
+        .filter(Boolean)
+        .join("; ") || undefined,
+    }));
+
+    // Build address string
+    const ro = profile.registered_office_address ?? {};
+    const addressParts = [
+      ro.premises,
+      ro.address_line_1,
+      ro.address_line_2,
+      ro.locality,
+      ro.region,
+      ro.postal_code,
+      ro.country,
+    ].filter(Boolean);
+    const address = addressParts.length > 0 ? addressParts.join(", ") : undefined;
+
+    // Persist profile + charges
+    const companyResult = await ctx.runMutation(api.companiesHouse.syncCompanyData, {
+      companyNumber: num,
+      companyName: profile.company_name ?? num,
+      sicCodes: profile.sic_codes ?? [],
+      address,
+      registeredOfficeAddress: ro,
+      incorporationDate: profile.date_of_creation,
+      companyStatus: profile.company_status,
+      charges,
+    });
+
+    // Officers + PSCs: silently skipped — see fetch comment above.
+
+    return {
+      ok: true,
+      companyNumber: num,
+      companyName: profile.company_name,
+      status: profile.company_status,
+      incorporationDate: profile.date_of_creation,
+      sicCodes: profile.sic_codes ?? [],
+      chargesCount: charges.length,
+      message: `Synced ${num}: profile + ${charges.length} charges. Officers + PSCs not persisted by this tool yet — fetch via the CH public site if needed.`,
+    };
+  },
+});

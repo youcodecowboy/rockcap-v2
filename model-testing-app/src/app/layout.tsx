@@ -30,6 +30,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
+        // Grammarly + similar browser extensions inject attributes on <body>
+        // after React hydrates, causing a hydration mismatch warning. The
+        // suppression is scoped to this single element — React still
+        // warns about real mismatches elsewhere in the tree.
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ConvexProvider>
