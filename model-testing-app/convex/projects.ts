@@ -1045,3 +1045,67 @@ export const getDeepContext = query({
     };
   },
 });
+
+// ── v1.3 Sprint G: add a client role to a project's clientRoles ──
+//
+// Cleaner than wrapping projects.update for the common case of "add lender X
+// to project Y". Reads current clientRoles, appends the new role if not
+// already present, patches the row. Idempotent — re-adding the same
+// (clientId, role) is a no-op.
+//
+// Typical use: after lender.matchForDeal returns optimal lenders + operator
+// picks a shortlist, addLenderRole each chosen lender to the project before
+// staging outreach.draftToLender per lender.
+
+export const addLenderRole = mutation({
+  args: {
+    projectId: v.id("projects"),
+    clientId: v.id("clients"),     // the lender (clients row with type=lender)
+    role: v.optional(v.string()),  // default "lender"; allows "co-lender" / "syndicate-lead" etc.
+  },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("project_not_found");
+
+    const client = await ctx.db.get(args.clientId);
+    if (!client) throw new Error("client_not_found");
+    if ((client as any).type !== "lender") {
+      return {
+        ok: false as const,
+        error: "not_a_lender",
+        message: `Client ${args.clientId} has type='${(client as any).type}', not 'lender'. Use projects.update directly to add non-lender roles (borrower, developer, professional, etc.).`,
+      };
+    }
+
+    const role = args.role ?? "lender";
+    const existing = (project as any).clientRoles ?? [];
+    const alreadyPresent = existing.some(
+      (cr: any) => cr.clientId === args.clientId && cr.role === role,
+    );
+    if (alreadyPresent) {
+      return {
+        ok: true as const,
+        idempotent: true,
+        projectId: args.projectId,
+        clientId: args.clientId,
+        role,
+        note: "Lender already in clientRoles with this role; no-op.",
+      };
+    }
+
+    const newClientRoles = [...existing, { clientId: args.clientId, role }];
+    await ctx.db.patch(args.projectId, {
+      clientRoles: newClientRoles,
+    });
+
+    return {
+      ok: true as const,
+      projectId: args.projectId,
+      projectName: (project as any).name,
+      clientId: args.clientId,
+      clientName: (client as any).name,
+      role,
+      clientRolesCount: newClientRoles.length,
+    };
+  },
+});

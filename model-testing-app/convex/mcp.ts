@@ -1875,6 +1875,175 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+
+  // ── v1.3 Sprint G: deferred writers, now wired ──────────────────
+  //
+  // Closes the four "deferred" gaps from the v1.3 catalogue. Skills
+  // previously had to emit these as skillRun.complete.gaps; now they
+  // can call the tool directly.
+
+  {
+    name: "intelligence.addKnowledgeItem",
+    description:
+      "Add a single canonical or non-canonical fact to a client's or project's intelligence library. Used by skills (qualify-and-draft, meeting-capture, deal-intake) to promote facts discovered in a reply / meeting transcript / document into the structured intelligence layer that the deep-context tools read from. Supersedes any prior active item with the same (clientId|projectId, fieldPath, qualifier) tuple — the prior item is marked status='superseded' and the new one becomes active. fieldPath examples: 'borrower.experienceYears', 'project.gdv', 'project.peakDebt', 'lender.appetiteMaxLtv'. valueType controls how the UI renders the value. sourceType='ai_extraction' for skill-derived facts; 'manual' for operator-entered; 'document' for extracted from an uploaded doc (then set sourceDocumentId).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client (mutually exclusive with projectId)" },
+        projectId: { type: "string", description: "Convex id of the project (mutually exclusive with clientId)" },
+        fieldPath: { type: "string", description: "Dotted path: e.g., 'borrower.experienceYears'" },
+        isCanonical: { type: "boolean", description: "True if this is the canonical/authoritative value for this fieldPath" },
+        category: { type: "string", description: "Grouping bucket: 'borrower' | 'project' | 'financials' | 'security' | 'lender' | 'kyc' | 'other'" },
+        label: { type: "string", description: "Human-readable label shown in the UI (e.g., 'Years of dev experience')" },
+        value: { description: "The actual value — type matches valueType. Pass number for number/currency/percentage, string for string/text/date, boolean for boolean, array for array." },
+        valueType: {
+          type: "string",
+          enum: ["string", "number", "currency", "date", "percentage", "array", "text", "boolean"],
+          description: "Controls UI rendering + downstream validation",
+        },
+        sourceType: {
+          type: "string",
+          enum: ["document", "manual", "ai_extraction", "data_library", "checklist"],
+          description: "Where the value came from. Skill runs should use 'ai_extraction'.",
+        },
+        sourceDocumentId: { type: "string", description: "Optional Convex id of the document this fact was extracted from" },
+        sourceDocumentName: { type: "string", description: "Optional human-readable doc name" },
+        sourceText: { type: "string", description: "Optional verbatim sentence(s) from the source backing this fact" },
+        qualifier: { type: "string", description: "Optional disambiguator when multiple items share the same fieldPath (e.g., scheme name)" },
+        context: { type: "string", description: "Optional free-text context (e.g., 'mentioned on 2026-05-20 discovery call')" },
+        addedBy: { type: "string", description: "Optional human-readable provenance string (defaults to skill name)" },
+      },
+      required: ["fieldPath", "isCanonical", "category", "label", "value", "valueType", "sourceType"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.addKnowledgeItem, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        fieldPath: args.fieldPath,
+        isCanonical: args.isCanonical,
+        category: args.category,
+        label: args.label,
+        value: args.value,
+        valueType: args.valueType,
+        sourceType: args.sourceType,
+        sourceDocumentId: args.sourceDocumentId,
+        sourceDocumentName: args.sourceDocumentName,
+        sourceText: args.sourceText,
+        qualifier: args.qualifier,
+        context: args.context,
+        addedBy: args.addedBy,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "task.create",
+    description:
+      "Create an operator-facing task. Used by skills to surface follow-up work (e.g., meeting-capture creating 'Schedule follow-up call' or 'Send signed NDA'; qualify-and-draft creating 'Manual review of low-confidence reply'; deal-intake creating 'Request missing KYC items'). Tasks land in the operator's task inbox + appear on the linked client / project page. Defaults: status='todo', priority='medium', assignedTo=[calling operator]. Use `assignedTo` to route to a specific teammate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short imperative title (e.g., 'Schedule follow-up with Shane Gordon')" },
+        description: { type: "string", description: "Optional longer-form context" },
+        notes: { type: "string", description: "Optional free-form notes" },
+        dueDate: { type: "string", description: "Optional ISO timestamp" },
+        priority: { type: "string", enum: ["low", "medium", "high"], description: "Default 'medium'" },
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags for filtering" },
+        clientId: { type: "string", description: "Optional Convex id of the linked client" },
+        projectId: { type: "string", description: "Optional Convex id of the linked project" },
+        assignedTo: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional array of Convex user ids; defaults to the calling operator",
+        },
+        attachmentIds: { type: "array", items: { type: "string" }, description: "Optional document ids to attach" },
+        contactIds: { type: "array", items: { type: "string" }, description: "Optional contact ids to link" },
+      },
+      required: ["title"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.tasks.createInternal, {
+        userId,
+        title: args.title,
+        description: args.description,
+        notes: args.notes,
+        dueDate: args.dueDate,
+        priority: args.priority,
+        tags: args.tags,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        assignedTo: args.assignedTo,
+        attachmentIds: args.attachmentIds,
+        contactIds: args.contactIds,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.createFromGeneration",
+    description:
+      "Persist a document that was *generated* by a skill (e.g., lender brief package, IC paper, terms-comparison memo, post-meeting notes) into the documents table. Content lives inline in the `summary` field as markdown / plain text — no file storage required until a separate markdown→PDF/DOCX conversion step runs. The resulting row appears in the standard documents UI (filterable by category, linkable to a project, etc.). For UPLOADS of files (PDFs / spreadsheets), use the normal documents.create flow with file storage. For pre-existing docs that need linking to a project, use document.linkToProject.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Optional Convex id of the linked client" },
+        projectId: { type: "string", description: "Optional Convex id of the linked project" },
+        fileName: { type: "string", description: "Display name for the generated artefact (e.g., 'Comberton — Lender Brief Package.md')" },
+        fileTypeDetected: {
+          type: "string",
+          description: "Operator-facing artefact type (e.g., 'Lender Brief Package', 'IC Paper', 'Terms Comparison Memo', 'Meeting Notes')",
+        },
+        category: {
+          type: "string",
+          description: "Document category for filing (e.g., 'Lender outreach', 'Credit submission', 'Meeting notes')",
+        },
+        summary: { type: "string", description: "The full generated content (markdown or plain text). Becomes the document body." },
+        reasoning: { type: "string", description: "Optional 1-2 sentence operator-facing explanation of what this artefact is + when it was generated" },
+        sourceSkillRunId: { type: "string", description: "Optional Convex id of the skillRun that produced this artefact (for provenance)" },
+        isBaseDocument: { type: "boolean", description: "True if this should appear in the client's Base Documents folder (default false)" },
+      },
+      required: ["fileName", "fileTypeDetected", "category", "summary"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.documents.createFromGeneration, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        fileName: args.fileName,
+        fileTypeDetected: args.fileTypeDetected,
+        category: args.category,
+        summary: args.summary,
+        reasoning: args.reasoning,
+        sourceSkillRunId: args.sourceSkillRunId,
+        isBaseDocument: args.isBaseDocument,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "project.addLenderRole",
+    description:
+      "Idempotently add a lender (clients row with type='lender') to a project's clientRoles array. Used by the terms-package-build workflow after lender.matchForDeal picks a shortlist — each chosen lender is attached to the project here before outreach.draftToLender stages an approval per lender. Refuses non-lender clients with error='not_a_lender' (use projects.update directly for borrower/developer/professional roles). If the lender + role pair is already present, returns ok:true with idempotent:true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Convex id of the project" },
+        clientId: { type: "string", description: "Convex id of the lender (clients row with type='lender')" },
+        role: { type: "string", description: "Default 'lender'. Use 'co-lender' / 'syndicate-lead' for multi-lender deals." },
+      },
+      required: ["projectId", "clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.projects.addLenderRole, {
+        projectId: args.projectId,
+        clientId: args.clientId,
+        role: args.role,
+      });
+      return asText(result);
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(

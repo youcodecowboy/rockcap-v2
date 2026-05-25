@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 68 tools across 18 domains as of v1.3 Sprint F.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 72 tools across 19 domains as of v1.3 Sprint G.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -90,7 +90,7 @@ The deep-context tools are the spine:
 |---|---|
 | `clients.setProspectFacts({clientId, companiesHouseNumber?, website?, primaryDirectorName?, primaryContactId?})` | Bulk-patch the structured prospect facts on a clients row. Used by `prospect-intel` skill workflow step 10 to promote facts out of intelMarkdown text. |
 
-### `project.*` — Project (scheme/deal) workflows (4)
+### `project.*` — Project (scheme/deal) workflows (5)
 
 | Tool | Purpose |
 |---|---|
@@ -98,6 +98,7 @@ The deep-context tools are the spine:
 | `project.get({id})` | Single project by id. |
 | `project.getByClient({clientId})` | All projects a client appears in (via `clientRoles` array — any role). |
 | `project.getStats({projectId})` | Aggregate counts (subsumed by `getDeepContext.summary`). |
+| `project.addLenderRole({projectId, clientId, role?})` | Idempotently attach a lender (type=lender client) to a project's clientRoles. Defaults role='lender'; supports co-lender / syndicate-lead. Refuses non-lender clients with error='not_a_lender'. Used by terms-package-build after `lender.matchForDeal` picks a shortlist. |
 
 ### `lender.*` — Lender intelligence + matching (7)
 
@@ -156,7 +157,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `meeting.listUpcoming({limit?})` | Upcoming meetings across all clients, soonest first. Operator's "what calls do I have" surface. |
 | (`meeting.listByClient` removed in catalogue cleanup — use `meeting.getByClient`) | — |
 
-### `document.*` — Document discovery + linkage (5)
+### `document.*` — Document discovery + linkage (6)
 
 | Tool | Purpose |
 |---|---|
@@ -165,6 +166,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `document.get({documentId})` | Full document metadata (summary, classification, fileStorageId for download). |
 | `document.search({query, clientId?})` | Substring search by fileName / summary / fileTypeDetected. |
 | `document.linkToProject({documentId, projectId?})` | Re-file a document: assign to a project (sets isBaseDocument=false) or unlink (pass projectId=null). |
+| `document.createFromGeneration({fileName, fileTypeDetected, category, summary, clientId?, projectId?, ...})` | Persist a skill-generated artefact (lender brief, IC paper, terms comparison, meeting notes) into documents. Content lives inline in `summary` as markdown — no file storage needed. Appears in the standard documents UI. For file UPLOADS use the regular `documents.create` flow. |
 
 ### `checklist.*` — Requirements tracking (4)
 
@@ -191,13 +193,20 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `contact.get({contactId})` | Single contact row. |
 | `contact.getByClient({clientId})` | All contacts linked to a client. |
 
-### `intelligence.*` — Structured intelligence reads (3)
+### `intelligence.*` — Structured intelligence reads + single-fact writes (4)
 
 | Tool | Purpose |
 |---|---|
 | `intelligence.getClientIntelligence({clientId})` | The clientIntelligence row for a client. Subsumed by `client.getDeepContext.clientIntelligence`. |
 | `intelligence.getProjectIntelligence({projectId})` | The projectIntelligence row for a project. Subsumed by `project.getDeepContext.projectIntelligence`. |
 | `intelligence.searchLenders({...})` | Search lender intelligence. (May overlap with `lender.matchForDeal` — prefer matchForDeal for criteria-based matching.) |
+| `intelligence.addKnowledgeItem({fieldPath, value, valueType, sourceType, category, label, isCanonical, clientId?, projectId?, ...})` | Write a single canonical or non-canonical fact into the knowledge library. Supersedes any prior active item at the same `(scope, fieldPath, qualifier)` tuple. Used by qualify-and-draft / meeting-capture / deal-intake to promote facts from replies / transcripts / docs into the structured intelligence layer that `*.getDeepContext` reads from. fieldPath examples: `borrower.experienceYears`, `project.gdv`, `lender.appetiteMaxLtv`. |
+
+### `task.*` — Operator task creation (1)
+
+| Tool | Purpose |
+|---|---|
+| `task.create({title, clientId?, projectId?, priority?, dueDate?, assignedTo?, ...})` | Create an operator-facing task. Used by skills to surface follow-up work (meeting-capture → 'Schedule follow-up call'; qualify-and-draft → 'Manual review of low-confidence reply'; deal-intake → 'Request missing KYC items'). Defaults: status='todo', priority='medium', assignedTo=[calling operator]. |
 
 ### `touchpoint.*` — Outreach activity log reads (3)
 
@@ -293,12 +302,9 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 
 Skills currently reference these in their workflows; today they fall back to gaps in `skillRun.complete`:
 
-- `intelligence.addKnowledgeItem` / `updateClientIntelligence` / `updateLenderProfile` — intelligence write surface
-- `knowledge.recordMatchOutcome` — matching audit trail
-- `task.create` — RockCap-side action items
+- `intelligence.updateClientIntelligence` / `intelligence.updateLenderProfile` — bulk patch of the intelligence object (single-fact writes are covered by `intelligence.addKnowledgeItem`)
+- `knowledge.recordMatchOutcome` — matching audit trail (record which lender was picked + outcome, to refine match scoring over time)
 - `lender.recordAppetiteSignal` (the meeting-capture variant — `lender.recordAppetite` exists for the lender-intel skill path)
-- `document.createFromGeneration` — for skills that produce documents (lender brief packages, IC papers, terms comparison memos)
-- `project.addLenderRole` — workaround via `project.update` with extended clientRoles array
 
 When any of these is added: update this catalogue in the same commit.
 

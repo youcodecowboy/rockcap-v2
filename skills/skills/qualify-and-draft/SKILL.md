@@ -75,7 +75,7 @@ What it does not do:
 
 7. **Stage the approval.** Call `outreach.draftReply({contactId, clientId, subject, bodyText, bodyHtml, replyToReplyEventId, skillRunId, reasoning})`. The `reasoning` field is a 1-2 sentence summary for the operator's quick-review on the /approvals page. Returns `{approvalId, viewAt}`.
 
-8. **Capture qualification expectations.** Write a `knowledgeItems` row via `intelligence.addKnowledgeItem` (when MCP-exposed) with `fieldPath: "qualification.open_questions"` and the list of gaps the reply asks about. v1.3.x gap: this MCP tool may not be wired yet — if it errors, capture the gap list in the skillRun.complete `gaps` array as a fallback.
+8. **Capture qualification expectations.** Write a `knowledgeItems` row via `intelligence.addKnowledgeItem({clientId, fieldPath: "qualification.open_questions", value: <gap list>, valueType: "array", sourceType: "ai_extraction", category: "borrower", label: "Open qualification questions", isCanonical: true})`. The next inbound's qualify-and-draft run reads this to check which gaps closed.
 
 9. **Optional warm_lead_chase.** If the inbound suggests defer-and-revisit, add `warmLeadChase: {fireAt, message}` to the approval's draftPayload. Do NOT call `cadence.create` directly — the cadence only lands when the operator approves the package.
 
@@ -100,6 +100,7 @@ This skill calls these MCP-exposed tools (v1.3):
 - `contact.getByClient` — find primary contact if reply is operator-initiated
 - `skillRun.start` (with dedup) — workflow entry
 - `outreach.draftReply` — stage the email draft as a pending approval
+- `intelligence.addKnowledgeItem` — persist the qualification open-questions list so the next inbound's run can check which gaps closed (Sprint G)
 - `skillRun.complete` (with linkedApprovalIds + gaps) — workflow exit
 - `cadence.create` — only for the warm_lead_chase case AND only after operator approval (deferred to approval-execution path; skill does not call this directly)
 
