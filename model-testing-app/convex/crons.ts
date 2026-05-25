@@ -75,4 +75,13 @@ crons.daily(
   internal.gmailWatch.renewWatchesInternal,
 );
 
+// v1.2: stale skillRun sweep. Once daily, mark any skillRun with
+// status=running AND _creationTime > 6h as failed. Prevents stuck runs
+// from blocking future dedup checks.
+crons.daily(
+  "skillrun-staleness-sweep",
+  { hourUTC: 3, minuteUTC: 45 },
+  internal.skillRuns.sweepStaleRunningRunsInternal,
+);
+
 export default crons;
