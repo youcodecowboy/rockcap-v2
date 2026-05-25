@@ -1022,3 +1022,33 @@ async function deleteProjectRelatedData(ctx: any, projectId: Id<"projects">) {
     await deleteByField(ctx, "flagThreadEntries", "flagId", flag._id);
   }
 }
+
+// ── v1.2.4 prospect-intel hardening: structured prospect facts ──
+// Replaces the template-locked regex extraction (aside / PeopleTab /
+// OverviewTab parsing intelMarkdown for director name + website + CH
+// number) with real columns on the clients row. The skill calls this
+// mutation in workflow step 10, after building the intelMarkdown report.
+// All consumers READ these fields directly; regex extraction remains
+// as the fallback for legacy reports that predate this commit.
+
+export const setProspectFactsInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    companiesHouseNumber: v.optional(v.string()),
+    website: v.optional(v.string()),
+    primaryDirectorName: v.optional(v.string()),
+    primaryContactId: v.optional(v.id("contacts")),
+  },
+  handler: async (ctx, args) => {
+    const patch: Record<string, unknown> = {};
+    if (args.companiesHouseNumber !== undefined) patch.companiesHouseNumber = args.companiesHouseNumber;
+    if (args.website !== undefined) patch.website = args.website;
+    if (args.primaryDirectorName !== undefined) patch.primaryDirectorName = args.primaryDirectorName;
+    if (args.primaryContactId !== undefined) patch.primaryContactId = args.primaryContactId;
+    if (Object.keys(patch).length === 0) {
+      return { ok: true, patched: 0, note: "no fields supplied; nothing to write" };
+    }
+    await ctx.db.patch(args.clientId, patch);
+    return { ok: true, patched: Object.keys(patch).length };
+  },
+});

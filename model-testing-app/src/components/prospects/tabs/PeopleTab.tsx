@@ -139,6 +139,8 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
         name: person.name,
         role: apolloFor?.title ?? person.bullets["ch role + appointment"]?.split(",")[0] ?? person.roleNote ?? "Director",
         email: apolloFor?.email,
+        emailStatus: apolloFor?.emailStatus,
+        emailSource: apolloFor?.email ? "apollo" : undefined,
         company: companyName,
         notes: `Imported from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.${apolloFor?.email ? ` Email via Apollo (${apolloFor.emailStatus ?? "unknown status"}).` : ""}${apolloFor?.linkedinUrl ? ` LinkedIn: ${apolloFor.linkedinUrl}.` : ""}`,
         clientId: prospect?._id,

@@ -75,13 +75,24 @@ export default defineSchema({
     )),
     prospectStateChangedAt: v.optional(v.string()),
     prospectStateChangedBy: v.optional(v.id("users")),
+
+    // v1.2.4 — structured prospect facts populated by the prospect-intel skill
+    // workflow step 10 via clients.setProspectFacts. Promoted out of
+    // template-locked regex extraction in intelMarkdown so the aside /
+    // PeopleTab / OverviewTab can read directly and survive template drift.
+    // Note: `website` already exists on this table above; setProspectFacts
+    // patches the existing field rather than adding a duplicate.
+    companiesHouseNumber: v.optional(v.string()),
+    primaryDirectorName: v.optional(v.string()),
+    primaryContactId: v.optional(v.id("contacts")),
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])
     .index("by_name", ["name"])
     .index("by_hubspot_id", ["hubspotCompanyId"])
     .index("by_last_accessed", ["lastAccessedAt"])
-    .index("by_prospect_state", ["prospectState"]),
+    .index("by_prospect_state", ["prospectState"])
+    .index("by_companies_house_number", ["companiesHouseNumber"]),
 
   // Companies table - HubSpot companies (prospects, separate from clients)
   // Companies can be promoted to clients when they become active
@@ -423,6 +434,15 @@ export default defineSchema({
     name: v.string(),
     role: v.optional(v.string()),
     email: v.optional(v.string()),
+    // v1.2.4 — email verification status. Populated when email is sourced
+    // from Apollo (uses Apollo's verification field) or set manually after
+    // SMTP verification. Used as the cadence-engine gating signal:
+    // cadence.create refuses to create cadences for contacts where email
+    // is present but emailStatus is "questionable" or "spam_trap".
+    // Undefined or "verified" allow cadence creation.
+    emailStatus: v.optional(v.string()),
+    emailVerifiedAt: v.optional(v.string()),
+    emailSource: v.optional(v.string()), // "apollo" | "manual" | "hubspot" | etc.
     phone: v.optional(v.string()),
     company: v.optional(v.string()), // @deprecated - use linkedCompanyIds instead. Kept for backward compatibility.
     notes: v.optional(v.string()),
@@ -3715,6 +3735,20 @@ export default defineSchema({
     .index("by_target_date", ["targetDate"])
     .index("by_project_status", ["projectId", "status"])
     .index("by_chase_state", ["chaseState"]),
+
+  // v1.2.4 — Apollo email-lookup cache. Prevents double-charging Apollo
+  // credits on repeat clicks of "Find email via Apollo" for the same
+  // person + company combination. 30-day TTL (rows older than 30 days
+  // are stale enough that Apollo's index has probably refreshed).
+  // Indexed by composite key for direct lookup; cleanup is currently
+  // operator-driven (no auto-expiry cron yet).
+  apolloLookups: defineTable({
+    firstName: v.string(),
+    lastName: v.string(),
+    companyKey: v.string(), // normalised companyName or "" if not provided
+    result: v.any(), // the full ApolloPersonResult / ApolloErrorResult shape
+    fetchedAt: v.string(), // ISO timestamp
+  }).index("by_lookup_key", ["firstName", "lastName", "companyKey"]),
 
   // Cadence (BL-1.7) - scheduled-touch records keyed by contact + type + next-due.
   // Consumed by the cadence scheduling engine (BL-5.8). Seven canonical

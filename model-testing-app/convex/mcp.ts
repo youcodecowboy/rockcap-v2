@@ -570,6 +570,47 @@ const TOOLS: McpTool[] = [
       required: ["contactId", "cadenceType", "nextDueAt", "scheduleConfig", "isActive"],
     },
     handler: async (ctx, userId, args) => {
+      // v1.2.4 email guard. Refuse to create cadences for contacts with no
+      // email or with explicitly-bad emailStatus values. Surfaces the gap
+      // at cadence-creation time (when the operator/skill can do something
+      // about it) rather than at fire time (when the dispatcher would
+      // silently skip or hit a deliverability wall).
+      const contact = await ctx.runQuery(internal.contacts.getInternal, {
+        contactId: args.contactId,
+      });
+      if (!contact) {
+        return asText({
+          status: "error",
+          error: "contact_not_found",
+          contactId: args.contactId,
+        });
+      }
+      if (!contact.email || contact.email.trim() === "") {
+        return asText({
+          status: "error",
+          error: "contact_has_no_email",
+          contactId: args.contactId,
+          contactName: contact.name,
+          fix: "Run apollo.findEmail({firstName, lastName, companyName}) to discover, then contacts.update({contactId, email, emailStatus}) to persist before retrying this cadence.create call.",
+        });
+      }
+      const bad = new Set(["questionable", "spam_trap", "invalid", "bounced"]);
+      if (contact.emailStatus && bad.has(contact.emailStatus.toLowerCase())) {
+        return asText({
+          status: "error",
+          error: "email_status_blocks_send",
+          contactId: args.contactId,
+          contactName: contact.name,
+          email: contact.email,
+          emailStatus: contact.emailStatus,
+          fix: "Find an alternative email address (different contact at same company, or re-run apollo.findEmail with companyDomain hint) before sending to this contact.",
+        });
+      }
+      // emailStatus = "verified" passes; undefined passes (assumed manually
+      // entered + valid); "unverified" passes with a soft warning (the v1.1
+      // cadence dispatcher will eventually surface verification status to
+      // operators in the approvals UI).
+
       const cadenceId = await ctx.runMutation(internal.cadences.createInternal, {
         contactId: args.contactId,
         cadenceType: args.cadenceType,
@@ -584,7 +625,10 @@ const TOOLS: McpTool[] = [
         sourceSkillRunId: args.sourceSkillRunId,
         createdBy: userId,
       });
-      return asText({ status: "created", cadenceId });
+      const warning = contact.emailStatus === "unverified"
+        ? "Contact email is unverified (Apollo or manual entry). Operator should confirm before package approval."
+        : undefined;
+      return asText({ status: "created", cadenceId, ...(warning ? { warning } : {}) });
     },
   },
   {
@@ -740,6 +784,34 @@ const TOOLS: McpTool[] = [
     handler: async (ctx, userId, args) => {
       const result = await ctx.runAction(internal.companiesHouse.syncOneCompanyFromCHInternal, {
         companyNumber: args.chNumber,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.2.4 prospect-intel hardening: structured prospect facts
+  {
+    name: "clients.setProspectFacts",
+    description:
+      "Set structured prospect facts on a clients row (companiesHouseNumber, website, primaryDirectorName, primaryContactId). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the clients row" },
+        companiesHouseNumber: { type: "string", description: "8-digit CH number, or 6 digits prefixed by SC/NI/OC" },
+        website: { type: "string", description: "Full URL (e.g., 'https://example.co.uk') or 'not-found' if confirmed-absent" },
+        primaryDirectorName: { type: "string", description: "Director name as it should appear in the UI — operator-readable, not necessarily matching CH's surname-first format" },
+        primaryContactId: { type: "string", description: "Convex id of the primary contact for outreach (the one cadences should target)" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.clients.setProspectFactsInternal, {
+        clientId: args.clientId,
+        companiesHouseNumber: args.companiesHouseNumber,
+        website: args.website,
+        primaryDirectorName: args.primaryDirectorName,
+        primaryContactId: args.primaryContactId,
       });
       return asText(result);
     },

@@ -86,12 +86,19 @@ export function ProspectDetailAside({ prospect, intelRun, cadences, chProfile }:
     .sort()
     .reverse()[0];
 
-  // Derived from intelMarkdown
-  const director = extractPrimaryDirector(intelRun?.intelMarkdown);
-  const website = extractWebsite(intelRun?.intelMarkdown);
+  // v1.2.4 — prefer structured fields on the clients row (populated by
+  // the skill via clients.setProspectFacts). Fall back to template-locked
+  // regex extraction for legacy reports that predate the structured fields.
+  const director = prospect?.primaryDirectorName ?? extractPrimaryDirector(intelRun?.intelMarkdown);
+  const websiteFromStructured = prospect?.website;
+  const website = websiteFromStructured ?? extractWebsite(intelRun?.intelMarkdown);
 
-  // CH or fallback values
-  const chNumber = chProfile?.companyNumber ?? (intelRun as any)?.dedupKey;
+  // CH or fallback values. The structured field is canonical; the chProfile
+  // lookup and intelRun.dedupKey are fallbacks if it's not set.
+  const chNumber =
+    prospect?.companiesHouseNumber ??
+    chProfile?.companyNumber ??
+    (intelRun as any)?.dedupKey;
   const legalName = chProfile?.companyName ?? prospect?.companyName ?? prospect?.name;
   const status = chProfile?.companyStatus;
   const incorpDate = chProfile?.incorporationDate;

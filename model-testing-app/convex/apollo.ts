@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 // Apollo.io integration — primary email discovery surface for prospect-intel.
 //
@@ -145,18 +146,118 @@ async function callApolloMatch(args: {
   };
 }
 
+// ── v1.2.4 caching layer ──
+// apolloLookups table stores recent results keyed by (firstName, lastName,
+// companyKey). 30-day TTL. Read-then-call-then-write so re-clicks of "Find
+// email" don't re-charge Apollo for the same combination.
+
+const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function normalizeCompanyKey(name: string | undefined): string {
+  if (!name) return "";
+  return name.toLowerCase().replace(/\s+(limited|ltd|plc|llp)\s*$/i, "").trim();
+}
+
+export const findCachedLookupInternal = internalQuery({
+  args: {
+    firstName: v.string(),
+    lastName: v.string(),
+    companyKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("apolloLookups")
+      .withIndex("by_lookup_key", (q) =>
+        q
+          .eq("firstName", args.firstName)
+          .eq("lastName", args.lastName)
+          .eq("companyKey", args.companyKey),
+      )
+      .order("desc")
+      .take(1);
+    const latest = rows[0];
+    if (!latest) return null;
+    const fetchedMs = new Date(latest.fetchedAt).getTime();
+    if (Date.now() - fetchedMs > CACHE_TTL_MS) return null;
+    return { result: latest.result, fetchedAt: latest.fetchedAt, cacheId: latest._id };
+  },
+});
+
+export const writeLookupCacheInternal = internalMutation({
+  args: {
+    firstName: v.string(),
+    lastName: v.string(),
+    companyKey: v.string(),
+    result: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("apolloLookups", {
+      firstName: args.firstName,
+      lastName: args.lastName,
+      companyKey: args.companyKey,
+      result: args.result,
+      fetchedAt: new Date().toISOString(),
+    });
+    return { ok: true };
+  },
+});
+
+async function findPersonCachedOrFresh(
+  ctx: any,
+  args: {
+    firstName: string;
+    lastName: string;
+    companyName?: string;
+    companyDomain?: string;
+    skipCache?: boolean;
+  },
+): Promise<(ApolloPersonResult | ApolloErrorResult) & { cached?: boolean; cachedAt?: string }> {
+  const companyKey = normalizeCompanyKey(args.companyName);
+
+  // Read cache unless explicitly bypassed
+  if (!args.skipCache) {
+    const cached = await ctx.runQuery(internal.apollo.findCachedLookupInternal, {
+      firstName: args.firstName,
+      lastName: args.lastName,
+      companyKey,
+    });
+    if (cached) {
+      return { ...cached.result, cached: true, cachedAt: cached.fetchedAt };
+    }
+  }
+
+  // Cache miss — call Apollo
+  const fresh = await callApolloMatch(args);
+
+  // Only cache successful results (ok: true). Errors aren't cached because
+  // they're often transient (rate limits, key not set) and would persist
+  // the operator's bad experience past the underlying fix.
+  if (fresh.ok) {
+    await ctx.runMutation(internal.apollo.writeLookupCacheInternal, {
+      firstName: args.firstName,
+      lastName: args.lastName,
+      companyKey,
+      result: fresh,
+    });
+  }
+
+  return { ...fresh, cached: false };
+}
+
 // ── Public action: callable from React via useAction + from MCP via the
 //    apollo.findEmail tool wrapper. Returns the raw Apollo result; caller
 //    decides whether to persist (contacts row, intel report, etc).
+//    v1.2.4: cached for 30 days against (firstName, lastName, companyName).
 export const findPerson = action({
   args: {
     firstName: v.string(),
     lastName: v.string(),
     companyName: v.optional(v.string()),
     companyDomain: v.optional(v.string()),
+    skipCache: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<ApolloPersonResult | ApolloErrorResult> => {
-    return await callApolloMatch(args);
+  handler: async (ctx, args) => {
+    return await findPersonCachedOrFresh(ctx, args);
   },
 });
 
@@ -167,8 +268,9 @@ export const findPersonInternal = internalAction({
     lastName: v.string(),
     companyName: v.optional(v.string()),
     companyDomain: v.optional(v.string()),
+    skipCache: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<ApolloPersonResult | ApolloErrorResult> => {
-    return await callApolloMatch(args);
+  handler: async (ctx, args) => {
+    return await findPersonCachedOrFresh(ctx, args);
   },
 });

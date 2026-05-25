@@ -103,6 +103,12 @@ What it does not do:
 
 10. **Persist intelligence**. Write the findings to `clientIntelligence` and any specific data points to `knowledgeItems`. Cite sources (Companies House filing numbers, charge IDs, URLs scraped with timestamps, web search queries used). Build the full markdown report following `references/intel-report-template.md` — all 9 sections, in order, with confidence levels.
 
+    **Also call `clients.setProspectFacts({clientId, companiesHouseNumber, website, primaryDirectorName, primaryContactId})` (v1.2.4)** to populate the structured fields on the clients row. These are the canonical source for the CRM aside / PeopleTab / OverviewTab — promoted out of intelMarkdown regex extraction so the UI doesn't depend on the report's template shape. Pass:
+    - `companiesHouseNumber`: the resolved CH number (always pass if known)
+    - `website`: the URL discovered in step 6 (or omit if "Not found" after 4 attempts)
+    - `primaryDirectorName`: the lead director name as it should appear in the UI (e.g., "Stephen John Mccarthy" or "Shane Gordon")
+    - `primaryContactId`: the Convex id of the primary contact created/found in step 11 (call setProspectFacts AGAIN after step 11 if the contact didn't exist when step 10 ran)
+
 11. **If a reachout is appropriate, draft it**. Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables. If a reachout is not appropriate (no contact, no trigger reason, recent contact already made), say so and stop. After composing, queue the full cadence package via `cadence.create` per the `## Cadence package` section above. The cadences land with `packageApprovalStatus: "pending"`; the operator approves the package via the CRM detail page.
 
 12. **Return**. Call `skillRun.complete` with:
@@ -134,9 +140,12 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 - `contact.get`, `contact.getByClient` — for step 11 contact resolution
 - `approval.create` — for step 11 (staged reachout)
 - `cadence.create` — for step 11 (cadence package, 4 calls)
-- `apollo.findEmail` — for step 8 (per-director email discovery; the v1.2.3 capability)
+- `apollo.findEmail` — for step 8 (per-director email discovery; the v1.2.3 capability; cached 30 days at v1.2.4)
 - `companies.syncCompaniesHouse` — for step 2 (CH profile + charges sync)
 - `contact.getByClient` — for step 11 (resolve the prospect's contact for cadence wiring)
+- `clients.setProspectFacts` — for step 10 (populate structured prospect facts on the clients row; v1.2.4)
+
+**Important — cadence email guard (v1.2.4):** `cadence.create` now refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) before retrying. The guard surfaces the gap at cadence-creation time rather than at fire time.
 - `skillRun.start` (with dedup) — for step 1
 - `skillRun.complete` (with intelMarkdown) — for step 12
 

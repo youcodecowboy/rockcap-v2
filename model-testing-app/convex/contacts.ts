@@ -115,6 +115,12 @@ export const create = mutation({
     name: v.string(),
     role: v.optional(v.string()),
     email: v.optional(v.string()),
+    // v1.2.4 — email verification metadata. When email is sourced from
+    // Apollo, pass the emailStatus + "apollo" as emailSource. When manually
+    // entered, leave both undefined (cadence guard treats undefined as
+    // "operator-entered, presumed valid").
+    emailStatus: v.optional(v.string()),
+    emailSource: v.optional(v.string()),
     phone: v.optional(v.string()),
     company: v.optional(v.string()),
     notes: v.optional(v.string()),
@@ -128,6 +134,9 @@ export const create = mutation({
       name: args.name,
       role: args.role,
       email: args.email,
+      emailStatus: args.emailStatus,
+      emailSource: args.emailSource,
+      emailVerifiedAt: args.emailStatus === "verified" ? new Date().toISOString() : undefined,
       phone: args.phone,
       company: args.company,
       notes: args.notes,
