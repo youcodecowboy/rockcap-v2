@@ -480,3 +480,138 @@ export const requestRevision = mutation({
     return { ok: true, patched: rows.length };
   },
 });
+
+// ── v1.2.1 frontend deferrals: per-touch operator editing + preset apply ──
+
+// Update a single cadence's content (subject + body) and/or scheduled date.
+// Sets the audit fields (editedByOperator / editedAt / editedBy) so the
+// dispatcher knows the operator has touched this row — revision re-runs
+// will respect editedByOperator and skip overwriting unless the operator's
+// revision note specifically asks to redraft this touch.
+export const update = mutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    preDraftedTouch: v.optional(v.object({
+      subject: v.string(),
+      bodyText: v.string(),
+      bodyHtml: v.string(),
+      dynamicVars: v.optional(v.any()),
+    })),
+    nextDueAt: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+
+    const cadence = await ctx.db.get(args.cadenceId);
+    if (!cadence) throw new Error("cadence_not_found");
+
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = {
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: userId,
+      updatedAt: now,
+    };
+    if (args.preDraftedTouch !== undefined) patch.preDraftedTouch = args.preDraftedTouch;
+    if (args.nextDueAt !== undefined) patch.nextDueAt = args.nextDueAt;
+
+    await ctx.db.patch(args.cadenceId, patch);
+    return {
+      ok: true,
+      cadenceId: args.cadenceId,
+      alreadyFired: !!cadence.lastFiredAt,
+    };
+  },
+});
+
+// Apply a preset schedule (Light / Moderate / Aggressive) to all unfired
+// cadences in a package. Touch 1's scheduled date stays as the anchor;
+// Touches 2-4 are rescheduled relative to Touch 1's nextDueAt (or
+// lastFiredAt if Touch 1 has already fired).
+//
+// Touches that have already fired are NEVER rescheduled — the past doesn't
+// move. Operators expect "Apply Aggressive" to shorten FUTURE gaps, not
+// retroactively change history.
+//
+// Preset offsets (days after Touch 1):
+//   light:      T2 +10, T3 +25, T4 +60   (lower-pressure; rare follow-ups)
+//   moderate:   T2 +5,  T3 +12, T4 +30   (default; matches SKILL.md cadence package spec)
+//   aggressive: T2 +2,  T3 +5,  T4 +10   (tight chase; near-term opportunity)
+//
+// "Custom" is not handled here — operator edits per-touch via cadence.update.
+
+const PRESET_OFFSETS: Record<string, number[]> = {
+  light: [0, 10, 25, 60],
+  moderate: [0, 5, 12, 30],
+  aggressive: [0, 2, 5, 10],
+};
+
+export const applyPresetSchedule = mutation({
+  args: {
+    packageId: v.string(),
+    preset: v.union(v.literal("light"), v.literal("moderate"), v.literal("aggressive")),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    if (rows.length === 0) {
+      return { ok: false as const, error: "package_not_found", packageId: args.packageId };
+    }
+
+    const sorted = [...rows].sort((a, b) => (a.packageOrder ?? 0) - (b.packageOrder ?? 0));
+    const touch1 = sorted[0];
+    const anchorIso = touch1.lastFiredAt ?? touch1.nextDueAt;
+    if (!anchorIso) {
+      return { ok: false as const, error: "touch_1_has_no_anchor_date" };
+    }
+    const anchorMs = new Date(anchorIso).getTime();
+    const offsets = PRESET_OFFSETS[args.preset];
+    const now = new Date().toISOString();
+
+    let rescheduled = 0;
+    let skippedFired = 0;
+    for (const row of sorted) {
+      const order = row.packageOrder ?? 0;
+      if (order < 1 || order > 4) continue;
+      if (row.lastFiredAt) {
+        skippedFired++;
+        continue;
+      }
+      const offsetDays = offsets[order - 1] ?? offsets[offsets.length - 1];
+      const newDueMs = anchorMs + offsetDays * 24 * 60 * 60 * 1000;
+      const newDueIso = new Date(newDueMs).toISOString();
+
+      if (row.nextDueAt === newDueIso) continue;
+
+      await ctx.db.patch(row._id, {
+        nextDueAt: newDueIso,
+        editedByOperator: true,
+        editedAt: now,
+        editedBy: userId,
+        updatedAt: now,
+      });
+      rescheduled++;
+    }
+
+    return {
+      ok: true as const,
+      packageId: args.packageId,
+      preset: args.preset,
+      rescheduled,
+      skippedFired,
+      anchor: anchorIso,
+    };
+  },
+});
