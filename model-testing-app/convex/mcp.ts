@@ -701,6 +701,352 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.3 Sprint D — cadence flexibility primitives. Operator-driven pause /
+  // resume / snooze for in-flight cadences. Used when operator says things
+  // like "pause Mccarthy's cadence for 2 weeks while we wait for X" or
+  // "snooze Touch 3 by a week — they're on holiday".
+  {
+    name: "cadence.pause",
+    description:
+      "Soft-pause a single cadence row by setting pauseUntil. The dispatcher checks pauseUntil before firing and skips while it's > now. Default: 14 days. Idempotent — re-running with a later date extends the pause; with an earlier date shortens it. Errors: cadence_not_found, cannot_pause_fired_cadence (Touch already sent).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        untilDate: { type: "string", description: "ISO timestamp. Defaults to 14 days from now." },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.cadences.pause, {
+        cadenceId: args.cadenceId,
+        untilDate: args.untilDate,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.resume",
+    description:
+      "Clear pauseUntil on a cadence (resume). Optionally also reschedule by passing newNextDueAt. Use after cadence.pause when whatever the operator was waiting for has happened. If you don't pass newNextDueAt, the dispatcher will fire on the next tick if the original nextDueAt is now in the past.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        newNextDueAt: { type: "string", description: "Optional ISO timestamp. If supplied, also reschedules nextDueAt." },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.cadences.resume, {
+        cadenceId: args.cadenceId,
+        newNextDueAt: args.newNextDueAt,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.snooze",
+    description:
+      "Push a cadence's nextDueAt forward by N days. Different from pause: snooze is a HARD reschedule of the next send date; pause leaves nextDueAt alone and just suppresses firing temporarily via pauseUntil. Use snooze when you want a specific delay (e.g., 'they said wait until next week'); use pause when the duration is open-ended. Errors: invalid_byDays (must be 1-365), cannot_snooze_fired_cadence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        byDays: { type: "number", description: "Positive integer, 1-365. Pushed forward from current nextDueAt." },
+      },
+      required: ["cadenceId", "byDays"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.cadences.snooze, {
+        cadenceId: args.cadenceId,
+        byDays: args.byDays,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.get",
+    description:
+      "Get a single cadence row by id. Use when you have a cadence id from prospect.getDeepContext's cadences section and need the full row (preDraftedTouch, scheduleConfig, pauseUntil status, etc).",
+    inputSchema: {
+      type: "object",
+      properties: { cadenceId: { type: "string" } },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.cadences.getById, { cadenceId: args.cadenceId });
+      if (!result) return asText({ error: "cadence_not_found", cadenceId: args.cadenceId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.listByPackage",
+    description:
+      "List all cadences in a package (all 4 touches of a prospect-intel package, typically). Useful when operator says 'show me Mccarthy's outreach package' and you want to enumerate touches without going through getDeepContext.",
+    inputSchema: {
+      type: "object",
+      properties: { packageId: { type: "string" } },
+      required: ["packageId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.cadences.listByPackage, { packageId: args.packageId });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint D — document MCP surface. Operator-driven document
+  // discovery + linkage. Sister tools to the checklist + outreach surfaces.
+  {
+    name: "document.listByClient",
+    description:
+      "List all documents linked to a client. Includes Base Documents (not project-specific) AND any project-linked docs for that client's projects. Each row carries fileName + fileTypeDetected (AI-classified) + category + uploadedAt + summary + projectId/Name if linked.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.getByClient, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.listByProject",
+    description:
+      "List documents linked to a specific project. Use after prospect.getDeepContext.projects.active reveals a project id and you want the document list for that specific scheme.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.getByProject, { projectId: args.projectId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.get",
+    description:
+      "Get full document metadata by id (summary, reasoning, confidence, fileStorageId for download via storage URL, classification details). Use when document.listByClient returns an id you want to drill into.",
+    inputSchema: {
+      type: "object",
+      properties: { documentId: { type: "string" } },
+      required: ["documentId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.get, { id: args.documentId });
+      if (!result) return asText({ error: "document_not_found", documentId: args.documentId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.search",
+    description:
+      "Search documents by query string. Returns documents whose fileName, summary, or fileTypeDetected match. Use for 'find Mccarthy's red book valuation' style queries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        clientId: { type: "string", description: "Optional: restrict to one client" },
+      },
+      required: ["query"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.search, {
+        query: args.query,
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.linkToProject",
+    description:
+      "Link an existing document to a project. Patches the document's projectId + projectName + sets isBaseDocument=false. Pass projectId=null to unlink (moves back to Base Documents). Operator-driven: 'this Red Book Val is for Comberton, not Bayfield Base'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+        projectId: { type: "string", description: "Convex id of the project to link to. Pass null/omit to unlink." },
+      },
+      required: ["documentId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.documents.linkToProject, {
+        documentId: args.documentId,
+        projectId: args.projectId || undefined,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint D — checklist MCP surface. Read existing items + create
+  // custom items + flip status. The standard items get initialised from
+  // templates; this surface is for the operator-driven exceptions.
+  {
+    name: "checklist.listByClient",
+    description:
+      "List all checklist items for a client (both client-level and project-level items). Each row carries name + category + phaseRequired + priority + status (missing/pending_review/fulfilled). Use to answer 'what do we still need from Mccarthy?' type questions.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.knowledgeLibrary.getChecklistByClient, {
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "checklist.listByProject",
+    description:
+      "List checklist items for a specific project. Use after prospect.getDeepContext reveals a project id and you want the scheme-specific requirements list (vs the client-level Base Documents).",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.knowledgeLibrary.getChecklistByProject, {
+        projectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "checklist.updateStatus",
+    description:
+      "Flip a checklist item's status (missing / pending_review / fulfilled). Use when a document was received OR when operator decides an item is no longer required (mark fulfilled with a note in evidence document).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        checklistItemId: { type: "string" },
+        status: {
+          type: "string",
+          description: "missing | pending_review | fulfilled",
+        },
+      },
+      required: ["checklistItemId", "status"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.updateItemStatus, {
+        checklistItemId: args.checklistItemId,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "checklist.createCustomItem",
+    description:
+      "Add a custom (non-template) checklist item to a client or project. Use for bespoke requirements like lender-specific PG forms, unusual planning conditions, side letters. Defaults: phaseRequired=indicative_terms, priority=required, status=missing. Order auto-computed as last+1 within the scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        projectId: { type: "string", description: "Optional — omit for client-level item" },
+        name: { type: "string", description: "Operator-readable item name, e.g., 'Personal Guarantee — Stephen Mccarthy'" },
+        category: { type: "string", description: "Free-form category for grouping, e.g., 'Security' or 'Sponsor docs'" },
+        phaseRequired: {
+          type: "string",
+          description: "indicative_terms | credit_submission | post_credit | always (default: indicative_terms)",
+        },
+        priority: {
+          type: "string",
+          description: "required | nice_to_have | optional (default: required)",
+        },
+        description: { type: "string", description: "Optional longer description" },
+        matchingDocumentTypes: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: document types that fulfil this item (e.g., ['Personal Guarantee Form'])",
+        },
+        isBlocking: { type: "boolean", description: "Optional: signals deal can't proceed without this" },
+      },
+      required: ["clientId", "name", "category"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.createCustomItem, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        name: args.name,
+        category: args.category,
+        phaseRequired: args.phaseRequired,
+        priority: args.priority,
+        description: args.description,
+        matchingDocumentTypes: args.matchingDocumentTypes,
+        isBlocking: args.isBlocking,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint D — outreach.draftFreshEmail. Sister to outreach.draftReply.
+  // Distinction: draftReply responds to a tracked replyEventId (links via
+  // relatedReplyEventId); draftFreshEmail is operator-initiated NEW outreach
+  // (no inbound). Use when operator says "send Mccarthy an email asking for
+  // the appraisal" — no specific inbound prompted this.
+  {
+    name: "outreach.draftFreshEmail",
+    description:
+      "Stage a NEW outreach email as a pending approval (distinct from outreach.draftReply which threads onto a reply event). Use when operator initiates a fresh email outside the cadence package + outside a reply. Examples: 'send Mccarthy an email asking for the appraisal', 'follow up with Bayfield on Comberton planning status'. The approval appears on the Overview Pending Approvals card + in /approvals.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "Recipient contact" },
+        clientId: { type: "string", description: "Client this email concerns" },
+        subject: { type: "string" },
+        bodyText: { type: "string" },
+        bodyHtml: { type: "string" },
+        skillRunId: { type: "string", description: "Optional: skillRun audit linkage" },
+        reasoning: { type: "string", description: "1-2 sentence operator-facing summary of WHY this email — surfaces on /approvals quick-review" },
+      },
+      required: ["contactId", "clientId", "subject", "bodyText", "bodyHtml"],
+    },
+    handler: async (ctx, userId, args) => {
+      const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
+        entityType: "client_communication" as const,
+        summary: args.reasoning
+          ? `Fresh outreach (${args.subject.slice(0, 60)}) — ${args.reasoning.slice(0, 120)}`
+          : `Fresh outreach: ${args.subject.slice(0, 80)}`,
+        draftPayload: {
+          kind: "email_fresh" as const,
+          contactId: args.contactId,
+          subject: args.subject,
+          bodyText: args.bodyText,
+          bodyHtml: args.bodyHtml,
+          reasoning: args.reasoning,
+        },
+        requestedBy: userId,
+        requestSource: "skill" as const,
+        requestSourceName: "operator_initiated",
+        relatedClientId: args.clientId,
+        relatedContactId: args.contactId,
+        relatedSkillRunId: args.skillRunId,
+      });
+      return asText({
+        status: "draft_staged",
+        approvalId,
+        viewAt: `/approvals/${approvalId}`,
+        note: "Fresh outreach draft staged for operator review. Distinct from cadence touches AND from reply drafts — this is ad-hoc outreach.",
+      });
+    },
+  },
+
   // v1.3 Sprint C — meeting visibility + skill-side meeting management.
   // The meeting-prep skill loads context (via getDeepContext which already
   // returns meeting summaries) then proposes availability via outreach.draftReply.

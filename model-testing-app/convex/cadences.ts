@@ -615,3 +615,137 @@ export const applyPresetSchedule = mutation({
     };
   },
 });
+
+// ── v1.3 Sprint D: cadence flexibility primitives ──
+//
+// Operator-driven pause / resume / snooze flows for in-flight cadences.
+// All three patch the same underlying row; the dispatcher's pause check
+// (cadenceDispatcher.ts checks pauseUntil before firing) does the rest.
+//
+// Pause: set pauseUntil. The dispatcher skips while pauseUntil > now.
+// Resume: clear pauseUntil (set to undefined) OR set it to the past so
+//   the next dispatcher tick fires.
+// Snooze: push nextDueAt forward by N days. Useful when "we're waiting
+//   for X" — different from pause because pause is a soft hold whereas
+//   snooze is a hard reschedule.
+
+export const pause = mutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    untilDate: v.optional(v.string()), // ISO; defaults to 14 days from now
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+
+    const cadence = await ctx.db.get(args.cadenceId);
+    if (!cadence) throw new Error("cadence_not_found");
+    if (cadence.lastFiredAt) {
+      return {
+        ok: false as const,
+        error: "cannot_pause_fired_cadence",
+        message: "This cadence already fired; pausing has no effect. Use cadence.cancel to suppress future re-fires (rare) or leave it as-is.",
+      };
+    }
+
+    const defaultUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const pauseUntil = args.untilDate ?? defaultUntil;
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.cadenceId, {
+      pauseUntil,
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: userId,
+      updatedAt: now,
+    });
+    return { ok: true as const, cadenceId: args.cadenceId, pauseUntil };
+  },
+});
+
+export const resume = mutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    newNextDueAt: v.optional(v.string()), // ISO; if supplied, also reschedule
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+
+    const cadence = await ctx.db.get(args.cadenceId);
+    if (!cadence) throw new Error("cadence_not_found");
+
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = {
+      pauseUntil: undefined,
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: userId,
+      updatedAt: now,
+    };
+    if (args.newNextDueAt) patch.nextDueAt = args.newNextDueAt;
+
+    await ctx.db.patch(args.cadenceId, patch);
+    return {
+      ok: true as const,
+      cadenceId: args.cadenceId,
+      nextDueAt: args.newNextDueAt ?? cadence.nextDueAt,
+    };
+  },
+});
+
+export const snooze = mutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    byDays: v.number(), // positive integer; 7 = push out by a week
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+
+    if (args.byDays <= 0) {
+      return { ok: false as const, error: "invalid_byDays", message: "byDays must be positive" };
+    }
+    if (args.byDays > 365) {
+      return { ok: false as const, error: "invalid_byDays", message: "byDays must be <= 365; use cadence.cancel for indefinite holds" };
+    }
+
+    const cadence = await ctx.db.get(args.cadenceId);
+    if (!cadence) throw new Error("cadence_not_found");
+    if (cadence.lastFiredAt) {
+      return { ok: false as const, error: "cannot_snooze_fired_cadence" };
+    }
+
+    const currentDueMs = new Date(cadence.nextDueAt).getTime();
+    const newDueIso = new Date(currentDueMs + args.byDays * 24 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.cadenceId, {
+      nextDueAt: newDueIso,
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: userId,
+      updatedAt: now,
+    });
+    return {
+      ok: true as const,
+      cadenceId: args.cadenceId,
+      previousDueAt: cadence.nextDueAt,
+      newDueAt: newDueIso,
+      byDays: args.byDays,
+    };
+  },
+});
+
+// (cadences.getById already exists earlier in this file — used by
+// /api/cadence-compose. The Sprint D cadence.get MCP tool wraps it
+// without needing a second public query.)

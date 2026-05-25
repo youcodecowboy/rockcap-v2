@@ -518,6 +518,78 @@ export const initializeChecklistForProject = mutation({
   },
 });
 
+// ── v1.3 Sprint D: operator-driven custom checklist item creation ──
+//
+// Existing flows initialize checklist items from templates (initializeChecklistForClient
+// / initializeChecklistForProject). This mutation creates ONE-OFF custom items
+// for operator-specific requirements that aren't in the template — e.g., a
+// lender-specific PG form, an unusual planning condition, a bespoke side letter.
+//
+// Items created here have requirementTemplateId + requirementId unset (signals
+// it's a custom item, not template-derived). Defaults: phaseRequired="indicative_terms",
+// priority="required", status="missing", order=last+1.
+
+export const createCustomItem = mutation({
+  args: {
+    clientId: v.id("clients"),
+    projectId: v.optional(v.id("projects")),
+    name: v.string(),
+    category: v.string(),
+    phaseRequired: v.optional(v.union(
+      v.literal("indicative_terms"),
+      v.literal("credit_submission"),
+      v.literal("post_credit"),
+      v.literal("always")
+    )),
+    priority: v.optional(v.union(
+      v.literal("required"),
+      v.literal("nice_to_have"),
+      v.literal("optional")
+    )),
+    description: v.optional(v.string()),
+    matchingDocumentTypes: v.optional(v.array(v.string())),
+    isBlocking: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    // Compute order as last + 1 for the scope (client OR project-scoped)
+    const existingScopeItems = args.projectId
+      ? await ctx.db
+          .query("knowledgeChecklistItems")
+          .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+          .collect()
+      : await ctx.db
+          .query("knowledgeChecklistItems")
+          .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+          .filter((q: any) => q.eq(q.field("projectId"), undefined))
+          .collect();
+    const maxOrder = existingScopeItems.reduce(
+      (max: number, item: any) => Math.max(max, item.order ?? 0),
+      0,
+    );
+
+    const now = new Date().toISOString();
+    const id = await ctx.db.insert("knowledgeChecklistItems", {
+      clientId: args.clientId,
+      projectId: args.projectId,
+      name: args.name,
+      category: args.category,
+      phaseRequired: args.phaseRequired ?? "indicative_terms",
+      priority: args.priority ?? "required",
+      description: args.description,
+      matchingDocumentTypes: args.matchingDocumentTypes,
+      isBlocking: args.isBlocking,
+      order: maxOrder + 1,
+      status: "missing",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { ok: true as const, checklistItemId: id, order: maxOrder + 1 };
+  },
+});
+
 // Mutation: Link a document to a requirement (manual) - DEPRECATED, use linkDocumentToChecklistItem
 // Kept for backwards compatibility, redirects to new linking system
 export const linkDocumentToRequirement = mutation({

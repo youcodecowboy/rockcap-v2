@@ -2428,3 +2428,48 @@ export const rename = mutation({
     return updates.documentCode || doc.documentCode;
   },
 });
+
+// ── v1.3 Sprint D: link an existing document to a project (or unlink) ──
+//
+// Operator-driven: "this document is for the Comberton scheme not the
+// Bayfield Base Documents folder". Patches projectId + projectName +
+// sets isBaseDocument: false. Pass projectId: null (or skip the param)
+// to unlink.
+
+export const linkToProject = mutation({
+  args: {
+    documentId: v.id("documents"),
+    projectId: v.optional(v.id("projects")),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc) throw new Error("document_not_found");
+
+    if (args.projectId) {
+      const project = await ctx.db.get(args.projectId);
+      if (!project) throw new Error("project_not_found");
+      await ctx.db.patch(args.documentId, {
+        projectId: args.projectId,
+        projectName: project.name,
+        isBaseDocument: false,
+      });
+      return {
+        ok: true as const,
+        documentId: args.documentId,
+        linkedTo: { projectId: args.projectId, projectName: project.name },
+      };
+    } else {
+      // Unlink — move back to Base Documents folder
+      await ctx.db.patch(args.documentId, {
+        projectId: undefined,
+        projectName: undefined,
+        isBaseDocument: true,
+      });
+      return {
+        ok: true as const,
+        documentId: args.documentId,
+        unlinked: true,
+      };
+    }
+  },
+});
