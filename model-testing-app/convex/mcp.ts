@@ -701,6 +701,195 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.3 Sprint F — lender substrate. Lenders are clients with type="lender";
+  // appetite signals capture their preferences over time; matching scores
+  // deals against current appetite. The headline tool is lender.matchForDeal —
+  // produces the "Optimal lenders: X, Y, Z" recommendation Claude Code can
+  // surface alongside prospect-intel's Recommended Approach section.
+  {
+    name: "lender.list",
+    description:
+      "List all lenders in the database (clients with type='lender'). Optionally filter by name substring. Use for 'show me all our lenders' or 'find the Octopus entry' type questions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        nameQuery: { type: "string", description: "Optional substring filter on name or companyName" },
+        limit: { type: "number", description: "Default 100" },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.appetiteSignals.listLenders, {
+        nameQuery: args.nameQuery,
+        limit: args.limit ?? 100,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "lender.getDeepContext",
+    description:
+      "Comprehensive snapshot of a lender: identity + current appetite (all isCurrent=true signals as a fieldPath→value map) + recent appetite changes (last 90 days) + BDM contacts + projects where they appear in clientRoles + meetings (upcoming + past) + cadences (relationship maintenance) + pending approvals (lender-bound outreach). The summary block surfaces 'currentAppetiteFieldCount' so operator-agent knows how complete the appetite picture is. THE first tool to call when operator asks about a specific lender.",
+    inputSchema: {
+      type: "object",
+      properties: { lenderClientId: { type: "string" } },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.lenderGetDeepContext, {
+        lenderClientId: args.lenderClientId,
+      });
+      if (!result) return asText({ error: "lender_not_found", lenderClientId: args.lenderClientId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.recordAppetite",
+    description:
+      "Record a new appetite signal for a lender. Each signal is (fieldPath, value, valueType, sourceType, asOfDate, confidence). Writing a new value for an existing (lender, fieldPath) automatically supersedes the prior — sets prior.isCurrent=false + supersededBy=<new id>, marks new.isCurrent=true. Standard fieldPaths (use these for matching to work): dealSize.min, dealSize.max, products.offered (array: bridging/development_finance/term/btl), propertyType.allowed (array: residential/commercial/mixed_use), geography.regions (array including 'uk_wide'), ltv.maximum (0-1), ltgdv.maximum (0-1), timeline.typicalWeeksToOffer (number). Custom fieldPaths are fine but won't contribute to matching scores unless lender.matchForDeal is extended to handle them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string" },
+        fieldPath: { type: "string", description: "Standard path (see description) or custom <area>.<thing>" },
+        value: { description: "The value — type per valueType (number/string/array/etc.)" },
+        valueType: { type: "string", description: "number | currency | percentage | string | array | boolean | date" },
+        sourceType: { type: "string", description: "bdm_meeting | lender_doc | publication | deal_behaviour | manual" },
+        sourceRef: { type: "string", description: "Optional: meetingId / documentId / URL for traceability" },
+        asOfDate: { type: "string", description: "ISO timestamp; defaults to now" },
+        confidence: { type: "number", description: "0-1 confidence" },
+        notes: { type: "string", description: "Optional free-text annotation" },
+      },
+      required: ["lenderClientId", "fieldPath", "value", "valueType", "sourceType"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.appetiteSignals.record, {
+        lenderClientId: args.lenderClientId,
+        fieldPath: args.fieldPath,
+        value: args.value,
+        valueType: args.valueType,
+        sourceType: args.sourceType,
+        sourceRef: args.sourceRef,
+        asOfDate: args.asOfDate,
+        confidence: args.confidence,
+        notes: args.notes,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.getAppetite",
+    description:
+      "Get current appetite for a lender as a fieldPath→value map. Returns only isCurrent=true signals. Use after lender.getDeepContext if you only need appetite (cheaper) OR when filtering by specific fields. Pass asMap=true (default) for the convenient map shape; asMap=false returns the raw array of signal rows including sourceType + asOfDate + confidence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string" },
+        asMap: { type: "boolean", description: "Default true. If false, returns raw signal rows." },
+      },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.getCurrentForLender, {
+        lenderClientId: args.lenderClientId,
+        asMap: args.asMap ?? true,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.getAppetiteHistory",
+    description:
+      "Get full appetite history for a lender (current + superseded signals, newest first). Use to answer 'how has Octopus's max LTV changed over time?' or to audit signal sources. Optionally filter to one fieldPath for a single-dimension timeline.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string" },
+        fieldPath: { type: "string", description: "Optional: filter to one fieldPath" },
+        limit: { type: "number", description: "Default unlimited" },
+      },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.getHistoryForLender, {
+        lenderClientId: args.lenderClientId,
+        fieldPath: args.fieldPath,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.matchForDeal",
+    description:
+      "THE headline matching tool. Given a deal's criteria (dealSize, dealType, assetClass, geography, ltv, ltgdv, timelineWeeks — all optional), returns a RANKED list of lenders with per-lender matchScore + matchReasons + fitConcerns + currentSignalsCount. Scoring: each matching dimension contributes +2 to +4 to score; each incompatible dimension subtracts -2 to -5. Lenders with zero appetite signals get score=0 + a note (uninformed match). Use right after prospect-intel produces its Recommended Approach section to compose 'Optimal lenders for this £X bridging deal: A (score 12 — reasons), B (score 9 — reasons)' answers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        criteria: {
+          type: "object",
+          properties: {
+            dealSize: { type: "number", description: "GBP" },
+            dealType: { type: "string", description: "bridging | development_finance | term | btl" },
+            assetClass: { type: "string", description: "residential | commercial | mixed_use" },
+            geography: { type: "string", description: "Region name; matches against lender's geography.regions" },
+            ltv: { type: "number", description: "0-1; required loan-to-value" },
+            ltgdv: { type: "number", description: "0-1; required loan-to-GDV" },
+            timelineWeeks: { type: "number", description: "Weeks to indicative offer needed" },
+          },
+        },
+        limit: { type: "number", description: "Default 10" },
+      },
+      required: ["criteria"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.matchForDeal, {
+        criteria: args.criteria,
+        limit: args.limit ?? 10,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.create",
+    description:
+      "Create a new lender record (a clients row with type='lender'). Use for adding a new lender to the database before recording appetite signals. After create, call lender.recordAppetite repeatedly to populate the appetite picture. Common pattern after a first BDM meeting: lender.create → lender.recordAppetite × N from the meeting notes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Lender name (e.g., 'Octopus Real Estate')" },
+        companyName: { type: "string", description: "Optional legal name if different from name" },
+        notes: { type: "string", description: "Optional: 1-2 sentence summary of who they are" },
+        website: { type: "string" },
+        email: { type: "string", description: "General contact email if known" },
+        phone: { type: "string" },
+        country: { type: "string", description: "Default 'United Kingdom'" },
+      },
+      required: ["name"],
+    },
+    handler: async (ctx, userId, args) => {
+      const id = await ctx.runMutation(api.clients.create, {
+        name: args.name,
+        type: "lender",
+        status: "active" as const,
+        companyName: args.companyName,
+        notes: args.notes,
+        website: args.website,
+        email: args.email,
+        phone: args.phone,
+        country: args.country ?? "United Kingdom",
+        source: "manual" as const,
+      });
+      return asText({ status: "created", lenderClientId: id, note: "Now record appetite signals via lender.recordAppetite to enable matching." });
+    },
+  },
+
   // v1.3 Sprint E — project MCP surface. Mirrors the client.getDeepContext
   // pattern but scoped to PROJECTS (schemes / deals). Use when operator
   // asks about a specific scheme: "where are we at with Comberton?".
