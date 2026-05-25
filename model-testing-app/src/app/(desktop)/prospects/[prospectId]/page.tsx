@@ -43,6 +43,15 @@ export default function ProspectDetailPage() {
     intelRunId ? { runId: intelRunId } : "skip",
   );
 
+  // Companies House profile + charges. For prospect-intel runs the dedupKey
+  // IS the CH number — use it to surface the structured CH data in the
+  // right aside (company status, SIC, charges, lender names).
+  const chNumber = (intelRun as any)?.dedupKey as string | undefined;
+  const chProfile = useQuery(
+    api.companiesHouse.getCompanyByNumber,
+    chNumber ? { companyNumber: chNumber } : "skip",
+  );
+
   const approvePackage = useMutation(api.cadences.approvePackage);
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
@@ -83,7 +92,7 @@ export default function ProspectDetailPage() {
           )}
         </div>
         <aside style={{ background: colors.bg.light, padding: 20, borderLeft: `1px solid ${colors.border.default}` }}>
-          <ProspectDetailAside prospect={prospect} intelRun={intelRun} cadences={cadences} />
+          <ProspectDetailAside prospect={prospect} intelRun={intelRun} cadences={cadences} chProfile={chProfile} />
         </aside>
       </div>
 
