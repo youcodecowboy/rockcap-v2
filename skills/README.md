@@ -65,4 +65,5 @@ The cost of staying disciplined is small (a one-line edit per change). The cost 
 - **v1.2**: prospects CRM substrate + MCP server (~25 tools) + prospect-intel hardened to v3
 - **v1.3 Sprints A-F**: reply visibility + deep-context tools (prospect/client/project/lender) + qualify-and-draft + meeting flow + cadence flexibility + documents/checklists + lender substrate. 68 MCP tools. 5 skills v2-hardened.
 - **v1.3 Sprint G**: wire 4 deferred MCP writers — `intelligence.addKnowledgeItem`, `task.create`, `document.createFromGeneration`, `project.addLenderRole`. 72 MCP tools / 19 domains. qualify-and-draft + meeting-capture SKILL.md gap-fallback language removed (tools now in workflow directly).
+- **v1.4 Sprint H**: misclassification fixer MCP tools — `document.updateClassification`, `checklist.linkDocument`, `checklist.unlinkDocument`. 75 MCP tools / 19 domains. Substrate prerequisite for deal-intake hardening (skill needs to be able to correct V4 ingestion misfires it observes during the workflow).
 - **v1.4+ (pending)**: deal-intake + terms-package-build + ic-paper-drafter hardening; doc generation MCP; behavioural lender signal cron

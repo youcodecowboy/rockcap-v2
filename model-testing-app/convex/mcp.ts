@@ -2044,6 +2044,102 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+
+  // ── v1.4 Sprint H: misclassification fixers ──────────────────────
+  //
+  // The V4 ingestion classifier makes mistakes. Skills + operators
+  // see these mistakes via `client.getDeepContext` / `project.getDeepContext`
+  // (e.g., a checklist item shows status='fulfilled' but the linked
+  // primaryDocument is obviously wrong). These three tools let the
+  // operator / skill correct the record without leaving Claude Code.
+  //
+  // Typical flow: operator notices misclassification → calls
+  // checklist.unlinkDocument to remove the wrong link → optionally
+  // calls document.updateClassification to fix the doc's own category
+  // → calls checklist.linkDocument to attach the correct doc to the
+  // requirement.
+
+  {
+    name: "document.updateClassification",
+    description:
+      "Patch a document's classification fields (category, fileTypeDetected, summary, reasoning) — for correcting V4 ingestion classifier mistakes. Use when you've identified that a document is in the wrong category (e.g., an email auto-classified as 'Scheme Brief' should be 'Communications'). Does NOT change the file itself, only its metadata. Common cases: (1) V4 mis-categorised a doc, (2) the operator wants to add a more specific fileTypeDetected (e.g., 'Personal Guarantee' instead of generic 'Legal Document'), (3) the summary or reasoning is wrong and worth re-stating. Each field is optional; pass only what you want to change. Does not re-run V4 — strictly a metadata patch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string", description: "Convex id of the document" },
+        category: {
+          type: "string",
+          description: "New canonical category, e.g., 'Legal Documents' | 'Professional Reports' | 'Project Plans' | 'Project Information' | 'Communications' | 'KYC' | 'Financial Documents' | 'Insurance' | 'Photographs' | 'Warranties' (see CATALOGUE for full list). Optional — omit to leave unchanged.",
+        },
+        fileTypeDetected: {
+          type: "string",
+          description: "More specific type tag (e.g., 'Personal Guarantee', 'Floorplan', 'Red Book Valuation'). Used by checklist auto-matching. Optional.",
+        },
+        summary: {
+          type: "string",
+          description: "Replacement summary text (markdown). Optional. Use when V4's summary is materially wrong, not for minor tweaks.",
+        },
+        reasoning: {
+          type: "string",
+          description: "Free-text rationale for the correction (audit trail). Recommended whenever you change category or fileTypeDetected so the next reviewer knows why.",
+        },
+      },
+      required: ["documentId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.documents.update, {
+        id: args.documentId,
+        category: args.category,
+        fileTypeDetected: args.fileTypeDetected,
+        summary: args.summary,
+        reasoning: args.reasoning,
+      });
+      return asText({ ok: true, documentId: args.documentId, updatedFields: Object.keys(args).filter(k => k !== "documentId" && args[k] !== undefined) });
+    },
+  },
+
+  {
+    name: "checklist.linkDocument",
+    description:
+      "Link a document to a checklist item (knowledgeChecklistItems row). If this is the first document linked, the item's status becomes 'fulfilled' and the doc becomes the primary. If links already exist, the new one is added as non-primary. Idempotent: returns alreadyExists=true if the same doc was already linked. Use when (1) V4 failed to auto-link an obviously-fulfilling doc, OR (2) operator wants to attach a second supporting doc to a requirement (e.g., a revised floorplan alongside the original).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        checklistItemId: { type: "string", description: "Convex id of the knowledgeChecklistItems row" },
+        documentId: { type: "string", description: "Convex id of the document to link" },
+      },
+      required: ["checklistItemId", "documentId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.linkDocumentToChecklistItem, {
+        checklistItemId: args.checklistItemId,
+        documentId: args.documentId,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "checklist.unlinkDocument",
+    description:
+      "Remove a document link from a checklist item. If the unlinked doc was the primary AND other links remain, the oldest remaining link is auto-promoted to primary. If no links remain, the item's status reverts to 'missing'. Use when V4 wrongly linked a non-matching doc to a requirement (e.g., a HoTs Comparison wrongly linked to the 'Planning Decision Notice' requirement) and you want to clean up. Pair with document.updateClassification when the doc itself is also miscategorised.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        checklistItemId: { type: "string", description: "Convex id of the knowledgeChecklistItems row" },
+        documentId: { type: "string", description: "Convex id of the document to unlink" },
+      },
+      required: ["checklistItemId", "documentId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.unlinkDocumentFromChecklistItem, {
+        checklistItemId: args.checklistItemId,
+        documentId: args.documentId,
+      });
+      return asText(result);
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(
