@@ -56,12 +56,20 @@ export const createInternal = internalMutation({
 export const findDueInternal = internalQuery({
   args: { nowIso: v.string(), limit: v.number() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const rows = await ctx.db
       .query("cadences")
       .withIndex("by_active_next_due", (q) =>
         q.eq("isActive", true).lte("nextDueAt", args.nowIso),
       )
       .take(args.limit);
+    // v1.2: respect package-level approval gate. Skip rows that haven't been
+    // approved yet OR were denied. Legacy rows (no packageApprovalStatus
+    // field at all) are treated as approved for back-compat — see the
+    // one-shot migration in a follow-on commit.
+    return rows.filter((row) =>
+      row.packageApprovalStatus === undefined ||
+      row.packageApprovalStatus === "approved"
+    );
   },
 });
 
@@ -204,5 +212,141 @@ export const getById = query({
   args: { cadenceId: v.id("cadences") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.cadenceId);
+  },
+});
+
+// ── Public query: list cadences by package (powers detail page Outreach tab) ──
+
+export const listByPackage = query({
+  args: { packageId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+  },
+});
+
+// ── Public query: list cadences by contact (detail page sidebar) ──
+
+export const listByContact = query({
+  args: { contactId: v.id("contacts") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("cadences")
+      .withIndex("by_contact", (q) => q.eq("contactId", args.contactId))
+      .collect();
+  },
+});
+
+// ── Update a single cadence (operator edit; called by cadence.update MCP) ──
+
+export const updateInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    userId: v.id("users"),
+    preDraftedTouch: v.optional(v.object({
+      subject: v.string(),
+      bodyText: v.string(),
+      bodyHtml: v.string(),
+      dynamicVars: v.optional(v.any()),
+    })),
+    nextDueAt: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = {
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: args.userId,
+      updatedAt: now,
+    };
+    if (args.preDraftedTouch !== undefined) patch.preDraftedTouch = args.preDraftedTouch;
+    if (args.nextDueAt !== undefined) patch.nextDueAt = args.nextDueAt;
+    await ctx.db.patch(args.cadenceId, patch);
+    return { ok: true };
+  },
+});
+
+// ── Approve all cadences in a package (single-gate approval model) ──
+
+export const approvePackageInternal = internalMutation({
+  args: {
+    packageId: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    const now = new Date().toISOString();
+    let patched = 0;
+    for (const row of rows) {
+      await ctx.db.patch(row._id, {
+        packageApprovalStatus: "approved",
+        approvedBy: args.userId,
+        approvedAt: now,
+        updatedAt: now,
+      });
+      patched++;
+    }
+    return { ok: true, patched };
+  },
+});
+
+// ── Deny all cadences in a package ──
+
+export const denyPackageInternal = internalMutation({
+  args: {
+    packageId: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    const now = new Date().toISOString();
+    let patched = 0;
+    for (const row of rows) {
+      await ctx.db.patch(row._id, {
+        packageApprovalStatus: "denied",
+        isActive: false,
+        cancelledReason: "operator_denied_package",
+        updatedAt: now,
+      });
+      patched++;
+    }
+    return { ok: true, patched };
+  },
+});
+
+// ── Request revision on a package (mark for skill re-run) ──
+
+export const requestRevisionInternal = internalMutation({
+  args: {
+    packageId: v.string(),
+    userId: v.id("users"),
+    revisionNote: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    const now = new Date().toISOString();
+    let patched = 0;
+    for (const row of rows) {
+      await ctx.db.patch(row._id, {
+        revisionRequested: true,
+        revisionNote: args.revisionNote,
+        revisionRequestedBy: args.userId,
+        revisionRequestedAt: now,
+        updatedAt: now,
+      });
+      patched++;
+    }
+    return { ok: true, patched };
   },
 });
