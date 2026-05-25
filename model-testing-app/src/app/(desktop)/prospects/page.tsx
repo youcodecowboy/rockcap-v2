@@ -10,6 +10,8 @@ import { NeedsReviewSection } from "@/components/prospects/sections/NeedsReviewS
 import { NeedsRevisionSection } from "@/components/prospects/sections/NeedsRevisionSection";
 import { ActiveSection } from "@/components/prospects/sections/ActiveSection";
 import { RepliedSection } from "@/components/prospects/sections/RepliedSection";
+import { RepliesAwaitingTriageSection } from "@/components/prospects/sections/RepliesAwaitingTriageSection";
+import { UpcomingMeetingsSection } from "@/components/prospects/sections/UpcomingMeetingsSection";
 import { SimpleSection } from "@/components/prospects/sections/SimpleSection";
 
 export default function ProspectsPage() {
@@ -32,6 +34,14 @@ export default function ProspectsPage() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
         />
+
+        {/* v1.3 Sprint C — Upcoming meetings: "what calls do I have today".
+            Top of the morning queue. Auto-expands when rows present. */}
+        <UpcomingMeetingsSection />
+
+        {/* v1.3 — Replies awaiting triage: morning triage queue.
+            Auto-expands when rows are present. */}
+        <RepliesAwaitingTriageSection />
 
         {/* Action-item sections — expanded by default */}
         <CandidatesSection />

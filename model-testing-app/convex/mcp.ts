@@ -652,6 +652,1012 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.3 — THE central operator workflow tool. Returns a one-shot snapshot
+  // of everything about a prospect OR active client so Claude Code can
+  // answer "where are we at with X?" without 10 separate reads. Works for
+  // ANY clients-table row regardless of CRM state.
+  {
+    name: "prospect.getDeepContext",
+    description:
+      "Returns a comprehensive snapshot of any clients-table entity (prospect or active client). For prospects: contacts, cadences (active/fired/queued split), reply events (newest first), latest prospect-intel skillRun, CH profile + charges. For active clients: deals (active/all), projects (active/all), pending approvals. Always returns: identity, contacts, recent meetings (upcoming + past), touchpoints, clientIntelligence row. The `summary` block has an `entityFocus` field ('prospect' or 'active_client') so Claude Code knows which section counts matter most. Use this as the FIRST tool call when an operator asks about a specific entity. Subsequent narrower tool calls (reply.get, cadence.update, etc.) operate on data already in scope from the deep context return. v1.3 update: works for both prospects AND active clients with adaptive summary.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the clients row (prospect OR active client)" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.prospects.getDeepContext, {
+        clientId: args.clientId,
+      });
+      if (!result) return asText({ error: "entity_not_found", clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  // v1.3 — alias name for the same query, surfaced under client.* for
+  // discoverability when working with active clients (operator says
+  // "tell me about Bayfield Homes" → Claude Code naturally looks for
+  // client.* tools). The query handler is shape-agnostic; returns the
+  // same payload as prospect.getDeepContext.
+  {
+    name: "client.getDeepContext",
+    description:
+      "Alias of prospect.getDeepContext. Same query, surfaced under client.* for operator-side clarity when working with active clients. Returns identity + contacts + meetings + touchpoints + deals + projects + pending approvals + clientIntelligence + (when present) the prospect-flavour fields like cadences/replies/intel-run that survived from the prospect phase. The summary.entityFocus field tells you whether this entity is currently in prospect or active-client mode.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the clients row" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.prospects.getDeepContext, {
+        clientId: args.clientId,
+      });
+      if (!result) return asText({ error: "client_not_found", clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint F — lender substrate. Lenders are clients with type="lender";
+  // appetite signals capture their preferences over time; matching scores
+  // deals against current appetite. The headline tool is lender.matchForDeal —
+  // produces the "Optimal lenders: X, Y, Z" recommendation Claude Code can
+  // surface alongside prospect-intel's Recommended Approach section.
+  {
+    name: "lender.list",
+    description:
+      "List all lenders in the database (clients with type='lender'). Optionally filter by name substring. Use for 'show me all our lenders' or 'find the Octopus entry' type questions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        nameQuery: { type: "string", description: "Optional substring filter on name or companyName" },
+        limit: { type: "number", description: "Default 100" },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.appetiteSignals.listLenders, {
+        nameQuery: args.nameQuery,
+        limit: args.limit ?? 100,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "lender.getDeepContext",
+    description:
+      "Comprehensive snapshot of a lender: identity + current appetite (all isCurrent=true signals as a fieldPath→value map) + recent appetite changes (last 90 days) + BDM contacts + projects where they appear in clientRoles + meetings (upcoming + past) + cadences (relationship maintenance) + pending approvals (lender-bound outreach). The summary block surfaces 'currentAppetiteFieldCount' so operator-agent knows how complete the appetite picture is. THE first tool to call when operator asks about a specific lender.",
+    inputSchema: {
+      type: "object",
+      properties: { lenderClientId: { type: "string" } },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.lenderGetDeepContext, {
+        lenderClientId: args.lenderClientId,
+      });
+      if (!result) return asText({ error: "lender_not_found", lenderClientId: args.lenderClientId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.recordAppetite",
+    description:
+      "Record a new appetite signal for a lender. Each signal is (fieldPath, value, valueType, sourceType, asOfDate, confidence). Writing a new value for an existing (lender, fieldPath) automatically supersedes the prior — sets prior.isCurrent=false + supersededBy=<new id>, marks new.isCurrent=true. Standard fieldPaths (use these for matching to work): dealSize.min, dealSize.max, products.offered (array: bridging/development_finance/term/btl), propertyType.allowed (array: residential/commercial/mixed_use), geography.regions (array including 'uk_wide'), ltv.maximum (0-1), ltgdv.maximum (0-1), timeline.typicalWeeksToOffer (number). Custom fieldPaths are fine but won't contribute to matching scores unless lender.matchForDeal is extended to handle them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string" },
+        fieldPath: { type: "string", description: "Standard path (see description) or custom <area>.<thing>" },
+        value: { description: "The value — type per valueType (number/string/array/etc.)" },
+        valueType: { type: "string", description: "number | currency | percentage | string | array | boolean | date" },
+        sourceType: { type: "string", description: "bdm_meeting | lender_doc | publication | deal_behaviour | manual" },
+        sourceRef: { type: "string", description: "Optional: meetingId / documentId / URL for traceability" },
+        asOfDate: { type: "string", description: "ISO timestamp; defaults to now" },
+        confidence: { type: "number", description: "0-1 confidence" },
+        notes: { type: "string", description: "Optional free-text annotation" },
+      },
+      required: ["lenderClientId", "fieldPath", "value", "valueType", "sourceType"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.appetiteSignals.record, {
+        lenderClientId: args.lenderClientId,
+        fieldPath: args.fieldPath,
+        value: args.value,
+        valueType: args.valueType,
+        sourceType: args.sourceType,
+        sourceRef: args.sourceRef,
+        asOfDate: args.asOfDate,
+        confidence: args.confidence,
+        notes: args.notes,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.getAppetite",
+    description:
+      "Get current appetite for a lender as a fieldPath→value map. Returns only isCurrent=true signals. Use after lender.getDeepContext if you only need appetite (cheaper) OR when filtering by specific fields. Pass asMap=true (default) for the convenient map shape; asMap=false returns the raw array of signal rows including sourceType + asOfDate + confidence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string" },
+        asMap: { type: "boolean", description: "Default true. If false, returns raw signal rows." },
+      },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.getCurrentForLender, {
+        lenderClientId: args.lenderClientId,
+        asMap: args.asMap ?? true,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.getAppetiteHistory",
+    description:
+      "Get full appetite history for a lender (current + superseded signals, newest first). Use to answer 'how has Octopus's max LTV changed over time?' or to audit signal sources. Optionally filter to one fieldPath for a single-dimension timeline.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string" },
+        fieldPath: { type: "string", description: "Optional: filter to one fieldPath" },
+        limit: { type: "number", description: "Default unlimited" },
+      },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.getHistoryForLender, {
+        lenderClientId: args.lenderClientId,
+        fieldPath: args.fieldPath,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.matchForDeal",
+    description:
+      "THE headline matching tool. Given a deal's criteria (dealSize, dealType, assetClass, geography, ltv, ltgdv, timelineWeeks — all optional), returns a RANKED list of lenders with per-lender matchScore + matchReasons + fitConcerns + currentSignalsCount. Scoring: each matching dimension contributes +2 to +4 to score; each incompatible dimension subtracts -2 to -5. Lenders with zero appetite signals get score=0 + a note (uninformed match). Use right after prospect-intel produces its Recommended Approach section to compose 'Optimal lenders for this £X bridging deal: A (score 12 — reasons), B (score 9 — reasons)' answers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        criteria: {
+          type: "object",
+          properties: {
+            dealSize: { type: "number", description: "GBP" },
+            dealType: { type: "string", description: "bridging | development_finance | term | btl" },
+            assetClass: { type: "string", description: "residential | commercial | mixed_use" },
+            geography: { type: "string", description: "Region name; matches against lender's geography.regions" },
+            ltv: { type: "number", description: "0-1; required loan-to-value" },
+            ltgdv: { type: "number", description: "0-1; required loan-to-GDV" },
+            timelineWeeks: { type: "number", description: "Weeks to indicative offer needed" },
+          },
+        },
+        limit: { type: "number", description: "Default 10" },
+      },
+      required: ["criteria"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.matchForDeal, {
+        criteria: args.criteria,
+        limit: args.limit ?? 10,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.create",
+    description:
+      "Create a new lender record (a clients row with type='lender'). Use for adding a new lender to the database before recording appetite signals. After create, call lender.recordAppetite repeatedly to populate the appetite picture. Common pattern after a first BDM meeting: lender.create → lender.recordAppetite × N from the meeting notes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Lender name (e.g., 'Octopus Real Estate')" },
+        companyName: { type: "string", description: "Optional legal name if different from name" },
+        notes: { type: "string", description: "Optional: 1-2 sentence summary of who they are" },
+        website: { type: "string" },
+        email: { type: "string", description: "General contact email if known" },
+        phone: { type: "string" },
+        country: { type: "string", description: "Default 'United Kingdom'" },
+      },
+      required: ["name"],
+    },
+    handler: async (ctx, userId, args) => {
+      const id = await ctx.runMutation(api.clients.create, {
+        name: args.name,
+        type: "lender",
+        status: "active" as const,
+        companyName: args.companyName,
+        notes: args.notes,
+        website: args.website,
+        email: args.email,
+        phone: args.phone,
+        country: args.country ?? "United Kingdom",
+        source: "manual" as const,
+      });
+      return asText({ status: "created", lenderClientId: id, note: "Now record appetite signals via lender.recordAppetite to enable matching." });
+    },
+  },
+
+  // v1.3 Sprint E — project MCP surface. Mirrors the client.getDeepContext
+  // pattern but scoped to PROJECTS (schemes / deals). Use when operator
+  // asks about a specific scheme: "where are we at with Comberton?".
+  {
+    name: "project.getDeepContext",
+    description:
+      "Returns a comprehensive snapshot of a project (scheme / deal): the project row, projectIntelligence, linked clients via clientRoles (with role labels), project-scoped meetings (upcoming + past), documents, checklist split by status (missing/pending_review/fulfilled), cadences, skillRuns, deals, touchpoints, and pending approvals. The summary block includes counts so the operator-agent can compose an answer in one round-trip. Use this FIRST when an operator asks about a specific project (vs prospect.getDeepContext for client-level questions).",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.projects.getDeepContext, {
+        projectId: args.projectId,
+      });
+      if (!result) return asText({ error: "project_not_found", projectId: args.projectId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "project.listByClient",
+    description:
+      "List all projects where a client appears in any clientRoles entry (borrower / lender / developer / etc.). Use to enumerate projects for a client when client.getDeepContext returned project counts and you want the full project list.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.projects.getByClient, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  // (project.get + project.getStats already defined earlier in this file —
+  // pre-Sprint E. The Sprint E project.listByClient + project.getDeepContext
+  // above are the new additions. Re-defining project.get here would create
+  // duplicate tool registrations.)
+
+  // v1.3 Sprint E — meeting.update wrapper for meeting-capture skill output
+  // (Sprint C added meeting.create + listByClient + listUpcoming + get;
+  // this completes the surface with update for the post-meeting fill-in
+  // path that meeting-capture uses.)
+  {
+    name: "meeting.update",
+    description:
+      "Update an existing meeting record with captured content (summary, keyPoints, decisions, actionItems, attendees). Used by meeting-capture skill after parsing a Fireflies transcript or operator-pasted notes — the meeting record was created via meeting.create at scheduling time; this fills in the post-call content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        meetingId: { type: "string" },
+        title: { type: "string", description: "Optional: refine the title if it was a placeholder" },
+        summary: { type: "string", description: "Optional: replace the summary" },
+        keyPoints: { type: "array", items: { type: "string" } },
+        decisions: { type: "array", items: { type: "string" } },
+        actionItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              description: { type: "string" },
+              assignee: { type: "string" },
+              dueDate: { type: "string" },
+              status: { type: "string", description: "pending | completed | cancelled" },
+              createdAt: { type: "string" },
+            },
+            required: ["id", "description", "status", "createdAt"],
+          },
+        },
+        attendees: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              role: { type: "string" },
+              company: { type: "string" },
+              contactId: { type: "string" },
+            },
+            required: ["name"],
+          },
+        },
+        verified: { type: "boolean", description: "Mark verified after operator review" },
+      },
+      required: ["meetingId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.meetings.update, {
+        meetingId: args.meetingId,
+        title: args.title,
+        summary: args.summary,
+        keyPoints: args.keyPoints,
+        decisions: args.decisions,
+        actionItems: args.actionItems,
+        attendees: args.attendees,
+        verified: args.verified,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint E — outreach.draftToLender. Counterpart to draftReply +
+  // draftFreshEmail; distinguished by entityType=lender_outreach so the
+  // approvals UI can route lender-bound emails to a different reviewer
+  // OR apply lender-specific guards (e.g., requires the project's terms
+  // package to be approved before lender outreach can fire).
+  {
+    name: "outreach.draftToLender",
+    description:
+      "Stage a lender-bound email as a pending approval with entityType=lender_outreach (vs client_communication for borrower-bound). Use when sending indicative terms requests, follow-ups to lender BDMs, or term sheet acceptance / rejection notifications. The approvals UI applies any lender-specific gates (e.g., terms package signed off) before allowing send.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string", description: "The lender (clients row with type=lender)" },
+        contactId: { type: "string", description: "Specific BDM/contact at the lender" },
+        projectId: { type: "string", description: "Optional but recommended — the deal context" },
+        subject: { type: "string" },
+        bodyText: { type: "string" },
+        bodyHtml: { type: "string" },
+        attachedDocumentIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: document ids to attach (e.g., the lender brief package or appraisal)",
+        },
+        skillRunId: { type: "string", description: "Optional: skillRun audit linkage" },
+        reasoning: { type: "string", description: "1-2 sentence operator-facing summary of WHY this lender + WHY now" },
+      },
+      required: ["lenderClientId", "contactId", "subject", "bodyText", "bodyHtml"],
+    },
+    handler: async (ctx, userId, args) => {
+      const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
+        entityType: "lender_outreach" as const,
+        summary: args.reasoning
+          ? `To lender (${args.subject.slice(0, 50)}) — ${args.reasoning.slice(0, 120)}`
+          : `Lender outreach: ${args.subject.slice(0, 80)}`,
+        draftPayload: {
+          kind: "lender_email" as const,
+          lenderClientId: args.lenderClientId,
+          contactId: args.contactId,
+          subject: args.subject,
+          bodyText: args.bodyText,
+          bodyHtml: args.bodyHtml,
+          attachedDocumentIds: args.attachedDocumentIds,
+          reasoning: args.reasoning,
+        },
+        requestedBy: userId,
+        requestSource: "skill" as const,
+        requestSourceName: "lender_outreach",
+        relatedClientId: args.lenderClientId,
+        relatedContactId: args.contactId,
+        relatedProjectId: args.projectId,
+        relatedSkillRunId: args.skillRunId,
+      });
+      return asText({
+        status: "draft_staged",
+        approvalId,
+        viewAt: `/approvals/${approvalId}`,
+        note: "Lender outreach draft staged. entityType=lender_outreach for any lender-specific approval guards.",
+      });
+    },
+  },
+
+  // v1.3 Sprint D — cadence flexibility primitives. Operator-driven pause /
+  // resume / snooze for in-flight cadences. Used when operator says things
+  // like "pause Mccarthy's cadence for 2 weeks while we wait for X" or
+  // "snooze Touch 3 by a week — they're on holiday".
+  {
+    name: "cadence.pause",
+    description:
+      "Soft-pause a single cadence row by setting pauseUntil. The dispatcher checks pauseUntil before firing and skips while it's > now. Default: 14 days. Idempotent — re-running with a later date extends the pause; with an earlier date shortens it. Errors: cadence_not_found, cannot_pause_fired_cadence (Touch already sent).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        untilDate: { type: "string", description: "ISO timestamp. Defaults to 14 days from now." },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.cadences.pause, {
+        cadenceId: args.cadenceId,
+        untilDate: args.untilDate,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.resume",
+    description:
+      "Clear pauseUntil on a cadence (resume). Optionally also reschedule by passing newNextDueAt. Use after cadence.pause when whatever the operator was waiting for has happened. If you don't pass newNextDueAt, the dispatcher will fire on the next tick if the original nextDueAt is now in the past.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        newNextDueAt: { type: "string", description: "Optional ISO timestamp. If supplied, also reschedules nextDueAt." },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.cadences.resume, {
+        cadenceId: args.cadenceId,
+        newNextDueAt: args.newNextDueAt,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.snooze",
+    description:
+      "Push a cadence's nextDueAt forward by N days. Different from pause: snooze is a HARD reschedule of the next send date; pause leaves nextDueAt alone and just suppresses firing temporarily via pauseUntil. Use snooze when you want a specific delay (e.g., 'they said wait until next week'); use pause when the duration is open-ended. Errors: invalid_byDays (must be 1-365), cannot_snooze_fired_cadence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        byDays: { type: "number", description: "Positive integer, 1-365. Pushed forward from current nextDueAt." },
+      },
+      required: ["cadenceId", "byDays"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.cadences.snooze, {
+        cadenceId: args.cadenceId,
+        byDays: args.byDays,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.get",
+    description:
+      "Get a single cadence row by id. Use when you have a cadence id from prospect.getDeepContext's cadences section and need the full row (preDraftedTouch, scheduleConfig, pauseUntil status, etc).",
+    inputSchema: {
+      type: "object",
+      properties: { cadenceId: { type: "string" } },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.cadences.getById, { cadenceId: args.cadenceId });
+      if (!result) return asText({ error: "cadence_not_found", cadenceId: args.cadenceId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "cadence.listByPackage",
+    description:
+      "List all cadences in a package (all 4 touches of a prospect-intel package, typically). Useful when operator says 'show me Mccarthy's outreach package' and you want to enumerate touches without going through getDeepContext.",
+    inputSchema: {
+      type: "object",
+      properties: { packageId: { type: "string" } },
+      required: ["packageId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.cadences.listByPackage, { packageId: args.packageId });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint D — document MCP surface. Operator-driven document
+  // discovery + linkage. Sister tools to the checklist + outreach surfaces.
+  {
+    name: "document.listByClient",
+    description:
+      "List all documents linked to a client. Includes Base Documents (not project-specific) AND any project-linked docs for that client's projects. Each row carries fileName + fileTypeDetected (AI-classified) + category + uploadedAt + summary + projectId/Name if linked.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.getByClient, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.listByProject",
+    description:
+      "List documents linked to a specific project. Use after prospect.getDeepContext.projects.active reveals a project id and you want the document list for that specific scheme.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.getByProject, { projectId: args.projectId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.get",
+    description:
+      "Get full document metadata by id (summary, reasoning, confidence, fileStorageId for download via storage URL, classification details). Use when document.listByClient returns an id you want to drill into.",
+    inputSchema: {
+      type: "object",
+      properties: { documentId: { type: "string" } },
+      required: ["documentId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.get, { id: args.documentId });
+      if (!result) return asText({ error: "document_not_found", documentId: args.documentId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.search",
+    description:
+      "Search documents by query string. Returns documents whose fileName, summary, or fileTypeDetected match. Use for 'find Mccarthy's red book valuation' style queries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        clientId: { type: "string", description: "Optional: restrict to one client" },
+      },
+      required: ["query"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.documents.search, {
+        query: args.query,
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.linkToProject",
+    description:
+      "Link an existing document to a project. Patches the document's projectId + projectName + sets isBaseDocument=false. Pass projectId=null to unlink (moves back to Base Documents). Operator-driven: 'this Red Book Val is for Comberton, not Bayfield Base'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+        projectId: { type: "string", description: "Convex id of the project to link to. Pass null/omit to unlink." },
+      },
+      required: ["documentId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.documents.linkToProject, {
+        documentId: args.documentId,
+        projectId: args.projectId || undefined,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint D — checklist MCP surface. Read existing items + create
+  // custom items + flip status. The standard items get initialised from
+  // templates; this surface is for the operator-driven exceptions.
+  //
+  // (Read surface: checklist.getByClient + checklist.getByProject exist
+  // earlier in this file — pre-Sprint D. Use those for listing.)
+
+  {
+    name: "checklist.updateStatus",
+    description:
+      "Flip a checklist item's status (missing / pending_review / fulfilled). Use when a document was received OR when operator decides an item is no longer required (mark fulfilled with a note in evidence document).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        checklistItemId: { type: "string" },
+        status: {
+          type: "string",
+          description: "missing | pending_review | fulfilled",
+        },
+      },
+      required: ["checklistItemId", "status"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.updateItemStatus, {
+        checklistItemId: args.checklistItemId,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "checklist.createCustomItem",
+    description:
+      "Add a custom (non-template) checklist item to a client or project. Use for bespoke requirements like lender-specific PG forms, unusual planning conditions, side letters. Defaults: phaseRequired=indicative_terms, priority=required, status=missing. Order auto-computed as last+1 within the scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        projectId: { type: "string", description: "Optional — omit for client-level item" },
+        name: { type: "string", description: "Operator-readable item name, e.g., 'Personal Guarantee — Stephen Mccarthy'" },
+        category: { type: "string", description: "Free-form category for grouping, e.g., 'Security' or 'Sponsor docs'" },
+        phaseRequired: {
+          type: "string",
+          description: "indicative_terms | credit_submission | post_credit | always (default: indicative_terms)",
+        },
+        priority: {
+          type: "string",
+          description: "required | nice_to_have | optional (default: required)",
+        },
+        description: { type: "string", description: "Optional longer description" },
+        matchingDocumentTypes: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: document types that fulfil this item (e.g., ['Personal Guarantee Form'])",
+        },
+        isBlocking: { type: "boolean", description: "Optional: signals deal can't proceed without this" },
+      },
+      required: ["clientId", "name", "category"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.createCustomItem, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        name: args.name,
+        category: args.category,
+        phaseRequired: args.phaseRequired,
+        priority: args.priority,
+        description: args.description,
+        matchingDocumentTypes: args.matchingDocumentTypes,
+        isBlocking: args.isBlocking,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.3 Sprint D — outreach.draftFreshEmail. Sister to outreach.draftReply.
+  // Distinction: draftReply responds to a tracked replyEventId (links via
+  // relatedReplyEventId); draftFreshEmail is operator-initiated NEW outreach
+  // (no inbound). Use when operator says "send Mccarthy an email asking for
+  // the appraisal" — no specific inbound prompted this.
+  {
+    name: "outreach.draftFreshEmail",
+    description:
+      "Stage a NEW outreach email as a pending approval (distinct from outreach.draftReply which threads onto a reply event). Use when operator initiates a fresh email outside the cadence package + outside a reply. Examples: 'send Mccarthy an email asking for the appraisal', 'follow up with Bayfield on Comberton planning status'. The approval appears on the Overview Pending Approvals card + in /approvals.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "Recipient contact" },
+        clientId: { type: "string", description: "Client this email concerns" },
+        subject: { type: "string" },
+        bodyText: { type: "string" },
+        bodyHtml: { type: "string" },
+        skillRunId: { type: "string", description: "Optional: skillRun audit linkage" },
+        reasoning: { type: "string", description: "1-2 sentence operator-facing summary of WHY this email — surfaces on /approvals quick-review" },
+      },
+      required: ["contactId", "clientId", "subject", "bodyText", "bodyHtml"],
+    },
+    handler: async (ctx, userId, args) => {
+      const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
+        entityType: "client_communication" as const,
+        summary: args.reasoning
+          ? `Fresh outreach (${args.subject.slice(0, 60)}) — ${args.reasoning.slice(0, 120)}`
+          : `Fresh outreach: ${args.subject.slice(0, 80)}`,
+        draftPayload: {
+          kind: "email_fresh" as const,
+          contactId: args.contactId,
+          subject: args.subject,
+          bodyText: args.bodyText,
+          bodyHtml: args.bodyHtml,
+          reasoning: args.reasoning,
+        },
+        requestedBy: userId,
+        requestSource: "skill" as const,
+        requestSourceName: "operator_initiated",
+        relatedClientId: args.clientId,
+        relatedContactId: args.contactId,
+        relatedSkillRunId: args.skillRunId,
+      });
+      return asText({
+        status: "draft_staged",
+        approvalId,
+        viewAt: `/approvals/${approvalId}`,
+        note: "Fresh outreach draft staged for operator review. Distinct from cadence touches AND from reply drafts — this is ad-hoc outreach.",
+      });
+    },
+  },
+
+  // v1.3 Sprint C — meeting visibility + skill-side meeting management.
+  // The meeting-prep skill loads context (via getDeepContext which already
+  // returns meeting summaries) then proposes availability via outreach.draftReply.
+  // After a meeting books, meeting.create persists the record for the
+  // Meetings tab + UpcomingMeetingsSection.
+  //
+  // (Read surface: meeting.getByClient + meeting.getByProject exist earlier
+  // in this file — pre-Sprint C. Use those for listing per-client / per-project.
+  // meeting.listUpcoming below is the only NEW list-surface introduced in
+  // Sprint C since it spans all clients.)
+
+  {
+    name: "meeting.listUpcoming",
+    description:
+      "List upcoming meetings across all clients, soonest first. The operator's 'what calls do I have' surface — populates the UpcomingMeetingsSection on the /prospects home page AND Claude Code's morning-queue surveys. Filters to meetings whose meetingDate is in the future.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Default 50" },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.meetings.listUpcoming, {
+        limit: args.limit ?? 50,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "meeting.get",
+    description:
+      "Get one meeting by id with full content (attendees, decisions, action items, summary). Use after meeting.listByClient / listUpcoming has returned an id and you need the full payload.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        meetingId: { type: "string" },
+      },
+      required: ["meetingId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.meetings.get, {
+        meetingId: args.meetingId,
+      });
+      if (!result) return asText({ error: "meeting_not_found", meetingId: args.meetingId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "meeting.create",
+    description:
+      "Create a meeting record. Used by meeting-prep skill after operator approves a proposed time, and by meeting-capture skill when persisting captured notes. For a JUST-SCHEDULED meeting (no notes yet), pass title + meetingDate + attendees + meetingType only; leave summary='' / keyPoints=[] / decisions=[] / actionItems=[] empty — they get populated by meeting-capture post-meeting.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        projectId: { type: "string", description: "Optional — only if linked to a specific project" },
+        title: { type: "string", description: "e.g., 'Mccarthy intro call' or 'Comberton site visit'" },
+        meetingDate: { type: "string", description: "ISO timestamp; the scheduled date/time" },
+        meetingType: {
+          type: "string",
+          description: "progress | kickoff | review | site_visit | call | other",
+        },
+        attendees: {
+          type: "array",
+          description: "Array of {name, role, company, contactId?}",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              role: { type: "string" },
+              company: { type: "string" },
+              contactId: { type: "string" },
+            },
+            required: ["name"],
+          },
+        },
+        summary: { type: "string", description: "Empty string for scheduled-but-not-yet-held meetings" },
+      },
+      required: ["clientId", "title", "meetingDate", "attendees", "summary"],
+    },
+    handler: async (ctx, userId, args) => {
+      const meetingId = await ctx.runMutation(api.meetings.create, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        title: args.title,
+        meetingDate: args.meetingDate,
+        meetingType: args.meetingType,
+        attendees: args.attendees,
+        summary: args.summary,
+        keyPoints: [],
+        decisions: [],
+        actionItems: [],
+      });
+      return asText({ status: "created", meetingId });
+    },
+  },
+
+  // v1.3 Sprint B — qualify-and-draft helper tools. Skill-friendly surface
+  // for the "operator wants to draft a reply" workflow. Wraps approvals.create
+  // with the right shape for email drafts + links the approval back to the
+  // triggering reply event (when present) and the skillRun (always present
+  // for skill-invoked drafts).
+  {
+    name: "outreach.draftReply",
+    description:
+      "Stage a drafted email reply as a pending approval. Use this from qualify-and-draft (or any draft-an-email skill) to surface the draft to the operator for review BEFORE it sends. The approval will appear on the prospect-detail Overview's 'Pending approvals' card AND in /approvals. Once approved, the existing approval-execution path triggers the actual send (Gmail or whichever provider is wired). Required: contactId + clientId (so the draft surfaces in both contact-scoped and client-scoped views) + subject + bodyText + bodyHtml. Optional: replyToReplyEventId (when drafting in response to a tracked inbound reply — links the approval back to the reply for cross-navigation) + skillRunId (audit linkage) + reasoning (1-2 sentence summary of why the draft says what it says, for the operator's quick-review).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "Convex id of the recipient contact" },
+        clientId: { type: "string", description: "Convex id of the client this reply concerns" },
+        subject: { type: "string" },
+        bodyText: { type: "string", description: "Plain text email body" },
+        bodyHtml: { type: "string", description: "HTML email body (paragraph-wrapped at minimum)" },
+        replyToReplyEventId: { type: "string", description: "Optional: the replyEvents id this draft is responding to" },
+        skillRunId: { type: "string", description: "Optional: the skillRun id that produced this draft (audit linkage)" },
+        reasoning: { type: "string", description: "1-2 sentence summary of why the draft says what it says (operator-facing quick-review)" },
+        threadId: { type: "string", description: "Optional: Gmail thread id if continuing a thread" },
+        inReplyTo: { type: "string", description: "Optional: original Gmail Message-ID for proper threading" },
+      },
+      required: ["contactId", "clientId", "subject", "bodyText", "bodyHtml"],
+    },
+    handler: async (ctx, userId, args) => {
+      const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
+        entityType: "client_communication" as const,
+        summary: args.reasoning
+          ? `Reply draft (${args.subject.slice(0, 60)}) — ${args.reasoning.slice(0, 120)}`
+          : `Reply draft: ${args.subject.slice(0, 80)}`,
+        draftPayload: {
+          kind: "email_reply" as const,
+          contactId: args.contactId,
+          subject: args.subject,
+          bodyText: args.bodyText,
+          bodyHtml: args.bodyHtml,
+          threadId: args.threadId,
+          inReplyTo: args.inReplyTo,
+          reasoning: args.reasoning,
+        },
+        requestedBy: userId,
+        requestSource: "skill" as const,
+        requestSourceName: "qualify-and-draft",
+        relatedClientId: args.clientId,
+        relatedContactId: args.contactId,
+        relatedReplyEventId: args.replyToReplyEventId,
+        relatedSkillRunId: args.skillRunId,
+      });
+      return asText({
+        status: "draft_staged",
+        approvalId,
+        viewAt: `/approvals/${approvalId}`,
+        note: "Approval is pending operator review. The operator can approve in the CRM (/approvals) or you can call approval.get to monitor status.",
+      });
+    },
+  },
+
+  {
+    name: "approval.listPendingByClient",
+    description:
+      "List pending approvals for a specific client. Use to check whether qualify-and-draft or any other skill has staged drafts awaiting operator review. Returns the same approval rows as the Overview tab's 'Pending approvals' card. Includes all entity types (client_communication, gmail_send, lender_outreach, etc).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        limit: { type: "number", description: "Default 20" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.approvals.listPendingByClient, {
+        clientId: args.clientId,
+        limit: args.limit ?? 20,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "approval.listByReplyEvent",
+    description:
+      "List approvals (any status) linked to a specific reply event. Typically returns 0 or 1 row — the qualify-and-draft or meeting-prep-respond output. Use to check whether a reply has been drafted for yet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: { type: "string" },
+      },
+      required: ["replyEventId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.approvals.listByReplyEvent, {
+        replyEventId: args.replyEventId,
+      });
+      return asText(rows);
+    },
+  },
+
+  // v1.3 reply handling: list + read + reclassify
+  {
+    name: "reply.listByClient",
+    description:
+      "List reply events linked to a specific clients row (newest first). Use this to see what inbound replies a prospect has sent. Each row carries the classified intent + confidence + dispatch destination. The body text is in replyBodyText when persisted.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        limit: { type: "number", description: "Default 50" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.replyEvents.listByClient, {
+        clientId: args.clientId,
+        limit: args.limit ?? 50,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "reply.listUnrouted",
+    description:
+      "List reply events where the classifier dispatched to 'operator_review' (didn't auto-route to a downstream skill). This is the operator's morning triage queue — replies that need a human decision before action. Each row carries the classified intent + evidence so the operator can see why the classifier flagged it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Default 50" },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.replyEvents.listUnrouted, {
+        limit: args.limit ?? 50,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "reply.get",
+    description:
+      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: { type: "string" },
+      },
+      required: ["replyEventId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.replyEvents.getInternal, {
+        replyEventId: args.replyEventId,
+      });
+      if (!result) return asText({ error: "reply_event_not_found", replyEventId: args.replyEventId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "reply.ingestManual",
+    description:
+      "Operator pasted a reply they received via a channel that doesn't auto-sync (WhatsApp, text, forwarded email). Routes through the SAME flow as automated ingest: cancels active cadences for the matched contact, runs the intent classifier, dispatches to a downstream skill (or operator_review). Returns the same {status, replyEventId} shape as ingestFromGmailPush / ingestFromHubspot. Also useful for testing the reply-handling backbone before the Gmail Pub/Sub topic is provisioned. Errors: no_contact_match (the contactEmail doesn't resolve to any RockCap contact) — the reply event is still created but no cadence cancellation or dispatch happens.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contactEmail: { type: "string", description: "Email address of the person who replied (used to look up the contact)" },
+        subject: { type: "string", description: "Subject of the reply" },
+        body: { type: "string", description: "Plain-text body of the reply" },
+        receivedAt: { type: "string", description: "ISO timestamp; defaults to now" },
+        rawMessageRef: { type: "string", description: "Optional URL/reference to the original message (e.g., WhatsApp screenshot URL or forwarded-email reference)" },
+      },
+      required: ["contactEmail", "subject", "body"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.replyEventProcessor.ingestManualInternal, {
+        contactEmail: args.contactEmail,
+        subject: args.subject,
+        body: args.body,
+        receivedAt: args.receivedAt,
+        rawMessageRef: args.rawMessageRef,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2 prospects CRM — state transition
   {
     name: "prospect.transitionState",
@@ -866,6 +1872,175 @@ const TOOLS: McpTool[] = [
         approvalId: args.approvalId,
       });
       if (!result) return asText({ error: "approval not found" });
+      return asText(result);
+    },
+  },
+
+  // ── v1.3 Sprint G: deferred writers, now wired ──────────────────
+  //
+  // Closes the four "deferred" gaps from the v1.3 catalogue. Skills
+  // previously had to emit these as skillRun.complete.gaps; now they
+  // can call the tool directly.
+
+  {
+    name: "intelligence.addKnowledgeItem",
+    description:
+      "Add a single canonical or non-canonical fact to a client's or project's intelligence library. Used by skills (qualify-and-draft, meeting-capture, deal-intake) to promote facts discovered in a reply / meeting transcript / document into the structured intelligence layer that the deep-context tools read from. Supersedes any prior active item with the same (clientId|projectId, fieldPath, qualifier) tuple — the prior item is marked status='superseded' and the new one becomes active. fieldPath examples: 'borrower.experienceYears', 'project.gdv', 'project.peakDebt', 'lender.appetiteMaxLtv'. valueType controls how the UI renders the value. sourceType='ai_extraction' for skill-derived facts; 'manual' for operator-entered; 'document' for extracted from an uploaded doc (then set sourceDocumentId).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client (mutually exclusive with projectId)" },
+        projectId: { type: "string", description: "Convex id of the project (mutually exclusive with clientId)" },
+        fieldPath: { type: "string", description: "Dotted path: e.g., 'borrower.experienceYears'" },
+        isCanonical: { type: "boolean", description: "True if this is the canonical/authoritative value for this fieldPath" },
+        category: { type: "string", description: "Grouping bucket: 'borrower' | 'project' | 'financials' | 'security' | 'lender' | 'kyc' | 'other'" },
+        label: { type: "string", description: "Human-readable label shown in the UI (e.g., 'Years of dev experience')" },
+        value: { description: "The actual value — type matches valueType. Pass number for number/currency/percentage, string for string/text/date, boolean for boolean, array for array." },
+        valueType: {
+          type: "string",
+          enum: ["string", "number", "currency", "date", "percentage", "array", "text", "boolean"],
+          description: "Controls UI rendering + downstream validation",
+        },
+        sourceType: {
+          type: "string",
+          enum: ["document", "manual", "ai_extraction", "data_library", "checklist"],
+          description: "Where the value came from. Skill runs should use 'ai_extraction'.",
+        },
+        sourceDocumentId: { type: "string", description: "Optional Convex id of the document this fact was extracted from" },
+        sourceDocumentName: { type: "string", description: "Optional human-readable doc name" },
+        sourceText: { type: "string", description: "Optional verbatim sentence(s) from the source backing this fact" },
+        qualifier: { type: "string", description: "Optional disambiguator when multiple items share the same fieldPath (e.g., scheme name)" },
+        context: { type: "string", description: "Optional free-text context (e.g., 'mentioned on 2026-05-20 discovery call')" },
+        addedBy: { type: "string", description: "Optional human-readable provenance string (defaults to skill name)" },
+      },
+      required: ["fieldPath", "isCanonical", "category", "label", "value", "valueType", "sourceType"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.addKnowledgeItem, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        fieldPath: args.fieldPath,
+        isCanonical: args.isCanonical,
+        category: args.category,
+        label: args.label,
+        value: args.value,
+        valueType: args.valueType,
+        sourceType: args.sourceType,
+        sourceDocumentId: args.sourceDocumentId,
+        sourceDocumentName: args.sourceDocumentName,
+        sourceText: args.sourceText,
+        qualifier: args.qualifier,
+        context: args.context,
+        addedBy: args.addedBy,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "task.create",
+    description:
+      "Create an operator-facing task. Used by skills to surface follow-up work (e.g., meeting-capture creating 'Schedule follow-up call' or 'Send signed NDA'; qualify-and-draft creating 'Manual review of low-confidence reply'; deal-intake creating 'Request missing KYC items'). Tasks land in the operator's task inbox + appear on the linked client / project page. Defaults: status='todo', priority='medium', assignedTo=[calling operator]. Use `assignedTo` to route to a specific teammate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short imperative title (e.g., 'Schedule follow-up with Shane Gordon')" },
+        description: { type: "string", description: "Optional longer-form context" },
+        notes: { type: "string", description: "Optional free-form notes" },
+        dueDate: { type: "string", description: "Optional ISO timestamp" },
+        priority: { type: "string", enum: ["low", "medium", "high"], description: "Default 'medium'" },
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags for filtering" },
+        clientId: { type: "string", description: "Optional Convex id of the linked client" },
+        projectId: { type: "string", description: "Optional Convex id of the linked project" },
+        assignedTo: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional array of Convex user ids; defaults to the calling operator",
+        },
+        attachmentIds: { type: "array", items: { type: "string" }, description: "Optional document ids to attach" },
+        contactIds: { type: "array", items: { type: "string" }, description: "Optional contact ids to link" },
+      },
+      required: ["title"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.tasks.createInternal, {
+        userId,
+        title: args.title,
+        description: args.description,
+        notes: args.notes,
+        dueDate: args.dueDate,
+        priority: args.priority,
+        tags: args.tags,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        assignedTo: args.assignedTo,
+        attachmentIds: args.attachmentIds,
+        contactIds: args.contactIds,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "document.createFromGeneration",
+    description:
+      "Persist a document that was *generated* by a skill (e.g., lender brief package, IC paper, terms-comparison memo, post-meeting notes) into the documents table. Content lives inline in the `summary` field as markdown / plain text — no file storage required until a separate markdown→PDF/DOCX conversion step runs. The resulting row appears in the standard documents UI (filterable by category, linkable to a project, etc.). For UPLOADS of files (PDFs / spreadsheets), use the normal documents.create flow with file storage. For pre-existing docs that need linking to a project, use document.linkToProject.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Optional Convex id of the linked client" },
+        projectId: { type: "string", description: "Optional Convex id of the linked project" },
+        fileName: { type: "string", description: "Display name for the generated artefact (e.g., 'Comberton — Lender Brief Package.md')" },
+        fileTypeDetected: {
+          type: "string",
+          description: "Operator-facing artefact type (e.g., 'Lender Brief Package', 'IC Paper', 'Terms Comparison Memo', 'Meeting Notes')",
+        },
+        category: {
+          type: "string",
+          description: "Document category for filing (e.g., 'Lender outreach', 'Credit submission', 'Meeting notes')",
+        },
+        summary: { type: "string", description: "The full generated content (markdown or plain text). Becomes the document body." },
+        reasoning: { type: "string", description: "Optional 1-2 sentence operator-facing explanation of what this artefact is + when it was generated" },
+        sourceSkillRunId: { type: "string", description: "Optional Convex id of the skillRun that produced this artefact (for provenance)" },
+        isBaseDocument: { type: "boolean", description: "True if this should appear in the client's Base Documents folder (default false)" },
+      },
+      required: ["fileName", "fileTypeDetected", "category", "summary"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.documents.createFromGeneration, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        fileName: args.fileName,
+        fileTypeDetected: args.fileTypeDetected,
+        category: args.category,
+        summary: args.summary,
+        reasoning: args.reasoning,
+        sourceSkillRunId: args.sourceSkillRunId,
+        isBaseDocument: args.isBaseDocument,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "project.addLenderRole",
+    description:
+      "Idempotently add a lender (clients row with type='lender') to a project's clientRoles array. Used by the terms-package-build workflow after lender.matchForDeal picks a shortlist — each chosen lender is attached to the project here before outreach.draftToLender stages an approval per lender. Refuses non-lender clients with error='not_a_lender' (use projects.update directly for borrower/developer/professional roles). If the lender + role pair is already present, returns ok:true with idempotent:true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Convex id of the project" },
+        clientId: { type: "string", description: "Convex id of the lender (clients row with type='lender')" },
+        role: { type: "string", description: "Default 'lender'. Use 'co-lender' / 'syndicate-lead' for multi-lender deals." },
+      },
+      required: ["projectId", "clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(api.projects.addLenderRole, {
+        projectId: args.projectId,
+        clientId: args.clientId,
+        role: args.role,
+      });
       return asText(result);
     },
   },

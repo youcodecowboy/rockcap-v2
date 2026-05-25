@@ -12,6 +12,8 @@ import { IntelTab } from "@/components/prospects/tabs/IntelTab";
 import { PeopleTab } from "@/components/prospects/tabs/PeopleTab";
 import { CompaniesHouseTab } from "@/components/prospects/tabs/CompaniesHouseTab";
 import { OutreachTab } from "@/components/prospects/tabs/OutreachTab";
+import { RepliesTab } from "@/components/prospects/tabs/RepliesTab";
+import { MeetingsTab } from "@/components/prospects/tabs/MeetingsTab";
 import { ActivityTab } from "@/components/prospects/tabs/ActivityTab";
 import { StickyApprovalFooter } from "@/components/prospects/StickyApprovalFooter";
 import { RevisionRequestModal } from "@/components/prospects/RevisionRequestModal";
@@ -23,7 +25,7 @@ export default function ProspectDetailPage() {
   const params = useParams();
   const prospectId = params.prospectId as Id<"clients">;
 
-  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "outreach" | "activity">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity">("overview");
   const [showRevisionModal, setShowRevisionModal] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
@@ -59,6 +61,18 @@ export default function ProspectDetailPage() {
     chNumber ? { companyNumber: chNumber } : "skip",
   );
 
+  // v1.3 — reply events linked to this client (for the Replies tab + count)
+  const replies = useQuery(
+    api.replyEvents.listByClient,
+    prospect ? { clientId: prospectId, limit: 50 } : "skip",
+  );
+
+  // v1.3 Sprint C — meetings linked to this client (for the Meetings tab + count)
+  const meetings = useQuery(
+    api.meetings.getByClient,
+    prospect ? { clientId: prospectId, limit: 100 } : "skip",
+  );
+
   const approvePackage = useMutation(api.cadences.approvePackage);
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
@@ -82,6 +96,8 @@ export default function ProspectDetailPage() {
         onTabChange={setActiveTab}
         peopleCount={countKeyPeople((intelRun as any)?.intelMarkdown)}
         chargesCount={(chProfile as any)?.charges?.length ?? 0}
+        repliesCount={replies?.length ?? 0}
+        meetingsCount={meetings?.length ?? 0}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 1, background: colors.border.default, paddingBottom: 80 }}>
@@ -103,6 +119,8 @@ export default function ProspectDetailPage() {
             <CompaniesHouseTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} />
           )}
           {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
+          {activeTab === "replies" && <RepliesTab prospect={prospect} />}
+          {activeTab === "meetings" && <MeetingsTab prospect={prospect} />}
           {activeTab === "activity" && (
             <ActivityTab prospect={prospect} intelRun={intelRun} cadences={cadences} />
           )}

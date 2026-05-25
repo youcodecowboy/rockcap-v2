@@ -166,6 +166,8 @@ export const create = mutation({
     relatedProjectId: v.optional(v.id("projects")),
     relatedContactId: v.optional(v.id("contacts")),
     relatedCadenceId: v.optional(v.id("cadences")),
+    relatedReplyEventId: v.optional(v.id("replyEvents")),
+    relatedSkillRunId: v.optional(v.id("skillRuns")),
     expiresAt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -184,6 +186,8 @@ export const create = mutation({
       relatedProjectId: args.relatedProjectId,
       relatedContactId: args.relatedContactId,
       relatedCadenceId: args.relatedCadenceId,
+      relatedReplyEventId: args.relatedReplyEventId,
+      relatedSkillRunId: args.relatedSkillRunId,
       expiresAt: args.expiresAt,
     });
   },
@@ -204,6 +208,8 @@ export const internalCreate = internalMutation({
     relatedProjectId: v.optional(v.id("projects")),
     relatedContactId: v.optional(v.id("contacts")),
     relatedCadenceId: v.optional(v.id("cadences")),
+    relatedReplyEventId: v.optional(v.id("replyEvents")),
+    relatedSkillRunId: v.optional(v.id("skillRuns")),
     expiresAt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -221,8 +227,40 @@ export const internalCreate = internalMutation({
       relatedProjectId: args.relatedProjectId,
       relatedContactId: args.relatedContactId,
       relatedCadenceId: args.relatedCadenceId,
+      relatedReplyEventId: args.relatedReplyEventId,
+      relatedSkillRunId: args.relatedSkillRunId,
       expiresAt: args.expiresAt,
     });
+  },
+});
+
+// ── v1.3 — public queries for the prospect-detail Overview + Claude Code ──
+
+// List pending approvals related to a client. Used by the Overview's
+// "Pending approvals" card AND by Claude Code when checking the status
+// of a drafted reply.
+export const listPendingByClient = query({
+  args: { clientId: v.id("clients"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("approvals")
+      .withIndex("by_related_client", (q) => q.eq("relatedClientId", args.clientId))
+      .order("desc")
+      .take(args.limit ?? 20);
+    return rows.filter((r) => r.status === "pending");
+  },
+});
+
+// List approvals related to a specific reply event (typically one — the
+// qualify-and-draft or meeting-prep-respond output).
+export const listByReplyEvent = query({
+  args: { replyEventId: v.id("replyEvents") },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("approvals")
+      .withIndex("by_related_reply_event", (q) => q.eq("relatedReplyEventId", args.replyEventId))
+      .collect();
+    return rows;
   },
 });
 

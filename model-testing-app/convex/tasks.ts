@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
 // Helper function to get authenticated user
@@ -112,6 +112,79 @@ export const create = mutation({
     }
 
     return taskId;
+  },
+});
+
+// ── v1.3 Sprint G: internal variant for MCP/skill callers ──
+//
+// The public `create` above requires a Clerk session via getAuthenticatedUser.
+// Skill runs come in through the MCP server which authenticates via bearer
+// token (mcpTokens), so the calling userId is already known at the MCP layer
+// and is threaded through into this internal mutation directly.
+//
+// Use case: meeting-capture skill creates follow-up tasks from a meeting
+// transcript; qualify-and-draft creates "schedule call" tasks after a reply
+// classified as book_meeting; deal-intake creates "request missing docs"
+// tasks when KYC items are incomplete.
+
+export const createInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    title: v.string(),
+    description: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    dueDate: v.optional(v.string()),
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high")
+    )),
+    tags: v.optional(v.array(v.string())),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    assignedTo: v.optional(v.array(v.id("users"))),
+    attachmentIds: v.optional(v.array(v.id("documents"))),
+    contactIds: v.optional(v.array(v.id("contacts"))),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    const assignees = args.assignedTo && args.assignedTo.length > 0 ? args.assignedTo : [args.userId];
+
+    const taskId = await ctx.db.insert("tasks", {
+      createdBy: args.userId,
+      assignedTo: assignees,
+      title: args.title,
+      description: args.description,
+      notes: args.notes,
+      dueDate: args.dueDate,
+      status: "todo",
+      priority: args.priority || "medium",
+      tags: args.tags || [],
+      clientId: args.clientId,
+      projectId: args.projectId,
+      reminderIds: [],
+      attachmentIds: args.attachmentIds || [],
+      contactIds: args.contactIds || undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Notify all assignees except the creator
+    for (const assigneeId of assignees) {
+      if (assigneeId !== args.userId) {
+        await ctx.db.insert("notifications", {
+          userId: assigneeId,
+          type: "task" as const,
+          title: "New task assigned",
+          message: `You have been assigned to task: "${args.title}"`,
+          relatedId: String(taskId),
+          isRead: false,
+          createdAt: now,
+        });
+      }
+    }
+
+    return { ok: true as const, taskId };
   },
 });
 
