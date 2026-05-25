@@ -62,12 +62,26 @@ export default defineSchema({
     deletedAt: v.optional(v.string()),
     deletedBy: v.optional(v.id("users")),
     deletedReason: v.optional(v.string()),
+    // Prospect state machine (v1.2 prospects CRM)
+    prospectState: v.optional(v.union(
+      v.literal("drafted"),
+      v.literal("needs_revision"),
+      v.literal("active"),
+      v.literal("replied"),
+      v.literal("engaged"),
+      v.literal("promoted"),
+      v.literal("parked"),
+      v.literal("lost"),
+    )),
+    prospectStateChangedAt: v.optional(v.string()),
+    prospectStateChangedBy: v.optional(v.id("users")),
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])
     .index("by_name", ["name"])
     .index("by_hubspot_id", ["hubspotCompanyId"])
-    .index("by_last_accessed", ["lastAccessedAt"]),
+    .index("by_last_accessed", ["lastAccessedAt"])
+    .index("by_prospect_state", ["prospectState"]),
 
   // Companies table - HubSpot companies (prospects, separate from clients)
   // Companies can be promoted to clients when they become active
@@ -3769,6 +3783,24 @@ export default defineSchema({
 
     // Origin (which skill run drafted this cadence)
     sourceSkillRunId: v.optional(v.id("skillRuns")),
+
+    // Package-level approval gate (v1.2)
+    packageApprovalStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("denied"),
+    )),
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.string()),
+
+    // Operator edit + revision tracking (v1.2)
+    editedByOperator: v.optional(v.boolean()),
+    editedAt: v.optional(v.string()),
+    editedBy: v.optional(v.id("users")),
+    revisionRequested: v.optional(v.boolean()),
+    revisionNote: v.optional(v.string()),
+    revisionRequestedBy: v.optional(v.id("users")),
+    revisionRequestedAt: v.optional(v.string()),
   })
     .index("by_contact", ["contactId"])
     .index("by_next_due", ["nextDueAt"])
@@ -3776,6 +3808,7 @@ export default defineSchema({
     .index("by_related_project", ["relatedProjectId"])
     .index("by_related_client", ["relatedClientId"])
     .index("by_package", ["packageId"])
+    .index("by_package_approval_status", ["packageId", "packageApprovalStatus"])
     .index("by_contact_active", ["contactId", "isActive"])
     .index("by_created_by", ["createdBy"]),
 
@@ -4126,6 +4159,15 @@ export default defineSchema({
 
     // Batch (future)
     parentBatchId: v.optional(v.id("bulkUploadBatches")),
+
+    // Rich intel report (v1.2) — companion to `brief`, full markdown
+    intelMarkdown: v.optional(v.string()),
+
+    // Revision linking (v1.2) — set when a skillRun is a re-run after request_revision
+    parentRunId: v.optional(v.id("skillRuns")),
+    revisionRequestedAt: v.optional(v.string()),
+    revisionNote: v.optional(v.string()),
+    revisionRequestedBy: v.optional(v.id("users")),
   })
     .index("by_user", ["userId"])
     .index("by_skill_and_dedup_key", ["skillName", "dedupKey"])
