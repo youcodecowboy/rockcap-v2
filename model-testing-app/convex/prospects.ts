@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 
 /**
  * Create a prospect from a company number
@@ -187,3 +187,84 @@ export const getRecentCount = query({
   },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.2 Prospects CRM — state machine helpers
+//
+// A "prospect" is a clients row with prospectState set (one of 8 states).
+// The CRM home page surfaces these via the per-state public queries below.
+// State transitions are written through transitionStateInternal which also
+// schedules HubSpot push-back via the existing sync surface (HubSpot push
+// hook lands in a follow-on commit).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PROSPECT_STATE = v.union(
+  v.literal("drafted"),
+  v.literal("needs_revision"),
+  v.literal("active"),
+  v.literal("replied"),
+  v.literal("engaged"),
+  v.literal("promoted"),
+  v.literal("parked"),
+  v.literal("lost"),
+);
+
+// ── State transition (called by prospect.transitionState MCP tool) ──
+
+export const transitionStateInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    newState: PROSPECT_STATE,
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.clientId, {
+      prospectState: args.newState,
+      prospectStateChangedAt: now,
+      prospectStateChangedBy: args.userId,
+    });
+    return { ok: true, transitionedAt: now };
+  },
+});
+
+// ── List prospects by state (public queries — power the home page sections) ──
+
+export const listByState = query({
+  args: { state: PROSPECT_STATE },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("clients")
+      .withIndex("by_prospect_state", (q) => q.eq("prospectState", args.state))
+      .order("desc")
+      .take(100);
+  },
+});
+
+export const countByState = query({
+  args: { state: PROSPECT_STATE },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("clients")
+      .withIndex("by_prospect_state", (q) => q.eq("prospectState", args.state))
+      .collect();
+    return rows.length;
+  },
+});
+
+// ── Get a single prospect with state context ──
+
+export const getById = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.clientId);
+  },
+});
+
+// ── Internal: get for MCP-side reads (no auth gate; trusted caller) ──
+
+export const getInternal = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.clientId);
+  },
+});
