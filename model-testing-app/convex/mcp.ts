@@ -424,18 +424,29 @@ const TOOLS: McpTool[] = [
       if (args.dedupKey && args.dedupWindowDays) {
         const windowMs = args.dedupWindowDays * 24 * 60 * 60 * 1000;
         const cutoffMs = Date.now() - windowMs;
-        const priorRun = await ctx.runQuery(internal.skillRuns.findRecentByDedupKeyInternal, {
+        const priorResult = await ctx.runQuery(internal.skillRuns.findRecentByDedupKeyInternal, {
           skillName: args.skillName,
           dedupKey: args.dedupKey,
           cutoffMs,
         });
-        if (priorRun) {
+        if (priorResult?.kind === "completed") {
+          const priorRun = priorResult.row;
           const ageHours = (Date.now() - priorRun._creationTime) / (1000 * 60 * 60);
           return asText({
             status: "duplicate_found",
             priorRunId: priorRun._id,
             priorRunBrief: priorRun.brief ?? "",
             priorRunAgeHours: Math.round(ageHours * 10) / 10,
+          });
+        }
+        if (priorResult?.kind === "in_flight") {
+          const priorRun = priorResult.row;
+          const ageMinutes = (Date.now() - priorRun._creationTime) / (1000 * 60);
+          return asText({
+            status: "already_running",
+            priorRunId: priorRun._id,
+            priorRunOwnerId: priorRun.userId,
+            priorRunStartedAgoMinutes: Math.round(ageMinutes * 10) / 10,
           });
         }
       }
@@ -588,6 +599,141 @@ const TOOLS: McpTool[] = [
         cadenceId: args.cadenceId,
         reason: args.reason,
       });
+      return asText(result);
+    },
+  },
+
+  // v1.2 prospects CRM — state transition
+  {
+    name: "prospect.transitionState",
+    description:
+      "Transition a prospect through the 8-state pipeline (drafted/needs_revision/active/replied/engaged/promoted/parked/lost). Called by the prospects CRM and by skill workflows (e.g., reply event processor on intent classification). Side effect: pushes the mapped lifecycleStage + hs_lead_status to HubSpot (see spec section 2.8).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client row" },
+        newState: {
+          type: "string",
+          description: "drafted | needs_revision | active | replied | engaged | promoted | parked | lost",
+        },
+      },
+      required: ["clientId", "newState"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.prospects.transitionStateInternal, {
+        clientId: args.clientId,
+        newState: args.newState,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.2 prospects CRM — operator edit on a single touch
+  {
+    name: "cadence.update",
+    description:
+      "Update an existing cadence row's preDraftedTouch content or scheduled nextDueAt. Sets editedByOperator + editedAt audit fields. Revision re-runs respect editedByOperator and skip overwriting unless the operator's revision note specifically calls out the edited touch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        preDraftedTouch: {
+          type: "object",
+          properties: {
+            subject: { type: "string" },
+            bodyText: { type: "string" },
+            bodyHtml: { type: "string" },
+            dynamicVars: { type: "object" },
+          },
+        },
+        nextDueAt: { type: "string", description: "ISO timestamp" },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.updateInternal, {
+        cadenceId: args.cadenceId,
+        userId,
+        preDraftedTouch: args.preDraftedTouch,
+        nextDueAt: args.nextDueAt,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.2 prospects CRM — request revision on a cadence package
+  {
+    name: "cadence.requestRevision",
+    description:
+      "Mark all cadences in a package as revision-requested with an operator note. Skill re-runs use the note as context to produce a new package; the new package's diff is shown to the operator for per-touch accept/reject.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageId: { type: "string" },
+        revisionNote: { type: "string", description: "Operator's free-text revision note (e.g., 'too aggressive on rates')" },
+      },
+      required: ["packageId", "revisionNote"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.requestRevisionInternal, {
+        packageId: args.packageId,
+        userId,
+        revisionNote: args.revisionNote,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.2 prospects CRM — list unprocessed candidates for prospect-intel
+  {
+    name: "companies.listUnprocessed",
+    description:
+      "List HubSpot-synced companies that don't have a prospect-intel skillRun yet (or are in NEW/RUNNING/STUCK state). Used by Claude Code to find batch candidates for prospect-intel runs. Default filter: states=['new'], sinceDays=30, limit=25, excludePromoted=true. Returns rows with a per-row 'state' field.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Default 25" },
+        sinceDays: { type: "number", description: "Only companies created in last N days; default 30" },
+        states: {
+          type: "array",
+          items: { type: "string" },
+          description: "Subset of ['new', 'running', 'stuck']; default ['new']",
+        },
+        excludePromoted: { type: "boolean", description: "Default true" },
+        lifecycleStage: { type: "string", description: "Optional HubSpot lifecycleStage filter" },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.companies.listUnprocessedInternal, {
+        limit: args.limit ?? 25,
+        sinceDays: args.sinceDays ?? 30,
+        states: args.states ?? ["new"],
+        excludePromoted: args.excludePromoted ?? true,
+        lifecycleStage: args.lifecycleStage,
+      });
+      return asText(result);
+    },
+  },
+
+  // v1.2 prospects CRM — operator-side read of an approval row
+  {
+    name: "approval.get",
+    description:
+      "Read an approval row by id (read-only). Closes the v1.1 gap where skills couldn't audit the approval rows they created. Returns the full row including draftPayload + linked entity ids.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalId: { type: "string" },
+      },
+      required: ["approvalId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.approvals.getInternal, {
+        approvalId: args.approvalId,
+      });
+      if (!result) return asText({ error: "approval not found" });
       return asText(result);
     },
   },

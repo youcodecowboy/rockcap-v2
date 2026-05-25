@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 
 /**
  * Get company by ID
@@ -247,6 +247,92 @@ export const searchByName = query({
       .map((s) => s.company);
 
     return scored;
+  },
+});
+
+// v1.2: list HubSpot-synced companies that haven't been processed by
+// prospect-intel yet (NEW state) — or are currently in-flight (RUNNING)
+// or stuck (RUNNING > 2h). Joins against skillRuns to derive state per row.
+
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+export const listUnprocessedInternal = internalQuery({
+  args: {
+    limit: v.number(),
+    sinceDays: v.number(),
+    states: v.array(v.string()),
+    excludePromoted: v.boolean(),
+    lifecycleStage: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const sinceMs = Date.now() - args.sinceDays * 24 * 60 * 60 * 1000;
+
+    // Pull recent companies. There's no index on createdAt, so use _creationTime
+    // via collect + filter (acceptable for the 30d window + ~hundreds of rows).
+    const allRecent = await ctx.db
+      .query("companies")
+      .filter((q) => q.gt(q.field("_creationTime"), sinceMs))
+      .collect();
+
+    const candidates: Array<{
+      company: any;
+      state: "new" | "running" | "stuck";
+      runId?: string;
+      runOwnerId?: string;
+      runAgeMinutes?: number;
+    }> = [];
+
+    for (const company of allRecent) {
+      if (args.lifecycleStage && (company as any).hubspotLifecycleStage !== args.lifecycleStage) continue;
+
+      // Look up the most recent prospect-intel skillRun for this company.
+      // Dedup key is the CH number; derive it from the description if present.
+      const chMatch = (company as any).metadata?.hubspotCustomProperties?.description?.match(/CH\s+(\d{6,8})/);
+      const dedupKey = chMatch?.[1];
+      if (!dedupKey) {
+        // No CH number available — treat as NEW since we can't dedup
+        candidates.push({ company, state: "new" });
+        continue;
+      }
+
+      const runs = await ctx.db
+        .query("skillRuns")
+        .withIndex("by_skill_and_dedup_key", (q) =>
+          q.eq("skillName", "prospect-intel").eq("dedupKey", dedupKey),
+        )
+        .order("desc")
+        .take(1);
+
+      const latest = runs[0];
+
+      if (!latest) {
+        candidates.push({ company, state: "new" });
+      } else if (latest.status === "running") {
+        const ageMs = Date.now() - latest._creationTime;
+        const isStuck = ageMs > TWO_HOURS_MS;
+        candidates.push({
+          company,
+          state: isStuck ? "stuck" : "running",
+          runId: latest._id,
+          runOwnerId: latest.userId,
+          runAgeMinutes: Math.round(ageMs / 60000),
+        });
+      } else if (
+        args.excludePromoted &&
+        (latest.status === "complete" || latest.status === "complete_with_gaps")
+      ) {
+        // Has a completed run — not a candidate
+        continue;
+      }
+    }
+
+    // Filter by requested states
+    const filtered = candidates.filter((c) => args.states.includes(c.state));
+
+    // Sort by most recent first
+    filtered.sort((a, b) => (b.company as any)._creationTime - (a.company as any)._creationTime);
+
+    return filtered.slice(0, args.limit);
   },
 });
 

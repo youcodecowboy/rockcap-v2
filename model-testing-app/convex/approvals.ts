@@ -386,3 +386,13 @@ export const executeApproval = internalAction({
     }
   },
 });
+
+// v1.2: skill-side read of an approval row. Closes the gap from v1.1
+// where approvals queries gate on Clerk auth and skills couldn't audit
+// the rows they created.
+export const getInternal = internalQuery({
+  args: { approvalId: v.id("approvals") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.approvalId);
+  },
+});
