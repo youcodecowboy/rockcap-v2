@@ -641,3 +641,37 @@ export const promoteActionItemToTask = mutation({
     return { taskId };
   },
 });
+
+// ── v1.3 Sprint C — upcoming meetings across all clients ──
+//
+// Powers the operator's morning queue ("what calls do I have today/this week")
+// AND Claude Code's "what's on my plate" surveys. Returns meetings whose
+// scheduled meetingDate is in the future (>= now), oldest first (so the
+// next-up meeting is at the top).
+//
+// Acceptable scan-and-filter approach at current row counts (<200 meetings
+// in flight per quarter). Add a by_meeting_date index when scale demands.
+
+export const listUpcoming = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    const meetings = await ctx.db.query("meetings").collect();
+    return meetings
+      .filter((m) => m.meetingDate >= now)
+      .sort((a, b) =>
+        new Date(a.meetingDate).getTime() - new Date(b.meetingDate).getTime(),
+      )
+      .slice(0, args.limit ?? 50);
+  },
+});
+
+// Count upcoming meetings — for the home page section badge.
+export const countUpcoming = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date().toISOString();
+    const meetings = await ctx.db.query("meetings").collect();
+    return meetings.filter((m) => m.meetingDate >= now).length;
+  },
+});

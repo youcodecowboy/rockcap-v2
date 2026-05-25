@@ -8,14 +8,15 @@ interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity") => void;
   peopleCount?: number;
   chargesCount?: number;
   repliesCount?: number;
+  meetingsCount?: number;
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
 
@@ -76,7 +77,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "people", "ch", "outreach", "replies", "activity"] as const).map((tab) => {
+          {(["overview", "intel", "people", "ch", "outreach", "replies", "meetings", "activity"] as const).map((tab) => {
             const labelMap: Record<typeof tab, string> = {
               overview: "Overview",
               intel: "Intel",
@@ -84,6 +85,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               ch: "Companies House",
               outreach: "Outreach",
               replies: "Replies",
+              meetings: "Meetings",
               activity: "Activity",
             };
             return (
@@ -109,6 +111,9 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               )}
               {tab === "replies" && repliesCount !== undefined && repliesCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{repliesCount}</span>
+              )}
+              {tab === "meetings" && meetingsCount !== undefined && meetingsCount > 0 && (
+                <span style={{ color: colors.text.dim, marginLeft: 4 }}>{meetingsCount}</span>
               )}
             </div>
             );

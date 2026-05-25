@@ -701,6 +701,121 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.3 Sprint C — meeting visibility + skill-side meeting management.
+  // The meeting-prep skill loads context (via getDeepContext which already
+  // returns meeting summaries) then proposes availability via outreach.draftReply.
+  // After a meeting books, meeting.create persists the record for the
+  // Meetings tab + UpcomingMeetingsSection.
+  {
+    name: "meeting.listByClient",
+    description:
+      "List meetings for a specific client (past + upcoming, newest first). Used by Claude Code when an operator asks 'what's the meeting history with X?' and by the Meetings tab on the prospect detail page. Each row carries full meeting content: title, attendees, decisions, action items, summary.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        limit: { type: "number", description: "Default 50" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.meetings.getByClient, {
+        clientId: args.clientId,
+        limit: args.limit ?? 50,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "meeting.listUpcoming",
+    description:
+      "List upcoming meetings across all clients, soonest first. The operator's 'what calls do I have' surface — populates the UpcomingMeetingsSection on the /prospects home page AND Claude Code's morning-queue surveys. Filters to meetings whose meetingDate is in the future.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Default 50" },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const rows = await ctx.runQuery(api.meetings.listUpcoming, {
+        limit: args.limit ?? 50,
+      });
+      return asText(rows);
+    },
+  },
+
+  {
+    name: "meeting.get",
+    description:
+      "Get one meeting by id with full content (attendees, decisions, action items, summary). Use after meeting.listByClient / listUpcoming has returned an id and you need the full payload.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        meetingId: { type: "string" },
+      },
+      required: ["meetingId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.meetings.get, {
+        meetingId: args.meetingId,
+      });
+      if (!result) return asText({ error: "meeting_not_found", meetingId: args.meetingId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "meeting.create",
+    description:
+      "Create a meeting record. Used by meeting-prep skill after operator approves a proposed time, and by meeting-capture skill when persisting captured notes. For a JUST-SCHEDULED meeting (no notes yet), pass title + meetingDate + attendees + meetingType only; leave summary='' / keyPoints=[] / decisions=[] / actionItems=[] empty — they get populated by meeting-capture post-meeting.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        projectId: { type: "string", description: "Optional — only if linked to a specific project" },
+        title: { type: "string", description: "e.g., 'Mccarthy intro call' or 'Comberton site visit'" },
+        meetingDate: { type: "string", description: "ISO timestamp; the scheduled date/time" },
+        meetingType: {
+          type: "string",
+          description: "progress | kickoff | review | site_visit | call | other",
+        },
+        attendees: {
+          type: "array",
+          description: "Array of {name, role, company, contactId?}",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              role: { type: "string" },
+              company: { type: "string" },
+              contactId: { type: "string" },
+            },
+            required: ["name"],
+          },
+        },
+        summary: { type: "string", description: "Empty string for scheduled-but-not-yet-held meetings" },
+      },
+      required: ["clientId", "title", "meetingDate", "attendees", "summary"],
+    },
+    handler: async (ctx, userId, args) => {
+      const meetingId = await ctx.runMutation(api.meetings.create, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        title: args.title,
+        meetingDate: args.meetingDate,
+        meetingType: args.meetingType,
+        attendees: args.attendees,
+        summary: args.summary,
+        keyPoints: [],
+        decisions: [],
+        actionItems: [],
+      });
+      return asText({ status: "created", meetingId });
+    },
+  },
+
   // v1.3 Sprint B — qualify-and-draft helper tools. Skill-friendly surface
   // for the "operator wants to draft a reply" workflow. Wraps approvals.create
   // with the right shape for email drafts + links the approval back to the
