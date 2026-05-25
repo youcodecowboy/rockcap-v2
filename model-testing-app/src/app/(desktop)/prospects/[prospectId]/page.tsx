@@ -33,15 +33,20 @@ export default function ProspectDetailPage() {
   );
   const cadences = (cadencesRaw as any[]) ?? [];
 
-  // Derive the intel run via the cadences' sourceSkillRunId — far more
-  // robust than dedupKey lookup. The cadences carry the link between
-  // a clients row and the skill output that produced them, regardless
-  // of whether the clients row has hubspotCompanyId populated.
+  // Derive the intel run via the cadences' sourceSkillRunId where possible
+  // (operationally linked path), falling back to a direct lookup by
+  // linkedClientId for prospects that have a skillRun but no cadences yet
+  // (e.g., freshly synthesized intel, package not yet created).
   const intelRunId = cadences[0]?.sourceSkillRunId as Id<"skillRuns"> | undefined;
-  const intelRun = useQuery(
+  const intelRunFromCadence = useQuery(
     api.skillRuns.getById,
     intelRunId ? { runId: intelRunId } : "skip",
   );
+  const intelRunFromBackref = useQuery(
+    api.skillRuns.latestByLinkedClientId,
+    !intelRunId && prospect ? { clientId: prospectId, skillName: "prospect-intel" } : "skip",
+  );
+  const intelRun = intelRunFromCadence ?? intelRunFromBackref;
 
   // Companies House profile + charges. For prospect-intel runs the dedupKey
   // IS the CH number — use it to surface the structured CH data in the

@@ -152,6 +152,24 @@ export const latestByDedupKey = query({
   },
 });
 
+// Latest skillRun linked to a clients row — fallback used by the detail page
+// when no cadences exist yet (e.g., new prospect just synthesized, package
+// not yet created). Walks skillRuns and filters by linkedClientId. Acceptable
+// for current row counts (<1000 skillRuns); add a by_linkedClientId index
+// when scale demands it.
+export const latestByLinkedClientId = query({
+  args: { clientId: v.id("clients"), skillName: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const all = await ctx.db.query("skillRuns").order("desc").collect();
+    const matches = all.filter(
+      (r) =>
+        r.linkedClientId === args.clientId &&
+        (!args.skillName || r.skillName === args.skillName),
+    );
+    return matches[0] ?? null;
+  },
+});
+
 // ── Stale-run sweep (called by the daily cron in Group 7) ──
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
