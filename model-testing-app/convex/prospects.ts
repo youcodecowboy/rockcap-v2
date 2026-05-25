@@ -368,15 +368,63 @@ export const getDeepContext = query({
       .sort((a: any, b: any) => (b.occurredAt ?? "").localeCompare(a.occurredAt ?? ""))
       .slice(0, 20);
 
+    // 10. v1.3 — Deals linked to this client (active-client primary view).
+    // Deals table has clientId field. We fetch all then sort by amount/date.
+    const deals = (await ctx.db.query("deals").collect())
+      .filter((d: any) => d.clientId === args.clientId)
+      .sort((a: any, b: any) => (b.amount ?? 0) - (a.amount ?? 0));
+    const dealsActive = deals.filter((d: any) => {
+      const s = (d.status ?? "").toLowerCase();
+      // Active = anything not closed-won/lost/dropped. Heuristic — adapt
+      // when the deal lifecycle stages stabilise.
+      return !s.includes("closed") && !s.includes("lost") && !s.includes("dropped");
+    });
+
+    // 11. v1.3 — Projects linked via the many-to-many clientRoles array.
+    // Projects can have multiple client roles (borrower / lender / etc.);
+    // surface all where this client appears in any role.
+    const projects = (await ctx.db.query("projects").collect()).filter((p: any) =>
+      (p.clientRoles ?? []).some((cr: any) => cr.clientId === args.clientId),
+    );
+    const projectsActive = projects.filter((p: any) => {
+      const s = (p.status ?? "").toLowerCase();
+      return s === "active" || s === "in_progress" || s === "underwriting" || s === "execution" || s === "post_credit";
+    });
+
+    // 12. v1.3 — Pending approvals targeting this client. The approvals
+    // table doesn't have a direct clientId column (uses entityRefId as
+    // a flexible string); we'd need a denormalised link to filter
+    // efficiently. For now: scan for any approval whose draftPayload
+    // references this client. Best-effort; the operator can drill into
+    // /approvals for the full picture.
+    const allApprovals = await ctx.db.query("approvals").collect();
+    const pendingApprovals = allApprovals
+      .filter((a: any) => a.status === "pending")
+      .filter((a: any) => {
+        // Match on draftPayload string contents (loose; could be tightened
+        // when approvals get a structured clientId field)
+        const payload = JSON.stringify(a.draftPayload ?? {});
+        return payload.includes(args.clientId);
+      })
+      .slice(0, 20);
+
     // Compose a synthesis-friendly summary block. Claude Code can use this
     // for a quick "headline" answer, then drill into the structured fields.
-    const summary = {
+    // Adapts to entity state: prospects show outreach counts; active clients
+    // show deal/project counts. Both shapes share core identity + counts.
+    const isActiveClient = (prospect as any).status === "active";
+    const summary: Record<string, any> = {
       name: (prospect as any).name,
-      companiesHouseNumber: chNumber,
+      type: (prospect as any).type,
+      status: (prospect as any).status,
       prospectState: (prospect as any).prospectState ?? "n/a",
-      prospectStateChangedAt: (prospect as any).prospectStateChangedAt,
+      companiesHouseNumber: chNumber,
       contactsCount: contacts.length,
       contactsWithEmail: contacts.filter((c: any) => c.email).length,
+      meetingsUpcoming: meetingsUpcoming.length,
+      meetingsPast: meetingsPast.length,
+      pendingApprovals: pendingApprovals.length,
+      // Prospect-flavour counts (always returned; will be 0 for active clients)
       cadencesActive: cadencesActive.length,
       cadencesFired: cadencesFired.length,
       cadencesQueued: cadencesQueued.length,
@@ -384,11 +432,19 @@ export const getDeepContext = query({
       repliesAwaitingTriage: replyEvents.filter((r: any) => r.dispatchedTo === "operator_review").length,
       latestIntelRunStatus: latestIntelRun?.status ?? "no_run",
       latestIntelRunCompletedAt: latestIntelRun?.completedAt,
-      meetingsUpcoming: meetingsUpcoming.length,
-      meetingsPast: meetingsPast.length,
       chargesActive: chProfile?.charges?.filter((c: any) => c.chargeStatus === "outstanding").length ?? 0,
       chargesTotal: chProfile?.charges?.length ?? 0,
+      // Active-client-flavour counts (always returned; will be 0 for prospects)
+      dealsActive: dealsActive.length,
+      dealsTotal: deals.length,
+      projectsActive: projectsActive.length,
+      projectsTotal: projects.length,
+      touchpointsCount: touchpoints.length,
     };
+    if ((prospect as any).prospectStateChangedAt) {
+      summary.prospectStateChangedAt = (prospect as any).prospectStateChangedAt;
+    }
+    summary.entityFocus = isActiveClient ? "active_client" : "prospect";
 
     return {
       summary,
@@ -407,6 +463,10 @@ export const getDeepContext = query({
       chProfile,
       clientIntelligence,
       touchpoints,
+      // v1.3 — active-client sections (returned for any clients row; empty arrays for prospects)
+      deals: { all: deals, active: dealsActive },
+      projects: { all: projects, active: projectsActive },
+      pendingApprovals,
     };
   },
 });

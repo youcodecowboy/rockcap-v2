@@ -653,16 +653,17 @@ const TOOLS: McpTool[] = [
   },
 
   // v1.3 — THE central operator workflow tool. Returns a one-shot snapshot
-  // of everything about a prospect so Claude Code can answer "where are we
-  // at with X?" without 10 separate reads.
+  // of everything about a prospect OR active client so Claude Code can
+  // answer "where are we at with X?" without 10 separate reads. Works for
+  // ANY clients-table row regardless of CRM state.
   {
     name: "prospect.getDeepContext",
     description:
-      "Returns a comprehensive snapshot of a prospect: the clients row, all linked contacts, all cadences (active/fired/queued split), all reply events (newest first), the latest prospect-intel skillRun, recent meetings (upcoming + past), the Companies House profile + charges if synced, the clientIntelligence row, and recent touchpoints. Includes a `summary` block with at-a-glance counts (cadencesActive, repliesReceived, repliesAwaitingTriage, meetingsUpcoming, chargesActive, etc.) so the operator-agent can compose an answer immediately. Use this as the FIRST tool call when an operator asks about a specific prospect. Subsequent narrower tool calls (reply.get, cadence.update, etc.) operate on data already in scope from the deep context return.",
+      "Returns a comprehensive snapshot of any clients-table entity (prospect or active client). For prospects: contacts, cadences (active/fired/queued split), reply events (newest first), latest prospect-intel skillRun, CH profile + charges. For active clients: deals (active/all), projects (active/all), pending approvals. Always returns: identity, contacts, recent meetings (upcoming + past), touchpoints, clientIntelligence row. The `summary` block has an `entityFocus` field ('prospect' or 'active_client') so Claude Code knows which section counts matter most. Use this as the FIRST tool call when an operator asks about a specific entity. Subsequent narrower tool calls (reply.get, cadence.update, etc.) operate on data already in scope from the deep context return. v1.3 update: works for both prospects AND active clients with adaptive summary.",
     inputSchema: {
       type: "object",
       properties: {
-        clientId: { type: "string", description: "Convex id of the clients row (the prospect)" },
+        clientId: { type: "string", description: "Convex id of the clients row (prospect OR active client)" },
       },
       required: ["clientId"],
     },
@@ -670,7 +671,32 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runQuery(api.prospects.getDeepContext, {
         clientId: args.clientId,
       });
-      if (!result) return asText({ error: "prospect_not_found", clientId: args.clientId });
+      if (!result) return asText({ error: "entity_not_found", clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  // v1.3 — alias name for the same query, surfaced under client.* for
+  // discoverability when working with active clients (operator says
+  // "tell me about Bayfield Homes" → Claude Code naturally looks for
+  // client.* tools). The query handler is shape-agnostic; returns the
+  // same payload as prospect.getDeepContext.
+  {
+    name: "client.getDeepContext",
+    description:
+      "Alias of prospect.getDeepContext. Same query, surfaced under client.* for operator-side clarity when working with active clients. Returns identity + contacts + meetings + touchpoints + deals + projects + pending approvals + clientIntelligence + (when present) the prospect-flavour fields like cadences/replies/intel-run that survived from the prospect phase. The summary.entityFocus field tells you whether this entity is currently in prospect or active-client mode.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the clients row" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.prospects.getDeepContext, {
+        clientId: args.clientId,
+      });
+      if (!result) return asText({ error: "client_not_found", clientId: args.clientId });
       return asText(result);
     },
   },
