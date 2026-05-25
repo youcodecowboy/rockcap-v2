@@ -336,3 +336,79 @@ export const listUnprocessedInternal = internalQuery({
   },
 });
 
+// v1.2: Public-facing version of listUnprocessedInternal — exposed via
+// api.companies.listUnprocessed so the prospects CRM CandidatesSection
+// can subscribe via useQuery. Body is intentionally duplicated rather than
+// proxying through ctx.runQuery to avoid the extra hop; if/when this query
+// grows complex, extract a shared helper.
+export const listUnprocessed = query({
+  args: {
+    limit: v.number(),
+    sinceDays: v.number(),
+    states: v.array(v.string()),
+    excludePromoted: v.boolean(),
+    lifecycleStage: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const sinceMs = Date.now() - args.sinceDays * 24 * 60 * 60 * 1000;
+
+    const allRecent = await ctx.db
+      .query("companies")
+      .filter((q) => q.gt(q.field("_creationTime"), sinceMs))
+      .collect();
+
+    const candidates: Array<{
+      company: any;
+      state: "new" | "running" | "stuck";
+      runId?: string;
+      runOwnerId?: string;
+      runAgeMinutes?: number;
+    }> = [];
+
+    for (const company of allRecent) {
+      if (args.lifecycleStage && (company as any).hubspotLifecycleStage !== args.lifecycleStage) continue;
+
+      const chMatch = (company as any).metadata?.hubspotCustomProperties?.description?.match(/CH\s+(\d{6,8})/);
+      const dedupKey = chMatch?.[1];
+      if (!dedupKey) {
+        candidates.push({ company, state: "new" });
+        continue;
+      }
+
+      const runs = await ctx.db
+        .query("skillRuns")
+        .withIndex("by_skill_and_dedup_key", (q) =>
+          q.eq("skillName", "prospect-intel").eq("dedupKey", dedupKey),
+        )
+        .order("desc")
+        .take(1);
+
+      const latest = runs[0];
+
+      if (!latest) {
+        candidates.push({ company, state: "new" });
+      } else if (latest.status === "running") {
+        const ageMs = Date.now() - latest._creationTime;
+        const isStuck = ageMs > TWO_HOURS_MS;
+        candidates.push({
+          company,
+          state: isStuck ? "stuck" : "running",
+          runId: latest._id,
+          runOwnerId: latest.userId,
+          runAgeMinutes: Math.round(ageMs / 60000),
+        });
+      } else if (
+        args.excludePromoted &&
+        (latest.status === "complete" || latest.status === "complete_with_gaps")
+      ) {
+        continue;
+      }
+    }
+
+    const filtered = candidates.filter((c) => args.states.includes(c.state));
+    filtered.sort((a, b) => (b.company as any)._creationTime - (a.company as any)._creationTime);
+
+    return filtered.slice(0, args.limit);
+  },
+});
+
