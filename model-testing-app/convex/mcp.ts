@@ -926,35 +926,10 @@ const TOOLS: McpTool[] = [
     },
   },
 
-  {
-    name: "project.get",
-    description: "Get one project by id (name, shortcode, status, clientRoles, address, description, etc.).",
-    inputSchema: {
-      type: "object",
-      properties: { projectId: { type: "string" } },
-      required: ["projectId"],
-    },
-    handler: async (ctx, userId, args) => {
-      const result = await ctx.runQuery(api.projects.get, { id: args.projectId });
-      if (!result) return asText({ error: "project_not_found", projectId: args.projectId });
-      return asText(result);
-    },
-  },
-
-  {
-    name: "project.getStats",
-    description:
-      "Get aggregate counts for a project (documents count by category, checklist completion %, recent activity count). Use when operator asks 'how complete is the Comberton package?' style questions.",
-    inputSchema: {
-      type: "object",
-      properties: { projectId: { type: "string" } },
-      required: ["projectId"],
-    },
-    handler: async (ctx, userId, args) => {
-      const result = await ctx.runQuery(api.projects.getStats, { id: args.projectId });
-      return asText(result);
-    },
-  },
+  // (project.get + project.getStats already defined earlier in this file —
+  // pre-Sprint E. The Sprint E project.listByClient + project.getDeepContext
+  // above are the new additions. Re-defining project.get here would create
+  // duplicate tool registrations.)
 
   // v1.3 Sprint E — meeting.update wrapper for meeting-capture skill output
   // (Sprint C added meeting.create + listByClient + listUpcoming + get;
@@ -1271,39 +1246,9 @@ const TOOLS: McpTool[] = [
   // v1.3 Sprint D — checklist MCP surface. Read existing items + create
   // custom items + flip status. The standard items get initialised from
   // templates; this surface is for the operator-driven exceptions.
-  {
-    name: "checklist.listByClient",
-    description:
-      "List all checklist items for a client (both client-level and project-level items). Each row carries name + category + phaseRequired + priority + status (missing/pending_review/fulfilled). Use to answer 'what do we still need from Mccarthy?' type questions.",
-    inputSchema: {
-      type: "object",
-      properties: { clientId: { type: "string" } },
-      required: ["clientId"],
-    },
-    handler: async (ctx, userId, args) => {
-      const result = await ctx.runQuery(api.knowledgeLibrary.getChecklistByClient, {
-        clientId: args.clientId,
-      });
-      return asText(result);
-    },
-  },
-
-  {
-    name: "checklist.listByProject",
-    description:
-      "List checklist items for a specific project. Use after prospect.getDeepContext reveals a project id and you want the scheme-specific requirements list (vs the client-level Base Documents).",
-    inputSchema: {
-      type: "object",
-      properties: { projectId: { type: "string" } },
-      required: ["projectId"],
-    },
-    handler: async (ctx, userId, args) => {
-      const result = await ctx.runQuery(api.knowledgeLibrary.getChecklistByProject, {
-        projectId: args.projectId,
-      });
-      return asText(result);
-    },
-  },
+  //
+  // (Read surface: checklist.getByClient + checklist.getByProject exist
+  // earlier in this file — pre-Sprint D. Use those for listing.)
 
   {
     name: "checklist.updateStatus",
@@ -1431,26 +1376,11 @@ const TOOLS: McpTool[] = [
   // returns meeting summaries) then proposes availability via outreach.draftReply.
   // After a meeting books, meeting.create persists the record for the
   // Meetings tab + UpcomingMeetingsSection.
-  {
-    name: "meeting.listByClient",
-    description:
-      "List meetings for a specific client (past + upcoming, newest first). Used by Claude Code when an operator asks 'what's the meeting history with X?' and by the Meetings tab on the prospect detail page. Each row carries full meeting content: title, attendees, decisions, action items, summary.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        clientId: { type: "string" },
-        limit: { type: "number", description: "Default 50" },
-      },
-      required: ["clientId"],
-    },
-    handler: async (ctx, userId, args) => {
-      const rows = await ctx.runQuery(api.meetings.getByClient, {
-        clientId: args.clientId,
-        limit: args.limit ?? 50,
-      });
-      return asText(rows);
-    },
-  },
+  //
+  // (Read surface: meeting.getByClient + meeting.getByProject exist earlier
+  // in this file — pre-Sprint C. Use those for listing per-client / per-project.
+  // meeting.listUpcoming below is the only NEW list-surface introduced in
+  // Sprint C since it spans all clients.)
 
   {
     name: "meeting.listUpcoming",

@@ -1,51 +1,113 @@
 # Skills
 
-Each subdirectory here is a skill. A skill is a SKILL.md plus supporting references that tells Claude how to perform a specific workflow the RockCap way. SKILL.md is the orchestration file; per-skill references hold the deeper context.
+Each subdirectory is a skill — a `SKILL.md` plus supporting references that tells Claude how to perform a specific workflow the RockCap way.
+
+**For tool discovery, see `../CATALOGUE.md`.** This README is the SKILL index.
 
 All skills follow the shape and rules in `../CONVENTIONS.md`.
 
-## The deal lifecycle (15 steps)
+## Skill maturity status
 
-The brief's 15-step deal lifecycle maps to the skills below. Some steps share a skill; some skills span more than one step.
-
-| Step | Topic | Skill |
+| Skill | Status | Last hardening |
 |---|---|---|
-| 1 | Prospecting and cold intel | [`prospect-intel/`](./prospect-intel/) |
-| 2 | Qualification and first-touch outreach | [`qualify-and-draft/`](./qualify-and-draft/) |
-| 3 | Prospect cadence tracking | [`cadence-fire/`](./cadence-fire/) (handles all 7 cadence types) |
-| 4 | Reply handling | [`qualify-and-draft/`](./qualify-and-draft/) (continuation) |
-| 5 | Pre-call refresh and post-call capture | [`meeting-prep/`](./meeting-prep/) and [`meeting-capture/`](./meeting-capture/) |
-| 6 | Post-meeting nurture | [`cadence-fire/`](./cadence-fire/) |
-| 7 | Deal data intake and underwriting model | [`deal-intake/`](./deal-intake/) |
-| 8 | Indicative terms and lender submission pack | [`terms-package-build/`](./terms-package-build/) |
-| 9 | Terms comparison and recommendation | [`terms-comparison/`](./terms-comparison/) |
-| 10 | Client decision capture | [`client-decision-capture/`](./client-decision-capture/) |
-| 11 | IC application support | [`ic-paper-drafter/`](./ic-paper-drafter/) and [`info-request-grader/`](./info-request-grader/) |
-| 12 | Timeline and chase orchestration | [`deal-triage/`](./deal-triage/) |
-| 13 | Deal closure and case study | [`case-study-author/`](./case-study-author/) |
-| 14 | Project monitoring | [`monitoring-watcher/`](./monitoring-watcher/) |
-| 15 | Existing client cadence | [`cadence-fire/`](./cadence-fire/) (client_checkin type) |
+| `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement |
+| `qualify-and-draft/` | **v2 hardened** | v1.3 Sprint B |
+| `meeting-prep/` | **v2 hardened** | v1.3 Sprint C |
+| `meeting-capture/` | **v2 hardened** | v1.3 Sprint E |
+| `lender-intel/` | **v2 hardened** | v1.3 Sprint F |
+| `cadence-fire/` | **v1.1** | substrate / runtime contract — not a Claude-invokable skill |
+| `deal-intake/` | skeleton | — |
+| `deal-triage/` | skeleton | — |
+| `terms-package-build/` | skeleton | — |
+| `terms-comparison/` | skeleton | — |
+| `ic-paper-drafter/` | skeleton | — |
+| `info-request-grader/` | skeleton | — |
+| `client-decision-capture/` | skeleton | — |
+| `case-study-author/` | skeleton | — |
+| `monitoring-watcher/` | skeleton | — |
+| `classification-critic/` | skeleton | — |
 
-## Parallel systems
+**v2 hardened** means: workflow retargeted at v1.3 MCP tool surface, `## Dedup` section present, `## Cadence package` section present (or explicit "doesn't produce one"), reference files authored, failure modes enumerated, multiple invocation paths documented. Skeleton skills predate this template; usable as intent statements but not operationally hardened.
 
-| System | Skill |
-|---|---|
-| Lender intelligence and BDM relationship management | [`lender-intel/`](./lender-intel/) |
-| Document classification critic (lifted from V3 pipeline) | [`classification-critic/`](./classification-critic/) |
+## The deal lifecycle (15 steps → skills map)
 
-## Status
+The brief's deal lifecycle maps to skills below. Some steps share a skill; some skills span more than one step.
 
-All 14 skills above have a SKILL.md authored. Depth varies: prospect-intel has two fully-authored references (`lender-dna-from-charges.md`, `bridging-vs-developer.md`, `template-mapped-reachout.md`); other skills reference future per-skill references that have not yet been authored. Per-skill references get fleshed out as we discover patterns from operator use.
+| Step | Topic | Skill | Status |
+|---|---|---|---|
+| 1 | Prospecting + cold intel | [`prospect-intel/`](./prospect-intel/) | v3 |
+| 2 | Qualification + first-touch reply | [`qualify-and-draft/`](./qualify-and-draft/) | v2 |
+| 3 | Prospect cadence tracking | [`cadence-fire/`](./cadence-fire/) | v1.1 substrate |
+| 4 | Reply handling | [`qualify-and-draft/`](./qualify-and-draft/) (continuation) | v2 |
+| 5a | Pre-call meeting prep | [`meeting-prep/`](./meeting-prep/) | v2 |
+| 5b | Post-call meeting capture | [`meeting-capture/`](./meeting-capture/) | v2 |
+| 6 | Post-meeting nurture | [`cadence-fire/`](./cadence-fire/) | substrate |
+| 7 | Deal data intake + underwriting model | [`deal-intake/`](./deal-intake/) | skeleton |
+| 8 | Indicative terms + lender submission pack | [`terms-package-build/`](./terms-package-build/) | skeleton |
+| 9 | Terms comparison + recommendation | [`terms-comparison/`](./terms-comparison/) | skeleton |
+| 10 | Client decision capture | [`client-decision-capture/`](./client-decision-capture/) | skeleton |
+| 11a | IC paper draft | [`ic-paper-drafter/`](./ic-paper-drafter/) | skeleton |
+| 11b | Lender info-request grading | [`info-request-grader/`](./info-request-grader/) | skeleton |
+| 12 | Deal triage (daily sweep) | [`deal-triage/`](./deal-triage/) | skeleton |
+| 13 | Case study (post-close) | [`case-study-author/`](./case-study-author/) | skeleton |
+| 14 | Monitoring (post-credit phase) | [`monitoring-watcher/`](./monitoring-watcher/) | skeleton |
+| 15 | (reserved) | | |
 
-The skills will not be runnable until the MCP server (BL-5.1) and per-user MCP token issuance (BL-5.9) are built. Until then, SKILL.md files are planning artefacts and reference material; the workflows describe what operators do manually until automation arrives.
+**Parallel systems** (not deal-lifecycle steps):
+- [`lender-intel/`](./lender-intel/) — v2 hardened. Lender appetite capture + matching. Used by terms-package-build (step 8) to shortlist lenders.
+- [`classification-critic/`](./classification-critic/) — skeleton. V4 document-pipeline critic.
 
-## What is not yet a skill
+## How operator-agent should select a skill
 
-Several functions are deliberately not skills, either because they belong in the app (deterministic tools) or because they remain operator-by-hand work in v1:
+The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 5 v2-hardened skills are the operationally-ready ones; their SKILL.md files document multiple invocation paths so Claude Code can recognise when to invoke them:
 
-- HubSpot data review and editing: operators do this in the app UI; not skill-orchestrated.
-- Document upload and filing: handled by the V4 pipeline and the `placementRules` engine; the `classification-critic` skill reviews but does not initiate.
-- Calendar management: handled by the Google Calendar integration in the app; meeting-prep reads, does not write events.
-- Pure CRUD over CRM entities (creating clients, adding notes, updating tasks): tools, not skills.
+- **prospect-intel**: operator says "run prospect-intel on {company name / CH number}" OR Claude Code surfaces a candidate via `companies.listUnprocessed`
+- **qualify-and-draft**: classifier-routed (reply intent = `info_question`) OR operator says "draft a response to {prospect}'s reply" OR operator says "draft a follow-up for {client} mentioning X"
+- **meeting-prep**: classifier-routed (reply intent = `book_meeting` → `/api/meeting-prep-respond` route) OR operator says "prep me for the {meeting}"
+- **meeting-capture**: operator says "capture the {meeting}: {pasted notes}" OR Fireflies auto-sync (when Pub/Sub provisioned)
+- **lender-intel**: capture mode (operator after BDM call) OR matching mode (auto-triggered by terms-package-build OR operator says "which lenders for this deal?")
 
-The shape of "skill versus tool" rule remains: skill if it requires RockCap-specific judgement; tool if it's mechanical CRUD or external integration plumbing.
+## Skill-side conventions (every v2-hardened SKILL.md has these sections)
+
+1. Header — what the skill does + last hardening date
+2. `## Trigger` — invocation paths (typically 2-3)
+3. `## Inputs` — required + optional
+4. `## Dedup` — dedupKey strategy + window + on-duplicate behaviour
+5. `## Cadence package` — explicit declaration (produces / doesn't produce); shape if applies
+6. `## Outputs` — what gets persisted + what doesn't
+7. `## High-level workflow` — numbered steps using v1.3 tool names
+8. `## Style rules` — voice + format constraints per CONVENTIONS.md
+9. `## Tool dependencies` — MCP tools used + deferred (captured in skillRun.complete.gaps)
+10. `## What goes wrong` — enumerated failure modes
+11. `## References` — list of references/*.md loaded during workflow
+
+When hardening a skeleton skill: follow this template + harden the SKILL.md + author 1-2 reference files in `references/` + update this README's status table in the same commit.
+
+## Hardening order (recommended for the 10 remaining skeletons)
+
+Ranked by operator-cycle leverage:
+
+1. **deal-intake** (step 7) — when a borrower sends documents, this skill stands up a deal. High leverage: closes the prospect → active-client transition.
+2. **terms-package-build** (step 8) — produces the lender brief package. High leverage: pairs with lender-intel matching to operationalize lender outreach.
+3. **terms-comparison** (step 9) — pairs with terms-package-build; activated when indicative terms come back.
+4. **ic-paper-drafter** (step 11a) — when a lender wants to proceed; produces the IC submission.
+5. **client-decision-capture** (step 10) — when client chooses a lender from the comparison.
+6. **info-request-grader** (step 11b) — lender-side document requests; can be paired with checklist tooling.
+7. **monitoring-watcher** (step 14) — post-credit phase; lower urgency until first deal closes.
+8. **case-study-author** (step 13) — post-close; lowest urgency until first deal closes.
+9. **deal-triage** (step 12) — daily sweep; useful once deal-intake creates a real pipeline.
+10. **classification-critic** — parallel system; lower priority than deal-lifecycle skills.
+
+## Adding a new skill
+
+1. Create `skills/skills/<skill-name>/SKILL.md` following the v2 template above.
+2. Add `references/` subdirectory if the skill needs supporting docs.
+3. Update this README's status table + lifecycle map in the same commit.
+4. Add any new MCP tools to `../CATALOGUE.md` in the same commit.
+
+## Sub-skills + corpora + templates
+
+- `../sub-skills/` — Claude-side primitives reused across skills (e.g., `resolve-company.md`, `score-lender-match.md`). Documented separately from full skills.
+- `../corpora/` — anonymised exemplars per skill. Currently sparse; populated as we accumulate good runs to draw from.
+- `../templates/` — XLSX / DOCX / PDF templates referenced by document-producing skills (terms-package-build, ic-paper-drafter).
+- `../shared-references/` — cross-skill references (UK property finance glossary, approval payload shapes, etc.).
