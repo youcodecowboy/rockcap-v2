@@ -109,7 +109,7 @@ The deep-context tools are the spine:
 | `lender.getDeepContext({lenderClientId})` | **HEADLINE.** Comprehensive snapshot for a lender: identity + current appetite as fieldPath→value map + recent appetite changes (90d) + BDM contacts + linked projects (via clientRoles) + meetings + cadences + pending approvals. |
 | `lender.matchForDeal({criteria, limit?})` | **THE MATCHING TOOL.** Given criteria `{dealSize, dealType, assetClass, geography, ltv, ltgdv, timelineWeeks}` (all optional individually), returns ranked lenders with per-lender matchScore + matchReasons + fitConcerns + currentSignalsCount. Use after prospect-intel produces Recommended Approach to compose "Optimal lenders for this £X deal: A, B, C" answers. |
 | `lender.list({nameQuery?, limit?})` | Filter clients by type=lender + optional name substring. |
-| `lender.create({name, companyName?, ...})` | Create a new lender (wraps `clients.create` with `type: "lender"`). Common pattern after a first BDM meeting: `lender.create` → `lender.recordAppetite × N` from the meeting notes. |
+| `lender.create({name?, promoteFromCompanyId?, hubspotCompanyId?, ...})` | **3 modes** (Sprint K): (1) `promoteFromCompanyId` (Convex id) promotes an existing companies-table row into a lender — auto-inherits metadata + links synced contacts; (2) `hubspotCompanyId` (string) when you only have the HubSpot id from `contact.hubspotCompanyIds[0]` — resolves + promotes; (3) `name` alone for naked creation when no HubSpot link exists. Most lenders are already in HubSpot via contact sync — prefer modes 1/2 when possible. |
 | `lender.recordAppetite({lenderClientId, fieldPath, value, valueType, sourceType, ...})` | Write an appetite signal. Auto-supersedes prior signal at the same fieldPath. Standard fieldPaths drive matching: `dealSize.min/max`, `products.offered`, `propertyType.allowed`, `geography.regions`, `ltv.maximum`, `ltgdv.maximum`, `timeline.typicalWeeksToOffer`. See `skills/skills/lender-intel/references/appetite-signal-catalogue.md` for the full catalogue. |
 | `lender.getAppetite({lenderClientId, asMap?})` | Current appetite (isCurrent=true signals). asMap=true (default) returns convenient `{fieldPath: {value, ...}}` shape. |
 | `lender.getAppetiteHistory({lenderClientId, fieldPath?, limit?})` | Full appetite history including superseded. Optional fieldPath filter for single-dimension timelines. |
@@ -313,10 +313,19 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 ### Pattern: Add a new lender + record BDM appetite
 
 ```
-1. lender.create({name, companyName?, website?, ...}) — creates clients row with type=lender
-2. lender.recordAppetite × N — one per appetite dimension from the BDM call
-   Standard fieldPaths per references/appetite-signal-catalogue.md
-3. lender.getDeepContext({lenderClientId}) — verify the appetite picture is recorded
+# Common case — lender already in HubSpot (you have BDM contact data)
+1. contacts.getAll → filter for the lender's email domain (e.g., @shawbrook.co.uk)
+2. Read contact.hubspotCompanyIds[0] OR contact.linkedCompanyIds[0]
+3. lender.create({hubspotCompanyId: "..." }) OR lender.create({promoteFromCompanyId: "m17..."})
+   — promotes the existing companies row + auto-links synced contacts
+4. lender.recordAppetite × N — one per appetite dimension from BDM call
+5. lender.setSubmissionRequirements({lenderClientId, requirementsMarkdown})
+   — author per shared-references/lender-submission-requirements-canon.md
+6. lender.getDeepContext({lenderClientId}) — verify identity + appetite + requirements
+
+# Cold-add — lender never in HubSpot (rare)
+1. lender.create({name: "..."}) — naked creation, no HubSpot link
+2-6. Same as above
 ```
 
 ### Pattern: Fix a misclassified document
