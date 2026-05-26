@@ -159,21 +159,96 @@ ALIE = Assets, Liabilities, Income, Expenditure — a canonical UK property fina
 
 ---
 
+```yaml
+correction: 006
+date: 2026-05-25
+deal: Monksbury Court (Kinspire Property Ltd) — type=Development, phase=monitoring
+checklist_item: Valuation Report (rh765nde7g7430jtmt9enhqbx182s5ca)
+wrongly_linked_file: Monkhide Kinspire 4.2.23.pdf (Comparables)
+action: unlinkDocumentFromChecklistItem → then linkDocumentToChecklistItem with correct doc
+replacement_file: FINAL REPORT Quantum - hereford.pdf (RedBook Valuation)
+diagnostic_pattern: wrong_checklist_link
+```
+
+V4 linked a Comparables doc (`Monkhide Kinspire 4.2.23.pdf`) to the Valuation Report requirement. The matching requirement's `matchingDocumentTypes` is `["Valuation","RedBook Valuation","Red Book Valuation","Appraisal Report","Valuation Report"]`. `Comparables` is not in the list. The actual RICS Red Book valuation in the batch (`FINAL REPORT Quantum - hereford.pdf`, fileTypeDetected=RedBook Valuation) was unlinked — exactly the situation Check 1 catches. First production-fired audit correction.
+
+---
+
+```yaml
+correction: 007
+date: 2026-05-25
+deal: Monksbury Court (Kinspire Property Ltd)
+checklist_item: Floorplans (rh7dv8khtj5hdmqkg01b6ksfr582rb01)
+action: linkDocumentToChecklistItem
+linked_file: Amended Plot 7 GF.pdf (fileTypeDetected=Floor Plans)
+diagnostic_pattern: link_opportunity_missed
+context: 7 Floor Plans docs available in batch; this becomes primary
+```
+
+V4 correctly classified `Amended Plot 7 GF.pdf` as `Floor Plans` (in the requirement's matchingDocumentTypes), but the auto-link at V4 ingest time didn't fire. 7 Floor Plans docs in batch — operator could optionally add the other 6 as supporting links. This is the FIRST entry of the `link_opportunity_missed` diagnostic in the corpus — the highest-leverage Check 6 pattern.
+
+---
+
+```yaml
+correction: 008
+date: 2026-05-25
+deal: Monksbury Court (Kinspire Property Ltd)
+checklist_item: Elevations (rh7b65hvw42weh9g20dgja5n5982svwv)
+action: linkDocumentToChecklistItem
+linked_file: Proposed Garage.pdf (fileTypeDetected=Elevations)
+diagnostic_pattern: link_opportunity_missed
+```
+
+Single Elevations doc in batch (the rest of the Plans pack is Floor Plans). V4 classified correctly; auto-link missed.
+
+---
+
+```yaml
+correction: 009
+date: 2026-05-25
+deal: Monksbury Court (Kinspire Property Ltd)
+checklist_item: Site Plan (rh7e4v0bnw9th8gp2bf8k9dfsd82s88q)
+action: linkDocumentToChecklistItem
+linked_file: Block Plan.pdf (fileTypeDetected=Site Plans)
+diagnostic_pattern: link_opportunity_missed
+```
+
+`Block Plan` is the operator-recognised shorthand for `Site Plan` (the layout showing building footprint + access + parking). V4 classified correctly. Auto-link missed.
+
+---
+
+```yaml
+correction: 010
+date: 2026-05-25
+deal: Monksbury Court (Kinspire Property Ltd)
+checklist_item: Initial Monitoring Report (rh76pr68ayce3329abas8zmtqx82rp1q)
+action: linkDocumentToChecklistItem
+linked_file: 10156 Monksbury Court Ledbury.pdf (fileTypeDetected=Initial Monitoring Report)
+diagnostic_pattern: link_opportunity_missed
+```
+
+Numbered Initial Monitoring Report from the monitoring surveyor (10156 = QS ref). V4 classified correctly. Auto-link missed despite a clear name + fileType match. This deal is in monitoring phase — the IMR should have been linked at intake.
+
+---
+
 ## Pattern aggregates (auto-generated; refresh on each correction)
 
-Patterns observed in current corpus (5 corrections):
+Patterns observed in current corpus (10 corrections):
 
-- `filename_literal_match_missed`: 1
-- `initialism_match_missed`: 1
-- `confused_correspondence_vs_kyc`: 1
-- `inconsistent_with_sibling_doc`: 1
-- `bad_folder_placement`: 2 (Capstone Quinn TR + John Parker ALIE)
-- `wrong_checklist_link`: 1
-- `default_to_other`: 4 (correlated with above patterns — when V4 defaults to Other Document, it's usually because it failed to match on another diagnostic)
+- `filename_literal_match_missed`: 1 (corp 001)
+- `initialism_match_missed`: 1 (corp 002)
+- `confused_correspondence_vs_kyc`: 1 (corp 004)
+- `inconsistent_with_sibling_doc`: 1 (corp 005)
+- `bad_folder_placement`: 2 (corp 001, 005 — both fixed by Sprint I `documents.update` validator change)
+- `wrong_checklist_link`: 2 (corp 003 = Manor Park Refi HoTs comparison; corp 006 = Monksbury Comparables-as-Valuation)
+- `link_opportunity_missed`: 4 (corp 007-010, all Monksbury, all from the same audit pass) **← new dominant pattern**
+- `default_to_other`: 4 (corp 001, 002, 005, indirect via initialism_match_missed)
 
-Categories appearing in V4 misses: KYC (1), Financial Documents (1), Communications (1), Miscellaneous (1), Loan Terms (1)
-Categories operator should have used: Project Information (2), KYC (2), [n/a unlink] (1)
-FileTypeDetected operator should have used: Track Record (3), Assets & Liabilities Statement (1), [n/a unlink] (1)
+**Pattern insight (2026-05-25):** in a single audit pass on a mid-phase deal, `link_opportunity_missed` dominates (4 of 6 corrections were V4-classified-correctly-but-not-auto-linked). This validates the Check 6 prediction from Sprint I test fire. Recommendation: V4 ingestion pipeline should re-run auto-link on classification completion, not only at initial classification time.
+
+Categories appearing in V4 misses: KYC (1), Financial Documents (1), Communications (1), Miscellaneous (1), Loan Terms (1), Professional Reports (1)
+Categories operator should have used: Project Information (2), KYC (2), Plans (3), Professional Reports (1), [n/a unlink] (2)
+FileTypeDetected operator should have used: Track Record (3), Assets & Liabilities Statement (1), Floor Plans (1), Elevations (1), Site Plans (1), Initial Monitoring Report (1), RedBook Valuation (1), [n/a unlink] (2)
 
 ## Open vocabulary gaps surfaced (for V4 prompt extension)
 
