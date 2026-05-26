@@ -56,7 +56,7 @@ Each correction is tagged with a short diagnostic pattern. New patterns are adde
 - `default_to_other` — V4 fell back to `Other Document` instead of attempting a match
 - `inconsistent_with_sibling_doc` — same deal has another doc of same type classified correctly, but V4 was inconsistent
 - `wrong_checklist_link` — V4 linked a doc to a checklist item whose `matchingDocumentTypes` doesn't contain the doc's fileTypeDetected
-- `bad_folder_placement` — V4 placed the doc in a folder that doesn't exist for the project (e.g., wrote `folderId: "kyc"` to a project-scoped doc but `kyc` is a client-level folder)
+- `bad_folder_placement` — V4 placed the doc in a folder that doesn't exist for the project (e.g., wrote `folderId: "kyc"` to a project-scoped doc but `kyc` is a client-level folder). **Note (Sprint I):** the `documents.update` validator no longer trips on this for unchanged folder fields. Corrections can be applied without the prior `folderId: null` workaround. The V4 bad-placement behaviour itself is still a substrate issue (V4 picks invalid folders); fixing V4 to pick correctly is a separate vocab/prompt PR.
 - `vocab_gap` — the correct fileTypeDetected isn't in the V4 vocabulary yet (e.g., `Brochure` would need adding)
 - `link_opportunity_missed` — doc was correctly classified by V4 BUT was never auto-linked to a checklist item it would have fulfilled. Highest-frequency pattern observed during test fire (Monksbury Court 2026-05-25). Often dominates audit batches.
 

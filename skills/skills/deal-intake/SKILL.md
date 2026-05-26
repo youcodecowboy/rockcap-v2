@@ -91,7 +91,7 @@ Persisted to Convex:
 ## Audit-approval loop (post-skillRun)
 
 After `skillRun.complete`, the operator visits the approvals UI. For each approved correction:
-- Apply via Sprint H tool (`document.updateClassification` / `checklist.linkDocument` / `checklist.unlinkDocument`) with the folder-validation-bug workaround (`folderId: null, folderType: null` when current folder is suspect).
+- Apply via Sprint H tool (`document.updateClassification` / `checklist.linkDocument` / `checklist.unlinkDocument`).
 - Append corpus entry to `skills/corpora/document-classification-corrections.md` per the format documented there.
 - For rejections, append a corpus entry with `appliedStatus: rejected_by_operator` (rejection IS data).
 
@@ -152,9 +152,7 @@ Tools NOT YET MCP-exposed (skill falls back to `npx convex run` OR captures in g
 
 8. **Audit produces zero corrections.** No misclassifications detected (V4 did clean work). Skill skips step 8's approvals row, sets `status: "complete"`.
 
-9. **Audit corrections hit the folder-validation bug.** Until the substrate bug is fixed (`/jotted` 2026-05-25), the skill must pre-clear `folderId` on docs with suspect folder placements before calling `document.updateClassification`. See `references/misclassification-audit-playbook.md` "Folder-validation bug workaround" section.
-
-10. **macOS resource forks in batch.** Step 3 rejects them before V4; the noise count is surfaced via `gap: resource_fork_ingested`. If the count is unusually high (>10), the operator should be alerted via the brief — likely the borrower drag-dropped from a Mac with hidden files visible.
+9. **macOS resource forks in batch.** Sprint I added a server-side filter at `bulkUpload.addItemToBatch` that rejects `._*` files at upload time. The skill's step 4 resource-fork check is now defence-in-depth — should be a no-op for new uploads but still rejects any historical `._*` docs that slipped through before the filter landed. If the rejection count is unusually high (>10), the operator should be alerted via the brief — likely the borrower drag-dropped from a Mac with hidden files visible.
 
 ## References
 

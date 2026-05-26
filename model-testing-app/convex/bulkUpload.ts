@@ -317,6 +317,23 @@ export const addItemToBatch = mutation({
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
 
+    // Reject macOS resource-fork sidecar files at upload time.
+    // macOS creates `._<filename>` 0-byte metadata files when copying from
+    // HFS+/APFS to non-Mac filesystems. They're not real documents — they
+    // pollute doc counts, burn V4 classifier tokens, and produce spurious
+    // checklist linkages. Filter at intake before any classification runs.
+    // (v1.4 Sprint I fix; previously the deal-intake skill had to detect
+    // + reject them post-ingest. With this filter the skill's resource-fork
+    // check becomes a no-op for new uploads.)
+    // Throws so callers see the failure for THIS file but the batch
+    // continues for other files. Recommend callers catch + display the
+    // rejection in the per-file status row.
+    if (args.fileName.startsWith("._")) {
+      throw new Error(
+        `rejected_macos_resource_fork: "${args.fileName}" is a macOS metadata sidecar (0-byte resource fork). Not ingested.`,
+      );
+    }
+
     // Get batch to inherit isInternal default
     const batch = await ctx.db.get(args.batchId);
     if (!batch) {

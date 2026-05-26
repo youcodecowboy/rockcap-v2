@@ -72,13 +72,11 @@ For each `knowledgeChecklistItems` with `status: missing`, search the batch for 
 
 ---
 
-## The folder-validation bug workaround
+## Folder-validation note (FIXED 2026-05-25)
 
-**Known substrate bug** (`/jotted` 2026-05-25; documented in corpus corrections 001 + 005): `documents.update` re-validates `folderId` even when not being changed. If V4 placed the doc in a folder that doesn't exist for the project context, ANY update fails.
+The `documents.update` folder-validation bug was fixed in Sprint I (commit on PR #15). The mutation now only validates `folderId` when the caller explicitly changes it. Skill no longer needs to pre-clear `folderId` on docs with suspect folder placements — just call `document.updateClassification` with the classification fields.
 
-**Workaround:** when calling `document.updateClassification`, ALWAYS pass `folderId: null, folderType: null` if the doc's current `folderId` looks suspicious (e.g., contains `kyc`, `miscellaneous`, or other client-level folder names at `folderType: project`).
-
-When the substrate bug is fixed, this workaround should be removed.
+(Earlier Sprint H corrections 001 + 005 in the corpus document the historical workaround; those entries remain as a record of the bug + fix for V4 prompt-improvement context.)
 
 ---
 

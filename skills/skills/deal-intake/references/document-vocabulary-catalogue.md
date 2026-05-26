@@ -38,7 +38,7 @@ Production sweep (2026-05-25) returned 24 distinct category values. After normal
 
 | Production value | Target canonical | Rule |
 |---|---|---|
-| `Legal` | `Legal Documents` | Always map. `Legal` alone is V4 inconsistency. |
+| `Legal` | **`Legal Documents`** | **Always map.** Operator-confirmed canonical (2026-05-25). Matches the 13-category canon from MEMORY.md. |
 | `Marketing & Sales` | `Project Documents` (if accommodation/sales tracker) OR `Project Information` (if marketing brochure) | Context-dependent — look at fileTypeDetected. |
 | `Marketing Materials` | Same as above | Same. |
 | `Background` | `Project Information` | `Background` is V4's earlier name for what's now Project Information. |
@@ -46,9 +46,9 @@ Production sweep (2026-05-25) returned 24 distinct category values. After normal
 | `Loan Applications` | `Loan Terms` (when it's an application form) OR `KYC` (when it's verification material) | Context-dependent. |
 | `Operational Model` | `Appraisals` (Appraisal/Cashflow are the canonical fileTypeDetected here) | Always map. |
 | `Market Research` | `Professional Reports` (if external) or `Project Information` (if internal) | Context-dependent. |
-| `Other` / `Miscellaneous` / `Unclassified` | `Unclassified` (canonical) | All three are the V4 defeat condition. Standardise on one. |
+| `Other` / `Miscellaneous` / `Unclassified` | **`Unclassified`** (canonical) | **All three are the V4 defeat condition.** Operator-confirmed canonical (2026-05-25). Same rule as fileTypeDetected defeat-state above. |
 
-**The 12 canonical categories above are the operator-facing taxonomy.** The deal-intake skill normalises drift values silently; if the operator queries `documents.list` they see canonical values only.
+**The 12 canonical categories above are the operator-facing taxonomy.** The deal-intake skill normalises drift values silently on read; if the operator queries `documents.list` they see canonical values only. Skill behaviour: in-memory normalisation only — DO NOT call `document.updateClassification` to persist canonical values for every legacy doc (write amplification). V4 prompt-side normalisation lands in a separate vocab-cleanup PR.
 
 ---
 
@@ -58,9 +58,11 @@ Production sweep returned 57 distinct values. Drift to normalise:
 
 | Production value | Target canonical | Rule |
 |---|---|---|
-| `Roof Plan` | `Roof Plans` | Consistent with `Floor Plans` / `Site Plans` plural form |
-| `Other` | `Unclassified` | Use canonical defeat value |
-| `Other Document` | `Unclassified` | Same |
+| `Roof Plan` | **`Roof Plans`** | Operator-confirmed canonical (2026-05-25). Skill normalises on read. |
+| `Other` | **`Unclassified`** | Operator-confirmed canonical (2026-05-25). Most descriptive defeat value. Skill normalises on read. |
+| `Other Document` | **`Unclassified`** | Same — operator-confirmed canonical (2026-05-25). |
+
+**Normalisation rule (skill behaviour):** whenever the skill reads a doc's `fileTypeDetected` from `documents.get` / `documents.search` / a checklist's `primaryDocument`, apply the above mapping IN MEMORY before downstream processing (audit, classification, intelligence mining). DO NOT call `document.updateClassification` to persist the canonical value — that would create write amplification across hundreds of docs. The skill normalises silently on read; the V4 prompt-side normalisation lands in a separate vocab-cleanup PR.
 
 ### Vocabulary gaps (observed in production filenames but not in V4 vocabulary)
 
