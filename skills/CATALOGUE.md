@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 75 tools across 19 domains as of v1.4 Sprint H.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 77 tools across 19 domains as of v1.4 Sprint I.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -75,7 +75,7 @@ The deep-context tools are the spine:
 | `prospect.getDeepContext({clientId})` | **HEADLINE.** Comprehensive snapshot: prospect + contacts + cadences (split active/fired/queued) + replies + intel run + meetings + CH profile + clientIntelligence + touchpoints + deals + projects + pending approvals + summary block with 22 at-a-glance counts. FIRST tool call for any prospect-scoped question. |
 | `prospect.transitionState({clientId, newState})` | Move a prospect through the 8-state machine: drafted / needs_revision / active / replied / engaged / promoted / parked / lost. Side effect: schedules HubSpot push-back via existing sync. |
 
-### `client.*` — Client workflows (alias of prospect; for active clients) (4)
+### `client.*` — Client workflows (alias of prospect; for active clients) (5)
 
 | Tool | Purpose |
 |---|---|
@@ -83,6 +83,7 @@ The deep-context tools are the spine:
 | `client.get({id})` | Single client by id (raw row, no aggregations). Use when you just need the contact details + don't need the deep context overhead. |
 | `client.list({filters?})` | List clients with optional filters. Use sparingly — `prospect.getDeepContext` is the recommended path for any specific entity. |
 | `client.getStats({clientId})` | Aggregate counts for a client. Subsumed by `getDeepContext.summary`; use only if you don't need the full context. |
+| `client.activate({clientId})` | **Sprint I.** Promote a prospect to active client. Atomic: patches `clients.status: "active"`, transitions `prospectState: "promoted"` (with audit fields), schedules HubSpot lifecycleStage push. Idempotent — returns `idempotent: true` if already active. The natural firing point is deal-intake: the moment a borrower's first meaningful doc batch arrives + a project is created. Distinct from `prospect.transitionState` (which only flips prospectState; doesn't touch client.status). |
 
 ### `clients.*` — Bulk client field patching (1)
 
@@ -90,7 +91,7 @@ The deep-context tools are the spine:
 |---|---|
 | `clients.setProspectFacts({clientId, companiesHouseNumber?, website?, primaryDirectorName?, primaryContactId?})` | Bulk-patch the structured prospect facts on a clients row. Used by `prospect-intel` skill workflow step 10 to promote facts out of intelMarkdown text. |
 
-### `project.*` — Project (scheme/deal) workflows (5)
+### `project.*` — Project (scheme/deal) workflows (6)
 
 | Tool | Purpose |
 |---|---|
@@ -99,6 +100,7 @@ The deep-context tools are the spine:
 | `project.getByClient({clientId})` | All projects a client appears in (via `clientRoles` array — any role). |
 | `project.getStats({projectId})` | Aggregate counts (subsumed by `getDeepContext.summary`). |
 | `project.addLenderRole({projectId, clientId, role?})` | Idempotently attach a lender (type=lender client) to a project's clientRoles. Defaults role='lender'; supports co-lender / syndicate-lead. Refuses non-lender clients with error='not_a_lender'. Used by terms-package-build after `lender.matchForDeal` picks a shortlist. |
+| `project.create({name, clientId?, clientRoles?, projectShortcode?, address?, ...})` | **Sprint I.** Create a new project (deal record). Auto-generates 10-char shortcode if not provided; auto-seeds folder structure based on primary client's type. Status defaults to 'active', country to 'United Kingdom'. Returns `{ok:true, projectId}`. Used by deal-intake when standing up a new deal from the first meaningful doc batch. |
 
 ### `lender.*` — Lender intelligence + matching (7)
 
@@ -328,6 +330,26 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
    wrong requirement
 5. (optional) checklist.linkDocument({checklistItemId, documentId: <correct doc>}) —
    if you find the right doc that SHOULD fulfill this requirement, link it explicitly
+```
+
+### Pattern: Stand up a fresh deal (the deal-intake skill flow)
+
+```
+1. client.getDeepContext({clientId: <prospect>}) — confirm prospect state + current status
+2. client.activate({clientId}) — promote: status="active", prospectState="promoted",
+   HubSpot lifecycleStage updated (Sprint I)
+3. project.create({name, clientId, address?, ...}) — auto-shortcode, auto-folders (Sprint I)
+4. (per-doc) document.get({documentId}) — verify input batch docs exist
+5. (skill: deal-intake) — run filename pre-classification, wait for V4, detect type+phase,
+   seed checklist, run 6-check audit pass (per references/misclassification-audit-playbook.md)
+6. checklist.linkDocument × N — auto-link correctly-classified docs to checklist requirements
+7. intelligence.addKnowledgeItem × N — persist mined intelligence (deal type, phase, GDV,
+   SPV structure per shared-references/spv-structure-canon.md, sponsor directors, scheme address)
+8. approval.create({entityType: "document_classification_audit"}) — stage the audit
+   corrections batch for operator review (always-ask-operator rule)
+9. task.create × N — for required items missing without candidate docs (e.g., "Request appraisal")
+10. skillRun.complete with brief leading on "Promoted {Client}; stood up {Project};
+    type=X, phase=Y; audit produced N corrections; M intelligence items mined"
 ```
 
 ## What's NOT yet MCP-exposed (deferred)

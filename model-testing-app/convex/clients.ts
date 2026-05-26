@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 // Query: Get all clients
@@ -1050,5 +1050,87 @@ export const setProspectFactsInternal = internalMutation({
     }
     await ctx.db.patch(args.clientId, patch);
     return { ok: true, patched: Object.keys(patch).length };
+  },
+});
+
+// ── v1.4 Sprint I: prospect → active client activation ──────────
+//
+// Fires as part of deal-intake when the client starts sending docs.
+// Atomically: (1) patches clients.status from "prospect" to "active",
+// (2) if prospectState is set, transitions it to "promoted" via the
+// internal prospects mutation (which also pushes to HubSpot).
+//
+// Idempotent: if client is already active (status="active"), returns
+// {ok:true, idempotent:true} without further writes. The prospectState
+// transition is skipped if already promoted/parked/lost.
+//
+// Use case: deal-intake skill calls this once docs are confirmed AND
+// project is being stood up. Marks the entity transition from "lead
+// we're chasing" to "active client we're executing on."
+
+export const activateInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args): Promise<{
+    ok: true;
+    idempotent?: boolean;
+    statusChanged?: boolean;
+    prospectStateChanged?: boolean;
+    fromStatus?: string;
+    fromProspectState?: string;
+    note?: string;
+  }> => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) {
+      throw new Error("client_not_found");
+    }
+
+    const currentStatus = (client as any).status;
+    const currentProspectState = (client as any).prospectState;
+    const now = new Date().toISOString();
+
+    // Already active — return idempotent
+    if (currentStatus === "active") {
+      return {
+        ok: true,
+        idempotent: true,
+        fromStatus: currentStatus,
+        note: "client already active; no patch applied",
+      };
+    }
+
+    // Patch status to active
+    await ctx.db.patch(args.clientId, {
+      status: "active",
+    });
+
+    // If prospectState is set AND not yet in a terminal state, transition to promoted
+    let prospectStateChanged = false;
+    const terminalStates = new Set(["promoted", "parked", "lost"]);
+    if (currentProspectState && !terminalStates.has(currentProspectState)) {
+      await ctx.db.patch(args.clientId, {
+        prospectState: "promoted",
+        prospectStateChangedAt: now,
+        prospectStateChangedBy: args.userId,
+      });
+      prospectStateChanged = true;
+
+      // Schedule the HubSpot push-back so the lifecycleStage + hs_lead_status
+      // reflect the promotion (same side-effect as prospect.transitionState MCP).
+      await ctx.scheduler.runAfter(0, internal.prospects.pushStateToHubspotInternal, {
+        clientId: args.clientId,
+        newState: "promoted",
+      });
+    }
+
+    return {
+      ok: true,
+      statusChanged: true,
+      prospectStateChanged,
+      fromStatus: currentStatus ?? "n/a",
+      fromProspectState: currentProspectState ?? "n/a",
+    };
   },
 });

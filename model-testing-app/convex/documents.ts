@@ -751,13 +751,26 @@ export const update = mutation({
       throw new Error("Document not found");
     }
 
-    // Validate folder assignment if being updated
+    // Validate folder assignment ONLY when folder fields are being changed.
+    // Previously this block re-validated `folderId` even when the caller did
+    // NOT touch it, which caused failures when the existing record had a
+    // historically-invalid folder (e.g., V4 wrote folderId="kyc" at
+    // folderType="project" — kyc is a client-level folder, invalid for
+    // projects). Re-validation grandfathered nothing, so ANY update to those
+    // docs failed. Fix: only validate when the caller is actually changing
+    // folderId / folderType / clientId / projectId. (v1.4 Sprint I fix.)
+    const folderFieldsBeingUpdated =
+      updates.folderId !== undefined ||
+      updates.folderType !== undefined ||
+      updates.clientId !== undefined ||
+      updates.projectId !== undefined;
+
     const newFolderId = updates.folderId !== undefined ? updates.folderId : existing.folderId;
     const newFolderType = updates.folderType !== undefined ? updates.folderType : existing.folderType;
     const newClientId = updates.clientId !== undefined ? updates.clientId : existing.clientId;
     const newProjectId = updates.projectId !== undefined ? updates.projectId : existing.projectId;
 
-    if (newFolderId && newFolderType && newClientId) {
+    if (folderFieldsBeingUpdated && newFolderId && newFolderType && newClientId) {
       // Validate folderType-projectId logic
       if (newFolderType === "project" && !newProjectId) {
         throw new Error("Project folder requires a projectId");
