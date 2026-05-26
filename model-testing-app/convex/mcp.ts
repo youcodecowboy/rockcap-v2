@@ -859,11 +859,13 @@ const TOOLS: McpTool[] = [
   {
     name: "lender.create",
     description:
-      "Create a new lender record (a clients row with type='lender'). Use for adding a new lender to the database before recording appetite signals. After create, call lender.recordAppetite repeatedly to populate the appetite picture. Common pattern after a first BDM meeting: lender.create → lender.recordAppetite × N from the meeting notes.",
+      "Create a new lender record (a clients row with type='lender'). Three input modes (in priority order): (1) Pass `promoteFromCompanyId` (Convex id) to promote an existing companies-table row into a lender — auto-inherits name/website/etc. + marks the company as promoted + links any HubSpot-synced contacts to the new lender. (2) Pass `hubspotCompanyId` (string) when you only know the HubSpot id (e.g., reading off a contact's `hubspotCompanyIds[0]`) — skill resolves to Convex companies row + promotes. (3) Pass just `name` for naked creation — escape hatch for genuine net-new lenders never seen in HubSpot. After create, call `lender.recordAppetite` repeatedly + `lender.setSubmissionRequirements` to populate substrate. Common patterns: (A) after BDM meeting on a known HubSpot lender → mode 2 + `lender.recordAppetite × N`; (B) lender with rich HubSpot doc evidence → mode 1; (C) cold-add a new lender you're starting to track → mode 3.",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Lender name (e.g., 'Octopus Real Estate')" },
+        name: { type: "string", description: "Lender name (e.g., 'Shawbrook Bank'). REQUIRED for mode 3; OPTIONAL for modes 1/2 (defaults to the source company's name when promoting)." },
+        promoteFromCompanyId: { type: "string", description: "Mode 1: Convex id of an existing companies row to promote. Read from contact.linkedCompanyIds[0] when working off a HubSpot-synced contact." },
+        hubspotCompanyId: { type: "string", description: "Mode 2: HubSpot company id (string) when you only have the HubSpot id. Skill resolves to Convex companies row before promoting. Read directly from contact.hubspotCompanyIds[0]." },
         companyName: { type: "string", description: "Optional legal name if different from name" },
         notes: { type: "string", description: "Optional: 1-2 sentence summary of who they are" },
         website: { type: "string" },
@@ -871,9 +873,56 @@ const TOOLS: McpTool[] = [
         phone: { type: "string" },
         country: { type: "string", description: "Default 'United Kingdom'" },
       },
-      required: ["name"],
+      required: [],
     },
     handler: async (ctx, userId, args) => {
+      // Mode resolution: promoteFromCompanyId > hubspotCompanyId > name-only
+      let convexCompanyId: string | undefined = args.promoteFromCompanyId;
+
+      if (!convexCompanyId && args.hubspotCompanyId) {
+        // Resolve HubSpot id → Convex id
+        const companies = await ctx.runQuery(api.companies.listWithHubspotId, {});
+        const match = (companies as any[]).find((c) => c.hubspotCompanyId === args.hubspotCompanyId);
+        if (!match) {
+          return asText({
+            error: "hubspot_company_not_found_in_convex",
+            note: `No companies row with hubspotCompanyId=${args.hubspotCompanyId}. The HubSpot sync may not have run yet, or the id is wrong. Try mode 3 (pass just 'name') for a naked creation.`,
+          });
+        }
+        convexCompanyId = match._id;
+      }
+
+      if (convexCompanyId) {
+        // Promotion path
+        const company = await ctx.runQuery(api.companies.get, { id: convexCompanyId });
+        if (!company) {
+          return asText({ error: "company_not_found", note: `companies row ${convexCompanyId} not found.` });
+        }
+        const id = await ctx.runMutation(api.clients.createWithPromotion, {
+          name: args.name ?? (company as any).name,
+          type: "lender",
+          status: "active" as const,
+          companyName: args.companyName ?? (company as any).name,
+          website: args.website ?? (company as any).website,
+          phone: args.phone ?? (company as any).phone,
+          address: (company as any).address,
+          city: (company as any).city,
+          country: args.country ?? (company as any).country ?? "United Kingdom",
+          promoteFromCompanyId: convexCompanyId as any,
+        });
+        return asText({
+          status: "promoted",
+          lenderClientId: id,
+          sourceCompanyId: convexCompanyId,
+          sourceCompanyName: (company as any).name,
+          note: "Lender created by promoting an existing HubSpot-synced company. Auto-inherited metadata + linked synced contacts. Now record appetite signals via lender.recordAppetite + author submission requirements via lender.setSubmissionRequirements.",
+        });
+      }
+
+      // Mode 3: naked creation (no HubSpot link)
+      if (!args.name) {
+        return asText({ error: "name_required_for_mode_3", note: "Mode 3 (naked creation) requires `name`. For modes 1/2 (HubSpot promotion), pass promoteFromCompanyId or hubspotCompanyId instead." });
+      }
       const id = await ctx.runMutation(api.clients.create, {
         name: args.name,
         type: "lender",
@@ -886,7 +935,11 @@ const TOOLS: McpTool[] = [
         country: args.country ?? "United Kingdom",
         source: "manual" as const,
       });
-      return asText({ status: "created", lenderClientId: id, note: "Now record appetite signals via lender.recordAppetite to enable matching." });
+      return asText({
+        status: "created",
+        lenderClientId: id,
+        note: "Lender created via naked path (no HubSpot link). Now record appetite signals via lender.recordAppetite + author submission requirements via lender.setSubmissionRequirements.",
+      });
     },
   },
 
