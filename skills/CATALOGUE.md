@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 77 tools across 19 domains as of v1.4 Sprint I.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 79 tools across 19 domains as of v1.4 Sprint K.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -102,7 +102,7 @@ The deep-context tools are the spine:
 | `project.addLenderRole({projectId, clientId, role?})` | Idempotently attach a lender (type=lender client) to a project's clientRoles. Defaults role='lender'; supports co-lender / syndicate-lead. Refuses non-lender clients with error='not_a_lender'. Used by terms-package-build after `lender.matchForDeal` picks a shortlist. |
 | `project.create({name, clientId?, clientRoles?, projectShortcode?, address?, ...})` | **Sprint I.** Create a new project (deal record). Auto-generates 10-char shortcode if not provided; auto-seeds folder structure based on primary client's type. Status defaults to 'active', country to 'United Kingdom'. Returns `{ok:true, projectId}`. Used by deal-intake when standing up a new deal from the first meaningful doc batch. |
 
-### `lender.*` — Lender intelligence + matching (7)
+### `lender.*` — Lender intelligence + matching + submission requirements (9)
 
 | Tool | Purpose |
 |---|---|
@@ -113,6 +113,8 @@ The deep-context tools are the spine:
 | `lender.recordAppetite({lenderClientId, fieldPath, value, valueType, sourceType, ...})` | Write an appetite signal. Auto-supersedes prior signal at the same fieldPath. Standard fieldPaths drive matching: `dealSize.min/max`, `products.offered`, `propertyType.allowed`, `geography.regions`, `ltv.maximum`, `ltgdv.maximum`, `timeline.typicalWeeksToOffer`. See `skills/skills/lender-intel/references/appetite-signal-catalogue.md` for the full catalogue. |
 | `lender.getAppetite({lenderClientId, asMap?})` | Current appetite (isCurrent=true signals). asMap=true (default) returns convenient `{fieldPath: {value, ...}}` shape. |
 | `lender.getAppetiteHistory({lenderClientId, fieldPath?, limit?})` | Full appetite history including superseded. Optional fieldPath filter for single-dimension timelines. |
+| `lender.setSubmissionRequirements({lenderClientId, requirementsMarkdown, sourceContext?})` | **Sprint K.** Set / update Submission Requirements doc for a lender. Wraps `document.createFromGeneration` with standard shape (clientId=lender, fileTypeDetected='Submission Requirements', category='Lender outreach', isBaseDocument=true). Creates NEW doc version each call (auto-supersede via most-recent-wins on read). Follow canon at `shared-references/lender-submission-requirements-canon.md`. |
+| `lender.getSubmissionRequirements({lenderClientId})` | **Sprint K.** Fetch the most recent Submission Requirements doc for a lender. Returns `{found, content, documentId, ...}` or `{found:false}` if none exist yet. Used by terms-package-build to tailor each pack. |
 
 ### `cadence.*` — Outreach cadence flow (9)
 

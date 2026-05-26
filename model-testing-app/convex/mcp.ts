@@ -890,6 +890,94 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── v1.4 Sprint K: lender Submission Requirements ─────────────────
+  //
+  // Per-lender doc capturing how that lender wants packs formatted +
+  // what they care about + things they hate. Consumed by terms-package-build
+  // to tailor each pack. Authored by lender-intel during BDM call captures
+  // OR manually by operators as preferences are learned over time.
+  // Shape canon: shared-references/lender-submission-requirements-canon.md
+
+  {
+    name: "lender.setSubmissionRequirements",
+    description:
+      "Set / update the Submission Requirements doc for a lender. Wraps document.createFromGeneration with the standard shape locked in: clientId=lender, fileTypeDetected='Submission Requirements', category='Lender outreach', isBaseDocument=true. Creates a NEW doc version each call (supersession via getSubmissionRequirements returning the most recent). Use after a BDM call when you've learned new lender preferences, OR initially when seeding a lender from HoTs evidence + operator domain knowledge. Always follow the canonical structure in shared-references/lender-submission-requirements-canon.md (8 sections: Identity, Submission preferences, Content emphasis, Credit committee, Appetite envelope, Submission history, Past wins/losses, Provenance). Sections you can't populate should be present with 'Not yet captured' placeholders, not omitted.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string", description: "Convex id of the lender (clients row with type='lender')" },
+        requirementsMarkdown: { type: "string", description: "Full markdown content per the canonical 8-section structure. Operator-facing artefact; will appear in lender's base documents list." },
+        sourceContext: {
+          type: "string",
+          description: "Provenance — what source(s) informed this version. E.g., 'BDM call 2026-05-25 with Sarah at Octane', 'Inferred from 3 HoTs in Manor Park Refi + Comberton', 'Operator domain knowledge'.",
+        },
+      },
+      required: ["lenderClientId", "requirementsMarkdown"],
+    },
+    handler: async (ctx, userId, args) => {
+      const lender = await ctx.runQuery(api.clients.get, { id: args.lenderClientId });
+      if (!lender) return asText({ error: "lender_not_found" });
+      if ((lender as any).type !== "lender") {
+        return asText({ error: "not_a_lender", note: `Client ${args.lenderClientId} has type='${(lender as any).type}'. Submission Requirements only applies to type=lender.` });
+      }
+      const result = await ctx.runMutation(api.documents.createFromGeneration, {
+        clientId: args.lenderClientId,
+        fileName: "Submission Requirements",
+        fileTypeDetected: "Submission Requirements",
+        category: "Lender outreach",
+        summary: args.requirementsMarkdown,
+        reasoning: args.sourceContext ?? "Submission requirements for this lender; loaded by terms-package-build to tailor packs.",
+        isBaseDocument: true,
+      });
+      return asText({
+        ok: true,
+        lenderClientId: args.lenderClientId,
+        lenderName: (lender as any).name,
+        documentId: (result as any).documentId,
+        contentLength: args.requirementsMarkdown.length,
+        sourceContext: args.sourceContext,
+      });
+    },
+  },
+
+  {
+    name: "lender.getSubmissionRequirements",
+    description:
+      "Fetch the most recent Submission Requirements doc for a lender. Returns the doc's full content (markdown), or {found:false} if the lender has no Submission Requirements yet. Used by terms-package-build to tailor each pack; used by lender-intel to read prior preferences before a BDM call. When multiple versions exist (because operator has updated over time), returns the most recently created.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string", description: "Convex id of the lender" },
+      },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const docs = await ctx.runQuery(api.documents.getByClient, { clientId: args.lenderClientId });
+      const requirementsDocs = (docs as any[]).filter(
+        (d) => d.fileTypeDetected === "Submission Requirements" || d.fileName === "Submission Requirements",
+      );
+      if (requirementsDocs.length === 0) {
+        return asText({
+          found: false,
+          lenderClientId: args.lenderClientId,
+          note: "No Submission Requirements doc found for this lender. Call lender.setSubmissionRequirements to author one.",
+        });
+      }
+      // Most recent first
+      requirementsDocs.sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0));
+      const latest = requirementsDocs[0];
+      return asText({
+        found: true,
+        documentId: latest._id,
+        fileName: latest.fileName,
+        createdAt: latest.uploadedAt ?? latest.savedAt,
+        reasoning: latest.reasoning,
+        content: latest.summary,
+        versionsAvailable: requirementsDocs.length,
+      });
+    },
+  },
+
   // v1.3 Sprint E — project MCP surface. Mirrors the client.getDeepContext
   // pattern but scoped to PROJECTS (schemes / deals). Use when operator
   // asks about a specific scheme: "where are we at with Comberton?".

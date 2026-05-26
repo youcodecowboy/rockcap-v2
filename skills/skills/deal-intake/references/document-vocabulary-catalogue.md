@@ -73,6 +73,19 @@ Production sweep returned 57 distinct values. Drift to normalise:
 | `Bridge Loan Application` | Bridging deals frequently have generic Application Forms | Add to enable type detection |
 | `HoTs Comparison Memo` | `Shawbrook_Allica_HoTSComparison.xlsx` classified as `Term Sheet` (misleading) | Add. Distinct from Term Sheet — comparison vs single offer |
 
+### Skill-generated vocabulary (in production via skill writes)
+
+These `fileTypeDetected` values are not V4 outputs — they're produced by skills via `document.createFromGeneration`. Catalogue them here so other skills know they exist.
+
+| fileTypeDetected | category | Producer skill | Purpose | Shape canon |
+|---|---|---|---|---|
+| `Submission Requirements` | `Lender outreach` | lender-intel + lender.setSubmissionRequirements | Per-lender requirements doc (one per lender, `isBaseDocument: true`) | `../../../shared-references/lender-submission-requirements-canon.md` |
+| `Lender Brief Package` | `Lender outreach` | terms-package-build (future) | Per-lender tailored submission pack for a specific deal | (Canon TBD when terms-package-build hardens) |
+| `Indicative Terms (Client-facing)` | `Loan Terms` | terms-package-build (future) | Client-facing indicative terms summary | (Canon TBD) |
+| `IC Paper` | `Credit submission` | ic-paper-drafter (future) | Internal credit committee submission | (Canon TBD) |
+| `Terms Comparison Memo` | `Lender outreach` | terms-comparison (future) | Multi-lender HoTs comparison memo | (Canon TBD) |
+| `Meeting Notes` | `Communications` | meeting-capture | Captured meeting record | (See meeting-capture references) |
+
 **Until V4 vocabulary is extended, deal-intake uses the closest existing canonical value + flags the substitution in `skillRun.complete.gaps` with kind `vocab_substitution`.**
 
 ---
