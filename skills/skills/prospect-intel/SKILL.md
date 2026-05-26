@@ -181,6 +181,7 @@ Loaded on demand during the workflow:
 - **`references/intel-report-template.md`** (v2) — full markdown structure for the `intelMarkdown` field. (Step 10.)
 - **`references/website-scrape-playbook.md`** (v2) — URL discovery + page fetching + extraction format. (Step 6.)
 - **`references/web-research-playbook.md`** (v2) — exact queries for company-level + director-level + cross-reference research. (Steps 7, 8, 9.)
+- `../../shared-references/spv-structure-canon.md` — canonical UK property finance SPV chain (Sponsor → Borrower SPV → Lender SPV → Lender → Agent + Guarantors). Loaded when interpreting Companies House charges + officers + PSC data: helps recognise `Sponsor (X) Limited` patterns as scheme-specific SPVs, lender SPVs on charges, and parent-subsidiary structures. CH-perspective extraction guidance is in section "Perspective A — Companies House."
 
 ## Corpora (planned)
 

@@ -2140,6 +2140,104 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+
+  // ── v1.4 Sprint I: lifecycle transitions for deal-intake ────────────
+  //
+  // The deal-intake skill is the lynchpin moment when a prospect becomes
+  // an active client + a project comes into being. These two tools wire
+  // the substrate so the skill can actually fire those transitions
+  // (previously both required `npx convex run` fallback).
+
+  {
+    name: "client.activate",
+    description:
+      "Promote a client from prospect to active. Atomic: (1) patches `clients.status` to 'active', (2) if `prospectState` is set + not terminal, transitions to 'promoted' with audit fields, (3) schedules the HubSpot lifecycleStage push-back. Idempotent: returns ok:true with idempotent:true if client is already active. The natural firing point is the deal-intake skill — after the first meaningful doc batch arrives + a project is created, the client conceptually transitions from 'lead we're chasing' to 'active client we're executing on.' Operators can also fire manually for non-deal-intake activations (e.g., a referred direct-active client that skipped the prospect phase).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client to activate" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.clients.activateInternal, {
+        clientId: args.clientId,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "project.create",
+    description:
+      "Create a new project (a deal record). Auto-generates a 10-char shortcode if not provided; uniqueness checked. Auto-seeds folder structure based on the primary client's type (borrower / lender / developer). Default status is 'active'. The natural firing point is the deal-intake skill — after detecting the deal type + phase, the skill creates the project as the substrate the docs will be filed against. Returns the new projectId. Errors: shortcode_in_use (operator-provided shortcode collides) — auto-generation avoids this by appending a counter.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Project name (e.g., 'Comberton', 'Manor Park Refinance')" },
+        clientId: { type: "string", description: "Convex id of the primary client (borrower). Convenience field — wraps into clientRoles array with role='borrower'." },
+        clientRoles: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              clientId: { type: "string" },
+              role: { type: "string", description: "borrower / developer / lender / professional / etc." },
+            },
+            required: ["clientId", "role"],
+          },
+          description: "Alternative to `clientId` — full clientRoles array for multi-party deals. If both `clientId` and `clientRoles` provided, `clientRoles` wins.",
+        },
+        projectShortcode: { type: "string", description: "Optional 10-char shortcode for document naming. Auto-generated if omitted." },
+        description: { type: "string", description: "Optional project description" },
+        address: { type: "string", description: "Scheme address" },
+        city: { type: "string" },
+        state: { type: "string", description: "UK county / region" },
+        zip: { type: "string", description: "UK postcode" },
+        country: { type: "string", description: "Default 'United Kingdom'" },
+        status: {
+          type: "string",
+          enum: ["active", "inactive", "completed", "on-hold", "cancelled"],
+          description: "Default 'active'",
+        },
+        lifecycleStage: {
+          type: "string",
+          enum: ["prospective", "active", "completed", "on-hold", "cancelled", "archived"],
+          description: "Optional. Defaults based on status.",
+        },
+        loanAmount: { type: "number", description: "Optional headline loan amount in GBP" },
+        notes: { type: "string", description: "Optional free-text notes" },
+      },
+      required: ["name"],
+    },
+    handler: async (ctx, userId, args) => {
+      // Resolve clientRoles: explicit array wins; else build from `clientId`
+      let clientRoles = args.clientRoles;
+      if (!clientRoles || clientRoles.length === 0) {
+        if (!args.clientId) {
+          return asText({ error: "must provide either clientId or clientRoles" });
+        }
+        clientRoles = [{ clientId: args.clientId, role: "borrower" }];
+      }
+      const result = await ctx.runMutation(api.projects.create, {
+        name: args.name,
+        clientRoles,
+        projectShortcode: args.projectShortcode,
+        description: args.description,
+        address: args.address,
+        city: args.city,
+        state: args.state,
+        zip: args.zip,
+        country: args.country ?? "United Kingdom",
+        status: args.status,
+        lifecycleStage: args.lifecycleStage,
+        loanAmount: args.loanAmount,
+        notes: args.notes,
+      });
+      return asText({ ok: true, projectId: result });
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(

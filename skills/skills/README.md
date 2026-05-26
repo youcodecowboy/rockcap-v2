@@ -16,7 +16,7 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 | `meeting-capture/` | **v2 hardened** | v1.3 Sprint E |
 | `lender-intel/` | **v2 hardened** | v1.3 Sprint F |
 | `cadence-fire/` | **v1.1** | substrate / runtime contract — not a Claude-invokable skill |
-| `deal-intake/` | skeleton | — |
+| `deal-intake/` | **v2 hardened** | v1.4 Sprint I |
 | `deal-triage/` | skeleton | — |
 | `terms-package-build/` | skeleton | — |
 | `terms-comparison/` | skeleton | — |
