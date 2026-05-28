@@ -2048,6 +2048,39 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // prospect-intel corporate-group resolution: an individual's other CH
+  // appointments. Given an officer's stored appointments link, returns the
+  // person's full appointment list so the resolve-related-entities sub-skill
+  // can map likely sibling SPVs controlled by the same director/PSC.
+  {
+    name: "companies.getOfficerAppointments",
+    description:
+      "Fetch an individual's full Companies House appointment list via the CH API. Pass `appointmentsLink` — the stored `links.officer.appointments` path persisted on each companiesHouseOfficers row (e.g. '/officers/{appointment_id}/appointments') — exactly as returned by companies.syncCompaniesHouse. (Or pass a bare `appointmentId`, which is normalised to the canonical path.) Read-only (does NOT persist). For each appointment returns: company_number, company_name, company_status (active/dissolved/...), officer_role, appointed_on, resigned_on, plus the appointed person's name + date_of_birth (echoed per-row for disambiguation when a common name resolves to multiple officers). Also returns a top-level name + date_of_birth and an activeCount split. Used by prospect-intel (via the resolve-related-entities sub-skill) to map the corporate group: a majority PSC/director who controls the prospect usually controls the sibling SPVs too, so their other active appointments reveal likely scheme vehicles vs the trading parent. The heuristic is a strong signal, not proof of ownership. Errors: missing_appointments_link_or_id (neither arg supplied), officer_appointments_not_found (CH 404), or COMPANIES_HOUSE_API_KEY not set (Convex env gap).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        appointmentsLink: {
+          type: "string",
+          description:
+            "The stored CH `links.officer.appointments` path (e.g. '/officers/abc123.../appointments'). Pass verbatim from companiesHouseOfficers.appointmentsLink. A full CH URL or leading-slash-less path is also accepted and normalised.",
+        },
+        appointmentId: {
+          type: "string",
+          description:
+            "Alternative to appointmentsLink: a bare CH officer appointment id, normalised to '/officers/{id}/appointments'.",
+        },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.companiesHouse.getOfficerAppointmentsInternal, {
+        appointmentsLink: args.appointmentsLink,
+        appointmentId: args.appointmentId,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2.4 prospect-intel hardening: structured prospect facts
   {
     name: "clients.setProspectFacts",

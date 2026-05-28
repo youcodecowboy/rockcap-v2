@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 79 tools across 19 domains as of v1.4 Sprint K.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 80 tools across 19 domains as of v1.4 Sprint K.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -43,6 +43,7 @@ The deep-context tools are the spine:
 | "Find email for {director name} at {company}" | `apollo.findEmail` |
 | "Find {company name} on Companies House" | `companies.searchCompaniesHouse` |
 | "Sync {CH number} from Companies House" | `companies.syncCompaniesHouse` |
+| "What other companies does {director} control?" / "Map the corporate group / sibling SPVs" | `companies.getOfficerAppointments` (via the resolve-related-entities sub-skill) |
 | "Which HubSpot companies need prospecting?" | `companies.listUnprocessed` |
 | "Approve {approval}" / "What's pending?" | `approval.listPendingByClient` then `approval.get` |
 | "Record that {lender} said X about appetite" | `lender.recordAppetite` |
@@ -226,13 +227,14 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `touchpoint.getByContact({contactId})` | Touchpoints for a contact. |
 | `touchpoint.getByProject({projectId})` | Touchpoints for a project (subsumed by project.getDeepContext). |
 
-### `companies.*` — External company sync (3)
+### `companies.*` — External company sync (4)
 
 | Tool | Purpose |
 |---|---|
 | `companies.listUnprocessed({limit?, sinceDays?, states?, ...})` | HubSpot-synced companies without prospect-intel runs. State per row: new / running / stuck. Used by Claude Code to find prospecting candidates. |
 | `companies.searchCompaniesHouse({query, limit?})` | Search Companies House by **name** → ranked matches (company_number, title, company_status, date_of_creation, address_snippet, sic_codes when present). Read-only. Use FIRST when you have a name but not a CH number, then feed the chosen company_number to `companies.syncCompaniesHouse`. |
 | `companies.syncCompaniesHouse({chNumber})` | Fetch CH profile + charges + **officers + PSCs** via CH API directly + persist into Convex (companiesHouseCompanies / Charges / Officers / PSC). Idempotent (upserts on natural keys). Each officer row stores its `links.officer.appointments` URL as a future cross-company join key. Returns counts: chargesCount, officersCount, pscCount. |
+| `companies.getOfficerAppointments({appointmentsLink})` | Fetch an **individual's** other CH appointments via the link stored on each officer row (`links.officer.appointments`, e.g. `/officers/{id}/appointments`). Read-only. Per appointment: company_number, company_name, company_status, officer_role, appointed_on, resigned_on + the person's name + date_of_birth (disambiguation). Maps the **corporate group** — a majority PSC/director who controls the prospect usually controls the sibling SPVs too, so their other active appointments reveal likely scheme vehicles vs the trading parent. Consumed by the `resolve-related-entities` sub-skill (prospect-intel). Heuristic, not proof of ownership. |
 
 ### `apollo.*` — Email discovery (1)
 

@@ -1403,3 +1403,115 @@ export const searchCompaniesHouseInternal = internalAction({
     };
   },
 });
+
+// ── related-entity resolution: an individual's other CH appointments ─────────
+// Given an officer's appointments link (the `links.officer.appointments` value
+// we persist on companiesHouseOfficers, e.g. "/officers/{appointment_id}/
+// appointments") OR a bare appointmentId, fetch that PERSON's full appointment
+// list from CH. This is the join key that lets prospect-intel map the corporate
+// group: UK developers spread schemes across SPVs, so a single company's charge
+// book understates the picture — but a majority PSC/director usually controls
+// the sibling SPVs too. Surfacing "this controller also runs X Ltd, Y Ltd"
+// reveals likely scheme vehicles vs the trading parent.
+//
+// Read-only (no persistence — the surface-only design persists ONE
+// intelligence.addKnowledgeItem at the skill layer, not company/client rows).
+// Same CH Basic auth (API key as username, empty password) via chFetch above.
+//
+// Endpoint: GET /officers/{appointment_id}/appointments
+// (the path stored verbatim in companiesHouseOfficers.appointmentsLink).
+
+export const getOfficerAppointmentsInternal = internalAction({
+  args: {
+    // The stored `links.officer.appointments` path (preferred — pass it
+    // verbatim from companiesHouseOfficers.appointmentsLink) OR a bare
+    // appointment id which is normalised to the canonical path.
+    appointmentsLink: v.optional(v.string()),
+    appointmentId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
+    if (!apiKey) {
+      throw new Error("COMPANIES_HOUSE_API_KEY not set in Convex env");
+    }
+
+    // Resolve the path. Accept the stored link directly; if only an
+    // appointmentId was given, build the canonical path. Normalise so callers
+    // can pass either "/officers/{id}/appointments", a full CH URL, or a bare
+    // id without worrying about the exact shape.
+    let path: string | undefined;
+    if (args.appointmentsLink && args.appointmentsLink.trim()) {
+      let link = args.appointmentsLink.trim();
+      // Strip a full-URL prefix if one was passed (we only want the path).
+      link = link.replace(/^https?:\/\/[^/]+/i, "");
+      if (!link.startsWith("/")) link = `/${link}`;
+      path = link;
+    } else if (args.appointmentId && args.appointmentId.trim()) {
+      const id = args.appointmentId.trim();
+      path = `/officers/${encodeURIComponent(id)}/appointments`;
+    }
+
+    if (!path) {
+      return {
+        ok: false,
+        reason: "missing_appointments_link_or_id",
+        appointments: [],
+      };
+    }
+
+    const data = await chFetch<any>(path, apiKey);
+    if (!data) {
+      return {
+        ok: false,
+        reason: "officer_appointments_not_found",
+        path,
+        appointments: [],
+      };
+    }
+
+    // The appointed person's identity lives at the top level of the response
+    // (name + date_of_birth) — used for disambiguation when a common name
+    // resolves to multiple officers. Each item carries the company it is an
+    // appointment to under `appointed_to`.
+    const personName: string | undefined = data.name;
+    const personDob = data.date_of_birth
+      ? { month: data.date_of_birth.month, year: data.date_of_birth.year }
+      : undefined;
+
+    const appointments = (data.items ?? []).map((item: any) => {
+      const at = item.appointed_to ?? {};
+      return {
+        company_number: at.company_number,
+        company_name: at.company_name,
+        company_status: at.company_status,
+        officer_role: item.officer_role,
+        appointed_on: item.appointed_on,
+        resigned_on: item.resigned_on,
+        // Echo the appointed person's identity on each row for disambiguation
+        // (CH returns it once at the top level; carrying it per-row keeps the
+        // shape self-describing for the resolve-related-entities sub-skill).
+        name: personName,
+        date_of_birth: personDob,
+      };
+    });
+
+    // Convenience split so the caller doesn't have to re-scan: active vs
+    // dissolved/closed appointments (the heuristic cares which siblings are
+    // live trading vehicles).
+    const isActive = (s: string | undefined) =>
+      (s ?? "").toLowerCase() === "active";
+    const activeAppointments = appointments.filter((a: any) =>
+      isActive(a.company_status),
+    );
+
+    return {
+      ok: true,
+      path,
+      name: personName,
+      date_of_birth: personDob,
+      totalResults: data.total_results ?? appointments.length,
+      activeCount: activeAppointments.length,
+      appointments,
+    };
+  },
+});
