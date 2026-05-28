@@ -531,11 +531,11 @@ const TOOLS: McpTool[] = [
   {
     name: "cadence.create",
     description:
-      "Queue a cadence row that the dispatcher will fire at nextDueAt. For gauntlet-mode pre-drafted packages (prospect-intel uses this), set packageId + packageOrder + preDraftedTouch together. For recurring cadences (e.g., BDM relationship maintenance), set scheduleConfig.intervalDays and omit preDraftedTouch (v1 ships pre-drafted only; recurring composition lands in v1.1).",
+      "Queue a cadence row that the dispatcher will fire at nextDueAt. For gauntlet-mode pre-drafted packages (prospect-intel uses this), set packageId + packageOrder + preDraftedTouch together. For recurring cadences (e.g., BDM relationship maintenance), set scheduleConfig.intervalDays and omit preDraftedTouch (v1 ships pre-drafted only; recurring composition lands in v1.1). contactId is OPTIONAL (Phase 3): omit it to create a held 'needs_contact' draft — the touch is composed and reviewable on the board but is forced inactive and the dispatcher will never fire it until a verified contact is attached. With contactId present, the v1.2.4 email guard still applies (refuses contacts with no/bad email).",
     inputSchema: {
       type: "object",
       properties: {
-        contactId: { type: "string", description: "Convex id of the target contact" },
+        contactId: { type: "string", description: "Convex id of the target contact. OPTIONAL: omit to create a contactless held 'needs_contact' draft (reviewable but never fired until a contact is attached)." },
         cadenceType: {
           type: "string",
           description: "prospect_followup | warm_lead_chase | execution_chaser | client_checkin | bdm_relationship | monitoring_ask | post_lost_re_engagement | custom",
@@ -567,49 +567,62 @@ const TOOLS: McpTool[] = [
         },
         sourceSkillRunId: { type: "string", description: "If queued by a skill run, the runId for audit linkage" },
       },
-      required: ["contactId", "cadenceType", "nextDueAt", "scheduleConfig", "isActive"],
+      required: ["cadenceType", "nextDueAt", "scheduleConfig", "isActive"],
     },
     handler: async (ctx, userId, args) => {
-      // v1.2.4 email guard. Refuse to create cadences for contacts with no
-      // email or with explicitly-bad emailStatus values. Surfaces the gap
-      // at cadence-creation time (when the operator/skill can do something
-      // about it) rather than at fire time (when the dispatcher would
-      // silently skip or hit a deliverability wall).
-      const contact = await ctx.runQuery(internal.contacts.getInternal, {
-        contactId: args.contactId,
-      });
-      if (!contact) {
-        return asText({
-          status: "error",
-          error: "contact_not_found",
+      // Phase 3: contactless path. When no contactId is supplied, skip the
+      // email guard entirely and create a held "needs_contact" draft. The
+      // createInternal mutation forces isActive: false +
+      // packageApprovalStatus: "needs_contact" + needsContact: true, so the
+      // dispatcher (findDueInternal filters isActive=true AND approved) can
+      // never fire it. The draft is reviewable on the board; the operator
+      // attaches a contact to make it fireable.
+      let warning: string | undefined;
+      if (args.contactId) {
+        // v1.2.4 email guard. Refuse to create cadences for contacts with no
+        // email or with explicitly-bad emailStatus values. Surfaces the gap
+        // at cadence-creation time (when the operator/skill can do something
+        // about it) rather than at fire time (when the dispatcher would
+        // silently skip or hit a deliverability wall).
+        const contact = await ctx.runQuery(internal.contacts.getInternal, {
           contactId: args.contactId,
         });
+        if (!contact) {
+          return asText({
+            status: "error",
+            error: "contact_not_found",
+            contactId: args.contactId,
+          });
+        }
+        if (!contact.email || contact.email.trim() === "") {
+          return asText({
+            status: "error",
+            error: "contact_has_no_email",
+            contactId: args.contactId,
+            contactName: contact.name,
+            fix: "Run apollo.findEmail({firstName, lastName, companyName}) to discover, then contacts.update({contactId, email, emailStatus}) to persist before retrying this cadence.create call. Alternatively omit contactId to create a held 'needs_contact' draft for board review.",
+          });
+        }
+        const bad = new Set(["questionable", "spam_trap", "invalid", "bounced"]);
+        if (contact.emailStatus && bad.has(contact.emailStatus.toLowerCase())) {
+          return asText({
+            status: "error",
+            error: "email_status_blocks_send",
+            contactId: args.contactId,
+            contactName: contact.name,
+            email: contact.email,
+            emailStatus: contact.emailStatus,
+            fix: "Find an alternative email address (different contact at same company, or re-run apollo.findEmail with companyDomain hint) before sending to this contact.",
+          });
+        }
+        // emailStatus = "verified" passes; undefined passes (assumed manually
+        // entered + valid); "unverified" passes with a soft warning (the v1.1
+        // cadence dispatcher will eventually surface verification status to
+        // operators in the approvals UI).
+        warning = contact.emailStatus === "unverified"
+          ? "Contact email is unverified (Apollo or manual entry). Operator should confirm before package approval."
+          : undefined;
       }
-      if (!contact.email || contact.email.trim() === "") {
-        return asText({
-          status: "error",
-          error: "contact_has_no_email",
-          contactId: args.contactId,
-          contactName: contact.name,
-          fix: "Run apollo.findEmail({firstName, lastName, companyName}) to discover, then contacts.update({contactId, email, emailStatus}) to persist before retrying this cadence.create call.",
-        });
-      }
-      const bad = new Set(["questionable", "spam_trap", "invalid", "bounced"]);
-      if (contact.emailStatus && bad.has(contact.emailStatus.toLowerCase())) {
-        return asText({
-          status: "error",
-          error: "email_status_blocks_send",
-          contactId: args.contactId,
-          contactName: contact.name,
-          email: contact.email,
-          emailStatus: contact.emailStatus,
-          fix: "Find an alternative email address (different contact at same company, or re-run apollo.findEmail with companyDomain hint) before sending to this contact.",
-        });
-      }
-      // emailStatus = "verified" passes; undefined passes (assumed manually
-      // entered + valid); "unverified" passes with a soft warning (the v1.1
-      // cadence dispatcher will eventually surface verification status to
-      // operators in the approvals UI).
 
       const cadenceId = await ctx.runMutation(internal.cadences.createInternal, {
         contactId: args.contactId,
@@ -625,10 +638,15 @@ const TOOLS: McpTool[] = [
         sourceSkillRunId: args.sourceSkillRunId,
         createdBy: userId,
       });
-      const warning = contact.emailStatus === "unverified"
-        ? "Contact email is unverified (Apollo or manual entry). Operator should confirm before package approval."
-        : undefined;
-      return asText({ status: "created", cadenceId, ...(warning ? { warning } : {}) });
+      // Phase 3: signal the held state back to the caller so the skill can
+      // record a no_contact gap and surface "needs contact" to the operator.
+      const needsContact = !args.contactId;
+      return asText({
+        status: "created",
+        cadenceId,
+        ...(needsContact ? { needsContact: true, packageApprovalStatus: "needs_contact" } : {}),
+        ...(warning ? { warning } : {}),
+      });
     },
   },
   {
@@ -748,7 +766,7 @@ const TOOLS: McpTool[] = [
   {
     name: "lender.recordAppetite",
     description:
-      "Record a new appetite signal for a lender. Each signal is (fieldPath, value, valueType, sourceType, asOfDate, confidence). Writing a new value for an existing (lender, fieldPath) automatically supersedes the prior — sets prior.isCurrent=false + supersededBy=<new id>, marks new.isCurrent=true. Standard fieldPaths (use these for matching to work): dealSize.min, dealSize.max, products.offered (array: bridging/development_finance/term/btl), propertyType.allowed (array: residential/commercial/mixed_use), geography.regions (array including 'uk_wide'), ltv.maximum (0-1), ltgdv.maximum (0-1), timeline.typicalWeeksToOffer (number). Custom fieldPaths are fine but won't contribute to matching scores unless lender.matchForDeal is extended to handle them.",
+      "Record a new appetite signal for a lender. Each signal is (fieldPath, value, valueType, sourceType, asOfDate, confidence). Writing a new value for an existing (lender, fieldPath) automatically supersedes the prior — sets prior.isCurrent=false + supersededBy=<new id>, marks new.isCurrent=true. Standard fieldPaths (use these for matching to work): dealSize.min, dealSize.max, products.offered (array of LENDER product codes — bridging/development_finance/term/btl/mezzanine/commercial/land; this is the lender-side vocabulary, distinct from prospect deal-type codes, which lender.matchForDeal auto-maps onto it), propertyType.allowed (array: residential/commercial/mixed_use), geography.regions (array including 'uk_wide'), ltv.maximum (0-1), ltgdv.maximum (0-1), timeline.typicalWeeksToOffer (number). Custom fieldPaths are fine but won't contribute to matching scores unless lender.matchForDeal is extended to handle them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -835,7 +853,7 @@ const TOOLS: McpTool[] = [
           type: "object",
           properties: {
             dealSize: { type: "number", description: "GBP" },
-            dealType: { type: "string", description: "bridging | development_finance | term | btl" },
+            dealType: { type: "string", description: "Accepts EITHER a prospect canonical code (new_development | bridging | existing_asset | unclassifiable) OR a lender product code (bridging | development_finance | term | btl | mezzanine | commercial | land). Prospect codes are auto-mapped to lender products before matching (new_development→development_finance, existing_asset→term, bridging stays; unclassifiable→no match, dimension skipped). Scored against the lender's products.offered. See lender-matching-rules.md." },
             assetClass: { type: "string", description: "residential | commercial | mixed_use" },
             geography: { type: "string", description: "Region name; matches against lender's geography.regions" },
             ltv: { type: "number", description: "0-1; required loan-to-value" },
@@ -1803,14 +1821,14 @@ const TOOLS: McpTool[] = [
   {
     name: "prospect.transitionState",
     description:
-      "Transition a prospect through the 8-state pipeline (drafted/needs_revision/active/replied/engaged/promoted/parked/lost). Called by the prospects CRM and by skill workflows (e.g., reply event processor on intent classification). Side effect: pushes the mapped lifecycleStage + hs_lead_status to HubSpot (see spec section 2.8).",
+      "Transition a prospect through the 9-state pipeline (researched/drafted/needs_revision/active/replied/engaged/promoted/parked/lost). Called by the prospects CRM and by skill workflows (e.g., reply event processor on intent classification). Side effect: pushes the mapped lifecycleStage + hs_lead_status to HubSpot (see spec section 2.8).",
     inputSchema: {
       type: "object",
       properties: {
         clientId: { type: "string", description: "Convex id of the client row" },
         newState: {
           type: "string",
-          description: "drafted | needs_revision | active | replied | engaged | promoted | parked | lost",
+          description: "researched | drafted | needs_revision | active | replied | engaged | promoted | parked | lost",
         },
       },
       required: ["clientId", "newState"],
@@ -1940,7 +1958,7 @@ const TOOLS: McpTool[] = [
   {
     name: "clients.setProspectFacts",
     description:
-      "Set structured prospect facts on a clients row (companiesHouseNumber, website, primaryDirectorName, primaryContactId). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites.",
+      "Set structured prospect facts on a clients row (companiesHouseNumber, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab / prospects table read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1949,6 +1967,15 @@ const TOOLS: McpTool[] = [
         website: { type: "string", description: "Full URL (e.g., 'https://example.co.uk') or 'not-found' if confirmed-absent" },
         primaryDirectorName: { type: "string", description: "Director name as it should appear in the UI — operator-readable, not necessarily matching CH's surname-first format" },
         primaryContactId: { type: "string", description: "Convex id of the primary contact for outreach (the one cadences should target)" },
+        dealType: {
+          type: "string",
+          enum: ["new_development", "bridging", "existing_asset", "unclassifiable"],
+          description: "Canonical deal-type classification from prospect-intel (see bridging-vs-developer.md). One of: new_development, bridging, existing_asset, unclassifiable.",
+        },
+        dealSizeRange: {
+          type: "string",
+          description: "Display string carrying the indicative deal size as range + confidence + basis, e.g. '£2-5m, medium confidence, based on Woodberry Park 48 units'. Never a naked number. Omit for unclassifiable prospects.",
+        },
       },
       required: ["clientId"],
     },
@@ -1959,6 +1986,8 @@ const TOOLS: McpTool[] = [
         website: args.website,
         primaryDirectorName: args.primaryDirectorName,
         primaryContactId: args.primaryContactId,
+        dealType: args.dealType,
+        dealSizeRange: args.dealSizeRange,
       });
       return asText(result);
     },

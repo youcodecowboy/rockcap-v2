@@ -63,7 +63,7 @@ The deep-context tools are the spine:
 
 **Special:**
 - `setProspectFacts` — bulk-patches structured prospect fields on the clients row
-- `transitionState` — moves a prospect through the 8-state machine
+- `transitionState` — moves a prospect through the 9-state machine
 - `applyPresetSchedule` — bulk reschedules cadence touches by preset (Light/Moderate/Aggressive)
 
 ## Tools by domain
@@ -73,7 +73,7 @@ The deep-context tools are the spine:
 | Tool | Purpose |
 |---|---|
 | `prospect.getDeepContext({clientId})` | **HEADLINE.** Comprehensive snapshot: prospect + contacts + cadences (split active/fired/queued) + replies + intel run + meetings + CH profile + clientIntelligence + touchpoints + deals + projects + pending approvals + summary block with 22 at-a-glance counts. FIRST tool call for any prospect-scoped question. |
-| `prospect.transitionState({clientId, newState})` | Move a prospect through the 8-state machine: drafted / needs_revision / active / replied / engaged / promoted / parked / lost. Side effect: schedules HubSpot push-back via existing sync. |
+| `prospect.transitionState({clientId, newState})` | Move a prospect through the 9-state machine: researched / drafted / needs_revision / active / replied / engaged / promoted / parked / lost. `researched` is set by prospect-intel on completion (intel exists, no outreach drafted yet); later states are operator-driven. Side effect: schedules HubSpot push-back via existing sync. |
 
 ### `client.*` — Client workflows (alias of prospect; for active clients) (5)
 
@@ -89,7 +89,7 @@ The deep-context tools are the spine:
 
 | Tool | Purpose |
 |---|---|
-| `clients.setProspectFacts({clientId, companiesHouseNumber?, website?, primaryDirectorName?, primaryContactId?})` | Bulk-patch the structured prospect facts on a clients row. Used by `prospect-intel` skill workflow step 10 to promote facts out of intelMarkdown text. |
+| `clients.setProspectFacts({clientId, companiesHouseNumber?, website?, primaryDirectorName?, primaryContactId?, dealType?, dealSizeRange?})` | Bulk-patch the structured prospect facts on a clients row. Used by `prospect-intel` skill workflow step 10 to promote facts out of intelMarkdown text. `dealType` is the canonical deal-type code (new_development / bridging / existing_asset / unclassifiable); `dealSizeRange` is the indicative-size display string (range + confidence + basis). |
 
 ### `project.*` — Project (scheme/deal) workflows (6)
 
@@ -107,7 +107,7 @@ The deep-context tools are the spine:
 | Tool | Purpose |
 |---|---|
 | `lender.getDeepContext({lenderClientId})` | **HEADLINE.** Comprehensive snapshot for a lender: identity + current appetite as fieldPath→value map + recent appetite changes (90d) + BDM contacts + linked projects (via clientRoles) + meetings + cadences + pending approvals. |
-| `lender.matchForDeal({criteria, limit?})` | **THE MATCHING TOOL.** Given criteria `{dealSize, dealType, assetClass, geography, ltv, ltgdv, timelineWeeks}` (all optional individually), returns ranked lenders with per-lender matchScore + matchReasons + fitConcerns + currentSignalsCount. Use after prospect-intel produces Recommended Approach to compose "Optimal lenders for this £X deal: A, B, C" answers. |
+| `lender.matchForDeal({criteria, limit?})` | **THE MATCHING TOOL.** Given criteria `{dealSize, dealType, assetClass, geography, ltv, ltgdv, timelineWeeks}` (all optional individually), returns ranked lenders with per-lender matchScore + matchReasons + fitConcerns + currentSignalsCount. `dealType` accepts a prospect canonical code (`new_development`/`bridging`/`existing_asset`/`unclassifiable`) OR a lender product code — prospect codes auto-map onto the lender `products.offered` vocabulary (`new_development`→`development_finance`, `existing_asset`→`term`; `unclassifiable`→no match). Use after prospect-intel produces Recommended Approach to compose "Optimal lenders for this £X deal: A, B, C" answers. |
 | `lender.list({nameQuery?, limit?})` | Filter clients by type=lender + optional name substring. |
 | `lender.create({name?, promoteFromCompanyId?, hubspotCompanyId?, ...})` | **3 modes** (Sprint K): (1) `promoteFromCompanyId` (Convex id) promotes an existing companies-table row into a lender — auto-inherits metadata + links synced contacts; (2) `hubspotCompanyId` (string) when you only have the HubSpot id from `contact.hubspotCompanyIds[0]` — resolves + promotes; (3) `name` alone for naked creation when no HubSpot link exists. Most lenders are already in HubSpot via contact sync — prefer modes 1/2 when possible. |
 | `lender.recordAppetite({lenderClientId, fieldPath, value, valueType, sourceType, ...})` | Write an appetite signal. Auto-supersedes prior signal at the same fieldPath. Standard fieldPaths drive matching: `dealSize.min/max`, `products.offered`, `propertyType.allowed`, `geography.regions`, `ltv.maximum`, `ltgdv.maximum`, `timeline.typicalWeeksToOffer`. See `skills/skills/lender-intel/references/appetite-signal-catalogue.md` for the full catalogue. |

@@ -102,9 +102,15 @@ For each of top 2 directors by CH appointment recency:
 
 ## 7. Recommended Approach
 
-- **Classification:** {bridging-suitable / development-finance-suitable / term-loan-suitable / unclassifiable}
-  - Reasoning: {one sentence}
-- **Estimated deal size + timing:** {£X-Y likely, timing window of N months}
+This section is REQUIRED to carry a classified deal type AND a deal-size range. Both are mandatory outputs of the skill, not optional colour. Neither may be omitted; if evidence is thin, use the fallback rules below and label the confidence Low. The first two bullets feed structured fields on the clients row (`dealType`, `dealSizeRange`) via `clients.setProspectFacts`, so they must be present and well-formed.
+
+- **Deal type (REQUIRED):** {new_development / bridging / existing_asset / unclassifiable} — the canonical code from `references/bridging-vs-developer.md`.
+  - Confidence: {High / Medium / Low}
+  - Rationale: {one sentence per signal that drove the classification}
+- **Deal size (REQUIRED):** a range, never a point. {£X-Y} ({High / Medium / Low} confidence) — **based on {X}**.
+  - Derive per `../../shared-references/deal-type-size-bands.md` (units × regional avg sale value → indicative GDV → loan at typical LTGDV; OR sum of outstanding charge sizes). If evidence will not support a derived range, fall back to the deal-type band from that reference and label Low confidence with the basis stated as the deal type alone.
+  - A naked number with no range, no confidence, and no "based on" line is forbidden. (Exception: `unclassifiable` produces no deal-size estimate; say so and surface the gap.)
+- **Timing:** {timing window of N months, if estimable; else "Not estimable from public data"}
 - **Best initial angle:** {which template; what specific anchor to reference}
 - **Touch 1 anchor:** {the SPECIFIC scheme / charge / news mention to reference in the opening — must be in evidence above}
 - **Risk flags:** {any concerns: thin financials, recent officer change, dissolved sister entities, etc.}
@@ -129,6 +135,8 @@ For each of top 2 directors by CH appointment recency:
 ## 9. Gaps surfaced
 
 (Anything captured in the `gaps` array on this skillRun. Mirror them here for operator visibility.)
+
+**This section is the source of the UI flag chips.** The `/prospects/[id]` view renders one flag chip per gap surfaced here, so an operator can see at a glance what is missing or needs human judgment without opening the full report. Each gap therefore must be a discrete, chip-sized item (one missing thing, one needed action) rather than a paragraph. A missing or low-confidence deal type or deal size belongs here as a gap so it raises a chip.
 
 - {gap.kind}: {gap.description} → {gap.suggestedFix or "No fix suggested"}
 - {repeat}

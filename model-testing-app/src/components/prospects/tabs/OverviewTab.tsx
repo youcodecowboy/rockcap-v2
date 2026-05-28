@@ -3,7 +3,9 @@
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { TrendingUp, AlertCircle, Plus, Mail, CheckCircle2, ExternalLink } from "lucide-react";
+import { TrendingUp, AlertCircle, Plus, Mail, CheckCircle2, ExternalLink, UserPlus } from "lucide-react";
+import { computeProspectFlags } from "@/lib/prospects/flags";
+import { FlagChip } from "../FlagChip";
 
 interface OverviewTabProps {
   prospect: any;
@@ -87,6 +89,13 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
   const hasIntel = !!intelRun?.intelMarkdown;
   const cadencesEmpty = cadences.length === 0;
 
+  // Findings/flags banner. computeProspectFlags merges the contact-presence
+  // warn with the intel run's gaps (as info). Only `all_clear` → green "All
+  // found"; otherwise amber, listing each warn/info chip.
+  const flags = computeProspectFlags(prospect ?? {}, intelRun ?? null);
+  const allClear = flags.length === 1 && flags[0].key === "all_clear";
+  const hasNoContact = flags.some((f) => f.key === "no_contact");
+
   // v1.3 Sprint B — pending approvals for this client. Surfaces drafts
   // staged by qualify-and-draft, meeting-prep-respond, lender-outreach,
   // and any other client_communication / gmail_send / lender_outreach
@@ -98,6 +107,79 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
 
   return (
     <div>
+      {/* Findings / flags banner — TOP of the overview. Green when everything
+          intel needed was found; amber when items need attention (e.g. no
+          contact email to send to, or intel gaps surfaced during the run). */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "10px 14px",
+          borderRadius: 4,
+          marginBottom: 18,
+          background: allClear ? `${colors.accent.green}12` : `${colors.accent.orange}12`,
+          border: `1px solid ${allClear ? colors.accent.green : colors.accent.orange}40`,
+          borderLeft: `3px solid ${allClear ? colors.accent.green : colors.accent.orange}`,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: allClear ? 0 : 8 }}>
+            {allClear ? (
+              <CheckCircle2 size={14} color={colors.accent.green} />
+            ) : (
+              <AlertCircle size={14} color={colors.accent.orange} />
+            )}
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: allClear ? colors.accent.green : colors.accent.orange,
+              }}
+            >
+              {allClear
+                ? "All found"
+                : `${flags.length} item${flags.length === 1 ? "" : "s"} need attention`}
+            </span>
+          </div>
+          {!allClear && (
+            <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
+              {flags.map((f) => (
+                <FlagChip key={f.key} label={f.label} severity={f.severity} colors={colors} />
+              ))}
+            </div>
+          )}
+        </div>
+        {hasNoContact && (
+          // TODO: wire to an add-contact flow once a prospect add-contact UI
+          // exists (no add-contact UI in this phase). The button + chip must
+          // render now; the action is a no-op placeholder until then.
+          <button
+            onClick={() => {
+              // TODO: open add-contact form when available.
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              fontSize: 11,
+              fontWeight: 500,
+              color: "#fff",
+              background: colors.accent.orange,
+              border: "none",
+              borderRadius: 4,
+              cursor: "pointer",
+              whiteSpace: "nowrap" as const,
+            }}
+          >
+            <UserPlus size={12} />
+            Add contact
+          </button>
+        )}
+      </div>
+
       {/* Recommendation card — TOP PRIORITY card. Surfaces classification +
           deal sizing + Touch 1 anchor from intel section 7 so the operator
           sees the answer first, then can dig into evidence. */}

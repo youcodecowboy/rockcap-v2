@@ -51,6 +51,8 @@ When the workflow produces a draft outreach (step 11), it does NOT stop at the i
 
 **Implementation:** in workflow step 11, after composing the four messages, call `cadence.create` four times (one per row). Same `packageId` (a UUID generated at step start). `packageOrder` 1-4. Each row carries `preDraftedTouch: { subject, bodyText, bodyHtml }`. `isActive: true`. `sourceSkillRunId` set to the current runId. `packageApprovalStatus: "pending"` by default (v1.2 single-gate approval model).
 
+**Contactless held drafts (Phase 3):** the package is composed and queued **whether or not** a verified contact email exists. When one exists, pass `contactId` and the rows land `pending` as above. When none exists, **omit `contactId`** on all four calls: `cadence.create` then forces the rows to `isActive: false` + `packageApprovalStatus: "needs_contact"` + `needsContact: true` — a held draft that is reviewable on the board but that the dispatcher will never fire (it polls only active + approved rows). Step 11 also records a `no_contact` gap in that case. The drafts are never blocked by a missing contact; they are held until one is attached.
+
 If a reply arrives at any point, the cadence engine cancels all remaining package members automatically (via the by_contact_active index lookup). No skill action needed.
 
 ## Outputs
@@ -62,7 +64,7 @@ Persisted to Convex via the MCP tool surface:
 3. Where useful, `knowledgeItems` for specific extracted figures (turnover, ebitda, headcount if visible from HubSpot Beauhurst metadata).
 4. Optional: a draft outreach email staged as a pending `approvals` row with `entityType: "client_communication"`. Subject and body composed using the template-mapped reachout reference. Only created if `triggerContext` makes a reachout plausible.
 5. **v1.2 hardened:** the rich markdown `intelMarkdown` field on the skillRun row, written via `skillRun.complete({intelMarkdown})`. Structure per `references/intel-report-template.md`.
-6. **v1.2 hardened:** if the operator approves the produced package, the clients row's `prospectState` transitions from `drafted` → `active` (via the CRM Approve button calling `cadences.approvePackage` + the reply event processor's downstream transitions). The skill does NOT call `prospect.transitionState` itself — that's an operator action.
+6. **Prospect state:** the skill sets `prospectState: "researched"` on completion (via `prospect.transitionState`, step 12), reflecting that intel now exists for this prospect. It only sets `researched` if the prospect has no later state yet — it never downgrades a prospect already in `drafted`/`active`/etc. Later transitions are operator-driven: once the operator approves the produced cadence package, the CRM Approve button (`cadences.approvePackage`) and the reply event processor advance the state through `drafted` → `active` and beyond.
 
 What it does not do:
 
@@ -70,7 +72,7 @@ What it does not do:
 - Does not contact the prospect through any channel.
 - Does not create a `projects` row. Projects are created when an actual transaction emerges from the prospecting phase.
 - Does not promote the prospect to active client status (status remains `prospect`).
-- Does not transition `prospectState` directly. Operator does that via the CRM UI.
+- Does not drive `prospectState` beyond the initial `researched`. Transitions past `researched` (`drafted`, `active`, and onward) are operator-driven via the CRM UI + the cadence/reply machinery.
 
 ## High-level workflow
 
@@ -87,7 +89,7 @@ What it does not do:
 
 4. **Run Lender DNA analysis**. Load `references/lender-dna-from-charges.md` and follow it. The output is a section of structured findings: which lenders the company has used, which are current, which patterns the charge book reveals. This populates section 4 of the intel report.
 
-5. **Classify the developer type**. Load `references/bridging-vs-developer.md` and follow it. The classification is one of: bridging-suitable, development-finance-suitable, term-loan-suitable, unclassifiable. The classification colours the reachout angle and the lender match. This populates the Classification subsection of section 7.
+5. **Classify the developer type + size the deal**. Load `references/bridging-vs-developer.md` and follow it. The classification is one of the four canonical deal types: `new_development`, `bridging`, `existing_asset`, `unclassifiable`. The classification colours the reachout angle and the lender match. Then load `../../shared-references/deal-type-size-bands.md` and derive an indicative deal-size range (a range + confidence + "based on X" basis line is mandatory; a naked number is forbidden; `unclassifiable` produces no size estimate). Both outputs populate the Recommended Approach (section 7) of the intel report and are required, not optional.
 
 6. **Discover + scrape the prospect's website**. Load `references/website-scrape-playbook.md` and follow phases 1-4. The output populates section 2 (Online Presence) and feeds project facts into section 5 (Track Record).
 
@@ -97,19 +99,28 @@ What it does not do:
     - `verified`: safe for outreach. Use as the cadence's target email.
     - `unverified`: present in Apollo's index but not SMTP-verified. Note in section 3; cadence engine should refuse to fire on this — operator must manually verify before approving the package.
     - `questionable` / `spam_trap`: do NOT use; flag as risk in section 7.
-    - `unavailable` or `not found`: Apollo has no email; fall back to web research (LinkedIn personal profile, company website contact page) and surface as a gap if still unfindable. Without an email, the cadence package CANNOT be created — surface the gap loudly so the operator knows outreach is blocked.
+    - `unavailable` or `not found`: Apollo has no email; fall back to web research (LinkedIn personal profile, company website contact page) and surface as a gap if still unfindable. Without an email the package is still drafted — it lands **contactless** (`needs_contact`, held/inactive) so the drafts are reviewable on the board (see step 11), and a `no_contact` gap is recorded so the operator knows a contact must be attached before anything can send. Outreach is held, not blocked.
 
 9. **Cross-reference checks**. Follow `references/web-research-playbook.md` Phase C — Convex intelligence lookups for prior connections, address cross-check, sister entity check. Output enriches sections 3 and 4.
 
 10. **Persist intelligence**. Write the findings to `clientIntelligence` and any specific data points to `knowledgeItems`. Cite sources (Companies House filing numbers, charge IDs, URLs scraped with timestamps, web search queries used). Build the full markdown report following `references/intel-report-template.md` — all 9 sections, in order, with confidence levels.
 
-    **Also call `clients.setProspectFacts({clientId, companiesHouseNumber, website, primaryDirectorName, primaryContactId})` (v1.2.4)** to populate the structured fields on the clients row. These are the canonical source for the CRM aside / PeopleTab / OverviewTab — promoted out of intelMarkdown regex extraction so the UI doesn't depend on the report's template shape. Pass:
+    **Also call `clients.setProspectFacts({clientId, companiesHouseNumber, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange})` (v1.2.4; dealType + dealSizeRange added Phase 2)** to populate the structured fields on the clients row. These are the canonical source for the CRM aside / PeopleTab / OverviewTab / prospects table — promoted out of intelMarkdown regex extraction so the UI doesn't depend on the report's template shape. Pass:
     - `companiesHouseNumber`: the resolved CH number (always pass if known)
     - `website`: the URL discovered in step 6 (or omit if "Not found" after 4 attempts)
     - `primaryDirectorName`: the lead director name as it should appear in the UI (e.g., "Stephen John Mccarthy" or "Shane Gordon")
     - `primaryContactId`: the Convex id of the primary contact created/found in step 11 (call setProspectFacts AGAIN after step 11 if the contact didn't exist when step 10 ran)
+    - `dealType`: the canonical deal-type code from step 5 (`new_development` / `bridging` / `existing_asset` / `unclassifiable`)
+    - `dealSizeRange`: the indicative deal-size display string from step 5 — the range + confidence + basis line (e.g., "£2-5m, medium confidence, based on Woodberry Park 48 units"). Omit for `unclassifiable`. Never a naked number.
 
-11. **If a reachout is appropriate, draft it**. Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables. If a reachout is not appropriate (no contact, no trigger reason, recent contact already made), say so and stop. After composing, queue the full cadence package via `cadence.create` per the `## Cadence package` section above. The cadences land with `packageApprovalStatus: "pending"`; the operator approves the package via the CRM detail page.
+11. **Always compose the cadence package** (unless a reachout is genuinely inappropriate — see the stop conditions below). Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables, and compose all four touches per the `## Cadence package` section above. Then queue the package via `cadence.create` (four calls, same `packageId`, `packageOrder` 1-4). The contact situation decides HOW the rows land — not WHETHER they are created:
+
+    - **Verified contact email exists** → pass `contactId` on every `cadence.create` call. The rows land with `packageApprovalStatus: "pending"` (the v1.2 single-gate model); the operator approves the package via the CRM detail page.
+    - **No usable contact email** (Apollo `unavailable`/`not found`, or `emailStatus` blocks send) → **omit `contactId`** on every `cadence.create` call. The rows land **contactless**: the mutation forces `isActive: false` + `packageApprovalStatus: "needs_contact"` + `needsContact: true`, so the drafts are fully reviewable on the board but the dispatcher can never fire them. **Also record a `no_contact` gap** (`kind: "missing_data"`) so the operator is prompted to attach a verified contact, which makes the package fireable. Do NOT stop — the drafts are the deliverable.
+
+    **Stop conditions (no package at all):** only skip drafting when a reachout is genuinely not warranted — no trigger reason, a dissolved company, or a recent outbound send still awaiting a reply (see `## What goes wrong`). In those cases, say so and stop; missing contact is NOT one of these — it produces a held draft, not a stop.
+
+    The v1.2.4 fire-time email guard remains intact in both branches: even an approved package will not send until the target contact has a valid, non-blocked email — that is the point of the held `needs_contact` state.
 
 12. **Return**. Call `skillRun.complete` with:
     - `status: "complete"` if everything ran, or `"complete_with_gaps"` if any gap was surfaced
@@ -118,6 +129,8 @@ What it does not do:
     - `linkedClientId`: the clients row id
     - `linkedApprovalIds`: any approvals staged in step 11
     - `gaps`: any gaps captured along the way
+
+    **Then set the prospect state.** After `skillRun.complete` returns, call `prospect.transitionState({ clientId, newState: "researched" })` to mark that intel now exists for this prospect. Guard against downgrade: only do this if the prospect has no later state yet (i.e., `prospectState` is unset or already `researched`). If the prospect is already in `drafted`, `active`, or any later state — because a prior run drafted a cadence or the operator has advanced it — do NOT call this; leave the later state intact. All transitions past `researched` are operator-driven (CRM Approve button + reply processor); the skill only owns this one initial transition.
 
 ## Style rules
 
@@ -145,9 +158,10 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 - `contact.getByClient` — for step 11 (resolve the prospect's contact for cadence wiring)
 - `clients.setProspectFacts` — for step 10 (populate structured prospect facts on the clients row; v1.2.4)
 
-**Important — cadence email guard (v1.2.4):** `cadence.create` now refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) before retrying. The guard surfaces the gap at cadence-creation time rather than at fire time.
+**Important — cadence email guard (v1.2.4):** when you pass a `contactId`, `cadence.create` refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, either fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) and retry, OR omit `contactId` to land a held `needs_contact` draft for board review (Phase 3 — see step 11). The guard surfaces the gap at cadence-creation time rather than at fire time. The guard does not apply when `contactId` is omitted (there is no contact to validate); the contactless held state is what prevents an unaddressed send.
 - `skillRun.start` (with dedup) — for step 1
 - `skillRun.complete` (with intelMarkdown) — for step 12
+- `prospect.transitionState` — for step 12 (set `prospectState: "researched"` on completion, guarded against downgrade)
 
 The skill also uses **Claude Code's native tools**, available in every Claude Code session:
 

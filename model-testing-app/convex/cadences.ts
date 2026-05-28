@@ -10,7 +10,9 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 
 export const createInternal = internalMutation({
   args: {
-    contactId: v.id("contacts"),
+    // Phase 3: optional. When absent, the row is a held "needs_contact" draft
+    // (see handler) — reviewable on the board but never fired by the dispatcher.
+    contactId: v.optional(v.id("contacts")),
     cadenceType: v.union(
       v.literal("prospect_followup"),
       v.literal("warm_lead_chase"),
@@ -43,6 +45,21 @@ export const createInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
+    // Phase 3: a contactless row is a held draft. Force it inactive +
+    // needs_contact so the dispatcher (findDueInternal: isActive=true AND
+    // packageApprovalStatus approved/undefined) can never fire it, while the
+    // board can still surface it for review. The caller's isActive /
+    // packageApprovalStatus are overridden in this case on purpose.
+    if (!args.contactId) {
+      return await ctx.db.insert("cadences", {
+        ...args,
+        isActive: false,
+        packageApprovalStatus: "needs_contact",
+        needsContact: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
     return await ctx.db.insert("cadences", {
       ...args,
       createdAt: now,
@@ -66,6 +83,11 @@ export const findDueInternal = internalQuery({
     // approved yet OR were denied. Legacy rows (no packageApprovalStatus
     // field at all) are treated as approved for back-compat — see the
     // one-shot migration in a follow-on commit.
+    //
+    // Phase 3: this also excludes contactless held drafts. They are isActive=
+    // false (so the by_active_next_due index above never returns them) AND
+    // packageApprovalStatus="needs_contact" (so this filter would drop them
+    // too). A contactless draft therefore cannot fire — confirmed safe.
     return rows.filter((row) =>
       row.packageApprovalStatus === undefined ||
       row.packageApprovalStatus === "approved"

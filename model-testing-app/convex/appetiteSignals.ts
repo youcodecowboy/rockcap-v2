@@ -234,9 +234,38 @@ export const getHistoryForLender = query({
 // to the deal criteria contributes to a +match (compatible) or -match
 // (incompatible) score. Aggregate per lender. Sort by net score desc.
 
+// ── Deal-type vocabulary bridge ───────────────────────────────────────
+//
+// Two intentionally separate taxonomies meet here at the matching boundary:
+//   - prospect-intel classifies borrowers into 4 canonical deal types
+//     (new_development / bridging / existing_asset / unclassifiable)
+//   - lenders publish a richer 7-value product catalogue in products.offered
+//     (bridging / development_finance / term / btl / mezzanine / commercial / land)
+// They are NOT unified (4-vs-7 cardinality, different purpose). Instead a
+// prospect code maps onto a lender product code; lender codes pass through
+// unchanged. `unclassifiable` has no product equivalent → the dimension is
+// skipped (contributes 0), never penalised. Docs single-source-of-truth:
+// skills/skills/lender-intel/references/lender-matching-rules.md
+const PROSPECT_TO_LENDER_PRODUCT: Record<string, string | null> = {
+  new_development: "development_finance",
+  bridging: "bridging",
+  existing_asset: "term",
+  unclassifiable: null, // no lender-product equivalent → skip dimension
+};
+
+// Resolve a dealType criterion (prospect canonical OR lender product code) to
+// the products.offered vocabulary. Returns undefined when there is no usable
+// product match (e.g., unclassifiable), signalling "skip this dimension".
+function resolveDealTypeToProduct(dealType: string): string | undefined {
+  if (dealType in PROSPECT_TO_LENDER_PRODUCT) {
+    return PROSPECT_TO_LENDER_PRODUCT[dealType] ?? undefined;
+  }
+  return dealType; // already a lender product code (or custom) → passthrough
+}
+
 interface MatchCriteria {
   dealSize?: number;
-  dealType?: string;       // "bridging" / "development_finance" / "term"
+  dealType?: string;       // prospect canonical OR lender product code; resolved via resolveDealTypeToProduct
   assetClass?: string;     // "residential" / "commercial" / "mixed_use"
   geography?: string;      // "london" / "south_east" / "north_west" / etc.
   ltv?: number;            // 0-1; loan-to-value
@@ -324,15 +353,19 @@ export const matchForDeal = query({
         }
       }
 
-      // Deal type check
+      // Deal type check. criteria.dealType may arrive as a prospect canonical
+      // code (new_development / existing_asset / ...) or a lender product code;
+      // resolve to the products.offered vocabulary before matching. Codes with
+      // no product equivalent (unclassifiable) resolve to undefined → skip.
       if (criteria.dealType) {
+        const product = resolveDealTypeToProduct(criteria.dealType);
         const products = signalMap["products.offered"]?.value as string[] | undefined;
-        if (Array.isArray(products)) {
-          if (products.includes(criteria.dealType)) {
-            reasons.push(`Lender offers ${criteria.dealType}`);
+        if (product && Array.isArray(products)) {
+          if (products.includes(product)) {
+            reasons.push(`Lender offers ${product}`);
             score += 4;
           } else {
-            concerns.push(`Lender doesn't offer ${criteria.dealType} (offers: ${products.join(", ")})`);
+            concerns.push(`Lender doesn't offer ${product} (offers: ${products.join(", ")})`);
             score -= 4;
           }
         }

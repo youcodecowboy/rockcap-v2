@@ -36,6 +36,8 @@ For consistency across lenders, use these standard values in the array-valued fi
 - `commercial` — commercial-property-secured term
 - `land` — land-only bridging (no consent OR pre-planning)
 
+These are **lender product codes** — what a lender sells — and are deliberately a separate, richer vocabulary from prospect-intel's 4 borrower deal-type codes (`new_development` / `bridging` / `existing_asset` / `unclassifiable`). Keep `development_finance` / `term` as written here; `lender.matchForDeal` maps a prospect code onto these at scoring time (`new_development`→`development_finance`, `existing_asset`→`term`, `bridging` stays, `unclassifiable`→no match). Full mapping + rationale: `lender-matching-rules.md` § "Deal-type vocabulary + prospect mapping".
+
 ### `propertyType.allowed`
 - `residential` — houses + flats for sale/rent
 - `commercial` — office / retail / industrial

@@ -4,10 +4,12 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
-import { StatusSection } from "../StatusSection";
 import { StatePill } from "../StatePill";
 
-export function CandidatesSection() {
+// "New" tab — unprocessed companies synced from HubSpot that have not yet
+// been researched into a prospect. In the old board UI this lived inside a
+// StatusSection collapsible; it's now a top-level tab, not a section in a stack.
+export function NewTab() {
   const colors = useColors();
   const router = useRouter();
   const candidates = useQuery(api.companies.listUnprocessed as any, {
@@ -18,14 +20,15 @@ export function CandidatesSection() {
   });
 
   const rows = candidates ?? [];
-  const count = rows.length;
 
   return (
-    <StatusSection
-      title="Candidates"
-      count={`${count} from HubSpot`}
-      dotColor={colors.entityTypes.prospect}
-      defaultExpanded={true}
+    <div
+      style={{
+        border: `1px solid ${colors.border.default}`,
+        borderRadius: 4,
+        background: colors.bg.card,
+        overflow: "hidden",
+      }}
     >
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -40,6 +43,13 @@ export function CandidatesSection() {
           </tr>
         </thead>
         <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={7} style={{ ...tdStyle(colors), color: colors.text.muted, textAlign: "center" }}>
+                No new companies from HubSpot.
+              </td>
+            </tr>
+          )}
           {rows.map((c: any) => (
             <tr
               key={c.company._id}
@@ -83,7 +93,7 @@ export function CandidatesSection() {
           ))}
         </tbody>
       </table>
-    </StatusSection>
+    </div>
   );
 }
 

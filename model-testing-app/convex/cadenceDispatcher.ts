@@ -32,6 +32,18 @@ export const tick = internalAction({
     for (const row of dueRows) {
       const fireKey = `${row._id}:${row.nextDueAt}`;
 
+      // Phase 3 assertion: a contactless held draft (needs_contact) must never
+      // reach here. findDueInternal already excludes it twice — its index
+      // predicate requires isActive=true and held drafts are isActive=false,
+      // and its filter only passes packageApprovalStatus approved/undefined
+      // whereas held drafts are "needs_contact". This guard is belt-and-braces
+      // (and narrows row.contactId to a non-optional id for getInternal below):
+      // if a contactless row ever appears, skip it rather than fire.
+      if (!row.contactId) {
+        skipped++;
+        continue;
+      }
+
       // Idempotency: already fired this nextDueAt window
       if (row.lastFireKey === fireKey) {
         skipped++;

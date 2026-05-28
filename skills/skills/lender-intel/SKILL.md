@@ -15,7 +15,7 @@ Three invocation modes:
 
 2. **Matching mode** (operator-driven OR auto-triggered by other skills): a deal needs a lender shortlist.
    - "Which lenders for the Comberton deal?"
-   - prospect-intel's Recommended Approach section auto-calls this when classification is bridging/development_finance and the deal size + asset class are known
+   - prospect-intel's Recommended Approach section auto-calls this when the prospect classification is a fundable deal type (`new_development`, `bridging`, or `existing_asset` — never `unclassifiable`) and the deal size + asset class are known. Pass the prospect's canonical `dealType` straight through; `matchForDeal` maps it onto the lender product vocabulary (see `references/lender-matching-rules.md` § "Deal-type vocabulary + prospect mapping").
    - terms-package-build calls this to determine the lender distribution list
 
 3. **Behavioural recompute mode** (cron-driven, future v1.4): scan the last N months of closed deals and update each lender's "actual behaviour" signals — typical-time-to-offer, indicative-to-close rate, rate slippage. Schema supports `sourceType: "deal_behaviour"` for these. v1.3 has the schema but not the cron; deferred.
@@ -113,7 +113,7 @@ Persisted to Convex:
 
 2. **Call `skillRun.start`** with `dedupKey: match:<criteria-hash>`, `dedupWindowDays: 1`.
 
-3. **Call `lender.matchForDeal({criteria, limit: topN})`**. Returns ranked list with per-lender matchScore + matchReasons + fitConcerns.
+3. **Call `lender.matchForDeal({criteria, limit: topN})`**. Returns ranked list with per-lender matchScore + matchReasons + fitConcerns. `criteria.dealType` accepts either a prospect canonical code or a lender product code — it is normalised to the `products.offered` vocabulary internally (see `references/lender-matching-rules.md` § "Deal-type vocabulary + prospect mapping").
 
 4. **Format the result** for the operator/calling-skill:
    - Group lenders by tier: `optimal` (matchScore ≥ 8), `viable` (matchScore 3-7), `stretch` (matchScore 0-2 OR uninformed)
