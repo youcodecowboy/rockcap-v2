@@ -89,6 +89,7 @@ import type * as keywordLearning from "../keywordLearning.js";
 import type * as knowledgeBank from "../knowledgeBank.js";
 import type * as knowledgeLibrary from "../knowledgeLibrary.js";
 import type * as leads from "../leads.js";
+import type * as lib_lenderTiers from "../lib/lenderTiers.js";
 import type * as lib_schemeGrouping from "../lib/schemeGrouping.js";
 import type * as mcp from "../mcp.js";
 import type * as mcpTokens from "../mcpTokens.js";
@@ -232,6 +233,7 @@ declare const fullApi: ApiFromModules<{
   knowledgeBank: typeof knowledgeBank;
   knowledgeLibrary: typeof knowledgeLibrary;
   leads: typeof leads;
+  "lib/lenderTiers": typeof lib_lenderTiers;
   "lib/schemeGrouping": typeof lib_schemeGrouping;
   mcp: typeof mcp;
   mcpTokens: typeof mcpTokens;
