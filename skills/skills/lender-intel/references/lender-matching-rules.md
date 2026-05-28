@@ -63,6 +63,24 @@ Lender exists (clients row with type=lender) but has 0 signals in `appetiteSigna
 
 Operator interpretation: this lender is in the database but has never had appetite captured. The match doesn't EXCLUDE them but flags that the score is meaningless. Either record appetite first OR ask operator to confirm "include uninformed lenders in shortlist or skip?".
 
+## Deal-type vocabulary + prospect mapping
+
+The deal-type dimension bridges two intentionally separate taxonomies — do not unify them:
+
+- **Prospect deal types (4 canonical codes)** — a borrower classification produced by prospect-intel (`../../prospect-intel/references/bridging-vs-developer.md`): `new_development`, `bridging`, `existing_asset`, `unclassifiable`. Stored on the `clients` row via `clients.setProspectFacts`.
+- **Lender product codes (7)** — what a lender sells, recorded in `products.offered` (`appetite-signal-catalogue.md`): `bridging`, `development_finance`, `term`, `btl`, `mezzanine`, `commercial`, `land`.
+
+They are not 1:1: lender codes `btl`, `mezzanine`, `commercial`, `land` have no prospect-classification equivalent, and prospect `unclassifiable` has no product equivalent. Forcing one shared vocabulary would either lose lender product granularity or push lender-only product names into the borrower classification. So they stay separate and `matchForDeal` maps a prospect code onto a lender product code at scoring time:
+
+| Prospect code | → Lender product (`products.offered`) | Basis |
+|---|---|---|
+| `new_development` | `development_finance` | term ground-up construction |
+| `bridging` | `bridging` | identity |
+| `existing_asset` | `term` | long-hold investment / stabilised-asset refinance |
+| `unclassifiable` | *(no product equivalent)* | deal-type dimension skipped — contributes 0, not penalised |
+
+`matchForDeal` accepts EITHER vocabulary in `criteria.dealType`: a prospect code is mapped per the table above; a lender product code passes through unchanged. This makes the boundary forgiving — the prospect's stored `dealType` can be passed straight through without a wrong-product -4. The map lives in `convex/appetiteSignals.ts` (`PROSPECT_TO_LENDER_PRODUCT`); keep it and this table in sync.
+
 ## Score tier interpretation
 
 Use these tiers when presenting matches to the operator:

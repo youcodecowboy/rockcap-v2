@@ -766,7 +766,7 @@ const TOOLS: McpTool[] = [
   {
     name: "lender.recordAppetite",
     description:
-      "Record a new appetite signal for a lender. Each signal is (fieldPath, value, valueType, sourceType, asOfDate, confidence). Writing a new value for an existing (lender, fieldPath) automatically supersedes the prior — sets prior.isCurrent=false + supersededBy=<new id>, marks new.isCurrent=true. Standard fieldPaths (use these for matching to work): dealSize.min, dealSize.max, products.offered (array: bridging/development_finance/term/btl), propertyType.allowed (array: residential/commercial/mixed_use), geography.regions (array including 'uk_wide'), ltv.maximum (0-1), ltgdv.maximum (0-1), timeline.typicalWeeksToOffer (number). Custom fieldPaths are fine but won't contribute to matching scores unless lender.matchForDeal is extended to handle them.",
+      "Record a new appetite signal for a lender. Each signal is (fieldPath, value, valueType, sourceType, asOfDate, confidence). Writing a new value for an existing (lender, fieldPath) automatically supersedes the prior — sets prior.isCurrent=false + supersededBy=<new id>, marks new.isCurrent=true. Standard fieldPaths (use these for matching to work): dealSize.min, dealSize.max, products.offered (array of LENDER product codes — bridging/development_finance/term/btl/mezzanine/commercial/land; this is the lender-side vocabulary, distinct from prospect deal-type codes, which lender.matchForDeal auto-maps onto it), propertyType.allowed (array: residential/commercial/mixed_use), geography.regions (array including 'uk_wide'), ltv.maximum (0-1), ltgdv.maximum (0-1), timeline.typicalWeeksToOffer (number). Custom fieldPaths are fine but won't contribute to matching scores unless lender.matchForDeal is extended to handle them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -853,7 +853,7 @@ const TOOLS: McpTool[] = [
           type: "object",
           properties: {
             dealSize: { type: "number", description: "GBP" },
-            dealType: { type: "string", description: "bridging | development_finance | term | btl" },
+            dealType: { type: "string", description: "Accepts EITHER a prospect canonical code (new_development | bridging | existing_asset | unclassifiable) OR a lender product code (bridging | development_finance | term | btl | mezzanine | commercial | land). Prospect codes are auto-mapped to lender products before matching (new_development→development_finance, existing_asset→term, bridging stays; unclassifiable→no match, dimension skipped). Scored against the lender's products.offered. See lender-matching-rules.md." },
             assetClass: { type: "string", description: "residential | commercial | mixed_use" },
             geography: { type: "string", description: "Region name; matches against lender's geography.regions" },
             ltv: { type: "number", description: "0-1; required loan-to-value" },
