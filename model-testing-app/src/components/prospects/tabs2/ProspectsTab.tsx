@@ -182,8 +182,8 @@ function ProspectRow({ client, rungLabel, colors, router }: { client: any; rungL
       <td style={{ ...tdStyle(colors), color: colors.text.muted }}>—</td>
       <td style={tdStyle(colors)}>
         <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 4 }}>
-          {flags.map((f) => (
-            <FlagChip key={f.key} label={f.label} severity={f.severity} colors={colors} />
+          {flags.map((f, i) => (
+            <FlagChip key={`${f.key}-${i}`} label={f.label} severity={f.severity} colors={colors} />
           ))}
         </div>
       </td>

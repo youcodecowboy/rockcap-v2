@@ -145,8 +145,8 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
           </div>
           {!allClear && (
             <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
-              {flags.map((f) => (
-                <FlagChip key={f.key} label={f.label} severity={f.severity} colors={colors} />
+              {flags.map((f, i) => (
+                <FlagChip key={`${f.key}-${i}`} label={f.label} severity={f.severity} colors={colors} />
               ))}
             </div>
           )}
