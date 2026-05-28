@@ -72,7 +72,7 @@ For each of top 2 directors by CH appointment recency:
 
 ### Corporate group / related entities
 
-(From the `../../sub-skills/resolve-related-entities` walk — step 8b. Maps the controllers' other Companies House appointments to the corporate group. Surface-only: no `clients`/`companies` rows are created for the entities listed here.)
+(From the `../../sub-skills/resolve-related-entities` walk — step 8b. Maps the controllers' other Companies House appointments to the corporate group. Surface-only: no `clients`/`companies` rows are created for the entities listed here. The sub-skill also persists these sibling/parent CH numbers as structured `relatedCompaniesHouseNumbers` on the prospect via `clients.setProspectFacts` — that field powers the CH-tab "Group charges" rollup, which aggregates the whole group's charge book quantitatively alongside this narrative subsection.)
 
 - **Controllers walked:** {for each majority PSC / key director walked: name + why (e.g. "majority PSC, ownership-of-shares-75-to-100-percent" / "director, appointed 2023-04"). Note any controller whose appointments link was absent or whose list resolved to a different individual (DOB mismatch).}
 - **Likely trading parent:** {company name + CH number + confidence — the bare sponsor-root company (no scheme parenthetical), if found; else "None identified — prospect appears to be the trading parent / core entity"}

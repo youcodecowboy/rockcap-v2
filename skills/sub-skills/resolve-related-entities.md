@@ -94,7 +94,9 @@ type RelatedEntities = {
 
 ## Persist
 
-Persist exactly **one** knowledge item — the surface-only design. Do **not** create `clients` or `companies` rows for discovered appointments; this sub-skill surfaces and records the finding, it does not stand up new tracked entities.
+Persist **two** things — the prose finding (a knowledge item) **and** the structured list of group CH numbers (a column on the prospect's `clients` row). Both are surface-only: do **not** create `clients` or `companies` rows for the discovered appointments. This sub-skill surfaces and records the finding; it does not stand up new tracked entities.
+
+**1. The prose finding** — one knowledge item, as before:
 
 ```
 intelligence.addKnowledgeItem({
@@ -107,7 +109,25 @@ intelligence.addKnowledgeItem({
 })
 ```
 
-The prospect-intel report then renders this as the "Corporate group / related entities" subsection (under Key People). If the operator later decides a discovered sibling/parent is worth tracking in its own right, that is a separate, explicit operator action (sync it via `companies.syncCompaniesHouse`, promote it via `lender.create` / a client row) — never an automatic consequence of this walk.
+**2. The structured group CH numbers** — patch them onto the prospect via `clients.setProspectFacts`, so the app can roll up the group's charge book without re-parsing the prose:
+
+```
+clients.setProspectFacts({
+  clientId,                              // the prospect's clients row
+  relatedCompaniesHouseNumbers: [
+    // the SPV / parent CH numbers you discovered, EXCLUDING the prospect's
+    // own companiesHouseNumber. In practice: every likelySiblingSPVs[].companyNumber
+    // plus likelyParent.companyNumber. Pass the full deduped set each time —
+    // re-running overwrites (idempotent).
+  ],
+})
+```
+
+**Why the second write matters.** This is what powers the **prospect detail CH tab's "Group charges" rollup**. The tab's `companies.getGroupCharges` query reads `clients.companiesHouseNumber` (the parent/anchor) + `clients.relatedCompaniesHouseNumbers` (the siblings you just persisted), looks each up in the synced `companiesHouseCompanies` / `companiesHouseCharges` tables, and aggregates the group-wide charge book (total / active / satisfied charges, distinct lenders, per-company breakdown). Without this structured persist, the CH tab can only show the single anchor company's charges — understating the group's true lender DNA. The prose `borrower.related_entities` item drives the *narrative* report subsection; this structured field drives the *quantitative* rollup. Keep them in sync: the numbers you list here should match the siblings/parent in the prose finding.
+
+**What to include.** Only CH numbers you actually resolved to companies during the walk — the `likelySiblingSPVs[].companyNumber` set plus the `likelyParent.companyNumber` if found. Exclude the prospect's own `companiesHouseNumber` (it is the anchor, already on the row). Do **not** include `dissolvedRelated` numbers (the rollup is for the live group; dissolved sisters are a narrative risk signal, not a live charge contributor) unless the operator specifically wants historic charges rolled in — default to active group only. Numbers that aren't yet synced into `companiesHouseCompanies` are harmless to include (the query skips unsynced numbers), but prefer to `companies.syncCompaniesHouse` a sibling first if you want its charges to actually appear in the rollup.
+
+If the operator later decides a discovered sibling/parent is worth tracking as its own first-class entity (a `clients` / `companies` row), that is a separate, explicit operator action — never an automatic consequence of this walk. Persisting the CH **number** onto the prospect is not the same as creating an entity row for it; it is metadata on the prospect that lets the group rollup find the already-synced CH data.
 
 ## Style rules
 
@@ -123,7 +143,8 @@ CONVENTIONS apply. The ones that matter most here:
 
 - `companies.getOfficerAppointments({appointmentsLink})` — the core walk (one call per controller). Consumes the `links.officer.appointments` path persisted on `companiesHouseOfficers.appointmentsLink` by `companies.syncCompaniesHouse`.
 - `prospect.getDeepContext({clientId})` — to load the persisted officers + PSCs (or read the `companiesHouseOfficers` / `companiesHousePSC` tables directly).
-- `intelligence.addKnowledgeItem` — to persist the single `borrower.related_entities` finding.
+- `intelligence.addKnowledgeItem` — to persist the prose `borrower.related_entities` finding.
+- `clients.setProspectFacts({clientId, relatedCompaniesHouseNumbers})` — to persist the structured group CH-number set onto the prospect's `clients` row. This is what the prospect CH-tab group-charges rollup (`companies.getGroupCharges`) reads. Pass the siblings + parent CH numbers (exclude the prospect's own); re-running overwrites.
 
 Loads `../shared-references/spv-structure-canon.md` for the SPV chain + the `{Sponsor} ({Scheme}) Limited` naming convention the name-root heuristic keys off.
 

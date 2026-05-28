@@ -63,6 +63,15 @@ export default function ProspectDetailPage() {
     chNumber ? { companyNumber: chNumber } : "skip",
   );
 
+  // Corporate-group charge rollup: aggregates charges across the parent +
+  // sibling SPVs (clients.relatedCompaniesHouseNumbers, set by
+  // resolve-related-entities). Empty shape (companyCount 0) when there are no
+  // related numbers; the CH tab only renders the group section when > 1.
+  const groupCharges = useQuery(
+    api.companies.getGroupCharges,
+    prospect ? { clientId: prospectId } : "skip",
+  );
+
   // v1.3 — reply events linked to this client (for the Replies tab + count)
   const replies = useQuery(
     api.replyEvents.listByClient,
@@ -118,7 +127,7 @@ export default function ProspectDetailPage() {
             <PeopleTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} />
           )}
           {activeTab === "ch" && (
-            <CompaniesHouseTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} />
+            <CompaniesHouseTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} groupCharges={groupCharges} />
           )}
           {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}

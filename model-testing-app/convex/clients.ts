@@ -1031,35 +1031,68 @@ async function deleteProjectRelatedData(ctx: any, projectId: Id<"projects">) {
 // All consumers READ these fields directly; regex extraction remains
 // as the fallback for legacy reports that predate this commit.
 
-export const setProspectFactsInternal = internalMutation({
+// Shared arg shape + write logic for setProspectFacts. Both the internal
+// mutation (called by the MCP tool / skills) and the public mutation
+// (direct `npx convex run clients:setProspectFacts` data populates) delegate
+// here so the field set + patch behaviour can never drift.
+const setProspectFactsArgs = {
+  clientId: v.id("clients"),
+  companiesHouseNumber: v.optional(v.string()),
+  // Corporate-group SPV CH numbers (excludes the parent companiesHouseNumber).
+  // Discovered by the resolve-related-entities sub-skill; powers the CH-tab
+  // group-charges rollup via companies.getGroupCharges.
+  relatedCompaniesHouseNumbers: v.optional(v.array(v.string())),
+  website: v.optional(v.string()),
+  primaryDirectorName: v.optional(v.string()),
+  primaryContactId: v.optional(v.id("contacts")),
+  dealType: v.optional(v.union(
+    v.literal("new_development"),
+    v.literal("bridging"),
+    v.literal("existing_asset"),
+    v.literal("unclassifiable"),
+  )),
+  dealSizeRange: v.optional(v.string()),
+};
+
+async function applyProspectFacts(
+  ctx: any,
   args: {
-    clientId: v.id("clients"),
-    companiesHouseNumber: v.optional(v.string()),
-    website: v.optional(v.string()),
-    primaryDirectorName: v.optional(v.string()),
-    primaryContactId: v.optional(v.id("contacts")),
-    dealType: v.optional(v.union(
-      v.literal("new_development"),
-      v.literal("bridging"),
-      v.literal("existing_asset"),
-      v.literal("unclassifiable"),
-    )),
-    dealSizeRange: v.optional(v.string()),
+    clientId: Id<"clients">;
+    companiesHouseNumber?: string;
+    relatedCompaniesHouseNumbers?: string[];
+    website?: string;
+    primaryDirectorName?: string;
+    primaryContactId?: Id<"contacts">;
+    dealType?: "new_development" | "bridging" | "existing_asset" | "unclassifiable";
+    dealSizeRange?: string;
   },
-  handler: async (ctx, args) => {
-    const patch: Record<string, unknown> = {};
-    if (args.companiesHouseNumber !== undefined) patch.companiesHouseNumber = args.companiesHouseNumber;
-    if (args.website !== undefined) patch.website = args.website;
-    if (args.primaryDirectorName !== undefined) patch.primaryDirectorName = args.primaryDirectorName;
-    if (args.primaryContactId !== undefined) patch.primaryContactId = args.primaryContactId;
-    if (args.dealType !== undefined) patch.dealType = args.dealType;
-    if (args.dealSizeRange !== undefined) patch.dealSizeRange = args.dealSizeRange;
-    if (Object.keys(patch).length === 0) {
-      return { ok: true, patched: 0, note: "no fields supplied; nothing to write" };
-    }
-    await ctx.db.patch(args.clientId, patch);
-    return { ok: true, patched: Object.keys(patch).length };
-  },
+) {
+  const patch: Record<string, unknown> = {};
+  if (args.companiesHouseNumber !== undefined) patch.companiesHouseNumber = args.companiesHouseNumber;
+  if (args.relatedCompaniesHouseNumbers !== undefined) patch.relatedCompaniesHouseNumbers = args.relatedCompaniesHouseNumbers;
+  if (args.website !== undefined) patch.website = args.website;
+  if (args.primaryDirectorName !== undefined) patch.primaryDirectorName = args.primaryDirectorName;
+  if (args.primaryContactId !== undefined) patch.primaryContactId = args.primaryContactId;
+  if (args.dealType !== undefined) patch.dealType = args.dealType;
+  if (args.dealSizeRange !== undefined) patch.dealSizeRange = args.dealSizeRange;
+  if (Object.keys(patch).length === 0) {
+    return { ok: true, patched: 0, note: "no fields supplied; nothing to write" };
+  }
+  await ctx.db.patch(args.clientId, patch);
+  return { ok: true, patched: Object.keys(patch).length };
+}
+
+export const setProspectFactsInternal = internalMutation({
+  args: setProspectFactsArgs,
+  handler: async (ctx, args) => applyProspectFacts(ctx, args),
+});
+
+// Public mutation mirror of setProspectFactsInternal. Lets operators run
+// `npx convex run clients:setProspectFacts '{...}'` directly (e.g. the
+// one-off corporate-group populate) without going through the MCP layer.
+export const setProspectFacts = mutation({
+  args: setProspectFactsArgs,
+  handler: async (ctx, args) => applyProspectFacts(ctx, args),
 });
 
 // ── v1.4 Sprint I: prospect → active client activation ──────────

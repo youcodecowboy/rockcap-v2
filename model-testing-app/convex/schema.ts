@@ -84,6 +84,13 @@ export default defineSchema({
     // Note: `website` already exists on this table above; setProspectFacts
     // patches the existing field rather than adding a duplicate.
     companiesHouseNumber: v.optional(v.string()),
+    // Corporate-group SPV Companies House numbers discovered via the
+    // resolve-related-entities sub-skill (director-appointment walk). EXCLUDES
+    // the parent, which is `companiesHouseNumber` above. Set by
+    // clients.setProspectFacts. Powers the "Group charges" rollup in the
+    // prospect detail CH tab (companies.getGroupCharges aggregates charges
+    // across `companiesHouseNumber` + these sibling SPVs).
+    relatedCompaniesHouseNumbers: v.optional(v.array(v.string())),
     primaryDirectorName: v.optional(v.string()),
     primaryContactId: v.optional(v.id("contacts")),
     // Phase 2 — canonical deal-type classification + indicative deal size,

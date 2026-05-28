@@ -412,3 +412,134 @@ export const listUnprocessed = query({
   },
 });
 
+/**
+ * Aggregate the Companies House charge book across a prospect's whole
+ * corporate group — the parent (clients.companiesHouseNumber) plus the
+ * sibling SPVs persisted on clients.relatedCompaniesHouseNumbers (set by the
+ * resolve-related-entities sub-skill). Powers the "Group charges" rollup in
+ * the prospect detail CH tab.
+ *
+ * Single CH numbers understate a developer's borrowing because UK developers
+ * spread schemes across SPVs; this rolls the group's charges into one view.
+ *
+ * Returns an empty shape (companyCount: 0) when the client has no related
+ * numbers, so the UI can hide the section. Each company number is looked up
+ * in companiesHouseCompanies via `by_company_number`; a number with no synced
+ * company row is skipped (still counted in the requested set but contributing
+ * no charges). Charges are fetched via the companiesHouseCharges `by_company`
+ * index. Lenders are grouped by chargeeName (trimmed; "(unnamed)" fallback).
+ */
+export const getGroupCharges = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const empty = {
+      companyCount: 0,
+      totalCharges: 0,
+      activeCharges: 0,
+      satisfiedCharges: 0,
+      distinctLenders: 0,
+      lendersByCount: [] as Array<{ name: string; total: number; active: number }>,
+      byCompany: [] as Array<{
+        companyNumber: string;
+        companyName: string;
+        chargesCount: number;
+        activeCount: number;
+      }>,
+    };
+
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return empty;
+
+    const parentNumber = (client as any).companiesHouseNumber as string | undefined;
+    const relatedNumbers = ((client as any).relatedCompaniesHouseNumbers ?? []) as string[];
+
+    // Build the deduped company-number set: parent first, then siblings.
+    // Drop falsy entries (empty strings / nullish) and de-duplicate while
+    // preserving order so the parent stays first in byCompany.
+    const seen = new Set<string>();
+    const numbers: string[] = [];
+    for (const n of [parentNumber, ...relatedNumbers]) {
+      const num = (n ?? "").trim();
+      if (!num || seen.has(num)) continue;
+      seen.add(num);
+      numbers.push(num);
+    }
+
+    // No related numbers → nothing to roll up (parent alone is shown by the
+    // existing single-company profile/charges; the UI only renders the group
+    // section when companyCount > 1).
+    if (numbers.length === 0) return empty;
+
+    const lenderCounts: Record<string, { total: number; active: number }> = {};
+    const byCompany: Array<{
+      companyNumber: string;
+      companyName: string;
+      chargesCount: number;
+      activeCount: number;
+    }> = [];
+
+    let totalCharges = 0;
+    let activeCharges = 0;
+    let satisfiedCharges = 0;
+
+    for (const companyNumber of numbers) {
+      const company = await ctx.db
+        .query("companiesHouseCompanies")
+        .withIndex("by_company_number", (q: any) =>
+          q.eq("companyNumber", companyNumber),
+        )
+        .first();
+
+      // Number requested but not synced yet — skip (contributes no charges).
+      if (!company) continue;
+
+      const charges = await ctx.db
+        .query("companiesHouseCharges")
+        .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
+        .collect();
+
+      let companyActive = 0;
+      for (const c of charges) {
+        totalCharges++;
+        const status = (c.chargeStatus ?? "").toLowerCase();
+        const isActive = c.chargeStatus === "outstanding";
+        if (isActive) {
+          activeCharges++;
+          companyActive++;
+        }
+        if (status.startsWith("fully-satisfied") || status === "satisfied") {
+          satisfiedCharges++;
+        }
+        const name = c.chargeeName?.trim() || "(unnamed)";
+        if (!lenderCounts[name]) lenderCounts[name] = { total: 0, active: 0 };
+        lenderCounts[name].total++;
+        if (isActive) lenderCounts[name].active++;
+      }
+
+      byCompany.push({
+        companyNumber,
+        companyName: company.companyName,
+        chargesCount: charges.length,
+        activeCount: companyActive,
+      });
+    }
+
+    const lendersByCount = Object.entries(lenderCounts)
+      .map(([name, counts]) => ({ name, total: counts.total, active: counts.active }))
+      .sort((a, b) => b.total - a.total || b.active - a.active);
+
+    return {
+      // companyCount reflects companies that actually resolved to synced CH
+      // rows (the set the rollup is computed over), not the requested-number
+      // count. The UI gates the section on companyCount > 1.
+      companyCount: byCompany.length,
+      totalCharges,
+      activeCharges,
+      satisfiedCharges,
+      distinctLenders: Object.keys(lenderCounts).length,
+      lendersByCount,
+      byCompany,
+    };
+  },
+});
+
