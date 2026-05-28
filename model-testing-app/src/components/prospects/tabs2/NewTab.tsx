@@ -7,9 +7,8 @@ import { useRouter } from "next/navigation";
 import { StatePill } from "../StatePill";
 
 // "New" tab — unprocessed companies synced from HubSpot that have not yet
-// been researched into a prospect. This is the body of the former
-// CandidatesSection, lifted out of its StatusSection collapsible wrapper:
-// it's now a top-level tab, not a section in a stack.
+// been researched into a prospect. In the old board UI this lived inside a
+// StatusSection collapsible; it's now a top-level tab, not a section in a stack.
 export function NewTab() {
   const colors = useColors();
   const router = useRouter();
