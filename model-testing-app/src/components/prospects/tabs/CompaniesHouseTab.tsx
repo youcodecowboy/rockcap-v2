@@ -7,6 +7,10 @@ interface CompaniesHouseTabProps {
   prospect: any;
   intelRun?: any;
   chProfile?: any;
+  // Aggregate charge rollup across the corporate group (parent + sibling SPVs)
+  // from companies.getGroupCharges. The group section renders only when
+  // groupCharges.companyCount > 1 (i.e. related companies exist).
+  groupCharges?: any;
 }
 
 // Reads structured Companies House data (companiesHouseCompanies + charges)
@@ -70,7 +74,7 @@ function chargeStatusPill(status: string | undefined, colors: any) {
   );
 }
 
-export function CompaniesHouseTab({ prospect, intelRun, chProfile }: CompaniesHouseTabProps) {
+export function CompaniesHouseTab({ prospect, intelRun, chProfile, groupCharges }: CompaniesHouseTabProps) {
   const colors = useColors();
   const chNumber = chProfile?.companyNumber ?? (intelRun as any)?.dedupKey;
 
@@ -290,6 +294,104 @@ export function CompaniesHouseTab({ prospect, intelRun, chProfile }: CompaniesHo
           </table>
         </div>
       </div>
+
+      {/* Corporate-group charge rollup — aggregated across the parent + sibling
+          SPVs (clients.relatedCompaniesHouseNumbers). Only shown when there are
+          related companies in the group (companyCount > 1). */}
+      {groupCharges && groupCharges.companyCount > 1 && (
+        <div style={{ marginTop: 28, paddingTop: 22, borderTop: `1px solid ${colors.border.default}` }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.text.muted, marginBottom: 4 }}>
+              Corporate group
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: colors.text.primary }}>
+              Group charges (across {groupCharges.companyCount} companies)
+            </div>
+            <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 4, lineHeight: 1.5 }}>
+              Aggregated across the trading parent and the sibling SPVs discovered via shared director appointments. A single company&apos;s charge book understates a developer&apos;s borrowing when schemes are spread across SPVs.
+            </div>
+          </div>
+
+          {/* Group totals — mirrors the single-company metric cards above */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
+            <Metric label="Total charges" value={groupCharges.totalCharges} colors={colors} accent={colors.entityTypes.cadence} />
+            <Metric label="Active" value={groupCharges.activeCharges} colors={colors} accent={colors.accent.yellow} />
+            <Metric label="Satisfied" value={groupCharges.satisfiedCharges} colors={colors} accent={colors.accent.green} />
+            <Metric label="Distinct lenders" value={groupCharges.distinctLenders} colors={colors} accent={colors.accent.cyan} />
+          </div>
+
+          {/* Group-wide lender ranking */}
+          {(groupCharges.lendersByCount ?? []).length > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              <SectionLabel colors={colors}>Lenders by charge count (group-wide)</SectionLabel>
+              <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, background: colors.bg.card, overflow: "hidden" }}>
+                {(groupCharges.lendersByCount as any[]).map((l, i) => (
+                  <div
+                    key={l.name}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "8px 14px",
+                      borderTop: i === 0 ? "none" : `1px solid ${colors.border.light}`,
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: colors.text.primary, fontWeight: l.total > 1 ? 500 : 400 }}>{l.name}</span>
+                    <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: colors.text.muted }}>
+                      {l.total} total · {l.active} active
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Per-company breakdown */}
+          {(groupCharges.byCompany ?? []).length > 0 && (
+            <div>
+              <SectionLabel colors={colors}>Companies in group ({groupCharges.byCompany.length})</SectionLabel>
+              <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, background: colors.bg.card, overflow: "hidden" }}>
+                {(groupCharges.byCompany as any[]).map((co, i) => {
+                  const isParent = co.companyNumber === chProfile.companyNumber;
+                  return (
+                    <div
+                      key={co.companyNumber}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 14px",
+                        borderTop: i === 0 ? "none" : `1px solid ${colors.border.light}`,
+                        fontSize: 12,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                        <a
+                          href={`https://find-and-update.company-information.service.gov.uk/company/${co.companyNumber}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: colors.text.primary, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >
+                          {co.companyName}
+                        </a>
+                        {isParent && (
+                          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, letterSpacing: "0.05em", textTransform: "uppercase", color: colors.text.muted, border: `1px solid ${colors.border.default}`, borderRadius: 2, padding: "1px 4px", flexShrink: 0 }}>
+                            anchor
+                          </span>
+                        )}
+                        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, color: colors.text.muted, flexShrink: 0 }}>{co.companyNumber}</span>
+                      </div>
+                      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: colors.text.muted, flexShrink: 0, marginLeft: 12 }}>
+                        {co.chargesCount} {co.chargesCount === 1 ? "charge" : "charges"} · {co.activeCount} active
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
