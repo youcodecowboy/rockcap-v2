@@ -51,6 +51,8 @@ When the workflow produces a draft outreach (step 11), it does NOT stop at the i
 
 **Implementation:** in workflow step 11, after composing the four messages, call `cadence.create` four times (one per row). Same `packageId` (a UUID generated at step start). `packageOrder` 1-4. Each row carries `preDraftedTouch: { subject, bodyText, bodyHtml }`. `isActive: true`. `sourceSkillRunId` set to the current runId. `packageApprovalStatus: "pending"` by default (v1.2 single-gate approval model).
 
+**Contactless held drafts (Phase 3):** the package is composed and queued **whether or not** a verified contact email exists. When one exists, pass `contactId` and the rows land `pending` as above. When none exists, **omit `contactId`** on all four calls: `cadence.create` then forces the rows to `isActive: false` + `packageApprovalStatus: "needs_contact"` + `needsContact: true` — a held draft that is reviewable on the board but that the dispatcher will never fire (it polls only active + approved rows). Step 11 also records a `no_contact` gap in that case. The drafts are never blocked by a missing contact; they are held until one is attached.
+
 If a reply arrives at any point, the cadence engine cancels all remaining package members automatically (via the by_contact_active index lookup). No skill action needed.
 
 ## Outputs
@@ -97,7 +99,7 @@ What it does not do:
     - `verified`: safe for outreach. Use as the cadence's target email.
     - `unverified`: present in Apollo's index but not SMTP-verified. Note in section 3; cadence engine should refuse to fire on this — operator must manually verify before approving the package.
     - `questionable` / `spam_trap`: do NOT use; flag as risk in section 7.
-    - `unavailable` or `not found`: Apollo has no email; fall back to web research (LinkedIn personal profile, company website contact page) and surface as a gap if still unfindable. Without an email, the cadence package CANNOT be created — surface the gap loudly so the operator knows outreach is blocked.
+    - `unavailable` or `not found`: Apollo has no email; fall back to web research (LinkedIn personal profile, company website contact page) and surface as a gap if still unfindable. Without an email the package is still drafted — it lands **contactless** (`needs_contact`, held/inactive) so the drafts are reviewable on the board (see step 11), and a `no_contact` gap is recorded so the operator knows a contact must be attached before anything can send. Outreach is held, not blocked.
 
 9. **Cross-reference checks**. Follow `references/web-research-playbook.md` Phase C — Convex intelligence lookups for prior connections, address cross-check, sister entity check. Output enriches sections 3 and 4.
 
@@ -111,7 +113,14 @@ What it does not do:
     - `dealType`: the canonical deal-type code from step 5 (`new_development` / `bridging` / `existing_asset` / `unclassifiable`)
     - `dealSizeRange`: the indicative deal-size display string from step 5 — the range + confidence + basis line (e.g., "£2-5m, medium confidence, based on Woodberry Park 48 units"). Omit for `unclassifiable`. Never a naked number.
 
-11. **If a reachout is appropriate, draft it**. Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables. If a reachout is not appropriate (no contact, no trigger reason, recent contact already made), say so and stop. After composing, queue the full cadence package via `cadence.create` per the `## Cadence package` section above. The cadences land with `packageApprovalStatus: "pending"`; the operator approves the package via the CRM detail page.
+11. **Always compose the cadence package** (unless a reachout is genuinely inappropriate — see the stop conditions below). Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables, and compose all four touches per the `## Cadence package` section above. Then queue the package via `cadence.create` (four calls, same `packageId`, `packageOrder` 1-4). The contact situation decides HOW the rows land — not WHETHER they are created:
+
+    - **Verified contact email exists** → pass `contactId` on every `cadence.create` call. The rows land with `packageApprovalStatus: "pending"` (the v1.2 single-gate model); the operator approves the package via the CRM detail page.
+    - **No usable contact email** (Apollo `unavailable`/`not found`, or `emailStatus` blocks send) → **omit `contactId`** on every `cadence.create` call. The rows land **contactless**: the mutation forces `isActive: false` + `packageApprovalStatus: "needs_contact"` + `needsContact: true`, so the drafts are fully reviewable on the board but the dispatcher can never fire them. **Also record a `no_contact` gap** (`kind: "missing_data"`) so the operator is prompted to attach a verified contact, which makes the package fireable. Do NOT stop — the drafts are the deliverable.
+
+    **Stop conditions (no package at all):** only skip drafting when a reachout is genuinely not warranted — no trigger reason, a dissolved company, or a recent outbound send still awaiting a reply (see `## What goes wrong`). In those cases, say so and stop; missing contact is NOT one of these — it produces a held draft, not a stop.
+
+    The v1.2.4 fire-time email guard remains intact in both branches: even an approved package will not send until the target contact has a valid, non-blocked email — that is the point of the held `needs_contact` state.
 
 12. **Return**. Call `skillRun.complete` with:
     - `status: "complete"` if everything ran, or `"complete_with_gaps"` if any gap was surfaced
@@ -149,7 +158,7 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 - `contact.getByClient` — for step 11 (resolve the prospect's contact for cadence wiring)
 - `clients.setProspectFacts` — for step 10 (populate structured prospect facts on the clients row; v1.2.4)
 
-**Important — cadence email guard (v1.2.4):** `cadence.create` now refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) before retrying. The guard surfaces the gap at cadence-creation time rather than at fire time.
+**Important — cadence email guard (v1.2.4):** when you pass a `contactId`, `cadence.create` refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, either fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) and retry, OR omit `contactId` to land a held `needs_contact` draft for board review (Phase 3 — see step 11). The guard surfaces the gap at cadence-creation time rather than at fire time. The guard does not apply when `contactId` is omitted (there is no contact to validate); the contactless held state is what prevents an unaddressed send.
 - `skillRun.start` (with dedup) — for step 1
 - `skillRun.complete` (with intelMarkdown) — for step 12
 - `prospect.transitionState` — for step 12 (set `prospectState: "researched"` on completion, guarded against downgrade)
