@@ -117,29 +117,29 @@ export default function ProjectKnowledgeTab({
   // Loading state
   if (projectChecklist === undefined) {
     return (
-      <div className="flex items-center justify-center h-full bg-gray-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+      <div className="flex items-center justify-center h-full bg-muted">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full bg-gray-50 overflow-hidden">
+    <div className="flex h-full bg-muted overflow-hidden">
       {/* Column 1: Project Info & Stats */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-100 flex-shrink-0">
-          <h3 className="font-medium text-gray-900 text-sm">Project Checklist</h3>
-          <p className="text-xs text-gray-500 mt-1">Document requirements</p>
+      <div className="w-64 bg-card border-r border-border flex flex-col">
+        <div className="p-4 border-b border-border flex-shrink-0">
+          <h3 className="font-medium text-foreground text-sm">Project Checklist</h3>
+          <p className="text-xs text-muted-foreground mt-1">Document requirements</p>
         </div>
 
         {/* Project Section */}
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-4 border-b border-border">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-              <FolderKanban className="w-5 h-5 text-purple-600" />
+            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+              <FolderKanban className="w-5 h-5 text-indigo-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{projectName}</p>
+              <p className="text-sm font-medium text-foreground truncate">{projectName}</p>
               {dealPhase && (
                 <Badge variant="outline" className="text-[10px] mt-0.5">
                   {dealPhase.replace('_', ' ')}
@@ -151,11 +151,11 @@ export default function ProjectKnowledgeTab({
           {/* Overall Progress */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Completion</span>
-              <span className="font-medium text-gray-900">{stats.percentage}%</span>
+              <span className="text-muted-foreground">Completion</span>
+              <span className="font-medium text-foreground">{stats.percentage}%</span>
             </div>
             <Progress value={stats.percentage} className="h-2" />
-            <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{stats.fulfilled} of {stats.total}</span>
               {stats.pendingReview > 0 && (
                 <span className="text-amber-600">{stats.pendingReview} pending</span>
@@ -165,32 +165,32 @@ export default function ProjectKnowledgeTab({
         </div>
 
         {/* Status Summary */}
-        <div className="p-4 border-b border-gray-100 space-y-2">
+        <div className="p-4 border-b border-border space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span className="text-sm text-gray-600">Fulfilled</span>
+              <span className="text-sm text-muted-foreground">Fulfilled</span>
             </div>
             <span className="text-sm font-medium text-green-700">{stats.fulfilled}</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-amber-500" />
-              <span className="text-sm text-gray-600">Pending Review</span>
+              <span className="text-sm text-muted-foreground">Pending Review</span>
             </div>
             <span className="text-sm font-medium text-amber-700">{stats.pendingReview}</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Circle className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-600">Missing</span>
+              <Circle className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Missing</span>
             </div>
-            <span className="text-sm font-medium text-gray-700">{stats.missing}</span>
+            <span className="text-sm font-medium text-foreground">{stats.missing}</span>
           </div>
         </div>
 
         {/* Bottom Actions */}
-        <div className="mt-auto p-3 border-t border-gray-100 space-y-2 flex-shrink-0">
+        <div className="mt-auto p-3 border-t border-border space-y-2 flex-shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -201,7 +201,7 @@ export default function ProjectKnowledgeTab({
             Request Missing Docs
           </Button>
           {lastEmailGeneration && (
-            <p className="text-[10px] text-gray-400 px-2">
+            <p className="text-[10px] text-muted-foreground px-2">
               Last sent: {new Date(lastEmailGeneration).toLocaleDateString()}
             </p>
           )}
@@ -209,10 +209,10 @@ export default function ProjectKnowledgeTab({
       </div>
 
       {/* Column 2: Categories */}
-      <div className="w-56 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-100 flex-shrink-0">
-          <h4 className="font-medium text-gray-900 text-sm">Categories</h4>
-          <p className="text-xs text-gray-500 mt-1">Filter by type</p>
+      <div className="w-56 bg-card border-r border-border flex flex-col">
+        <div className="p-4 border-b border-border flex-shrink-0">
+          <h4 className="font-medium text-foreground text-sm">Categories</h4>
+          <p className="text-xs text-muted-foreground mt-1">Filter by type</p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -222,11 +222,11 @@ export default function ProjectKnowledgeTab({
             className={cn(
               "w-full px-4 py-3 flex items-center justify-between text-left transition-colors",
               selectedCategory === null
-                ? "bg-gray-100 font-medium"
-                : "hover:bg-gray-50"
+                ? "bg-muted font-medium"
+                : "hover:bg-muted"
             )}
           >
-            <span className="text-sm text-gray-700">All Items</span>
+            <span className="text-sm text-foreground">All Items</span>
             <Badge variant="secondary" className="text-xs">
               {projectChecklist?.length || 0}
             </Badge>
@@ -240,18 +240,18 @@ export default function ProjectKnowledgeTab({
               className={cn(
                 "w-full px-4 py-3 text-left transition-colors border-b border-gray-50",
                 selectedCategory === category.name
-                  ? "bg-gray-100"
-                  : "hover:bg-gray-50"
+                  ? "bg-muted"
+                  : "hover:bg-muted"
               )}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className={cn(
                   "text-sm truncate",
-                  selectedCategory === category.name ? "font-medium text-gray-900" : "text-gray-700"
+                  selectedCategory === category.name ? "font-medium text-foreground" : "text-foreground"
                 )}>
                   {category.name}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {category.fulfilled}/{category.total}
                 </span>
               </div>
@@ -272,7 +272,7 @@ export default function ProjectKnowledgeTab({
         </div>
 
         {/* Add Dynamic Requirement */}
-        <div className="p-3 border-t border-gray-100 flex-shrink-0">
+        <div className="p-3 border-t border-border flex-shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -286,7 +286,7 @@ export default function ProjectKnowledgeTab({
       </div>
 
       {/* Column 3: Checklist Items */}
-      <div className="flex-1 bg-white flex flex-col overflow-hidden">
+      <div className="flex-1 bg-card flex flex-col overflow-hidden">
         <KnowledgeChecklistPanel
           items={filteredItems}
           clientId={clientId}

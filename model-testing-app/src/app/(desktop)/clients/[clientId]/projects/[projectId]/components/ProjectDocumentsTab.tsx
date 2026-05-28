@@ -62,7 +62,7 @@ export default function ProjectDocumentsTab({
   }, []);
 
   return (
-    <div className="flex h-full overflow-hidden bg-white">
+    <div className="flex h-full overflow-hidden bg-card">
       {/* Folder Browser */}
       <FolderBrowser
         clientId={clientId}

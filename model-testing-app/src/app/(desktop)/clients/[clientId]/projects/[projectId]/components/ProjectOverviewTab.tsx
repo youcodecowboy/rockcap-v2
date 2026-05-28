@@ -141,29 +141,29 @@ export default function ProjectOverviewTab({
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <p className="text-xs text-gray-500">Project Name</p>
+            <p className="text-xs text-muted-foreground">Project Name</p>
             <p className="text-sm font-medium">{project.name}</p>
           </div>
 
           {project.projectShortcode && (
             <div>
-              <p className="text-xs text-gray-500">Shortcode</p>
+              <p className="text-xs text-muted-foreground">Shortcode</p>
               <Badge variant="outline" className="font-mono text-xs">{project.projectShortcode}</Badge>
             </div>
           )}
 
           {project.description && (
             <div>
-              <p className="text-xs text-gray-500">Description</p>
-              <p className="text-sm text-gray-700">{project.description}</p>
+              <p className="text-xs text-muted-foreground">Description</p>
+              <p className="text-sm text-foreground">{project.description}</p>
             </div>
           )}
 
           {project.address && (
             <div>
-              <p className="text-xs text-gray-500">Address</p>
+              <p className="text-xs text-muted-foreground">Address</p>
               <p className="text-sm font-medium flex items-start gap-1.5">
-                <MapPin className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
+                <MapPin className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
                 {[project.address, project.city, project.state, project.zip]
                   .filter(Boolean)
                   .join(', ')}
@@ -173,9 +173,9 @@ export default function ProjectOverviewTab({
 
           {project.startDate && (
             <div>
-              <p className="text-xs text-gray-500">Start Date</p>
+              <p className="text-xs text-muted-foreground">Start Date</p>
               <p className="text-sm font-medium flex items-center gap-1.5">
-                <Calendar className="w-3 h-3 text-gray-400" />
+                <Calendar className="w-3 h-3 text-muted-foreground" />
                 {new Date(project.startDate).toLocaleDateString()}
               </p>
             </div>
@@ -183,9 +183,9 @@ export default function ProjectOverviewTab({
 
           {project.expectedCompletionDate && (
             <div>
-              <p className="text-xs text-gray-500">Expected Completion</p>
+              <p className="text-xs text-muted-foreground">Expected Completion</p>
               <p className="text-sm font-medium flex items-center gap-1.5">
-                <Calendar className="w-3 h-3 text-gray-400" />
+                <Calendar className="w-3 h-3 text-muted-foreground" />
                 {new Date(project.expectedCompletionDate).toLocaleDateString()}
               </p>
             </div>
@@ -193,14 +193,14 @@ export default function ProjectOverviewTab({
 
           {project.loanAmount && (
             <div>
-              <p className="text-xs text-gray-500">Loan Amount</p>
+              <p className="text-xs text-muted-foreground">Loan Amount</p>
               <p className="text-sm font-medium">{formatCurrency(project.loanAmount)}</p>
             </div>
           )}
 
           {project.interestRate && (
             <div>
-              <p className="text-xs text-gray-500">Interest Rate</p>
+              <p className="text-xs text-muted-foreground">Interest Rate</p>
               <p className="text-sm font-medium">{project.interestRate}%</p>
             </div>
           )}
@@ -225,55 +225,55 @@ export default function ProjectOverviewTab({
         </CardHeader>
         <CardContent>
           {checklistStats.total === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No checklist items yet</p>
+            <p className="text-muted-foreground text-sm text-center py-4">No checklist items yet</p>
           ) : (
             <div className="space-y-4">
               {/* Overall Progress */}
               <div>
                 <div className="flex items-center justify-between text-sm mb-2">
-                  <span className="text-gray-600">Overall Completion</span>
+                  <span className="text-muted-foreground">Overall Completion</span>
                   <span className="font-medium">{checklistStats.percentage}%</span>
                 </div>
                 <Progress value={checklistStats.percentage} className="h-2" />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {checklistStats.fulfilled} of {checklistStats.total} documents
                 </p>
               </div>
 
               {/* Status Breakdown */}
-              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-gray-100">
+              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 mb-1">
                     <CheckCircle2 className="w-4 h-4 text-green-500" />
                     <span className="text-lg font-semibold text-green-700">{checklistStats.fulfilled}</span>
                   </div>
-                  <p className="text-[10px] text-gray-500">Fulfilled</p>
+                  <p className="text-[10px] text-muted-foreground">Fulfilled</p>
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 mb-1">
                     <Clock className="w-4 h-4 text-amber-500" />
                     <span className="text-lg font-semibold text-amber-700">{checklistStats.pendingReview}</span>
                   </div>
-                  <p className="text-[10px] text-gray-500">Pending</p>
+                  <p className="text-[10px] text-muted-foreground">Pending</p>
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 mb-1">
-                    <Circle className="w-4 h-4 text-gray-400" />
-                    <span className="text-lg font-semibold text-gray-700">{checklistStats.missing}</span>
+                    <Circle className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-lg font-semibold text-foreground">{checklistStats.missing}</span>
                   </div>
-                  <p className="text-[10px] text-gray-500">Missing</p>
+                  <p className="text-[10px] text-muted-foreground">Missing</p>
                 </div>
               </div>
 
               {/* Top Categories */}
               {Object.keys(checklistStats.byCategory).length > 0 && (
-                <div className="pt-2 border-t border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 mb-2">By Category</p>
+                <div className="pt-2 border-t border-border">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">By Category</p>
                   <div className="space-y-1.5">
                     {Object.entries(checklistStats.byCategory).slice(0, 4).map(([category, stats]) => (
                       <div key={category} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600 truncate flex-1">{category}</span>
-                        <span className="text-xs text-gray-500 ml-2">
+                        <span className="text-muted-foreground truncate flex-1">{category}</span>
+                        <span className="text-xs text-muted-foreground ml-2">
                           {stats.fulfilled}/{stats.total}
                         </span>
                       </div>
@@ -306,13 +306,13 @@ export default function ProjectOverviewTab({
         </CardHeader>
         <CardContent>
           {clientsWithRoles.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No clients associated</p>
+            <p className="text-muted-foreground text-sm text-center py-4">No clients associated</p>
           ) : (
             <div className="space-y-2">
               {clientsWithRoles.map((roleData: any, index: number) => (
                 <div
                   key={index}
-                  className="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                  className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
                   onClick={() => router.push(`/clients/${roleData.client._id}`)}
                 >
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
@@ -339,12 +339,12 @@ export default function ProjectOverviewTab({
                       >
                         {roleData.role || roleData.client.type || 'Client'}
                       </Badge>
-                      <span className="text-[10px] text-gray-500">
+                      <span className="text-[10px] text-muted-foreground">
                         {docsByClient[roleData.client._id] || 0} docs
                       </span>
                     </div>
                   </div>
-                  <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+                  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
                 </div>
               ))}
             </div>
@@ -370,25 +370,25 @@ export default function ProjectOverviewTab({
         </CardHeader>
         <CardContent>
           {recentDocuments.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No documents yet</p>
+            <p className="text-muted-foreground text-sm text-center py-4">No documents yet</p>
           ) : (
             <div className="space-y-2">
               {recentDocuments.map((doc: any) => (
                 <div
                   key={doc._id}
-                  className="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted transition-colors"
                 >
-                  <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">
                       {doc.displayName || doc.documentCode || doc.fileName}
                     </p>
-                    <p className="text-xs text-gray-500 truncate">{doc.summary}</p>
+                    <p className="text-xs text-muted-foreground truncate">{doc.summary}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                         {doc.category}
                       </Badge>
-                      <span className="text-[10px] text-gray-400">
+                      <span className="text-[10px] text-muted-foreground">
                         {new Date(doc.uploadedAt).toLocaleDateString()}
                       </span>
                     </div>
