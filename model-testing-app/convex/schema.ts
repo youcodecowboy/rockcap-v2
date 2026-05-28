@@ -1532,6 +1532,33 @@ export default defineSchema({
     .index("by_status", ["chargeStatus"])
     .index("by_is_new", ["isNew"]),
 
+  // Durable per-scheme enrichment for prospects. One row per SPV (scheme).
+  // Written as drafts by the prospect-intel skill (operatorConfirmed=false),
+  // confirmed/edited by operators in the Track Record tab. Surface-only:
+  // does NOT create clients/companies rows. See
+  // docs/superpowers/specs/2026-05-28-prospect-track-record-scheme-intelligence-design.md
+  prospectSchemes: defineTable({
+    clientId: v.id("clients"),
+    companyNumber: v.string(), // the SPV's Companies House number
+    companyName: v.string(),
+    schemeName: v.optional(v.string()),
+    address: v.optional(v.string()),
+    planningRefs: v.optional(v.array(v.string())),
+    estimatedUnits: v.optional(v.number()),
+    schemeType: v.optional(v.string()),
+    whatBuilding: v.optional(v.string()),
+    gdvEstimate: v.optional(v.string()), // range string, never a naked number
+    confidence: v.optional(v.string()), // "high" | "med" | "low"
+    status: v.optional(v.string()), // "live" | "past"
+    sourceUrls: v.optional(v.array(v.string())),
+    operatorConfirmed: v.boolean(),
+    updatedBy: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_client_company", ["clientId", "companyNumber"]),
+
   // Companies House PSC - Persons with Significant Control
   companiesHousePSC: defineTable({
     pscId: v.string(), // Unique PSC ID from Companies House
