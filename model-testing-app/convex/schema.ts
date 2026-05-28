@@ -3769,7 +3769,12 @@ export default defineSchema({
   // cadence types plus custom. contactId points at contacts today; when the
   // Person table lands (BL-1.2), an optional personId is added and backfilled.
   cadences: defineTable({
-    contactId: v.id("contacts"),
+    // Optional (Phase 3): a prospect-intel package can be drafted before a
+    // verified contact email exists. Such rows are held (isActive: false,
+    // packageApprovalStatus: "needs_contact", needsContact: true) so they're
+    // reviewable on the board but the dispatcher never fires them. Once a
+    // contact is attached + email verified, the row becomes fireable.
+    contactId: v.optional(v.id("contacts")),
     cadenceType: v.union(
       v.literal("prospect_followup"),           // default 3-month re-touch on cold prospects
       v.literal("warm_lead_chase"),             // "ask me in Q3" parked leads
@@ -3833,13 +3838,20 @@ export default defineSchema({
     sourceSkillRunId: v.optional(v.id("skillRuns")),
 
     // Package-level approval gate (v1.2)
+    // "needs_contact" (Phase 3): held draft created before a verified contact
+    // exists. Never fired by the dispatcher (paired with isActive: false +
+    // needsContact: true). Surfaced on the board as "needs contact".
     packageApprovalStatus: v.optional(v.union(
       v.literal("pending"),
       v.literal("approved"),
       v.literal("denied"),
+      v.literal("needs_contact"),
     )),
     approvedBy: v.optional(v.id("users")),
     approvedAt: v.optional(v.string()),
+    // Phase 3: true when this row was drafted without a contact. Pairs with
+    // packageApprovalStatus: "needs_contact" + isActive: false.
+    needsContact: v.optional(v.boolean()),
 
     // Operator edit + revision tracking (v1.2)
     editedByOperator: v.optional(v.boolean()),

@@ -531,11 +531,11 @@ const TOOLS: McpTool[] = [
   {
     name: "cadence.create",
     description:
-      "Queue a cadence row that the dispatcher will fire at nextDueAt. For gauntlet-mode pre-drafted packages (prospect-intel uses this), set packageId + packageOrder + preDraftedTouch together. For recurring cadences (e.g., BDM relationship maintenance), set scheduleConfig.intervalDays and omit preDraftedTouch (v1 ships pre-drafted only; recurring composition lands in v1.1).",
+      "Queue a cadence row that the dispatcher will fire at nextDueAt. For gauntlet-mode pre-drafted packages (prospect-intel uses this), set packageId + packageOrder + preDraftedTouch together. For recurring cadences (e.g., BDM relationship maintenance), set scheduleConfig.intervalDays and omit preDraftedTouch (v1 ships pre-drafted only; recurring composition lands in v1.1). contactId is OPTIONAL (Phase 3): omit it to create a held 'needs_contact' draft — the touch is composed and reviewable on the board but is forced inactive and the dispatcher will never fire it until a verified contact is attached. With contactId present, the v1.2.4 email guard still applies (refuses contacts with no/bad email).",
     inputSchema: {
       type: "object",
       properties: {
-        contactId: { type: "string", description: "Convex id of the target contact" },
+        contactId: { type: "string", description: "Convex id of the target contact. OPTIONAL: omit to create a contactless held 'needs_contact' draft (reviewable but never fired until a contact is attached)." },
         cadenceType: {
           type: "string",
           description: "prospect_followup | warm_lead_chase | execution_chaser | client_checkin | bdm_relationship | monitoring_ask | post_lost_re_engagement | custom",
@@ -567,49 +567,62 @@ const TOOLS: McpTool[] = [
         },
         sourceSkillRunId: { type: "string", description: "If queued by a skill run, the runId for audit linkage" },
       },
-      required: ["contactId", "cadenceType", "nextDueAt", "scheduleConfig", "isActive"],
+      required: ["cadenceType", "nextDueAt", "scheduleConfig", "isActive"],
     },
     handler: async (ctx, userId, args) => {
-      // v1.2.4 email guard. Refuse to create cadences for contacts with no
-      // email or with explicitly-bad emailStatus values. Surfaces the gap
-      // at cadence-creation time (when the operator/skill can do something
-      // about it) rather than at fire time (when the dispatcher would
-      // silently skip or hit a deliverability wall).
-      const contact = await ctx.runQuery(internal.contacts.getInternal, {
-        contactId: args.contactId,
-      });
-      if (!contact) {
-        return asText({
-          status: "error",
-          error: "contact_not_found",
+      // Phase 3: contactless path. When no contactId is supplied, skip the
+      // email guard entirely and create a held "needs_contact" draft. The
+      // createInternal mutation forces isActive: false +
+      // packageApprovalStatus: "needs_contact" + needsContact: true, so the
+      // dispatcher (findDueInternal filters isActive=true AND approved) can
+      // never fire it. The draft is reviewable on the board; the operator
+      // attaches a contact to make it fireable.
+      let warning: string | undefined;
+      if (args.contactId) {
+        // v1.2.4 email guard. Refuse to create cadences for contacts with no
+        // email or with explicitly-bad emailStatus values. Surfaces the gap
+        // at cadence-creation time (when the operator/skill can do something
+        // about it) rather than at fire time (when the dispatcher would
+        // silently skip or hit a deliverability wall).
+        const contact = await ctx.runQuery(internal.contacts.getInternal, {
           contactId: args.contactId,
         });
+        if (!contact) {
+          return asText({
+            status: "error",
+            error: "contact_not_found",
+            contactId: args.contactId,
+          });
+        }
+        if (!contact.email || contact.email.trim() === "") {
+          return asText({
+            status: "error",
+            error: "contact_has_no_email",
+            contactId: args.contactId,
+            contactName: contact.name,
+            fix: "Run apollo.findEmail({firstName, lastName, companyName}) to discover, then contacts.update({contactId, email, emailStatus}) to persist before retrying this cadence.create call. Alternatively omit contactId to create a held 'needs_contact' draft for board review.",
+          });
+        }
+        const bad = new Set(["questionable", "spam_trap", "invalid", "bounced"]);
+        if (contact.emailStatus && bad.has(contact.emailStatus.toLowerCase())) {
+          return asText({
+            status: "error",
+            error: "email_status_blocks_send",
+            contactId: args.contactId,
+            contactName: contact.name,
+            email: contact.email,
+            emailStatus: contact.emailStatus,
+            fix: "Find an alternative email address (different contact at same company, or re-run apollo.findEmail with companyDomain hint) before sending to this contact.",
+          });
+        }
+        // emailStatus = "verified" passes; undefined passes (assumed manually
+        // entered + valid); "unverified" passes with a soft warning (the v1.1
+        // cadence dispatcher will eventually surface verification status to
+        // operators in the approvals UI).
+        warning = contact.emailStatus === "unverified"
+          ? "Contact email is unverified (Apollo or manual entry). Operator should confirm before package approval."
+          : undefined;
       }
-      if (!contact.email || contact.email.trim() === "") {
-        return asText({
-          status: "error",
-          error: "contact_has_no_email",
-          contactId: args.contactId,
-          contactName: contact.name,
-          fix: "Run apollo.findEmail({firstName, lastName, companyName}) to discover, then contacts.update({contactId, email, emailStatus}) to persist before retrying this cadence.create call.",
-        });
-      }
-      const bad = new Set(["questionable", "spam_trap", "invalid", "bounced"]);
-      if (contact.emailStatus && bad.has(contact.emailStatus.toLowerCase())) {
-        return asText({
-          status: "error",
-          error: "email_status_blocks_send",
-          contactId: args.contactId,
-          contactName: contact.name,
-          email: contact.email,
-          emailStatus: contact.emailStatus,
-          fix: "Find an alternative email address (different contact at same company, or re-run apollo.findEmail with companyDomain hint) before sending to this contact.",
-        });
-      }
-      // emailStatus = "verified" passes; undefined passes (assumed manually
-      // entered + valid); "unverified" passes with a soft warning (the v1.1
-      // cadence dispatcher will eventually surface verification status to
-      // operators in the approvals UI).
 
       const cadenceId = await ctx.runMutation(internal.cadences.createInternal, {
         contactId: args.contactId,
@@ -625,10 +638,15 @@ const TOOLS: McpTool[] = [
         sourceSkillRunId: args.sourceSkillRunId,
         createdBy: userId,
       });
-      const warning = contact.emailStatus === "unverified"
-        ? "Contact email is unverified (Apollo or manual entry). Operator should confirm before package approval."
-        : undefined;
-      return asText({ status: "created", cadenceId, ...(warning ? { warning } : {}) });
+      // Phase 3: signal the held state back to the caller so the skill can
+      // record a no_contact gap and surface "needs contact" to the operator.
+      const needsContact = !args.contactId;
+      return asText({
+        status: "created",
+        cadenceId,
+        ...(needsContact ? { needsContact: true, packageApprovalStatus: "needs_contact" } : {}),
+        ...(warning ? { warning } : {}),
+      });
     },
   },
   {
