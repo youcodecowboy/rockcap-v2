@@ -1077,69 +1077,109 @@ export const setProspectFactsInternal = internalMutation({
 // project is being stood up. Marks the entity transition from "lead
 // we're chasing" to "active client we're executing on."
 
+type ActivateResult = {
+  ok: true;
+  idempotent?: boolean;
+  statusChanged?: boolean;
+  prospectStateChanged?: boolean;
+  fromStatus?: string;
+  fromProspectState?: string;
+  note?: string;
+};
+
+// Shared activation logic. Single source of truth for the prospect →
+// active-client transition: patches status, transitions prospectState to
+// "promoted" (with audit fields) if it's set + non-terminal, and schedules
+// the HubSpot lifecycleStage push-back. Both the public `activate` mutation
+// (one-click promote from the prospect detail UI) and `activateInternal`
+// (deal-intake skill / MCP) call this so the behaviour can never drift.
+async function activateClient(
+  ctx: any,
+  clientId: Id<"clients">,
+  userId: Id<"users"> | undefined
+): Promise<ActivateResult> {
+  const client = await ctx.db.get(clientId);
+  if (!client) {
+    throw new Error("client_not_found");
+  }
+
+  const currentStatus = (client as any).status;
+  const currentProspectState = (client as any).prospectState;
+  const now = new Date().toISOString();
+
+  // Already active — return idempotent
+  if (currentStatus === "active") {
+    return {
+      ok: true,
+      idempotent: true,
+      fromStatus: currentStatus,
+      note: "client already active; no patch applied",
+    };
+  }
+
+  // Patch status to active
+  await ctx.db.patch(clientId, {
+    status: "active",
+  });
+
+  // If prospectState is set AND not yet in a terminal state, transition to promoted
+  let prospectStateChanged = false;
+  const terminalStates = new Set(["promoted", "parked", "lost"]);
+  if (currentProspectState && !terminalStates.has(currentProspectState)) {
+    await ctx.db.patch(clientId, {
+      prospectState: "promoted",
+      prospectStateChangedAt: now,
+      prospectStateChangedBy: userId,
+    });
+    prospectStateChanged = true;
+
+    // Schedule the HubSpot push-back so the lifecycleStage + hs_lead_status
+    // reflect the promotion (same side-effect as prospect.transitionState MCP).
+    await ctx.scheduler.runAfter(0, internal.prospects.pushStateToHubspotInternal, {
+      clientId,
+      newState: "promoted",
+    });
+  }
+
+  return {
+    ok: true,
+    statusChanged: true,
+    prospectStateChanged,
+    fromStatus: currentStatus ?? "n/a",
+    fromProspectState: currentProspectState ?? "n/a",
+  };
+}
+
+// Public mutation so the prospect detail UI can promote a client in one
+// click (useMutation(api.clients.activate)). Resolves the acting user from
+// the Clerk identity (same pattern as `remove`) so prospectStateChangedBy
+// is recorded, then runs the shared activation logic. Idempotent: a no-op
+// if the client is already active.
+export const activate = mutation({
+  args: {
+    clientId: v.id("clients"),
+  },
+  handler: async (ctx, args): Promise<ActivateResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    let userId: Id<"users"> | undefined;
+    if (identity) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+        .first();
+      userId = user?._id;
+    }
+
+    return await activateClient(ctx, args.clientId, userId);
+  },
+});
+
 export const activateInternal = internalMutation({
   args: {
     clientId: v.id("clients"),
     userId: v.optional(v.id("users")),
   },
-  handler: async (ctx, args): Promise<{
-    ok: true;
-    idempotent?: boolean;
-    statusChanged?: boolean;
-    prospectStateChanged?: boolean;
-    fromStatus?: string;
-    fromProspectState?: string;
-    note?: string;
-  }> => {
-    const client = await ctx.db.get(args.clientId);
-    if (!client) {
-      throw new Error("client_not_found");
-    }
-
-    const currentStatus = (client as any).status;
-    const currentProspectState = (client as any).prospectState;
-    const now = new Date().toISOString();
-
-    // Already active — return idempotent
-    if (currentStatus === "active") {
-      return {
-        ok: true,
-        idempotent: true,
-        fromStatus: currentStatus,
-        note: "client already active; no patch applied",
-      };
-    }
-
-    // Patch status to active
-    await ctx.db.patch(args.clientId, {
-      status: "active",
-    });
-
-    // If prospectState is set AND not yet in a terminal state, transition to promoted
-    let prospectStateChanged = false;
-    const terminalStates = new Set(["promoted", "parked", "lost"]);
-    if (currentProspectState && !terminalStates.has(currentProspectState)) {
-      await ctx.db.patch(args.clientId, {
-        prospectState: "promoted",
-        prospectStateChangedAt: now,
-        prospectStateChangedBy: args.userId,
-      });
-      prospectStateChanged = true;
-
-      // Schedule the HubSpot push-back so the lifecycleStage + hs_lead_status
-      // reflect the promotion (same side-effect as prospect.transitionState MCP).
-      await ctx.scheduler.runAfter(0, internal.prospects.pushStateToHubspotInternal, {
-        clientId: args.clientId,
-        newState: "promoted",
-      });
-    }
-
-    return {
-      ok: true,
-      statusChanged: true,
-      prospectStateChanged,
-      fromStatus: currentStatus ?? "n/a",
-      fromProspectState: currentProspectState ?? "n/a",
-    };
+  handler: async (ctx, args): Promise<ActivateResult> => {
+    return await activateClient(ctx, args.clientId, args.userId);
   },
 });

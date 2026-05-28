@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { StatePill } from "./StatePill";
@@ -19,9 +22,26 @@ interface ProspectDetailHeaderProps {
 export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
+  const activate = useMutation(api.clients.activate as any);
+  const [promoting, setPromoting] = useState(false);
 
   const state = prospect?.prospectState ?? "drafted";
   const touchCount = cadences?.length ?? 0;
+  // Promote-to-client is offered only at the "engaged" rung (Meeting booked).
+  const canPromote = state === "engaged" && !!prospect?._id;
+
+  const handlePromote = async () => {
+    if (!prospect?._id || promoting) return;
+    const clientId = prospect._id as string;
+    setPromoting(true);
+    try {
+      await activate({ clientId });
+      router.push(`/clients/${clientId}`);
+    } catch (err) {
+      console.error("Failed to promote prospect to client", err);
+      setPromoting(false);
+    }
+  };
 
   return (
     <>
@@ -55,6 +75,27 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
             </div>
             <StatePill state={state} />
           </div>
+
+          {canPromote && (
+            <button
+              onClick={handlePromote}
+              disabled={promoting}
+              style={{
+                padding: "8px 16px",
+                fontSize: 13,
+                fontWeight: 500,
+                borderRadius: 6,
+                border: `1px solid ${colors.entityTypes.client}`,
+                background: promoting ? colors.bg.card : colors.entityTypes.client,
+                color: promoting ? colors.text.muted : "#fff",
+                cursor: promoting ? "default" : "pointer",
+                opacity: promoting ? 0.7 : 1,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {promoting ? "Promoting…" : "Promote to client"}
+            </button>
+          )}
         </div>
 
         <div style={{
