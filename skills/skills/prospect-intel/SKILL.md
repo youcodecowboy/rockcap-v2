@@ -101,6 +101,8 @@ What it does not do:
     - `questionable` / `spam_trap`: do NOT use; flag as risk in section 7.
     - `unavailable` or `not found`: Apollo has no email; fall back to web research (LinkedIn personal profile, company website contact page) and surface as a gap if still unfindable. Without an email the package is still drafted — it lands **contactless** (`needs_contact`, held/inactive) so the drafts are reviewable on the board (see step 11), and a `no_contact` gap is recorded so the operator knows a contact must be attached before anything can send. Outreach is held, not blocked.
 
+8b. **Map the corporate group (related entities).** Invoke the `../../sub-skills/resolve-related-entities` sub-skill for the prospect's **majority controllers** — every majority PSC and each key director. It walks each controller's other Companies House appointments via `companies.getOfficerAppointments({appointmentsLink})` (the link persisted on each `companiesHouseOfficers` row by step 2's sync) and returns the corporate group: the likely trading parent + likely sibling SPVs (matched on shared name root per the `{Sponsor} ({Scheme}) Limited` convention and/or shared registered office), split active vs dissolved. Persist the one `borrower.related_entities` knowledge item the sub-skill specifies. **Surface-only: do NOT create `clients`/`companies` rows for the discovered appointments.** Output populates the "Corporate group / related entities" subsection of section 3. **Why this matters:** a single CH number understates a developer's SPV-spread lender DNA — the prospect may be one scheme vehicle, not the trading parent. Walking the controller's appointments reveals the sibling SPVs (likely each carrying their own charges) so the lender-DNA picture in section 4 is read in the context of the whole group, not one node. This directly addresses the prior "single-CH-number understates SPV lender DNA" gap. If the controller's `appointmentsLink` is absent, or the appointment list resolves to a different individual (DOB mismatch), the sub-skill records that and the subsection notes it — see the sub-skill's `## What goes wrong`.
+
 9. **Cross-reference checks**. Follow `references/web-research-playbook.md` Phase C — Convex intelligence lookups for prior connections, address cross-check, sister entity check. Output enriches sections 3 and 4.
 
 10. **Persist intelligence**. Write the findings to `clientIntelligence` and any specific data points to `knowledgeItems`. Cite sources (Companies House filing numbers, charge IDs, URLs scraped with timestamps, web search queries used). Build the full markdown report following `references/intel-report-template.md` — all 9 sections, in order, with confidence levels.
@@ -155,6 +157,7 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 - `cadence.create` — for step 11 (cadence package, 4 calls)
 - `apollo.findEmail` — for step 8 (per-director email discovery; the v1.2.3 capability; cached 30 days at v1.2.4)
 - `companies.syncCompaniesHouse` — for step 2 (CH profile + charges sync)
+- `companies.getOfficerAppointments` — for step 8b (corporate-group mapping; consumes the `appointmentsLink` persisted on each officer row by step 2, via the `resolve-related-entities` sub-skill)
 - `contact.getByClient` — for step 11 (resolve the prospect's contact for cadence wiring)
 - `clients.setProspectFacts` — for step 10 (populate structured prospect facts on the clients row; v1.2.4)
 
@@ -196,6 +199,7 @@ Loaded on demand during the workflow:
 - **`references/website-scrape-playbook.md`** (v2) — URL discovery + page fetching + extraction format. (Step 6.)
 - **`references/web-research-playbook.md`** (v2) — exact queries for company-level + director-level + cross-reference research. (Steps 7, 8, 9.)
 - `../../shared-references/spv-structure-canon.md` — canonical UK property finance SPV chain (Sponsor → Borrower SPV → Lender SPV → Lender → Agent + Guarantors). Loaded when interpreting Companies House charges + officers + PSC data: helps recognise `Sponsor (X) Limited` patterns as scheme-specific SPVs, lender SPVs on charges, and parent-subsidiary structures. CH-perspective extraction guidance is in section "Perspective A — Companies House."
+- `../../sub-skills/resolve-related-entities.md` — the corporate-group walk. (Step 8b.) Given the prospect's persisted majority PSCs + key directors, walks each controller's other CH appointments via `companies.getOfficerAppointments` to surface likely sibling SPVs + the trading parent, and persists one `borrower.related_entities` knowledge item (surface-only; no rows created). Authored.
 
 ## Corpora (planned)
 

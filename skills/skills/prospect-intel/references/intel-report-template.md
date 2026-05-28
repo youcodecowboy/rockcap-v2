@@ -70,6 +70,19 @@ For each of top 2 directors by CH appointment recency:
 - **Press / quotes:** {any verbatim quotes or press mentions; or "None found"}
 - **Connection signal:** {if they appear connected to other property/finance people in our existing intelligence, note it; else "No prior connection in RockCap intelligence"}
 
+### Corporate group / related entities
+
+(From the `../../sub-skills/resolve-related-entities` walk — step 8b. Maps the controllers' other Companies House appointments to the corporate group. Surface-only: no `clients`/`companies` rows are created for the entities listed here.)
+
+- **Controllers walked:** {for each majority PSC / key director walked: name + why (e.g. "majority PSC, ownership-of-shares-75-to-100-percent" / "director, appointed 2023-04"). Note any controller whose appointments link was absent or whose list resolved to a different individual (DOB mismatch).}
+- **Likely trading parent:** {company name + CH number + confidence — the bare sponsor-root company (no scheme parenthetical), if found; else "None identified — prospect appears to be the trading parent / core entity"}
+- **Likely sibling SPVs (active):** {top active companies controlled by the same individual(s) that share the prospect's name root and/or registered office. For each: name + CH number + officer role + match basis (shared name root / shared office / both) + confidence.}
+  - {example: "Homes by Carlton (Bishopton) Ltd — 11223344, director, shared name root + shared office (HIGH)"}
+  - {if none: "None found — no active sibling SPVs surfaced from the controllers' appointments"}
+- **Dissolved / historic related entities:** {dissolved or liquidated companies the controller(s) ran that share the name root — possibly wound-up completed schemes, possibly failures; flag for operator judgment. Or "None on file."}
+- **Other active appointments:** {count of further active appointments not obviously related to this group, e.g. "Director also holds 4 further active appointments with no shared name root or office"}
+- **Heuristic caveat:** shared name root + shared controller is a strong signal of a common group but is NOT proof of ownership. State only what Companies House shows; do not assert ownership beyond a PSC filing that names the parent.
+
 ## 4. Lender DNA
 
 (From CH charges via `references/lender-dna-from-charges.md`.)
