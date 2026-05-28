@@ -7,6 +7,7 @@ import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { rungFor, RUNGS, PROSPECT_RUNGS } from "@/lib/prospects/ladder";
 import { computeProspectFlags } from "@/lib/prospects/flags";
+import { FlagChip } from "../FlagChip";
 
 // "Prospects" tab — the canonical prospect ladder. Every client with
 // status==="prospect" + a prospectState, grouped by its operator-facing rung
@@ -187,34 +188,6 @@ function ProspectRow({ client, rungLabel, colors, router }: { client: any; rungL
         </div>
       </td>
     </tr>
-  );
-}
-
-function FlagChip({ label, severity, colors }: { label: string; severity: "ok" | "info" | "warn"; colors: any }) {
-  const tone =
-    severity === "warn"
-      ? { bg: `${colors.accent.orange}15`, fg: colors.accent.orange, border: `${colors.accent.orange}40` }
-      : severity === "info"
-        ? { bg: `${colors.accent.blue}15`, fg: colors.accent.blue, border: `${colors.accent.blue}40` }
-        : { bg: `${colors.accent.green}15`, fg: colors.accent.green, border: `${colors.accent.green}40` };
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 6px",
-        borderRadius: 2,
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: 9,
-        lineHeight: 1.3,
-        letterSpacing: "0.04em",
-        background: tone.bg,
-        color: tone.fg,
-        border: `1px solid ${tone.border}`,
-        whiteSpace: "nowrap" as const,
-      }}
-    >
-      {label}
-    </span>
   );
 }
 

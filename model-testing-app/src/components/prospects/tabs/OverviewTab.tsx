@@ -5,6 +5,7 @@ import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { TrendingUp, AlertCircle, Plus, Mail, CheckCircle2, ExternalLink, UserPlus } from "lucide-react";
 import { computeProspectFlags } from "@/lib/prospects/flags";
+import { FlagChip } from "../FlagChip";
 
 interface OverviewTabProps {
   prospect: any;
@@ -544,33 +545,6 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
         </div>
       </div>
     </div>
-  );
-}
-
-function FlagChip({ label, severity, colors }: { label: string; severity: "ok" | "info" | "warn"; colors: any }) {
-  const tone =
-    severity === "warn"
-      ? { bg: `${colors.accent.orange}15`, fg: colors.accent.orange, border: `${colors.accent.orange}40` }
-      : severity === "info"
-        ? { bg: `${colors.accent.blue}15`, fg: colors.accent.blue, border: `${colors.accent.blue}40` }
-        : { bg: `${colors.accent.green}15`, fg: colors.accent.green, border: `${colors.accent.green}40` };
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 7px",
-        borderRadius: 2,
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: 9,
-        lineHeight: 1.4,
-        letterSpacing: "0.04em",
-        background: tone.bg,
-        color: tone.fg,
-        border: `1px solid ${tone.border}`,
-      }}
-    >
-      {label}
-    </span>
   );
 }
 
