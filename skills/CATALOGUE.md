@@ -63,7 +63,7 @@ The deep-context tools are the spine:
 
 **Special:**
 - `setProspectFacts` — bulk-patches structured prospect fields on the clients row
-- `transitionState` — moves a prospect through the 8-state machine
+- `transitionState` — moves a prospect through the 9-state machine
 - `applyPresetSchedule` — bulk reschedules cadence touches by preset (Light/Moderate/Aggressive)
 
 ## Tools by domain
@@ -73,7 +73,7 @@ The deep-context tools are the spine:
 | Tool | Purpose |
 |---|---|
 | `prospect.getDeepContext({clientId})` | **HEADLINE.** Comprehensive snapshot: prospect + contacts + cadences (split active/fired/queued) + replies + intel run + meetings + CH profile + clientIntelligence + touchpoints + deals + projects + pending approvals + summary block with 22 at-a-glance counts. FIRST tool call for any prospect-scoped question. |
-| `prospect.transitionState({clientId, newState})` | Move a prospect through the 8-state machine: drafted / needs_revision / active / replied / engaged / promoted / parked / lost. Side effect: schedules HubSpot push-back via existing sync. |
+| `prospect.transitionState({clientId, newState})` | Move a prospect through the 9-state machine: researched / drafted / needs_revision / active / replied / engaged / promoted / parked / lost. `researched` is set by prospect-intel on completion (intel exists, no outreach drafted yet); later states are operator-driven. Side effect: schedules HubSpot push-back via existing sync. |
 
 ### `client.*` — Client workflows (alias of prospect; for active clients) (5)
 
