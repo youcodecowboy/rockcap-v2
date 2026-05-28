@@ -445,6 +445,16 @@ export const getGroupCharges = query({
         chargesCount: number;
         activeCount: number;
       }>,
+      charges: [] as Array<{
+        companyNumber: string;
+        companyName: string;
+        companyStatus?: string;
+        chargeId: string;
+        lender: string;
+        date?: string;
+        status?: string;
+        description?: string;
+      }>,
     };
 
     const client = await ctx.db.get(args.clientId);
@@ -476,6 +486,16 @@ export const getGroupCharges = query({
       companyName: string;
       chargesCount: number;
       activeCount: number;
+    }> = [];
+    const allCharges: Array<{
+      companyNumber: string;
+      companyName: string;
+      companyStatus?: string;
+      chargeId: string;
+      lender: string;
+      date?: string;
+      status?: string;
+      description?: string;
     }> = [];
 
     let totalCharges = 0;
@@ -514,6 +534,17 @@ export const getGroupCharges = query({
         if (!lenderCounts[name]) lenderCounts[name] = { total: 0, active: 0 };
         lenderCounts[name].total++;
         if (isActive) lenderCounts[name].active++;
+
+        allCharges.push({
+          companyNumber,
+          companyName: company.companyName,
+          companyStatus: (company as any).companyStatus,
+          chargeId: c.chargeId,
+          lender: name,
+          date: c.chargeDate,
+          status: c.chargeStatus,
+          description: c.chargeDescription,
+        });
       }
 
       byCompany.push({
@@ -528,6 +559,8 @@ export const getGroupCharges = query({
       .map(([name, counts]) => ({ name, total: counts.total, active: counts.active }))
       .sort((a, b) => b.total - a.total || b.active - a.active);
 
+    allCharges.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
     return {
       // companyCount reflects companies that actually resolved to synced CH
       // rows (the set the rollup is computed over), not the requested-number
@@ -539,6 +572,7 @@ export const getGroupCharges = query({
       distinctLenders: Object.keys(lenderCounts).length,
       lendersByCount,
       byCompany,
+      charges: allCharges,
     };
   },
 });
