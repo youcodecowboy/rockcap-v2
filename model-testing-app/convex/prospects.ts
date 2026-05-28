@@ -199,6 +199,7 @@ export const getRecentCount = query({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PROSPECT_STATE = v.union(
+  v.literal("researched"),
   v.literal("drafted"),
   v.literal("needs_revision"),
   v.literal("active"),
@@ -536,6 +537,7 @@ export const linkExistingCadencesToClientInternal = internalAction({
 
 // HubSpot lifecycle + lead status mapping per spec section 2.8
 const HUBSPOT_MAPPING: Record<string, { lifecycleStage: string; hs_lead_status: string }> = {
+  researched: { lifecycleStage: "lead", hs_lead_status: "open" },
   drafted: { lifecycleStage: "lead", hs_lead_status: "open" },
   needs_revision: { lifecycleStage: "lead", hs_lead_status: "open" },
   active: { lifecycleStage: "marketingqualifiedlead", hs_lead_status: "contacted" },

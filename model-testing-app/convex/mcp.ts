@@ -1803,14 +1803,14 @@ const TOOLS: McpTool[] = [
   {
     name: "prospect.transitionState",
     description:
-      "Transition a prospect through the 8-state pipeline (drafted/needs_revision/active/replied/engaged/promoted/parked/lost). Called by the prospects CRM and by skill workflows (e.g., reply event processor on intent classification). Side effect: pushes the mapped lifecycleStage + hs_lead_status to HubSpot (see spec section 2.8).",
+      "Transition a prospect through the 9-state pipeline (researched/drafted/needs_revision/active/replied/engaged/promoted/parked/lost). Called by the prospects CRM and by skill workflows (e.g., reply event processor on intent classification). Side effect: pushes the mapped lifecycleStage + hs_lead_status to HubSpot (see spec section 2.8).",
     inputSchema: {
       type: "object",
       properties: {
         clientId: { type: "string", description: "Convex id of the client row" },
         newState: {
           type: "string",
-          description: "drafted | needs_revision | active | replied | engaged | promoted | parked | lost",
+          description: "researched | drafted | needs_revision | active | replied | engaged | promoted | parked | lost",
         },
       },
       required: ["clientId", "newState"],

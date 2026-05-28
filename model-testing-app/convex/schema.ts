@@ -64,6 +64,7 @@ export default defineSchema({
     deletedReason: v.optional(v.string()),
     // Prospect state machine (v1.2 prospects CRM)
     prospectState: v.optional(v.union(
+      v.literal("researched"),
       v.literal("drafted"),
       v.literal("needs_revision"),
       v.literal("active"),
