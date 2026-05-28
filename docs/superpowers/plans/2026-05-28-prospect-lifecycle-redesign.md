@@ -310,6 +310,19 @@ git commit -m "[app] add prospect flag computation helper (lifecycle redesign Ph
 - [ ] **Step 1:** Update the `prospect.transitionState` row to list `researched` as the first state in the 9-state machine.
 - [ ] **Step 2:** Commit: `git commit -am "[skills] CATALOGUE: add researched to transitionState states"`
 
+### Task 2.6: Persist `dealType` + `dealSizeRange` on the clients row
+
+So the Prospects table shows real values, not "—". Additive, optional columns.
+
+**Files:** Modify `convex/schema.ts` (clients table), `convex/clients.ts` (`setProspectFacts`), `convex/mcp.ts` (`clients.setProspectFacts` tool), `skills/skills/prospect-intel/SKILL.md` (step 10)
+
+- [ ] **Step 1:** In `convex/schema.ts` clients table, add `dealType: v.optional(v.union(v.literal("new_development"), v.literal("bridging"), v.literal("existing_asset"), v.literal("unclassifiable")))` and `dealSizeRange: v.optional(v.string())` (a display string, e.g. "£2-5m, medium confidence, based on Woodberry Park 48 units").
+- [ ] **Step 2:** In `convex/clients.ts` `setProspectFacts`, add optional `dealType` + `dealSizeRange` args and patch them when present (mirror the existing `companiesHouseNumber` / `website` handling).
+- [ ] **Step 3:** In `convex/mcp.ts`, add `dealType` + `dealSizeRange` to the `clients.setProspectFacts` tool input schema + pass them through.
+- [ ] **Step 4:** In `prospect-intel/SKILL.md` step 10, pass `dealType` (canonical term) + `dealSizeRange` (the range string from the report) to `clients.setProspectFacts`.
+- [ ] **Step 5:** Deploy + verify: `npx convex dev --once`; `grep -n dealSizeRange convex/clients.ts convex/mcp.ts` → present.
+- [ ] **Step 6:** Commit: `git add convex/schema.ts convex/clients.ts convex/mcp.ts skills/skills/prospect-intel/SKILL.md && git commit -m "[both] persist dealType + dealSizeRange on clients for the prospects table"`
+
 ---
 
 ## Phase 3 — Cadence: always draft + contact flag
@@ -357,7 +370,7 @@ git commit -m "[app] add prospect flag computation helper (lifecycle redesign Ph
 - [ ] **Step 3:** Verify: build passes; Homes by Carlton appears under "Researched" with a "No contact" flag chip.
 - [ ] **Step 4:** Commit: `git commit -am "[app] prospects: ladder table in Prospects tab"`
 
-> Note: `dealType` / `dealSizeRange` / `lastReplyAt` as `clients` columns are written by Phase 2's intel + the reply flow. If not yet present on the row, render "—"; do not block. A follow-up can add `clients.setProspectFacts` fields for `dealType` + `dealSizeRange` (extend Task 2.4 if you want them populated immediately).
+> Note: `dealType` + `dealSizeRange` are persisted on the `clients` row by Task 2.6 (via `setProspectFacts`); `lastReplyAt` comes from the reply flow. Render "—" only when a field is genuinely absent (e.g. intel not yet re-run on an old prospect); never block on it.
 
 ### Task 4.3: Retire ResearchedSection
 
@@ -405,5 +418,5 @@ git commit -m "[app] add prospect flag computation helper (lifecycle redesign Ph
 ## Self-review
 
 - **Spec coverage:** Thread 1 → Tasks 1.1–1.2; Thread 2 → Tasks 1.3, 2.1–2.5, 4.4; Thread 3 → Tasks 3.1–3.2; Thread 4 → Tasks 4.1–4.4; Thread 5 → 5.1. All five threads + all six acceptance criteria covered.
-- **Open dependency:** the Prospects table columns `dealType` / `dealSizeRange` need to be persisted on the `clients` row to display non-"—" values. Task 4.2's note flags this; populating them is an optional extension of Task 2.4 (`setProspectFacts` gains `dealType` + `dealSizeRange`), called out rather than hidden.
+- **Resolved dependency:** the Prospects table columns `dealType` / `dealSizeRange` are persisted on the `clients` row by **Task 2.6** (`setProspectFacts` gains both fields), so they populate immediately rather than rendering "—".
 - **Type consistency:** `rungFor` / `computeProspectFlags` signatures are used consistently in Tasks 4.2 and 4.4.
