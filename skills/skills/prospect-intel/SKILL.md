@@ -62,7 +62,7 @@ Persisted to Convex via the MCP tool surface:
 3. Where useful, `knowledgeItems` for specific extracted figures (turnover, ebitda, headcount if visible from HubSpot Beauhurst metadata).
 4. Optional: a draft outreach email staged as a pending `approvals` row with `entityType: "client_communication"`. Subject and body composed using the template-mapped reachout reference. Only created if `triggerContext` makes a reachout plausible.
 5. **v1.2 hardened:** the rich markdown `intelMarkdown` field on the skillRun row, written via `skillRun.complete({intelMarkdown})`. Structure per `references/intel-report-template.md`.
-6. **v1.2 hardened:** if the operator approves the produced package, the clients row's `prospectState` transitions from `drafted` → `active` (via the CRM Approve button calling `cadences.approvePackage` + the reply event processor's downstream transitions). The skill does NOT call `prospect.transitionState` itself — that's an operator action.
+6. **Prospect state:** the skill sets `prospectState: "researched"` on completion (via `prospect.transitionState`, step 12), reflecting that intel now exists for this prospect. It only sets `researched` if the prospect has no later state yet — it never downgrades a prospect already in `drafted`/`active`/etc. Later transitions are operator-driven: once the operator approves the produced cadence package, the CRM Approve button (`cadences.approvePackage`) and the reply event processor advance the state through `drafted` → `active` and beyond.
 
 What it does not do:
 
@@ -70,7 +70,7 @@ What it does not do:
 - Does not contact the prospect through any channel.
 - Does not create a `projects` row. Projects are created when an actual transaction emerges from the prospecting phase.
 - Does not promote the prospect to active client status (status remains `prospect`).
-- Does not transition `prospectState` directly. Operator does that via the CRM UI.
+- Does not drive `prospectState` beyond the initial `researched`. Transitions past `researched` (`drafted`, `active`, and onward) are operator-driven via the CRM UI + the cadence/reply machinery.
 
 ## High-level workflow
 
@@ -87,7 +87,7 @@ What it does not do:
 
 4. **Run Lender DNA analysis**. Load `references/lender-dna-from-charges.md` and follow it. The output is a section of structured findings: which lenders the company has used, which are current, which patterns the charge book reveals. This populates section 4 of the intel report.
 
-5. **Classify the developer type**. Load `references/bridging-vs-developer.md` and follow it. The classification is one of: bridging-suitable, development-finance-suitable, term-loan-suitable, unclassifiable. The classification colours the reachout angle and the lender match. This populates the Classification subsection of section 7.
+5. **Classify the developer type + size the deal**. Load `references/bridging-vs-developer.md` and follow it. The classification is one of the four canonical deal types: `new_development`, `bridging`, `existing_asset`, `unclassifiable`. The classification colours the reachout angle and the lender match. Then load `../../shared-references/deal-type-size-bands.md` and derive an indicative deal-size range (a range + confidence + "based on X" basis line is mandatory; a naked number is forbidden; `unclassifiable` produces no size estimate). Both outputs populate the Recommended Approach (section 7) of the intel report and are required, not optional.
 
 6. **Discover + scrape the prospect's website**. Load `references/website-scrape-playbook.md` and follow phases 1-4. The output populates section 2 (Online Presence) and feeds project facts into section 5 (Track Record).
 
@@ -119,6 +119,8 @@ What it does not do:
     - `linkedApprovalIds`: any approvals staged in step 11
     - `gaps`: any gaps captured along the way
 
+    **Then set the prospect state.** After `skillRun.complete` returns, call `prospect.transitionState({ clientId, newState: "researched" })` to mark that intel now exists for this prospect. Guard against downgrade: only do this if the prospect has no later state yet (i.e., `prospectState` is unset or already `researched`). If the prospect is already in `drafted`, `active`, or any later state — because a prior run drafted a cadence or the operator has advanced it — do NOT call this; leave the later state intact. All transitions past `researched` are operator-driven (CRM Approve button + reply processor); the skill only owns this one initial transition.
+
 ## Style rules
 
 All voice and output rules from `../../CONVENTIONS.md` apply. The four that matter most for this skill:
@@ -148,6 +150,7 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 **Important — cadence email guard (v1.2.4):** `cadence.create` now refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) before retrying. The guard surfaces the gap at cadence-creation time rather than at fire time.
 - `skillRun.start` (with dedup) — for step 1
 - `skillRun.complete` (with intelMarkdown) — for step 12
+- `prospect.transitionState` — for step 12 (set `prospectState: "researched"` on completion, guarded against downgrade)
 
 The skill also uses **Claude Code's native tools**, available in every Claude Code session:
 
