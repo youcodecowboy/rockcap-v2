@@ -66,6 +66,8 @@ Persisted to Convex via the MCP tool surface:
 5. **v1.2 hardened:** the rich markdown `intelMarkdown` field on the skillRun row, written via `skillRun.complete({intelMarkdown})`. Structure per `references/intel-report-template.md`.
 6. **Prospect state:** the skill sets `prospectState: "researched"` on completion (via `prospect.transitionState`, step 12), reflecting that intel now exists for this prospect. It only sets `researched` if the prospect has no later state yet — it never downgrades a prospect already in `drafted`/`active`/etc. Later transitions are operator-driven: once the operator approves the produced cadence package, the CRM Approve button (`cadences.approvePackage`) and the reply event processor advance the state through `drafted` → `active` and beyond.
 
+7. **Draft per-scheme enrichment (v1.2.5):** one `prospectSchemes` row per live SPV, written via `companies.upsertProspectScheme` in step 10b. Each row is a draft (`operatorConfirmed: false`) containing the best available estimate of what the scheme is building — type, unit count, GDV range, planning references, confidence label, and source URLs. The operator confirms each row in the prospect detail Track Record tab; confirmed rows are never clobbered by a re-run.
+
 What it does not do:
 
 - Does not send email.
@@ -87,7 +89,7 @@ What it does not do:
 
 3. **Check for existing prospect or client**. If a `clients` row already references this company number, this is an update flow, not a new-prospect flow. Update the existing row's intelligence; do not create a duplicate.
 
-4. **Run Lender DNA analysis**. Load `references/lender-dna-from-charges.md` and follow it. The output is a section of structured findings: which lenders the company has used, which are current, which patterns the charge book reveals. This populates section 4 of the intel report.
+4. **Run Lender DNA analysis**. Load `references/lender-dna-from-charges.md` and follow it. The output is a section of structured findings: which lenders the company has used, which are current, which patterns the charge book reveals. This populates section 4 of the intel report. **When the prospect borrows through per-scheme SPVs (so the anchor company shows few or no charges), the group rollup `companies.getGroupCharges` from step 8b gives charge COUNTS per lender, not which lender sits on which scheme.** Do not name or characterise a lender's schemes (size, prime-ness) from counts; read the per-SPV charge register (`.../company/{N}/charges`) first. See the reference's "What not to do" for why (a past run mischaracterised a lender's schemes from counts alone).
 
 5. **Classify the developer type + size the deal**. Load `references/bridging-vs-developer.md` and follow it. The classification is one of the four canonical deal types: `new_development`, `bridging`, `existing_asset`, `unclassifiable`. The classification colours the reachout angle and the lender match. Then load `../../shared-references/deal-type-size-bands.md` and derive an indicative deal-size range (a range + confidence + "based on X" basis line is mandatory; a naked number is forbidden; `unclassifiable` produces no size estimate). Both outputs populate the Recommended Approach (section 7) of the intel report and are required, not optional.
 
@@ -114,6 +116,8 @@ What it does not do:
     - `primaryContactId`: the Convex id of the primary contact created/found in step 11 (call setProspectFacts AGAIN after step 11 if the contact didn't exist when step 10 ran)
     - `dealType`: the canonical deal-type code from step 5 (`new_development` / `bridging` / `existing_asset` / `unclassifiable`)
     - `dealSizeRange`: the indicative deal-size display string from step 5 — the range + confidence + basis line (e.g., "£2-5m, medium confidence, based on Woodberry Park 48 units"). Omit for `unclassifiable`. Never a naked number.
+
+10b. **Enrich live schemes (Track Record).** Load `references/scheme-from-charges.md` and follow it. Call `companies.getProspectSchemes({clientId})` to get the group's live schemes (the charge-bearing SPVs), then for the 5-7 most recent run the deep address → planning/web research and persist a draft estimate per scheme via `companies.upsertProspectScheme` (operatorConfirmed defaults false; the operator confirms in the Track Record tab). Estimates only, every figure cited. This populates the prospect detail Track Record tab.
 
 11. **Always compose the cadence package** (unless a reachout is genuinely inappropriate — see the stop conditions below). Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables, and compose all four touches per the `## Cadence package` section above. Then queue the package via `cadence.create` (four calls, same `packageId`, `packageOrder` 1-4). The contact situation decides HOW the rows land — not WHETHER they are created:
 
@@ -160,6 +164,8 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 - `companies.getOfficerAppointments` — for step 8b (corporate-group mapping; consumes the `appointmentsLink` persisted on each officer row by step 2, via the `resolve-related-entities` sub-skill)
 - `contact.getByClient` — for step 11 (resolve the prospect's contact for cadence wiring)
 - `clients.setProspectFacts` — for step 10 (populate structured prospect facts on the clients row; v1.2.4)
+- `companies.getProspectSchemes` — for step 10b (read the group's live schemes + candidate addresses parsed from charge particulars).
+- `companies.upsertProspectScheme` — for step 10b (persist the per-scheme "what they're building" draft estimate; operator confirms in the Track Record tab).
 
 **Important — cadence email guard (v1.2.4):** when you pass a `contactId`, `cadence.create` refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, either fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) and retry, OR omit `contactId` to land a held `needs_contact` draft for board review (Phase 3 — see step 11). The guard surfaces the gap at cadence-creation time rather than at fire time. The guard does not apply when `contactId` is omitted (there is no contact to validate); the contactless held state is what prevents an unaddressed send.
 - `skillRun.start` (with dedup) — for step 1
@@ -200,6 +206,7 @@ Loaded on demand during the workflow:
 - **`references/web-research-playbook.md`** (v2) — exact queries for company-level + director-level + cross-reference research. (Steps 7, 8, 9.)
 - `../../shared-references/spv-structure-canon.md` — canonical UK property finance SPV chain (Sponsor → Borrower SPV → Lender SPV → Lender → Agent + Guarantors). Loaded when interpreting Companies House charges + officers + PSC data: helps recognise `Sponsor (X) Limited` patterns as scheme-specific SPVs, lender SPVs on charges, and parent-subsidiary structures. CH-perspective extraction guidance is in section "Perspective A — Companies House."
 - `../../sub-skills/resolve-related-entities.md` — the corporate-group walk. (Step 8b.) Given the prospect's persisted majority PSCs + key directors, walks each controller's other CH appointments via `companies.getOfficerAppointments` to surface likely sibling SPVs + the trading parent. Persists two things (surface-only; no rows created): the prose `borrower.related_entities` knowledge item, and the structured group CH-number set via `clients.setProspectFacts({relatedCompaniesHouseNumbers})` — the latter powers the CH-tab `companies.getGroupCharges` group-charges rollup. Authored.
+- `references/scheme-from-charges.md` — deep per-scheme enrichment (address → planning/web research → what they're building), persisted to `prospectSchemes`. (Step 10b.)
 
 ## Corpora (planned)
 
