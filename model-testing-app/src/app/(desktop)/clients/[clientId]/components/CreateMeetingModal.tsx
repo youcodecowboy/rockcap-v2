@@ -225,7 +225,7 @@ export default function CreateMeetingModal({
                     ? 'border-blue-500 bg-blue-50'
                     : selectedFile
                       ? 'border-green-500 bg-green-50'
-                      : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                      : 'border-border hover:border-border hover:bg-muted'
                   }
                 `}
               >
@@ -242,8 +242,8 @@ export default function CreateMeetingModal({
                     <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center mb-3">
                       <File className="w-6 h-6 text-green-600" />
                     </div>
-                    <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
                       {(selectedFile.size / 1024).toFixed(1)} KB
                     </p>
                     <Button
@@ -253,7 +253,7 @@ export default function CreateMeetingModal({
                         e.stopPropagation();
                         setSelectedFile(null);
                       }}
-                      className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+                      className="mt-2 text-xs text-muted-foreground hover:text-foreground"
                     >
                       <X className="w-3 h-3 mr-1" />
                       Remove
@@ -261,13 +261,13 @@ export default function CreateMeetingModal({
                   </div>
                 ) : (
                   <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center mb-3">
-                      <Upload className="w-6 h-6 text-gray-400" />
+                    <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center mb-3">
+                      <Upload className="w-6 h-6 text-muted-foreground" />
                     </div>
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-foreground">
                       Drop your meeting notes here
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       or click to browse files
                     </p>
                     <div className="flex gap-2 mt-3">
@@ -286,12 +286,12 @@ export default function CreateMeetingModal({
                 </div>
               )}
 
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <div className="bg-muted rounded-lg p-4">
+                <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-blue-500" />
                   AI Extraction
                 </h4>
-                <p className="text-xs text-gray-600">
+                <p className="text-xs text-muted-foreground">
                   Our AI will automatically extract meeting details including attendees,
                   key discussion points, decisions made, and action items from your document.
                 </p>
@@ -334,31 +334,31 @@ export default function CreateMeetingModal({
 
               <div className="space-y-3">
                 <div>
-                  <Label className="text-xs text-gray-500">Title</Label>
+                  <Label className="text-xs text-muted-foreground">Title</Label>
                   <p className="font-medium">{extractionResult.title}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs text-gray-500">Date</Label>
+                    <Label className="text-xs text-muted-foreground">Date</Label>
                     <p className="flex items-center gap-1">
-                      <Calendar className="w-4 h-4 text-gray-400" />
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
                       {new Date(extractionResult.meetingDate).toLocaleDateString()}
                     </p>
                   </div>
                   <div>
-                    <Label className="text-xs text-gray-500">Type</Label>
+                    <Label className="text-xs text-muted-foreground">Type</Label>
                     <Badge variant="secondary">{extractionResult.meetingType || 'other'}</Badge>
                   </div>
                 </div>
 
                 <div>
-                  <Label className="text-xs text-gray-500">Summary</Label>
-                  <p className="text-sm text-gray-700">{extractionResult.summary}</p>
+                  <Label className="text-xs text-muted-foreground">Summary</Label>
+                  <p className="text-sm text-foreground">{extractionResult.summary}</p>
                 </div>
 
                 <div>
-                  <Label className="text-xs text-gray-500 flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1">
                     <Users className="w-3 h-3" />
                     Attendees ({extractionResult.attendees.length})
                   </Label>
@@ -366,7 +366,7 @@ export default function CreateMeetingModal({
                     {extractionResult.attendees.map((a, i) => (
                       <Badge key={i} variant="outline" className="text-xs">
                         {a.name}
-                        {a.role && <span className="text-gray-400 ml-1">({a.role})</span>}
+                        {a.role && <span className="text-muted-foreground ml-1">({a.role})</span>}
                       </Badge>
                     ))}
                   </div>
@@ -374,13 +374,13 @@ export default function CreateMeetingModal({
 
                 {extractionResult.keyPoints.length > 0 && (
                   <div>
-                    <Label className="text-xs text-gray-500">Key Points ({extractionResult.keyPoints.length})</Label>
-                    <ul className="text-sm text-gray-700 list-disc list-inside mt-1">
+                    <Label className="text-xs text-muted-foreground">Key Points ({extractionResult.keyPoints.length})</Label>
+                    <ul className="text-sm text-foreground list-disc list-inside mt-1">
                       {extractionResult.keyPoints.slice(0, 3).map((p, i) => (
                         <li key={i}>{p}</li>
                       ))}
                       {extractionResult.keyPoints.length > 3 && (
-                        <li className="text-gray-400">+{extractionResult.keyPoints.length - 3} more</li>
+                        <li className="text-muted-foreground">+{extractionResult.keyPoints.length - 3} more</li>
                       )}
                     </ul>
                   </div>
@@ -388,13 +388,13 @@ export default function CreateMeetingModal({
 
                 {extractionResult.decisions.length > 0 && (
                   <div>
-                    <Label className="text-xs text-gray-500">Decisions ({extractionResult.decisions.length})</Label>
-                    <ul className="text-sm text-gray-700 list-disc list-inside mt-1">
+                    <Label className="text-xs text-muted-foreground">Decisions ({extractionResult.decisions.length})</Label>
+                    <ul className="text-sm text-foreground list-disc list-inside mt-1">
                       {extractionResult.decisions.slice(0, 3).map((d, i) => (
                         <li key={i}>{d}</li>
                       ))}
                       {extractionResult.decisions.length > 3 && (
-                        <li className="text-gray-400">+{extractionResult.decisions.length - 3} more</li>
+                        <li className="text-muted-foreground">+{extractionResult.decisions.length - 3} more</li>
                       )}
                     </ul>
                   </div>
@@ -402,24 +402,24 @@ export default function CreateMeetingModal({
 
                 {extractionResult.actionItems.length > 0 && (
                   <div>
-                    <Label className="text-xs text-gray-500 flex items-center gap-1">
+                    <Label className="text-xs text-muted-foreground flex items-center gap-1">
                       <CheckSquare className="w-3 h-3" />
                       Action Items ({extractionResult.actionItems.length})
                     </Label>
-                    <ul className="text-sm text-gray-700 mt-1 space-y-1">
+                    <ul className="text-sm text-foreground mt-1 space-y-1">
                       {extractionResult.actionItems.slice(0, 3).map((item, i) => (
                         <li key={i} className="flex items-start gap-2">
                           <CheckSquare className="w-3 h-3 mt-1 text-amber-500" />
                           <span>
                             {item.description}
                             {item.assignee && (
-                              <span className="text-gray-400 ml-1">- {item.assignee}</span>
+                              <span className="text-muted-foreground ml-1">- {item.assignee}</span>
                             )}
                           </span>
                         </li>
                       ))}
                       {extractionResult.actionItems.length > 3 && (
-                        <li className="text-gray-400 ml-5">+{extractionResult.actionItems.length - 3} more</li>
+                        <li className="text-muted-foreground ml-5">+{extractionResult.actionItems.length - 3} more</li>
                       )}
                     </ul>
                   </div>

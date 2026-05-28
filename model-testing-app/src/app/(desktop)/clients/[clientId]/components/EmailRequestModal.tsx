@@ -151,7 +151,7 @@ export default function EmailRequestModal({
             <DialogTitle>Loading...</DialogTitle>
           </DialogHeader>
           <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
           </div>
         </DialogContent>
       </Dialog>
@@ -178,7 +178,7 @@ export default function EmailRequestModal({
           <div className="flex flex-col min-h-0">
             {/* Last Generation Info */}
             {lastEmail && (
-              <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-md mb-4 shrink-0">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-3 py-2 rounded-md mb-4 shrink-0">
                 <Clock className="w-3.5 h-3.5" />
                 <span>
                   Last request generated: {new Date(lastEmail).toLocaleString()}
@@ -188,11 +188,11 @@ export default function EmailRequestModal({
 
             {/* Summary Stats */}
             <div className="grid grid-cols-2 gap-3 mb-4 shrink-0">
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
                   Missing Documents
                 </p>
-                <p className="text-2xl font-semibold text-gray-900">
+                <p className="text-2xl font-semibold text-foreground">
                   {missingItems.length}
                 </p>
               </div>
@@ -210,7 +210,7 @@ export default function EmailRequestModal({
             <div className="flex-1 border rounded-lg divide-y overflow-y-auto min-h-0">
               {Object.entries(groupedItems).map(([category, items]) => (
                 <div key={category} className="p-3">
-                  <h4 className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">{category}</h4>
+                  <h4 className="text-xs font-medium text-foreground mb-2 uppercase tracking-wide">{category}</h4>
                   <div className="space-y-1.5">
                     {items.map(item => (
                       <div key={item._id} className="flex items-center gap-2 text-sm">
@@ -218,7 +218,7 @@ export default function EmailRequestModal({
                           "w-3.5 h-3.5 shrink-0",
                           item.priority === 'required' ? "text-red-500" : "text-amber-500"
                         )} />
-                        <span className="text-gray-600 flex-1">{item.name}</span>
+                        <span className="text-muted-foreground flex-1">{item.name}</span>
                         {item.priority === 'required' && (
                           <Badge variant="destructive" className="text-[10px] h-4 shrink-0">
                             Required
@@ -240,7 +240,7 @@ export default function EmailRequestModal({
             <Textarea
               value={emailContent}
               readOnly
-              className="flex-1 font-mono text-sm bg-gray-50 resize-none min-h-0"
+              className="flex-1 font-mono text-sm bg-muted resize-none min-h-0"
             />
           </div>
         </div>

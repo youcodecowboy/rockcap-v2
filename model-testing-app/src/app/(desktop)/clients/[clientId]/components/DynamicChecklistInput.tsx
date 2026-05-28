@@ -217,7 +217,7 @@ export default function DynamicChecklistInput({
                 onChange={(e) => setLlmInput(e.target.value)}
                 className="h-32"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Describe what additional documents you need in natural language. The AI will parse your text and extract structured requirements.
               </p>
             </div>
@@ -259,14 +259,14 @@ export default function DynamicChecklistInput({
                     <div key={index} className="p-3 flex items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm text-gray-900">{req.name}</span>
+                          <span className="font-medium text-sm text-foreground">{req.name}</span>
                           {getPriorityBadge(req.priority)}
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           Category: {req.category}
                         </p>
                         {req.description && (
-                          <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                             {req.description}
                           </p>
                         )}
@@ -274,7 +274,7 @@ export default function DynamicChecklistInput({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0 text-gray-400 hover:text-red-500"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
                         onClick={() => handleRemoveParsed(index)}
                       >
                         <X className="w-4 h-4" />

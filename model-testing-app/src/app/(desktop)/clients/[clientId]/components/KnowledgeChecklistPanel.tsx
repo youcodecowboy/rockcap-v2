@@ -340,7 +340,7 @@ export default function KnowledgeChecklistPanel({
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="font-medium text-gray-900 text-sm">{item.name}</h4>
+              <h4 className="font-medium text-foreground text-sm">{item.name}</h4>
               {getPriorityBadge(item.priority)}
               {item.isCustom && (
                 <Badge variant="outline" className="text-[10px] h-4 bg-purple-50 text-purple-700 border-purple-200">
@@ -354,10 +354,10 @@ export default function KnowledgeChecklistPanel({
             </div>
             
             {item.description && (
-              <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.description}</p>
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.description}</p>
             )}
 
-            <div className="flex items-center gap-2 mt-2 text-[10px] text-gray-400">
+            <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
               <span>{getPhaseLabel(item.phaseRequired)}</span>
               <span>•</span>
               <span>{item.category}</span>
@@ -406,7 +406,7 @@ export default function KnowledgeChecklistPanel({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setExpandedItemId(expandedItemId === item._id ? null : item._id)}
-                    className="flex items-center gap-2 text-xs hover:bg-gray-100 rounded px-1 py-0.5 -ml-1"
+                    className="flex items-center gap-2 text-xs hover:bg-muted rounded px-1 py-0.5 -ml-1"
                   >
                     <FileText className="w-3.5 h-3.5 text-green-600" />
                     <a
@@ -422,13 +422,13 @@ export default function KnowledgeChecklistPanel({
                       </Badge>
                     )}
                     {(item.linkedDocumentCount || 0) > 1 && (
-                      expandedItemId === item._id 
-                        ? <ChevronUp className="w-3 h-3 text-gray-400" />
-                        : <ChevronDown className="w-3 h-3 text-gray-400" />
+                      expandedItemId === item._id
+                        ? <ChevronUp className="w-3 h-3 text-muted-foreground" />
+                        : <ChevronDown className="w-3 h-3 text-muted-foreground" />
                     )}
                   </button>
                   {item.primaryDocument.linkedAt && (
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-[10px] text-muted-foreground">
                       {new Date(item.primaryDocument.linkedAt).toLocaleDateString()}
                     </span>
                   )}
@@ -439,12 +439,12 @@ export default function KnowledgeChecklistPanel({
                   <div className="ml-4 space-y-1 border-l-2 border-green-200 pl-3">
                     {linkedDocuments.map((doc) => (
                       <div key={doc._id} className="flex items-center gap-2 text-xs group">
-                        <FileText className="w-3 h-3 text-gray-400" />
+                        <FileText className="w-3 h-3 text-muted-foreground" />
                         <a
                           href={`/docs/reader/${doc.documentId}`}
                           className={cn(
                             "truncate max-w-[140px] hover:underline",
-                            doc.isPrimary ? "text-green-700 font-medium" : "text-gray-600"
+                            doc.isPrimary ? "text-green-700 font-medium" : "text-muted-foreground"
                           )}
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -455,13 +455,13 @@ export default function KnowledgeChecklistPanel({
                             Primary
                           </Badge>
                         )}
-                        <span className="text-[10px] text-gray-400">
+                        <span className="text-[10px] text-muted-foreground">
                           {new Date(doc.linkedAt).toLocaleDateString()}
                         </span>
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500"
+                          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500"
                           onClick={() => handleUnlinkSpecific(item._id, doc.documentId)}
                         >
                           <X className="w-3 h-3" />
@@ -469,7 +469,7 @@ export default function KnowledgeChecklistPanel({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500"
+                          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-blue-500"
                           onClick={() => window.open(`/docs/${doc.documentId}`, '_blank')}
                         >
                           <ExternalLink className="w-3 h-3" />
@@ -491,7 +491,7 @@ export default function KnowledgeChecklistPanel({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 w-7 p-0 text-gray-400 hover:text-blue-500"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
                     onClick={() => setLinkingItemId(item._id)}
                   >
                     {item.status === 'fulfilled' ? (
@@ -515,7 +515,7 @@ export default function KnowledgeChecklistPanel({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 p-0 text-gray-400 hover:text-red-500"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
                       onClick={() => handleUnlinkAll(item._id)}
                     >
                       <Unlink className="w-4 h-4" />
@@ -534,7 +534,7 @@ export default function KnowledgeChecklistPanel({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 p-0 text-gray-400 hover:text-blue-500"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
                       onClick={() => window.open(`/docs/${item.primaryDocument?.documentId}`, '_blank')}
                     >
                       <ExternalLink className="w-4 h-4" />
@@ -551,7 +551,7 @@ export default function KnowledgeChecklistPanel({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 w-7 p-0 text-gray-400 hover:text-amber-500"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-500"
                     onClick={() => setFlaggingItem(item)}
                   >
                     <Flag className="w-4 h-4" />
@@ -568,7 +568,7 @@ export default function KnowledgeChecklistPanel({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 p-0 text-gray-400 hover:text-red-500"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
                       onClick={() => handleDeleteCustom(item._id)}
                     >
                       <Trash2 className="w-4 h-4" />
@@ -588,12 +588,12 @@ export default function KnowledgeChecklistPanel({
     <>
       <div className="flex flex-col h-full">
         {/* Header with filters */}
-        <div className="p-4 border-b border-gray-100 space-y-3">
+        <div className="p-4 border-b border-border space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-gray-900">
+            <h3 className="font-medium text-foreground">
               {selectedCategory || 'All Requirements'}
             </h3>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-muted-foreground">
               {filteredItems.filter(i => i.status === 'fulfilled').length} / {filteredItems.length} complete
             </div>
           </div>
@@ -601,7 +601,7 @@ export default function KnowledgeChecklistPanel({
           {/* Search and Filters */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search requirements..."
                 value={searchQuery}
@@ -640,10 +640,10 @@ export default function KnowledgeChecklistPanel({
         {/* Items List */}
         <div className="flex-1 overflow-y-auto p-4">
           {filteredItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <AlertCircle className="w-8 h-8 mb-2 text-gray-300" />
               <p className="text-sm">No requirements found</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Try adjusting your filters
               </p>
             </div>
@@ -666,8 +666,8 @@ export default function KnowledgeChecklistPanel({
               {groupedItems.missing.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <Circle className="w-4 h-4 text-gray-400" />
-                    <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    <Circle className="w-4 h-4 text-muted-foreground" />
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       Missing ({groupedItems.missing.length})
                     </h4>
                   </div>
@@ -712,7 +712,7 @@ export default function KnowledgeChecklistPanel({
 
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search documents..."
               value={docSearchQuery}
@@ -723,12 +723,12 @@ export default function KnowledgeChecklistPanel({
 
           <div className="max-h-[28rem] overflow-y-auto">
             {groupedDocuments.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                 <p className="text-sm">
                   {docSearchQuery ? 'No documents match your search' : 'No documents available'}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {docSearchQuery ? 'Try a different search term' : 'Upload documents to the client\'s library first'}
                 </p>
               </div>
@@ -740,17 +740,17 @@ export default function KnowledgeChecklistPanel({
                     <div key={folderId}>
                       {/* Folder Header */}
                       <button
-                        className="w-full flex items-center gap-2 px-2 py-2 text-left hover:bg-gray-50 rounded-md transition-colors"
+                        className="w-full flex items-center gap-2 px-2 py-2 text-left hover:bg-muted rounded-md transition-colors"
                         onClick={() => toggleFolder(folderId)}
                       >
                         {isCollapsed ? (
-                          <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                         ) : (
-                          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                         )}
                         <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                        <span className="text-sm font-medium text-gray-700">{displayName}</span>
-                        <span className="text-xs text-gray-400 ml-auto">{docs.length}</span>
+                        <span className="text-sm font-medium text-foreground">{displayName}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{docs.length}</span>
                       </button>
 
                       {/* Folder Contents */}
@@ -768,7 +768,7 @@ export default function KnowledgeChecklistPanel({
                                     ? "bg-green-50 border border-green-100 cursor-default"
                                     : isSelected
                                     ? "bg-blue-50 border border-blue-200"
-                                    : "hover:bg-gray-50 border border-transparent"
+                                    : "hover:bg-muted border border-transparent"
                                 )}
                               >
                                 <Checkbox
@@ -776,16 +776,16 @@ export default function KnowledgeChecklistPanel({
                                   disabled={isAlreadyLinked}
                                   onCheckedChange={() => !isAlreadyLinked && toggleDocSelection(doc._id)}
                                 />
-                                <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-gray-900 truncate">
+                                  <p className="text-sm text-foreground truncate">
                                     {doc.fileName}
                                   </p>
                                   <div className="flex items-center gap-2 mt-0.5">
                                     <Badge variant="secondary" className="text-[10px] h-4">
                                       {doc.fileTypeDetected || doc.category}
                                     </Badge>
-                                    <span className="text-[10px] text-gray-400">
+                                    <span className="text-[10px] text-muted-foreground">
                                       {new Date(doc.uploadedAt).toLocaleDateString()}
                                     </span>
                                   </div>
@@ -808,8 +808,8 @@ export default function KnowledgeChecklistPanel({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <span className="text-xs text-gray-500">
+          <div className="flex items-center justify-between pt-2 border-t border-border">
+            <span className="text-xs text-muted-foreground">
               {selectedDocIds.size > 0
                 ? `${selectedDocIds.size} document${selectedDocIds.size > 1 ? 's' : ''} selected`
                 : 'Select documents to link'}

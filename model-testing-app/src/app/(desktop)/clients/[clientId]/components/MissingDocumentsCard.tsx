@@ -56,12 +56,12 @@ export default function MissingDocumentsCard({
     return (
       <Card className={cn("animate-pulse", className)}>
         <CardHeader className="py-3">
-          <div className="h-5 bg-gray-200 rounded w-32"></div>
+          <div className="h-5 bg-muted rounded w-32"></div>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            <div className="h-4 bg-gray-200 rounded w-full"></div>
-            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+            <div className="h-4 bg-muted rounded w-full"></div>
+            <div className="h-4 bg-muted rounded w-3/4"></div>
           </div>
         </CardContent>
       </Card>
@@ -79,7 +79,7 @@ export default function MissingDocumentsCard({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             No document requirements configured yet.
           </p>
           <Button
@@ -158,10 +158,10 @@ export default function MissingDocumentsCard({
         {/* Progress */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-foreground">
               {completionPercentage}% Complete
             </span>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-muted-foreground">
               {summary.overall.fulfilled}/{summary.overall.total} documents
             </span>
           </div>
@@ -182,15 +182,15 @@ export default function MissingDocumentsCard({
 
         {/* Top Missing Items */}
         <div className="space-y-2">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Priority Missing
           </p>
           {topMissingItems.map(item => (
             <div
               key={item._id}
-              className="flex items-center gap-2 text-sm text-gray-600"
+              className="flex items-center gap-2 text-sm text-muted-foreground"
             >
-              <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <FileText className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
               <span className="truncate flex-1">{item.name}</span>
               {item.priority === 'required' && (
                 <Badge variant="destructive" className="text-[10px] h-4 px-1.5">
@@ -200,7 +200,7 @@ export default function MissingDocumentsCard({
             </div>
           ))}
           {requiredMissing.length > 5 && (
-            <p className="text-xs text-gray-400 pl-5">
+            <p className="text-xs text-muted-foreground pl-5">
               +{requiredMissing.length - 5} more required documents
             </p>
           )}
@@ -208,14 +208,14 @@ export default function MissingDocumentsCard({
 
         {/* Category Breakdown */}
         {Object.keys(summary.byCategory).length > 0 && (
-          <div className="mt-4 pt-3 border-t border-gray-100">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+          <div className="mt-4 pt-3 border-t border-border">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
               By Category
             </p>
             <div className="space-y-1.5">
               {Object.entries(summary.byCategory).map(([category, stats]) => (
                 <div key={category} className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">{category}</span>
+                  <span className="text-muted-foreground">{category}</span>
                   <span className={cn(
                     stats.missing > 0 ? "text-red-600" : "text-green-600"
                   )}>

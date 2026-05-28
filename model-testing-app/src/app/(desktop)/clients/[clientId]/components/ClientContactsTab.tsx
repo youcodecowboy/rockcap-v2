@@ -134,8 +134,8 @@ export default function ClientContactsTab({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Contacts</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="text-xl font-semibold text-foreground">Contacts</h2>
+          <p className="text-sm text-muted-foreground">
             {contacts.length} contact{contacts.length !== 1 ? 's' : ''} for {clientName}
           </p>
         </div>
@@ -179,10 +179,10 @@ export default function ClientContactsTab({
           })}
         </div>
       ) : (
-        <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+        <div className="text-center py-12 bg-muted rounded-lg border-2 border-dashed border-border">
           <User className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No contacts yet</h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <h3 className="text-lg font-medium text-foreground mb-2">No contacts yet</h3>
+          <p className="text-sm text-muted-foreground mb-4">
             Add your first contact to start building your network
           </p>
           <Button onClick={() => setIsAddModalOpen(true)} variant="outline" className="gap-2">
@@ -273,7 +273,7 @@ function ContactCard({
   );
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md hover:border-gray-300 transition-all">
+    <div className="bg-card rounded-lg border border-border p-5 hover:shadow-md hover:border-border transition-all">
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -282,7 +282,7 @@ function ContactCard({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <h3 className="font-semibold text-gray-900 truncate">
+              <h3 className="font-semibold text-foreground truncate">
                 {contact.name}
               </h3>
               {fromHubSpot ? (
@@ -295,7 +295,7 @@ function ContactCard({
               ) : null}
             </div>
             {contact.role && (
-              <p className="text-sm text-gray-500 flex items-center gap-1 truncate">
+              <p className="text-sm text-muted-foreground flex items-center gap-1 truncate">
                 <Briefcase className="w-3 h-3 shrink-0" />
                 <span className="truncate">{contact.role}</span>
               </p>
@@ -334,7 +334,7 @@ function ContactCard({
       {lifecycle || linkedCompanyName || lastTouch ? (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {lifecycle ? (
-            <span className="text-[10px] font-medium text-gray-600 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-medium text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-full">
               {lifecycle}
             </span>
           ) : null}
@@ -345,7 +345,7 @@ function ContactCard({
             </span>
           ) : null}
           {lastTouch ? (
-            <span className="text-[10px] font-medium text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-medium text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-full">
               Last touch · {lastTouch}
             </span>
           ) : null}
@@ -356,8 +356,8 @@ function ContactCard({
       <div className="space-y-2 mb-4">
         {contact.email && (
           <div className="flex items-center justify-between group">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Mail className="w-4 h-4 text-gray-400" />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Mail className="w-4 h-4 text-muted-foreground" />
               <span className="truncate">{contact.email}</span>
             </div>
             <Button
@@ -375,14 +375,14 @@ function ContactCard({
           </div>
         )}
         {contact.phone && (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Phone className="w-4 h-4 text-gray-400" />
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Phone className="w-4 h-4 text-muted-foreground" />
             <span>{contact.phone}</span>
           </div>
         )}
         {contact.company && (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Building2 className="w-4 h-4 text-gray-400" />
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Building2 className="w-4 h-4 text-muted-foreground" />
             <span>{contact.company}</span>
           </div>
         )}
@@ -390,12 +390,12 @@ function ContactCard({
 
       {/* Notes */}
       {contact.notes && (
-        <div className="bg-gray-50 rounded-md p-3 mb-4">
-          <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+        <div className="bg-muted rounded-md p-3 mb-4">
+          <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
             <MessageSquare className="w-3 h-3" />
             Notes
           </p>
-          <p className="text-sm text-gray-700 line-clamp-2">{contact.notes}</p>
+          <p className="text-sm text-foreground line-clamp-2">{contact.notes}</p>
         </div>
       )}
 
@@ -541,7 +541,7 @@ function ContactModal({
         <div className="space-y-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">
+              <label className="text-sm font-medium text-foreground">
                 Name <span className="text-red-500">*</span>
               </label>
               <Input
@@ -551,7 +551,7 @@ function ContactModal({
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Role</label>
+              <label className="text-sm font-medium text-foreground">Role</label>
               <Input
                 placeholder="CEO, Manager, etc."
                 value={formData.role}
@@ -562,7 +562,7 @@ function ContactModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Email</label>
+              <label className="text-sm font-medium text-foreground">Email</label>
               <Input
                 type="email"
                 placeholder="john@example.com"
@@ -571,7 +571,7 @@ function ContactModal({
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Phone</label>
+              <label className="text-sm font-medium text-foreground">Phone</label>
               <Input
                 placeholder="+44 7XXX XXXXXX"
                 value={formData.phone}
@@ -581,7 +581,7 @@ function ContactModal({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Company</label>
+            <label className="text-sm font-medium text-foreground">Company</label>
             <Input
               placeholder="Company name"
               value={formData.company}
@@ -590,7 +590,7 @@ function ContactModal({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Notes</label>
+            <label className="text-sm font-medium text-foreground">Notes</label>
             <Textarea
               placeholder="Any additional notes about this contact..."
               value={formData.notes}

@@ -171,7 +171,7 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Header */}
-      <div className="border-b border-gray-200 bg-white sticky top-0 z-10">
+      <div className="border-b border-border bg-card sticky top-0 z-10">
         <div className="p-6">
           <div className="flex items-start justify-between mb-4">
             <div className="flex-1">
@@ -184,12 +184,12 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
                     {meetingTypeLabels[meeting.meetingType] || meeting.meetingType}
                   </Badge>
                 )}
-                <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <Calendar className="w-4 h-4" />
                   {formattedDate}
                 </div>
               </div>
-              <h1 className="text-2xl font-bold text-gray-900">{meeting.title}</h1>
+              <h1 className="text-2xl font-bold text-foreground">{meeting.title}</h1>
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -213,10 +213,10 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
           </div>
 
           {/* Attendees */}
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Users className="w-4 h-4" />
             <span className="font-medium">{meeting.attendees.length} attendees:</span>
-            <span className="text-gray-500">
+            <span className="text-muted-foreground">
               {meeting.attendees.slice(0, 3).map(a => a.name).join(', ')}
               {meeting.attendees.length > 3 && ` +${meeting.attendees.length - 3} more`}
             </span>
@@ -224,7 +224,7 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
 
           {/* Source Document */}
           {meeting.sourceDocumentName && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
+            <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
               <FileText className="w-4 h-4" />
               <span>From: {meeting.sourceDocumentName}</span>
               {meeting.extractionConfidence && (
@@ -279,17 +279,17 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
       <div className="p-6 space-y-6">
         {/* Summary */}
         <section>
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
             <MessageSquare className="w-4 h-4" />
             Summary
           </h2>
-          <p className="text-gray-700 leading-relaxed">{meeting.summary}</p>
+          <p className="text-foreground leading-relaxed">{meeting.summary}</p>
         </section>
 
         {/* Key Points */}
         {meeting.keyPoints.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
               <Lightbulb className="w-4 h-4" />
               Key Points
             </h2>
@@ -297,7 +297,7 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
               {meeting.keyPoints.map((point, index) => (
                 <li key={index} className="flex items-start gap-3">
                   <span className="text-blue-500 mt-0.5">•</span>
-                  <span className="text-gray-700">{point}</span>
+                  <span className="text-foreground">{point}</span>
                 </li>
               ))}
             </ul>
@@ -307,7 +307,7 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
         {/* Decisions */}
         {meeting.decisions.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
               <CheckSquare className="w-4 h-4" />
               Decisions Made
             </h2>
@@ -315,7 +315,7 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
               {meeting.decisions.map((decision, index) => (
                 <li key={index} className="flex items-start gap-3">
                   <span className="text-green-500 mt-0.5">✓</span>
-                  <span className="text-gray-700">{decision}</span>
+                  <span className="text-foreground">{decision}</span>
                 </li>
               ))}
             </ul>
@@ -325,7 +325,7 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
         {/* Action Items */}
         {meeting.actionItems.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
               <ListChecks className="w-4 h-4" />
               Action Items
               <Badge variant="secondary" className="text-xs">
@@ -338,8 +338,8 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
                   key={item.id}
                   className={`flex items-start gap-3 p-3 rounded-lg border ${
                     item.status === 'completed'
-                      ? 'bg-gray-50 border-gray-200'
-                      : 'bg-white border-gray-200'
+                      ? 'bg-muted border-border'
+                      : 'bg-card border-border'
                   }`}
                 >
                   <Checkbox
@@ -348,10 +348,10 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
                     className="mt-0.5"
                   />
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm ${item.status === 'completed' ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                    <p className={`text-sm ${item.status === 'completed' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                       {item.description}
                     </p>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       {item.assignee && (
                         <span className="flex items-center gap-1">
                           <User className="w-3 h-3" />
@@ -398,7 +398,7 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
 
         {/* Attendees Detail */}
         <section>
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
             <Users className="w-4 h-4" />
             Attendees
           </h2>
@@ -406,16 +406,16 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
             {meeting.attendees.map((attendee, index) => (
               <div
                 key={index}
-                className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white"
+                className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card"
               >
-                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
                   <User className="w-4 h-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium text-foreground truncate">
                     {attendee.name}
                   </p>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     {attendee.role && <span>{attendee.role}</span>}
                     {attendee.role && attendee.company && <span>•</span>}
                     {attendee.company && (
@@ -434,11 +434,11 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
         {/* Notes */}
         {meeting.notes && (
           <section>
-            <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
               <FileText className="w-4 h-4" />
               Additional Notes
             </h2>
-            <p className="text-gray-700 whitespace-pre-wrap">{meeting.notes}</p>
+            <p className="text-foreground whitespace-pre-wrap">{meeting.notes}</p>
           </section>
         )}
       </div>

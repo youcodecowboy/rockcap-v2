@@ -223,7 +223,7 @@ export default function ClientOverviewTab({
       {/* Right Column - Everything Else */}
       <div className="lg:col-span-3 space-y-4">
         {/* Stage Note - Slim Banner */}
-        <div className="bg-white rounded-lg border border-l-4 border-l-blue-500 px-4 py-2">
+        <div className="bg-card rounded-lg border border-l-4 border-l-blue-500 px-4 py-2">
           <div className="flex items-center gap-3">
             <StickyNote className="w-4 h-4 text-blue-500 flex-shrink-0" />
             {isEditingStageNote ? (
@@ -243,23 +243,23 @@ export default function ClientOverviewTab({
                   <Check className="w-4 h-4 text-green-600" />
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleCancelStageNote}>
-                  <X className="w-4 h-4 text-gray-400" />
+                  <X className="w-4 h-4 text-muted-foreground" />
                 </Button>
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-1">
                 <span className="text-sm flex-1">
-                  <span className="font-semibold text-gray-700">Status:</span>{' '}
+                  <span className="font-semibold text-foreground">Status:</span>{' '}
                   {client.stageNote ? (
-                    <span className="font-medium text-gray-900">{client.stageNote}</span>
+                    <span className="font-medium text-foreground">{client.stageNote}</span>
                   ) : (
-                    <span className="text-gray-400 italic">Click to add...</span>
+                    <span className="text-muted-foreground italic">Click to add...</span>
                   )}
                 </span>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-2 text-xs text-gray-400 hover:text-gray-600"
+                  className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
                   onClick={() => setIsEditingStageNote(true)}
                 >
                   <Pencil className="w-3 h-3" />
@@ -273,7 +273,7 @@ export default function ClientOverviewTab({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {/* Deal Value - Editable */}
         <div
-          className="bg-white rounded-lg border p-4 cursor-pointer hover:border-green-300 transition-colors group"
+          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-green-300 transition-colors group"
           onClick={!isEditingDealValue ? handleStartEditDealValue : undefined}
         >
           <div className="flex items-center gap-3">
@@ -282,14 +282,14 @@ export default function ClientOverviewTab({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1">
-                <p className="text-xs text-gray-500 font-medium">Deal Value</p>
+                <p className="text-xs text-muted-foreground font-medium">Deal Value</p>
                 {!isEditingDealValue && mainProject && (
-                  <Pencil className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                 )}
               </div>
               {isEditingDealValue ? (
                 <div className="flex items-center gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
-                  <span className="text-lg font-semibold text-gray-500">$</span>
+                  <span className="text-lg font-semibold text-muted-foreground">$</span>
                   <Input
                     type="text"
                     value={dealValueInput}
@@ -306,13 +306,13 @@ export default function ClientOverviewTab({
                     <Check className="w-4 h-4 text-green-600" />
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleCancelDealValue}>
-                    <X className="w-4 h-4 text-gray-400" />
+                    <X className="w-4 h-4 text-muted-foreground" />
                   </Button>
                 </div>
               ) : (
-                <p className="text-lg font-semibold text-gray-900 truncate">
+                <p className="text-lg font-semibold text-foreground truncate">
                   {totalDealValue > 0 ? formatCurrency(totalDealValue) : '—'}
-                  {!mainProject && <span className="text-xs font-normal text-gray-400 ml-1">(no projects)</span>}
+                  {!mainProject && <span className="text-xs font-normal text-muted-foreground ml-1">(no projects)</span>}
                 </p>
               )}
             </div>
@@ -321,7 +321,7 @@ export default function ClientOverviewTab({
 
         {/* Active Projects */}
         <div
-          className="bg-white rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
+          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
           onClick={() => router.push(`/clients/${clientId}?tab=projects`)}
         >
           <div className="flex items-center gap-3">
@@ -329,9 +329,9 @@ export default function ClientOverviewTab({
               <FolderKanban className="w-5 h-5 text-purple-600" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-gray-500 font-medium">Active Projects</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {activeProjectsCount} <span className="text-sm font-normal text-gray-500">of {projects.length}</span>
+              <p className="text-xs text-muted-foreground font-medium">Active Projects</p>
+              <p className="text-lg font-semibold text-foreground">
+                {activeProjectsCount} <span className="text-sm font-normal text-muted-foreground">of {projects.length}</span>
               </p>
             </div>
           </div>
@@ -339,7 +339,7 @@ export default function ClientOverviewTab({
 
         {/* Primary Contact */}
         <div
-          className="bg-white rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
+          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
           onClick={() => router.push(`/clients/${clientId}?tab=contacts`)}
         >
           <div className="flex items-center gap-3">
@@ -347,14 +347,14 @@ export default function ClientOverviewTab({
               <User className="w-5 h-5 text-blue-600" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs text-gray-500 font-medium">Primary Contact</p>
+              <p className="text-xs text-muted-foreground font-medium">Primary Contact</p>
               {primaryContact ? (
                 <div>
-                  <p className="text-sm font-semibold text-gray-900 truncate">{primaryContact.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{primaryContact.role || primaryContact.email || '—'}</p>
+                  <p className="text-sm font-semibold text-foreground truncate">{primaryContact.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{primaryContact.role || primaryContact.email || '—'}</p>
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">No contacts</p>
+                <p className="text-sm text-muted-foreground">No contacts</p>
               )}
             </div>
           </div>
@@ -362,7 +362,7 @@ export default function ClientOverviewTab({
 
         {/* Last Meeting */}
         <div
-          className="bg-white rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
+          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
           onClick={() => router.push(`/clients/${clientId}?tab=meetings`)}
         >
           <div className="flex items-center gap-3">
@@ -370,14 +370,14 @@ export default function ClientOverviewTab({
               <Video className="w-5 h-5 text-orange-600" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs text-gray-500 font-medium">Last Meeting</p>
+              <p className="text-xs text-muted-foreground font-medium">Last Meeting</p>
               {lastMeeting ? (
                 <div>
-                  <p className="text-sm font-semibold text-gray-900 truncate">{lastMeeting.title}</p>
-                  <p className="text-xs text-gray-500">{new Date(lastMeeting.meetingDate).toLocaleDateString()}</p>
+                  <p className="text-sm font-semibold text-foreground truncate">{lastMeeting.title}</p>
+                  <p className="text-xs text-muted-foreground">{new Date(lastMeeting.meetingDate).toLocaleDateString()}</p>
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">No meetings</p>
+                <p className="text-sm text-muted-foreground">No meetings</p>
               )}
             </div>
           </div>
@@ -416,22 +416,22 @@ export default function ClientOverviewTab({
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
                 <div>
-                  <p className="text-xs text-gray-500">Company Name</p>
+                  <p className="text-xs text-muted-foreground">Company Name</p>
                   <p className="text-sm font-medium">{client.companyName || client.name}</p>
                 </div>
 
                 {client.industry && (
                   <div>
-                    <p className="text-xs text-gray-500">Industry</p>
+                    <p className="text-xs text-muted-foreground">Industry</p>
                     <p className="text-sm font-medium">{client.industry}</p>
                   </div>
                 )}
 
                 {formatAddress() && (
                   <div className="md:col-span-2">
-                    <p className="text-xs text-gray-500">Address</p>
+                    <p className="text-xs text-muted-foreground">Address</p>
                     <p className="text-sm font-medium flex items-start gap-2">
-                      <MapPin className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <MapPin className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
                       {formatAddress()}
                     </p>
                   </div>
@@ -439,7 +439,7 @@ export default function ClientOverviewTab({
 
                 {client.email && (
                   <div>
-                    <p className="text-xs text-gray-500">Email</p>
+                    <p className="text-xs text-muted-foreground">Email</p>
                     <a
                       href={`mailto:${client.email}`}
                       className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1.5"
@@ -452,7 +452,7 @@ export default function ClientOverviewTab({
 
                 {client.phone && (
                   <div>
-                    <p className="text-xs text-gray-500">Phone</p>
+                    <p className="text-xs text-muted-foreground">Phone</p>
                     <a
                       href={`tel:${client.phone}`}
                       className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1.5"
@@ -465,7 +465,7 @@ export default function ClientOverviewTab({
 
                 {client.website && (
                   <div>
-                    <p className="text-xs text-gray-500">Website</p>
+                    <p className="text-xs text-muted-foreground">Website</p>
                     <a
                       href={client.website.startsWith('http') ? client.website : `https://${client.website}`}
                       target="_blank"
@@ -480,16 +480,16 @@ export default function ClientOverviewTab({
                 )}
 
                 <div>
-                  <p className="text-xs text-gray-500">Client Since</p>
+                  <p className="text-xs text-muted-foreground">Client Since</p>
                   <p className="text-sm font-medium flex items-center gap-1.5">
-                    <Calendar className="w-3 h-3 text-gray-400" />
+                    <Calendar className="w-3 h-3 text-muted-foreground" />
                     {new Date(client.createdAt).toLocaleDateString()}
                   </p>
                 </div>
 
                 {client.tags && client.tags.length > 0 && (
                   <div className="md:col-span-2">
-                    <p className="text-xs text-gray-500 mb-1.5">Tags</p>
+                    <p className="text-xs text-muted-foreground mb-1.5">Tags</p>
                     <div className="flex flex-wrap gap-1">
                       {client.tags.map((tag) => (
                         <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
@@ -500,8 +500,8 @@ export default function ClientOverviewTab({
 
                 {client.notes && (
                   <div className="md:col-span-2">
-                    <p className="text-xs text-gray-500">Notes</p>
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                    <p className="text-xs text-muted-foreground">Notes</p>
+                    <p className="text-sm text-foreground whitespace-pre-wrap">
                       {client.notes.substring(0, 300)}
                       {client.notes.length > 300 && '...'}
                     </p>
@@ -530,7 +530,7 @@ export default function ClientOverviewTab({
                 {/* Recent Documents Section */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Documents</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Documents</p>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -541,16 +541,16 @@ export default function ClientOverviewTab({
                     </Button>
                   </div>
                   {recentDocuments.length === 0 ? (
-                    <p className="text-gray-400 text-sm py-2">No documents yet</p>
+                    <p className="text-muted-foreground text-sm py-2">No documents yet</p>
                   ) : (
                     <div className="space-y-1">
                       {recentDocuments.slice(0, 3).map((doc: any) => (
                         <div
                           key={doc._id}
-                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
                           onClick={() => router.push(`/docs/${doc._id}`)}
                         >
-                          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">
                               {doc.displayName || doc.documentCode || doc.fileName}
@@ -559,7 +559,7 @@ export default function ClientOverviewTab({
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">
                             {doc.category}
                           </Badge>
-                          <span className="text-[10px] text-gray-400 flex-shrink-0">
+                          <span className="text-[10px] text-muted-foreground flex-shrink-0">
                             {new Date(doc.uploadedAt).toLocaleDateString()}
                           </span>
                         </div>
@@ -573,7 +573,7 @@ export default function ClientOverviewTab({
                 {/* Projects Section */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projects</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Projects</p>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -584,13 +584,13 @@ export default function ClientOverviewTab({
                     </Button>
                   </div>
                   {projects.length === 0 ? (
-                    <p className="text-gray-400 text-sm py-2">No projects yet</p>
+                    <p className="text-muted-foreground text-sm py-2">No projects yet</p>
                   ) : (
                     <div className="space-y-1">
                       {projects.slice(0, 3).map((project: any) => (
                         <div
                           key={project._id}
-                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
                           onClick={() => router.push(`/clients/${clientId}/projects/${project._id}`)}
                         >
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
@@ -604,7 +604,7 @@ export default function ClientOverviewTab({
                             <p className="text-sm font-medium truncate">{project.name}</p>
                           </div>
                           {project.loanAmount && (
-                            <span className="text-xs text-gray-500 flex-shrink-0">
+                            <span className="text-xs text-muted-foreground flex-shrink-0">
                               {formatCurrency(project.loanAmount)}
                             </span>
                           )}
@@ -651,13 +651,13 @@ export default function ClientOverviewTab({
             </CardHeader>
             <CardContent>
               {activeTasks.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">No active tasks</p>
+                <p className="text-muted-foreground text-sm text-center py-4">No active tasks</p>
               ) : (
                 <div className="space-y-2">
                   {activeTasks.map((task: any) => (
                     <div
                       key={task._id}
-                      className="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                      className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
                       onClick={() => router.push(`/clients/${clientId}?tab=tasks&task=${task._id}`)}
                     >
                       <div className={`w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0 ${
@@ -674,7 +674,7 @@ export default function ClientOverviewTab({
                           </Badge>
                           {task.dueDate && (
                             <span className={`text-[10px] flex items-center gap-0.5 ${
-                              new Date(task.dueDate) < new Date() ? 'text-red-500' : 'text-gray-400'
+                              new Date(task.dueDate) < new Date() ? 'text-red-500' : 'text-muted-foreground'
                             }`}>
                               <Clock className="w-2.5 h-2.5" />
                               {new Date(task.dueDate).toLocaleDateString()}

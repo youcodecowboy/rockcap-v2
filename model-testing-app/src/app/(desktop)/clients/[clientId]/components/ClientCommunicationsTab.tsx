@@ -66,10 +66,10 @@ export default function ClientCommunicationsTab({
 
   if (communications.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+      <div className="bg-card rounded-lg border border-border p-12 text-center">
         <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No Communications</h3>
-        <p className="text-gray-500 max-w-md mx-auto">
+        <h3 className="text-lg font-medium text-foreground mb-2">No Communications</h3>
+        <p className="text-muted-foreground max-w-md mx-auto">
           Communications will appear here as documents are uploaded and interactions are recorded.
         </p>
       </div>
@@ -77,18 +77,18 @@ export default function ClientCommunicationsTab({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200">
-      <div className="px-6 py-4 border-b border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900">Communication Timeline</h3>
-        <p className="text-sm text-gray-500">{communications.length} interactions</p>
+    <div className="bg-card rounded-lg border border-border">
+      <div className="px-6 py-4 border-b border-border">
+        <h3 className="text-lg font-semibold text-foreground">Communication Timeline</h3>
+        <p className="text-sm text-muted-foreground">{communications.length} interactions</p>
       </div>
 
-      <div className="divide-y divide-gray-100">
+      <div className="divide-y divide-border">
         {Object.entries(groupedCommunications).map(([date, comms]) => (
           <div key={date} className="py-4">
             {/* Date Header */}
             <div className="px-6 mb-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <Calendar className="w-4 h-4" />
                 {date}
               </div>
@@ -99,7 +99,7 @@ export default function ClientCommunicationsTab({
               {comms.map((comm) => (
                 <div
                   key={comm.id}
-                  className="px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="px-6 py-3 hover:bg-muted cursor-pointer transition-colors"
                   onClick={() => router.push(`/docs/${comm.documentId}`)}
                 >
                   <div className="flex items-start gap-3">
@@ -108,17 +108,17 @@ export default function ClientCommunicationsTab({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-gray-900 truncate">
+                        <p className="font-medium text-foreground truncate">
                           {getDocumentName(comm.documentId)}
                         </p>
                         <Badge variant="outline" className="text-xs">
                           {getDocumentType(comm.documentId)}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                         {comm.summary}
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {new Date(comm.date).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit',

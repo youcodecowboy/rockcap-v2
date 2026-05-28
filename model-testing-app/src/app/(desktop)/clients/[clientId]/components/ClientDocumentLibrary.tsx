@@ -62,7 +62,7 @@ export default function ClientDocumentLibrary({
   }, []);
 
   return (
-    <div className={`flex ${compact ? 'h-[500px]' : 'h-full'} overflow-hidden bg-white`}>
+    <div className={`flex ${compact ? 'h-[500px]' : 'h-full'} overflow-hidden bg-card`}>
       {/* Folder Browser */}
       <FolderBrowser
         clientId={clientId}
