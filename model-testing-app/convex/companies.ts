@@ -1,5 +1,12 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
+import {
+  type GroupCharge,
+  distinctLenders,
+  classifySchemeStatus,
+  parseCandidateAddress,
+  rankByRecency,
+} from "./lib/schemeGrouping";
 
 /**
  * Get company by ID
@@ -577,3 +584,149 @@ export const getGroupCharges = query({
   },
 });
 
+/**
+ * Build the prospect's scheme list by joining Companies House charge data
+ * with any per-scheme enrichment rows from prospectSchemes. Returns two
+ * buckets: live (outstanding charges or active company) and past (dissolved
+ * or fully satisfied). SPVs with zero charges are excluded because schemes
+ * are charge-bearing by definition.
+ *
+ * `address` and `parseCandidateAddress` fallback: the skill/operator address
+ * in the enrichment row always wins; the charge description is used only when
+ * no enrichment row exists (addressIsEstimate: true).
+ */
+export const getProspectSchemes = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return { live: [], past: [] };
+
+    const parentNumber = (client as any).companiesHouseNumber as string | undefined;
+    const relatedNumbers = ((client as any).relatedCompaniesHouseNumbers ?? []) as string[];
+    const seen = new Set<string>();
+    const numbers: string[] = [];
+    for (const n of [parentNumber, ...relatedNumbers]) {
+      const num = (n ?? "").trim();
+      if (!num || seen.has(num)) continue;
+      seen.add(num);
+      numbers.push(num);
+    }
+    if (numbers.length === 0) return { live: [], past: [] };
+
+    const enrichmentRows = await ctx.db
+      .query("prospectSchemes")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+    const enrichmentByCompany = new Map(enrichmentRows.map((r) => [r.companyNumber, r]));
+
+    const schemes: any[] = [];
+    for (const companyNumber of numbers) {
+      const company = await ctx.db
+        .query("companiesHouseCompanies")
+        .withIndex("by_company_number", (q: any) => q.eq("companyNumber", companyNumber))
+        .first();
+      if (!company) continue;
+
+      const rawCharges = await ctx.db
+        .query("companiesHouseCharges")
+        .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
+        .collect();
+      if (rawCharges.length === 0) continue; // schemes are charge-bearing SPVs
+
+      const charges: GroupCharge[] = rawCharges
+        .map((c) => ({
+          companyNumber,
+          companyName: company.companyName,
+          companyStatus: (company as any).companyStatus,
+          chargeId: c.chargeId,
+          lender: c.chargeeName?.trim() || "(unnamed)",
+          date: c.chargeDate,
+          status: c.chargeStatus,
+          description: c.chargeDescription,
+        }))
+        .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
+      const enrichment = enrichmentByCompany.get(companyNumber);
+      const lastChargeDate = charges[0]?.date;
+      schemes.push({
+        companyNumber,
+        companyName: company.companyName,
+        companyStatus: (company as any).companyStatus,
+        lenders: distinctLenders(charges),
+        charges,
+        lastChargeDate,
+        status: classifySchemeStatus((company as any).companyStatus, charges),
+        address: enrichment?.address ?? parseCandidateAddress(charges[0]?.description),
+        addressIsEstimate: !enrichment?.address,
+        planningRefs: enrichment?.planningRefs ?? [],
+        estimatedUnits: enrichment?.estimatedUnits,
+        schemeType: enrichment?.schemeType,
+        whatBuilding: enrichment?.whatBuilding,
+        gdvEstimate: enrichment?.gdvEstimate,
+        confidence: enrichment?.confidence,
+        sourceUrls: enrichment?.sourceUrls ?? [],
+        operatorConfirmed: enrichment?.operatorConfirmed ?? false,
+      });
+    }
+
+    const live = rankByRecency(schemes.filter((s) => s.status === "live"));
+    const past = rankByRecency(schemes.filter((s) => s.status === "past"));
+    return { live, past };
+  },
+});
+
+/**
+ * Create or update a per-scheme enrichment row. Used by the prospect-intel
+ * skill (operatorConfirmed=false) and the Track Record tab operator UI
+ * (operatorConfirmed=true). The confirmed-preservation rule is intentional:
+ * a skill re-run that omits operatorConfirmed must NOT clear a row an
+ * operator has already confirmed.
+ */
+export const upsertProspectScheme = mutation({
+  args: {
+    clientId: v.id("clients"),
+    companyNumber: v.string(),
+    companyName: v.string(),
+    schemeName: v.optional(v.string()),
+    address: v.optional(v.string()),
+    planningRefs: v.optional(v.array(v.string())),
+    estimatedUnits: v.optional(v.number()),
+    schemeType: v.optional(v.string()),
+    whatBuilding: v.optional(v.string()),
+    gdvEstimate: v.optional(v.string()),
+    confidence: v.optional(v.string()),
+    status: v.optional(v.string()),
+    sourceUrls: v.optional(v.array(v.string())),
+    operatorConfirmed: v.optional(v.boolean()),
+    updatedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    const existing = await ctx.db
+      .query("prospectSchemes")
+      .withIndex("by_client_company", (q: any) =>
+        q.eq("clientId", args.clientId).eq("companyNumber", args.companyNumber),
+      )
+      .first();
+
+    const { clientId, companyNumber, operatorConfirmed, ...rest } = args;
+    if (existing) {
+      const keepConfirmed = existing.operatorConfirmed && operatorConfirmed === undefined;
+      await ctx.db.patch(existing._id, {
+        ...rest,
+        operatorConfirmed: keepConfirmed ? true : (operatorConfirmed ?? existing.operatorConfirmed),
+        updatedAt: now,
+      });
+      return { schemeId: existing._id, created: false };
+    }
+    const schemeId = await ctx.db.insert("prospectSchemes", {
+      clientId,
+      companyNumber,
+      ...rest,
+      operatorConfirmed: operatorConfirmed ?? false,
+      createdAt: now,
+      updatedAt: now,
+    } as any);
+    return { schemeId, created: true };
+  },
+});
