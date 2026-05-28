@@ -2,6 +2,7 @@
 
 import { useColors } from "@/lib/useColors";
 import { ExternalLink } from "lucide-react";
+import { ChargeChronologyTable } from "./ChargeChronologyTable";
 
 interface CompaniesHouseTabProps {
   prospect: any;
@@ -35,43 +36,6 @@ const SIC_DESCRIPTIONS: Record<string, string> = {
 
 function sicLabel(code: string): string {
   return SIC_DESCRIPTIONS[code] ? `${code} — ${SIC_DESCRIPTIONS[code]}` : code;
-}
-
-function chargeStatusPill(status: string | undefined, colors: any) {
-  if (!status) return null;
-  const s = status.toLowerCase();
-  let bg: string, fg: string;
-  if (s === "outstanding") {
-    bg = "#fef3c7";
-    fg = "#92400e";
-  } else if (s.startsWith("fully-satisfied") || s === "satisfied") {
-    bg = "#dcfce7";
-    fg = "#166534";
-  } else if (s === "part-satisfied") {
-    bg = "#dbeafe";
-    fg = "#1e40af";
-  } else {
-    bg = colors.bg.cardAlt;
-    fg = colors.text.muted;
-  }
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 6px",
-        borderRadius: 2,
-        background: bg,
-        color: fg,
-        fontFamily: "ui-monospace, monospace",
-        fontSize: 9,
-        letterSpacing: "0.05em",
-        textTransform: "uppercase",
-        fontWeight: 500,
-      }}
-    >
-      {status}
-    </span>
-  );
 }
 
 export function CompaniesHouseTab({ prospect, intelRun, chProfile, groupCharges }: CompaniesHouseTabProps) {
@@ -261,38 +225,7 @@ export function CompaniesHouseTab({ prospect, intelRun, chProfile, groupCharges 
       {/* Charges table */}
       <div>
         <SectionLabel colors={colors}>Charge chronology ({charges.length})</SectionLabel>
-        <div style={{ overflowX: "auto", border: `1px solid ${colors.border.default}`, borderRadius: 4, background: colors.bg.card }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-            <thead>
-              <tr style={{ background: colors.bg.cardAlt }}>
-                {["Date", "Lender / chargee", "Status", "Description (excerpt)"].map((h) => (
-                  <th key={h} style={{ textAlign: "left", padding: "8px 12px", borderBottom: `1px solid ${colors.border.default}`, fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.05em", textTransform: "uppercase", color: colors.text.muted, fontWeight: 500 }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedCharges.map((c) => (
-                <tr key={c._id ?? c.chargeId}>
-                  <td style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border.light}`, fontFamily: "ui-monospace, monospace", fontSize: 10, color: colors.text.muted, verticalAlign: "top", whiteSpace: "nowrap" }}>
-                    {c.chargeDate ?? "—"}
-                  </td>
-                  <td style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border.light}`, color: colors.text.primary, verticalAlign: "top", maxWidth: 280 }}>
-                    {c.chargeeName ?? "(unnamed)"}
-                  </td>
-                  <td style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border.light}`, verticalAlign: "top", whiteSpace: "nowrap" }}>
-                    {chargeStatusPill(c.chargeStatus, colors)}
-                  </td>
-                  <td style={{ padding: "8px 12px", borderBottom: `1px solid ${colors.border.light}`, color: colors.text.secondary, verticalAlign: "top", fontSize: 10, lineHeight: 1.5 }}>
-                    {(c.chargeDescription ?? "").slice(0, 200)}
-                    {(c.chargeDescription ?? "").length > 200 && "…"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ChargeChronologyTable charges={sortedCharges} />
       </div>
 
       {/* Corporate-group charge rollup — aggregated across the parent + sibling
@@ -390,6 +323,59 @@ export function CompaniesHouseTab({ prospect, intelRun, chProfile, groupCharges 
               </div>
             </div>
           )}
+
+          {/* Group charges chronology — every charge across the group, newest-first */}
+          {(groupCharges.charges ?? []).length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <SectionLabel colors={colors}>Group charges chronology ({groupCharges.charges.length})</SectionLabel>
+              <ChargeChronologyTable
+                charges={(groupCharges.charges as any[]).map((c) => ({
+                  chargeId: c.chargeId,
+                  chargeDate: c.date,
+                  chargeeName: `${c.lender} · ${c.companyName}`,
+                  chargeStatus: c.status,
+                  chargeDescription: c.description,
+                }))}
+              />
+            </div>
+          )}
+
+          {/* Per-SPV charge chronology — each funded group company, collapsible */}
+          {(() => {
+            const byCo = new Map<string, any[]>();
+            for (const c of (groupCharges.charges ?? []) as any[]) {
+              if (!byCo.has(c.companyNumber)) byCo.set(c.companyNumber, []);
+              byCo.get(c.companyNumber)!.push(c);
+            }
+            const cos = [...byCo.entries()].sort((a, b) =>
+              (b[1][0]?.date ?? "").localeCompare(a[1][0]?.date ?? ""),
+            );
+            return cos.length > 0 ? (
+              <div style={{ marginTop: 18 }}>
+                <SectionLabel colors={colors}>Charge chronology by company ({cos.length})</SectionLabel>
+                {cos.map(([num, cs]) => (
+                  <details key={num} style={{ marginBottom: 8 }}>
+                    <summary style={{ cursor: "pointer", fontSize: 12, color: colors.text.primary, padding: "6px 0" }}>
+                      {cs[0].companyName} ·{" "}
+                      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, color: colors.text.muted }}>
+                        {num}
+                      </span>{" "}
+                      · {cs.length} charge{cs.length === 1 ? "" : "s"}
+                    </summary>
+                    <ChargeChronologyTable
+                      charges={cs.map((c) => ({
+                        chargeId: c.chargeId,
+                        chargeDate: c.date,
+                        chargeeName: c.lender,
+                        chargeStatus: c.status,
+                        chargeDescription: c.description,
+                      }))}
+                    />
+                  </details>
+                ))}
+              </div>
+            ) : null;
+          })()}
         </div>
       )}
     </div>
