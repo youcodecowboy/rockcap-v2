@@ -27,19 +27,11 @@ import {
 import EditableStatusBadge from '@/components/EditableStatusBadge';
 import EditableClientTypeBadge from '@/components/EditableClientTypeBadge';
 import {
-  FolderKanban,
-  FileText,
-  MessageSquare,
   Building2,
   Archive,
   Plus,
-  StickyNote,
-  Database,
-  LayoutGrid,
   Settings,
   Flag,
-  DollarSign,
-  Activity as ActivityIcon,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
@@ -70,7 +62,6 @@ import ClientBeauhurstCards from './components/ClientBeauhurstCards';
 import ClientDealsTab from './components/ClientDealsTab';
 import ClientActivityTab from './components/ClientActivityTab';
 import ClientSettingsPanel from '@/components/ClientSettingsPanel';
-import { Brain, CheckSquare, Contact, Video, ListTodo } from 'lucide-react';
 
 type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads' | 'deals' | 'activity';
 
@@ -185,39 +176,27 @@ function ClientProfileContent() {
     );
   }
 
-  // Format address
-  const formatAddress = () => {
-    const parts = [];
-    if (client.address) parts.push(client.address);
-    if (client.city) parts.push(client.city);
-    if (client.state) parts.push(client.state);
-    if (client.zip) parts.push(client.zip);
-    return parts.length > 0 ? parts.join(', ') : null;
-  };
-
   // Last activity
   const lastActivity = documents.length > 0 
     ? new Date(documents.sort((a: any, b: any) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())[0].uploadedAt)
     : null;
 
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: LayoutGrid },
-    { id: 'deals', label: 'Deals', icon: DollarSign },
-    { id: 'activity', label: 'Activity', icon: ActivityIcon },
-    { id: 'documents', label: 'Documents', icon: FileText, count: documents.length },
-    { id: 'projects', label: 'Projects', icon: FolderKanban, count: projects.length },
-    { id: 'contacts', label: 'Contacts', icon: Contact, count: contacts.length },
-    { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
-    { id: 'threads', label: 'Threads', icon: Flag, count: openFlagCount > 0 ? openFlagCount : undefined },
-    { id: 'communications', label: 'Communications', icon: MessageSquare, count: communications.length },
-    { id: 'meetings', label: 'Meetings', icon: Video, count: meetingsCount },
-    { id: 'data', label: 'Data', icon: Database },
-    { id: 'intelligence', label: 'Intelligence', icon: Brain },
-    { id: 'checklist', label: 'Checklist', icon: CheckSquare },
-    { id: 'notes', label: 'Notes', icon: StickyNote },
+  const tabs: TabDef[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'deals', label: 'Deals' },
+    { id: 'activity', label: 'Activity' },
+    { id: 'documents', label: 'Documents', count: documents.length },
+    { id: 'projects', label: 'Projects', count: projects.length },
+    { id: 'contacts', label: 'Contacts', count: contacts.length },
+    { id: 'tasks', label: 'Tasks', count: activeTasksCount > 0 ? activeTasksCount : undefined },
+    { id: 'threads', label: 'Threads', count: openFlagCount > 0 ? openFlagCount : undefined },
+    { id: 'communications', label: 'Communications', count: communications.length },
+    { id: 'meetings', label: 'Meetings', count: meetingsCount },
+    { id: 'data', label: 'Data' },
+    { id: 'intelligence', label: 'Intelligence' },
+    { id: 'checklist', label: 'Checklist' },
+    { id: 'notes', label: 'Notes' },
   ];
-
-  const scaffoldTabs: TabDef[] = tabs.map((t) => ({ id: t.id, label: t.label, count: t.count }));
 
   const kpis: Kpi[] = [
     { label: 'Projects', value: projects.length, meta: activeProjects.length ? `${activeProjects.length} active` : 'none active', accent: colors.entityTypes.project },
@@ -265,7 +244,7 @@ function ClientProfileContent() {
         status={statusSlot}
         actions={actions}
         kpis={kpis}
-        tabs={scaffoldTabs}
+        tabs={tabs}
         activeTab={activeTab}
         onTabChange={handleTabChange}
         banner={client.isDeleted ? (
@@ -346,11 +325,8 @@ function ClientProfileContent() {
 // Loading fallback
 function ClientProfileLoading() {
   return (
-    <div className="h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-500">Loading client profile...</p>
-      </div>
+    <div style={{ padding: 24 }}>
+      <SkeletonText lines={2} />
     </div>
   );
 }
