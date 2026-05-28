@@ -1,6 +1,6 @@
 # Template-Mapped Reachout
 
-Reference loaded by `../SKILL.md` step 7. This document defines the reachout email patterns RockCap uses for cold prospects, indexed by classification (per `./bridging-vs-developer.md`) and by trigger context. The skill picks the right template, populates the variables, and stages an `approvals` row of type `gmail_send`.
+Reference loaded by `../SKILL.md` step 11. This document defines the reachout email patterns RockCap uses for cold prospects, indexed by the canonical deal type (per `./bridging-vs-developer.md`: `new_development`, `bridging`, `existing_asset`, `unclassifiable`) and by trigger context. The skill picks the right template, populates the variables, and stages an `approvals` row of type `gmail_send`.
 
 ## Operating principles
 
@@ -21,14 +21,14 @@ These apply across every template. They come from CONVENTIONS but are restated h
 | bridging | recent charge filing | `bridging.recent_charge` |
 | bridging | press mention of sale | `bridging.recent_sale` |
 | bridging | referral or cold | `bridging.cold` |
-| development_finance | planning approval | `development_finance.planning_approval` |
-| development_finance | recent charge filing | `development_finance.recent_charge` |
-| development_finance | press mention | `development_finance.press_mention` |
-| development_finance | referral or cold | `development_finance.cold` |
-| term_loan | planning approval | not applicable; route to development_finance instead |
-| term_loan | recent charge filing | `term_loan.refinance_window` |
-| term_loan | press mention | `term_loan.press_mention` |
-| term_loan | referral or cold | `term_loan.cold` |
+| new_development | planning approval | `new_development.planning_approval` |
+| new_development | recent charge filing | `new_development.recent_charge` |
+| new_development | press mention | `new_development.press_mention` |
+| new_development | referral or cold | `new_development.cold` |
+| existing_asset | planning approval | not applicable; route to new_development instead |
+| existing_asset | recent charge filing | `existing_asset.refinance_window` |
+| existing_asset | press mention | `existing_asset.press_mention` |
+| existing_asset | referral or cold | `existing_asset.cold` |
 | unclassifiable | any | none; do not reach out |
 
 ## Template structure
@@ -145,7 +145,7 @@ terms across the lenders relevant to your activity.
 {rockcap.partner.role}, RockCap
 ```
 
-### `development_finance.planning_approval`
+### `new_development.planning_approval`
 
 Requirements: planning reference and approval date in `trigger.detail`, scheme address in `intel.recentSchemeAddress`, scheme scale visible (units, GDV estimate if known).
 
@@ -168,7 +168,7 @@ development lenders right now.
 {rockcap.partner.role}, RockCap
 ```
 
-### `development_finance.cold`
+### `new_development.cold`
 
 Requirements: `intel.lenderDnaSummary` with at least one development-finance pattern named.
 
@@ -190,7 +190,7 @@ the current terms picture across the lenders relevant to your activity.
 {rockcap.partner.role}, RockCap
 ```
 
-### `term_loan.refinance_window`
+### `existing_asset.refinance_window`
 
 Requirements: charge maturity inference in `trigger.detail`, current lender named if visible.
 
@@ -212,9 +212,9 @@ than they have been in a while.
 {rockcap.partner.role}, RockCap
 ```
 
-### `term_loan.cold`
+### `existing_asset.cold`
 
-Requirements: `intel.lenderDnaSummary` indicating term-loan-suitable pattern.
+Requirements: `intel.lenderDnaSummary` indicating existing-asset (investment/term-loan) pattern.
 
 ```
 Subject: Investment financing for {borrower.companyName}
