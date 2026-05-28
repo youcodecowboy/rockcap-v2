@@ -593,7 +593,7 @@ export const getGroupCharges = query({
  *
  * `address` and `parseCandidateAddress` fallback: the skill/operator address
  * in the enrichment row always wins; the charge description is used only when
- * no enrichment row exists (addressIsEstimate: true).
+ * no enrichment address is set (addressIsEstimate: true).
  */
 export const getProspectSchemes = query({
   args: { clientId: v.id("clients") },
@@ -648,6 +648,7 @@ export const getProspectSchemes = query({
 
       const enrichment = enrichmentByCompany.get(companyNumber);
       const lastChargeDate = charges[0]?.date;
+      const candidateAddress = enrichment?.address ?? parseCandidateAddress(charges[0]?.description);
       schemes.push({
         companyNumber,
         companyName: company.companyName,
@@ -656,8 +657,8 @@ export const getProspectSchemes = query({
         charges,
         lastChargeDate,
         status: classifySchemeStatus((company as any).companyStatus, charges),
-        address: enrichment?.address ?? parseCandidateAddress(charges[0]?.description),
-        addressIsEstimate: !enrichment?.address,
+        address: candidateAddress,
+        addressIsEstimate: !enrichment?.address && !!candidateAddress,
         planningRefs: enrichment?.planningRefs ?? [],
         estimatedUnits: enrichment?.estimatedUnits,
         schemeType: enrichment?.schemeType,
@@ -712,11 +713,12 @@ export const upsertProspectScheme = mutation({
     const { clientId, companyNumber, operatorConfirmed, ...rest } = args;
     if (existing) {
       const keepConfirmed = existing.operatorConfirmed && operatorConfirmed === undefined;
-      await ctx.db.patch(existing._id, {
-        ...rest,
-        operatorConfirmed: keepConfirmed ? true : (operatorConfirmed ?? existing.operatorConfirmed),
-        updatedAt: now,
-      });
+      const patch: Record<string, any> = { updatedAt: now };
+      for (const [k, val] of Object.entries(rest)) {
+        if (val !== undefined) patch[k] = val;
+      }
+      patch.operatorConfirmed = keepConfirmed ? true : (operatorConfirmed ?? existing.operatorConfirmed);
+      await ctx.db.patch(existing._id, patch);
       return { schemeId: existing._id, created: false };
     }
     const schemeId = await ctx.db.insert("prospectSchemes", {
