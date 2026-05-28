@@ -2104,6 +2104,51 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  {
+    name: "companies.getProspectSchemes",
+    description:
+      "Per-scheme view of a prospect's corporate group: one row per charge-bearing SPV, split into live[] and past[] (live = active company with an outstanding charge), each ranked by most-recent charge date. Merges the SPV's charges (lender(s), dates) with any prospectSchemes enrichment (address, what they're building, confidence). Powers the Track Record tab. Args: { clientId }.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string", description: "Convex id of the prospect's clients row" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companies.getProspectSchemes, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "companies.upsertProspectScheme",
+    description:
+      "Upsert per-scheme enrichment for a prospect (keyed by clientId + companyNumber). The prospect-intel skill writes draft estimates (operatorConfirmed defaults false); operator edits in the Track Record tab set operatorConfirmed true and are not clobbered by skill re-runs. Pass address, planningRefs, estimatedUnits, schemeType, whatBuilding, gdvEstimate (range string), confidence ('high'|'med'|'low'), status ('live'|'past'), sourceUrls. Surface-only: does not create clients/companies rows.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        companyNumber: { type: "string" },
+        companyName: { type: "string" },
+        schemeName: { type: "string" },
+        address: { type: "string" },
+        planningRefs: { type: "array", items: { type: "string" } },
+        estimatedUnits: { type: "number" },
+        schemeType: { type: "string" },
+        whatBuilding: { type: "string" },
+        gdvEstimate: { type: "string" },
+        confidence: { type: "string" },
+        status: { type: "string" },
+        sourceUrls: { type: "array", items: { type: "string" } },
+        operatorConfirmed: { type: "boolean" },
+      },
+      required: ["clientId", "companyNumber", "companyName"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.companies.upsertProspectScheme, args);
+      return asText(result);
+    },
+  },
+
   // v1.2.4 prospect-intel hardening: structured prospect facts
   {
     name: "clients.setProspectFacts",
