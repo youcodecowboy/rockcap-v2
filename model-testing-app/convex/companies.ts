@@ -7,6 +7,7 @@ import {
   parseCandidateAddress,
   rankByRecency,
 } from "./lib/schemeGrouping";
+import { classifyLenderTier } from "./lib/lenderTiers";
 
 /**
  * Get company by ID
@@ -673,6 +674,68 @@ export const getProspectSchemes = query({
     const live = rankByRecency(schemes.filter((s) => s.status === "live"));
     const past = rankByRecency(schemes.filter((s) => s.status === "past"));
     return { live, past };
+  },
+});
+
+/**
+ * Check whether any lender in the prospect's corporate-group charge book is
+ * on RockCap's protected lender tiers (source of truth:
+ * skills/shared-references/lender-tiers.md). Returns:
+ *   { action: "park"|"soften"|"none", tier1: string[], tier2: string[] }
+ *
+ * "park"   — Tier 1 lender present (e.g. Quantum Development Finance). Do
+ *            not pitch cold outreach; consultant must be briefed first.
+ * "soften" — Tier 2 lender present (e.g. Yellow Tree). Use broad-brush
+ *            hook only (no scheme-specific details).
+ * "none"   — No protected lender found.
+ *
+ * Resolution mirrors getGroupCharges: parent companiesHouseNumber +
+ * relatedCompaniesHouseNumbers, deduplicated. Returns the empty ("none")
+ * shape when the client is missing or has no CH numbers.
+ */
+export const getLenderTierConflict = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const empty = { action: "none" as const, tier1: [] as string[], tier2: [] as string[] };
+
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return empty;
+
+    const parentNumber = (client as any).companiesHouseNumber as string | undefined;
+    const relatedNumbers = ((client as any).relatedCompaniesHouseNumbers ?? []) as string[];
+
+    const seen = new Set<string>();
+    const numbers: string[] = [];
+    for (const n of [parentNumber, ...relatedNumbers]) {
+      const num = (n ?? "").trim();
+      if (!num || seen.has(num)) continue;
+      seen.add(num);
+      numbers.push(num);
+    }
+
+    if (numbers.length === 0) return empty;
+
+    const distinctLenderNames = new Set<string>();
+
+    for (const companyNumber of numbers) {
+      const company = await ctx.db
+        .query("companiesHouseCompanies")
+        .withIndex("by_company_number", (q: any) => q.eq("companyNumber", companyNumber))
+        .first();
+      if (!company) continue;
+
+      const charges = await ctx.db
+        .query("companiesHouseCharges")
+        .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
+        .collect();
+
+      for (const c of charges) {
+        const name = c.chargeeName?.trim();
+        if (name) distinctLenderNames.add(name);
+      }
+    }
+
+    return classifyLenderTier([...distinctLenderNames]);
   },
 });
 

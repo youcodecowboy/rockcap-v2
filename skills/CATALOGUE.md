@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 86 tools across 19 domains as of the prospect-schemes pass: adds companies.getProspectSchemes + upsertProspectScheme (Track Record tab / per-scheme enrichment). Prior pass (corporate-group charges): adds companies.getGroupCharges (CH-tab group-charges rollup). Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 87 tools across 19 domains as of the lender-tier-conflict pass: adds companies.getLenderTierConflict (prospect flag: park/soften on protected lenders). Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme (Track Record tab / per-scheme enrichment). Prior pass (corporate-group charges): adds companies.getGroupCharges (CH-tab group-charges rollup). Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -227,12 +227,13 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `touchpoint.getByContact({contactId})` | Touchpoints for a contact. |
 | `touchpoint.getByProject({projectId})` | Touchpoints for a project (subsumed by project.getDeepContext). |
 
-### `companies.*` — External company sync (7)
+### `companies.*` — External company sync (8)
 
 | Tool | Purpose |
 |---|---|
 | `companies.listUnprocessed({limit?, sinceDays?, states?, ...})` | HubSpot-synced companies without prospect-intel runs. State per row: new / running / stuck. Used by Claude Code to find prospecting candidates. |
 | `companies.getGroupCharges({clientId})` | Aggregate the Companies House charge book across a prospect's whole corporate group — the parent (`clients.companiesHouseNumber`) + sibling SPVs (`clients.relatedCompaniesHouseNumbers`, set by `resolve-related-entities`). Read-only. Returns `{companyCount, totalCharges, activeCharges, satisfiedCharges, distinctLenders, lendersByCount[], byCompany[], charges[]}`; `charges` is a per-charge array (`companyNumber, companyName, companyStatus?, chargeId, lender, date?, status?, description?`), newest-first. Empty shape (companyCount 0, charges []) when no related numbers. Unsynced CH numbers are skipped. Powers the prospect CH-tab "Group charges" rollup. |
+| `companies.getLenderTierConflict({clientId})` | Check a prospect's group lenders against RockCap's protected lender tiers. Returns `{ action: 'park'|'soften'|'none', tier1: string[], tier2: string[] }`. Tier 1 (e.g. Quantum Development Finance) = park — do not pitch cold; Tier 2 (e.g. Yellow Tree) = soften — broad-brush hook only. Consult before drafting cold outreach. Source of truth: `skills/shared-references/lender-tiers.md`. |
 | `companies.getProspectSchemes({clientId})` | Per-scheme view of a prospect's corporate group: one row per charge-bearing SPV, split into `live[]` and `past[]` (live = active company with an outstanding charge), each ranked by most-recent charge date. Merges SPV charges (lender(s), dates) with any prospectSchemes enrichment (address, what they're building, confidence). Read-only. Powers the Track Record tab. |
 | `companies.upsertProspectScheme({clientId, companyNumber, companyName, schemeName?, address?, planningRefs?, estimatedUnits?, schemeType?, whatBuilding?, gdvEstimate?, confidence?, status?, sourceUrls?, operatorConfirmed?})` | Upsert per-scheme enrichment for a prospect (keyed by `clientId` + `companyNumber`). The prospect-intel skill writes draft estimates (`operatorConfirmed` defaults false); operator edits in the Track Record tab set `operatorConfirmed` true and are not clobbered by skill re-runs. Surface-only: does not create clients/companies rows. |
 | `companies.searchCompaniesHouse({query, limit?})` | Search Companies House by **name** → ranked matches (company_number, title, company_status, date_of_creation, address_snippet, sic_codes when present). Read-only. Use FIRST when you have a name but not a CH number, then feed the chosen company_number to `companies.syncCompaniesHouse`. |

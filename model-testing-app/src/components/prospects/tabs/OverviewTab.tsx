@@ -13,6 +13,7 @@ interface OverviewTabProps {
   cadences: any[];
   onJumpToOutreach: () => void;
   onJumpToIntel?: () => void;
+  lenderTierConflict?: { action: "park" | "soften" | "none"; tier1: string[]; tier2: string[] };
 }
 
 // Parse the Recommended Approach section (#7) into structured fields for
@@ -82,7 +83,7 @@ function classificationColor(text: string | undefined, colors: any): string {
   return colors.accent.blue;
 }
 
-export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, onJumpToIntel }: OverviewTabProps) {
+export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, onJumpToIntel, lenderTierConflict }: OverviewTabProps) {
   const colors = useColors();
   const state = prospect?.prospectState ?? "drafted";
   const rec = parseRecommendation(intelRun?.intelMarkdown);
@@ -92,7 +93,8 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
   // Findings/flags banner. computeProspectFlags merges the contact-presence
   // warn with the intel run's gaps (as info). Only `all_clear` → green "All
   // found"; otherwise amber, listing each warn/info chip.
-  const flags = computeProspectFlags(prospect ?? {}, intelRun ?? null);
+  // lenderTierConflict adds park/soften flags at the top when present.
+  const flags = computeProspectFlags(prospect ?? {}, intelRun ?? null, lenderTierConflict);
   const allClear = flags.length === 1 && flags[0].key === "all_clear";
   const hasNoContact = flags.some((f) => f.key === "no_contact");
 

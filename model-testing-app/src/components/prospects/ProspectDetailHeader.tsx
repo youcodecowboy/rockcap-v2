@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { StatePill } from "./StatePill";
+import { FlagChip } from "./FlagChip";
 
 interface ProspectDetailHeaderProps {
   prospect: any;
@@ -18,9 +19,10 @@ interface ProspectDetailHeaderProps {
   repliesCount?: number;
   meetingsCount?: number;
   schemesCount?: number;
+  lenderTierConflict?: { action: "park" | "soften" | "none"; tier1: string[]; tier2: string[] };
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, lenderTierConflict }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
@@ -75,6 +77,12 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               </div>
             </div>
             <StatePill state={state} />
+            {lenderTierConflict?.action === "park" && (
+              <FlagChip label="Parked — Tier 1 lender" severity="warn" colors={colors} />
+            )}
+            {lenderTierConflict?.action === "soften" && (
+              <FlagChip label="Soften — Tier 2 lender" severity="info" colors={colors} />
+            )}
           </div>
 
           {canPromote && (

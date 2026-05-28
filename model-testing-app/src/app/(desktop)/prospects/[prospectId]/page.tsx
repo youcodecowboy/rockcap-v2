@@ -73,6 +73,13 @@ export default function ProspectDetailPage() {
     prospect ? { clientId: prospectId } : "skip",
   );
 
+  // Lender-tier conflict: detect if the prospect borrows from a protected
+  // lender (Tier 1 = park, Tier 2 = soften). Surfaced as a flag near the header.
+  const lenderTierConflict = useQuery(
+    api.companies.getLenderTierConflict,
+    prospect ? { clientId: prospectId } : "skip",
+  );
+
   // Track Record: prospect schemes (live / past) from the prospectSchemes table.
   const schemes = useQuery(api.companies.getProspectSchemes, prospect ? { clientId: prospectId } : "skip");
 
@@ -115,6 +122,7 @@ export default function ProspectDetailPage() {
         repliesCount={replies?.length ?? 0}
         meetingsCount={meetings?.length ?? 0}
         schemesCount={((schemes as any)?.live?.length ?? 0) + ((schemes as any)?.past?.length ?? 0)}
+        lenderTierConflict={lenderTierConflict as any}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 1, background: colors.border.default, paddingBottom: 80 }}>
@@ -126,6 +134,7 @@ export default function ProspectDetailPage() {
               cadences={cadences}
               onJumpToOutreach={() => setActiveTab("outreach")}
               onJumpToIntel={() => setActiveTab("intel")}
+              lenderTierConflict={lenderTierConflict as any}
             />
           )}
           {activeTab === "intel" && <IntelTab intelRun={intelRun} />}

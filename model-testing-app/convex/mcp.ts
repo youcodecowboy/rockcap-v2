@@ -2105,6 +2105,25 @@ const TOOLS: McpTool[] = [
   },
 
   {
+    name: "companies.getLenderTierConflict",
+    description:
+      "Check a prospect's group lenders against RockCap's protected lender tiers. Returns { action: 'park'|'soften'|'none', tier1[], tier2[] }. Tier 1 (favourite lender, e.g. Quantum) means park the prospect (do not pitch cold); Tier 2 (preferred, e.g. Yellow Tree) means soften the hook to broad-brush. Consulted before drafting cold outreach. Source of truth: skills/shared-references/lender-tiers.md.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companies.getLenderTierConflict, {
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
     name: "companies.getProspectSchemes",
     description:
       "Per-scheme view of a prospect's corporate group: one row per charge-bearing SPV, split into live[] and past[] (live = active company with an outstanding charge), each ranked by most-recent charge date. Merges the SPV's charges (lender(s), dates) with any prospectSchemes enrichment (address, what they're building, confidence). Powers the Track Record tab. Args: { clientId }.",
