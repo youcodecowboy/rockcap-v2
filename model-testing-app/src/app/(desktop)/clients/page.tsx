@@ -1,160 +1,167 @@
 'use client';
 
-import { useState, useCallback, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useMemo, useCallback, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { Building, Upload } from 'lucide-react';
-import ClientsSidebar from './components/ClientsSidebar';
+import { Building, Upload, Plus, Search } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
+import {
+  EntityListScaffold,
+  StatusPill,
+  clientStatusTone,
+  SkeletonTable,
+} from '@/components/layouts';
 import CreateClientDrawer from '@/components/CreateClientDrawer';
 import CSVClientImport from '@/components/CSVClientImport';
 
+type ClientRow = {
+  _id: Id<'clients'>;
+  name: string;
+  type?: string;
+  status?: string;
+  updatedAt?: number;
+  _creationTime: number;
+};
+
 function ClientsPortalContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  
-  // Get selected client from URL or state
-  const urlClientId = searchParams.get('client') as Id<"clients"> | null;
-  const [selectedClientId, setSelectedClientId] = useState<Id<"clients"> | null>(urlClientId);
+  const colors = useColors();
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
   const [isCSVImportOpen, setIsCSVImportOpen] = useState(false);
 
-  // Fetch selected client details
-  const selectedClient = useQuery(
-    api.clients.get,
-    selectedClientId ? { id: selectedClientId } : "skip"
+  const clients = useQuery(api.clients.list, {}) as ClientRow[] | undefined;
+
+  const filtered = useMemo(() => {
+    if (!clients) return undefined;
+    const q = searchQuery.trim().toLowerCase();
+    return clients.filter((c) => {
+      const matchesQuery = !q || c.name?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q);
+      const matchesStatus = statusFilter === 'all' || (c.status ?? '').toLowerCase() === statusFilter;
+      return matchesQuery && matchesStatus;
+    });
+  }, [clients, searchQuery, statusFilter]);
+
+  const openClient = useCallback((id: Id<'clients'>) => router.push(`/clients/${id}`), [router]);
+
+  const lastActivity = (c: ClientRow) =>
+    new Date(c.updatedAt ?? c._creationTime).toLocaleDateString();
+
+  const search = (
+    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <Search style={{ position: 'absolute', left: 8, width: 14, height: 14, color: colors.text.muted }} />
+      <input
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search clients"
+        style={{
+          background: colors.bg.card,
+          border: `1px solid ${colors.border.default}`,
+          color: colors.text.primary,
+          borderRadius: 4,
+          padding: '6px 8px 6px 28px',
+          fontSize: 12,
+          width: 220,
+        }}
+      />
+    </div>
   );
 
-  // Handler for client selection
-  const handleClientSelect = useCallback((clientId: Id<"clients"> | null) => {
-    setSelectedClientId(clientId);
-    if (clientId) {
-      // Navigate to the client profile page
-      router.push(`/clients/${clientId}`);
-    }
-  }, [router]);
+  const actions = (
+    <>
+      <button
+        onClick={() => setIsCSVImportOpen(true)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: colors.bg.card, border: `1px solid ${colors.border.default}`, color: colors.text.primary, borderRadius: 4, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}
+      >
+        <Upload style={{ width: 14, height: 14 }} /> Import CSV
+      </button>
+      <button
+        onClick={() => setIsCreateDrawerOpen(true)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: colors.entityTypes.client, border: `1px solid ${colors.entityTypes.client}`, color: '#fff', borderRadius: 4, padding: '6px 10px', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
+      >
+        <Plus style={{ width: 14, height: 14 }} /> New Client
+      </button>
+    </>
+  );
 
-  const handleAddClient = useCallback(() => {
-    setIsCreateDrawerOpen(true);
-  }, []);
+  const filters = (['all', 'active', 'prospect', 'archived'] as const).map((s) => (
+    <button
+      key={s}
+      onClick={() => setStatusFilter(s)}
+      style={{
+        textTransform: 'capitalize',
+        fontSize: 11,
+        borderRadius: 4,
+        padding: '4px 10px',
+        cursor: 'pointer',
+        background: statusFilter === s ? colors.text.primary : colors.bg.card,
+        color: statusFilter === s ? colors.bg.card : colors.text.muted,
+        border: `1px solid ${colors.border.default}`,
+      }}
+    >
+      {s}
+    </button>
+  ));
 
-  const handleClientCreated = useCallback(() => {
-    setIsCreateDrawerOpen(false);
-    // Navigation is handled by CreateClientDrawer
-  }, []);
+  const columns = ['Name', 'Type', 'Status', 'Last activity'];
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Building className="w-5 h-5 text-white" />
+    <>
+      <EntityListScaffold
+        entityType="client"
+        title="Clients"
+        count={filtered?.length}
+        search={search}
+        actions={actions}
+        filters={filters}
+      >
+        {filtered === undefined ? (
+          <SkeletonTable rows={10} cols={4} />
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 64, textAlign: 'center', color: colors.text.dim, fontSize: 13 }}>
+            No clients match your filters.
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Clients Portal</h1>
-            <p className="text-sm text-gray-500">Manage clients, projects, and documents</p>
-          </div>
-        </div>
-        <button
-          onClick={() => setIsCSVImportOpen(true)}
-          className="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <Upload className="w-4 h-4" />
-          Import CSV
-        </button>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <ClientsSidebar
-          selectedClientId={selectedClientId}
-          onClientSelect={handleClientSelect}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          onAddClient={handleAddClient}
-        />
-
-        {/* Main Content Area */}
-        <div className="flex-1 overflow-auto">
-          {!selectedClientId ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center max-w-md">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Building className="w-8 h-8 text-gray-400" />
+        ) : (
+          <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 16, padding: '10px 16px', background: colors.bg.cardAlt, borderBottom: `1px solid ${colors.border.default}` }}>
+              {columns.map((c) => (
+                <div key={c} style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
+                  {c}
                 </div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                  Select a Client
-                </h2>
-                <p className="text-gray-500 mb-6">
-                  Choose a client from the sidebar to view their profile, projects, documents, and more.
-                </p>
-                <button
-                  onClick={handleAddClient}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  <Building className="w-4 h-4" />
-                  Create New Client
-                </button>
+              ))}
+            </div>
+            {filtered.map((c) => (
+              <div
+                key={c._id}
+                onClick={() => openClient(c._id)}
+                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 16, padding: '12px 16px', borderBottom: `1px solid ${colors.border.light}`, cursor: 'pointer', alignItems: 'center', fontSize: 12, color: colors.text.primary }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <Building style={{ width: 14, height: 14, color: colors.entityTypes.client, flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                </div>
+                <div style={{ color: colors.text.secondary, textTransform: 'capitalize' }}>{c.type ?? '—'}</div>
+                <div>{c.status ? <StatusPill label={c.status} tone={clientStatusTone(c.status, colors)} /> : '—'}</div>
+                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, color: colors.text.muted }}>{lastActivity(c)}</div>
               </div>
-            </div>
-          ) : selectedClient === undefined ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            </div>
-          ) : selectedClient === null ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-gray-500">Client not found</p>
-              </div>
-            </div>
-          ) : (
-            // Redirect to client profile page
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Loading {selectedClient.name}...</p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+            ))}
+          </div>
+        )}
+      </EntityListScaffold>
 
-      {/* Create Client Drawer */}
-      <CreateClientDrawer
-        isOpen={isCreateDrawerOpen}
-        onClose={() => setIsCreateDrawerOpen(false)}
-        onSuccess={handleClientCreated}
-      />
-
-      {/* CSV Client Import */}
-      <CSVClientImport
-        isOpen={isCSVImportOpen}
-        onClose={() => setIsCSVImportOpen(false)}
-      />
-    </div>
+      <CreateClientDrawer isOpen={isCreateDrawerOpen} onClose={() => setIsCreateDrawerOpen(false)} onSuccess={() => setIsCreateDrawerOpen(false)} />
+      <CSVClientImport isOpen={isCSVImportOpen} onClose={() => setIsCSVImportOpen(false)} />
+    </>
   );
 }
 
-// Loading fallback component
-function ClientsPortalLoading() {
-  return (
-    <div className="h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-500">Loading Clients Portal...</p>
-      </div>
-    </div>
-  );
-}
-
-// Main export with Suspense boundary
 export default function ClientsPortalPage() {
   return (
-    <Suspense fallback={<ClientsPortalLoading />}>
+    <Suspense fallback={null}>
       <ClientsPortalContent />
     </Suspense>
   );
