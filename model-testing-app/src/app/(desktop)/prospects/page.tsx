@@ -6,6 +6,7 @@ import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { ProspectsHomeHeader } from "@/components/prospects/ProspectsHomeHeader";
 import { CandidatesSection } from "@/components/prospects/sections/CandidatesSection";
+import { ResearchedSection } from "@/components/prospects/sections/ResearchedSection";
 import { NeedsReviewSection } from "@/components/prospects/sections/NeedsReviewSection";
 import { NeedsRevisionSection } from "@/components/prospects/sections/NeedsRevisionSection";
 import { ActiveSection } from "@/components/prospects/sections/ActiveSection";
@@ -45,6 +46,10 @@ export default function ProspectsPage() {
 
         {/* Action-item sections — expanded by default */}
         <CandidatesSection />
+        {/* Researched but not yet in the outreach state machine (no prospectState).
+            Catches prospects whose intel completed but outreach was blocked, so they
+            don't vanish from the board. */}
+        <ResearchedSection />
         <NeedsReviewSection />
         <NeedsRevisionSection />
         <ActiveSection />
