@@ -2081,6 +2081,29 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // Corporate-group charge rollup: aggregates the Companies House charge book
+  // across a prospect's parent + sibling-SPV CH numbers (the ones persisted on
+  // clients.relatedCompaniesHouseNumbers by resolve-related-entities). Mirrors
+  // the prospect CH-tab "Group charges" section.
+  {
+    name: "companies.getGroupCharges",
+    description:
+      "Aggregate the Companies House charge book across a prospect's whole corporate group — the parent (clients.companiesHouseNumber) plus the sibling SPVs on clients.relatedCompaniesHouseNumbers (set by the resolve-related-entities sub-skill). Read-only. A single CH number understates a developer's borrowing because schemes are spread across SPVs; this rolls the group's charges into one view. Returns { companyCount, totalCharges, activeCharges, satisfiedCharges, distinctLenders, lendersByCount: [{name,total,active}] (desc), byCompany: [{companyNumber,companyName,chargesCount,activeCount}] }. Returns the empty shape (companyCount 0) when the client has no related numbers. CH numbers not yet synced (no companiesHouseCompanies row) are skipped. Powers the prospect CH-tab group-charges rollup.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companies.getGroupCharges, {
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2.4 prospect-intel hardening: structured prospect facts
   {
     name: "clients.setProspectFacts",
