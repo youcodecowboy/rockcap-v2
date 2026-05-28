@@ -2085,12 +2085,17 @@ const TOOLS: McpTool[] = [
   {
     name: "clients.setProspectFacts",
     description:
-      "Set structured prospect facts on a clients row (companiesHouseNumber, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab / prospects table read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites.",
+      "Set structured prospect facts on a clients row (companiesHouseNumber, relatedCompaniesHouseNumbers, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab / prospects table read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). relatedCompaniesHouseNumbers persists the corporate-group sibling SPVs discovered by the resolve-related-entities sub-skill — it powers the CH-tab group-charges rollup (companies.getGroupCharges). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites.",
     inputSchema: {
       type: "object",
       properties: {
         clientId: { type: "string", description: "Convex id of the clients row" },
         companiesHouseNumber: { type: "string", description: "8-digit CH number, or 6 digits prefixed by SC/NI/OC" },
+        relatedCompaniesHouseNumbers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Corporate-group SPV Companies House numbers discovered via the resolve-related-entities sub-skill's director-appointment walk. EXCLUDE the parent (that's companiesHouseNumber). Each is an 8-digit CH number (or 6 digits prefixed by SC/NI/OC). Powers the prospect CH-tab group-charges rollup. Pass the full set each time — re-running overwrites.",
+        },
         website: { type: "string", description: "Full URL (e.g., 'https://example.co.uk') or 'not-found' if confirmed-absent" },
         primaryDirectorName: { type: "string", description: "Director name as it should appear in the UI — operator-readable, not necessarily matching CH's surname-first format" },
         primaryContactId: { type: "string", description: "Convex id of the primary contact for outreach (the one cadences should target)" },
@@ -2110,6 +2115,7 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runMutation(internal.clients.setProspectFactsInternal, {
         clientId: args.clientId,
         companiesHouseNumber: args.companiesHouseNumber,
+        relatedCompaniesHouseNumbers: args.relatedCompaniesHouseNumbers,
         website: args.website,
         primaryDirectorName: args.primaryDirectorName,
         primaryContactId: args.primaryContactId,

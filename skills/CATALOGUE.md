@@ -91,7 +91,7 @@ The deep-context tools are the spine:
 
 | Tool | Purpose |
 |---|---|
-| `clients.setProspectFacts({clientId, companiesHouseNumber?, website?, primaryDirectorName?, primaryContactId?, dealType?, dealSizeRange?})` | Bulk-patch the structured prospect facts on a clients row. Used by `prospect-intel` skill workflow step 10 to promote facts out of intelMarkdown text. `dealType` is the canonical deal-type code (new_development / bridging / existing_asset / unclassifiable); `dealSizeRange` is the indicative-size display string (range + confidence + basis). |
+| `clients.setProspectFacts({clientId, companiesHouseNumber?, relatedCompaniesHouseNumbers?, website?, primaryDirectorName?, primaryContactId?, dealType?, dealSizeRange?})` | Bulk-patch the structured prospect facts on a clients row. Used by `prospect-intel` skill workflow step 10 to promote facts out of intelMarkdown text. `dealType` is the canonical deal-type code (new_development / bridging / existing_asset / unclassifiable); `dealSizeRange` is the indicative-size display string (range + confidence + basis). `relatedCompaniesHouseNumbers` is the array of corporate-group sibling-SPV CH numbers (excl. the parent) discovered by the `resolve-related-entities` sub-skill — it powers the CH-tab group-charges rollup (`companies.getGroupCharges`). |
 
 ### `project.*` — Project (scheme/deal) workflows (6)
 
