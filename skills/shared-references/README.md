@@ -2,7 +2,11 @@
 
 Cross-skill references that more than one skill loads. Distinct from per-skill references (which live at `skills/{skill-name}/references/`).
 
-Currently empty. Planned shared references:
+Live shared references:
+
+- `deal-type-size-bands.md` — how to estimate an indicative deal size from public evidence when the prospect has not given a number (derivation methods, confidence rubric, the mandatory range + confidence + basis line, and the coarse fallback bands per deal type). Loaded by `prospect-intel`.
+
+Planned shared references:
 
 - `uk-property-finance-glossary.md` — terms, abbreviations, and conventions every skill needs (GDV, TDC, LTGDV, LTC, profit on cost, day-one value, etc.) with the definitions RockCap uses.
 - `voice-cheat-sheet.md` — a one-pager distillation of `../CONVENTIONS.md` for quick load in skill prompts.
