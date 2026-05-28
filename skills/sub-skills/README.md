@@ -12,6 +12,7 @@ When a recurring step appears in two or more skills, lift it here. SKILL.md file
 |---|---|---|
 | [`resolve-company.md`](./resolve-company.md) | Map name / email domain / Companies House number / free description to a canonical organisation. | prospect-intel, qualify-and-draft, lender-intel, deal-intake, attribute-touchpoint |
 | [`resolve-contact.md`](./resolve-contact.md) | Map email or name+org to a specific `contactId`. | qualify-and-draft, meeting-capture, attribute-touchpoint, cadence-fire |
+| [`resolve-related-entities.md`](./resolve-related-entities.md) | Walk a prospect's controlling PSCs/directors' other CH appointments to map the corporate group (likely sibling SPVs + trading parent). Surface-only: persists one `borrower.related_entities` knowledge item, creates no rows. | prospect-intel |
 | [`attribute-touchpoint.md`](./attribute-touchpoint.md) | Attach an inbound or outbound event to person, deal, thread; write to `touchpoints`. | Gmail sync, Fireflies sync, HubSpot sync, meeting-capture |
 | [`dedupe-meeting.md`](./dedupe-meeting.md) | Determine whether a proposed meeting duplicates an existing record. | Fireflies sync, meeting-capture |
 | [`address-normalizer.md`](./address-normalizer.md) | Canonicalise UK addresses to a hash-comparable form. | resolve-company, deal-intake, companies-house linkage |
@@ -51,7 +52,7 @@ When a recurring step appears in two or more skills, lift it here. SKILL.md file
 
 ## Status
 
-All 18 sub-skills above have a markdown file authored. Depth varies. Most read end-to-end as design specs; some (like `address-normalizer`) document existing implementation (`convex/companiesHouse.ts` `getAddressHash`).
+All 19 sub-skills above have a markdown file authored. Depth varies. Most read end-to-end as design specs; some (like `address-normalizer`) document existing implementation (`convex/companiesHouse.ts` `getAddressHash`). `resolve-related-entities` documents a live primitive: it drives the `companies.getOfficerAppointments` MCP tool.
 
 The sub-skills are not runnable until the MCP server (BL-5.1) and the cross-cutting primitives (`template.populate` BL-5.6, `deal.get_full_context` BL-5.4, `document.extract` BL-5.5) ship. Until then, they describe the design Claude will follow once the primitives are real.
 
