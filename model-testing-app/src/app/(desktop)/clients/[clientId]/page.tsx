@@ -14,8 +14,6 @@ import {
 } from '@/lib/clientStorage';
 import { useDocumentsByClient } from '@/lib/documentStorage';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,26 +26,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import EditableStatusBadge from '@/components/EditableStatusBadge';
 import EditableClientTypeBadge from '@/components/EditableClientTypeBadge';
-import CompactMetricCard from '@/components/CompactMetricCard';
 import {
   FolderKanban,
   FileText,
   MessageSquare,
-  Users,
   Building2,
-  ChevronRight,
-  Calendar,
   Archive,
   Plus,
-  Mail,
   StickyNote,
   Database,
   LayoutGrid,
-  Phone,
-  Globe,
-  MapPin,
-  ArrowLeft,
-  TrendingUp,
   Settings,
   Flag,
   DollarSign,
@@ -56,6 +44,14 @@ import {
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
 import RestorationBanner from '@/components/RestorationBanner';
+import { useColors } from '@/lib/useColors';
+import {
+  EntityDetailScaffold,
+  type Kpi,
+  type TabDef,
+  SkeletonText,
+} from '@/components/layouts';
+import { ClientDetailAside } from './components/ClientDetailAside';
 
 // Import tab components
 import ClientDocumentLibrary from './components/ClientDocumentLibrary';
@@ -110,6 +106,8 @@ function ClientProfileContent() {
 
   // Mutations
   const updateClientMutation = useUpdateClient();
+
+  const colors = useColors();
 
   // Computed values
   const activeProjects = projects.filter((p: any) => p.status === 'active');
@@ -169,8 +167,8 @@ function ClientProfileContent() {
   // Loading state
   if (client === undefined) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div style={{ padding: 24 }}>
+        <SkeletonText lines={2} />
       </div>
     );
   }
@@ -178,15 +176,10 @@ function ClientProfileContent() {
   // Not found
   if (!client) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-            <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">Client not found.</p>
-            <Link href="/clients" className="mt-4 text-blue-600 hover:text-blue-700">
-              Back to Clients
-            </Link>
-          </div>
+      <div style={{ padding: 24 }}>
+        <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, padding: 48, textAlign: 'center', color: colors.text.muted }}>
+          <p style={{ marginBottom: 12 }}>Client not found.</p>
+          <Link href="/clients" style={{ color: colors.accent.blue, textDecoration: 'underline' }}>Back to Clients</Link>
         </div>
       </div>
     );
@@ -224,337 +217,91 @@ function ClientProfileContent() {
     { id: 'notes', label: 'Notes', icon: StickyNote },
   ];
 
+  const scaffoldTabs: TabDef[] = tabs.map((t) => ({ id: t.id, label: t.label, count: t.count }));
+
+  const kpis: Kpi[] = [
+    { label: 'Projects', value: projects.length, meta: activeProjects.length ? `${activeProjects.length} active` : 'none active', accent: colors.entityTypes.project },
+    { label: 'Documents', value: documents.length, accent: colors.entityTypes.client },
+    { label: 'Contacts', value: contacts.length, accent: colors.entityTypes.contact },
+    { label: 'Meetings', value: meetingsCount, accent: colors.entityTypes.cadence },
+    { label: 'Last activity', value: lastActivity ? lastActivity.toLocaleDateString() : '—', accent: colors.entityTypes.skillRun },
+  ];
+
+  const actions = (
+    <>
+      <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }}>
+        <Settings className="w-3.5 h-3.5 mr-1" /> Settings
+      </Button>
+      <Button size="sm" onClick={() => handleTabChange('projects')} className="bg-black text-white hover:bg-gray-800 h-7 text-xs px-2.5">
+        <Plus className="w-3.5 h-3.5 mr-1" /> New Project
+      </Button>
+      <Button size="sm" variant="ghost" className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-7 text-xs px-2" onClick={() => setFlagModalOpen(true)}>
+        <Flag className="w-3.5 h-3.5 mr-1" /> Flag
+      </Button>
+      <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setShowArchiveDialog(true)}>
+        <Archive className="w-3.5 h-3.5 mr-1" /> Archive
+      </Button>
+    </>
+  );
+
+  const statusSlot = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <FlagIndicator entityType="client" entityId={clientId} />
+      <EditableStatusBadge status={client.status as 'prospect' | 'active' | 'archived' | 'past' | undefined} onStatusChange={handleStatusChange} />
+      <EditableClientTypeBadge type={client.type} onTypeChange={handleTypeChange} customTypes={customTypes} onAddCustomType={() => {}} />
+    </div>
+  );
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Compact Header */}
-      <header className="bg-white border-b px-4 py-2 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/clients">
-              <Button variant="ghost" size="sm" className="gap-1.5 h-7 text-xs px-2">
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Clients
-              </Button>
-            </Link>
-            <div className="h-5 w-px bg-gray-200" />
-            <div className="flex items-center gap-2">
-              <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
-                client.type?.toLowerCase() === 'lender'
-                  ? 'bg-blue-100'
-                  : 'bg-green-100'
-              }`}>
-                <Building2 className={`w-3.5 h-3.5 ${
-                  client.type?.toLowerCase() === 'lender'
-                    ? 'text-blue-600'
-                    : 'text-green-600'
-                }`} />
-              </div>
-              <h1 className="text-base font-semibold text-gray-900">{client.name}</h1>
-              <FlagIndicator entityType="client" entityId={clientId} />
-              <EditableStatusBadge
-                status={client.status as 'prospect' | 'active' | 'archived' | 'past' | undefined}
-                onStatusChange={handleStatusChange}
-              />
-              <EditableClientTypeBadge
-                type={client.type}
-                onTypeChange={handleTypeChange}
-                customTypes={customTypes}
-                onAddCustomType={() => {}}
-              />
-              {/* HubSpot chips — mirrors the mobile client-header chip strip.
-                  Only renders the chips that have data; empty strip if none. */}
-              {primaryCompany ? (
-                <>
-                  {primaryCompany.hubspotLifecycleStageName || primaryCompany.hubspotLifecycleStage ? (
-                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
-                      <span className="text-gray-400 mr-1">Lifecycle</span>
-                      {primaryCompany.hubspotLifecycleStageName ?? primaryCompany.hubspotLifecycleStage}
-                    </span>
-                  ) : null}
-                  {primaryCompany.type ? (
-                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
-                      <span className="text-gray-400 mr-1">HubSpot type</span>
-                      {primaryCompany.type}
-                    </span>
-                  ) : null}
-                  {primaryCompany.industry ? (
-                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
-                      <span className="text-gray-400 mr-1">Industry</span>
-                      {primaryCompany.industry}
-                    </span>
-                  ) : null}
-                  {primaryCompany.ownerName ? (
-                    <span className="inline-flex items-center text-[10px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
-                      <span className="text-gray-400 mr-1">Owner</span>
-                      {primaryCompany.ownerName}
-                    </span>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs px-2"
-              onClick={() => {
-                setSettingsDefaultTab('general');
-                setShowSettingsPanel(true);
-              }}
-            >
-              <Settings className="w-3.5 h-3.5 mr-1" />
-              Settings
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => handleTabChange('projects')}
-              className="bg-black text-white hover:bg-gray-800 h-7 text-xs px-2.5"
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              New Project
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-7 text-xs px-2"
-              onClick={() => setFlagModalOpen(true)}
-            >
-              <Flag className="w-3.5 h-3.5 mr-1" />
-              Flag
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs px-2"
-              onClick={() => setShowArchiveDialog(true)}
-            >
-              <Archive className="w-3.5 h-3.5 mr-1" />
-              Archive
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      {client.isDeleted && (
-        <RestorationBanner
-          entityType="client"
-          entityName={client.name}
-          entityId={clientId}
-          deletedAt={client.deletedAt}
-          onRestored={() => {}}
-          onPermanentlyDeleted={() => router.push('/clients')}
-        />
-      )}
-
-      {/* Tabs at the top - like Document Queue */}
-      <Tabs 
-        value={activeTab} 
-        onValueChange={handleTabChange}
-        className="flex-1 flex flex-col overflow-hidden"
+    <>
+      <EntityDetailScaffold
+        entityType="client"
+        breadcrumbs={[
+          { label: 'Clients', type: 'client', onClick: () => router.push('/clients') },
+          { label: client.name, type: 'client' },
+        ]}
+        icon={<Building2 className="w-[18px] h-[18px]" />}
+        title={client.name}
+        status={statusSlot}
+        actions={actions}
+        kpis={kpis}
+        tabs={scaffoldTabs}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        banner={client.isDeleted ? (
+          <RestorationBanner
+            entityType="client"
+            entityName={client.name}
+            entityId={clientId}
+            deletedAt={client.deletedAt}
+            onRestored={() => {}}
+            onPermanentlyDeleted={() => router.push('/clients')}
+          />
+        ) : undefined}
+        aside={<ClientDetailAside client={client} primaryCompany={primaryCompany} counts={{ projects: projects.length, documents: documents.length, contacts: contacts.length, meetings: meetingsCount }} />}
       >
-        <div className="bg-white border-b px-2 md:px-4 flex-shrink-0 overflow-x-auto scrollbar-subtle">
-          <TabsList className="h-11 bg-transparent p-0 gap-0.5 md:gap-1">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <TabsTrigger
-                  key={tab.id}
-                  value={tab.id}
-                  title={tab.label}
-                  className="relative h-11 px-1.5 md:px-2.5 text-xs md:text-sm rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:shadow-none whitespace-nowrap"
-                >
-                  <Icon className="w-3.5 h-3.5 md:mr-1.5 flex-shrink-0" />
-                  <span className="hidden md:inline">{tab.label}</span>
-                  {tab.count !== undefined && tab.count > 0 && (
-                    <Badge
-                      variant="secondary"
-                      className="ml-1 md:ml-1.5 bg-gray-100 text-gray-700 hover:bg-gray-100 text-[10px] px-1 md:px-1.5 py-0"
-                    >
-                      {tab.count}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </div>
-
-        {/* Slim Metrics Row - Overview only */}
         {activeTab === 'overview' && (
-          <div className="bg-white border-b px-4 py-2 flex-shrink-0">
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              <CompactMetricCard
-                label="Documents"
-                value={documents.length}
-                icon={FileText}
-                iconColor="blue"
-              />
-              <CompactMetricCard
-                label="Projects"
-                value={projects.length}
-                icon={FolderKanban}
-                iconColor="purple"
-                badge={activeProjects.length > 0 ? { text: `${activeProjects.length} active`, variant: 'outline' } : undefined}
-              />
-              <CompactMetricCard
-                label="Contacts"
-                value={contacts.length}
-                icon={Users}
-                iconColor="green"
-              />
-              <CompactMetricCard
-                label="Last Activity"
-                value={lastActivity ? lastActivity.toLocaleDateString() : 'No activity'}
-                icon={TrendingUp}
-                iconColor="orange"
-              />
-              {client.email && (
-                <CompactMetricCard
-                  label="Email"
-                  value={client.email}
-                  icon={Mail}
-                  iconColor="blue"
-                  onClick={() => window.location.href = `mailto:${client.email}`}
-                />
-              )}
-              {client.phone && (
-                <CompactMetricCard
-                  label="Phone"
-                  value={client.phone}
-                  icon={Phone}
-                  iconColor="green"
-                  onClick={() => window.location.href = `tel:${client.phone}`}
-                />
-              )}
-            </div>
+          <ClientOverviewTab client={client} clientId={clientId} documents={documents} projects={projects} contacts={contacts} onOpenSettings={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }} onTabChange={handleTabChange} />
+        )}
+        {activeTab === 'intelligence' && (
+          <div className="space-y-6">
+            <ClientBeauhurstCards clientId={clientId} />
+            <ClientIntelligenceTab clientId={clientId} clientName={client.name} clientType={client.type} projects={projects} />
           </div>
         )}
-
-        {/* Tab Content */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Edge-to-Edge Tabs */}
-          <TabsContent value="overview" className="mt-0 flex-1 overflow-auto">
-            <div className="px-6 py-6">
-              <ClientOverviewTab
-                client={client}
-                clientId={clientId}
-                documents={documents}
-                projects={projects}
-                contacts={contacts}
-                onOpenSettings={() => {
-                  setSettingsDefaultTab('general');
-                  setShowSettingsPanel(true);
-                }}
-                onTabChange={handleTabChange}
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="intelligence" className="mt-0 flex-1 overflow-auto">
-            <div className="space-y-6 p-6">
-              {/* Beauhurst CRM intel — sits above the existing AI doc
-                  intelligence so users see CRM-sourced company data first.
-                  Hidden if no HubSpot data exists for this client. */}
-              <ClientBeauhurstCards clientId={clientId} />
-              <ClientIntelligenceTab
-                clientId={clientId}
-                clientName={client.name}
-                clientType={client.type}
-                projects={projects}
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="deals" className="mt-0 flex-1 overflow-auto">
-            <ClientDealsTab clientId={clientId} />
-          </TabsContent>
-
-          <TabsContent value="activity" className="mt-0 flex-1 overflow-auto">
-            <ClientActivityTab clientId={clientId} />
-          </TabsContent>
-
-          <TabsContent value="documents" className="mt-0 flex-1 overflow-hidden">
-            <ClientDocumentLibrary
-              clientId={clientId}
-              clientName={client.name}
-              clientType={client.type}
-            />
-          </TabsContent>
-
-          <TabsContent value="checklist" className="mt-0 flex-1 overflow-hidden">
-            <ClientKnowledgeTab
-              clientId={clientId}
-              clientName={client.name}
-              clientType={client.type}
-              projects={projects}
-            />
-          </TabsContent>
-
-          <TabsContent value="notes" className="mt-0 flex-1 overflow-hidden">
-            <ClientNotesTab
-              clientId={clientId}
-              clientName={client.name}
-            />
-          </TabsContent>
-
-          <TabsContent value="meetings" className="mt-0 flex-1 overflow-hidden">
-            <ClientMeetingsTab
-              clientId={clientId}
-              clientName={client.name}
-            />
-          </TabsContent>
-
-          <TabsContent value="tasks" className="mt-0 flex-1 overflow-hidden">
-            <ClientTasksTab
-              clientId={clientId}
-              clientName={client.name}
-            />
-          </TabsContent>
-
-          <TabsContent value="data" className="mt-0 flex-1 overflow-hidden">
-            <ClientDataTab
-              clientId={clientId}
-              clientName={client.name}
-            />
-          </TabsContent>
-
-          <TabsContent value="threads" className="mt-0 flex-1 overflow-hidden">
-            <ClientThreadsTab clientId={clientId} />
-          </TabsContent>
-
-          {/* Contained Tabs - With Max Width Container */}
-          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data', 'threads', 'deals', 'activity'].includes(activeTab) ? 'hidden' : ''}`}>
-            <div className="max-w-7xl mx-auto px-6 py-6">
-
-              <TabsContent value="projects" className="mt-0">
-                <ClientProjectsTab
-                  clientId={clientId}
-                  clientName={client.name}
-                  projects={projects}
-                />
-              </TabsContent>
-
-              <TabsContent value="contacts" className="mt-0">
-                <ClientContactsTab
-                  clientId={clientId}
-                  clientName={client.name}
-                  contacts={contacts}
-                />
-              </TabsContent>
-
-              <TabsContent value="communications" className="mt-0">
-                <ClientCommunicationsTab
-                  clientId={clientId}
-                  communications={communications}
-                  documents={documents}
-                />
-              </TabsContent>
-            </div>
-          </div>
-        </div>
-      </Tabs>
+        {activeTab === 'deals' && <ClientDealsTab clientId={clientId} />}
+        {activeTab === 'activity' && <ClientActivityTab clientId={clientId} />}
+        {activeTab === 'documents' && <ClientDocumentLibrary clientId={clientId} clientName={client.name} clientType={client.type} />}
+        {activeTab === 'checklist' && <ClientKnowledgeTab clientId={clientId} clientName={client.name} clientType={client.type} projects={projects} />}
+        {activeTab === 'notes' && <ClientNotesTab clientId={clientId} clientName={client.name} />}
+        {activeTab === 'meetings' && <ClientMeetingsTab clientId={clientId} clientName={client.name} />}
+        {activeTab === 'tasks' && <ClientTasksTab clientId={clientId} clientName={client.name} />}
+        {activeTab === 'data' && <ClientDataTab clientId={clientId} clientName={client.name} />}
+        {activeTab === 'threads' && <ClientThreadsTab clientId={clientId} />}
+        {activeTab === 'projects' && <ClientProjectsTab clientId={clientId} clientName={client.name} projects={projects} />}
+        {activeTab === 'contacts' && <ClientContactsTab clientId={clientId} clientName={client.name} contacts={contacts} />}
+        {activeTab === 'communications' && <ClientCommunicationsTab clientId={clientId} communications={communications} documents={documents} />}
+      </EntityDetailScaffold>
 
       {/* Archive Dialog */}
       <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
@@ -592,7 +339,7 @@ function ClientProfileContent() {
         entityName={client.name}
         clientId={clientId}
       />
-    </div>
+    </>
   );
 }
 
