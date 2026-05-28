@@ -1,6 +1,6 @@
 # Logbook Index
 
-Last updated: 2026-04-22
+Last updated: 2026-05-28
 
 | Status | Date | Title | Tags | File |
 |--------|------|-------|------|------|
@@ -71,11 +71,12 @@ Last updated: 2026-04-22
 | done | 2026-04-22 | Homepage task tap opens edit modal — should default to view | #bug #mobile #ux | done/2026-04-22_homepage-task-tap-opens-view-not-edit.md |
 | done | 2026-04-22 | Backfill clientFolders for legacy mobile-created clients | #mobile #data #backfill | done/2026-04-22_backfill-clientfolders-legacy-clients.md |
 | done | 2026-04-18 | Mobile dashboard widgets — Deals overview + Recent Activity teaser | #mobile #ux #feature | done/2026-04-18_mobile-dashboard-widgets-deals-and-activity.md |
+| queued | 2026-05-28 | Prospect Track Record tab + scheme-level charge intelligence | #prospects #feature #ui #skill #companies-house #intelligence | queued/2026-05-28_prospect-track-record-scheme-charge-intelligence.md |
 | queued | 2026-04-22 | Calendar sync scale — indexed listActiveSyncUserIds | #calendar #perf #debt #scale | queued/2026-04-22_calendar-sync-scale-indexed-listactive.md |
 | queued | 2026-04-18 | Mobile global search — port desktop cross-entity search UX | #mobile #feature | queued/2026-04-18_mobile-global-search.md |
 | queued | 2026-04-18 | Mobile main chat / AI agent integration (shared server-side agent) | #mobile #feature #ai | queued/2026-04-18_mobile-main-chat-agent-integration.md |
 | done | 2026-04-16 | Merge 2 duplicate client records (Halo Living and Kinspire) |  | done/2026-04-16_merge-duplicate-clients-halo-kinspire.md |
-| abandoned | 2026-04-16 | Verify changes with next build + commit |  | abandoned/2026-04-16_verify-changes-with-next-build-commit.md |
+| queued | 2026-04-16 | Verify changes with next build + commit |  | queued/2026-04-16_verify-changes-with-next-build-commit.md |
 | abandoned | 2026-04-16 | Task 2b: Handle empty state + preserve sort/filter in full inbox |  | abandoned/2026-04-16_task-2b-handle-empty-state-preserve-sortfilter-in-full-inbox.md |
 | abandoned | 2026-04-16 | Task 1b: Polish daily brief section |  | abandoned/2026-04-16_task-1b-polish-daily-brief-section.md |
 | abandoned | 2026-04-16 | Task 1a: Polish task summary section (greeting + metrics) |  | abandoned/2026-04-16_task-1a-polish-task-summary-section-greeting-metrics.md |
