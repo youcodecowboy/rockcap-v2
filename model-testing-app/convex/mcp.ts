@@ -2029,7 +2029,7 @@ const TOOLS: McpTool[] = [
   {
     name: "companies.syncCompaniesHouse",
     description:
-      "Fetch a Companies House company by number (profile + charges + officers + PSCs) via the CH API and persist into RockCap's companiesHouseCompanies / Charges / Officers / PSC tables. Idempotent: re-running upserts existing rows. Called by prospect-intel skill workflow step 2 to ensure CH data is present before running lender-DNA analysis. Returns summary counts. Common errors: company_not_found_on_companies_house (CH returned 404 — verify the number) or COMPANIES_HOUSE_API_KEY not set (Convex env config gap).",
+      "Fetch a Companies House company by number — profile + charges + officers + PSCs — via the CH API and persist into RockCap's companiesHouseCompanies / Charges / Officers / PSC tables. Each officer row stores its CH links.officer.appointments URL (a join key for cross-company appointment resolution). Idempotent: re-running upserts existing rows on their natural keys. Called by prospect-intel skill workflow step 2 to ensure CH data is present before running lender-DNA analysis. Returns summary counts (chargesCount, officersCount, pscCount). Common errors: company_not_found_on_companies_house (CH returned 404 — verify the number) or COMPANIES_HOUSE_API_KEY not set (Convex env config gap).",
     inputSchema: {
       type: "object",
       properties: {

@@ -232,7 +232,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 |---|---|
 | `companies.listUnprocessed({limit?, sinceDays?, states?, ...})` | HubSpot-synced companies without prospect-intel runs. State per row: new / running / stuck. Used by Claude Code to find prospecting candidates. |
 | `companies.searchCompaniesHouse({query, limit?})` | Search Companies House by **name** → ranked matches (company_number, title, company_status, date_of_creation, address_snippet, sic_codes when present). Read-only. Use FIRST when you have a name but not a CH number, then feed the chosen company_number to `companies.syncCompaniesHouse`. |
-| `companies.syncCompaniesHouse({chNumber})` | Fetch CH profile + charges via CH API directly + persist into Convex. Idempotent. Officers + PSCs deferred (workaround: WebFetch the CH pages directly per prospect-intel SKILL.md). |
+| `companies.syncCompaniesHouse({chNumber})` | Fetch CH profile + charges + **officers + PSCs** via CH API directly + persist into Convex (companiesHouseCompanies / Charges / Officers / PSC). Idempotent (upserts on natural keys). Each officer row stores its `links.officer.appointments` URL as a future cross-company join key. Returns counts: chargesCount, officersCount, pscCount. |
 
 ### `apollo.*` — Email discovery (1)
 
