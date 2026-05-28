@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 80 tools across 19 domains as of v1.4 Sprint K.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 83 tools across 19 domains as of the prospect-intel tooling pass (post-v1.4 Sprint K): adds contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
