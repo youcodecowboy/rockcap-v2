@@ -193,12 +193,14 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `approval.get({approvalId})` | Full approval row including draftPayload. |
 | `approval.create({entityType, summary, draftPayload, ...})` | Create an approval directly. Skills typically use the higher-level `outreach.draft*` tools instead. |
 
-### `contact.*` — Contact lookups (2)
+### `contact.*` — Contact lookups + writes (4)
 
 | Tool | Purpose |
 |---|---|
-| `contact.get({contactId})` | Single contact row. |
-| `contact.getByClient({clientId})` | All contacts linked to a client. |
+| `contact.get({id})` | Single contact row (with linked companies + deals). |
+| `contact.getByClient({clientId})` | All contacts linked to a client (direct + via promoted companies). |
+| `contact.create({name, role?, email?, emailStatus?, emailSource?, phone?, company?, notes?, clientId?, projectId?, linkedCompanyIds?})` | Create a contact. Use when prospect-intel / qualify-and-draft discovers a new person. Link via clientId/projectId/linkedCompanyIds. For Apollo-sourced emails pass emailStatus + emailSource='apollo'; leave undefined for manual entry. Returns `contactId`. |
+| `contact.update({id, name?, role?, email?, phone?, company?, notes?, clientId?})` | Patch a contact (omitted fields unchanged). `clientId=null` unlinks from any client. Common use: persist an Apollo-discovered email so a later `cadence.create` passes the email guard. |
 
 ### `intelligence.*` — Structured intelligence reads + single-fact writes (4)
 

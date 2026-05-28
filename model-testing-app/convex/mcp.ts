@@ -175,6 +175,78 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  {
+    name: "contact.create",
+    description:
+      "Create a new contact row. Use when prospect-intel / qualify-and-draft discovers a person (director, BDM, primary contact) who isn't yet in the system. Pass `name` (required) plus any of role/email/phone/company/notes. Link it by passing clientId, projectId, and/or linkedCompanyIds (Convex companies ids — also back-links the contact onto those companies). Email verification metadata (v1.2.4): when email comes from Apollo, pass emailStatus (e.g. 'verified'/'unverified') + emailSource='apollo'; when manually entered, leave both undefined (the cadence guard treats undefined as operator-entered/presumed-valid). Returns the new contactId — feed it to clients.setProspectFacts({primaryContactId}) or cadence.create({contactId}).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Full name (required)" },
+        role: { type: "string", description: "e.g. 'Director', 'BDM'" },
+        email: { type: "string" },
+        emailStatus: { type: "string", description: "Apollo verification status: verified / unverified / questionable / unavailable. Omit for manually-entered emails." },
+        emailSource: { type: "string", description: "'apollo' when sourced from apollo.findEmail; omit for manual entry." },
+        phone: { type: "string" },
+        company: { type: "string", description: "Free-text company name (display only)" },
+        notes: { type: "string" },
+        clientId: { type: "string", description: "Convex id of the client to link this contact to directly" },
+        projectId: { type: "string", description: "Convex id of the project to link this contact to" },
+        sourceDocumentId: { type: "string", description: "Convex id of the document this contact was extracted from, if any" },
+        linkedCompanyIds: { type: "array", items: { type: "string" }, description: "Convex companies ids to associate (also back-links the contact onto each company)" },
+      },
+      required: ["name"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const contactId = await ctx.runMutation(api.contacts.create, {
+        name: args.name,
+        role: args.role,
+        email: args.email,
+        emailStatus: args.emailStatus,
+        emailSource: args.emailSource,
+        phone: args.phone,
+        company: args.company,
+        notes: args.notes,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        sourceDocumentId: args.sourceDocumentId,
+        linkedCompanyIds: args.linkedCompanyIds,
+      });
+      return asText({ status: "created", contactId });
+    },
+  },
+  {
+    name: "contact.update",
+    description:
+      "Update an existing contact by id. Pass `id` (required) plus any subset of name/role/email/phone/company/notes to patch — omitted fields are left unchanged. To re-link to a different client pass clientId; to unlink from any client pass clientId=null. Common use: persisting an email discovered via apollo.findEmail (contact.update({id, email})) so a subsequent cadence.create passes the email guard.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Convex id of the contact to update (required)" },
+        name: { type: "string" },
+        role: { type: "string" },
+        email: { type: "string" },
+        phone: { type: "string" },
+        company: { type: "string" },
+        notes: { type: "string" },
+        clientId: { type: "string", description: "Convex client id to (re)link to. Pass null to unlink from any client." },
+      },
+      required: ["id"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.contacts.update, {
+        id: args.id,
+        name: args.name,
+        role: args.role,
+        email: args.email,
+        phone: args.phone,
+        company: args.company,
+        notes: args.notes,
+        clientId: args.clientId,
+      });
+      return asText({ status: "updated", contactId: result });
+    },
+  },
 
   // Intelligence domain
   {
