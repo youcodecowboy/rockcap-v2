@@ -5,24 +5,33 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { ProspectsHomeHeader } from "@/components/prospects/ProspectsHomeHeader";
-import { CandidatesSection } from "@/components/prospects/sections/CandidatesSection";
-import { ResearchedSection } from "@/components/prospects/sections/ResearchedSection";
-import { NeedsReviewSection } from "@/components/prospects/sections/NeedsReviewSection";
-import { NeedsRevisionSection } from "@/components/prospects/sections/NeedsRevisionSection";
-import { ActiveSection } from "@/components/prospects/sections/ActiveSection";
-import { RepliedSection } from "@/components/prospects/sections/RepliedSection";
 import { RepliesAwaitingTriageSection } from "@/components/prospects/sections/RepliesAwaitingTriageSection";
 import { UpcomingMeetingsSection } from "@/components/prospects/sections/UpcomingMeetingsSection";
-import { SimpleSection } from "@/components/prospects/sections/SimpleSection";
+import { NewTab } from "@/components/prospects/tabs2/NewTab";
+import { ProspectsTab } from "@/components/prospects/tabs2/ProspectsTab";
+
+type Tab = "new" | "prospects";
 
 export default function ProspectsPage() {
   const colors = useColors();
   const [searchQuery, setSearchQuery] = useState("");
+  const [tab, setTab] = useState<Tab>("prospects");
 
   // Counts for the header (each is a small query)
   const draftedCount = useQuery(api.prospects.countByState as any, { state: "drafted" }) ?? 0;
   const allClients = useQuery(api.clients.list as any, {}) ?? [];
-  const allCount = (allClients as any[]).filter((c: any) => c.prospectState).length;
+  const prospectCount = (allClients as any[]).filter(
+    (c: any) => c.status === "prospect" && c.prospectState,
+  ).length;
+
+  // New tab count — unprocessed HubSpot companies (same query the tab itself uses).
+  const candidates = useQuery(api.companies.listUnprocessed as any, {
+    limit: 25,
+    sinceDays: 30,
+    states: ["new", "running", "stuck"],
+    excludePromoted: true,
+  });
+  const newCount = (candidates ?? []).length;
 
   return (
     <>
@@ -30,37 +39,99 @@ export default function ProspectsPage() {
       <div style={{ height: 2, background: colors.entityTypes.prospect }} />
       <div style={{ padding: "16px 24px", background: colors.bg.cardAlt, minHeight: "100vh" }}>
         <ProspectsHomeHeader
-          totalCount={allCount}
+          totalCount={prospectCount}
           draftedCount={draftedCount}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
         />
 
-        {/* v1.3 Sprint C — Upcoming meetings: "what calls do I have today".
-            Top of the morning queue. Auto-expands when rows present. */}
+        {/* Cross-cutting morning triage — these are NOT pipeline rungs, so they
+            stay above the tab bar regardless of which tab is active.
+            v1.3 Sprint C — Upcoming meetings: "what calls do I have today".
+            v1.3 — Replies awaiting triage: the morning triage queue.
+            Both auto-expand when rows are present. */}
         <UpcomingMeetingsSection />
-
-        {/* v1.3 — Replies awaiting triage: morning triage queue.
-            Auto-expands when rows are present. */}
         <RepliesAwaitingTriageSection />
 
-        {/* Action-item sections — expanded by default */}
-        <CandidatesSection />
-        {/* Researched but not yet in the outreach state machine (no prospectState).
-            Catches prospects whose intel completed but outreach was blocked, so they
-            don't vanish from the board. */}
-        <ResearchedSection />
-        <NeedsReviewSection />
-        <NeedsRevisionSection />
-        <ActiveSection />
-        <RepliedSection />
+        {/* Pipeline tabs — New (unprocessed HubSpot companies) vs
+            Prospects (the researched → meeting-booked ladder). */}
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            borderBottom: `1px solid ${colors.border.default}`,
+            marginBottom: 14,
+          }}
+        >
+          <TabButton
+            label="New"
+            count={newCount}
+            active={tab === "new"}
+            onClick={() => setTab("new")}
+            colors={colors}
+          />
+          <TabButton
+            label="Prospects"
+            count={prospectCount}
+            active={tab === "prospects"}
+            onClick={() => setTab("prospects")}
+            colors={colors}
+          />
+        </div>
 
-        {/* Monitoring + historic sections — collapsed by default */}
-        <SimpleSection state="engaged" title="Engaged" dotColor={colors.status.engaged} subtitle="meeting booked / in convo" />
-        <SimpleSection state="parked" title="Parked" dotColor={colors.status.parked} subtitle="long-term wakeup queue" />
-        <SimpleSection state="promoted" title="Promoted" dotColor={colors.status.promoted} subtitle="now active clients" />
-        <SimpleSection state="lost" title="Lost" dotColor={colors.status.lost} subtitle="closed" />
+        {tab === "new" ? <NewTab /> : <ProspectsTab />}
       </div>
     </>
+  );
+}
+
+function TabButton({
+  label,
+  count,
+  active,
+  onClick,
+  colors,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  colors: any;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 14px",
+        background: "transparent",
+        border: "none",
+        borderBottom: `2px solid ${active ? colors.entityTypes.prospect : "transparent"}`,
+        marginBottom: -1,
+        cursor: "pointer",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase" as const,
+        fontWeight: active ? 600 : 400,
+        color: active ? colors.text.primary : colors.text.muted,
+      }}
+    >
+      {label}
+      <span
+        style={{
+          fontSize: 10,
+          padding: "1px 6px",
+          borderRadius: 2,
+          background: active ? `${colors.entityTypes.prospect}20` : colors.bg.cardAlt,
+          color: active ? colors.entityTypes.prospect : colors.text.muted,
+          border: `1px solid ${active ? `${colors.entityTypes.prospect}40` : colors.border.default}`,
+        }}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
