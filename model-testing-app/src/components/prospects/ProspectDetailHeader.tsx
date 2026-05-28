@@ -11,15 +11,16 @@ interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity") => void;
   peopleCount?: number;
   chargesCount?: number;
   repliesCount?: number;
   meetingsCount?: number;
+  schemesCount?: number;
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
@@ -118,12 +119,13 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "people", "ch", "outreach", "replies", "meetings", "activity"] as const).map((tab) => {
+          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "activity"] as const).map((tab) => {
             const labelMap: Record<typeof tab, string> = {
               overview: "Overview",
               intel: "Intel",
               people: "People",
               ch: "Companies House",
+              "track-record": "Track Record",
               outreach: "Outreach",
               replies: "Replies",
               meetings: "Meetings",
@@ -149,6 +151,9 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               )}
               {tab === "ch" && chargesCount !== undefined && chargesCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{chargesCount}</span>
+              )}
+              {tab === "track-record" && schemesCount !== undefined && schemesCount > 0 && (
+                <span style={{ color: colors.text.dim, marginLeft: 4 }}>{schemesCount}</span>
               )}
               {tab === "replies" && repliesCount !== undefined && repliesCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{repliesCount}</span>
