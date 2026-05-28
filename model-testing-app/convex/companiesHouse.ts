@@ -1274,3 +1274,55 @@ export const syncOneCompanyFromCHInternal = internalAction({
     };
   },
 });
+
+// ── v1.x prospect-intel: Companies House NAME search ────────────────────────
+// Resolves a free-text company name to ranked CH matches so the operator/skill
+// can pick the right company_number before calling companies.syncCompaniesHouse.
+// Read-only (no persistence). Same CH Basic auth as the profile/charges fetch
+// (API key as username, empty password) via chFetch above.
+//
+// Endpoint: GET /search/companies?q={query}&items_per_page={limit}
+
+export const searchCompaniesHouseInternal = internalAction({
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
+    if (!apiKey) {
+      throw new Error("COMPANIES_HOUSE_API_KEY not set in Convex env");
+    }
+
+    const q = args.query.trim();
+    if (!q) {
+      return { ok: false, query: args.query, reason: "empty_query", results: [] };
+    }
+
+    // Clamp limit to CH's allowed range (1..100); default 20.
+    const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
+
+    const path = `/search/companies?q=${encodeURIComponent(q)}&items_per_page=${limit}`;
+    const data = await chFetch<any>(path, apiKey);
+
+    const items = data?.items ?? [];
+    const results = items.map((item: any) => ({
+      company_number: item.company_number,
+      title: item.title,
+      company_status: item.company_status,
+      date_of_creation: item.date_of_creation,
+      address_snippet: item.address_snippet,
+      // SIC codes when CH returns them on the search hit (not always present).
+      sic_codes: item.sic_codes ?? undefined,
+      company_type: item.company_type,
+    }));
+
+    return {
+      ok: true,
+      query: q,
+      totalResults: data?.total_results ?? results.length,
+      returnedResults: results.length,
+      results,
+    };
+  },
+});

@@ -2003,6 +2003,28 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.x prospect-intel: Companies House NAME search (resolve name → number)
+  {
+    name: "companies.searchCompaniesHouse",
+    description:
+      "Search Companies House by company NAME and return ranked matches via the CH search API. Use this FIRST when you have a prospect's name but not its Companies House number — pick the right company_number from the results, then call companies.syncCompaniesHouse({chNumber}) to fetch + persist its data. Read-only (does not persist). Each result has: company_number, title, company_status (active/dissolved/liquidation/...), date_of_creation, address_snippet, and sic_codes when CH returns them on the hit. Returns { ok, query, totalResults, returnedResults, results[] }. Errors: COMPANIES_HOUSE_API_KEY not set (Convex env gap).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Free-text company name to search for, e.g. 'Opulence Property Group'." },
+        limit: { type: "number", description: "Max matches to return (1-100). Default 20." },
+      },
+      required: ["query"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.companiesHouse.searchCompaniesHouseInternal, {
+        query: args.query,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2 prospect-intel hardening: trigger CH sync for a single company
   {
     name: "companies.syncCompaniesHouse",

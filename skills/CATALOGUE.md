@@ -41,6 +41,7 @@ The deep-context tools are the spine:
 | "Mark {checklist item} as received" | `checklist.updateStatus` |
 | "Add {custom item} to {client}'s checklist" | `checklist.createCustomItem` |
 | "Find email for {director name} at {company}" | `apollo.findEmail` |
+| "Find {company name} on Companies House" | `companies.searchCompaniesHouse` |
 | "Sync {CH number} from Companies House" | `companies.syncCompaniesHouse` |
 | "Which HubSpot companies need prospecting?" | `companies.listUnprocessed` |
 | "Approve {approval}" / "What's pending?" | `approval.listPendingByClient` then `approval.get` |
@@ -225,11 +226,12 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `touchpoint.getByContact({contactId})` | Touchpoints for a contact. |
 | `touchpoint.getByProject({projectId})` | Touchpoints for a project (subsumed by project.getDeepContext). |
 
-### `companies.*` — External company sync (2)
+### `companies.*` — External company sync (3)
 
 | Tool | Purpose |
 |---|---|
 | `companies.listUnprocessed({limit?, sinceDays?, states?, ...})` | HubSpot-synced companies without prospect-intel runs. State per row: new / running / stuck. Used by Claude Code to find prospecting candidates. |
+| `companies.searchCompaniesHouse({query, limit?})` | Search Companies House by **name** → ranked matches (company_number, title, company_status, date_of_creation, address_snippet, sic_codes when present). Read-only. Use FIRST when you have a name but not a CH number, then feed the chosen company_number to `companies.syncCompaniesHouse`. |
 | `companies.syncCompaniesHouse({chNumber})` | Fetch CH profile + charges via CH API directly + persist into Convex. Idempotent. Officers + PSCs deferred (workaround: WebFetch the CH pages directly per prospect-intel SKILL.md). |
 
 ### `apollo.*` — Email discovery (1)
