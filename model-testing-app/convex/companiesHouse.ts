@@ -625,10 +625,12 @@ export const saveOfficer = mutation({
       month: v.optional(v.number()),
       year: v.optional(v.number()),
     })),
+    // CH links.officer.appointments — appointments URL/id (future join key).
+    appointmentsLink: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
-    
+
     // Check if officer already exists for this company
     const existing = await ctx.db
       .query("companiesHouseOfficers")
@@ -648,6 +650,7 @@ export const saveOfficer = mutation({
         countryOfResidence: args.countryOfResidence,
         address: args.address,
         dateOfBirth: args.dateOfBirth,
+        appointmentsLink: args.appointmentsLink,
         updatedAt: now,
       });
       return existing._id;
@@ -665,6 +668,7 @@ export const saveOfficer = mutation({
         countryOfResidence: args.countryOfResidence,
         address: args.address,
         dateOfBirth: args.dateOfBirth,
+        appointmentsLink: args.appointmentsLink,
         createdAt: now,
         updatedAt: now,
       });
@@ -1212,15 +1216,15 @@ export const syncOneCompanyFromCHInternal = internalAction({
       };
     }
 
-    // Fetch charges only. Officers + PSCs are deferred to a later iteration:
-    // the existing saveOfficer / savePSC mutations expect a transformed shape
-    // (companyId resolved, specific field names) that this action doesn't
-    // yet adapt. For now the prospect-intel skill's web-research playbook
-    // covers officers + PSCs via WebFetch on the public CH pages — slower
-    // but unblocking.
+    // Fetch charges + officers + PSCs. Each is upserted below via the
+    // existing saveCharge/saveOfficer/savePSC paths (idempotent on their
+    // natural keys). 404s return null (chFetch) — handled as "none".
     const chargesData = await chFetch<any>(`/company/${num}/charges?items_per_page=100`, apiKey);
-    const officersData: any = null;
-    const pscData: any = null;
+    const officersData = await chFetch<any>(`/company/${num}/officers?items_per_page=100`, apiKey);
+    const pscData = await chFetch<any>(
+      `/company/${num}/persons-with-significant-control?items_per_page=100`,
+      apiKey,
+    );
 
     // Build the charges payload in the shape syncCompanyData expects
     const charges = (chargesData?.items ?? []).map((c: any) => ({
@@ -1248,8 +1252,9 @@ export const syncOneCompanyFromCHInternal = internalAction({
     ].filter(Boolean);
     const address = addressParts.length > 0 ? addressParts.join(", ") : undefined;
 
-    // Persist profile + charges
-    const companyResult = await ctx.runMutation(api.companiesHouse.syncCompanyData, {
+    // Persist profile + charges. Returns the companiesHouseCompanies id,
+    // which we need as the FK for officers + PSCs below.
+    const companyId = await ctx.runMutation(api.companiesHouse.syncCompanyData, {
       companyNumber: num,
       companyName: profile.company_name ?? num,
       sicCodes: profile.sic_codes ?? [],
@@ -1260,7 +1265,77 @@ export const syncOneCompanyFromCHInternal = internalAction({
       charges,
     });
 
-    // Officers + PSCs: silently skipped — see fetch comment above.
+    // ── Officers ──────────────────────────────────────────────────────────
+    // CH officer list items carry no top-level id; identity lives on
+    // links.officer.appointments (e.g. "/officers/abc123.../appointments").
+    // We persist that link verbatim (a later feature uses it as a join key)
+    // AND derive a stable officerId from it for the upsert natural key. If the
+    // link is somehow absent, fall back to a name+role+appointed_on composite
+    // so the upsert stays deterministic. saveOfficer is idempotent on
+    // (companyId, officerId).
+    let officersCount = 0;
+    for (const o of officersData?.items ?? []) {
+      const appointmentsLink: string | undefined = o.links?.officer?.appointments;
+      const officerId =
+        appointmentsLink ??
+        ([o.name, o.officer_role, o.appointed_on].filter(Boolean).join("|") ||
+          o.name ||
+          "unknown-officer");
+      await ctx.runMutation(api.companiesHouse.saveOfficer, {
+        officerId,
+        companyId,
+        name: o.name ?? "Unknown",
+        officerRole: o.officer_role ?? "unknown",
+        appointedOn: o.appointed_on,
+        resignedOn: o.resigned_on,
+        nationality: o.nationality,
+        occupation: o.occupation,
+        countryOfResidence: o.country_of_residence,
+        address: o.address,
+        dateOfBirth: o.date_of_birth
+          ? { month: o.date_of_birth.month, year: o.date_of_birth.year }
+          : undefined,
+        appointmentsLink,
+      });
+      officersCount++;
+    }
+
+    // ── PSCs (persons with significant control) ─────────────────────────────
+    // Identity from links.self (e.g. ".../persons-with-significant-control/
+    // individual/xyz"). CH `kind` maps to our pscType union. savePSC is
+    // idempotent on (companyId, pscId).
+    let pscCount = 0;
+    for (const p of pscData?.items ?? []) {
+      const pscId: string =
+        p.links?.self ??
+        ([p.name, p.notified_on].filter(Boolean).join("|") ||
+          p.name ||
+          "unknown-psc");
+      // Map CH `kind` → our union. Defaults to "individual" when unrecognised.
+      const kind: string = p.kind ?? "";
+      const pscType: "individual" | "corporate-entity" | "legal-person" =
+        kind.includes("corporate-entity")
+          ? "corporate-entity"
+          : kind.includes("legal-person")
+            ? "legal-person"
+            : "individual";
+      await ctx.runMutation(api.companiesHouse.savePSC, {
+        pscId,
+        companyId,
+        pscType,
+        name: p.name ?? "Unknown",
+        nationality: p.nationality,
+        dateOfBirth: p.date_of_birth
+          ? { month: p.date_of_birth.month, year: p.date_of_birth.year }
+          : undefined,
+        address: p.address,
+        naturesOfControl: p.natures_of_control,
+        notifiableOn: p.notified_on,
+        ceasedOn: p.ceased_on,
+        identification: p.identification,
+      });
+      pscCount++;
+    }
 
     return {
       ok: true,
@@ -1270,7 +1345,173 @@ export const syncOneCompanyFromCHInternal = internalAction({
       incorporationDate: profile.date_of_creation,
       sicCodes: profile.sic_codes ?? [],
       chargesCount: charges.length,
-      message: `Synced ${num}: profile + ${charges.length} charges. Officers + PSCs not persisted by this tool yet — fetch via the CH public site if needed.`,
+      officersCount,
+      pscCount,
+      message: `Synced ${num}: profile + ${charges.length} charges + ${officersCount} officers + ${pscCount} PSCs persisted.`,
+    };
+  },
+});
+
+// ── v1.x prospect-intel: Companies House NAME search ────────────────────────
+// Resolves a free-text company name to ranked CH matches so the operator/skill
+// can pick the right company_number before calling companies.syncCompaniesHouse.
+// Read-only (no persistence). Same CH Basic auth as the profile/charges fetch
+// (API key as username, empty password) via chFetch above.
+//
+// Endpoint: GET /search/companies?q={query}&items_per_page={limit}
+
+export const searchCompaniesHouseInternal = internalAction({
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
+    if (!apiKey) {
+      throw new Error("COMPANIES_HOUSE_API_KEY not set in Convex env");
+    }
+
+    const q = args.query.trim();
+    if (!q) {
+      return { ok: false, query: args.query, reason: "empty_query", results: [] };
+    }
+
+    // Clamp limit to CH's allowed range (1..100); default 20.
+    const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
+
+    const path = `/search/companies?q=${encodeURIComponent(q)}&items_per_page=${limit}`;
+    const data = await chFetch<any>(path, apiKey);
+
+    const items = data?.items ?? [];
+    const results = items.map((item: any) => ({
+      company_number: item.company_number,
+      title: item.title,
+      company_status: item.company_status,
+      date_of_creation: item.date_of_creation,
+      address_snippet: item.address_snippet,
+      // SIC codes when CH returns them on the search hit (not always present).
+      sic_codes: item.sic_codes ?? undefined,
+      company_type: item.company_type,
+    }));
+
+    return {
+      ok: true,
+      query: q,
+      totalResults: data?.total_results ?? results.length,
+      returnedResults: results.length,
+      results,
+    };
+  },
+});
+
+// ── related-entity resolution: an individual's other CH appointments ─────────
+// Given an officer's appointments link (the `links.officer.appointments` value
+// we persist on companiesHouseOfficers, e.g. "/officers/{appointment_id}/
+// appointments") OR a bare appointmentId, fetch that PERSON's full appointment
+// list from CH. This is the join key that lets prospect-intel map the corporate
+// group: UK developers spread schemes across SPVs, so a single company's charge
+// book understates the picture — but a majority PSC/director usually controls
+// the sibling SPVs too. Surfacing "this controller also runs X Ltd, Y Ltd"
+// reveals likely scheme vehicles vs the trading parent.
+//
+// Read-only (no persistence — the surface-only design persists ONE
+// intelligence.addKnowledgeItem at the skill layer, not company/client rows).
+// Same CH Basic auth (API key as username, empty password) via chFetch above.
+//
+// Endpoint: GET /officers/{appointment_id}/appointments
+// (the path stored verbatim in companiesHouseOfficers.appointmentsLink).
+
+export const getOfficerAppointmentsInternal = internalAction({
+  args: {
+    // The stored `links.officer.appointments` path (preferred — pass it
+    // verbatim from companiesHouseOfficers.appointmentsLink) OR a bare
+    // appointment id which is normalised to the canonical path.
+    appointmentsLink: v.optional(v.string()),
+    appointmentId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
+    if (!apiKey) {
+      throw new Error("COMPANIES_HOUSE_API_KEY not set in Convex env");
+    }
+
+    // Resolve the path. Accept the stored link directly; if only an
+    // appointmentId was given, build the canonical path. Normalise so callers
+    // can pass either "/officers/{id}/appointments", a full CH URL, or a bare
+    // id without worrying about the exact shape.
+    let path: string | undefined;
+    if (args.appointmentsLink && args.appointmentsLink.trim()) {
+      let link = args.appointmentsLink.trim();
+      // Strip a full-URL prefix if one was passed (we only want the path).
+      link = link.replace(/^https?:\/\/[^/]+/i, "");
+      if (!link.startsWith("/")) link = `/${link}`;
+      path = link;
+    } else if (args.appointmentId && args.appointmentId.trim()) {
+      const id = args.appointmentId.trim();
+      path = `/officers/${encodeURIComponent(id)}/appointments`;
+    }
+
+    if (!path) {
+      return {
+        ok: false,
+        reason: "missing_appointments_link_or_id",
+        appointments: [],
+      };
+    }
+
+    const data = await chFetch<any>(path, apiKey);
+    if (!data) {
+      return {
+        ok: false,
+        reason: "officer_appointments_not_found",
+        path,
+        appointments: [],
+      };
+    }
+
+    // The appointed person's identity lives at the top level of the response
+    // (name + date_of_birth) — used for disambiguation when a common name
+    // resolves to multiple officers. Each item carries the company it is an
+    // appointment to under `appointed_to`.
+    const personName: string | undefined = data.name;
+    const personDob = data.date_of_birth
+      ? { month: data.date_of_birth.month, year: data.date_of_birth.year }
+      : undefined;
+
+    const appointments = (data.items ?? []).map((item: any) => {
+      const at = item.appointed_to ?? {};
+      return {
+        company_number: at.company_number,
+        company_name: at.company_name,
+        company_status: at.company_status,
+        officer_role: item.officer_role,
+        appointed_on: item.appointed_on,
+        resigned_on: item.resigned_on,
+        // Echo the appointed person's identity on each row for disambiguation
+        // (CH returns it once at the top level; carrying it per-row keeps the
+        // shape self-describing for the resolve-related-entities sub-skill).
+        name: personName,
+        date_of_birth: personDob,
+      };
+    });
+
+    // Convenience split so the caller doesn't have to re-scan: active vs
+    // dissolved/closed appointments (the heuristic cares which siblings are
+    // live trading vehicles).
+    const isActive = (s: string | undefined) =>
+      (s ?? "").toLowerCase() === "active";
+    const activeAppointments = appointments.filter((a: any) =>
+      isActive(a.company_status),
+    );
+
+    return {
+      ok: true,
+      path,
+      name: personName,
+      date_of_birth: personDob,
+      totalResults: data.total_results ?? appointments.length,
+      activeCount: activeAppointments.length,
+      appointments,
     };
   },
 });

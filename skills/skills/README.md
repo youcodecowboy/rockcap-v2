@@ -106,7 +106,7 @@ Ranked by operator-cycle leverage:
 
 ## Sub-skills + corpora + templates
 
-- `../sub-skills/` — Claude-side primitives reused across skills (e.g., `resolve-company.md`, `score-lender-match.md`). Documented separately from full skills.
+- `../sub-skills/` — Claude-side primitives reused across skills (e.g., `resolve-company.md`, `score-lender-match.md`, `resolve-related-entities.md`). Documented separately from full skills.
 - `../corpora/` — anonymised exemplars per skill. Currently sparse; populated as we accumulate good runs to draw from.
 - `../templates/` — XLSX / DOCX / PDF templates referenced by document-producing skills (terms-package-build, ic-paper-drafter).
 - `../shared-references/` — cross-skill references (UK property finance glossary, approval payload shapes, etc.).

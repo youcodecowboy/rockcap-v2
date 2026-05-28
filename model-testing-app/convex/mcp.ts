@@ -175,6 +175,78 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  {
+    name: "contact.create",
+    description:
+      "Create a new contact row. Use when prospect-intel / qualify-and-draft discovers a person (director, BDM, primary contact) who isn't yet in the system. Pass `name` (required) plus any of role/email/phone/company/notes. Link it by passing clientId, projectId, and/or linkedCompanyIds (Convex companies ids — also back-links the contact onto those companies). Email verification metadata (v1.2.4): when email comes from Apollo, pass emailStatus (e.g. 'verified'/'unverified') + emailSource='apollo'; when manually entered, leave both undefined (the cadence guard treats undefined as operator-entered/presumed-valid). Returns the new contactId — feed it to clients.setProspectFacts({primaryContactId}) or cadence.create({contactId}).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Full name (required)" },
+        role: { type: "string", description: "e.g. 'Director', 'BDM'" },
+        email: { type: "string" },
+        emailStatus: { type: "string", description: "Apollo verification status: verified / unverified / questionable / unavailable. Omit for manually-entered emails." },
+        emailSource: { type: "string", description: "'apollo' when sourced from apollo.findEmail; omit for manual entry." },
+        phone: { type: "string" },
+        company: { type: "string", description: "Free-text company name (display only)" },
+        notes: { type: "string" },
+        clientId: { type: "string", description: "Convex id of the client to link this contact to directly" },
+        projectId: { type: "string", description: "Convex id of the project to link this contact to" },
+        sourceDocumentId: { type: "string", description: "Convex id of the document this contact was extracted from, if any" },
+        linkedCompanyIds: { type: "array", items: { type: "string" }, description: "Convex companies ids to associate (also back-links the contact onto each company)" },
+      },
+      required: ["name"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const contactId = await ctx.runMutation(api.contacts.create, {
+        name: args.name,
+        role: args.role,
+        email: args.email,
+        emailStatus: args.emailStatus,
+        emailSource: args.emailSource,
+        phone: args.phone,
+        company: args.company,
+        notes: args.notes,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        sourceDocumentId: args.sourceDocumentId,
+        linkedCompanyIds: args.linkedCompanyIds,
+      });
+      return asText({ status: "created", contactId });
+    },
+  },
+  {
+    name: "contact.update",
+    description:
+      "Update an existing contact by id. Pass `id` (required) plus any subset of name/role/email/phone/company/notes to patch — omitted fields are left unchanged. To re-link to a different client pass clientId; to unlink from any client pass clientId=null. Common use: persisting an email discovered via apollo.findEmail (contact.update({id, email})) so a subsequent cadence.create passes the email guard.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Convex id of the contact to update (required)" },
+        name: { type: "string" },
+        role: { type: "string" },
+        email: { type: "string" },
+        phone: { type: "string" },
+        company: { type: "string" },
+        notes: { type: "string" },
+        clientId: { type: "string", description: "Convex client id to (re)link to. Pass null to unlink from any client." },
+      },
+      required: ["id"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.contacts.update, {
+        id: args.id,
+        name: args.name,
+        role: args.role,
+        email: args.email,
+        phone: args.phone,
+        company: args.company,
+        notes: args.notes,
+        clientId: args.clientId,
+      });
+      return asText({ status: "updated", contactId: result });
+    },
+  },
 
   // Intelligence domain
   {
@@ -1931,11 +2003,33 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // v1.x prospect-intel: Companies House NAME search (resolve name → number)
+  {
+    name: "companies.searchCompaniesHouse",
+    description:
+      "Search Companies House by company NAME and return ranked matches via the CH search API. Use this FIRST when you have a prospect's name but not its Companies House number — pick the right company_number from the results, then call companies.syncCompaniesHouse({chNumber}) to fetch + persist its data. Read-only (does not persist). Each result has: company_number, title, company_status (active/dissolved/liquidation/...), date_of_creation, address_snippet, and sic_codes when CH returns them on the hit. Returns { ok, query, totalResults, returnedResults, results[] }. Errors: COMPANIES_HOUSE_API_KEY not set (Convex env gap).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Free-text company name to search for, e.g. 'Opulence Property Group'." },
+        limit: { type: "number", description: "Max matches to return (1-100). Default 20." },
+      },
+      required: ["query"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.companiesHouse.searchCompaniesHouseInternal, {
+        query: args.query,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2 prospect-intel hardening: trigger CH sync for a single company
   {
     name: "companies.syncCompaniesHouse",
     description:
-      "Fetch a Companies House company by number (profile + charges + officers + PSCs) via the CH API and persist into RockCap's companiesHouseCompanies / Charges / Officers / PSC tables. Idempotent: re-running upserts existing rows. Called by prospect-intel skill workflow step 2 to ensure CH data is present before running lender-DNA analysis. Returns summary counts. Common errors: company_not_found_on_companies_house (CH returned 404 — verify the number) or COMPANIES_HOUSE_API_KEY not set (Convex env config gap).",
+      "Fetch a Companies House company by number — profile + charges + officers + PSCs — via the CH API and persist into RockCap's companiesHouseCompanies / Charges / Officers / PSC tables. Each officer row stores its CH links.officer.appointments URL (a join key for cross-company appointment resolution). Idempotent: re-running upserts existing rows on their natural keys. Called by prospect-intel skill workflow step 2 to ensure CH data is present before running lender-DNA analysis. Returns summary counts (chargesCount, officersCount, pscCount). Common errors: company_not_found_on_companies_house (CH returned 404 — verify the number) or COMPANIES_HOUSE_API_KEY not set (Convex env config gap).",
     inputSchema: {
       type: "object",
       properties: {
@@ -1949,6 +2043,39 @@ const TOOLS: McpTool[] = [
     handler: async (ctx, userId, args) => {
       const result = await ctx.runAction(internal.companiesHouse.syncOneCompanyFromCHInternal, {
         companyNumber: args.chNumber,
+      });
+      return asText(result);
+    },
+  },
+
+  // prospect-intel corporate-group resolution: an individual's other CH
+  // appointments. Given an officer's stored appointments link, returns the
+  // person's full appointment list so the resolve-related-entities sub-skill
+  // can map likely sibling SPVs controlled by the same director/PSC.
+  {
+    name: "companies.getOfficerAppointments",
+    description:
+      "Fetch an individual's full Companies House appointment list via the CH API. Pass `appointmentsLink` — the stored `links.officer.appointments` path persisted on each companiesHouseOfficers row (e.g. '/officers/{appointment_id}/appointments') — exactly as returned by companies.syncCompaniesHouse. (Or pass a bare `appointmentId`, which is normalised to the canonical path.) Read-only (does NOT persist). For each appointment returns: company_number, company_name, company_status (active/dissolved/...), officer_role, appointed_on, resigned_on, plus the appointed person's name + date_of_birth (echoed per-row for disambiguation when a common name resolves to multiple officers). Also returns a top-level name + date_of_birth and an activeCount split. Used by prospect-intel (via the resolve-related-entities sub-skill) to map the corporate group: a majority PSC/director who controls the prospect usually controls the sibling SPVs too, so their other active appointments reveal likely scheme vehicles vs the trading parent. The heuristic is a strong signal, not proof of ownership. Errors: missing_appointments_link_or_id (neither arg supplied), officer_appointments_not_found (CH 404), or COMPANIES_HOUSE_API_KEY not set (Convex env gap).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        appointmentsLink: {
+          type: "string",
+          description:
+            "The stored CH `links.officer.appointments` path (e.g. '/officers/abc123.../appointments'). Pass verbatim from companiesHouseOfficers.appointmentsLink. A full CH URL or leading-slash-less path is also accepted and normalised.",
+        },
+        appointmentId: {
+          type: "string",
+          description:
+            "Alternative to appointmentsLink: a bare CH officer appointment id, normalised to '/officers/{id}/appointments'.",
+        },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.companiesHouse.getOfficerAppointmentsInternal, {
+        appointmentsLink: args.appointmentsLink,
+        appointmentId: args.appointmentId,
       });
       return asText(result);
     },

@@ -1572,6 +1572,10 @@ export default defineSchema({
       month: v.optional(v.number()),
       year: v.optional(v.number()),
     })),
+    // CH `links.officer.appointments` — the appointments URL/id for this
+    // officer. Stored as a future join key so a later feature can resolve an
+    // officer's appointments across all companies they're attached to.
+    appointmentsLink: v.optional(v.string()),
     // Links to other companies (for relationship mapping)
     linkedCompanyIds: v.optional(v.array(v.id("companiesHouseCompanies"))),
     createdAt: v.string(),
