@@ -86,6 +86,19 @@ export default defineSchema({
     companiesHouseNumber: v.optional(v.string()),
     primaryDirectorName: v.optional(v.string()),
     primaryContactId: v.optional(v.id("contacts")),
+    // Phase 2 — canonical deal-type classification + indicative deal size,
+    // set by prospect-intel step 10 via clients.setProspectFacts. dealType is
+    // one of the four canonical buckets (see prospect-intel/references/
+    // bridging-vs-developer.md). dealSizeRange is a display string carrying the
+    // range + confidence + basis (e.g. "£2-5m, medium confidence, based on
+    // Woodberry Park 48 units") per shared-references/deal-type-size-bands.md.
+    dealType: v.optional(v.union(
+      v.literal("new_development"),
+      v.literal("bridging"),
+      v.literal("existing_asset"),
+      v.literal("unclassifiable"),
+    )),
+    dealSizeRange: v.optional(v.string()),
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])

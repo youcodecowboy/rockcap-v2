@@ -1940,7 +1940,7 @@ const TOOLS: McpTool[] = [
   {
     name: "clients.setProspectFacts",
     description:
-      "Set structured prospect facts on a clients row (companiesHouseNumber, website, primaryDirectorName, primaryContactId). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites.",
+      "Set structured prospect facts on a clients row (companiesHouseNumber, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab / prospects table read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1949,6 +1949,15 @@ const TOOLS: McpTool[] = [
         website: { type: "string", description: "Full URL (e.g., 'https://example.co.uk') or 'not-found' if confirmed-absent" },
         primaryDirectorName: { type: "string", description: "Director name as it should appear in the UI — operator-readable, not necessarily matching CH's surname-first format" },
         primaryContactId: { type: "string", description: "Convex id of the primary contact for outreach (the one cadences should target)" },
+        dealType: {
+          type: "string",
+          enum: ["new_development", "bridging", "existing_asset", "unclassifiable"],
+          description: "Canonical deal-type classification from prospect-intel (see bridging-vs-developer.md). One of: new_development, bridging, existing_asset, unclassifiable.",
+        },
+        dealSizeRange: {
+          type: "string",
+          description: "Display string carrying the indicative deal size as range + confidence + basis, e.g. '£2-5m, medium confidence, based on Woodberry Park 48 units'. Never a naked number. Omit for unclassifiable prospects.",
+        },
       },
       required: ["clientId"],
     },
@@ -1959,6 +1968,8 @@ const TOOLS: McpTool[] = [
         website: args.website,
         primaryDirectorName: args.primaryDirectorName,
         primaryContactId: args.primaryContactId,
+        dealType: args.dealType,
+        dealSizeRange: args.dealSizeRange,
       });
       return asText(result);
     },

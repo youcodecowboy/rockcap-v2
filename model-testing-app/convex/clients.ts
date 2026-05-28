@@ -1038,6 +1038,13 @@ export const setProspectFactsInternal = internalMutation({
     website: v.optional(v.string()),
     primaryDirectorName: v.optional(v.string()),
     primaryContactId: v.optional(v.id("contacts")),
+    dealType: v.optional(v.union(
+      v.literal("new_development"),
+      v.literal("bridging"),
+      v.literal("existing_asset"),
+      v.literal("unclassifiable"),
+    )),
+    dealSizeRange: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const patch: Record<string, unknown> = {};
@@ -1045,6 +1052,8 @@ export const setProspectFactsInternal = internalMutation({
     if (args.website !== undefined) patch.website = args.website;
     if (args.primaryDirectorName !== undefined) patch.primaryDirectorName = args.primaryDirectorName;
     if (args.primaryContactId !== undefined) patch.primaryContactId = args.primaryContactId;
+    if (args.dealType !== undefined) patch.dealType = args.dealType;
+    if (args.dealSizeRange !== undefined) patch.dealSizeRange = args.dealSizeRange;
     if (Object.keys(patch).length === 0) {
       return { ok: true, patched: 0, note: "no fields supplied; nothing to write" };
     }

@@ -103,11 +103,13 @@ What it does not do:
 
 10. **Persist intelligence**. Write the findings to `clientIntelligence` and any specific data points to `knowledgeItems`. Cite sources (Companies House filing numbers, charge IDs, URLs scraped with timestamps, web search queries used). Build the full markdown report following `references/intel-report-template.md` — all 9 sections, in order, with confidence levels.
 
-    **Also call `clients.setProspectFacts({clientId, companiesHouseNumber, website, primaryDirectorName, primaryContactId})` (v1.2.4)** to populate the structured fields on the clients row. These are the canonical source for the CRM aside / PeopleTab / OverviewTab — promoted out of intelMarkdown regex extraction so the UI doesn't depend on the report's template shape. Pass:
+    **Also call `clients.setProspectFacts({clientId, companiesHouseNumber, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange})` (v1.2.4; dealType + dealSizeRange added Phase 2)** to populate the structured fields on the clients row. These are the canonical source for the CRM aside / PeopleTab / OverviewTab / prospects table — promoted out of intelMarkdown regex extraction so the UI doesn't depend on the report's template shape. Pass:
     - `companiesHouseNumber`: the resolved CH number (always pass if known)
     - `website`: the URL discovered in step 6 (or omit if "Not found" after 4 attempts)
     - `primaryDirectorName`: the lead director name as it should appear in the UI (e.g., "Stephen John Mccarthy" or "Shane Gordon")
     - `primaryContactId`: the Convex id of the primary contact created/found in step 11 (call setProspectFacts AGAIN after step 11 if the contact didn't exist when step 10 ran)
+    - `dealType`: the canonical deal-type code from step 5 (`new_development` / `bridging` / `existing_asset` / `unclassifiable`)
+    - `dealSizeRange`: the indicative deal-size display string from step 5 — the range + confidence + basis line (e.g., "£2-5m, medium confidence, based on Woodberry Park 48 units"). Omit for `unclassifiable`. Never a naked number.
 
 11. **If a reachout is appropriate, draft it**. Load `references/template-mapped-reachout.md`, select the template that matches the classification and trigger context, populate the variables. If a reachout is not appropriate (no contact, no trigger reason, recent contact already made), say so and stop. After composing, queue the full cadence package via `cadence.create` per the `## Cadence package` section above. The cadences land with `packageApprovalStatus: "pending"`; the operator approves the package via the CRM detail page.
 
