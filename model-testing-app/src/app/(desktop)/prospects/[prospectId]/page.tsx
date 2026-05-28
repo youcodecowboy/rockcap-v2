@@ -52,10 +52,12 @@ export default function ProspectDetailPage() {
   );
   const intelRun = intelRunFromCadence ?? intelRunFromBackref;
 
-  // Companies House profile + charges. For prospect-intel runs the dedupKey
-  // IS the CH number — use it to surface the structured CH data in the
-  // right aside (company status, SIC, charges, lender names).
-  const chNumber = (intelRun as any)?.dedupKey as string | undefined;
+  // Companies House profile + charges. Resolve the CH number robustly: prefer
+  // the prospect's canonical companiesHouseNumber (set by clients.setProspectFacts),
+  // falling back to the intel run's dedupKey. A refresh run started without a
+  // dedupKey would otherwise blank chProfile here (and the People tab + aside),
+  // making genuinely-synced data read as "not synced". Mirrors prospects.getDeepContext.
+  const chNumber = ((prospect as any)?.companiesHouseNumber ?? (intelRun as any)?.dedupKey) as string | undefined;
   const chProfile = useQuery(
     api.companiesHouse.getCompanyByNumber,
     chNumber ? { companyNumber: chNumber } : "skip",
