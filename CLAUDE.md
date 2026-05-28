@@ -18,11 +18,11 @@
 
 When working in this repo + considering MCP tool selection or skill invocation, start at these three files in order:
 
-1. **`skills/CATALOGUE.md`** — every MCP tool (68 across 18 domains) with grouping, "when to use" guidance, and common-pattern cookbooks. This is the canonical reference for tool selection. The 4 most-used tools across all workflows are documented prominently: `prospect.getDeepContext` / `client.getDeepContext` / `project.getDeepContext` / `lender.getDeepContext` + `lender.matchForDeal`.
+1. **`skills/CATALOGUE.md`** — every MCP tool (79 across 19 domains) with grouping, "when to use" guidance, and common-pattern cookbooks. This is the canonical reference for tool selection. The 4 most-used tools across all workflows are documented prominently: `prospect.getDeepContext` / `client.getDeepContext` / `project.getDeepContext` / `lender.getDeepContext` + `lender.matchForDeal`.
 2. **`skills/skills/README.md`** — the skill index. Lists all 16 skills with maturity status (v2-hardened vs skeleton) + deal-lifecycle mapping. Use when figuring out which skill to invoke for a given operator ask.
 3. **`skills/CONVENTIONS.md`** — cross-skill voice, style, and operating rules. Every skill follows these.
 
-**Maintain discoverability:** when adding or removing an MCP tool, update `CATALOGUE.md` in the same commit. When creating or hardening a skill, update `skills/skills/README.md` status table in the same commit. At 68 tools and 16 skills, Claude Code can only pick well if the documentation is accurate. The cost of staying disciplined is a one-line edit per change.
+**Maintain discoverability:** when adding or removing an MCP tool, update `CATALOGUE.md` in the same commit. When creating or hardening a skill, update `skills/skills/README.md` status table in the same commit. At 79 tools and 16 skills, Claude Code can only pick well if the documentation is accurate. The cost of staying disciplined is a one-line edit per change.
 
 ### Skill execution
 

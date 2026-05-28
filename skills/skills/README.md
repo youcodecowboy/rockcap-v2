@@ -42,7 +42,7 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 | 5a | Pre-call meeting prep | [`meeting-prep/`](./meeting-prep/) | v2 |
 | 5b | Post-call meeting capture | [`meeting-capture/`](./meeting-capture/) | v2 |
 | 6 | Post-meeting nurture | [`cadence-fire/`](./cadence-fire/) | substrate |
-| 7 | Deal data intake + underwriting model | [`deal-intake/`](./deal-intake/) | skeleton |
+| 7 | Deal data intake + underwriting model | [`deal-intake/`](./deal-intake/) | v2 |
 | 8 | Indicative terms + lender submission pack | [`terms-package-build/`](./terms-package-build/) | skeleton |
 | 9 | Terms comparison + recommendation | [`terms-comparison/`](./terms-comparison/) | skeleton |
 | 10 | Client decision capture | [`client-decision-capture/`](./client-decision-capture/) | skeleton |
@@ -83,20 +83,19 @@ The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 5 v2-
 
 When hardening a skeleton skill: follow this template + harden the SKILL.md + author 1-2 reference files in `references/` + update this README's status table in the same commit.
 
-## Hardening order (recommended for the 10 remaining skeletons)
+## Hardening order (recommended for the 9 remaining skeletons)
 
 Ranked by operator-cycle leverage:
 
-1. **deal-intake** (step 7) — when a borrower sends documents, this skill stands up a deal. High leverage: closes the prospect → active-client transition.
-2. **terms-package-build** (step 8) — produces the lender brief package. High leverage: pairs with lender-intel matching to operationalize lender outreach.
-3. **terms-comparison** (step 9) — pairs with terms-package-build; activated when indicative terms come back.
-4. **ic-paper-drafter** (step 11a) — when a lender wants to proceed; produces the IC submission.
-5. **client-decision-capture** (step 10) — when client chooses a lender from the comparison.
-6. **info-request-grader** (step 11b) — lender-side document requests; can be paired with checklist tooling.
-7. **monitoring-watcher** (step 14) — post-credit phase; lower urgency until first deal closes.
-8. **case-study-author** (step 13) — post-close; lowest urgency until first deal closes.
-9. **deal-triage** (step 12) — daily sweep; useful once deal-intake creates a real pipeline.
-10. **classification-critic** — parallel system; lower priority than deal-lifecycle skills.
+1. **terms-package-build** (step 8) — produces the lender brief package. High leverage: pairs with lender-intel matching to operationalize lender outreach.
+2. **terms-comparison** (step 9) — pairs with terms-package-build; activated when indicative terms come back.
+3. **ic-paper-drafter** (step 11a) — when a lender wants to proceed; produces the IC submission.
+4. **client-decision-capture** (step 10) — when client chooses a lender from the comparison.
+5. **info-request-grader** (step 11b) — lender-side document requests; can be paired with checklist tooling.
+6. **monitoring-watcher** (step 14) — post-credit phase; lower urgency until first deal closes.
+7. **case-study-author** (step 13) — post-close; lowest urgency until first deal closes.
+8. **deal-triage** (step 12) — daily sweep; useful once deal-intake creates a real pipeline.
+9. **classification-critic** — parallel system; lower priority than deal-lifecycle skills.
 
 ## Adding a new skill
 

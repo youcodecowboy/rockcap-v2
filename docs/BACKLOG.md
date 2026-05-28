@@ -19,10 +19,10 @@ These are the safety practices that apply to every item in this backlog. They ar
 7. **Tool name changes are deprecation, not rename.** If a 150-tool audit produces a better name, the new name is added, the old name stays as an alias for at least one release. No silent breakage of the chat assistant's tool calls.
 8. **V3 retirement is coverage-gated.** A V3 route is deleted only after: V4 equivalent exists, every caller migrated, zero traffic for seven days verified in logs.
 
-## Status snapshot (as of 2026-05-20)
+## Status snapshot (as of 2026-05-28)
 
-**Completed**: 48 backlog items shipped across foundations, schema, integrations (substrate + UI), and skills.
-**In progress / planned**: 36 items remain, dominated by WS-2 V3 retirement, WS-5 MCP server and primitives, and WS-7 tool description audit.
+**Completed**: 52 backlog items shipped across foundations, schema, integrations (substrate + UI), the MCP server, and skills.
+**In progress / planned**: 32 items remain, dominated by WS-2 V3 retirement and WS-7 tool description audit; the remaining WS-5 work is the `document.extract` / `template.populate` primitives.
 **Deferred**: 5 items explicitly held (Person/Role tables, CI gating, Fireflies webhook, LenderProfile staticLayer refactor).
 
 ### What's actually done by workstream
@@ -34,28 +34,28 @@ These are the safety practices that apply to every item in this backlog. They ar
 | WS-2 V3 retirement | 1 / 16 | Coverage matrix authored. All migrations and deletions still ahead. Three new V4-build items added (BL-2.0a/b/c). |
 | WS-3 Fireflies | 7 / 10 | Token-paste connect end-to-end + sync action + cron. Backfill, pattern-detector delete, webhook still ahead. |
 | WS-4 Gmail | 7 / 10 | OAuth + token storage + settings UI + send wrapper with three-switch gate + Touchpoint table. Read sync, Pub/Sub webhook, cron still ahead. |
-| WS-5 MCP + primitives | 1 / 9 | Approval queue UI built. MCP server itself + primitives (deal.get_full_context, document.extract, template.populate) still ahead. |
+| WS-5 MCP + primitives | 5 / 9 | MCP server live (Convex HTTP actions, 79 tools, per-user token auth + `/settings/mcp-token` mint/revoke UI). `*.getDeepContext` composers ship the coarse-grained primitive. Remaining: `document.extract` + `template.populate` primitives; full tool exposure (79 of 150 atomic tools); cadence cron. |
 | WS-6 Skills | 22 / 23 | CONVENTIONS, SETUP, 14 SKILL.md, 18 sub-skill .md, 4 shared references, scaffolding for corpora and templates. E2E testing deferred until MCP server lives. |
 | WS-7 Tool description audit | 0 / 7 | Not started; sequenced after WS-1.0 (done) and WS-1.2 (deferred). |
 | WS-8 Post-MVP | 0 / 5 | All deferred by design. |
 
 ### Most consequential items still ahead
 
-1. **BL-5.1 MCP server**: until this ships, no skill can call a tool. The whole skills tree is planning-only until then.
-2. **BL-5.9 Per-user MCP token issuance flow**: required for operators to actually connect Claude Code.
-3. **BL-2.0a/b/c new V4 routes**: gates the V3 retirement chain.
-4. **BL-1.2 Person table**: deferred but blocks BL-1.3 (Role) and any meaningful BDM-mobility tracking.
-5. **BL-3.8 Fireflies backfill** and **BL-4.3 Gmail read sync**: unlock real touchpoint flow from both integrations.
+1. **BL-2.0a/b/c new V4 routes**: gates the V3 retirement chain.
+2. **BL-5.5 `document.extract`** and **BL-5.6 `template.populate`**: the remaining cross-cutting MCP primitives; used by deal-intake and terms-package-build.
+3. **BL-1.2 Person table**: deferred but blocks BL-1.3 (Role) and any meaningful BDM-mobility tracking.
+4. **BL-3.8 Fireflies backfill** and **BL-4.3 Gmail read sync**: unlock real touchpoint flow from both integrations.
+5. **Hardening the next skill skeletons**: terms-package-build (step 8) is first on the critical path after the live set.
 
 ## Phase plan
 
-Four phases. The team is most of the way through Phase B with significant Phase D work already done out of sequence (skills authored ahead of the MCP server that would run them).
+Four phases. Phase C's headline item (the MCP server, BL-5.1) has shipped, along with per-user token auth (BL-5.2) and the token-issuance UI (BL-5.9); the remaining Phase C work is the `document.extract` / `template.populate` primitives and the WS-7 tool audit. Phase D skills are now executable against the live server (6 of 16 hardened).
 
 | Phase | Window | Workstreams | Status |
 |---|---|---|---|
 | **A. Foundations and architecture decisions** | weeks 1-2 | WS-0, BL-1.0, BL-2.0, BL-3.0, BL-4.0 | **complete** |
 | **B. Additive build-out** | weeks 2-6 | WS-1, WS-3, WS-4, WS-2 caller migrations | **schema mostly complete; integration substrate complete; V3 retirement not started** |
-| **C. Skills substrate** | weeks 6-8 | WS-5 (MCP + primitives), WS-7 (tool audit) | **not started apart from BL-5.7 (Approval queue UI)** |
+| **C. Skills substrate** | weeks 6-8 | WS-5 (MCP + primitives), WS-7 (tool audit) | **MCP server + per-user token auth + token-issuance UI + `getDeepContext` composers shipped; `document.extract` / `template.populate` primitives + WS-7 tool audit remain** |
 | **D. First skills + V3 cleanup** | weeks 8-12 | WS-6 first skills, WS-2 deletions after coverage proof | **WS-6 content authored ahead of schedule; WS-2 deletions await retirement chain** |
 
 ## Cross-stream dependencies
@@ -241,15 +241,15 @@ The MCP server is the connection point between Claude Code on operator laptops a
 
 | Status | ID | Item | Risk | Size | Notes |
 |---|---|---|---|---|---|
-| | BL-5.1 | Stand up MCP server as Convex HTTP actions | medium | L | Highest-leverage outstanding item. No Next.js bridge. |
-| | BL-5.2 | Per-user MCP auth via Clerk-issued token | high | M | |
-| | BL-5.3 | Tool exposure: every public tool callable via MCP | medium | M | Read tools immediate; writes queue an approval. |
-| | BL-5.4 | `deal.get_full_context(dealId)` coarse-grained primitive | low | M | Composes project + intelligence + checklist + milestones + lender approaches + recent docs/touchpoints. |
+| ✓ | BL-5.1 | Stand up MCP server as Convex HTTP actions | medium | L | **Shipped.** Served at `incredible-kudu-562.convex.site/mcp`; 79 tools across 19 domains. No Next.js bridge. |
+| ✓ | BL-5.2 | Per-user MCP auth via Clerk-issued token | high | M | **Shipped.** `mcpTokens` table; bearer stored as SHA-256 hash + display prefix; validated per request, 401 on invalid/revoked. Minted via Clerk-authed session. |
+| ◐ | BL-5.3 | Tool exposure: every public tool callable via MCP | medium | M | Partial: 79 of 150 atomic tools exposed. Read tools immediate; writes stage an approval via `outreach.draft*`. |
+| ✓ | BL-5.4 | `deal.get_full_context(dealId)` coarse-grained primitive | low | M | **Shipped** as per-domain `*.getDeepContext` composers (prospect/client/project/lender): each composes intelligence + checklist + cadences + meetings + docs + touchpoints + approvals in one call. |
 | | BL-5.5 | `document.extract(targetSchema, sourceDocumentRef)` primitive | medium | L | Unifies V4 deep extract, intelligence extract, meeting extract, term-sheet extract. |
 | | BL-5.6 | `template.populate(templateRef, dataObject) → fileStorageId` primitive | medium | L | Generalises the Excel engine to XLSX, DOCX, PDF forms. |
 | ✓ | BL-5.7 | Approval queue UI surface (web) | medium | L | `/approvals` page with status tabs, expandable cards, Gmail-specific preview, approve/reject/cancel flows. |
-| | BL-5.8 | Cadence scheduling engine | medium | L | Cron consumer of `cadences` table; per-type dispatch. |
-| | BL-5.9 | Per-user MCP token issuance flow | high | M | `/settings/mcp-token` page; mint, rotate, revoke. |
+| ◐ | BL-5.8 | Cadence scheduling engine | medium | L | Partial: `cadence.*` tool surface live + cadence-fire runtime contract defined (v1.1, pre-drafted touches). Autonomous cron dispatch unverified. |
+| ✓ | BL-5.9 | Per-user MCP token issuance flow | high | M | **Shipped.** `/settings/mcp-token` page; mint, rotate, revoke; tokens stored hashed. |
 
 ### WS-6: First skills
 
@@ -352,9 +352,8 @@ These were the open questions from the first backlog draft. Locked in here so do
 
 In order of leverage given the current state:
 
-1. **BL-5.1 MCP server**: unblocks every skill. Highest single item by impact.
-2. **BL-5.9 Per-user MCP token issuance**: pairs with BL-5.1; operators need this to connect.
-3. **BL-2.0a/b/c new V4 routes**: unblocks the V3 retirement chain.
-4. **BL-5.4 deal.get_full_context primitive**: pure backend, low risk, used by half the skills.
-5. **BL-3.8 Fireflies backfill** plus **BL-4.3 Gmail read sync**: unblock real touchpoint flow once you have the API credentials.
-6. **Hardening of authored skills**: per-skill references for the SKILL.md files that have planned-but-unauthored references.
+1. **BL-2.0a/b/c new V4 routes**: unblocks the V3 retirement chain.
+2. **BL-5.5 `document.extract`** plus **BL-5.6 `template.populate`**: the remaining cross-cutting MCP primitives; pure backend, used by deal-intake and the terms skills.
+3. **BL-3.8 Fireflies backfill** plus **BL-4.3 Gmail read sync**: unblock real touchpoint flow once you have the API credentials.
+4. **Harden the next skill skeleton**: terms-package-build (step 8), first on the critical path after the live set.
+5. **BL-1.2 Person table**: deferred but blocks Role + BDM-mobility tracking.

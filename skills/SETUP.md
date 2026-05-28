@@ -25,27 +25,22 @@ When the skills tree splits into its own repository (per `docs/BACKLOG.md` BL-8.
 Claude Code talks to the RockCap MCP server (a set of Convex HTTP endpoints) using a per-user token. You mint your token through the web app:
 
 1. Sign in to the RockCap web app.
-2. Navigate to `/settings/mcp-token` (this page lands when BL-5.9 ships; today the route does not exist).
-3. Click "Generate MCP token". The token is shown once; copy it somewhere safe (a password manager, not a text file in iCloud).
-4. The token does not expire by default but can be revoked from the same page if it leaks.
+2. Navigate to `/settings/mcp-token`.
+3. Click "Generate MCP token". The token is shown once (it is stored only as a hash, so it cannot be recovered later); copy it somewhere safe (a password manager, not a text file in iCloud).
+4. The token does not expire by default but can be rotated or revoked from the same page if it leaks.
 
 If the token is ever exposed, revoke immediately and mint a fresh one. The token grants the same access as your Clerk session.
 
 ### 3. Configure Claude Code
 
-Open Claude Code's config. The exact mechanism depends on your install:
-
-- VS Code extension: open the Claude Code panel, click the gear, "Configure MCP servers".
-- CLI: edit `~/.config/claude/settings.json`.
-- Desktop app: Settings → Servers.
-
-Add the RockCap MCP server entry:
+This repository already ships a project-scoped `.mcp.json` at the repo root, so Claude Code picks up the RockCap MCP server automatically when you open the repo. The entry looks like this:
 
 ```json
 {
   "mcpServers": {
-    "rockcap": {
-      "url": "https://<your-convex-deployment>.convex.cloud/mcp",
+    "rockcap-mcp": {
+      "type": "http",
+      "url": "https://incredible-kudu-562.convex.site/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_MCP_TOKEN_HERE"
       }
@@ -54,7 +49,9 @@ Add the RockCap MCP server entry:
 }
 ```
 
-Replace `<your-convex-deployment>` with the deployment URL the team uses (ask if you do not know). Replace `YOUR_MCP_TOKEN_HERE` with the token from step 2.
+The committed file carries a shared team token, so the integration works out of the box. To use your own per-user token instead (recommended, so usage and revocation are scoped to you), replace the `Authorization` bearer with the token you minted in step 2: edit the repo's `.mcp.json` locally, or add the same server block to your user-level Claude Code config so your token is not committed.
+
+Note the endpoint is on the `.convex.site` domain, not `.convex.cloud`. Convex serves custom HTTP actions (like `/mcp`) from `.convex.site`; the reactive query/mutation API lives on `.convex.cloud`.
 
 ### 4. Point Claude Code at the skills directory
 
@@ -66,7 +63,7 @@ Claude Code reads skills from a configured path. Add the local skills location t
 }
 ```
 
-Restart Claude Code. The Skills panel should show the available skills (today: `prospect-intel`, `qualify-and-draft`, `cadence-fire`, and growing).
+Restart Claude Code. The Skills panel should show the available skills. Six are hardened today (`prospect-intel`, `qualify-and-draft`, `meeting-prep`, `meeting-capture`, `lender-intel`, `deal-intake`); see `skills/skills/README.md` for the full list and maturity status.
 
 ### 5. Test the connection
 
@@ -109,13 +106,17 @@ When the skills repo splits (BL-8.5), the pull command changes to whatever the n
 - **Approvals queue not updating**: the page is real-time via Convex live queries; if it sticks, refresh the page. If the underlying mutation is failing, check `/approvals` for an `execution_failed` row with the error.
 - **Outputs not respecting voice rules**: re-read `~/rockcap-v2/skills/CONVENTIONS.md` and confirm the skill's SKILL.md links to it. If you find a skill that drifts from the rules, raise it on the team channel.
 
-## What is not yet wired
+## What is live, and what is still gated
 
-This list is current as of the latest commit on `claude/audit-app-inventory-ngHuP`:
+This list is current as of 2026-05-28.
 
-- **MCP server**: the Convex HTTP endpoints (BL-5.1) are not yet built. Today the skills exist as content; the MCP server is what makes them callable from Claude Code. Until BL-5.1 ships, the only way to operate skills is to read them and follow the workflows by calling the app's web UI by hand.
-- **Per-user MCP token issuance** (BL-5.9): no `/settings/mcp-token` page exists. The token flow above describes the destination, not today's state.
+**Live and working end to end:**
+
+- **MCP server** (BL-5.1): served from Convex HTTP actions at `https://incredible-kudu-562.convex.site/mcp`. 79 tools across 19 domains; see `skills/CATALOGUE.md` for the full list. Verify with the canary in step 5.
+- **Per-user MCP token issuance** (BL-5.9): the `/settings/mcp-token` page mints, rotates, and revokes tokens. Tokens are stored only as a hash; auth is validated per request against the per-user token table.
+- **Operational skills**: 6 of 16 skills are hardened and executable against the live tool surface (`prospect-intel`, `qualify-and-draft`, `meeting-prep`, `meeting-capture`, `lender-intel`, `deal-intake`). The other 9 are skeletons; `cadence-fire` is event-driven substrate. See `skills/skills/README.md`.
+
+**Built but gated (default-off kill switches):**
+
 - **Gmail send**: built behind a triple kill switch (BL-4.2 plus the send-gate UI). The kill switches are default-off until the OAuth client is configured.
 - **Fireflies sync**: built and ready (BL-3.3); the global kill switch is default-off until a user pastes a personal token.
-
-When BL-5.1 lands, this document gets updated to reflect the real connection URL and any final configuration steps.
