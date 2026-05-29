@@ -121,9 +121,28 @@ to one account.
 
 ---
 
-## Outbound → HubSpot logging
+## Outbound → HubSpot logging (BCC method)
 
-So that sent email also lands on the client's HubSpot timeline (and the mobile
-activity feed). **Pending the BCC-vs-executor decision — this section will be
-filled in when that path is built.** Inbound email is already captured via the
-HubSpot sync (`activities` table, keyed to client).
+Sent email auto-logs to the client's HubSpot timeline (and the mobile activity
+feed) by BCC'ing the portal's logging address. `executeApprovedSend` appends it
+at send time — the single chokepoint, so every `gmail_send` (cadence,
+qualify-and-draft reply, manual) is logged. BCC is invisible to the recipient.
+
+- **Env (Convex only):** `HUBSPOT_LOG_BCC = 146182077@bcc.eu1.hubspot.com`
+  (the portal's "Log to CRM" BCC from HubSpot inbox settings). If unset, sends
+  still go out — they just aren't logged.
+  - `npx convex env set HUBSPOT_LOG_BCC 146182077@bcc.eu1.hubspot.com`
+  - Convex only: the executor (which composes + sends) runs in Convex; the
+    Next.js app does not send, so Vercel doesn't need this var.
+- HubSpot associates the logged email to the contact matching the recipient
+  address (our prospects/clients are synced, so this resolves). It then flows
+  back into our `activities` table on the next HubSpot sync — which is what the
+  mobile feed reads.
+- Inbound email is already captured via the HubSpot sync (`activities`, keyed to
+  client) — no work needed.
+- **Verify on first test-fire:** after sending, confirm the email appears on the
+  contact's HubSpot timeline.
+
+> Want explicit deal-level associations instead of recipient-match? That's the
+> `hubspot_write` executor upgrade (log via the engagement API) — deferred; BCC
+> covers the unified-timeline goal with near-zero surface.

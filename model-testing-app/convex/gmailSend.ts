@@ -379,12 +379,24 @@ export const executeApprovedSend = internalAction({
       });
     }
 
+    // Append the HubSpot logging BCC so the sent email auto-logs to the
+    // client's HubSpot timeline (and thus the mobile activity feed). Set via
+    // Convex env HUBSPOT_LOG_BCC (the portal's bcc.<region>.hubspot.com
+    // address). If unset, the send still goes out — it just isn't logged. BCC
+    // is invisible to the recipient. This is the single send-time chokepoint,
+    // so every gmail_send (cadence, qualify-and-draft reply, manual) logs.
+    const hubspotLogBcc = process.env.HUBSPOT_LOG_BCC;
+    const bcc = [
+      ...(payload.bcc ?? []),
+      ...(hubspotLogBcc ? [hubspotLogBcc] : []),
+    ].filter((v, i, arr) => !!v && arr.indexOf(v) === i);
+
     const raw = base64Url(
       composeRfc822({
         fromEmail: token.connectedEmail,
         to: payload.to,
         cc: payload.cc,
-        bcc: payload.bcc,
+        bcc,
         subject: payload.subject,
         bodyHtml: payload.bodyHtml,
         bodyText: payload.bodyText,
