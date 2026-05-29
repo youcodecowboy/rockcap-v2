@@ -5,11 +5,13 @@ import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 
 export interface PdfOptions {
-  /** Chromium footer template (HTML). Enables displayHeaderFooter with an empty
-   *  header. Use `<span class="pageNumber"></span>` / `totalPages` for page nos. */
-  footerTemplate?: string;
-  /** Bottom margin in mm when a footer is shown (must fit the footer). Default 24. */
+  /** Bottom margin in mm for Puppeteer's margin option. Default 20. When a layout
+   *  uses @page CSS for margins (e.g. lender-brief), pass 0 here so @page wins. */
   marginBottomMm?: number;
+  /** Top margin override in mm. Default 20. */
+  marginTopMm?: number;
+  /** Left/right margin override in mm. Default 18. */
+  marginSideMm?: number;
 }
 
 async function resolveExecutablePath(): Promise<string> {
@@ -27,18 +29,15 @@ export async function renderHtmlToPdf(html: string, opts?: PdfOptions): Promise<
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
-    const hasFooter = !!opts?.footerTemplate;
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
-      displayHeaderFooter: hasFooter,
-      headerTemplate: hasFooter ? "<span></span>" : undefined, // suppress default header
-      footerTemplate: hasFooter ? opts!.footerTemplate : undefined,
+      displayHeaderFooter: false,
       margin: {
-        top: "20mm",
-        bottom: hasFooter ? `${opts?.marginBottomMm ?? 24}mm` : "20mm",
-        left: "18mm",
-        right: "18mm",
+        top: `${opts?.marginTopMm ?? 20}mm`,
+        bottom: `${opts?.marginBottomMm ?? 20}mm`,
+        left: `${opts?.marginSideMm ?? 18}mm`,
+        right: `${opts?.marginSideMm ?? 18}mm`,
       },
     });
     return Buffer.from(pdf);

@@ -2,16 +2,21 @@
 // Branded lender-brief layout: assembles a full HTML document from structured
 // briefData. Shell fields are escaped; section bodyHtml is injected raw (the
 // composer is trusted). Page 1 has an in-body masthead (brief-header). The PDF
-// gets a full-bleed black footer band + page numbers via the Chromium
-// footerTemplate (buildLenderBriefFooterTemplate); the DOCX has none.
+// gets a full-bleed black footer band via a position:fixed CSS body element
+// (.brief-footer-band) — this reaches the physical page edge on every page,
+// unlike Chromium's footerTemplate which always leaves a white strip. Page
+// numbers are dropped (Chromium cannot number a fixed body element). The
+// reserved bottom margin (marginBottomMm) keeps body content clear of the band.
+// buildLenderBriefFooterTemplate is kept for reference but is no longer wired up.
 import { escapeHtml } from "../houseStyle";
 import { ROCKCAP_COMPANY } from "../rockcapCompany";
 import type { LenderBriefData } from "../types";
 
 const LENDER_BRIEF_CSS = `
+  @page { margin: 0; }
   * { box-sizing: border-box; }
   body { margin: 0; color: #141414; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  main.brief { font-size: 10.5pt; line-height: 1.5; }
+  main.brief { font-size: 10.5pt; line-height: 1.5; padding: 20mm 18mm 26mm; }
   .brief-header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #141414; padding-bottom: 10px; margin-bottom: 18px; }
   .brief-wordmark { font-size: 22pt; font-weight: 400; letter-spacing: -0.01em; }
   .brief-header-meta { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 8pt; letter-spacing: 0.08em; text-transform: uppercase; color: #6b6b6b; text-align: right; line-height: 1.4; }
@@ -33,11 +38,12 @@ const LENDER_BRIEF_CSS = `
   .brief-signoff .name { font-weight: 600; }
   .brief-signoff .contact { font-family: ui-monospace, monospace; font-size: 9pt; color: #6b6b6b; }
   .brief-closing { margin-top: 6px; font-family: ui-monospace, monospace; font-size: 7.5pt; letter-spacing: 0.06em; text-transform: uppercase; color: #9a9a9a; }
+  .brief-footer-band { position: fixed; bottom: -5mm; left: -5mm; right: -5mm; height: 27mm; background: #141414; color: #ffffff; display: flex; align-items: flex-start; padding: 5mm 23mm 0; font-size: 8.5pt; letter-spacing: 0.03em; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   section.brief-section { break-inside: avoid; }
   section.brief-section > h2 { break-after: avoid; }
   .brief-section table, .brief-section thead, .brief-section tr { break-inside: avoid; }
   .brief-section p { orphans: 2; widows: 2; }
-  .brief-signoff { break-inside: avoid; }
+  .brief-signoff { break-before: avoid; }
 `;
 
 export function buildLenderBriefHtml(data: LenderBriefData): string {
@@ -51,6 +57,9 @@ export function buildLenderBriefHtml(data: LenderBriefData): string {
   // Change 3: drop confidentiality token from the meta line; "Strictly Private & Confidential"
   // appears in the in-body masthead header-meta and is the only confidentiality marker.
   const metaline = `${data.meta.borrower}  ·  Prepared by ${data.meta.preparedBy}  ·  ${data.meta.date}`;
+  const legalLine = [c.legalName, c.registeredOffice, c.companyNo ? `Co. No. ${c.companyNo}` : "", c.website]
+    .filter(Boolean)
+    .join("  ·  ");
   return (
     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
     `<title>${escapeHtml(`${data.title.location} — Lender Brief`)}</title>` +
@@ -65,9 +74,10 @@ export function buildLenderBriefHtml(data: LenderBriefData): string {
     sections +
     `<div class="brief-signoff"><div class="name">${escapeHtml(data.signOff.name)}</div>` +
     `<div>${escapeHtml(data.signOff.role)}</div>` +
-    `<div class="contact">${escapeHtml(`${data.signOff.email}  |  ${data.signOff.phone}`)}</div>` +
-    `<div class="brief-closing">${escapeHtml(`${c.legalName}  ·  ${c.website}`)}</div></div>` +
-    `</main></body></html>`
+    `<div class="contact">${escapeHtml(`${data.signOff.email}  |  ${data.signOff.phone}`)}</div></div>` +
+    `</main>` +
+    `<footer class="brief-footer-band"><span>${escapeHtml(legalLine)}</span></footer>` +
+    `</body></html>`
   );
 }
 

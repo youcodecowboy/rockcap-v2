@@ -5,7 +5,7 @@
 // The lender-brief in-body masthead (.brief-header) renders in both PDF + DOCX
 // bodies, so no separate Chromium header template or DOCX header is used.
 import { wrapInHouseStyle } from "./houseStyle";
-import { buildLenderBriefHtml, buildLenderBriefFooterTemplate } from "./layouts/lenderBrief";
+import { buildLenderBriefHtml } from "./layouts/lenderBrief";
 import { renderHtmlToPdf, type PdfOptions } from "./renderPdf";
 import { renderHtmlToDocx } from "./renderDocx";
 import { MIME, type DocFormat, type RenderResult, type RenderSpec } from "./types";
@@ -30,7 +30,8 @@ export async function renderDocument(spec: RenderSpec): Promise<RenderResult[]> 
   if (spec.layout === "lender-brief") {
     if (!spec.briefData?.sections?.length) throw new Error("renderDocument: lender-brief has no sections");
     fullHtml = buildLenderBriefHtml(spec.briefData);
-    pdfOpts = { footerTemplate: buildLenderBriefFooterTemplate(), marginBottomMm: 20 };
+    // @page in LENDER_BRIEF_CSS controls all margins; pass 0 so Puppeteer doesn't double them
+    pdfOpts = { marginTopMm: 0, marginBottomMm: 0, marginSideMm: 0 };
   } else {
     if (!spec.contentHtml?.trim()) throw new Error("renderDocument: contentHtml is empty");
     fullHtml = wrapInHouseStyle(spec.contentHtml, { title: spec.title });

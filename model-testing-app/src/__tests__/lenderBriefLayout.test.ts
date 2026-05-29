@@ -2,7 +2,6 @@
 import { describe, it, expect } from "vitest";
 import {
   buildLenderBriefHtml,
-  buildLenderBriefFooterTemplate,
 } from "../lib/docgen/layouts/lenderBrief";
 import type { LenderBriefData } from "../lib/docgen/types";
 
@@ -50,27 +49,35 @@ describe("buildLenderBriefHtml", () => {
     expect(html).toContain("<p>RockCap is presenting a 9-unit scheme.</p>");
     expect(html).toContain("<td class=\"num\">£700k</td>"); // table preserved
   });
-  it("renders the sign-off", () => {
+  it("renders the sign-off (no brief-closing div — company line is in footer band)", () => {
     expect(html).toContain("Alex Lundberg");
     expect(html).toContain("alex@rockcap.uk");
-    expect(html).toContain("RockCap Ltd"); // closing line
+    // sign-off no longer contains the brief-closing company line (moved to footer band)
+    expect(html).not.toContain("class=\"brief-closing\"");
   });
-  it("includes page-break-avoid CSS rules including sign-off (Change 4)", () => {
+  it("includes page-break-avoid CSS rules", () => {
     expect(html).toContain("break-inside: avoid");
     expect(html).toContain("break-after: avoid");
-    expect(html).toContain(".brief-signoff { break-inside: avoid; }");
   });
 });
 
-describe("buildLenderBriefFooterTemplate", () => {
-  const footer = buildLenderBriefFooterTemplate();
-  it("is a full-bleed black band with bigger text, company line + page numbers (Change 2)", () => {
-    expect(footer).toContain("background:#141414");
-    expect(footer).toContain("height:100%");   // fills entire bottom margin to page edge
-    expect(footer).toContain("font-size:8.5pt"); // bigger text
-    expect(footer).toContain("RockCap Ltd");
-    expect(footer).toContain("rockcap.uk");
-    expect(footer).toContain('class="pageNumber"');
-    expect(footer).toContain('class="totalPages"');
+describe("buildLenderBriefHtml footer band", () => {
+  const html = buildLenderBriefHtml(sample);
+  it("contains a position:fixed CSS footer band in the body (not a footerTemplate)", () => {
+    // The footer band is a body element, not a Chromium footerTemplate
+    expect(html).toContain("class=\"brief-footer-band\"");
+    expect(html).toContain("position: fixed");
+    expect(html).toContain("background: #141414");
+    expect(html).toContain("font-size: 8.5pt");
+  });
+  it("footer band contains the company legal line", () => {
+    expect(html).toContain("RockCap Ltd");
+    expect(html).toContain("rockcap.uk");
+  });
+  it("page uses @page { margin: 0 } so fixed element reaches physical page edge", () => {
+    expect(html).toContain("@page { margin: 0; }");
+  });
+  it("main.brief has padding to keep content clear of the fixed footer", () => {
+    expect(html).toContain("padding: 20mm 18mm 26mm");
   });
 });
