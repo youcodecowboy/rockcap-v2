@@ -1,8 +1,9 @@
 // src/lib/docgen/layouts/lenderBrief.ts
 // Branded lender-brief layout: assembles a full HTML document from structured
 // briefData. Shell fields are escaped; section bodyHtml is injected raw (the
-// composer is trusted). The PDF gets a black footer band + page numbers via the
-// Chromium footerTemplate (buildLenderBriefFooterTemplate); the DOCX has none.
+// composer is trusted). Page 1 has an in-body masthead (brief-header). The PDF
+// gets a full-bleed black footer band + page numbers via the Chromium
+// footerTemplate (buildLenderBriefFooterTemplate); the DOCX has none.
 import { escapeHtml } from "../houseStyle";
 import { ROCKCAP_COMPANY } from "../rockcapCompany";
 import type { LenderBriefData } from "../types";
@@ -11,6 +12,9 @@ const LENDER_BRIEF_CSS = `
   * { box-sizing: border-box; }
   body { margin: 0; color: #141414; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   main.brief { font-size: 10.5pt; line-height: 1.5; }
+  .brief-header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #141414; padding-bottom: 10px; margin-bottom: 18px; }
+  .brief-wordmark { font-size: 22pt; font-weight: 400; letter-spacing: -0.01em; }
+  .brief-header-meta { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 8pt; letter-spacing: 0.08em; text-transform: uppercase; color: #6b6b6b; text-align: right; line-height: 1.4; }
   .brief-title h1 { font-size: 19pt; letter-spacing: 0.01em; text-transform: uppercase; margin: 0 0 2px; }
   .brief-title .descriptor { font-size: 12pt; color: #3a3a3a; margin: 0 0 4px; }
   .brief-title .metaline { font-family: ui-monospace, monospace; font-size: 8.5pt; color: #6b6b6b; margin: 0; }
@@ -33,6 +37,7 @@ const LENDER_BRIEF_CSS = `
   section.brief-section > h2 { break-after: avoid; }
   .brief-section table, .brief-section thead, .brief-section tr { break-inside: avoid; }
   .brief-section p { orphans: 2; widows: 2; }
+  .brief-signoff { break-inside: avoid; }
 `;
 
 export function buildLenderBriefHtml(data: LenderBriefData): string {
@@ -43,11 +48,16 @@ export function buildLenderBriefHtml(data: LenderBriefData): string {
   const sections = data.sections
     .map((s) => `<section class="brief-section"><h2>${escapeHtml(String(s.n))}. ${escapeHtml(s.title)}</h2>${s.bodyHtml}</section>`)
     .join("");
-  const metaline = `${data.meta.borrower}  ·  Prepared by ${data.meta.preparedBy}  ·  ${data.meta.date}  ·  ${data.confidentiality}`;
+  // Change 3: drop confidentiality token from the meta line; "Strictly Private & Confidential"
+  // appears in the in-body masthead header-meta and is the only confidentiality marker.
+  const metaline = `${data.meta.borrower}  ·  Prepared by ${data.meta.preparedBy}  ·  ${data.meta.date}`;
   return (
     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
     `<title>${escapeHtml(`${data.title.location} — Lender Brief`)}</title>` +
     `<style>${LENDER_BRIEF_CSS}</style></head><body><main class="brief">` +
+    // Change 1: in-body masthead — wordmark left, "Lender Brief / Strictly Private & Confidential" right
+    `<div class="brief-header"><div class="brief-wordmark">${escapeHtml(c.wordmark)}</div>` +
+    `<div class="brief-header-meta">Lender Brief<br>Strictly Private &amp; Confidential</div></div>` +
     `<div class="brief-title"><h1>${escapeHtml(data.title.location)}</h1>` +
     `<p class="descriptor">${escapeHtml(data.title.descriptor)}</p>` +
     `<p class="metaline">${escapeHtml(metaline)}</p></div>` +
@@ -61,31 +71,9 @@ export function buildLenderBriefHtml(data: LenderBriefData): string {
   );
 }
 
-// Chromium running headerTemplate (PDF only): wordmark left + confidentiality right.
-// Chromium quirks: external CSS is ignored, default font-size is 0 — set everything inline.
-export function buildLenderBriefHeaderTemplate(): string {
-  return (
-    `<div style="width:100%;display:flex;justify-content:space-between;align-items:baseline;` +
-    `border-bottom:1px solid #141414;padding:0 18mm 4px;-webkit-print-color-adjust:exact;">` +
-    `<span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13pt;font-weight:400;letter-spacing:-0.01em;color:#141414;">RockCap</span>` +
-    `<span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:6.5pt;letter-spacing:0.08em;text-transform:uppercase;color:#6b6b6b;">Lender Brief &middot; Strictly Private &amp; Confidential</span>` +
-    `</div>`
-  );
-}
-
-// Simple DOCX header HTML (html-to-docx does not support inline styles well;
-// plain semantic markup is more reliable).
-export function buildLenderBriefDocxHeaderHtml(): string {
-  return `<p><strong>RockCap</strong> &mdash; Lender Brief &mdash; Strictly Private &amp; Confidential</p>`;
-}
-
-// Simple DOCX footer HTML.
-export function buildLenderBriefDocxFooterHtml(): string {
-  const c = ROCKCAP_COMPANY;
-  return `<p>${escapeHtml(`${c.legalName}  ·  ${c.website}`)}</p>`;
-}
-
-// Chromium footerTemplate (PDF only): black band, company legal line + page nos.
+// Chromium footerTemplate (PDF only): full-bleed black band to the page bottom edge,
+// company legal line on the left + page numbers on the right.
+// height:100% fills the entire margin reserved by marginBottomMm.
 // Chromium quirks handled: explicit font-size (default is 0), exact color print.
 export function buildLenderBriefFooterTemplate(): string {
   const c = ROCKCAP_COMPANY;
@@ -93,9 +81,10 @@ export function buildLenderBriefFooterTemplate(): string {
     .filter(Boolean)
     .join("  ·  ");
   return (
-    `<div style="width:100%;background:#141414;color:#ffffff;` +
-    `font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:7pt;letter-spacing:0.04em;` +
-    `padding:6px 14mm;display:flex;justify-content:space-between;-webkit-print-color-adjust:exact;">` +
+    `<div style="margin:0;box-sizing:border-box;width:100%;height:100%;background:#141414;color:#ffffff;` +
+    `padding:0 18mm;display:flex;align-items:center;justify-content:space-between;` +
+    `font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:8.5pt;letter-spacing:0.03em;` +
+    `-webkit-print-color-adjust:exact;print-color-adjust:exact;">` +
     `<span>${legal}</span>` +
     `<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>` +
     `</div>`
