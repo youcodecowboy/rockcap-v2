@@ -19,8 +19,11 @@ export const renderAndStage = internalAction({
     relatedProjectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args): Promise<{ approvalId: string; formats: string[] }> => {
-    const appUrl = process.env.NEXT_APP_URL;
-    if (!appUrl) throw new Error("NEXT_APP_URL not set; cannot reach the render route");
+    const rawAppUrl = process.env.NEXT_APP_URL;
+    if (!rawAppUrl) throw new Error("NEXT_APP_URL not set; cannot reach the render route");
+    // NEXT_APP_URL may be stored without a scheme (e.g. "rockcap-v2.vercel.app").
+    // Normalise like replyEventProcessor so the fetch URL is absolute.
+    const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
     const formats = args.formats && args.formats.length ? args.formats : ["pdf", "docx"];
 
     const res = await fetch(`${appUrl}/api/documents/generate`, {
