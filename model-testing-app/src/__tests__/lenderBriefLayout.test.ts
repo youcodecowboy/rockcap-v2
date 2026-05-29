@@ -1,6 +1,10 @@
 // src/__tests__/lenderBriefLayout.test.ts
 import { describe, it, expect } from "vitest";
-import { buildLenderBriefHtml, buildLenderBriefFooterTemplate } from "../lib/docgen/layouts/lenderBrief";
+import {
+  buildLenderBriefHtml,
+  buildLenderBriefHeaderTemplate,
+  buildLenderBriefFooterTemplate,
+} from "../lib/docgen/layouts/lenderBrief";
 import type { LenderBriefData } from "../lib/docgen/types";
 
 const sample: LenderBriefData = {
@@ -19,14 +23,28 @@ const sample: LenderBriefData = {
   signOff: { name: "Alex Lundberg", role: "Director, RockCap", email: "alex@rockcap.uk", phone: "07815 912 057" },
 };
 
+describe("buildLenderBriefHeaderTemplate", () => {
+  const header = buildLenderBriefHeaderTemplate();
+  it("contains the RockCap wordmark and confidentiality line", () => {
+    expect(header).toContain("RockCap");
+    expect(header).toContain("Strictly Private");
+  });
+  it("is inline-styled (Chromium ignores external CSS)", () => {
+    expect(header).toContain("font-size:13pt");
+    expect(header).toContain("font-family:");
+  });
+});
+
 describe("buildLenderBriefHtml", () => {
   const html = buildLenderBriefHtml(sample);
-  it("is a full HTML document with the brand header", () => {
+  it("is a full HTML document", () => {
     expect(html.startsWith("<!doctype html>")).toBe(true);
-    expect(html).toContain("class=\"brief-wordmark\">RockCap<");
-    expect(html).toContain("Strictly Private");
   });
-  it("renders the title block + confidentiality", () => {
+  it("does NOT contain the in-body brief-header div (wordmark moved to running header)", () => {
+    expect(html).not.toContain("class=\"brief-wordmark\"");
+    expect(html).not.toContain("class=\"brief-header\"");
+  });
+  it("renders the title block + confidentiality in the metaline", () => {
     expect(html).toContain("BURNHAM, BUCKINGHAMSHIRE");
     expect(html).toContain("9-Unit Residential — Senior + Equity");
     expect(html).toContain("INTERNAL");
@@ -44,6 +62,10 @@ describe("buildLenderBriefHtml", () => {
     expect(html).toContain("Alex Lundberg");
     expect(html).toContain("alex@rockcap.uk");
     expect(html).toContain("RockCap Ltd"); // closing line
+  });
+  it("includes page-break-avoid CSS rules", () => {
+    expect(html).toContain("break-inside: avoid");
+    expect(html).toContain("break-after: avoid");
   });
 });
 
