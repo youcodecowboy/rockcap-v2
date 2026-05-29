@@ -44,7 +44,45 @@ const STATUS_LABELS: Record<ApprovalStatus, string> = {
   cancelled: "Cancelled",
 };
 
-function StatusBadge({ status }: { status: ApprovalStatus }) {
+function DocFileLink({ file }: { file: any }) {
+  const url = useQuery(api.documents.getFileUrl as any, { storageId: file.storageId });
+  return (
+    <a
+      href={url ?? undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-flex items-center gap-1 border rounded px-2 py-1 text-xs ${
+        url ? "text-blue-700 hover:bg-blue-50" : "text-gray-400 pointer-events-none"
+      }`}
+    >
+      {file.format === "pdf" ? "View PDF" : "Download DOCX"}
+    </a>
+  );
+}
+
+function DocumentPublishPreview({ payload }: { payload: any }) {
+  const files = payload?.files ?? [];
+  return (
+    <div className="space-y-2 text-sm">
+      <div>
+        <span className="text-gray-500">Title: </span>
+        <span className="font-medium">{payload?.title}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-gray-500">
+        <span className="font-mono">{payload?.docType}</span>
+        <span>·</span>
+        <span>{payload?.category}</span>
+      </div>
+      <div className="flex flex-wrap gap-2 pt-1">
+        {files.map((f: any) => (
+          <DocFileLink key={f.storageId} file={f} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status, entityType }: { status: ApprovalStatus; entityType?: string }) {
   switch (status) {
     case "pending":
       return (
@@ -64,7 +102,7 @@ function StatusBadge({ status }: { status: ApprovalStatus }) {
       return (
         <Badge variant="default" className="bg-emerald-600">
           <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-          Sent
+          {entityType === "document_publish" ? "Filed" : "Sent"}
         </Badge>
       );
     case "execution_failed":
@@ -176,7 +214,7 @@ function ApprovalCard({ approval }: { approval: any }) {
               <span>{new Date(approval.requestedAt).toLocaleString()}</span>
             </div>
           </div>
-          <StatusBadge status={approval.status} />
+          <StatusBadge status={approval.status} entityType={approval.entityType} />
         </div>
       </CardHeader>
 
@@ -217,8 +255,13 @@ function ApprovalCard({ approval }: { approval: any }) {
               </div>
             )}
 
-            {/* Generic payload dump for non-Gmail types */}
-            {approval.entityType !== "gmail_send" && (
+            {/* Document-publish preview */}
+            {approval.entityType === "document_publish" && approval.draftPayload && (
+              <DocumentPublishPreview payload={approval.draftPayload} />
+            )}
+
+            {/* Generic payload dump for remaining types */}
+            {approval.entityType !== "gmail_send" && approval.entityType !== "document_publish" && (
               <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-96">
                 {JSON.stringify(approval.draftPayload, null, 2)}
               </pre>
