@@ -417,11 +417,14 @@ export const executeApproval = internalAction({
             approvalId: args.approvalId,
           });
           break;
-        // Other entity types register here. For v1, only gmail_send has
-        // a real executor; the rest mark executed with no payload so
-        // the lifecycle still advances.
-        case "hubspot_write":
         case "document_publish":
+          result = await ctx.runMutation(internal.documentPublish.recordPublishedDocs, {
+            approvalId: args.approvalId,
+          });
+          break;
+        // Other entity types register here. The rest mark executed with no
+        // payload so the lifecycle still advances.
+        case "hubspot_write":
         case "lender_outreach":
         case "client_communication":
         case "skill_action":
