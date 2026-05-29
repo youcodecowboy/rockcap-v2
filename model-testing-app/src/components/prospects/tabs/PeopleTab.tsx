@@ -5,11 +5,13 @@ import { useMutation, useAction } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { ExternalLink, UserPlus, Search, Mail, Loader2 } from "lucide-react";
+import { matchPersonToContact } from "@/lib/prospects/matchPersonToContact";
 
 interface PeopleTabProps {
   prospect: any;
   intelRun?: any;
   chProfile?: any;
+  contacts?: any[];
 }
 
 interface ApolloLookup {
@@ -72,9 +74,10 @@ function parseKeyPeople(intelMarkdown?: string): ParsedPerson[] {
   return people;
 }
 
-export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
+export function PeopleTab({ prospect, intelRun, chProfile, contacts }: PeopleTabProps) {
   const colors = useColors();
   const createContact = useMutation(api.contacts.create);
+  const updateContact = useMutation(api.contacts.update);
   const findEmailApollo = useAction(api.apollo.findPerson);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [added, setAdded] = useState<Record<string, string>>({});
@@ -134,18 +137,38 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
     setAddingId(person.name);
     setError(null);
     const apolloFor = apolloByPerson[person.name]?.result;
+    const matched = matchPersonToContact(person.name, contacts ?? []);
     try {
-      const id = await createContact({
-        name: person.name,
-        role: apolloFor?.title ?? person.bullets["ch role + appointment"]?.split(",")[0] ?? person.roleNote ?? "Director",
-        email: apolloFor?.email,
-        emailStatus: apolloFor?.emailStatus,
-        emailSource: apolloFor?.email ? "apollo" : undefined,
-        company: companyName,
-        notes: `Imported from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.${apolloFor?.email ? ` Email via Apollo (${apolloFor.emailStatus ?? "unknown status"}).` : ""}${apolloFor?.linkedinUrl ? ` LinkedIn: ${apolloFor.linkedinUrl}.` : ""}`,
-        clientId: prospect?._id,
-      });
-      setAdded((prev) => ({ ...prev, [person.name]: String(id) }));
+      let id: string;
+      if (matched?._id) {
+        // Existing contact — update rather than create to avoid duplicates.
+        // Only patch fields that are improving the record (email from Apollo,
+        // role, and ensure the client link is set).
+        await updateContact({
+          id: matched._id as any,
+          role: apolloFor?.title ?? person.bullets["ch role + appointment"]?.split(",")[0] ?? person.roleNote ?? matched.role ?? "Director",
+          ...(apolloFor?.email ? {
+            email: apolloFor.email,
+          } : {}),
+          notes: `Linked from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.${apolloFor?.email ? ` Email via Apollo (${apolloFor.emailStatus ?? "unknown status"}).` : ""}${apolloFor?.linkedinUrl ? ` LinkedIn: ${apolloFor.linkedinUrl}.` : ""}`,
+          clientId: prospect?._id,
+        });
+        id = String(matched._id);
+      } else {
+        // No existing contact — create fresh.
+        const newId = await createContact({
+          name: person.name,
+          role: apolloFor?.title ?? person.bullets["ch role + appointment"]?.split(",")[0] ?? person.roleNote ?? "Director",
+          email: apolloFor?.email,
+          emailStatus: apolloFor?.emailStatus,
+          emailSource: apolloFor?.email ? "apollo" : undefined,
+          company: companyName,
+          notes: `Imported from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.${apolloFor?.email ? ` Email via Apollo (${apolloFor.emailStatus ?? "unknown status"}).` : ""}${apolloFor?.linkedinUrl ? ` LinkedIn: ${apolloFor.linkedinUrl}.` : ""}`,
+          clientId: prospect?._id,
+        });
+        id = String(newId);
+      }
+      setAdded((prev) => ({ ...prev, [person.name]: id }));
     } catch (e: any) {
       setError(`Failed to add ${person.name}: ${e?.message ?? e}`);
     } finally {
@@ -209,6 +232,8 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
       {people.map((person) => {
         const isAdding = addingId === person.name;
         const addedContactId = added[person.name];
+        const matched = matchPersonToContact(person.name, contacts ?? []);
+        const onFileEmail = matched?.email;
         return (
           <div
             key={person.name}
@@ -245,7 +270,7 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
                     textTransform: "uppercase",
                   }}
                 >
-                  Added · {addedContactId.slice(-8)}
+                  {matched?._id ? "Linked" : "Added"} · {addedContactId.slice(-8)}
                 </span>
               ) : (
                 <button
@@ -253,7 +278,7 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
                   disabled={isAdding}
                   style={{
                     padding: "6px 12px",
-                    background: colors.accent.green,
+                    background: matched?._id ? colors.accent.blue : colors.accent.green,
                     color: "#ffffff",
                     border: "none",
                     borderRadius: 3,
@@ -267,7 +292,7 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
                   }}
                 >
                   <UserPlus size={12} />
-                  {isAdding ? "Adding…" : "Add as contact"}
+                  {isAdding ? (matched?._id ? "Linking…" : "Adding…") : (matched?._id ? "On file — update" : "Add as contact")}
                 </button>
               )}
             </div>
@@ -287,14 +312,20 @@ export function PeopleTab({ prospect, intelRun, chProfile }: PeopleTabProps) {
               ))}
             </div>
 
-            {/* Apollo email discovery block. Renders inline; when result lands,
-                shows the email + verification status; the add-contact button
-                automatically uses the found email. */}
-            <ApolloEmailBlock
-              lookup={apolloByPerson[person.name]}
-              onFind={() => handleFindEmail(person)}
-              colors={colors}
-            />
+            {/* Email block: show on-file email when matched, else Apollo discovery. */}
+            {onFileEmail ? (
+              <OnFileEmailBlock
+                email={onFileEmail}
+                emailStatus={matched?.emailStatus}
+                colors={colors}
+              />
+            ) : (
+              <ApolloEmailBlock
+                lookup={apolloByPerson[person.name]}
+                onFind={() => handleFindEmail(person)}
+                colors={colors}
+              />
+            )}
 
             {/* Contact discovery actions */}
             <div
@@ -379,6 +410,72 @@ function DiscoveryButton({
       {icon}
       {label}
     </a>
+  );
+}
+
+function OnFileEmailBlock({
+  email,
+  emailStatus,
+  colors,
+}: {
+  email: string;
+  emailStatus?: string;
+  colors: any;
+}) {
+  const pill = emailStatusColor(emailStatus, colors);
+  return (
+    <div
+      style={{
+        padding: "10px 12px",
+        background: `${colors.accent.green}08`,
+        border: `1px solid ${colors.accent.green}40`,
+        borderRadius: 4,
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+      }}
+    >
+      <Mail size={12} color={colors.accent.green} />
+      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: colors.text.primary }}>
+        {email}
+      </span>
+      <span
+        style={{
+          padding: "1px 6px",
+          background: `${colors.accent.green}20`,
+          color: colors.accent.green,
+          border: `1px solid ${colors.accent.green}40`,
+          borderRadius: 2,
+          fontSize: 9,
+          fontFamily: "ui-monospace, monospace",
+          letterSpacing: "0.05em",
+          textTransform: "uppercase" as const,
+          fontWeight: 500,
+        }}
+      >
+        on file
+      </span>
+      {emailStatus && (
+        <span
+          style={{
+            padding: "1px 6px",
+            background: pill.bg,
+            color: pill.fg,
+            border: `1px solid ${pill.border}`,
+            borderRadius: 2,
+            fontSize: 9,
+            fontFamily: "ui-monospace, monospace",
+            letterSpacing: "0.05em",
+            textTransform: "uppercase" as const,
+            fontWeight: 500,
+          }}
+        >
+          {emailStatus}
+        </span>
+      )}
+    </div>
   );
 }
 

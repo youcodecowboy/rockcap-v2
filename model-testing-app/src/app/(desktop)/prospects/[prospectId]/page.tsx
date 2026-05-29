@@ -95,6 +95,10 @@ export default function ProspectDetailPage() {
     prospect ? { clientId: prospectId, limit: 100 } : "skip",
   );
 
+  // People tab: existing HubSpot contacts for this prospect, so we can
+  // match report "key people" to on-file contacts and avoid duplicates.
+  const contacts = useQuery(api.contacts.getByClient, prospect ? { clientId: prospectId } : "skip");
+
   const approvePackage = useMutation(api.cadences.approvePackage);
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
@@ -139,7 +143,7 @@ export default function ProspectDetailPage() {
           )}
           {activeTab === "intel" && <IntelTab intelRun={intelRun} />}
           {activeTab === "people" && (
-            <PeopleTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} />
+            <PeopleTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} contacts={contacts} />
           )}
           {activeTab === "ch" && (
             <CompaniesHouseTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} groupCharges={groupCharges} />
