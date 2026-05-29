@@ -5,13 +5,20 @@ import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 
 export interface PdfOptions {
-  /** Bottom margin in mm for Puppeteer's margin option. Default 20. When a layout
-   *  uses @page CSS for margins (e.g. lender-brief), pass 0 here so @page wins. */
+  /** Bottom margin in mm for Puppeteer's margin option. Default 20. */
   marginBottomMm?: number;
   /** Top margin override in mm. Default 20. */
   marginTopMm?: number;
   /** Left/right margin override in mm. Default 18. */
   marginSideMm?: number;
+  /**
+   * Chromium footer template HTML. When provided, displayHeaderFooter is set to
+   * true and an empty headerTemplate is supplied to suppress the default header.
+   * The template has access to Chromium's .pageNumber / .totalPages inject spans.
+   * The reserved bottom margin (marginBottomMm) is what physically hosts the band
+   * on EVERY page — this is how page-overflow is avoided.
+   */
+  footerTemplate?: string;
 }
 
 async function resolveExecutablePath(): Promise<string> {
@@ -29,10 +36,15 @@ export async function renderHtmlToPdf(html: string, opts?: PdfOptions): Promise<
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
+    const useFooterTemplate = Boolean(opts?.footerTemplate);
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
-      displayHeaderFooter: false,
+      displayHeaderFooter: useFooterTemplate,
+      ...(useFooterTemplate && {
+        headerTemplate: "<span></span>",
+        footerTemplate: opts!.footerTemplate,
+      }),
       margin: {
         top: `${opts?.marginTopMm ?? 20}mm`,
         bottom: `${opts?.marginBottomMm ?? 20}mm`,

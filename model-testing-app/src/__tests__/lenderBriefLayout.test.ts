@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildLenderBriefHtml,
+  buildLenderBriefFooterTemplate,
 } from "../lib/docgen/layouts/lenderBrief";
 import type { LenderBriefData } from "../lib/docgen/types";
 
@@ -61,23 +62,40 @@ describe("buildLenderBriefHtml", () => {
   });
 });
 
-describe("buildLenderBriefHtml footer band", () => {
+describe("buildLenderBriefFooterTemplate", () => {
+  const tpl = buildLenderBriefFooterTemplate();
+  it("is a full-width black band with the company legal line on the left", () => {
+    expect(tpl).toContain("background:#141414");
+    expect(tpl).toContain("RockCap Ltd");
+    expect(tpl).toContain("rockcap.uk");
+  });
+  it("includes Chromium page-number inject spans", () => {
+    expect(tpl).toContain("class=\"pageNumber\"");
+    expect(tpl).toContain("class=\"totalPages\"");
+    expect(tpl).toContain("Page ");
+    expect(tpl).toContain(" of ");
+  });
+  it("fills the reserved margin with height:100% and has correct font-size", () => {
+    expect(tpl).toContain("height:100%");
+    expect(tpl).toContain("font-size:8.5pt");
+  });
+});
+
+describe("buildLenderBriefHtml footer approach (footerTemplate, not fixed band)", () => {
   const html = buildLenderBriefHtml(sample);
-  it("contains a position:fixed CSS footer band in the body (not a footerTemplate)", () => {
-    // The footer band is a body element, not a Chromium footerTemplate
-    expect(html).toContain("class=\"brief-footer-band\"");
-    expect(html).toContain("position: fixed");
-    expect(html).toContain("background: #141414");
-    expect(html).toContain("font-size: 8.5pt");
+  it("does NOT contain a position:fixed footer band in the body HTML", () => {
+    expect(html).not.toContain("class=\"brief-footer-band\"");
+    expect(html).not.toContain("position: fixed");
   });
-  it("footer band contains the company legal line", () => {
-    expect(html).toContain("RockCap Ltd");
-    expect(html).toContain("rockcap.uk");
+  it("does NOT use @page { margin: 0 } — page margins are managed by Chromium", () => {
+    expect(html).not.toContain("@page { margin: 0; }");
   });
-  it("page uses @page { margin: 0 } so fixed element reaches physical page edge", () => {
-    expect(html).toContain("@page { margin: 0; }");
+  it("main.brief has no explicit bottom padding hack (no 26mm bottom)", () => {
+    // The body content relies on Chromium's margin.bottom rather than CSS padding
+    expect(html).not.toContain("padding: 20mm 18mm 26mm");
   });
-  it("main.brief has padding to keep content clear of the fixed footer", () => {
-    expect(html).toContain("padding: 20mm 18mm 26mm");
+  it("break-inside avoid rules are still present for section/table/signoff", () => {
+    expect(html).toContain("break-inside: avoid");
+    expect(html).toContain("break-after: avoid");
   });
 });
