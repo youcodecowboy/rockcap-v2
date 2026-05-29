@@ -41,6 +41,7 @@ const GLOBAL_WRITE_TOOLS = new Set([
   "createNote",
   "createContact",
   "saveChatDocument",
+  "generateDocument",
   "createMeeting",
   "extractMeetingFromText",
   "createFlag",
