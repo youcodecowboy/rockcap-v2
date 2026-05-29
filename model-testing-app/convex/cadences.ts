@@ -160,7 +160,8 @@ export const advanceAfterFireInternal = internalMutation({
     cadenceId: v.id("cadences"),
     fireKey: v.string(),
     lastResult: v.union(
-      v.literal("sent"),
+      v.literal("approval_staged"),  // fired → staged a pending approval (did NOT send)
+      v.literal("sent"),             // legacy-tolerated; nothing writes it anymore
       v.literal("skipped_paused"),
       v.literal("skipped_holiday"),
       v.literal("skipped_user_opted_out"),

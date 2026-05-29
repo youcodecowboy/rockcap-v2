@@ -3831,6 +3831,11 @@ export default defineSchema({
     nextDueAt: v.string(),                      // ISO timestamp; indexed for cron queries
     lastFiredAt: v.optional(v.string()),
     lastResult: v.optional(v.union(
+      // "approval_staged" = the dispatcher fired this touch and STAGED a
+      // pending gmail_send approval. It did NOT send — operator approval +
+      // the live Gmail executor (gmailSend.executeApprovedSend) do that.
+      // "sent" is legacy-tolerated for pre-rename rows; nothing writes it now.
+      v.literal("approval_staged"),
       v.literal("sent"),
       v.literal("skipped_paused"),
       v.literal("skipped_holiday"),

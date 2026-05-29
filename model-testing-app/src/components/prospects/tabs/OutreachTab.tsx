@@ -382,7 +382,7 @@ function TouchCard({
           </span>
           {alreadyFired && (
             <Pill colors={colors} bg={`${colors.accent.green}20`} fg={colors.accent.green} border={`${colors.accent.green}50`}>
-              {cadence.lastResult ?? "sent"}
+              {cadence.lastResult === "approval_staged" ? "draft staged" : (cadence.lastResult ?? "—")}
             </Pill>
           )}
           {wasEdited && (
