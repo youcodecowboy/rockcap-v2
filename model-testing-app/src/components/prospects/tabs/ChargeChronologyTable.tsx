@@ -82,8 +82,8 @@ export function ChargeChronologyTable({ charges }: { charges: ChronologyCharge[]
           </tr>
         </thead>
         <tbody>
-          {sorted.map((c) => (
-            <tr key={c._id ?? c.chargeId ?? `${c.chargeDate}-${c.chargeeName}`}>
+          {sorted.map((c, i) => (
+            <tr key={c._id ?? `${c.chargeId ?? "row"}-${i}`}>
               <td
                 style={{
                   padding: "8px 12px",
