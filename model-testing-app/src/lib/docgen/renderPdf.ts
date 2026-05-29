@@ -4,12 +4,20 @@
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 
+export interface PdfOptions {
+  /** Chromium footer template (HTML). Enables displayHeaderFooter with an empty
+   *  header. Use `<span class="pageNumber"></span>` / `totalPages` for page nos. */
+  footerTemplate?: string;
+  /** Bottom margin in mm when a footer is shown (must fit the footer). Default 24. */
+  marginBottomMm?: number;
+}
+
 async function resolveExecutablePath(): Promise<string> {
   if (process.env.CHROMIUM_EXECUTABLE_PATH) return process.env.CHROMIUM_EXECUTABLE_PATH;
   return await chromium.executablePath();
 }
 
-export async function renderHtmlToPdf(html: string): Promise<Buffer> {
+export async function renderHtmlToPdf(html: string, opts?: PdfOptions): Promise<Buffer> {
   const executablePath = await resolveExecutablePath();
   const browser = await puppeteer.launch({
     args: process.env.CHROMIUM_EXECUTABLE_PATH ? ["--no-sandbox", "--disable-setuid-sandbox"] : chromium.args,
@@ -19,10 +27,19 @@ export async function renderHtmlToPdf(html: string): Promise<Buffer> {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
+    const hasFooter = !!opts?.footerTemplate;
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: { top: "20mm", bottom: "20mm", left: "18mm", right: "18mm" },
+      displayHeaderFooter: hasFooter,
+      headerTemplate: hasFooter ? "<span></span>" : undefined, // suppress default header
+      footerTemplate: hasFooter ? opts!.footerTemplate : undefined,
+      margin: {
+        top: "20mm",
+        bottom: hasFooter ? `${opts?.marginBottomMm ?? 24}mm` : "20mm",
+        left: "18mm",
+        right: "18mm",
+      },
     });
     return Buffer.from(pdf);
   } finally {
