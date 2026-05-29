@@ -30,6 +30,43 @@ const FILE = v.object({
   mime: v.string(),
 });
 
+// ── Internal staging path (accepts explicit requestedByUserId for non-Clerk callers) ──
+export const stageInternal = internalMutation({
+  args: {
+    title: v.string(),
+    docType: v.string(),
+    category: v.string(),
+    summary: v.string(),
+    files: v.array(FILE),
+    isBaseDocument: v.boolean(),
+    requestedByUserId: v.id("users"),
+    requestSourceName: v.string(),
+    relatedClientId: v.optional(v.id("clients")),
+    relatedProjectId: v.optional(v.id("projects")),
+    relatedSkillRunId: v.optional(v.id("skillRuns")),
+  },
+  handler: async (ctx, args) => {
+    const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
+      entityType: "document_publish",
+      summary: args.summary,
+      draftPayload: {
+        title: args.title,
+        docType: args.docType,
+        category: args.category,
+        isBaseDocument: args.isBaseDocument,
+        files: args.files,
+      },
+      requestedBy: args.requestedByUserId,
+      requestSource: "skill",
+      requestSourceName: args.requestSourceName,
+      relatedClientId: args.relatedClientId,
+      relatedProjectId: args.relatedProjectId,
+      relatedSkillRunId: args.relatedSkillRunId,
+    });
+    return { approvalId };
+  },
+});
+
 // ── Stage the approval (called by the guiding skill / chat tool in P3) ──
 export const requestPublish = mutation({
   args: {
@@ -47,26 +84,19 @@ export const requestPublish = mutation({
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
     if (args.files.length === 0) throw new Error("requestPublish: no files to publish");
-
-    const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
-      entityType: "document_publish",
+    return await ctx.runMutation(internal.documentPublish.stageInternal, {
+      title: args.title,
+      docType: args.docType,
+      category: args.category,
       summary: args.summary,
-      draftPayload: {
-        title: args.title,
-        docType: args.docType,
-        category: args.category,
-        isBaseDocument: args.isBaseDocument ?? true,
-        files: args.files,
-      },
-      requestedBy: user._id,
-      requestSource: "skill",
+      files: args.files,
+      isBaseDocument: args.isBaseDocument ?? true,
+      requestedByUserId: user._id,
       requestSourceName: args.requestSourceName ?? "document-author",
       relatedClientId: args.relatedClientId,
       relatedProjectId: args.relatedProjectId,
       relatedSkillRunId: args.relatedSkillRunId,
     });
-
-    return { approvalId };
   },
 });
 

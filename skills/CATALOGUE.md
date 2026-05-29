@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 87 tools across 19 domains as of the lender-tier-conflict pass: adds companies.getLenderTierConflict (prospect flag: park/soften on protected lenders). Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme (Track Record tab / per-scheme enrichment). Prior pass (corporate-group charges): adds companies.getGroupCharges (CH-tab group-charges rollup). Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 88 tools across 19 domains as of the P4 docgen pass: adds document.generate (ad-hoc document generation: compose HTML → render PDF/DOCX → stage document_publish approval). Prior pass (lender-tier-conflict): adds companies.getLenderTierConflict (prospect flag: park/soften on protected lenders). Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme (Track Record tab / per-scheme enrichment). Prior pass (corporate-group charges): adds companies.getGroupCharges (CH-tab group-charges rollup). Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -163,7 +163,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `meeting.listUpcoming({limit?})` | Upcoming meetings across all clients, soonest first. Operator's "what calls do I have" surface. |
 | (`meeting.listByClient` removed in catalogue cleanup — use `meeting.getByClient`) | — |
 
-### `document.*` — Document discovery + linkage + classification fixes (7)
+### `document.*` — Document discovery + linkage + classification fixes + generation (8)
 
 | Tool | Purpose |
 |---|---|
@@ -174,6 +174,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `document.linkToProject({documentId, projectId?})` | Re-file a document: assign to a project (sets isBaseDocument=false) or unlink (pass projectId=null). |
 | `document.createFromGeneration({fileName, fileTypeDetected, category, summary, clientId?, projectId?, ...})` | Persist a skill-generated artefact (lender brief, IC paper, terms comparison, meeting notes) into documents. Content lives inline in `summary` as markdown — no file storage needed. Appears in the standard documents UI. For file UPLOADS use the regular `documents.create` flow. |
 | `document.updateClassification({documentId, category?, fileTypeDetected?, summary?, reasoning?})` | Patch a document's classification fields — for correcting V4 ingestion classifier mistakes. Does NOT re-run V4, strictly a metadata patch. All fields optional; pass only what to change. Recommend always passing `reasoning` for audit trail. |
+| `document.generate({contentHtml, title, docType, category?, summary?, formats?, clientId?, projectId?})` | **P4 — ad-hoc document generation from Claude Code.** Compose the body as semantic HTML (h1/h2/p/table; NO html/head/style wrappers — house styling applied automatically), render to PDF + DOCX via the Next `/api/documents/generate` route, and stage a `document_publish` approval. On approval the files are filed to the client's Documents library. Ground every figure in real data; never fabricate. Use for one-pagers, IC papers, company summaries etc. See the `document-author` skill + `skills/shared-references/document-house-style.md` for voice and structure. |
 
 ### `checklist.*` — Requirements tracking + link fixes (6)
 

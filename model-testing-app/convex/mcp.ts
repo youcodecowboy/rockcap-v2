@@ -2628,6 +2628,42 @@ const TOOLS: McpTool[] = [
       return asText({ ok: true, projectId: result });
     },
   },
+
+  // ── P4: ad-hoc document generation from Claude Code ──────────────────
+  {
+    name: "document.generate",
+    description:
+      "Generate a formatted document (PDF + DOCX) from composed HTML and stage it for operator approval; on approval it is filed to the client's Documents library. YOU compose the body as semantic HTML (h1/h2/p/table; NO <html>/<head>/<style> wrappers — house styling is applied automatically). Ground every figure in real data; never fabricate. Use for ad-hoc requests like a company one-pager. See the document-author skill + the document-house-style reference for voice and structure.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contentHtml: { type: "string", description: "Document body as semantic HTML. No html/head/style wrappers; one <h1>." },
+        title: { type: "string", description: "Document title; also the file-name stem." },
+        docType: { type: "string", description: "Kind of document, e.g. 'Company One-Pager'." },
+        category: { type: "string", description: "Filing category. Defaults to 'Generated'." },
+        summary: { type: "string", description: "One-line operator-facing summary for the approvals queue. Defaults to the title." },
+        formats: { type: "array", items: { type: "string", description: "pdf or docx" }, description: "Output formats. Defaults to ['pdf','docx']." },
+        clientId: { type: "string", description: "Client id to file the document under on approval." },
+        projectId: { type: "string", description: "Project id to associate (optional)." },
+      },
+      required: ["contentHtml", "title", "docType"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.documentGen.renderAndStage, {
+        contentHtml: args.contentHtml,
+        title: args.title,
+        docType: args.docType,
+        category: args.category,
+        summary: args.summary,
+        formats: args.formats,
+        isBaseDocument: true,
+        requestedByUserId: userId,
+        relatedClientId: args.clientId,
+        relatedProjectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(
