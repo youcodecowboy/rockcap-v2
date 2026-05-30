@@ -49,13 +49,7 @@ export function buildStructureChartSvg(graph: StructureGraph): string {
   // x = barycenter of parents (top-down); even-spread fallback; then de-overlap + centre
   const pos = new Map<string, { x: number; y: number }>();
   const span = W - 2 * SIDE;
-  for (let lv = 0; lv < levels.length; lv++) {
-    const row = levels[lv] ?? [];
-    row.forEach((n, i) => {
-      const ps = (parentsOf.get(n.id) ?? []).map((p) => pos.get(p)?.x).filter((x): x is number => x != null);
-      const x = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : SIDE + (span * (i + 0.5)) / row.length;
-      pos.set(n.id, { x, y: TOP + lv * LEVEL_GAP });
-    });
+  const recentreRow = (row: StructureNode[]) => {
     const sorted = [...row].sort((a, b) => pos.get(a.id)!.x - pos.get(b.id)!.x);
     const step = BOX_W + MIN_GAP;
     for (let i = 1; i < sorted.length; i++) {
@@ -63,13 +57,32 @@ export function buildStructureChartSvg(graph: StructureGraph): string {
       if (cur.x - prev.x < step) cur.x = prev.x + step;
     }
     const xs = sorted.map((n) => pos.get(n.id)!.x);
-    if (xs.length) {
-      const shift = (W - (Math.max(...xs) - Math.min(...xs))) / 2 - Math.min(...xs);
-      sorted.forEach((n) => {
-        const p = pos.get(n.id)!;
-        p.x = Math.max(SIDE + BOX_W / 2, Math.min(W - SIDE - BOX_W / 2, p.x + shift));
-      });
-    }
+    if (!xs.length) return;
+    const shift = (W - (Math.max(...xs) - Math.min(...xs))) / 2 - Math.min(...xs);
+    sorted.forEach((n) => {
+      const p = pos.get(n.id)!;
+      p.x = Math.max(SIDE + BOX_W / 2, Math.min(W - SIDE - BOX_W / 2, p.x + shift));
+    });
+  };
+  for (let lv = 0; lv < levels.length; lv++) {
+    const row = levels[lv] ?? [];
+    row.forEach((n, i) => {
+      const ps = (parentsOf.get(n.id) ?? []).map((p) => pos.get(p)?.x).filter((x): x is number => x != null);
+      const x = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : SIDE + (span * (i + 0.5)) / row.length;
+      pos.set(n.id, { x, y: TOP + lv * LEVEL_GAP });
+    });
+    recentreRow(row);
+  }
+  // bottom-up pass: pull each parent over the barycenter of its children, so a
+  // parent (e.g. the people above Homes) sits above what it owns rather than at a
+  // page-spread default. Re-resolve overlaps + recentre per row afterwards.
+  for (let lv = levels.length - 2; lv >= 0; lv--) {
+    const row = levels[lv] ?? [];
+    row.forEach((n) => {
+      const cs = (childrenOf.get(n.id) ?? []).map((c) => pos.get(c)?.x).filter((x): x is number => x != null);
+      if (cs.length) pos.get(n.id)!.x = cs.reduce((a, b) => a + b, 0) / cs.length;
+    });
+    recentreRow(row);
   }
 
   let hasFlagged = false;

@@ -586,6 +586,83 @@ export const getGroupCharges = query({
 });
 
 /**
+ * Returns the prospect's corporate-group CH numbers and the distinct active
+ * (non-resigned) directors across them (with each director's appointmentsLink),
+ * in one call. The
+ * starting point for the corporate-structure walk — feed each appointmentsLink
+ * to companies.getOfficerAppointments to discover scheme SPVs, and search CH
+ * by the deal/scheme name. Director != owner: confirm ownership via PSC before
+ * crediting a company to the prospect.
+ *
+ * Read-only — aggregates already-synced rows. No CH API fetch.
+ *
+ * Officers are keyed by companyId (a reference to companiesHouseCompanies),
+ * not the CH number, so each number is first resolved to its company row via
+ * the by_company_number index (mirrors getGroupCharges), then officers are
+ * fetched via the by_company index on companyId.
+ */
+export const mapGroup = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, { clientId }) => {
+    const client = await ctx.db.get(clientId);
+    if (!client) return { ok: false, error: "client_not_found" } as const;
+
+    const parentNumber = (client as any).companiesHouseNumber as string | undefined;
+    const relatedNumbers = ((client as any).relatedCompaniesHouseNumbers ?? []) as string[];
+
+    // Deduped CH-number set, parent first (mirrors getGroupCharges).
+    const seenNums = new Set<string>();
+    const numbers: string[] = [];
+    for (const n of [parentNumber, ...relatedNumbers]) {
+      const num = (n ?? "").trim();
+      if (!num || seenNums.has(num)) continue;
+      seenNums.add(num);
+      numbers.push(num);
+    }
+
+    // Distinct directors across the group. Officers are keyed by companyId (a
+    // ref), not the CH number, so resolve number -> company row first (like
+    // getGroupCharges), then read that company's officers by companyId.
+    const controllers: Array<{ name: string; appointmentsLink?: string; companyNumber: string }> = [];
+    const seen = new Set<string>();
+    for (const num of numbers) {
+      const company = await ctx.db
+        .query("companiesHouseCompanies")
+        .withIndex("by_company_number", (q: any) => q.eq("companyNumber", num))
+        .first();
+      if (!company) continue; // requested but not synced yet
+
+      const officers = await ctx.db
+        .query("companiesHouseOfficers")
+        .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
+        .collect();
+
+      for (const o of officers) {
+        // Active natural-person directors only — the current controllers to walk from.
+        // Resigned directors (resignedOn set) are excluded: walking a former director's
+        // appointments invites the mis-attribution this feature guards against (crediting a
+        // directed-but-not-owned scheme to the prospect). corporate-director / llp-member
+        // roles are out of v1 scope.
+        if (o.officerRole !== "director" || o.resignedOn) continue;
+        const key = (o.appointmentsLink ?? o.name) as string;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // companyNumber = the group company where this director was first seen (parent-first);
+        // their appointmentsLink gives the full cross-company picture when followed.
+        controllers.push({ name: o.name, appointmentsLink: o.appointmentsLink, companyNumber: num });
+      }
+    }
+
+    return {
+      ok: true,
+      companyNumbers: numbers,
+      controllers,
+      note: "Walk each controller's appointmentsLink via companies.getOfficerAppointments, then search CH by scheme name; confirm ownership (PSC) before crediting any company as the prospect's.",
+    } as const;
+  },
+});
+
+/**
  * Build the prospect's scheme list by joining Companies House charge data
  * with any per-scheme enrichment rows from prospectSchemes. Returns two
  * buckets: live (outstanding charges or active company) and past (dissolved

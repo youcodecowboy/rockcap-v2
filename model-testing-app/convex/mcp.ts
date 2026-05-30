@@ -552,6 +552,10 @@ const TOOLS: McpTool[] = [
           type: "string",
           description: "Full markdown intel report — rendered by the /prospects/[id] Intel tab. Separate from brief: this is the long-form artefact with sections (Identity, Online Presence, Key People, Lender DNA, Track Record, Recent Signals, Recommended Approach, Sources). Hardened skills (prospect-intel v2, qualify-and-draft, lender-intel) populate this; legacy skills can omit.",
         },
+        structureGraph: {
+          type: "object",
+          description: "Corporate StructureGraph to persist on the run (optional). Shape per src/lib/structure/types.ts { subjectClientId, asOf, nodes[], edges[], verdict }. Rendered as the structure chart in the prospect Intel tab.",
+        },
         linkedClientId: { type: "string" },
         linkedProjectId: { type: "string" },
         linkedApprovalIds: { type: "array", items: { type: "string" } },
@@ -588,6 +592,7 @@ const TOOLS: McpTool[] = [
         status: args.status,
         brief: args.brief,
         intelMarkdown: args.intelMarkdown,
+        structureGraph: args.structureGraph,
         linkedClientId: args.linkedClientId,
         linkedProjectId: args.linkedProjectId,
         linkedApprovalIds: args.linkedApprovalIds,
@@ -2081,6 +2086,22 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // Corporate-structure chart renderer: ownership-only layout SVG + data URI.
+  {
+    name: "structure.renderChart",
+    description:
+      "Render a corporate StructureGraph to a styled SVG (ownership-only layout) + a data:image/svg+xml URI + the high/med/low verdict. Pass { graph } (shape per src/lib/structure/types.ts). Use after building the graph in the corporate-structure skill: embed the returned dataUri in intelMarkdown and inline the svg in a lender brief's Corporate Structure section. Read-only (does not persist).",
+    inputSchema: {
+      type: "object",
+      properties: { graph: { type: "object", description: "StructureGraph { subjectClientId, asOf, nodes[], edges[] }" } },
+      required: ["graph"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runAction(internal.structureGen.renderChart, { graph: args.graph });
+      return asText(result);
+    },
+  },
+
   // Corporate-group charge rollup: aggregates the Companies House charge book
   // across a prospect's parent + sibling-SPV CH numbers (the ones persisted on
   // clients.relatedCompaniesHouseNumbers by resolve-related-entities). Mirrors
@@ -2100,6 +2121,17 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runQuery(api.companies.getGroupCharges, {
         clientId: args.clientId,
       });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "companies.mapGroup",
+    description:
+      "One-call group map: returns the prospect group's CH numbers + the distinct directors across them (with each director's appointmentsLink). The starting point for the corporate-structure walk — feed each appointmentsLink to companies.getOfficerAppointments to find scheme SPVs, and search CH by the deal/scheme name. Director != owner: confirm ownership via PSC before crediting a company to the prospect. Read-only; aggregates already-synced rows.",
+    inputSchema: { type: "object", properties: { clientId: { type: "string", description: "Convex id of the prospect's clients row" } }, required: ["clientId"] },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companies.mapGroup, { clientId: args.clientId });
       return asText(result);
     },
   },

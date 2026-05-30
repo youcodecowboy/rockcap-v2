@@ -4297,6 +4297,10 @@ export default defineSchema({
     // Rich intel report (v1.2) — companion to `brief`, full markdown
     intelMarkdown: v.optional(v.string()),
 
+    // Corporate-structure graph (nodes/edges/verdict) per src/lib/structure/types.ts;
+    // persisted by the corporate-structure / prospect-intel skills, rendered in the Intel tab.
+    structureGraph: v.optional(v.any()),
+
     // Revision linking (v1.2) — set when a skillRun is a re-run after request_revision
     parentRunId: v.optional(v.id("skillRuns")),
     revisionRequestedAt: v.optional(v.string()),
