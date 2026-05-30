@@ -31,9 +31,18 @@ const LENDER_BRIEF_CSS = `
   .brief-section td { padding: 5px 8px; border-bottom: 1px solid #ededed; vertical-align: top; }
   .brief-section td.num, .brief-section th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
   .brief-section .caption { font-size: 8pt; color: #8a8a8a; margin-top: -4px; }
+  .brief-section .sub { display: block; font-size: 8pt; color: #8a8a8a; margin-top: 1px; }
+  .brief-section em { font-style: italic; color: #6b6b6b; }
   .brief-signoff { margin-top: 28px; padding-top: 12px; border-top: 1px solid #d9d9d9; margin-bottom: 8px; }
   .brief-signoff .name { font-weight: 600; }
   .brief-signoff .contact { font-family: ui-monospace, monospace; font-size: 9pt; color: #6b6b6b; }
+  /* Block cohesion: a section is one unit — its heading must never sit at a page
+     bottom with the body overleaf. Sections taller than a page still break (the
+     engine ignores break-inside:avoid when it cannot fit), but break-after on the
+     h2 keeps the heading with its first content and tables never split. Operator
+     rule: prefer whole-block placement over tight page-fill, even at the cost of
+     some bottom whitespace. */
+  section.brief-section { break-inside: avoid; }
   section.brief-section > h2 { break-after: avoid; }
   .brief-section table, .brief-section thead, .brief-section tr { break-inside: avoid; }
   .brief-section p { orphans: 2; widows: 2; }

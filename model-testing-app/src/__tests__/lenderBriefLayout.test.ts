@@ -56,12 +56,13 @@ describe("buildLenderBriefHtml", () => {
     // sign-off no longer contains the brief-closing company line (moved to footer band)
     expect(html).not.toContain("class=\"brief-closing\"");
   });
-  it("includes page-break-avoid CSS rules (tables + signoff) but NOT whole-section avoid", () => {
+  it("includes page-break-avoid CSS rules (tables, signoff, AND whole section)", () => {
     // Tables and sign-off still avoid breaking
     expect(html).toContain("break-inside: avoid");
     expect(html).toContain("break-after: avoid");
-    // The whole-section break-inside:avoid rule was removed so prose flows naturally
-    expect(html).not.toContain("section.brief-section { break-inside: avoid; }");
+    // Whole-section break-inside:avoid keeps each section as one block — a heading
+    // never sits at a page bottom with its body on the next page.
+    expect(html).toContain("section.brief-section { break-inside: avoid; }");
   });
 });
 
@@ -103,10 +104,10 @@ describe("buildLenderBriefHtml footer approach (footerTemplate, not fixed band)"
     // The body content relies on Chromium's margin.bottom rather than CSS padding
     expect(html).not.toContain("padding: 20mm 18mm 26mm");
   });
-  it("break-inside avoid rules are still present for table/signoff but NOT whole section", () => {
+  it("break-inside avoid rules present for table/signoff AND whole section", () => {
     expect(html).toContain("break-inside: avoid");
     expect(html).toContain("break-after: avoid");
-    // Whole-section break-inside:avoid removed — prose flows across page breaks naturally
-    expect(html).not.toContain("section.brief-section { break-inside: avoid; }");
+    // Whole-section break-inside:avoid keeps each section as one block across pages
+    expect(html).toContain("section.brief-section { break-inside: avoid; }");
   });
 });
