@@ -552,6 +552,10 @@ const TOOLS: McpTool[] = [
           type: "string",
           description: "Full markdown intel report — rendered by the /prospects/[id] Intel tab. Separate from brief: this is the long-form artefact with sections (Identity, Online Presence, Key People, Lender DNA, Track Record, Recent Signals, Recommended Approach, Sources). Hardened skills (prospect-intel v2, qualify-and-draft, lender-intel) populate this; legacy skills can omit.",
         },
+        structureGraph: {
+          type: "object",
+          description: "Corporate StructureGraph to persist on the run (optional). Shape per src/lib/structure/types.ts { subjectClientId, asOf, nodes[], edges[], verdict }. Rendered as the structure chart in the prospect Intel tab.",
+        },
         linkedClientId: { type: "string" },
         linkedProjectId: { type: "string" },
         linkedApprovalIds: { type: "array", items: { type: "string" } },
@@ -588,6 +592,7 @@ const TOOLS: McpTool[] = [
         status: args.status,
         brief: args.brief,
         intelMarkdown: args.intelMarkdown,
+        structureGraph: args.structureGraph,
         linkedClientId: args.linkedClientId,
         linkedProjectId: args.linkedProjectId,
         linkedApprovalIds: args.linkedApprovalIds,
