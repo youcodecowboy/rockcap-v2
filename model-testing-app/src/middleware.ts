@@ -40,6 +40,12 @@ const isPublicRoute = createRouteMatcher([
   // action. Self-authenticates via X-Cron-Secret, same pattern as
   // webhook-process.
   '/api/hubspot/fireflies-backfill(.*)',
+  // Convex action → Next bridge for the corporate-structure chart renderer.
+  // The `structureGen.renderChart` action POSTs here server-to-server (no Clerk
+  // cookie); the handler self-authenticates via x-convex-internal-secret. Public
+  // here so Clerk doesn't 404-reject the request before the handler's own secret
+  // check — same pattern as v4-analyze / hubspot bridges above.
+  '/api/structure/render(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.
