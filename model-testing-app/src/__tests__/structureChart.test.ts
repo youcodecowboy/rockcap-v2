@@ -25,6 +25,10 @@ describe("buildStructureChartSvg", () => {
   it("shows the verdict chip", () => {
     expect(svg).toContain("STRUCTURE: MEDIUM");
   });
+  it("pulls non-owned context (former-employer) out of the ownership tree", () => {
+    expect(svg).toContain("PRIOR / NON-OWNED");
+    expect(svg).toContain("not owned");
+  });
 });
 
 describe("svgToMarkdownImage", () => {
