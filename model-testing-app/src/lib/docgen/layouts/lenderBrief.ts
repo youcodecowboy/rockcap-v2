@@ -34,7 +34,6 @@ const LENDER_BRIEF_CSS = `
   .brief-signoff { margin-top: 28px; padding-top: 12px; border-top: 1px solid #d9d9d9; margin-bottom: 8px; }
   .brief-signoff .name { font-weight: 600; }
   .brief-signoff .contact { font-family: ui-monospace, monospace; font-size: 9pt; color: #6b6b6b; }
-  section.brief-section { break-inside: avoid; }
   section.brief-section > h2 { break-after: avoid; }
   .brief-section table, .brief-section thead, .brief-section tr { break-inside: avoid; }
   .brief-section p { orphans: 2; widows: 2; }
