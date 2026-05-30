@@ -2126,6 +2126,17 @@ const TOOLS: McpTool[] = [
   },
 
   {
+    name: "companies.mapGroup",
+    description:
+      "One-call group map: returns the prospect group's CH numbers + the distinct directors across them (with each director's appointmentsLink). The starting point for the corporate-structure walk — feed each appointmentsLink to companies.getOfficerAppointments to find scheme SPVs, and search CH by the deal/scheme name. Director != owner: confirm ownership via PSC before crediting a company to the prospect. Read-only; aggregates already-synced rows.",
+    inputSchema: { type: "object", properties: { clientId: { type: "string", description: "Convex id of the prospect's clients row" } }, required: ["clientId"] },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companies.mapGroup, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  {
     name: "companies.getLenderTierConflict",
     description:
       "Check a prospect's group lenders against RockCap's protected lender tiers. Returns { action: 'park'|'soften'|'none', tier1[], tier2[] }. Tier 1 (favourite lender, e.g. Quantum) means park the prospect (do not pitch cold); Tier 2 (preferred, e.g. Yellow Tree) means soften the hook to broad-brush. Consulted before drafting cold outreach. Source of truth: skills/shared-references/lender-tiers.md.",
