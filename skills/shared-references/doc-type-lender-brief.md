@@ -24,6 +24,7 @@ INTERNAL vs EXTERNAL: operator says; default INTERNAL. EXTERNAL drops internal-o
 6. **Borrower & Sponsor** — group narrative (per-scheme SPV model, ownership / PSC) + a leadership table (principals + roles).
 7. **Track Record & Group Funding** — *the depth section* (see below).
 8. **Professional Team & Enclosed Documentation** — professional team table + an **annotated** enclosed-docs table (each document + what it provides).
+9. **Corporate Structure** *(optional; include when the structure is non-trivial — JVs, multiple SPVs, a brand ≠ borrower split)*. Inline the SVG from `buildStructureChartSvg(graph)` plus the verdict's open questions as caption text. Place it after Borrower & Sponsor.
 
 ## Depth: Track Record & Group Funding (section 7)
 §7 is the one section built from the **Companies House charge register** (the deal facts in §1–§6 and §8 come from the documents — see *Sourcing the brief*). Source it from the register, never inferred:

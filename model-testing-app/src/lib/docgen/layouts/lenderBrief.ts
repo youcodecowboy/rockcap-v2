@@ -32,6 +32,7 @@ const LENDER_BRIEF_CSS = `
   .brief-section td.num, .brief-section th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
   .brief-section .caption { font-size: 8pt; color: #8a8a8a; margin-top: -4px; }
   .brief-section .sub { display: block; font-size: 8pt; color: #8a8a8a; margin-top: 1px; }
+  .brief-section svg { width: 100%; height: auto; display: block; margin: 6px 0 10px; }
   .brief-section em { font-style: italic; color: #6b6b6b; }
   .brief-signoff { margin-top: 28px; padding-top: 12px; border-top: 1px solid #d9d9d9; margin-bottom: 8px; }
   .brief-signoff .name { font-weight: 600; }

@@ -56,6 +56,9 @@ describe("buildLenderBriefHtml", () => {
     // sign-off no longer contains the brief-closing company line (moved to footer band)
     expect(html).not.toContain("class=\"brief-closing\"");
   });
+  it("scales an inline SVG to the section width", () => {
+    expect(html).toContain(".brief-section svg { width: 100%; height: auto;");
+  });
   it("includes page-break-avoid CSS rules (tables, signoff, AND whole section)", () => {
     // Tables and sign-off still avoid breaking
     expect(html).toContain("break-inside: avoid");
