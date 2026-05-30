@@ -119,7 +119,7 @@ export const tick = internalAction({
             await ctx.runMutation(internal.cadences.advanceAfterFireInternal, {
               cadenceId: row._id,
               fireKey,
-              lastResult: "sent",
+              lastResult: "approval_staged",
               nextDueAt: computeNextDueAt(row),
             });
             fired++;
@@ -244,7 +244,7 @@ export const tick = internalAction({
             await ctx.runMutation(internal.cadences.advanceAfterFireInternal, {
               cadenceId: row._id,
               fireKey,
-              lastResult: "sent",
+              lastResult: "approval_staged",
               nextDueAt: computeNextDueAt(row),
             });
             fired++;

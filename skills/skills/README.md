@@ -26,6 +26,8 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 | `case-study-author/` | skeleton | — |
 | `monitoring-watcher/` | skeleton | — |
 | `classification-critic/` | skeleton | — |
+| `document-author/` | **v1** | docgen substrate v1 (2026-05-29) |
+| `corporate-structure/` | skeleton (spec + libs landed) | — |
 
 **v2 hardened** means: workflow retargeted at v1.3 MCP tool surface, `## Dedup` section present, `## Cadence package` section present (or explicit "doesn't produce one"), reference files authored, failure modes enumerated, multiple invocation paths documented. Skeleton skills predate this template; usable as intent statements but not operationally hardened.
 
@@ -56,6 +58,8 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 **Parallel systems** (not deal-lifecycle steps):
 - [`lender-intel/`](./lender-intel/) — v2 hardened. Lender appetite capture + matching. Used by terms-package-build (step 8) to shortlist lenders.
 - [`classification-critic/`](./classification-critic/) — skeleton. V4 document-pipeline critic.
+- [`document-author/`](./document-author/) — **v1**. Document-generation substrate: composes a document under prose guardrails and stages a `document_publish` approval (renders via `/api/documents/generate`, files to the client on approval). The deal-doc skills (terms-package-build, ic-paper-drafter, case-study-author) will build on it.
+- [`corporate-structure/`](./corporate-structure/) — skeleton (spec + libs landed). Discover, stress-test, and chart a prospect/borrower's corporate structure; produces a StructureGraph + SVG for the Intel tab and lender briefs. Invoked by prospect-intel step 8b and directly by operator.
 
 ## How operator-agent should select a skill
 
@@ -106,7 +110,7 @@ Ranked by operator-cycle leverage:
 
 ## Sub-skills + corpora + templates
 
-- `../sub-skills/` — Claude-side primitives reused across skills (e.g., `resolve-company.md`, `score-lender-match.md`, `resolve-related-entities.md`). Documented separately from full skills.
+- `../sub-skills/` — Claude-side primitives reused across skills (e.g., `resolve-company.md`, `score-lender-match.md`, `resolve-related-entities.md`, `compose-outreach-hook.md`). Documented separately from full skills.
 - `../corpora/` — anonymised exemplars per skill. Currently sparse; populated as we accumulate good runs to draw from.
 - `../templates/` — XLSX / DOCX / PDF templates referenced by document-producing skills (terms-package-build, ic-paper-drafter).
-- `../shared-references/` — cross-skill references (UK property finance glossary, approval payload shapes, etc.).
+- `../shared-references/` — cross-skill references (UK property finance glossary, approval payload shapes, etc.). Outreach voice + drafting: `rockcap-outreach-voice.md` (Alex Lundberg's canonical voice), `hook-ladder.md` (10 ranked hook types), `lender-tiers.md` (park/soften gate), `rockcap-regional-activity.md` + `sender-geography.md` (geographic hooks). Document generation: `document-house-style.md` (voice + HTML composition rules for generated docs), `doc-type-company-one-pager.md` (company one-pager guardrail).

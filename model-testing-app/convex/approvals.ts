@@ -312,6 +312,31 @@ export const reject = mutation({
   },
 });
 
+// Internal reject — for system flows (a denied/parked cadence package clearing
+// its staged gmail_send approvals, or operator-driven cleanup) that have no
+// auth session. Idempotent: only acts on pending rows.
+export const rejectInternal = internalMutation({
+  args: {
+    approvalId: v.id("approvals"),
+    reason: v.optional(v.string()),
+    actorUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) throw new Error("Approval not found");
+    if (approval.status !== "pending") {
+      return { ok: false, reason: `not_pending_${approval.status}` };
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "rejected",
+      approvedBy: args.actorUserId,
+      approvedAt: new Date().toISOString(),
+      rejectedReason: args.reason ?? "system_rejected",
+    });
+    return { ok: true };
+  },
+});
+
 export const cancel = mutation({
   args: { approvalId: v.id("approvals") },
   handler: async (ctx, args) => {
@@ -392,11 +417,14 @@ export const executeApproval = internalAction({
             approvalId: args.approvalId,
           });
           break;
-        // Other entity types register here. For v1, only gmail_send has
-        // a real executor; the rest mark executed with no payload so
-        // the lifecycle still advances.
-        case "hubspot_write":
         case "document_publish":
+          result = await ctx.runMutation(internal.documentPublish.recordPublishedDocs, {
+            approvalId: args.approvalId,
+          });
+          break;
+        // Other entity types register here. The rest mark executed with no
+        // payload so the lifecycle still advances.
+        case "hubspot_write":
         case "lender_outreach":
         case "client_communication":
         case "skill_action":

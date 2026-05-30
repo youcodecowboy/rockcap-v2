@@ -6,7 +6,7 @@ The conventions exist because skills produce work that goes in front of clients,
 
 ## Voice rules
 
-These come from the brief and apply to every word a skill produces.
+These come from the brief and apply to every word a skill produces. For external-facing outreach specifically, the canonical voice (Alex Lundberg's: opener skeleton, sign-off, verbatim quirks, hard rules) lives in `shared-references/rockcap-outreach-voice.md` and sits on top of these firm-wide rules.
 
 1. **UK English throughout.** Property finance terminology in the UK form. "Centre" not "center", "organisation" not "organization", "specialised" not "specialized", "behaviour" not "behavior". "Cheque" not "check" when meaning the document. Currency in GBP unless the deal is explicitly cross-border.
 2. **No em dashes anywhere.** Replace with a comma, a semicolon, a parenthesis, or a short sentence. The em dash is a tell; it makes output read as machine-written. The same rule applies to long en dashes used in prose.

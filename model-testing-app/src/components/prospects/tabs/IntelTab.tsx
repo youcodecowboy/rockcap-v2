@@ -1,8 +1,16 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useColors } from "@/lib/useColors";
+
+// Generated structure charts are embedded as data:image/svg+xml by the
+// corporate-structure skill. That content is system-generated (no scripts),
+// so allow it through; everything else uses react-markdown's safe default.
+function allowSvgDataUri(url: string): string {
+  if (url.startsWith("data:image/svg+xml,") || url.startsWith("data:image/svg+xml;")) return url;
+  return defaultUrlTransform(url);
+}
 
 // Intel tab renders the skillRun.intelMarkdown field — a long-form markdown
 // artefact produced by hardened skills (prospect-intel v2, qualify-and-draft,
@@ -33,6 +41,7 @@ export function IntelTab({ intelRun }: { intelRun?: any }) {
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={allowSvgDataUri}
         components={{
           h1: ({ children }) => (
             <h1

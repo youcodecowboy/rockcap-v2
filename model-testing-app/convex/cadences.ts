@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { isCadenceFireable } from "./lib/cadenceGating";
 
 // Internal API for the cadences table. The MCP tools cadence.create and
 // cadence.cancel wrap these (see convex/mcp.ts). The cron dispatcher in
@@ -62,6 +63,10 @@ export const createInternal = internalMutation({
     }
     return await ctx.db.insert("cadences", {
       ...args,
+      // A package member starts pending; cadences.approvePackage flips it to
+      // "approved" before the dispatcher (findDueInternal) will stage it. A
+      // non-package recurring cadence has no package gate, so leave it unset.
+      ...(args.packageId ? { packageApprovalStatus: "pending" as const } : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -88,10 +93,11 @@ export const findDueInternal = internalQuery({
     // false (so the by_active_next_due index above never returns them) AND
     // packageApprovalStatus="needs_contact" (so this filter would drop them
     // too). A contactless draft therefore cannot fire — confirmed safe.
-    return rows.filter((row) =>
-      row.packageApprovalStatus === undefined ||
-      row.packageApprovalStatus === "approved"
-    );
+    // v1.2 gate (hardened): a package member fires only once its package is
+    // approved; a non-package recurring cadence has no package gate. See
+    // ./lib/cadenceGating. Previously `undefined` was treated as approved for
+    // all rows, which let a never-approved package member stage itself.
+    return rows.filter((row) => isCadenceFireable(row));
   },
 });
 
@@ -154,7 +160,8 @@ export const advanceAfterFireInternal = internalMutation({
     cadenceId: v.id("cadences"),
     fireKey: v.string(),
     lastResult: v.union(
-      v.literal("sent"),
+      v.literal("approval_staged"),  // fired → staged a pending approval (did NOT send)
+      v.literal("sent"),             // legacy-tolerated; nothing writes it anymore
       v.literal("skipped_paused"),
       v.literal("skipped_holiday"),
       v.literal("skipped_user_opted_out"),

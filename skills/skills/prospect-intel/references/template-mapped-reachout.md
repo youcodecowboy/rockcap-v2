@@ -1,17 +1,22 @@
 # Template-Mapped Reachout
 
-Reference loaded by `../SKILL.md` step 11. This document defines the reachout email patterns RockCap uses for cold prospects, indexed by the canonical deal type (per `./bridging-vs-developer.md`: `new_development`, `bridging`, `existing_asset`, `unclassifiable`) and by trigger context. The skill picks the right template, populates the variables, and stages an `approvals` row of type `gmail_send`.
+Reference loaded by `../SKILL.md` step 11. It defines the reachout email patterns RockCap uses for cold prospects, in two layers:
+
+1. **Deal type + trigger select the product.** Per `./bridging-vs-developer.md`: `new_development`, `bridging`, `existing_asset`, `unclassifiable`.
+2. **For developer outreach, lender DNA selects the template, the hook ladder fills the hook, the voice governs tone.** The five proven canonical templates below (from RockCap's real sent corpus) are the source of truth for developer sends. The `<HOOK>` is chosen per `../../../shared-references/hook-ladder.md`; the opener skeleton, sign-off and quirks come from `../../../shared-references/rockcap-outreach-voice.md`; lender tiers (`../../../shared-references/lender-tiers.md`) gate whether to send at all (park Tier 1, soften Tier 2).
+
+The skill populates the template and stages a cadence touch / `approvals` row for review. Never auto-send.
 
 ## Operating principles
 
-These apply across every template. They come from CONVENTIONS but are restated here because they are what makes a RockCap reachout sound like RockCap.
+The authoritative voice, opener skeleton, sign-off and verbatim quirks live in `../../../shared-references/rockcap-outreach-voice.md`. Read it first. Where the generic guidance below differs from that proven voice (drawn from ~140 of Alex's real sent emails), **the proven voice wins.**
 
-1. **Open with the substance.** No "I hope this email finds you well". The first sentence either references the trigger or names the specific intelligence finding that motivated the email.
-2. **Show evidence, not enthusiasm.** A line about a charge filing, a planning approval, a sale, a press mention. The recipient should immediately understand we have done homework.
-3. **One ask, plain.** A 15-minute call to learn about their pipeline. Not "I would love to" or "It would be wonderful if". Just "Can we find a quarter of an hour next week?".
-4. **No marketing copy.** No "leading", "premier", "trusted", "innovative". Replace adjectives with facts (we placed £x last year, we work with y lenders).
-5. **Sign off properly.** RockCap's standard signature, partner-level when appropriate. Avoid first-name-only signoffs to people we have never met.
-6. **HTML in HubSpot notes, plain or simple HTML in Gmail.** The Gmail send wrapper handles either body type. Templates produce both.
+1. **Use the proven opener.** "Hi <First name>, / I hope you are well / I came across <Company> and wanted to reach out, <hook>." The hook carries the substance. Avoid only the AI tell "I hope this email finds you well"; "I hope you are well" is the correct, proven line.
+2. **Show evidence, not enthusiasm.** The hook is grounded in a real scheme, charge pattern, region, or RockCap deal. Never fabricate; drop a hook-ladder rung instead.
+3. **One ask, plain.** The proven ask is "Are you free for a coffee or a call or coffee over the next couple of weeks?" (the "or coffee" doubling is verbatim, keep it).
+4. **No marketing copy.** No "leading", "premier", "bespoke", "tailored solution". UK English, no em dashes, no rule-of-three.
+5. **Sign as Alex.** "Kind regards, / Alex", with the full signature block from the voice reference. The canonical sender is Alex Lundberg, Director; do not sign "RockCap" or use a placeholder.
+6. **Check lender tiers before drafting** (`../../../shared-references/lender-tiers.md`): park Tier 1, soften Tier 2.
 
 ## Template matrix
 
@@ -30,6 +35,128 @@ These apply across every template. They come from CONVENTIONS but are restated h
 | existing_asset | press mention | `existing_asset.press_mention` |
 | existing_asset | referral or cold | `existing_asset.cold` |
 | unclassifiable | any | none; do not reach out |
+
+## Canonical developer templates (proven) + lender-DNA selection
+
+For developer outreach (`new_development` and portfolio/investor prospects), use these five templates captured verbatim from RockCap's real corpus. They supersede the generic `new_development.*` patterns further down (which are kept for reference). Select by lender DNA, brand read, and scale. The `(Insert Hook)` slot is filled per `../../../shared-references/hook-ladder.md`; tone per `../../../shared-references/rockcap-outreach-voice.md`.
+
+### Lender DNA → template
+
+| Lender pattern on main SPVs | Read | Template |
+|---|---|---|
+| Paragon / UTB / HTB / Shawbrook / Close / Aldermore | SME developer, scheme-by-scheme | **Housebuilder 2** (default; most targets) |
+| Lloyds / HSBC / NatWest / Barclays / Handelsbanken, scheme-by-scheme | Mid-size SME, not RCF-tier | **High Street Bank Client** |
+| HS bank across multiple group entities, portfolio-shaped | Institutionally-backed, RCF-tier | **Large Housebuilder** |
+| Single specialist across 30+ charges | Portfolio operator / asset manager | **High LTPP** |
+| Contractor / construction services, not own-development | Contracting business | **Contractor** |
+
+**RCF check (High Street Bank Client vs Large Housebuilder).** The distinguishing question is whether the HS bank facility is an RCF / portfolio facility, not whether the HS bank is present. Charges on **scheme-level SPVs** (one charge per development vehicle, scheme name in the particulars) → High Street Bank Client. Charges across **multiple group entities** (holdco + investment vehicle + several SPVs, same lender, clustered renewal dates) or an RCF named on the website / accounts → Large Housebuilder. When in doubt, default to High Street Bank Client (the Large Housebuilder "long shot given your HSBC facility" framing implies a confirmed RCF). Worked example: Burgess Homes has HSBC + Lloyds across 15 charges, but on scheme-level SPVs, so High Street Bank Client is correct, not Large Housebuilder.
+
+### Housebuilder 2 (challenger-bank DNA; default)
+
+```
+Hi (FIRST NAME)
+
+I hope you are well
+
+I came across (DEVELOPER NAME) and wanted to reach out, (Insert Hook)
+
+Are you free for a coffee or a call or coffee over the next couple of weeks? We arrange debt & equity for SME developers, last year we did deals with clients ranging from housebuilders delivering 200-600 units a year to clients delivering much smaller more bespoke schemes.
+
+I'm sure you are really well covered but wanted to see whether there was anything we could look at working on. Given the challenges in the market at the moment and how tight SME's cashflows are it seems that really good quality borrowers are needing creative solutions to get them onto new or through their existing schemes and we're finding that we are able to come up with well thought through funding structures that are outside of their normal stable of lenders / investors.
+
+We're active at the moment with stretch senior, mezz and a handful of equity providers and always keen to speak with high quality borrowers to see if there is a way of working together.
+
+Look forward to hearing from you.
+
+{Signature}
+```
+
+### High Street Bank Client (HS-bank scheme-by-scheme, no RCF)
+
+```
+Hi (FIRST NAME)
+
+I hope you are well
+
+I came across (DEVELOPER NAME) and wanted to reach out, (Insert Hook)
+
+Are you free for a coffee or a call or coffee over the next couple of weeks? We arrange debt & equity for SME developers, last year we did deals with clients ranging from housebuilders delivering 200-600 units a year to clients delivering much smaller more bespoke schemes.
+
+I'm sure you are really well covered but wanted to see whether there was anything we could look at working on. Given the market at the moment we are finding that really good quality borrowers are open to new funding solutions outside of their normal stable of lenders / investors.
+
+We are actively working with developers who have traditionally borrowed from high street banks but feel that moderately higher leverage allows their cash to work harder for them without a substantial increase in risk or cost.
+
+Seeing who you borrow from, we would love to have a conversation about how we may be able to help with some more flexible financing.
+
+Look forward to hearing from you.
+
+{Signature}
+```
+
+### Large Housebuilder (RCF-tier; "long shot" framing)
+
+```
+Hi (CONTACT NAME)
+
+I hope you are both well.
+
+I've come across (DEVELOPER NAME) a handful of times over the last few years, looks like the business is doing incredibly well.
+
+I completely appreciate this is a long shot given it looks like you have an HSBC facility but I thought it was worth getting in touch.
+
+One of our main lending partners has done deals with several institutionally backed housebuilders and can provide flexible senior portfolio funding at higher leverage than the clearing banks, regear portfolio's of standing stock or bridge land ahead of development commencing to relieve cashflow pinches.
+
+Would love the opportunity to see if there is something we could look at, for context, we have done deals with housebuilders delivering several hundred units a year and have structured funding solutions that have complimented and sat alongside their existing RCFs.
+
+Look forward to hearing from you.
+
+{Signature}
+```
+
+(Quirks verbatim: "portfolio's", "complimented", "I hope you are both well". Keep them.)
+
+### High LTPP (portfolio operators / investors, heavy single-lender)
+
+```
+Hi (FIRST NAME)
+
+I hope you are well
+
+I came across (DEVELOPER NAME) and wanted to reach out, (Insert Hook)
+
+Are you free for a coffee or a call or coffee over the next couple of weeks? We arrange debt & equity for property developers and investors, last year we did deals with clients ranging from housebuilders delivering 200-600 units a year to investors acquiring assets Below Market Value through well structured deals.
+
+We have done several deals recently with experienced investors where we've arranged funding at a very high net Loan to Purchase Price and enabled them to increase their pipeline significantly as they are tying up less of their own cash.
+
+We're active at the moment with lenders funded in a variety of different ways, from family offices and HNWs to specialist funds / alternative lenders.
+
+We are always keen to speak with high quality borrowers to see if there is a way of working together.
+
+Look forward to hearing from you.
+
+{Signature}
+```
+
+### Contractor (contracting businesses; opens with a question, shortest, no hook slot)
+
+```
+Hi (FIRST NAME)
+
+I hope you are well.
+
+I came across (CONTRACTOR NAME) and wanted to reach out to see if you do any of your own developments?
+
+We work with a handful of contracting businesses (turnovers ranging from £20m-£100m) who have gone into development and have arranged really competitive financing packages for them on their schemes.
+
+Are you free for a call or coffee over the next couple of weeks?
+
+Look forward to hearing from you.
+
+{Signature}
+```
+
+The Contractor template has no `(Insert Hook)` slot: the opening question does the work, and a specific hook risks presuming own-developments they may not have. Its social-proof line can be lifted into a Housebuilder 2 hook for prospects that straddle contracting and development.
 
 ## Template structure
 

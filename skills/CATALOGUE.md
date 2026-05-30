@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 84 tools across 19 domains as of the corporate-group charges pass: adds companies.getGroupCharges (CH-tab group-charges rollup). Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 88 tools across 19 domains as of the P4 docgen pass: adds document.generate (ad-hoc document generation: compose HTML → render PDF/DOCX → stage document_publish approval). Prior pass (lender-tier-conflict): adds companies.getLenderTierConflict (prospect flag: park/soften on protected lenders). Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme (Track Record tab / per-scheme enrichment). Prior pass (corporate-group charges): adds companies.getGroupCharges (CH-tab group-charges rollup). Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -163,7 +163,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `meeting.listUpcoming({limit?})` | Upcoming meetings across all clients, soonest first. Operator's "what calls do I have" surface. |
 | (`meeting.listByClient` removed in catalogue cleanup — use `meeting.getByClient`) | — |
 
-### `document.*` — Document discovery + linkage + classification fixes (7)
+### `document.*` — Document discovery + linkage + classification fixes + generation (8)
 
 | Tool | Purpose |
 |---|---|
@@ -174,6 +174,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `document.linkToProject({documentId, projectId?})` | Re-file a document: assign to a project (sets isBaseDocument=false) or unlink (pass projectId=null). |
 | `document.createFromGeneration({fileName, fileTypeDetected, category, summary, clientId?, projectId?, ...})` | Persist a skill-generated artefact (lender brief, IC paper, terms comparison, meeting notes) into documents. Content lives inline in `summary` as markdown — no file storage needed. Appears in the standard documents UI. For file UPLOADS use the regular `documents.create` flow. |
 | `document.updateClassification({documentId, category?, fileTypeDetected?, summary?, reasoning?})` | Patch a document's classification fields — for correcting V4 ingestion classifier mistakes. Does NOT re-run V4, strictly a metadata patch. All fields optional; pass only what to change. Recommend always passing `reasoning` for audit trail. |
+| `document.generate({contentHtml, title, docType, category?, summary?, formats?, clientId?, projectId?})` | **P4 — ad-hoc document generation from Claude Code.** Compose the body as semantic HTML (h1/h2/p/table; NO html/head/style wrappers — house styling applied automatically), render to PDF + DOCX via the Next `/api/documents/generate` route, and stage a `document_publish` approval. On approval the files are filed to the client's Documents library. Ground every figure in real data; never fabricate. Use for one-pagers, IC papers, company summaries etc. See the `document-author` skill + `skills/shared-references/document-house-style.md` for voice and structure. |
 
 ### `checklist.*` — Requirements tracking + link fixes (6)
 
@@ -227,12 +228,15 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `touchpoint.getByContact({contactId})` | Touchpoints for a contact. |
 | `touchpoint.getByProject({projectId})` | Touchpoints for a project (subsumed by project.getDeepContext). |
 
-### `companies.*` — External company sync (5)
+### `companies.*` — External company sync (8)
 
 | Tool | Purpose |
 |---|---|
 | `companies.listUnprocessed({limit?, sinceDays?, states?, ...})` | HubSpot-synced companies without prospect-intel runs. State per row: new / running / stuck. Used by Claude Code to find prospecting candidates. |
-| `companies.getGroupCharges({clientId})` | Aggregate the Companies House charge book across a prospect's whole corporate group — the parent (`clients.companiesHouseNumber`) + sibling SPVs (`clients.relatedCompaniesHouseNumbers`, set by `resolve-related-entities`). Read-only. Returns `{companyCount, totalCharges, activeCharges, satisfiedCharges, distinctLenders, lendersByCount[], byCompany[]}`; empty shape (companyCount 0) when no related numbers. Unsynced CH numbers are skipped. Powers the prospect CH-tab "Group charges" rollup. |
+| `companies.getGroupCharges({clientId})` | Aggregate the Companies House charge book across a prospect's whole corporate group — the parent (`clients.companiesHouseNumber`) + sibling SPVs (`clients.relatedCompaniesHouseNumbers`, set by `resolve-related-entities`). Read-only. Returns `{companyCount, totalCharges, activeCharges, satisfiedCharges, distinctLenders, lendersByCount[], byCompany[], charges[]}`; `charges` is a per-charge array (`companyNumber, companyName, companyStatus?, chargeId, lender, date?, status?, description?`), newest-first. Empty shape (companyCount 0, charges []) when no related numbers. Unsynced CH numbers are skipped. Powers the prospect CH-tab "Group charges" rollup. |
+| `companies.getLenderTierConflict({clientId})` | Check a prospect's group lenders against RockCap's protected lender tiers. Returns `{ action: 'park'|'soften'|'none', tier1: string[], tier2: string[] }`. Tier 1 (e.g. Quantum Development Finance) = park — do not pitch cold; Tier 2 (e.g. Yellow Tree) = soften — broad-brush hook only. Consult before drafting cold outreach. Source of truth: `skills/shared-references/lender-tiers.md`. |
+| `companies.getProspectSchemes({clientId})` | Per-scheme view of a prospect's corporate group: one row per charge-bearing SPV, split into `live[]` and `past[]` (live = active company with an outstanding charge), each ranked by most-recent charge date. Merges SPV charges (lender(s), dates) with any prospectSchemes enrichment (address, what they're building, confidence). Read-only. Powers the Track Record tab. |
+| `companies.upsertProspectScheme({clientId, companyNumber, companyName, schemeName?, address?, planningRefs?, estimatedUnits?, schemeType?, whatBuilding?, gdvEstimate?, confidence?, status?, sourceUrls?, operatorConfirmed?})` | Upsert per-scheme enrichment for a prospect (keyed by `clientId` + `companyNumber`). The prospect-intel skill writes draft estimates (`operatorConfirmed` defaults false); operator edits in the Track Record tab set `operatorConfirmed` true and are not clobbered by skill re-runs. Surface-only: does not create clients/companies rows. |
 | `companies.searchCompaniesHouse({query, limit?})` | Search Companies House by **name** → ranked matches (company_number, title, company_status, date_of_creation, address_snippet, sic_codes when present). Read-only. Use FIRST when you have a name but not a CH number, then feed the chosen company_number to `companies.syncCompaniesHouse`. |
 | `companies.syncCompaniesHouse({chNumber})` | Fetch CH profile + charges + **officers + PSCs** via CH API directly + persist into Convex (companiesHouseCompanies / Charges / Officers / PSC). Idempotent (upserts on natural keys). Each officer row stores its `links.officer.appointments` URL as a future cross-company join key. Returns counts: chargesCount, officersCount, pscCount. |
 | `companies.getOfficerAppointments({appointmentsLink})` | Fetch an **individual's** other CH appointments via the link stored on each officer row (`links.officer.appointments`, e.g. `/officers/{id}/appointments`). Read-only. Per appointment: company_number, company_name, company_status, officer_role, appointed_on, resigned_on + the person's name + date_of_birth (disambiguation). Maps the **corporate group** — a majority PSC/director who controls the prospect usually controls the sibling SPVs too, so their other active appointments reveal likely scheme vehicles vs the trading parent. Consumed by the `resolve-related-entities` sub-skill (prospect-intel). Heuristic, not proof of ownership. |

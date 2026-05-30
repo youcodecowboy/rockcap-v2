@@ -65,6 +65,8 @@ Roll up the per-charge data into:
 - Historical pattern: who they've borrowed from, in what order, on what tenors.
 - Recency: most recent charge in the last 12 months, 12 to 36 months, beyond 36 months. Recent activity is a stronger signal than ancient history.
 
+**Group rollup gives counts, not the lender-to-scheme mapping.** When the prospect borrows through per-scheme SPVs (the common case, and the reason the trading parent often shows zero charges), you will lean on the group rollup `companies.getGroupCharges` (see SKILL.md step 8b). That tool returns charge **counts** per lender (`lendersByCount`) and per company (`byCompany`), but **not** which lender sits on which company. Counts alone cannot tell you which scheme a lender funded, that scheme's size, or whether it is prime. To attribute a lender to a scheme, or to characterise those schemes at all, read that SPV's per-charge register directly (`find-and-update.company-information.service.gov.uk/company/{N}/charges`) and build the real lender-to-scheme map. If you have only counts, write "lender-to-scheme mapping not yet retrieved" rather than inferring it.
+
 ## Patterns to flag
 
 These patterns recur on real charge books and shape the prospect-intel output:
@@ -97,3 +99,4 @@ Also update `clientIntelligence.lenderProfile.staticLayer` with the rolled-up DN
 - Do not match a private SPV name to a known individual without independent corroboration. Companies House officers and PSCs may help; press mentions or public LinkedIn data may help; speculation without evidence does not.
 - Do not extrapolate lender appetite from this analysis. Lender DNA tells you who has lent before, not who would lend now. Current appetite lives in `appetiteSignals`; that is fed by BDM check-ins, not by charge analysis.
 - Do not include the charge book itself in the output. Summarise and cite IDs; the full charge book is one query away if the operator wants it.
+- Do not infer which scheme a lender funds, or characterise those schemes (size, prime-ness, anything), from aggregate charge counts or from the lender-type taxonomy. The taxonomy classifies a *named* lender; it does not tell you which of the borrower's schemes that lender sits on. Read the per-charge register for the funded SPVs first, then state the mapping. (Real past error, 2026-05: a run stated a bank was "on the larger or more prime schemes" from `companies.getGroupCharges` counts alone, when its charges were in fact on the borrower's two smallest schemes, a single house and a three-unit row. Counts told us how many charges that lender held, not which schemes.)

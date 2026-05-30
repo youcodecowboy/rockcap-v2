@@ -148,6 +148,24 @@ export const getTokenForSend = internalQuery({
   },
 });
 
+// Global send kill-switch read for the executor's defense-in-depth check.
+// requestSend gates at queue time, but the cadence dispatcher stages
+// gmail_send approvals via approvals.internalCreate DIRECTLY, bypassing that
+// gate (see cadenceDispatcher.ts). So the executor MUST re-check the kill
+// switches at fire time — otherwise an operator approving a cadence-staged
+// draft would send even with the global switch off. Mirrors the global flag
+// read in gmailTokens.getSendConfig.
+export const getGlobalSendEnabled = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const config = await ctx.db
+      .query("gmailSendConfig")
+      .withIndex("by_enabled")
+      .first();
+    return config?.isEnabled === true;
+  },
+});
+
 export const writeRefreshedToken = internalMutation({
   args: {
     userId: v.id("users"),
@@ -329,6 +347,24 @@ export const executeApprovedSend = internalAction({
     if (!token) throw new Error("Gmail token not found for requester");
     if (token.needsReconnect) throw new Error("Gmail token needs reconnect");
 
+    // Defense-in-depth kill switch. The gate is enforced at queue time in
+    // requestSend, but the cadence dispatcher bypasses that path (it calls
+    // approvals.internalCreate directly), so an approved cadence-staged draft
+    // would otherwise fire regardless of the switches. Re-check BOTH switches
+    // here so no approved gmail_send — whatever its origin — can send while
+    // send is disabled. On throw, executeApproval marks the row
+    // execution_failed (not sent), which is the honest outcome.
+    if (token.sendEnabled !== true) {
+      throw new Error("Per-user Gmail send is disabled (kill switch)");
+    }
+    const globalSendEnabled: boolean = await ctx.runQuery(
+      internal.gmailSend.getGlobalSendEnabled,
+      {},
+    );
+    if (!globalSendEnabled) {
+      throw new Error("Global Gmail send is disabled (kill switch)");
+    }
+
     // Refresh if within 60 seconds of expiry, or if expired.
     let accessToken: string = token.accessToken;
     const expiresMs = new Date(token.expiresAt).getTime();
@@ -343,12 +379,24 @@ export const executeApprovedSend = internalAction({
       });
     }
 
+    // Append the HubSpot logging BCC so the sent email auto-logs to the
+    // client's HubSpot timeline (and thus the mobile activity feed). Set via
+    // Convex env HUBSPOT_LOG_BCC (the portal's bcc.<region>.hubspot.com
+    // address). If unset, the send still goes out — it just isn't logged. BCC
+    // is invisible to the recipient. This is the single send-time chokepoint,
+    // so every gmail_send (cadence, qualify-and-draft reply, manual) logs.
+    const hubspotLogBcc = process.env.HUBSPOT_LOG_BCC;
+    const bcc = [
+      ...(payload.bcc ?? []),
+      ...(hubspotLogBcc ? [hubspotLogBcc] : []),
+    ].filter((v, i, arr) => !!v && arr.indexOf(v) === i);
+
     const raw = base64Url(
       composeRfc822({
         fromEmail: token.connectedEmail,
         to: payload.to,
         cc: payload.cc,
-        bcc: payload.bcc,
+        bcc,
         subject: payload.subject,
         bodyHtml: payload.bodyHtml,
         bodyText: payload.bodyText,

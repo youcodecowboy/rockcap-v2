@@ -2088,7 +2088,7 @@ const TOOLS: McpTool[] = [
   {
     name: "companies.getGroupCharges",
     description:
-      "Aggregate the Companies House charge book across a prospect's whole corporate group — the parent (clients.companiesHouseNumber) plus the sibling SPVs on clients.relatedCompaniesHouseNumbers (set by the resolve-related-entities sub-skill). Read-only. A single CH number understates a developer's borrowing because schemes are spread across SPVs; this rolls the group's charges into one view. Returns { companyCount, totalCharges, activeCharges, satisfiedCharges, distinctLenders, lendersByCount: [{name,total,active}] (desc), byCompany: [{companyNumber,companyName,chargesCount,activeCount}] }. Returns the empty shape (companyCount 0) when the client has no related numbers. CH numbers not yet synced (no companiesHouseCompanies row) are skipped. Powers the prospect CH-tab group-charges rollup.",
+      "Aggregate the Companies House charge book across a prospect's whole corporate group — the parent (clients.companiesHouseNumber) plus the sibling SPVs on clients.relatedCompaniesHouseNumbers (set by the resolve-related-entities sub-skill). Read-only. A single CH number understates a developer's borrowing because schemes are spread across SPVs; this rolls the group's charges into one view. Returns { companyCount, totalCharges, activeCharges, satisfiedCharges, distinctLenders, lendersByCount: [{name,total,active}] (desc), byCompany: [{companyNumber,companyName,chargesCount,activeCount}], charges: [{companyNumber,companyName,companyStatus?,chargeId,lender,date?,status?,description?}] (newest-first) }. Returns the empty shape (companyCount 0, charges []) when the client has no related numbers. CH numbers not yet synced (no companiesHouseCompanies row) are skipped. Powers the prospect CH-tab group-charges rollup.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2100,6 +2100,70 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runQuery(api.companies.getGroupCharges, {
         clientId: args.clientId,
       });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "companies.getLenderTierConflict",
+    description:
+      "Check a prospect's group lenders against RockCap's protected lender tiers. Returns { action: 'park'|'soften'|'none', tier1[], tier2[] }. Tier 1 (favourite lender, e.g. Quantum) means park the prospect (do not pitch cold); Tier 2 (preferred, e.g. Yellow Tree) means soften the hook to broad-brush. Consulted before drafting cold outreach. Source of truth: skills/shared-references/lender-tiers.md.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companies.getLenderTierConflict, {
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "companies.getProspectSchemes",
+    description:
+      "Per-scheme view of a prospect's corporate group: one row per charge-bearing SPV, split into live[] and past[] (live = active company with an outstanding charge), each ranked by most-recent charge date. Merges the SPV's charges (lender(s), dates) with any prospectSchemes enrichment (address, what they're building, confidence). Powers the Track Record tab. Args: { clientId }.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string", description: "Convex id of the prospect's clients row" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companies.getProspectSchemes, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "companies.upsertProspectScheme",
+    description:
+      "Upsert per-scheme enrichment for a prospect (keyed by clientId + companyNumber). The prospect-intel skill writes draft estimates (operatorConfirmed defaults false); operator edits in the Track Record tab set operatorConfirmed true and are not clobbered by skill re-runs. Pass address, planningRefs, estimatedUnits, schemeType, whatBuilding, gdvEstimate (range string), confidence ('high'|'med'|'low'), status ('live'|'past'), sourceUrls. Surface-only: does not create clients/companies rows.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string" },
+        companyNumber: { type: "string" },
+        companyName: { type: "string" },
+        schemeName: { type: "string" },
+        address: { type: "string" },
+        planningRefs: { type: "array", items: { type: "string" } },
+        estimatedUnits: { type: "number" },
+        schemeType: { type: "string" },
+        whatBuilding: { type: "string" },
+        gdvEstimate: { type: "string" },
+        confidence: { type: "string" },
+        status: { type: "string" },
+        sourceUrls: { type: "array", items: { type: "string" } },
+        operatorConfirmed: { type: "boolean" },
+      },
+      required: ["clientId", "companyNumber", "companyName"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.companies.upsertProspectScheme, args);
       return asText(result);
     },
   },
@@ -2562,6 +2626,42 @@ const TOOLS: McpTool[] = [
         notes: args.notes,
       });
       return asText({ ok: true, projectId: result });
+    },
+  },
+
+  // ── P4: ad-hoc document generation from Claude Code ──────────────────
+  {
+    name: "document.generate",
+    description:
+      "Generate a formatted document (PDF + DOCX) from composed HTML and stage it for operator approval; on approval it is filed to the client's Documents library. YOU compose the body as semantic HTML (h1/h2/p/table; NO <html>/<head>/<style> wrappers — house styling is applied automatically). Ground every figure in real data; never fabricate. Use for ad-hoc requests like a company one-pager. See the document-author skill + the document-house-style reference for voice and structure.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        contentHtml: { type: "string", description: "Document body as semantic HTML. No html/head/style wrappers; one <h1>." },
+        title: { type: "string", description: "Document title; also the file-name stem." },
+        docType: { type: "string", description: "Kind of document, e.g. 'Company One-Pager'." },
+        category: { type: "string", description: "Filing category. Defaults to 'Generated'." },
+        summary: { type: "string", description: "One-line operator-facing summary for the approvals queue. Defaults to the title." },
+        formats: { type: "array", items: { type: "string", description: "pdf or docx" }, description: "Output formats. Defaults to ['pdf','docx']." },
+        clientId: { type: "string", description: "Client id to file the document under on approval." },
+        projectId: { type: "string", description: "Project id to associate (optional)." },
+      },
+      required: ["contentHtml", "title", "docType"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.documentGen.renderAndStage, {
+        contentHtml: args.contentHtml,
+        title: args.title,
+        docType: args.docType,
+        category: args.category,
+        summary: args.summary,
+        formats: args.formats,
+        isBaseDocument: true,
+        requestedByUserId: userId,
+        relatedClientId: args.clientId,
+        relatedProjectId: args.projectId,
+      });
+      return asText(result);
     },
   },
 ];

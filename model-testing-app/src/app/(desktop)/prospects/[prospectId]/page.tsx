@@ -15,6 +15,7 @@ import { OutreachTab } from "@/components/prospects/tabs/OutreachTab";
 import { RepliesTab } from "@/components/prospects/tabs/RepliesTab";
 import { MeetingsTab } from "@/components/prospects/tabs/MeetingsTab";
 import { ActivityTab } from "@/components/prospects/tabs/ActivityTab";
+import { TrackRecordTab } from "@/components/prospects/tabs/TrackRecordTab";
 import { StickyApprovalFooter } from "@/components/prospects/StickyApprovalFooter";
 import { RevisionRequestModal } from "@/components/prospects/RevisionRequestModal";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -25,7 +26,7 @@ export default function ProspectDetailPage() {
   const params = useParams();
   const prospectId = params.prospectId as Id<"clients">;
 
-  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity">("overview");
   const [showRevisionModal, setShowRevisionModal] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
@@ -72,6 +73,16 @@ export default function ProspectDetailPage() {
     prospect ? { clientId: prospectId } : "skip",
   );
 
+  // Lender-tier conflict: detect if the prospect borrows from a protected
+  // lender (Tier 1 = park, Tier 2 = soften). Surfaced as a flag near the header.
+  const lenderTierConflict = useQuery(
+    api.companies.getLenderTierConflict,
+    prospect ? { clientId: prospectId } : "skip",
+  );
+
+  // Track Record: prospect schemes (live / past) from the prospectSchemes table.
+  const schemes = useQuery(api.companies.getProspectSchemes, prospect ? { clientId: prospectId } : "skip");
+
   // v1.3 — reply events linked to this client (for the Replies tab + count)
   const replies = useQuery(
     api.replyEvents.listByClient,
@@ -84,9 +95,14 @@ export default function ProspectDetailPage() {
     prospect ? { clientId: prospectId, limit: 100 } : "skip",
   );
 
+  // People tab: existing HubSpot contacts for this prospect, so we can
+  // match report "key people" to on-file contacts and avoid duplicates.
+  const contacts = useQuery(api.contacts.getByClient, prospect ? { clientId: prospectId } : "skip");
+
   const approvePackage = useMutation(api.cadences.approvePackage);
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
+  const upsertScheme = useMutation(api.companies.upsertProspectScheme);
 
   if (prospect === undefined) {
     return <div style={{ padding: 24, color: colors.text.muted }}>Loading…</div>;
@@ -109,6 +125,8 @@ export default function ProspectDetailPage() {
         chargesCount={(chProfile as any)?.charges?.length ?? 0}
         repliesCount={replies?.length ?? 0}
         meetingsCount={meetings?.length ?? 0}
+        schemesCount={((schemes as any)?.live?.length ?? 0) + ((schemes as any)?.past?.length ?? 0)}
+        lenderTierConflict={lenderTierConflict as any}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 1, background: colors.border.default, paddingBottom: 80 }}>
@@ -120,14 +138,23 @@ export default function ProspectDetailPage() {
               cadences={cadences}
               onJumpToOutreach={() => setActiveTab("outreach")}
               onJumpToIntel={() => setActiveTab("intel")}
+              lenderTierConflict={lenderTierConflict as any}
             />
           )}
           {activeTab === "intel" && <IntelTab intelRun={intelRun} />}
           {activeTab === "people" && (
-            <PeopleTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} />
+            <PeopleTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} contacts={contacts} />
           )}
           {activeTab === "ch" && (
             <CompaniesHouseTab prospect={prospect} intelRun={intelRun} chProfile={chProfile} groupCharges={groupCharges} />
+          )}
+          {activeTab === "track-record" && (
+            <TrackRecordTab
+              schemes={schemes as any}
+              onConfirmScheme={(companyNumber, companyName) =>
+                upsertScheme({ clientId: prospectId, companyNumber, companyName, operatorConfirmed: true })
+              }
+            />
           )}
           {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}

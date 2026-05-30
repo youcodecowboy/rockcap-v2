@@ -141,4 +141,57 @@ export const ANALYSIS_TOOLS: AtomicTool[] = [
     convexMapping: { type: "query", path: "documents.get" },
     contextRelevance: ["document", "client", "project"],
   },
+  // -------------------------------------------------------------------------
+  // WRITE — Generate a formatted document from composed HTML and stage for approval
+  // -------------------------------------------------------------------------
+  {
+    name: "generateDocument",
+    domain: "document",
+    action: "write",
+    description:
+      "Generate a formatted document (PDF + DOCX) from composed HTML content and stage it for operator approval. Use this for ad-hoc document requests like 'generate a one-pager on {company}'. YOU compose the document body as semantic HTML (headings, paragraphs, tables) grounded in real data — do NOT include <html>/<head>/<style>; house styling is applied automatically. On approval the document is filed to the client's library. Requires user confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        contentHtml: {
+          type: "string",
+          description:
+            "The document body as semantic HTML (e.g. <h1>, <h2>, <p>, <table>). No <html>/<head>/<style> wrappers — house-style CSS is applied by the renderer. Ground every figure in real data; never fabricate.",
+        },
+        title: {
+          type: "string",
+          description: "Document title, e.g. 'Mackenzie Miller Homes — Company One-Pager'. Used in the file and as the file name stem.",
+        },
+        docType: {
+          type: "string",
+          description: "The kind of document, e.g. 'Company One-Pager', 'Lender Submission Pack'. Stored as the document's detected type.",
+        },
+        category: {
+          type: "string",
+          description: "Filing category. Defaults to 'Generated' if omitted.",
+        },
+        summary: {
+          type: "string",
+          description: "One-line operator-facing description shown in the approvals queue. Defaults to the title.",
+        },
+        formats: {
+          type: "array",
+          description: "Output formats. Defaults to both ['pdf','docx'].",
+          items: { type: "string", description: "pdf or docx" },
+        },
+        clientId: {
+          type: "string",
+          description: "Client to file the document under on approval.",
+        },
+        projectId: {
+          type: "string",
+          description: "Project to associate (optional).",
+        },
+      },
+      required: ["contentHtml", "title", "docType"],
+    },
+    requiresConfirmation: true,
+    convexMapping: { type: "mutation", path: "documentPublish.requestPublish" },
+    contextRelevance: ["document", "client", "project"],
+  },
 ];

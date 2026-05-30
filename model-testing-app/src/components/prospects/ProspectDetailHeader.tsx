@@ -6,20 +6,23 @@ import { api } from "../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { StatePill } from "./StatePill";
+import { FlagChip } from "./FlagChip";
 
 interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "outreach" | "replies" | "meetings" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity") => void;
   peopleCount?: number;
   chargesCount?: number;
   repliesCount?: number;
   meetingsCount?: number;
+  schemesCount?: number;
+  lenderTierConflict?: { action: "park" | "soften" | "none"; tier1: string[]; tier2: string[] };
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, lenderTierConflict }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
@@ -74,6 +77,12 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               </div>
             </div>
             <StatePill state={state} />
+            {lenderTierConflict?.action === "park" && (
+              <FlagChip label="Parked — Tier 1 lender" severity="warn" colors={colors} />
+            )}
+            {lenderTierConflict?.action === "soften" && (
+              <FlagChip label="Soften — Tier 2 lender" severity="info" colors={colors} />
+            )}
           </div>
 
           {canPromote && (
@@ -118,12 +127,13 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "people", "ch", "outreach", "replies", "meetings", "activity"] as const).map((tab) => {
+          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "activity"] as const).map((tab) => {
             const labelMap: Record<typeof tab, string> = {
               overview: "Overview",
               intel: "Intel",
               people: "People",
               ch: "Companies House",
+              "track-record": "Track Record",
               outreach: "Outreach",
               replies: "Replies",
               meetings: "Meetings",
@@ -149,6 +159,9 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               )}
               {tab === "ch" && chargesCount !== undefined && chargesCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{chargesCount}</span>
+              )}
+              {tab === "track-record" && schemesCount !== undefined && schemesCount > 0 && (
+                <span style={{ color: colors.text.dim, marginLeft: 4 }}>{schemesCount}</span>
               )}
               {tab === "replies" && repliesCount !== undefined && repliesCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{repliesCount}</span>
