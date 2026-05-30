@@ -312,11 +312,20 @@ export function PeopleTab({ prospect, intelRun, chProfile, contacts }: PeopleTab
               ))}
             </div>
 
-            {/* Email block: show on-file email when matched, else Apollo discovery. */}
+            {/* Email block: (1) on-file email; (2) a matched contact already
+                searched via Apollo (found, but no published email) — reflect that
+                persisted result instead of the un-searched prompt; (3) otherwise
+                offer a live Apollo discovery. A live re-search supersedes (2). */}
             {onFileEmail ? (
               <OnFileEmailBlock
                 email={onFileEmail}
                 emailStatus={matched?.emailStatus}
+                colors={colors}
+              />
+            ) : matched?.emailSource === "apollo" && !apolloByPerson[person.name] ? (
+              <SearchedApolloBlock
+                matched={matched}
+                onFind={() => handleFindEmail(person)}
                 colors={colors}
               />
             ) : (
@@ -485,6 +494,107 @@ function emailStatusColor(status: string | undefined, colors: any): { bg: string
   if (s === "unverified" || s === "guessed") return { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" };
   if (s === "questionable" || s === "spam_trap") return { bg: "#fee2e2", fg: "#7f1d1d", border: "#fca5a5" };
   return { bg: colors.bg.cardAlt, fg: colors.text.muted, border: colors.border.default };
+}
+
+// Reflects a PERSISTED Apollo search stored on a matched contact
+// (emailSource === "apollo"). Unlike ApolloEmailBlock (a live, on-click
+// lookup), this renders from the contact record so the tab shows that the
+// person was already searched and found — even when no email was published
+// (emailStatus "unavailable"). A "Re-search" runs a fresh live lookup.
+function SearchedApolloBlock({
+  matched,
+  onFind,
+  colors,
+}: {
+  matched: any;
+  onFind: () => void;
+  colors: any;
+}) {
+  const pill = emailStatusColor(matched?.emailStatus, colors);
+  const noEmail = !matched?.email;
+  return (
+    <div
+      style={{
+        padding: "12px 14px",
+        background: `${colors.accent.purple}08`,
+        border: `1px solid ${colors.accent.purple}40`,
+        borderRadius: 4,
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: colors.accent.purple, fontFamily: "ui-monospace, monospace", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 500 }}>
+          <Mail size={11} />
+          Searched via Apollo
+        </div>
+        <button
+          onClick={onFind}
+          style={{
+            padding: "3px 9px",
+            background: colors.bg.card,
+            color: colors.text.secondary,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 3,
+            fontSize: 10,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <Search size={10} />
+          Re-search
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: "5px 12px", fontSize: 11 }}>
+        <div style={{ color: colors.text.muted }}>Result</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ color: colors.text.primary }}>
+            Person found{noEmail ? " · no published email" : ""}
+          </span>
+          {matched?.emailStatus && (
+            <span
+              style={{
+                padding: "1px 6px",
+                background: pill.bg,
+                color: pill.fg,
+                border: `1px solid ${pill.border}`,
+                borderRadius: 2,
+                fontFamily: "ui-monospace, monospace",
+                fontSize: 9,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+                fontWeight: 500,
+              }}
+            >
+              {matched.emailStatus}
+            </span>
+          )}
+        </div>
+        {matched?.email && (
+          <>
+            <div style={{ color: colors.text.muted }}>Email</div>
+            <div style={{ color: colors.text.primary, fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{matched.email}</div>
+          </>
+        )}
+        {matched?.linkedinUrl && (
+          <>
+            <div style={{ color: colors.text.muted }}>LinkedIn</div>
+            <div>
+              <a
+                href={matched.linkedinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: colors.accent.blue, textDecoration: "underline", fontSize: 10, wordBreak: "break-all" }}
+              >
+                {matched.linkedinUrl.replace(/^https?:\/\/(www\.)?/, "")}
+              </a>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ApolloEmailBlock({

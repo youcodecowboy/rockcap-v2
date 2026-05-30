@@ -10,7 +10,7 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 
 | Skill | Status | Last hardening |
 |---|---|---|
-| `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement |
+| `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement; v3.1 People-tab contract (contact per key person + one `### ` heading per person) 2026-05-30 |
 | `qualify-and-draft/` | **v2 hardened** | v1.3 Sprint B |
 | `meeting-prep/` | **v2 hardened** | v1.3 Sprint C |
 | `meeting-capture/` | **v2 hardened** | v1.3 Sprint E |

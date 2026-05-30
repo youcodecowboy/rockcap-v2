@@ -178,6 +178,12 @@ export const update = mutation({
     company: v.optional(v.string()),
     notes: v.optional(v.string()),
     clientId: v.optional(v.union(v.id("clients"), v.null())),
+    // Enrichment fields (e.g. persisting an apollo.findEmail result so the
+    // People tab can reflect a completed search even when no email was
+    // published). All already exist on the contacts table.
+    linkedinUrl: v.optional(v.string()),
+    emailStatus: v.optional(v.string()),
+    emailSource: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;

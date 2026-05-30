@@ -60,19 +60,20 @@ What to do instead:
 
 ## 3. Key People
 
-For each of top 2 directors by CH appointment recency:
+Give **each** key person (every majority PSC and each key director) their own `### {Full Name}` heading with the bullets below, ordered by control then appointment recency. **People-tab contract:** the `/prospects/[id]` People tab (and the nav count) parse this section by splitting on `### ` and treat each `### ` heading as ONE person card, matched to a contact by name. So never group multiple people under a single heading (e.g. "### {Family} family" yields one card, not N), and ensure step 8 created a contact per person so each card can bind its email/Apollo-enrichment row. Add an **Apollo** bullet recording the search result (found / no email / status) so the report itself reflects the lookup.
 
 ### {Director Name}
 - **CH role + appointment:** {Director / Secretary, appointed YYYY-MM-DD}
 - **Other CH appointments:** {N other live appointments; list top 3 companies by recency if relevant}
 - **PSC status:** {ownership %, voting rights if applicable; or "Not a PSC"}
 - **LinkedIn:** <a href="{URL}">{URL}</a> (or "Not found in {N} searches")
+- **Apollo:** {searched YYYY-MM-DD; person found / no match; email + status, or "found, no published email (unavailable)". The same result is persisted on this person's contact (emailSource/emailStatus/linkedinUrl) by step 8.}
 - **Press / quotes:** {any verbatim quotes or press mentions; or "None found"}
 - **Connection signal:** {if they appear connected to other property/finance people in our existing intelligence, note it; else "No prior connection in RockCap intelligence"}
 
-### Corporate group / related entities
+#### Corporate group / related entities
 
-(From the `../../sub-skills/resolve-related-entities` walk — step 8b. Maps the controllers' other Companies House appointments to the corporate group. Surface-only: no `clients`/`companies` rows are created for the entities listed here. The sub-skill also persists these sibling/parent CH numbers as structured `relatedCompaniesHouseNumbers` on the prospect via `clients.setProspectFacts` — that field powers the CH-tab "Group charges" rollup, which aggregates the whole group's charge book quantitatively alongside this narrative subsection.)
+(Level-4 `####` heading by design — NOT `###`. The People tab treats every `### ` heading in section 3 as a person card, so this group subsection sits one level down to avoid becoming a phantom "person" card. From the `../../sub-skills/resolve-related-entities` walk — step 8b. Maps the controllers' other Companies House appointments to the corporate group. Surface-only: no `clients`/`companies` rows are created for the entities listed here. The sub-skill also persists these sibling/parent CH numbers as structured `relatedCompaniesHouseNumbers` on the prospect via `clients.setProspectFacts` — that field powers the CH-tab "Group charges" rollup, which aggregates the whole group's charge book quantitatively alongside this narrative subsection.)
 
 - **Controllers walked:** {for each majority PSC / key director walked: name + why (e.g. "majority PSC, ownership-of-shares-75-to-100-percent" / "director, appointed 2023-04"). Note any controller whose appointments link was absent or whose list resolved to a different individual (DOB mismatch).}
 - **Likely trading parent:** {company name + CH number + confidence — the bare sponsor-root company (no scheme parenthetical), if found; else "None identified — prospect appears to be the trading parent / core entity"}
