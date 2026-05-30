@@ -53,3 +53,4 @@ Defer to `document-house-style.md` and the doc-type reference. The three that ma
 ## References
 - `../../shared-references/document-house-style.md`
 - `../../shared-references/doc-type-company-one-pager.md`
+- `../../shared-references/doc-type-lender-brief.md` — branded multi-page lender brief (structured `briefData` via the lender-brief layout). Track-record depth from CH group charges; section blocks never split across a page break.
