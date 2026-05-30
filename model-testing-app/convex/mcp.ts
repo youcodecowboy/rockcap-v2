@@ -2081,6 +2081,22 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // Corporate-structure chart renderer: ownership-only layout SVG + data URI.
+  {
+    name: "structure.renderChart",
+    description:
+      "Render a corporate StructureGraph to a styled SVG (ownership-only layout) + a data:image/svg+xml URI + the high/med/low verdict. Pass { graph } (shape per src/lib/structure/types.ts). Use after building the graph in the corporate-structure skill: embed the returned dataUri in intelMarkdown and inline the svg in a lender brief's Corporate Structure section. Read-only (does not persist).",
+    inputSchema: {
+      type: "object",
+      properties: { graph: { type: "object", description: "StructureGraph { subjectClientId, asOf, nodes[], edges[] }" } },
+      required: ["graph"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runAction(internal.structureGen.renderChart, { graph: args.graph });
+      return asText(result);
+    },
+  },
+
   // Corporate-group charge rollup: aggregates the Companies House charge book
   // across a prospect's parent + sibling-SPV CH numbers (the ones persisted on
   // clients.relatedCompaniesHouseNumbers by resolve-related-entities). Mirrors
