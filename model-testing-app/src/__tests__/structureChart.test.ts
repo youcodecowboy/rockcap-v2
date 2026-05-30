@@ -18,16 +18,17 @@ describe("buildStructureChartSvg", () => {
     expect(svg).toContain("Birkett Hall Homes Ltd");
     expect(svg).toContain("Bocking Homes Ltd");
   });
-  it("draws inferred/band-only edges dashed and flagged edges in red", () => {
+  it("draws inferred/band-only ownership edges dashed", () => {
     expect(svg).toContain("stroke-dasharray"); // band-only / soft edges
-    expect(svg).toContain("#b00");             // director-not-owner edge
   });
   it("shows the verdict chip", () => {
     expect(svg).toContain("STRUCTURE: MEDIUM");
   });
-  it("pulls non-owned context (former-employer) out of the ownership tree", () => {
-    expect(svg).toContain("PRIOR / NON-OWNED");
-    expect(svg).toContain("not owned");
+  it("omits non-owned entities entirely (not part of the ownership structure)", () => {
+    // D2P is in the graph data (it drives the verdict + Track Record) but is only
+    // a directorship, not owned — so it must NOT appear in the ownership chart.
+    expect(svg).not.toContain("D2P Billericay");
+    expect(svg).not.toContain("PRIOR / NON-OWNED");
   });
 });
 
