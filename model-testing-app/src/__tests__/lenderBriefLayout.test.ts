@@ -78,8 +78,14 @@ describe("buildLenderBriefFooterTemplate", () => {
     expect(tpl).toContain("Page ");
     expect(tpl).toContain(" of ");
   });
-  it("fills the reserved margin with height:100% and has correct font-size", () => {
+  it("outer wrapper fills the reserved margin (height:100%) with align-items:flex-end", () => {
+    // Outer flex container fills the footer area; flex-end pins the band to the bottom,
+    // leaving empty white above it = gap between content and the band.
     expect(tpl).toContain("height:100%");
+    expect(tpl).toContain("align-items:flex-end");
+  });
+  it("inner band is a fixed 11mm height (not 100%)", () => {
+    expect(tpl).toContain("height:11mm");
     expect(tpl).toContain("font-size:8.5pt");
   });
 });

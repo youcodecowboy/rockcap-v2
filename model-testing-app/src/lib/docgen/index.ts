@@ -34,7 +34,10 @@ export async function renderDocument(spec: RenderSpec): Promise<RenderResult[]> 
     // footerTemplate + marginBottomMm: Chromium reserves the bottom margin on EVERY
     // page so body content never overlaps the footer band on intermediate pages.
     // DOCX path uses plain renderHtmlToDocx (no footer template needed).
-    pdfOpts = { marginTopMm: 20, marginBottomMm: 20, marginSideMm: 18, footerTemplate: buildLenderBriefFooterTemplate() };
+    // marginBottomMm:24 reserves 24mm at the bottom; the 11mm black band is pinned
+    // to the very bottom of that area, leaving ~13mm of white gap between the last
+    // content line and the band — no content jammed against the footer.
+    pdfOpts = { marginTopMm: 20, marginBottomMm: 24, marginSideMm: 18, footerTemplate: buildLenderBriefFooterTemplate() };
   } else {
     if (!spec.contentHtml?.trim()) throw new Error("renderDocument: contentHtml is empty");
     fullHtml = wrapInHouseStyle(spec.contentHtml, { title: spec.title });

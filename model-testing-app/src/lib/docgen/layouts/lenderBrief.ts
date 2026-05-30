@@ -71,9 +71,10 @@ export function buildLenderBriefHtml(data: LenderBriefData): string {
   );
 }
 
-// Chromium footerTemplate (PDF only): full-bleed black band to the page bottom edge,
-// company legal line on the left + page numbers on the right.
-// height:100% fills the entire margin reserved by marginBottomMm.
+// Chromium footerTemplate (PDF only): outer flex container fills the reserved bottom
+// margin (height:100%); align-items:flex-end pins the 11mm black band to the very
+// bottom of the footer area, leaving empty white space above — this creates a gap
+// between the last content line and the band on every page.
 // Chromium quirks handled: explicit font-size (default is 0), exact color print.
 export function buildLenderBriefFooterTemplate(): string {
   const c = ROCKCAP_COMPANY;
@@ -81,12 +82,15 @@ export function buildLenderBriefFooterTemplate(): string {
     .filter(Boolean)
     .join("  ·  ");
   return (
-    `<div style="margin:0;box-sizing:border-box;width:100%;height:100%;background:#141414;color:#ffffff;` +
-    `padding:0 18mm;display:flex;align-items:center;justify-content:space-between;` +
+    `<div style="height:100%;width:100%;margin:0;padding:0;display:flex;align-items:flex-end;` +
+    `-webkit-print-color-adjust:exact;print-color-adjust:exact;">` +
+    `<div style="width:100%;height:11mm;box-sizing:border-box;background:#141414;color:#ffffff;display:flex;` +
+    `align-items:center;justify-content:space-between;padding:0 18mm;` +
     `font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:8.5pt;letter-spacing:0.03em;` +
     `-webkit-print-color-adjust:exact;print-color-adjust:exact;">` +
     `<span>${legal}</span>` +
     `<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>` +
+    `</div>` +
     `</div>`
   );
 }
