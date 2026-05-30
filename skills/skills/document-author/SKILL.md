@@ -28,7 +28,7 @@ Does NOT produce a cadence.
 ## High-level workflow
 1. **Resolve the entity** to a `clientId` (the chat layer usually injects it; otherwise resolve by name).
 2. **`skillRun.start`** with the dedupKey above; honour `duplicate_found`.
-3. **Gather data:** `client.getDeepContext({clientId})` — identity, CH profile + charges, intelligence, track record, contacts, activity.
+3. **Gather data:** `client.getDeepContext({clientId})` — identity, CH profile + charges, intelligence, track record, contacts, activity. **For document-grounded doc types (e.g. the lender brief) this is not sufficient on its own: enumerate and read the deal's documents (`document.listByProject` / `document.listByClient` → `document.search` / `document.get`) — they are the primary source for figures, terms, and named principals. The deep-context rollups are a cross-check. See the doc-type reference.**
 4. **Load the guardrails:** `../../shared-references/document-house-style.md` (voice + HTML rules) and the doc-type reference (for one-pagers, `../../shared-references/doc-type-company-one-pager.md`).
 5. **Compose** the document body as semantic HTML, following the house style and the doc-type structure, grounding every figure in the gathered data. Omit sections with no data; never fabricate.
 6. **Call the `generateDocument` tool** with `{ contentHtml, title, docType, category: "Generated", clientId }`. It renders PDF + DOCX and stages the `document_publish` approval.
