@@ -1138,6 +1138,40 @@ export const appendContextInternal = internalMutation({
   handler: async (ctx, args) => appendContextImpl(ctx, args),
 });
 
+// One-off data migration for retiring aiSummary.recentUpdates (2026-05-31).
+// Strips the field from every clientIntelligence + projectIntelligence doc that
+// still carries it, so a follow-up can drop it from the schema without the
+// strict-object validator rejecting existing documents on the next push.
+// Idempotent — safe to run repeatedly; reports how many docs it touched.
+// Run with: npx convex run intelligence:stripRetiredRecentUpdates
+export const stripRetiredRecentUpdates = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let clientsCleaned = 0;
+    let projectsCleaned = 0;
+
+    for (const row of await ctx.db.query("clientIntelligence").collect()) {
+      const ai = (row as any).aiSummary;
+      if (ai && ai.recentUpdates !== undefined) {
+        const rest = { ...ai };
+        delete rest.recentUpdates;
+        await ctx.db.patch(row._id, { aiSummary: rest });
+        clientsCleaned++;
+      }
+    }
+    for (const row of await ctx.db.query("projectIntelligence").collect()) {
+      const ai = (row as any).aiSummary;
+      if (ai && ai.recentUpdates !== undefined) {
+        const rest = { ...ai };
+        delete rest.recentUpdates;
+        await ctx.db.patch(row._id, { aiSummary: rest });
+        projectsCleaned++;
+      }
+    }
+    return { ok: true, clientsCleaned, projectsCleaned };
+  },
+});
+
 /**
  * Update project summaries and aggregate data on client intelligence when projects change
  * Pulls data from all projects associated with this client
