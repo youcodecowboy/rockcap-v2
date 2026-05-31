@@ -1216,3 +1216,157 @@ export const activateInternal = internalMutation({
     return await activateClient(ctx, args.clientId, args.userId);
   },
 });
+
+// ── Outreach-ready gate (2026-05-30) ────────────────────────────
+//
+// The operator "accept → ready for outreach" gate. Marking a prospect ready is
+// an explicit human bless of the intel that exists; nothing is drafted until
+// this. The flag is two optional columns (outreachReadyAt/outreachReadyBy), not
+// a prospectState transition and not a HubSpot change. The outreach-draft skill
+// (a later session / batch) enumerates ready-but-not-drafted prospects and
+// composes the cadence package — which still routes through the approval gate.
+//
+// Guard: you accept intel that EXISTS. A prospect with no completed
+// prospect-intel run cannot be marked ready (the UI button is also disabled).
+
+// Does this client have a completed prospect-intel run? "Completed" means the
+// run reached complete or complete_with_gaps (gaps are expected and fine — a
+// no-email run still produces acceptable intel). skillRuns has no by-client
+// index; prospects are low-volume so a filtered scan is acceptable (mirrors
+// prospects.getDeepContext, which scans the same way).
+async function hasCompletedIntelRun(ctx: any, clientId: Id<"clients">): Promise<boolean> {
+  const runs = await ctx.db
+    .query("skillRuns")
+    .filter((q: any) => q.eq(q.field("linkedClientId"), clientId))
+    .collect();
+  return runs.some(
+    (r: any) =>
+      r.skillName === "prospect-intel" &&
+      (r.status === "complete" || r.status === "complete_with_gaps"),
+  );
+}
+
+type OutreachReadyResult = {
+  ok: true;
+  idempotent?: boolean;
+  outreachReadyAt?: string;
+  note?: string;
+};
+
+// Shared logic for both the public mutation (UI accept button, resolves the
+// Clerk identity) and the internal mutation (MCP tool, passes userId). Single
+// source of truth so the field set never drifts.
+async function applyMarkOutreachReady(
+  ctx: any,
+  clientId: Id<"clients">,
+  userId: Id<"users"> | undefined,
+): Promise<OutreachReadyResult> {
+  const client = await ctx.db.get(clientId);
+  if (!client) throw new Error("client_not_found");
+
+  // Already accepted — idempotent no-op (keep the original accept timestamp).
+  if ((client as any).outreachReadyAt) {
+    return {
+      ok: true,
+      idempotent: true,
+      outreachReadyAt: (client as any).outreachReadyAt,
+      note: "already marked ready; original accept preserved",
+    };
+  }
+
+  // Guard: intel must exist before it can be accepted.
+  if (!(await hasCompletedIntelRun(ctx, clientId))) {
+    throw new Error("no_completed_intel_run: cannot mark ready before a prospect-intel run completes");
+  }
+
+  const now = new Date().toISOString();
+  // clients has no `updatedAt` column; outreachReadyAt is itself the audit stamp.
+  await ctx.db.patch(clientId, {
+    outreachReadyAt: now,
+    outreachReadyBy: userId,
+  });
+  return { ok: true, outreachReadyAt: now };
+}
+
+async function applyClearOutreachReady(
+  ctx: any,
+  clientId: Id<"clients">,
+): Promise<OutreachReadyResult> {
+  const client = await ctx.db.get(clientId);
+  if (!client) throw new Error("client_not_found");
+
+  if (!(client as any).outreachReadyAt) {
+    return { ok: true, idempotent: true, note: "not marked ready; nothing to clear" };
+  }
+
+  await ctx.db.patch(clientId, {
+    outreachReadyAt: undefined,
+    outreachReadyBy: undefined,
+  });
+  return { ok: true };
+}
+
+// Resolve the Clerk identity to a users._id (same pattern as `activate`).
+async function resolveUserId(ctx: any): Promise<Id<"users"> | undefined> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return undefined;
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+    .first();
+  return user?._id;
+}
+
+// Public: UI "Accept intel — ready for outreach" button.
+export const markOutreachReady = mutation({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args): Promise<OutreachReadyResult> => {
+    const userId = await resolveUserId(ctx);
+    return await applyMarkOutreachReady(ctx, args.clientId, userId);
+  },
+});
+
+// Internal: MCP tool (client.markOutreachReady) passes the resolved userId.
+export const markOutreachReadyInternal = internalMutation({
+  args: { clientId: v.id("clients"), userId: v.optional(v.id("users")) },
+  handler: async (ctx, args): Promise<OutreachReadyResult> => {
+    return await applyMarkOutreachReady(ctx, args.clientId, args.userId);
+  },
+});
+
+// Public: UI "Unmark" link (meaningful only pre-draft).
+export const clearOutreachReady = mutation({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args): Promise<OutreachReadyResult> => {
+    return await applyClearOutreachReady(ctx, args.clientId);
+  },
+});
+
+export const clearOutreachReadyInternal = internalMutation({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args): Promise<OutreachReadyResult> => {
+    return await applyClearOutreachReady(ctx, args.clientId);
+  },
+});
+
+// Query: prospects that are ready for outreach AND not yet drafted. This is the
+// pool "draft all outreach for ready companies" enumerates. A prospect drops
+// out automatically once outreach-draft advances it past `researched` (to
+// `drafted`/etc.), so re-running the batch never double-drafts. Returns whole
+// client rows (the caller reads name/dealType/contacts off them).
+export const listOutreachReady = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db
+      .query("clients")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+    return all.filter((c: any) => {
+      if (!c.outreachReadyAt) return false;
+      // Not yet drafted: still at the initial `researched` state (or, defensively,
+      // unset). Anything `drafted` or later has left the to-draft pool.
+      const st = c.prospectState;
+      return st === undefined || st === "researched";
+    });
+  },
+});

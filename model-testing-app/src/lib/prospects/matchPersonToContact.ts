@@ -11,6 +11,7 @@ export type ContactLike = {
   email?: string;
   emailStatus?: string;
   emailSource?: string;
+  linkedinUrl?: string;
   role?: string;
 };
 

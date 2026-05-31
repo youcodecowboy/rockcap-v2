@@ -4,13 +4,16 @@ Each subdirectory is a skill — a `SKILL.md` plus supporting references that te
 
 **For tool discovery, see `../CATALOGUE.md`.** This README is the SKILL index.
 
+**For the prospect flow gates (intel → accept → draft → approve), see [`prospect-pipeline-gates.md`](./prospect-pipeline-gates.md).**
+
 All skills follow the shape and rules in `../CONVENTIONS.md`.
 
 ## Skill maturity status
 
 | Skill | Status | Last hardening |
 |---|---|---|
-| `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement |
+| `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement; v3.1 People-tab contract 2026-05-30; **v3.2 intel-only + Definition-of-Done manifest** (outreach split out behind the accept gate) 2026-05-30 |
+| `outreach-draft/` | **v2 hardened** | **NEW 2026-05-30** — composes the cold-outreach cadence package for prospects the operator has marked ready (lifecycle step 1.5; the old prospect-intel step 11) |
 | `qualify-and-draft/` | **v2 hardened** | v1.3 Sprint B |
 | `meeting-prep/` | **v2 hardened** | v1.3 Sprint C |
 | `meeting-capture/` | **v2 hardened** | v1.3 Sprint E |
@@ -37,7 +40,8 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 
 | Step | Topic | Skill | Status |
 |---|---|---|---|
-| 1 | Prospecting + cold intel | [`prospect-intel/`](./prospect-intel/) | v3 |
+| 1 | Prospecting + cold intel (intel-only) | [`prospect-intel/`](./prospect-intel/) | v3.2 |
+| 1.5 | Cold-outreach drafting (gated behind operator accept) | [`outreach-draft/`](./outreach-draft/) | v2 |
 | 2 | Qualification + first-touch reply | [`qualify-and-draft/`](./qualify-and-draft/) | v2 |
 | 3 | Prospect cadence tracking | [`cadence-fire/`](./cadence-fire/) | v1.1 substrate |
 | 4 | Reply handling | [`qualify-and-draft/`](./qualify-and-draft/) (continuation) | v2 |
@@ -65,7 +69,8 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 
 The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 5 v2-hardened skills are the operationally-ready ones; their SKILL.md files document multiple invocation paths so Claude Code can recognise when to invoke them:
 
-- **prospect-intel**: operator says "run prospect-intel on {company name / CH number}" OR Claude Code surfaces a candidate via `companies.listUnprocessed`
+- **prospect-intel**: operator says "run prospect-intel on {company name / CH number}" OR Claude Code surfaces a candidate via `companies.listUnprocessed`. Intel-only — it never drafts outreach.
+- **outreach-draft**: operator says "draft outreach for {prospect}" (single) OR "draft all outreach for ready companies" (batch). Only drafts for prospects the operator has marked ready (`outreachReadyAt` set); enumerates the batch pool via `client.listOutreachReady`. See [`prospect-pipeline-gates.md`](./prospect-pipeline-gates.md).
 - **qualify-and-draft**: classifier-routed (reply intent = `info_question`) OR operator says "draft a response to {prospect}'s reply" OR operator says "draft a follow-up for {client} mentioning X"
 - **meeting-prep**: classifier-routed (reply intent = `book_meeting` → `/api/meeting-prep-respond` route) OR operator says "prep me for the {meeting}"
 - **meeting-capture**: operator says "capture the {meeting}: {pasted notes}" OR Fireflies auto-sync (when Pub/Sub provisioned)

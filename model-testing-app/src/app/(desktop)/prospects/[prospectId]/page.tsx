@@ -103,6 +103,8 @@ export default function ProspectDetailPage() {
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
   const upsertScheme = useMutation(api.companies.upsertProspectScheme);
+  const markOutreachReady = useMutation(api.clients.markOutreachReady);
+  const clearOutreachReady = useMutation(api.clients.clearOutreachReady);
 
   if (prospect === undefined) {
     return <div style={{ padding: 24, color: colors.text.muted }}>Loading…</div>;
@@ -112,6 +114,13 @@ export default function ProspectDetailPage() {
   }
 
   const packageId = cadences[0]?.packageId;
+
+  // Accept gate: you can mark ready only once a completed intel run exists.
+  // Mirrors the clients.markOutreachReady guard so the button never offers an
+  // action the mutation would reject.
+  const intelStatus = (intelRun as any)?.status;
+  const canMarkReady =
+    intelStatus === "complete" || intelStatus === "complete_with_gaps";
 
   return (
     <>
@@ -187,6 +196,17 @@ export default function ProspectDetailPage() {
         onSkip={() => router.push("/prospects")}
         onPrev={() => { /* arrow nav v1.2.1 */ }}
         onNext={() => { /* arrow nav v1.2.1 */ }}
+        canMarkReady={canMarkReady}
+        onMarkReady={async () => {
+          try {
+            await markOutreachReady({ clientId: prospectId });
+          } catch (e: any) {
+            alert(e?.message ?? "Could not mark ready");
+          }
+        }}
+        onUnmarkReady={async () => {
+          await clearOutreachReady({ clientId: prospectId });
+        }}
       />
 
       {showRevisionModal && (

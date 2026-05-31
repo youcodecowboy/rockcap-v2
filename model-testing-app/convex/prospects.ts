@@ -445,6 +445,15 @@ export const getDeepContext = query({
     if ((prospect as any).prospectStateChangedAt) {
       summary.prospectStateChangedAt = (prospect as any).prospectStateChangedAt;
     }
+    // Outreach-ready gate (2026-05-30): surface the accept flag at a glance so
+    // the agent reads readiness from the summary without parsing the full row.
+    // outreachReady true = operator has accepted the intel; outreach-draft may
+    // now compose the cadence package.
+    summary.outreachReady = Boolean((prospect as any).outreachReadyAt);
+    if ((prospect as any).outreachReadyAt) {
+      summary.outreachReadyAt = (prospect as any).outreachReadyAt;
+      summary.outreachReadyBy = (prospect as any).outreachReadyBy;
+    }
     summary.entityFocus = isActiveClient ? "active_client" : "prospect";
 
     return {
