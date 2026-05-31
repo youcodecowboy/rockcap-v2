@@ -73,10 +73,11 @@ import { ClientIntelligenceTab } from '@/components/IntelligenceTab';
 import ClientBeauhurstCards from './components/ClientBeauhurstCards';
 import ClientDealsTab from './components/ClientDealsTab';
 import ClientActivityTab from './components/ClientActivityTab';
+import ClientContextTab from './components/ClientContextTab';
 import ClientSettingsPanel from '@/components/ClientSettingsPanel';
-import { Brain, CheckSquare, Contact, Video, ListTodo } from 'lucide-react';
+import { Brain, CheckSquare, Contact, Video, ListTodo, NotebookPen } from 'lucide-react';
 
-type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads' | 'deals' | 'activity';
+type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'context' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads' | 'deals' | 'activity';
 
 function ClientProfileContent() {
   const params = useParams();
@@ -220,6 +221,7 @@ function ClientProfileContent() {
     { id: 'meetings', label: 'Meetings', icon: Video, count: meetingsCount },
     { id: 'data', label: 'Data', icon: Database },
     { id: 'intelligence', label: 'Intelligence', icon: Brain },
+    { id: 'context', label: 'Context', icon: NotebookPen },
     { id: 'checklist', label: 'Checklist', icon: CheckSquare },
     { id: 'notes', label: 'Notes', icon: StickyNote },
   ];
@@ -467,6 +469,10 @@ function ClientProfileContent() {
             </div>
           </TabsContent>
 
+          <TabsContent value="context" className="mt-0 flex-1 overflow-auto">
+            <ClientContextTab clientId={clientId} clientName={client.name} />
+          </TabsContent>
+
           <TabsContent value="deals" className="mt-0 flex-1 overflow-auto">
             <ClientDealsTab clientId={clientId} />
           </TabsContent>
@@ -525,7 +531,7 @@ function ClientProfileContent() {
           </TabsContent>
 
           {/* Contained Tabs - With Max Width Container */}
-          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data', 'threads', 'deals', 'activity'].includes(activeTab) ? 'hidden' : ''}`}>
+          <div className={`flex-1 overflow-auto ${['overview', 'intelligence', 'context', 'documents', 'checklist', 'notes', 'meetings', 'tasks', 'data', 'threads', 'deals', 'activity'].includes(activeTab) ? 'hidden' : ''}`}>
             <div className="max-w-7xl mx-auto px-6 py-6">
 
               <TabsContent value="projects" className="mt-0">

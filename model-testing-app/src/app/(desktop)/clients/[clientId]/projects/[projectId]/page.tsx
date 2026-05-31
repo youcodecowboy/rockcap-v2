@@ -46,15 +46,16 @@ import RestorationBanner from '@/components/RestorationBanner';
 import ProjectOverviewTab from './components/ProjectOverviewTab';
 import ProjectDocumentsTab from './components/ProjectDocumentsTab';
 import ProjectNotesTab from './components/ProjectNotesTab';
+import ProjectContextTab from './components/ProjectContextTab';
 import ProjectKnowledgeTab from './components/ProjectKnowledgeTab';
 import ProjectDataTab from './components/ProjectDataTab';
 import ProjectTasksTab from './components/ProjectTasksTab';
 import ProjectThreadsTab from './components/ProjectThreadsTab';
 import { ProjectIntelligenceTab } from '@/components/IntelligenceTab';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
-import { Brain, CheckSquare, ListTodo } from 'lucide-react';
+import { Brain, CheckSquare, ListTodo, NotebookPen } from 'lucide-react';
 
-type TabType = 'overview' | 'documents' | 'intelligence' | 'checklist' | 'threads' | 'data' | 'notes' | 'tasks';
+type TabType = 'overview' | 'documents' | 'intelligence' | 'context' | 'checklist' | 'threads' | 'data' | 'notes' | 'tasks';
 
 function ProjectDetailContent() {
   const params = useParams();
@@ -171,6 +172,7 @@ function ProjectDetailContent() {
     { id: 'documents', label: 'Documents', icon: FileText, count: documents.length },
     { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
     { id: 'intelligence', label: 'Intelligence', icon: Brain },
+    { id: 'context', label: 'Context', icon: NotebookPen },
     { id: 'checklist', label: 'Checklist', icon: CheckSquare },
     { id: 'threads', label: 'Threads', icon: Flag, count: openFlagCount > 0 ? openFlagCount : undefined },
     { id: 'data', label: 'Data', icon: Database },
@@ -348,6 +350,10 @@ function ProjectDetailContent() {
             />
           </TabsContent>
 
+          <TabsContent value="context" className="mt-0 flex-1 overflow-auto">
+            <ProjectContextTab projectId={projectId} projectName={project.name} />
+          </TabsContent>
+
           <TabsContent value="documents" className="mt-0 flex-1 overflow-hidden">
             <ProjectDocumentsTab
               projectId={projectId}
@@ -392,7 +398,7 @@ function ProjectDetailContent() {
           </TabsContent>
 
           {/* Contained Tabs - With Max Width Container */}
-          <div className={`flex-1 overflow-auto ${['intelligence', 'documents', 'checklist', 'notes', 'tasks', 'threads'].includes(activeTab) ? 'hidden' : ''}`}>
+          <div className={`flex-1 overflow-auto ${['intelligence', 'context', 'documents', 'checklist', 'notes', 'tasks', 'threads'].includes(activeTab) ? 'hidden' : ''}`}>
             <div className="max-w-7xl mx-auto px-6 py-6">
               <TabsContent value="overview" className="mt-0">
                 <ProjectOverviewTab
