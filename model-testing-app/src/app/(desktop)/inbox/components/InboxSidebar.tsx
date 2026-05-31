@@ -38,9 +38,9 @@ export default function InboxSidebar({
       className="w-[350px] flex-shrink-0 flex flex-col h-full"
       style={{ background: colors.bg.light, borderRight: `1px solid ${colors.border.default}` }}
     >
-      {/* Filter Tabs */}
-      <div className="px-3 pt-3 pb-0" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
-        <div className="flex gap-1 overflow-x-auto">
+      {/* Filter Tabs — flat underline tabs that wrap (no horizontal scroll) */}
+      <div className="px-3 pt-2" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
+        <div className="flex flex-wrap gap-x-3">
           {FILTER_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeFilter === tab.key;
@@ -49,30 +49,28 @@ export default function InboxSidebar({
               <button
                 key={tab.key}
                 onClick={() => onFilterChange(tab.key)}
-                className="flex items-center gap-1.5 px-3 py-2 whitespace-nowrap"
+                className="flex items-center gap-1.5 py-2 whitespace-nowrap"
                 style={{
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                   fontSize: 9,
                   letterSpacing: '0.06em',
                   textTransform: 'uppercase',
                   fontWeight: 500,
-                  borderRadius: '4px 4px 0 0',
                   color: isActive ? colors.text.primary : colors.text.muted,
-                  background: isActive ? colors.bg.card : 'transparent',
-                  border: `1px solid ${isActive ? colors.border.default : 'transparent'}`,
-                  borderBottomColor: isActive ? colors.bg.card : 'transparent',
-                  marginBottom: isActive ? -1 : 0,
-                  transition: 'color 100ms linear, background 100ms linear',
+                  background: 'transparent',
+                  borderBottom: `2px solid ${isActive ? colors.text.primary : 'transparent'}`,
+                  marginBottom: -1,
+                  transition: 'color 100ms linear, border-color 100ms linear',
                 }}
               >
-                <Icon size={13} />
+                <Icon size={12} />
                 {tab.label}
                 {count > 0 && (
                   <span
-                    className="ml-1 flex items-center justify-center px-1"
+                    className="flex items-center justify-center px-1"
                     style={{
-                      minWidth: 18,
-                      height: 18,
+                      minWidth: 16,
+                      height: 16,
                       borderRadius: 2,
                       fontSize: 9,
                       fontWeight: 600,
