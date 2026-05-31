@@ -7,6 +7,9 @@
   1. Run `npx next build` from `model-testing-app/` (the Next.js app lives there, not repo root) to check for build issues and fix any errors
   2. Commit changes and push to GitHub
 
+### Pull requests
+- When authoring a PR, open the description with a **"Problems this PR solves"** bullet list — one short bullet per problem, in plain language, before the implementation detail. It gives the reviewer the *why* at a glance so the rest of the description reads faster. Keep the bullets about the problem (the pain / gap / bug), not the solution; the solution is what the rest of the PR body covers.
+
 ### Repo layout
 - `model-testing-app/` — Next.js 16 web app (Convex, Clerk, Anthropic SDK)
 - `mobile-app/` — Expo / React Native app
