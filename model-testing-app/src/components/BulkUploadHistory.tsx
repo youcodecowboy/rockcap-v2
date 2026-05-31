@@ -5,29 +5,34 @@ import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Loader2, Clock, CheckCircle2, AlertCircle, ArrowRight, FileText, ListOrdered, RefreshCw } from 'lucide-react';
+import { Button, StatusPill, EmptyState, SkeletonText } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
+import { Loader2, ArrowRight, FileText, RefreshCw } from 'lucide-react';
 
 type BatchStatus = 'queued' | 'uploading' | 'processing' | 'review' | 'completed' | 'partial';
 
-function StatusBadge({ status }: { status: BatchStatus }) {
+function statusTone(status: BatchStatus, colors: ColorPalette): string {
   switch (status) {
-    case 'queued':
-      return <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50"><ListOrdered className="w-3 h-3 mr-1" />Queued</Badge>;
-    case 'uploading':
-      return <Badge variant="outline" className="text-blue-600 border-blue-300 bg-blue-50"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Uploading</Badge>;
-    case 'processing':
-      return <Badge variant="outline" className="text-blue-600 border-blue-300 bg-blue-50"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Processing</Badge>;
-    case 'review':
-      return <Badge variant="outline" className="text-orange-600 border-orange-300 bg-orange-50"><Clock className="w-3 h-3 mr-1" />In Review</Badge>;
-    case 'completed':
-      return <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50"><CheckCircle2 className="w-3 h-3 mr-1" />Completed</Badge>;
-    case 'partial':
-      return <Badge variant="outline" className="text-yellow-600 border-yellow-300 bg-yellow-50"><AlertCircle className="w-3 h-3 mr-1" />Partial</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
+    case 'queued': return colors.accent.yellow;
+    case 'uploading': return colors.accent.blue;
+    case 'processing': return colors.accent.blue;
+    case 'review': return colors.accent.orange;
+    case 'completed': return colors.accent.green;
+    case 'partial': return colors.accent.yellow;
+    default: return colors.text.muted;
+  }
+}
+
+function statusLabel(status: BatchStatus): string {
+  switch (status) {
+    case 'queued': return 'Queued';
+    case 'uploading': return 'Uploading';
+    case 'processing': return 'Processing';
+    case 'review': return 'In Review';
+    case 'completed': return 'Completed';
+    case 'partial': return 'Partial';
+    default: return status;
   }
 }
 
@@ -40,6 +45,7 @@ function relativeDate(isoString: string) {
 }
 
 export default function BulkUploadHistory() {
+  const colors = useColors();
   const router = useRouter();
   const [retryingQueue, setRetryingQueue] = useState(false);
   const retryQueue = useAction(api.bulkUpload.checkAndStartNextQueued);
@@ -52,26 +58,21 @@ export default function BulkUploadHistory() {
   );
 
   if (!batches) {
-    return (
-      <div className="flex items-center justify-center py-12 text-muted-foreground">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />
-        Loading history...
-      </div>
-    );
+    return <SkeletonText lines={4} />;
   }
 
   if (batches.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-        <FileText className="w-10 h-10 opacity-30" />
-        <p className="text-sm">No upload batches yet</p>
-        <p className="text-xs">Start an upload to see your history here</p>
-      </div>
+      <EmptyState
+        icon={<FileText size={28} />}
+        title="No upload batches yet"
+        body="Start an upload to see your history here."
+      />
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {(batches as any[]).map((batch) => {
         const batchName =
           batch.clientName ||
@@ -88,35 +89,46 @@ export default function BulkUploadHistory() {
         return (
           <div
             key={batch._id}
-            className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/30 transition-colors gap-4"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              padding: 12,
+              borderRadius: 4,
+              border: `1px solid ${colors.border.default}`,
+              background: colors.bg.card,
+            }}
           >
             {/* Status + Name */}
-            <div className="flex items-start gap-3 min-w-0 flex-1">
-              <div className="pt-0.5 flex-shrink-0">
-                <StatusBadge status={batch.status as BatchStatus} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: 1 }}>
+              <div style={{ paddingTop: 2, flexShrink: 0 }}>
+                <StatusPill label={statusLabel(batch.status as BatchStatus)} tone={statusTone(batch.status as BatchStatus, colors)} />
               </div>
-              <div className="min-w-0">
-                <div className="text-sm font-medium truncate">
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }} className="truncate">
                   {batchName}{projectLabel}
                 </div>
-                <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
+                <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span>{batch.totalFiles} files</span>
                   {(batch.processedFiles ?? 0) > 0 && (
                     <span>· {batch.processedFiles} processed</span>
                   )}
                   {(batch.errorFiles ?? 0) > 0 && (
-                    <span className="text-red-500">· {batch.errorFiles} errors</span>
+                    <span style={{ color: colors.accent.red }}>· {batch.errorFiles} errors</span>
                   )}
                   {batch.status === 'queued' && batch.queuePosition && (
-                    <span className="text-amber-600">· Position {batch.queuePosition} in queue</span>
+                    <span style={{ color: colors.accent.yellow }}>· Position {batch.queuePosition} in queue</span>
                   )}
                   <span>· {relativeDate(batch.createdAt)}</span>
                 </div>
                 {/* Progress bar for active batches */}
                 {isActive && batch.totalFiles > 0 && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <Progress value={progress} className="h-1.5 flex-1 max-w-[200px]" />
-                    <span className="text-xs text-muted-foreground">{progress}%</span>
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ flex: 1, maxWidth: 200, height: 6, borderRadius: 3, background: colors.bg.cardAlt, overflow: 'hidden' }}>
+                      <div style={{ width: `${progress}%`, height: '100%', background: colors.accent.blue, transition: 'width 200ms linear' }} />
+                    </div>
+                    <span style={{ fontSize: 11, color: colors.text.muted }}>{progress}%</span>
                   </div>
                 )}
               </div>
@@ -125,9 +137,9 @@ export default function BulkUploadHistory() {
             {/* Action */}
             {batch.status === 'queued' && currentUser?._id && (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
-                className="flex-shrink-0"
+                style={{ flexShrink: 0 }}
                 disabled={retryingQueue}
                 onClick={async () => {
                   setRetryingQueue(true);
@@ -142,22 +154,22 @@ export default function BulkUploadHistory() {
                 }}
               >
                 {retryingQueue ? (
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  <Loader2 className="w-3 h-3 animate-spin" />
                 ) : (
-                  <RefreshCw className="w-3 h-3 mr-1" />
+                  <RefreshCw className="w-3 h-3" />
                 )}
                 Retry
               </Button>
             )}
             {(batch.status === 'review' || batch.status === 'processing' || batch.status === 'partial' || batch.status === 'completed') && (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
-                className="flex-shrink-0"
+                style={{ flexShrink: 0 }}
                 onClick={() => router.push(`/docs/bulk/${batch._id}`)}
               >
                 {batch.status === 'completed' ? 'View' : 'Review'}
-                <ArrowRight className="w-3 h-3 ml-1" />
+                <ArrowRight className="w-3 h-3" />
               </Button>
             )}
           </div>

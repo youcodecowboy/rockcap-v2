@@ -5,10 +5,17 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, AlertTriangle, Mail } from "lucide-react";
+import {
+  Panel,
+  Section,
+  Row,
+  StatusPill,
+  Button,
+  Skeleton,
+  SkeletonText,
+} from "@/components/layouts";
+import { useColors } from "@/lib/useColors";
+import { ArrowLeft, AlertTriangle, Mail } from "lucide-react";
 
 // Gmail settings page.
 // Per docs/INTEGRATIONS/gmail-scoping.md confirmed decisions:
@@ -18,6 +25,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Loader2, AlertTriangle, Mail } from "
 //   off; global gmailSendConfig.isEnabled defaults off. Both must be on.
 
 function GmailSettingsInner() {
+  const colors = useColors();
   const status = useQuery(api.gmailTokens.getConnectionStatus as any);
   const sendConfig = useQuery(api.gmailTokens.getSendConfig as any);
   const setMySendEnabled = useMutation(api.gmailTokens.setMySendEnabled as any);
@@ -81,21 +89,29 @@ function GmailSettingsInner() {
   const sendActuallyWorks = globalSendOn && userSendOn && status?.needsReconnect !== true;
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-3xl mx-auto px-6 py-8">
-        <div className="mb-6">
+    <div style={{ background: colors.bg.light, minHeight: "100vh" }}>
+      <div style={{ maxWidth: 768, margin: "0 auto", padding: "32px 24px" }}>
+        <div style={{ marginBottom: 24 }}>
           <Link
             href="/settings"
-            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+              color: colors.text.muted,
+            }}
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
+            <ArrowLeft size={14} />
             Back to settings
           </Link>
         </div>
 
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-gray-900">Gmail Integration</h1>
-          <p className="mt-2 text-gray-600">
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: colors.text.primary }}>
+            Gmail Integration
+          </h1>
+          <p style={{ marginTop: 8, fontSize: 13, color: colors.text.secondary, lineHeight: 1.5 }}>
             Connect your Gmail account so inbound and outbound emails flow into
             the touchpoint history. Sending from skills is gated behind two
             switches: your own per-account opt-in, and an admin-controlled
@@ -103,193 +119,227 @@ function GmailSettingsInner() {
           </p>
         </div>
 
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Connection</span>
-              {loading ? (
-                <Badge variant="outline">Loading</Badge>
+        <div style={{ marginBottom: 24 }}>
+          <Panel
+            title="Connection"
+            actions={
+              loading ? (
+                <Skeleton width={88} height={18} />
               ) : status?.connected ? (
-                <Badge variant="default" className="bg-emerald-600">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                  Connected
-                </Badge>
+                <StatusPill label="Connected" tone={colors.accent.green} />
               ) : (
-                <Badge variant="outline">
-                  <XCircle className="w-3.5 h-3.5 mr-1" />
-                  Not connected
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
+                <StatusPill label="Not connected" tone={colors.text.dim} />
+              )
+            }
+          >
+            <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 14 }}>
               Gmail uses Google OAuth. Connecting opens a Google consent screen
               and requests permission to send mail and modify messages (labels,
               archive, mark read). Disconnecting clears the local connection;
               you can also revoke access from your Google account settings.
-            </CardDescription>
-          </CardHeader>
+            </p>
 
-          <CardContent>
             {loading ? (
-              <div className="text-sm text-gray-500 flex items-center">
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                Loading connection status...
-              </div>
+              <SkeletonText lines={3} />
             ) : status?.connected ? (
-              <div className="space-y-3 text-sm">
-                <div>
-                  <div className="text-gray-500">Connected account</div>
-                  <div className="font-medium text-gray-900 flex items-center">
-                    <Mail className="w-4 h-4 mr-2 text-gray-400" />
-                    {status.connectedEmail}
-                  </div>
-                </div>
-                {status.connectedAt && (
-                  <div>
-                    <div className="text-gray-500">Connected on</div>
-                    <div className="text-gray-900">
-                      {new Date(status.connectedAt).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-                {status.scope && (
-                  <div>
-                    <div className="text-gray-500">Granted scopes</div>
-                    <div className="text-xs font-mono text-gray-700 break-all">
-                      {status.scope}
-                    </div>
-                  </div>
-                )}
+              <div>
+                <Section title="Account">
+                  <Row
+                    label="Connected account"
+                    value={
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <Mail size={14} style={{ color: colors.text.dim }} />
+                        {status.connectedEmail}
+                      </span>
+                    }
+                  />
+                  {status.connectedAt && (
+                    <Row
+                      label="Connected on"
+                      value={new Date(status.connectedAt).toLocaleString()}
+                      mono
+                    />
+                  )}
+                  {status.scope && (
+                    <Row label="Granted scopes" value={status.scope} mono />
+                  )}
+                </Section>
+
                 {status.needsReconnect && (
-                  <div className="flex items-start gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 text-sm">
-                    <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      color: colors.accent.yellow,
+                      background: `${colors.accent.yellow}15`,
+                      border: `1px solid ${colors.accent.yellow}40`,
+                      borderRadius: 4,
+                      padding: 12,
+                      fontSize: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <AlertTriangle size={14} style={{ marginTop: 1, flexShrink: 0 }} />
                     <div>
                       Gmail token has expired or been revoked. Reconnect to
                       restore syncing.
                     </div>
                   </div>
                 )}
-                <div className="pt-3 flex items-center gap-2">
-                  <Button asChild variant="outline">
-                    <a href="/api/gmail/auth">Reconnect</a>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleDisconnect}
-                    disabled={disconnecting}
-                  >
-                    {disconnecting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        Disconnecting
-                      </>
-                    ) : (
-                      "Disconnect"
-                    )}
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <a href="/api/gmail/auth">
+                    <Button variant="secondary">Reconnect</Button>
+                  </a>
+                  <Button variant="secondary" onClick={handleDisconnect} disabled={disconnecting}>
+                    {disconnecting ? "Disconnecting" : "Disconnect"}
                   </Button>
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600">
-                  Click below to open Google's consent screen. Gmail uses its
-                  own OAuth client, separate from Google Calendar; connecting
-                  Gmail will not affect your Calendar connection.
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5 }}>
+                  Open Google's consent screen below. Gmail uses its own OAuth
+                  client, separate from Google Calendar; connecting Gmail will
+                  not affect your Calendar connection.
                 </p>
-                <Button asChild>
-                  <a href="/api/gmail/auth">Connect Gmail</a>
-                </Button>
+                <div>
+                  <a href="/api/gmail/auth">
+                    <Button variant="primary">Connect Gmail</Button>
+                  </a>
+                </div>
               </div>
             )}
 
             {error && (
-              <div className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+              <div
+                style={{
+                  marginTop: 16,
+                  fontSize: 12,
+                  color: colors.accent.red,
+                  background: `${colors.accent.red}15`,
+                  border: `1px solid ${colors.accent.red}40`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}
+              >
                 {error}
               </div>
             )}
             {successMessage && !error && (
-              <div className="mt-4 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3">
+              <div
+                style={{
+                  marginTop: 16,
+                  fontSize: 12,
+                  color: colors.accent.green,
+                  background: `${colors.accent.green}15`,
+                  border: `1px solid ${colors.accent.green}40`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}
+              >
                 {successMessage}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+        </div>
 
         {status?.connected && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Outbound send</CardTitle>
-              <CardDescription>
-                Two switches gate skill-originated outbound email. The global
-                switch is admin-controlled; the per-account switch is yours.
-                Both must be on for any skill to send mail from your address.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border rounded p-3">
-                  <div>
-                    <div className="font-medium text-sm">Your account</div>
-                    <div className="text-xs text-gray-500">
-                      Opt your own account in or out of skill-originated send.
-                    </div>
+          <Panel title="Outbound send">
+            <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 14 }}>
+              Two switches gate skill-originated outbound email. The global
+              switch is admin-controlled; the per-account switch is yours.
+              Both must be on for any skill to send mail from your address.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                    Your account
                   </div>
-                  <Button
-                    onClick={handleToggleSend}
-                    variant={status.sendEnabled ? "outline" : "default"}
-                    disabled={togglingSend}
-                  >
-                    {togglingSend ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        Saving
-                      </>
-                    ) : status.sendEnabled ? (
-                      "Disable send for my account"
-                    ) : (
-                      "Enable send for my account"
-                    )}
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between border rounded p-3 bg-gray-50">
-                  <div>
-                    <div className="font-medium text-sm">Global send</div>
-                    <div className="text-xs text-gray-500">
-                      Admin-controlled. If off, no skill can send from any
-                      account, even if individual users have opted in.
-                    </div>
+                  <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+                    Opt your own account in or out of skill-originated send.
                   </div>
-                  {globalSendOn ? (
-                    <Badge variant="default" className="bg-emerald-600">on</Badge>
-                  ) : (
-                    <Badge variant="outline">off</Badge>
-                  )}
                 </div>
-                <div
-                  className={
-                    sendActuallyWorks
-                      ? "flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3"
-                      : "flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3"
-                  }
+                <Button
+                  onClick={handleToggleSend}
+                  variant={status.sendEnabled ? "secondary" : "primary"}
+                  disabled={togglingSend}
                 >
-                  {sendActuallyWorks ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      Skills can send mail from your address.
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="w-4 h-4" />
-                      Skill send is currently blocked.{" "}
-                      {!globalSendOn && "Global send is off. "}
-                      {globalSendOn && !userSendOn && "Your account opt-in is off. "}
-                      {status.needsReconnect && "Reconnect Gmail. "}
-                    </>
-                  )}
-                </div>
+                  {togglingSend
+                    ? "Saving"
+                    : status.sendEnabled
+                    ? "Disable send for my account"
+                    : "Enable send for my account"}
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  padding: 12,
+                  background: colors.bg.light,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                    Global send
+                  </div>
+                  <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+                    Admin-controlled. If off, no skill can send from any
+                    account, even if individual users have opted in.
+                  </div>
+                </div>
+                <StatusPill
+                  label={globalSendOn ? "on" : "off"}
+                  tone={globalSendOn ? colors.accent.green : colors.text.dim}
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 12,
+                  color: sendActuallyWorks ? colors.accent.green : colors.accent.yellow,
+                  background: `${sendActuallyWorks ? colors.accent.green : colors.accent.yellow}15`,
+                  border: `1px solid ${(sendActuallyWorks ? colors.accent.green : colors.accent.yellow)}40`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}
+              >
+                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                {sendActuallyWorks ? (
+                  "Skills can send mail from your address."
+                ) : (
+                  <span>
+                    Skill send is currently blocked.{" "}
+                    {!globalSendOn && "Global send is off. "}
+                    {globalSendOn && !userSendOn && "Your account opt-in is off. "}
+                    {status.needsReconnect && "Reconnect Gmail. "}
+                  </span>
+                )}
+              </div>
+            </div>
+          </Panel>
         )}
       </div>
     </div>
@@ -298,7 +348,7 @@ function GmailSettingsInner() {
 
 export default function GmailSettingsPage() {
   return (
-    <Suspense fallback={<div>Loading…</div>}>
+    <Suspense fallback={<SkeletonText lines={4} />}>
       <GmailSettingsInner />
     </Suspense>
   );

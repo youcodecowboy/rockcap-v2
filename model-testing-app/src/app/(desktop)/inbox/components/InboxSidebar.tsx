@@ -1,6 +1,7 @@
 'use client';
 
 import { Flag, Bell, AtSign, CheckCircle2, Inbox } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
 
 export type InboxFilter = 'all' | 'flags' | 'notifications' | 'mentions' | 'resolved';
 
@@ -31,10 +32,14 @@ export default function InboxSidebar({
   counts,
   children,
 }: InboxSidebarProps) {
+  const colors = useColors();
   return (
-    <div className="w-[350px] flex-shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col h-full">
+    <div
+      className="w-[350px] flex-shrink-0 flex flex-col h-full"
+      style={{ background: colors.bg.light, borderRight: `1px solid ${colors.border.default}` }}
+    >
       {/* Filter Tabs */}
-      <div className="border-b border-gray-200 px-3 pt-3 pb-0">
+      <div className="px-3 pt-3 pb-0" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
         <div className="flex gap-1 overflow-x-auto">
           {FILTER_TABS.map((tab) => {
             const Icon = tab.icon;
@@ -44,21 +49,36 @@ export default function InboxSidebar({
               <button
                 key={tab.key}
                 onClick={() => onFilterChange(tab.key)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-md transition-colors whitespace-nowrap ${
-                  isActive
-                    ? 'bg-white text-gray-900 border border-gray-200 border-b-white -mb-px'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                }`}
+                className="flex items-center gap-1.5 px-3 py-2 whitespace-nowrap"
+                style={{
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  fontSize: 9,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  fontWeight: 500,
+                  borderRadius: '4px 4px 0 0',
+                  color: isActive ? colors.text.primary : colors.text.muted,
+                  background: isActive ? colors.bg.card : 'transparent',
+                  border: `1px solid ${isActive ? colors.border.default : 'transparent'}`,
+                  borderBottomColor: isActive ? colors.bg.card : 'transparent',
+                  marginBottom: isActive ? -1 : 0,
+                  transition: 'color 100ms linear, background 100ms linear',
+                }}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon size={13} />
                 {tab.label}
                 {count > 0 && (
                   <span
-                    className={`ml-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-semibold px-1 ${
-                      isActive
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-gray-200 text-gray-600'
-                    }`}
+                    className="ml-1 flex items-center justify-center px-1"
+                    style={{
+                      minWidth: 18,
+                      height: 18,
+                      borderRadius: 2,
+                      fontSize: 9,
+                      fontWeight: 600,
+                      background: isActive ? colors.text.primary : colors.bg.cardAlt,
+                      color: isActive ? colors.bg.card : colors.text.muted,
+                    }}
                   >
                     {count > 99 ? '99+' : count}
                   </span>

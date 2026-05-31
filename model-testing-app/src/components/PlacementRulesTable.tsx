@@ -4,33 +4,8 @@ import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { DataTable, Modal, Button, IconButton, Field, Input, Select, StatusPill, EmptyState, type Column } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Plus,
   Trash2,
@@ -39,6 +14,8 @@ import {
   Folder,
   ArrowRight,
 } from 'lucide-react';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface FolderItem {
   name: string;
@@ -103,9 +80,10 @@ export default function PlacementRulesTable({
   clientFolders,
   projectFolders,
 }: PlacementRulesTableProps) {
+  const colors = useColors();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingRule, setEditingRule] = useState<PlacementRule | null>(null);
-  
+
   // Form state
   const [formDocType, setFormDocType] = useState('');
   const [formCategory, setFormCategory] = useState('');
@@ -182,7 +160,7 @@ export default function PlacementRulesTable({
     if (!confirm(`Delete rule for "${rule.documentType}"?`)) {
       return;
     }
-    
+
     try {
       await deleteRule({ id: rule._id });
     } catch (error) {
@@ -201,247 +179,219 @@ export default function PlacementRulesTable({
   // Sort rules by priority descending
   const sortedRules = [...rules].sort((a, b) => b.priority - a.priority);
 
+  const columns: Column<PlacementRule>[] = [
+    {
+      key: 'documentType',
+      header: 'Document Type',
+      width: 180,
+      render: (rule) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FileText style={{ width: 16, height: 16, color: colors.text.muted }} />
+          <span style={{ fontWeight: 500, color: colors.text.primary }}>{rule.documentType}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'category',
+      header: 'Category',
+      width: 120,
+      render: (rule) => <StatusPill label={rule.category} tone={colors.text.muted} />,
+    },
+    {
+      key: 'arrow',
+      header: '',
+      width: 50,
+      render: () => <ArrowRight style={{ width: 16, height: 16, color: colors.text.muted }} />,
+    },
+    {
+      key: 'targetFolder',
+      header: 'Target Folder',
+      width: 180,
+      render: (rule) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Folder style={{ width: 16, height: 16, color: colors.accent.yellow }} />
+          <span>{getFolderName(rule.targetFolderKey, rule.targetLevel)}</span>
+          <span style={{ fontSize: 11, color: colors.text.muted, fontFamily: MONO }}>
+            ({rule.targetFolderKey})
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'level',
+      header: 'Level',
+      width: 80,
+      render: (rule) => (
+        <StatusPill label={rule.targetLevel} tone={rule.targetLevel === 'client' ? colors.entityTypes.client : colors.entityTypes.project} />
+      ),
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      width: 60,
+      mono: true,
+      render: (rule) => <span style={{ color: colors.text.muted }}>{rule.priority}</span>,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: 80,
+      render: (rule) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <IconButton label="Edit rule" onClick={() => openEditDialog(rule)}>
+            <Edit2 style={{ width: 12, height: 12 }} />
+          </IconButton>
+          <IconButton label="Delete rule" onClick={() => handleDelete(rule)}>
+            <Trash2 style={{ width: 12, height: 12, color: colors.accent.red }} />
+          </IconButton>
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Table */}
-      <div className="border rounded-lg">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[180px]">Document Type</TableHead>
-              <TableHead className="w-[120px]">Category</TableHead>
-              <TableHead className="w-[50px]"></TableHead>
-              <TableHead className="w-[180px]">Target Folder</TableHead>
-              <TableHead className="w-[80px]">Level</TableHead>
-              <TableHead className="w-[60px]">Priority</TableHead>
-              <TableHead className="w-[80px]">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedRules.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No placement rules defined</p>
-                  <p className="text-xs">Click "Add Rule" to create one</p>
-                </TableCell>
-              </TableRow>
-            ) : (
-              sortedRules.map((rule) => (
-                <TableRow key={rule._id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-muted-foreground" />
-                      <span className="font-medium">{rule.documentType}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{rule.category}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Folder className="w-4 h-4 text-amber-500" />
-                      <span>{getFolderName(rule.targetFolderKey, rule.targetLevel)}</span>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        ({rule.targetFolderKey})
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={rule.targetLevel === 'client' ? 'default' : 'outline'}>
-                      {rule.targetLevel}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">{rule.priority}</span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        onClick={() => openEditDialog(rule)}
-                      >
-                        <Edit2 className="w-3 h-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 text-red-600"
-                        onClick={() => handleDelete(rule)}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <DataTable
+        columns={columns}
+        rows={sortedRules}
+        getRowKey={(r) => r._id}
+        empty={
+          <EmptyState
+            icon={<FileText style={{ width: 24, height: 24 }} />}
+            title="No placement rules defined"
+            body='Click "Add Rule" to create one'
+          />
+        }
+      />
 
       {/* Add Button */}
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        onClick={() => setShowAddDialog(true)}
-      >
-        <Plus className="w-4 h-4" />
-        Add Rule
-      </Button>
+      <div>
+        <Button variant="secondary" size="sm" onClick={() => setShowAddDialog(true)}>
+          <Plus style={{ width: 14, height: 14 }} />
+          Add Rule
+        </Button>
+      </div>
 
       {/* Add/Edit Dialog */}
-      <Dialog open={showAddDialog || !!editingRule} onOpenChange={closeDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editingRule ? 'Edit Placement Rule' : 'Add Placement Rule'}
-            </DialogTitle>
-            <DialogDescription>
-              Define which folder a document type should be filed into for {clientType} clients
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="doc-type">Document Type *</Label>
-                <Select value={formDocType} onValueChange={setFormDocType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DOCUMENT_TYPES.map(type => (
-                      <SelectItem key={type} value={type}>{type}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="category">Category *</Label>
-                <Select value={formCategory} onValueChange={setFormCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Target Level *</Label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="targetLevel"
-                    value="project"
-                    checked={formTargetLevel === 'project'}
-                    onChange={() => {
-                      setFormTargetLevel('project');
-                      setFormTargetFolder('');
-                    }}
-                    className="w-4 h-4"
-                  />
-                  <span>Project-level folder</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="targetLevel"
-                    value="client"
-                    checked={formTargetLevel === 'client'}
-                    onChange={() => {
-                      setFormTargetLevel('client');
-                      setFormTargetFolder('');
-                    }}
-                    className="w-4 h-4"
-                  />
-                  <span>Client-level folder</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="target-folder">Target Folder *</Label>
-              <Select value={formTargetFolder} onValueChange={setFormTargetFolder}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select folder..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableFolders.length === 0 ? (
-                    <SelectItem value="" disabled>
-                      No {formTargetLevel}-level folders available
-                    </SelectItem>
-                  ) : (
-                    availableFolders.map(folder => (
-                      <SelectItem key={folder.folderKey} value={folder.folderKey}>
-                        <div className="flex items-center gap-2">
-                          <Folder className="w-4 h-4 text-amber-500" />
-                          {folder.name}
-                          <span className="text-xs text-muted-foreground">
-                            ({folder.folderKey})
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="priority">Priority</Label>
-                <Input
-                  id="priority"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={formPriority}
-                  onChange={(e) => setFormPriority(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Higher priority rules take precedence (1-100)
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Input
-                  id="description"
-                  placeholder="Optional note..."
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>
+      <Modal
+        open={showAddDialog || !!editingRule}
+        onClose={closeDialog}
+        title={editingRule ? 'Edit Placement Rule' : 'Add Placement Rule'}
+        width={560}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeDialog}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSubmit} 
+            <Button
+              variant="primary"
+              onClick={handleSubmit}
               disabled={!formDocType || !formCategory || !formTargetFolder}
             >
               {editingRule ? 'Save Changes' : 'Add Rule'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <p style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 16 }}>
+          Define which folder a document type should be filed into for {clientType} clients
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Field label="Document Type *">
+              <Select value={formDocType} onChange={(e) => setFormDocType(e.target.value)}>
+                <option value="" disabled>Select type...</option>
+                {DOCUMENT_TYPES.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="Category *">
+              <Select value={formCategory} onChange={(e) => setFormCategory(e.target.value)}>
+                <option value="" disabled>Select category...</option>
+                {CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          <Field label="Target Level *">
+            <div style={{ display: 'flex', gap: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: colors.text.primary }}>
+                <input
+                  type="radio"
+                  name="targetLevel"
+                  value="project"
+                  checked={formTargetLevel === 'project'}
+                  onChange={() => {
+                    setFormTargetLevel('project');
+                    setFormTargetFolder('');
+                  }}
+                  style={{ width: 16, height: 16, accentColor: colors.accent.blue }}
+                />
+                <span>Project-level folder</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: colors.text.primary }}>
+                <input
+                  type="radio"
+                  name="targetLevel"
+                  value="client"
+                  checked={formTargetLevel === 'client'}
+                  onChange={() => {
+                    setFormTargetLevel('client');
+                    setFormTargetFolder('');
+                  }}
+                  style={{ width: 16, height: 16, accentColor: colors.accent.blue }}
+                />
+                <span>Client-level folder</span>
+              </label>
+            </div>
+          </Field>
+
+          <Field label="Target Folder *">
+            <Select value={formTargetFolder} onChange={(e) => setFormTargetFolder(e.target.value)}>
+              <option value="" disabled>Select folder...</option>
+              {availableFolders.length === 0 ? (
+                <option value="" disabled>
+                  No {formTargetLevel}-level folders available
+                </option>
+              ) : (
+                availableFolders.map(folder => (
+                  <option key={folder.folderKey} value={folder.folderKey}>
+                    {folder.name} ({folder.folderKey})
+                  </option>
+                ))
+              )}
+            </Select>
+          </Field>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Field label="Priority" hint="Higher priority rules take precedence (1-100)">
+              <Input
+                id="priority"
+                type="number"
+                min="1"
+                max="100"
+                value={formPriority}
+                onChange={(e) => setFormPriority(e.target.value)}
+              />
+            </Field>
+
+            <Field label="Description">
+              <Input
+                id="description"
+                placeholder="Optional note..."
+                value={formDescription}
+                onChange={(e) => setFormDescription(e.target.value)}
+              />
+            </Field>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

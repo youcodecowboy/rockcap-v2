@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import MetricCard from '@/components/MetricCard';
+import { StatTile, IconButton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { FileText, Calendar, DollarSign, TrendingUp, ArrowLeft, ArrowRight, Building2, Users, PieChart } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
 interface ExtractedData {
   financing?: {
@@ -64,6 +64,7 @@ export default function MetricCardsSlideshow({
   onControlsChange,
   currentIndex: externalIndex,
 }: MetricCardsSlideshowProps) {
+  const colors = useColors();
   const [internalIndex, setInternalIndex] = useState(0);
   const currentIndex = externalIndex !== undefined ? externalIndex : internalIndex;
   
@@ -238,6 +239,18 @@ export default function MetricCardsSlideshow({
     handleIndexChange(Math.min(metricCards.length - 4, currentIndex + 4));
   };
 
+  const accentFor = (iconColor: 'blue' | 'green' | 'purple' | 'orange' | 'yellow' | 'gray') => {
+    switch (iconColor) {
+      case 'green': return colors.accent.green;
+      case 'purple': return colors.accent.purple;
+      case 'orange': return colors.accent.orange;
+      case 'yellow': return colors.accent.yellow;
+      case 'gray': return colors.border.mid;
+      case 'blue':
+      default: return colors.accent.blue;
+    }
+  };
+
   if (metricCards.length === 0) {
     return null;
   }
@@ -250,11 +263,10 @@ export default function MetricCardsSlideshow({
             key={`${card.label}-${currentIndex + index}`}
             className="animate-in fade-in slide-in-from-bottom-2 duration-300"
           >
-            <MetricCard
+            <StatTile
               label={card.label}
               value={card.value}
-              icon={card.icon}
-              iconColor={card.iconColor}
+              accent={accentFor(card.iconColor)}
             />
           </div>
         ))}
@@ -279,29 +291,18 @@ export function MetricCardsControls({
   canGoBack: boolean;
   canGoForward: boolean;
 }) {
+  const colors = useColors();
   return (
     <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onPrevious}
-        disabled={!canGoBack}
-        className="h-8 w-8 p-0"
-      >
-        <ArrowLeft className="w-4 h-4" />
-      </Button>
-      <span className="text-sm text-gray-600">
+      <IconButton label="Previous" onClick={onPrevious} disabled={!canGoBack} style={{ opacity: canGoBack ? 1 : 0.4 }}>
+        <ArrowLeft size={16} />
+      </IconButton>
+      <span style={{ fontSize: 12, color: colors.text.muted }}>
         {Math.floor(currentIndex / 4) + 1} of {Math.ceil(totalCards / 4)}
       </span>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onNext}
-        disabled={!canGoForward}
-        className="h-8 w-8 p-0"
-      >
-        <ArrowRight className="w-4 h-4" />
-      </Button>
+      <IconButton label="Next" onClick={onNext} disabled={!canGoForward} style={{ opacity: canGoForward ? 1 : 0.4 }}>
+        <ArrowRight size={16} />
+      </IconButton>
     </div>
   );
 }

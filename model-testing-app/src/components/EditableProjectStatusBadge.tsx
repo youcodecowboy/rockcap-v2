@@ -1,13 +1,8 @@
 'use client';
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select';
 import { ChevronDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useColors } from '@/lib/useColors';
+import { projectStatusTone } from '@/components/layouts';
 
 type ProjectStatus = 'active' | 'inactive' | 'completed' | 'on-hold' | 'cancelled';
 
@@ -17,82 +12,56 @@ interface EditableProjectStatusBadgeProps {
   className?: string;
 }
 
-const statusConfig = {
-  active: {
-    label: 'Active',
-    className: 'bg-green-100 text-green-800 border-green-200',
-  },
-  inactive: {
-    label: 'Inactive',
-    className: 'bg-gray-100 text-gray-800 border-gray-200',
-  },
-  completed: {
-    label: 'Completed',
-    className: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  'on-hold': {
-    label: 'On Hold',
-    className: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  },
-  cancelled: {
-    label: 'Cancelled',
-    className: 'bg-red-100 text-red-800 border-red-200',
-  },
+const STATUS_LABELS: Record<ProjectStatus, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  completed: 'Completed',
+  'on-hold': 'On Hold',
+  cancelled: 'Cancelled',
 };
 
-export default function EditableProjectStatusBadge({ 
-  status, 
-  onStatusChange, 
-  className = '' 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+export default function EditableProjectStatusBadge({
+  status,
+  onStatusChange,
+  className = '',
 }: EditableProjectStatusBadgeProps) {
+  const colors = useColors();
   const currentStatus = status || 'active';
-  const config = statusConfig[currentStatus] || statusConfig.active;
-  
+  const tone = projectStatusTone(currentStatus, colors);
+
   return (
-    <Select
-      value={currentStatus}
-      onValueChange={(value) => onStatusChange(value as ProjectStatus)}
-    >
-      <SelectTrigger
-        className={cn(
-          "h-auto py-0.5 px-2 border rounded-md cursor-pointer hover:opacity-80 transition-opacity shadow-none",
-          config.className,
-          "data-[state=open]:ring-2 data-[state=open]:ring-blue-500 data-[state=open]:ring-offset-1",
-          "focus:ring-0 focus-visible:ring-0",
-          "[&>svg]:hidden", // Hide the default SelectPrimitive.Icon chevron
-          className
-        )}
+    <div className={className} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <select
+        value={currentStatus}
+        onChange={(e) => onStatusChange(e.target.value as ProjectStatus)}
+        style={{
+          appearance: 'none',
+          cursor: 'pointer',
+          fontFamily: MONO,
+          fontSize: 9,
+          lineHeight: 1.3,
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          padding: '2px 20px 2px 6px',
+          borderRadius: 2,
+          background: `${tone}20`,
+          color: tone,
+          border: `1px solid ${tone}40`,
+          outline: 'none',
+        }}
       >
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium">{config.label}</span>
-          <ChevronDown className="w-3 h-3 opacity-60" />
-        </div>
-      </SelectTrigger>
-      <SelectContent>
-        {Object.entries(statusConfig).map(([value, config]) => (
-          <SelectItem key={value} value={value}>
-            <div className="flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", config.className.split(' ')[0])} />
-              <span>{config.label}</span>
-            </div>
-          </SelectItem>
+        {(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((value) => (
+          <option key={value} value={value} style={{ color: colors.text.primary, background: colors.bg.card }}>
+            {STATUS_LABELS[value]}
+          </option>
         ))}
-      </SelectContent>
-    </Select>
+      </select>
+      <ChevronDown
+        size={11}
+        style={{ position: 'absolute', right: 5, color: tone, pointerEvents: 'none', opacity: 0.7 }}
+      />
+    </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

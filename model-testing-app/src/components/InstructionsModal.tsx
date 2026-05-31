@@ -2,20 +2,12 @@
 
 import { useState } from 'react';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
+import { Modal, Field, Textarea, Button } from '@/components/layouts';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Loader2 } from 'lucide-react';
 import { useFileQueue } from '@/lib/useFileQueue';
+import { useColors } from '@/lib/useColors';
 
 interface InstructionsModalProps {
   open: boolean;
@@ -34,6 +26,7 @@ export default function InstructionsModal({
   existingInstructions,
   onInstructionsSaved,
 }: InstructionsModalProps) {
+  const colors = useColors();
   const [instructions, setInstructions] = useState(existingInstructions || '');
   const [isSaving, setIsSaving] = useState(false);
   const updateJobStatus = useMutation(api.fileQueue.updateJobStatus);
@@ -80,59 +73,50 @@ export default function InstructionsModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <DialogTitle>Add Custom Instructions</DialogTitle>
-          <DialogDescription>
-            Provide additional context or instructions to help improve the accuracy of filing for <strong>{fileName}</strong>.
-            For example, you can specify the client name, document type, or any other relevant information.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="space-y-4 py-4">
-          <div>
-            <label htmlFor="instructions" className="text-sm font-medium text-gray-700 mb-2 block">
-              Instructions
-            </label>
-            <Textarea
-              id="instructions"
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              placeholder="Example: This document is for Client ABC. It's a financial report for Project XYZ. The file contains only numbers because it's a budget spreadsheet."
-              className="min-h-[120px]"
-              disabled={isSaving}
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              These instructions will be included in the AI analysis prompt to improve filing accuracy.
-            </p>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isSaving}
-          >
+    <Modal
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title="Add Custom Instructions"
+      width={600}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button
-            onClick={handleSave}
-            disabled={isSaving || !instructions.trim()}
-          >
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || !instructions.trim()}>
             {isSaving ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 size={14} className="animate-spin" />
                 Saving...
               </>
             ) : (
               'Save Instructions'
             )}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <p style={{ fontSize: 12, color: colors.text.secondary, lineHeight: 1.5 }}>
+          Provide additional context or instructions to help improve the accuracy of filing for{' '}
+          <strong style={{ color: colors.text.primary }}>{fileName}</strong>. For example, you can
+          specify the client name, document type, or any other relevant information.
+        </p>
+
+        <Field
+          label="Instructions"
+          hint="These instructions will be included in the AI analysis prompt to improve filing accuracy."
+        >
+          <Textarea
+            id="instructions"
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            placeholder="Example: This document is for Client ABC. It's a financial report for Project XYZ. The file contains only numbers because it's a budget spreadsheet."
+            style={{ minHeight: 120 }}
+            disabled={isSaving}
+          />
+        </Field>
+      </div>
+    </Modal>
   );
 }
-

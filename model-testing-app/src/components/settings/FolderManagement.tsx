@@ -2,10 +2,8 @@
 
 import { useState } from 'react';
 import { Folder, FolderPlus, Trash2, Edit2, Check, X, Lock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { Panel, Button, IconButton, Field, Input, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -21,6 +19,7 @@ export default function FolderManagement({
   clientId,
   projectId,
 }: FolderManagementProps) {
+  const colors = useColors();
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderDescription, setNewFolderDescription] = useState('');
@@ -132,40 +131,42 @@ export default function FolderManagement({
   };
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Info */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-900">Folder Structure</p>
-            <p className="text-xs text-gray-500 mt-1">
-              {folders.length} folders ({defaultFolders.length} default, {customFolders.length} custom)
-            </p>
-          </div>
-        </div>
-      </div>
+      <Panel title="Folder Structure">
+        <p style={{ fontSize: 11, color: colors.text.muted }}>
+          {folders.length} folders ({defaultFolders.length} default, {customFolders.length} custom)
+        </p>
+      </Panel>
 
       {/* Default Folders */}
       {defaultFolders.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium text-gray-900">Default Folders</h3>
-            <Badge variant="outline" className="text-xs">
-              <Lock className="w-3 h-3 mr-1" />
-              Read-only
-            </Badge>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>Default Folders</h3>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Lock style={{ width: 12, height: 12, color: colors.text.muted }} />
+              <StatusPill label="Read-only" tone={colors.text.muted} />
+            </span>
           </div>
-          <div className="space-y-1">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {defaultFolders.map((folder: any) => (
               <div
                 key={folder._id}
-                className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: 8,
+                  background: colors.bg.cardAlt,
+                  borderRadius: 4,
+                }}
               >
-                <Folder className="w-4 h-4 text-gray-400" />
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm text-gray-700">{folder.name}</span>
+                <Folder style={{ width: 16, height: 16, color: colors.text.dim }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, color: colors.text.secondary }}>{folder.name}</span>
                   {folder.description && (
-                    <p className="text-xs text-gray-400 truncate">{folder.description}</p>
+                    <p style={{ fontSize: 11, color: colors.text.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.description}</p>
                   )}
                 </div>
               </div>
@@ -175,129 +176,113 @@ export default function FolderManagement({
       )}
 
       {/* Custom Folders */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-900">Custom Folders</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>Custom Folders</h3>
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             onClick={() => setShowAddFolder(!showAddFolder)}
             disabled={entityType === 'client' ? !clientId : !projectId}
           >
-            <FolderPlus className="w-4 h-4 mr-1" />
+            <FolderPlus style={{ width: 14, height: 14 }} />
             Add Folder
           </Button>
         </div>
 
         {showAddFolder && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-            <div className="space-y-2">
-              <Label className="text-xs">Folder Name *</Label>
-              <Input
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="e.g., Archive"
-                autoFocus
-              />
+          <Panel accent={colors.accent.blue}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="Folder Name *">
+                <Input
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="e.g., Archive"
+                  autoFocus
+                />
+              </Field>
+              <Field label="Description (optional)">
+                <Input
+                  value={newFolderDescription}
+                  onChange={(e) => setNewFolderDescription(e.target.value)}
+                  placeholder="What goes in this folder?"
+                />
+              </Field>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <Button size="sm" variant="secondary" onClick={() => setShowAddFolder(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" variant="primary" onClick={handleAddFolder} disabled={!newFolderName.trim()}>
+                  Create Folder
+                </Button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Description (optional)</Label>
-              <Input
-                value={newFolderDescription}
-                onChange={(e) => setNewFolderDescription(e.target.value)}
-                placeholder="What goes in this folder?"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={() => setShowAddFolder(false)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleAddFolder}
-                disabled={!newFolderName.trim()}
-              >
-                Create Folder
-              </Button>
-            </div>
-          </div>
+          </Panel>
         )}
 
         {customFolders.length > 0 ? (
-          <div className="space-y-1">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {customFolders.map((folder: any) => (
               <div
                 key={folder._id}
-                className="flex items-center gap-3 p-2 bg-white border rounded-lg group"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: 8,
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                }}
               >
-                <Folder className="w-4 h-4 text-blue-500" />
-                <div className="flex-1 min-w-0">
+                <Folder style={{ width: 16, height: 16, color: colors.accent.blue }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
                   {editingFolder === folder._id ? (
-                    <div className="flex items-center gap-2">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Input
                         value={editingName}
                         onChange={(e) => setEditingName(e.target.value)}
-                        className="h-7 text-sm"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleRenameFolder(folder._id);
                           if (e.key === 'Escape') cancelEditing();
                         }}
                       />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        onClick={() => handleRenameFolder(folder._id)}
-                      >
-                        <Check className="w-3 h-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        onClick={cancelEditing}
-                      >
-                        <X className="w-3 h-3" />
-                      </Button>
+                      <IconButton label="Save" onClick={() => handleRenameFolder(folder._id)}>
+                        <Check style={{ width: 12, height: 12 }} />
+                      </IconButton>
+                      <IconButton label="Cancel" onClick={cancelEditing}>
+                        <X style={{ width: 12, height: 12 }} />
+                      </IconButton>
                     </div>
                   ) : (
                     <>
-                      <span className="text-sm text-gray-900">{folder.name}</span>
+                      <span style={{ fontSize: 13, color: colors.text.primary }}>{folder.name}</span>
                       {folder.description && (
-                        <p className="text-xs text-gray-400 truncate">{folder.description}</p>
+                        <p style={{ fontSize: 11, color: colors.text.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.description}</p>
                       )}
                     </>
                   )}
                 </div>
                 {editingFolder !== folder._id && (
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={() => startEditing(folder._id, folder.name)}
-                    >
-                      <Edit2 className="w-3 h-3 text-gray-400" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <IconButton label="Rename folder" onClick={() => startEditing(folder._id, folder.name)}>
+                      <Edit2 style={{ width: 12, height: 12, color: colors.text.dim }} />
+                    </IconButton>
+                    <IconButton
+                      label="Delete folder"
                       onClick={() => handleDeleteFolder(folder._id)}
                       disabled={isDeleting === folder._id}
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+                      <Trash2 style={{ width: 12, height: 12, color: colors.accent.red }} />
+                    </IconButton>
                   </div>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-500 text-center py-4">
-            No custom folders yet
-          </p>
+          <EmptyState title="No custom folders yet" />
         )}
       </div>
 

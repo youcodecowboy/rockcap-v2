@@ -11,10 +11,9 @@ import {
   Video,
   CheckSquare,
   ExternalLink,
-  Loader2,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, StatusPill, Skeleton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { ENTITY_TYPE_LABELS, buildEntityLink } from './utils';
 
 interface EntityContextHeaderProps {
@@ -25,13 +24,18 @@ interface EntityContextHeaderProps {
   compact?: boolean;
 }
 
-const ENTITY_ICON_CONFIG: Record<string, { icon: typeof FileText; bg: string; color: string }> = {
-  document: { icon: FileText, bg: 'bg-blue-50', color: 'text-blue-600' },
-  client: { icon: Building2, bg: 'bg-green-50', color: 'text-green-600' },
-  project: { icon: FolderKanban, bg: 'bg-purple-50', color: 'text-purple-600' },
-  task: { icon: ListTodo, bg: 'bg-amber-50', color: 'text-amber-600' },
-  meeting: { icon: Video, bg: 'bg-cyan-50', color: 'text-cyan-600' },
-  checklist_item: { icon: CheckSquare, bg: 'bg-orange-50', color: 'text-orange-600' },
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+const ENTITY_ICON_CONFIG: Record<
+  string,
+  { icon: typeof FileText; accent: keyof ReturnType<typeof useColors>['accent'] }
+> = {
+  document: { icon: FileText, accent: 'blue' },
+  client: { icon: Building2, accent: 'green' },
+  project: { icon: FolderKanban, accent: 'purple' },
+  task: { icon: ListTodo, accent: 'yellow' },
+  meeting: { icon: Video, accent: 'cyan' },
+  checklist_item: { icon: CheckSquare, accent: 'orange' },
 };
 
 export default function EntityContextHeader({
@@ -42,6 +46,7 @@ export default function EntityContextHeader({
   compact = false,
 }: EntityContextHeaderProps) {
   const router = useRouter();
+  const colors = useColors();
   const entityLabel = ENTITY_TYPE_LABELS[entityType] || entityType;
 
   const entityContext = useQuery(api.flags.getEntityContext, {
@@ -51,58 +56,80 @@ export default function EntityContextHeader({
 
   const iconConfig = ENTITY_ICON_CONFIG[entityType] || ENTITY_ICON_CONFIG.document;
   const IconComponent = iconConfig.icon;
+  const accent = colors.accent[iconConfig.accent];
   const entityLink = buildEntityLink(entityType, entityId, clientId, projectId);
 
   // Loading state
   if (entityContext === undefined) {
     return (
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50/50">
-        <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
-        <span className="text-sm text-gray-400">Loading {entityLabel}...</span>
+      <div
+        className="flex items-center gap-3 px-5 py-3"
+        style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.light }}
+      >
+        <Skeleton width={40} height={40} />
+        <Skeleton width={160} height={12} />
       </div>
     );
   }
 
   return (
-    <div className="flex items-start gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+    <div
+      className="flex items-start gap-3 px-5 py-3"
+      style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.light }}
+    >
       {/* Entity icon */}
       <div
-        className={`flex-shrink-0 w-10 h-10 rounded-lg ${iconConfig.bg} flex items-center justify-center`}
+        className="flex-shrink-0 w-10 h-10 flex items-center justify-center"
+        style={{ background: `${accent}15`, border: `1px solid ${accent}40`, borderRadius: 4 }}
       >
-        <IconComponent className={`h-5 w-5 ${iconConfig.color}`} />
+        <IconComponent className="h-5 w-5" style={{ color: accent }} />
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         {/* Entity type label */}
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: 9,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: colors.text.muted,
+            fontWeight: 500,
+          }}
+        >
           {entityLabel}
         </span>
 
         {/* Badges */}
         {entityContext.badges && entityContext.badges.length > 0 && (
-          <div className="flex items-center gap-1.5 mt-0.5">
+          <div className="flex items-center gap-1.5 mt-1">
             {entityContext.badges.map((badge) => (
-              <Badge key={badge} variant="outline" className="text-[10px] px-1.5 py-0">
-                {badge}
-              </Badge>
+              <StatusPill key={badge} label={badge} tone={colors.text.muted} />
             ))}
           </div>
         )}
 
         {/* Entity name */}
-        <p className="text-sm font-semibold text-gray-900 truncate mt-0.5">
+        <p
+          className="text-sm font-semibold truncate mt-0.5"
+          style={{ color: colors.text.primary }}
+        >
           {entityContext.name}
         </p>
 
         {/* Subtitle */}
         {entityContext.subtitle && (
-          <p className="text-xs text-gray-500 truncate">{entityContext.subtitle}</p>
+          <p className="text-xs truncate" style={{ color: colors.text.muted }}>
+            {entityContext.subtitle}
+          </p>
         )}
 
         {/* Summary (only when not compact) */}
         {!compact && entityContext.summary && (
-          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{entityContext.summary}</p>
+          <p className="text-xs mt-1 line-clamp-2" style={{ color: colors.text.muted }}>
+            {entityContext.summary}
+          </p>
         )}
       </div>
 
@@ -110,11 +137,11 @@ export default function EntityContextHeader({
       <Button
         variant="ghost"
         size="sm"
-        className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-900"
+        className="flex-shrink-0"
         onClick={() => router.push(entityLink)}
       >
         View
-        <ExternalLink className="h-3 w-3 ml-1" />
+        <ExternalLink className="h-3 w-3" />
       </Button>
     </div>
   );

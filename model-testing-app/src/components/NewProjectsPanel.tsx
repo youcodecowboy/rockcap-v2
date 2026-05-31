@@ -1,13 +1,40 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Input, Panel, Button } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { FolderPlus, Loader2, Merge, X } from 'lucide-react';
 import { generateShortcodeSuggestion } from '@/lib/shortcodeUtils';
+
+function TokenCheckbox({ checked, onChange, disabled, accent }: { checked: boolean; onChange: () => void; disabled?: boolean; accent: string }) {
+  return (
+    <button
+      role="checkbox"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onChange}
+      style={{
+        width: 16,
+        height: 16,
+        borderRadius: 3,
+        flexShrink: 0,
+        border: `1px solid ${checked ? accent : '#9ca3af'}`,
+        background: checked ? accent : 'transparent',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {checked && (
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+          <path d="M2.5 6.5L5 9L9.5 3.5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 export interface NewProjectEntry {
   suggestedName: string;   // Original name from V4 analysis
@@ -27,6 +54,7 @@ interface NewProjectsPanelProps {
 }
 
 export default function NewProjectsPanel({ projects, onChange, onCreateProjects, isCreating, createdCount }: NewProjectsPanelProps) {
+  const colors = useColors();
   const [mergeSelection, setMergeSelection] = useState<Set<number>>(new Set());
   const isMergeMode = mergeSelection.size > 0;
 
@@ -118,142 +146,123 @@ export default function NewProjectsPanel({ projects, onChange, onCreateProjects,
 
   if (projects.length === 0) return null;
 
+  const purple = colors.accent.purple;
+  const headerLabel: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 };
+
   return (
-    <Card className="border-purple-200 bg-purple-50/30">
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <FolderPlus className="w-5 h-5 text-purple-600" />
-          <CardTitle className="text-base">New Projects Detected</CardTitle>
-          <Badge variant="secondary" className="ml-auto">
-            {enabledCount} of {projects.length} selected
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {/* Merge toolbar — appears when 2+ rows are selected for merge */}
-        {isMergeMode && (
-          <div className="flex items-center gap-2 mb-3 p-2 bg-purple-100 border border-purple-300 rounded-md">
-            <Merge className="w-4 h-4 text-purple-700" />
-            <span className="text-sm text-purple-800 font-medium">
-              {mergeSelection.size} selected for merge
-            </span>
-            <Button
-              size="sm"
-              variant="default"
-              className="ml-auto bg-purple-600 hover:bg-purple-700"
-              onClick={handleMergeSelected}
-              disabled={mergeSelection.size < 2}
-            >
-              <Merge className="w-3 h-3 mr-1" />
-              Merge into first
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setMergeSelection(new Set())}
-            >
-              <X className="w-3 h-3 mr-1" />
-              Cancel
-            </Button>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {/* Header row */}
-          <div className="grid grid-cols-[32px_40px_1fr_160px_80px] gap-2 text-xs font-medium text-muted-foreground px-1">
-            <div className="text-center text-[10px]">Merge</div>
-            <div></div>
-            <div>Project Name</div>
-            <div>Shortcode</div>
-            <div className="text-right">Files</div>
-          </div>
-
-          {/* Project rows */}
-          {projects.map((project, index) => {
-            const isDupe = project.enabled && duplicateShortcodes.has(project.projectShortcode.toUpperCase());
-            const hasMergedNames = project.mergedSuggestedNames && project.mergedSuggestedNames.length > 1;
-            const isSelected = mergeSelection.has(index);
-            return (
-              <div
-                key={`${project.suggestedName}-${index}`}
-                className={`grid grid-cols-[32px_40px_1fr_160px_80px] gap-2 items-center p-2 rounded-md ${
-                  isSelected ? 'bg-purple-50 border border-purple-400' :
-                  project.enabled ? 'bg-white border' : 'bg-gray-50 opacity-60'
-                } ${isDupe && !isSelected ? 'border-red-300' : !isSelected ? 'border-gray-200' : ''}`}
-              >
-                {/* Merge select checkbox */}
-                <div className="flex justify-center">
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={() => toggleMergeSelect(index)}
-                    disabled={isCreating || !project.enabled}
-                    className="border-purple-400 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
-                  />
-                </div>
-                {/* Enable/disable checkbox */}
-                <Checkbox
-                  checked={project.enabled}
-                  onCheckedChange={(checked) => updateProject(index, { enabled: !!checked })}
-                  disabled={isCreating}
-                />
-                <div>
-                  <Input
-                    value={project.name}
-                    onChange={(e) => updateProject(index, { name: e.target.value })}
-                    disabled={!project.enabled || isCreating}
-                    className="h-8 text-sm"
-                  />
-                  {hasMergedNames && (
-                    <p className="text-[10px] text-purple-500 mt-0.5 px-1 truncate">
-                      Merged: {project.mergedSuggestedNames!.join(', ')}
-                    </p>
-                  )}
-                </div>
-                <div className="relative">
-                  <Input
-                    value={project.projectShortcode}
-                    onChange={(e) => updateProject(index, { projectShortcode: e.target.value.toUpperCase().slice(0, 10) })}
-                    disabled={!project.enabled || isCreating}
-                    className={`h-8 text-sm font-mono ${isDupe ? 'border-red-400 text-red-700' : ''}`}
-                    maxLength={10}
-                  />
-                  {isDupe && (
-                    <span className="text-xs text-red-600 absolute -bottom-4 left-0">Duplicate</span>
-                  )}
-                </div>
-                <div className="text-right text-sm text-muted-foreground">
-                  {project.fileCount}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {hasDuplicates && (
-          <p className="text-xs text-red-600 mt-3">
-            Resolve duplicate shortcodes — merge entries, edit shortcodes, or uncheck duplicates.
-          </p>
-        )}
-
-        <div className="flex items-center justify-between mt-4 pt-3 border-t">
-          <p className="text-xs text-muted-foreground">
-            Create projects now so you can link files to their checklists before filing.
-          </p>
-          <Button
-            size="sm"
-            onClick={handleCreate}
-            disabled={hasDuplicates || enabledCount === 0 || isCreating}
-          >
-            {isCreating ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <FolderPlus className="w-4 h-4 mr-2" />
-            )}
-            {isCreating ? 'Creating...' : `Create ${enabledCount} Project${enabledCount !== 1 ? 's' : ''}`}
+    <Panel
+      accent={purple}
+      title="New Projects Detected"
+      actions={
+        <span style={{ fontSize: 11, color: colors.text.muted }}>
+          {enabledCount} of {projects.length} selected
+        </span>
+      }
+    >
+      {/* Merge toolbar — appears when 2+ rows are selected for merge */}
+      {isMergeMode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: 8, background: `${purple}15`, border: `1px solid ${purple}40`, borderRadius: 4 }}>
+          <Merge size={16} style={{ color: purple }} />
+          <span style={{ fontSize: 12, color: purple, fontWeight: 500 }}>
+            {mergeSelection.size} selected for merge
+          </span>
+          <Button size="sm" variant="primary" accent={purple} onClick={handleMergeSelected} disabled={mergeSelection.size < 2} style={{ marginLeft: 'auto' }}>
+            <Merge size={12} />
+            Merge into first
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setMergeSelection(new Set())}>
+            <X size={12} />
+            Cancel
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Header row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '32px 40px 1fr 160px 80px', gap: 8, padding: '0 4px', ...headerLabel }}>
+          <div style={{ textAlign: 'center' }}>Merge</div>
+          <div></div>
+          <div>Project Name</div>
+          <div>Shortcode</div>
+          <div style={{ textAlign: 'right' }}>Files</div>
+        </div>
+
+        {/* Project rows */}
+        {projects.map((project, index) => {
+          const isDupe = project.enabled && duplicateShortcodes.has(project.projectShortcode.toUpperCase());
+          const hasMergedNames = project.mergedSuggestedNames && project.mergedSuggestedNames.length > 1;
+          const isSelected = mergeSelection.has(index);
+          const borderColor = isSelected ? purple : isDupe ? colors.accent.red : colors.border.default;
+          return (
+            <div
+              key={`${project.suggestedName}-${index}`}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '32px 40px 1fr 160px 80px',
+                gap: 8,
+                alignItems: 'center',
+                padding: 8,
+                borderRadius: 4,
+                background: isSelected ? `${purple}15` : project.enabled ? colors.bg.card : colors.bg.light,
+                border: `1px solid ${borderColor}`,
+                opacity: project.enabled ? 1 : 0.6,
+              }}
+            >
+              {/* Merge select checkbox */}
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <TokenCheckbox checked={isSelected} onChange={() => toggleMergeSelect(index)} disabled={isCreating || !project.enabled} accent={purple} />
+              </div>
+              {/* Enable/disable checkbox */}
+              <TokenCheckbox checked={project.enabled} onChange={() => updateProject(index, { enabled: !project.enabled })} disabled={isCreating} accent={colors.accent.blue} />
+              <div>
+                <Input
+                  value={project.name}
+                  onChange={(e) => updateProject(index, { name: e.target.value })}
+                  disabled={!project.enabled || isCreating}
+                  style={{ padding: '5px 8px', fontSize: 12 }}
+                />
+                {hasMergedNames && (
+                  <p style={{ fontSize: 10, color: purple, marginTop: 2, padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Merged: {project.mergedSuggestedNames!.join(', ')}
+                  </p>
+                )}
+              </div>
+              <div style={{ position: 'relative' }}>
+                <Input
+                  value={project.projectShortcode}
+                  onChange={(e) => updateProject(index, { projectShortcode: e.target.value.toUpperCase().slice(0, 10) })}
+                  disabled={!project.enabled || isCreating}
+                  style={{ padding: '5px 8px', fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', ...(isDupe ? { borderColor: colors.accent.red, color: colors.accent.red } : {}) }}
+                  maxLength={10}
+                />
+                {isDupe && (
+                  <span style={{ fontSize: 10, color: colors.accent.red, position: 'absolute', bottom: -16, left: 0 }}>Duplicate</span>
+                )}
+              </div>
+              <div style={{ textAlign: 'right', fontSize: 12, color: colors.text.muted }}>
+                {project.fileCount}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {hasDuplicates && (
+        <p style={{ fontSize: 11, color: colors.accent.red, marginTop: 12 }}>
+          Resolve duplicate shortcodes — merge entries, edit shortcodes, or uncheck duplicates.
+        </p>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border.default}` }}>
+        <p style={{ fontSize: 11, color: colors.text.muted }}>
+          Create projects now so you can link files to their checklists before filing.
+        </p>
+        <Button size="sm" variant="primary" accent={purple} onClick={handleCreate} disabled={hasDuplicates || enabledCount === 0 || isCreating}>
+          {isCreating ? <Loader2 size={14} className="animate-spin" /> : <FolderPlus size={14} />}
+          {isCreating ? 'Creating...' : `Create ${enabledCount} Project${enabledCount !== 1 ? 's' : ''}`}
+        </Button>
+      </div>
+    </Panel>
   );
 }
 

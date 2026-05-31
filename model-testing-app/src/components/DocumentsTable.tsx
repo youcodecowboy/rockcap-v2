@@ -12,24 +12,15 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { 
-  ChevronRight, 
-  Building2, 
-  FolderKanban, 
+import { Button, IconButton, Input, DataTable, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import {
+  ChevronRight,
+  Building2,
+  FolderKanban,
   FileText,
   Eye,
   ArrowUpDown,
-  Search,
   ExternalLink,
   ChevronLeft,
   Settings,
@@ -37,7 +28,6 @@ import {
   Trash2,
   AlertCircle,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Id } from '../../convex/_generated/dataModel';
 import React from 'react';
 import { useClients, useUpdateClient } from '@/lib/clientStorage';
@@ -49,7 +39,6 @@ import MoveDocumentModal from '@/components/MoveDocumentModal';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useDeleteDocument } from '@/lib/documentStorage';
-import { Badge } from '@/components/ui/badge';
 
 // Types
 interface Document {
@@ -98,7 +87,8 @@ type NavigationState =
 
 export default function DocumentsTable({ documents, showFilters: externalShowFilters, onFiltersChange }: DocumentsTableProps) {
   const router = useRouter();
-  
+  const colors = useColors();
+
   // Fetch clients data for status/type
   const allClients = useClients();
   const updateClient = useUpdateClient();
@@ -505,74 +495,51 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
     }
   };
   
+  const crumbBtn: React.CSSProperties = { background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.muted, font: 'inherit' };
+
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Breadcrumbs and Navigation */}
       {(navState.type !== 'all') && (
-        <div className="flex items-center justify-between gap-4 pb-3 border-b">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={navigateBack}
-                disabled={navHistoryIndex === 0}
-                className="h-8 w-8 p-0"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={navigateForward}
-                disabled={navHistoryIndex >= navHistory.length - 1}
-                className="h-8 w-8 p-0"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <button
-                onClick={navigateToAll}
-                className="hover:text-gray-900 transition-colors"
-              >
-                All Documents
-              </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, paddingBottom: 12, borderBottom: `1px solid ${colors.border.default}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <IconButton label="Back" onClick={navigateBack} disabled={navHistoryIndex === 0}>
+              <ChevronLeft size={16} />
+            </IconButton>
+            <IconButton label="Forward" onClick={navigateForward} disabled={navHistoryIndex >= navHistory.length - 1}>
+              <ChevronRight size={16} />
+            </IconButton>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: colors.text.muted }}>
+              <button onClick={navigateToAll} style={crumbBtn}>All Documents</button>
               {navState.type === 'client' && (
                 <>
-                  <ChevronRight className="w-3 h-3" />
-                  <span className="text-gray-900 font-medium">{navState.clientName}</span>
+                  <ChevronRight size={12} />
+                  <span style={{ color: colors.text.primary, fontWeight: 500 }}>{navState.clientName}</span>
                 </>
               )}
               {navState.type === 'baseDocuments' && (
                 <>
-                  <ChevronRight className="w-3 h-3" />
-                  <button
-                    onClick={() => navigateToClient(navState.clientId, navState.clientName)}
-                    className="hover:text-gray-900 transition-colors"
-                  >
+                  <ChevronRight size={12} />
+                  <button onClick={() => navigateToClient(navState.clientId, navState.clientName)} style={crumbBtn}>
                     {navState.clientName}
                   </button>
-                  <ChevronRight className="w-3 h-3" />
-                  <span className="text-gray-900 font-medium">Base Documents</span>
+                  <ChevronRight size={12} />
+                  <span style={{ color: colors.text.primary, fontWeight: 500 }}>Base Documents</span>
                 </>
               )}
               {navState.type === 'project' && (
                 <>
-                  <ChevronRight className="w-3 h-3" />
-                  <button
-                    onClick={() => navigateToClient(navState.clientId, navState.clientName)}
-                    className="hover:text-gray-900 transition-colors"
-                  >
+                  <ChevronRight size={12} />
+                  <button onClick={() => navigateToClient(navState.clientId, navState.clientName)} style={crumbBtn}>
                     {navState.clientName}
                   </button>
-                  <ChevronRight className="w-3 h-3" />
-                  <span className="text-gray-900 font-medium">{navState.projectName}</span>
+                  <ChevronRight size={12} />
+                  <span style={{ color: colors.text.primary, fontWeight: 500 }}>{navState.projectName}</span>
                 </>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <DirectUploadButton
               clientId={navState.clientId as Id<"clients">}
               clientName={navState.clientName}
@@ -583,31 +550,26 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
                 // Document will refresh via useQuery
               }}
             />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowConfigureModal(true)}
-              className="gap-2 relative"
-            >
-              <Settings className="w-4 h-4" />
+            <Button variant="secondary" size="sm" onClick={() => setShowConfigureModal(true)}>
+              <Settings size={14} />
               Configure File Names
               {(() => {
                 const docsNeedingCodes = navState.type === 'project' || navState.type === 'baseDocuments'
                   ? projectDocuments.filter(doc => !doc.documentCode || doc.documentCode.trim() === '').length
-                  : currentViewData.reduce((acc, client) => 
-                      acc + client.projects.flatMap(p => p.documents).filter(doc => !doc.documentCode || doc.documentCode.trim() === '').length, 
+                  : currentViewData.reduce((acc, client) =>
+                      acc + client.projects.flatMap(p => p.documents).filter(doc => !doc.documentCode || doc.documentCode.trim() === '').length,
                       0
                     );
                 return docsNeedingCodes > 0 ? (
-                  <span className="ml-1 px-1.5 py-0.5 text-xs font-semibold bg-orange-500 text-white rounded-full">
+                  <span style={{ marginLeft: 4, padding: '1px 6px', fontSize: 9, fontWeight: 600, background: colors.accent.orange, color: '#ffffff', borderRadius: 999 }}>
                     {docsNeedingCodes}
                   </span>
                 ) : null;
               })()}
             </Button>
-            <span className="text-sm text-gray-500 whitespace-nowrap">
+            <span style={{ fontSize: 12, color: colors.text.muted, whiteSpace: 'nowrap' }}>
               {(() => {
-                const count = navState.type === 'project' 
+                const count = navState.type === 'project'
                   ? projectDocuments.length
                   : currentViewData.reduce((acc, client) => acc + client.totalDocuments, 0);
                 return `${count} document${count !== 1 ? 's' : ''}`;
@@ -616,7 +578,7 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
           </div>
         </div>
       )}
-      
+
 
       {/* Configure File Names Modal */}
       {(navState.type === 'client' || navState.type === 'project' || navState.type === 'baseDocuments') && (
@@ -639,377 +601,229 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
         />
       )}
       
-      {/* Table */}
-      <div className="border rounded-lg bg-white overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-gray-50 sticky top-0 z-10">
-              <TableRow>
-                <TableHead className="w-[40px]"></TableHead>
-                {navState.type !== 'project' && (
-                  <TableHead 
-                    className="cursor-pointer hover:bg-gray-100 transition-colors"
-                    onClick={() => handleSort('client')}
-                  >
-                    <div className="flex items-center gap-2">
-                      Client / Project / Document
-                      <ArrowUpDown className="w-3 h-3" />
-                    </div>
-                  </TableHead>
-                )}
-                {navState.type === 'all' && (
-                  <>
-                    <TableHead className="w-[80px]">Documents</TableHead>
-                    <TableHead className="w-[120px]">Status</TableHead>
-                    <TableHead className="w-[120px]">Type</TableHead>
-                  </>
-                )}
-                {navState.type === 'client' && (
-                  <TableHead className="w-[80px]">Documents</TableHead>
-                )}
-                {navState.type !== 'all' && (
-                  <>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('code')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Document Name
-                        <ArrowUpDown className="w-3 h-3" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('fileName')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Original File Name
-                        <ArrowUpDown className="w-3 h-3" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('category')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Category
-                        <ArrowUpDown className="w-3 h-3" />
-                      </div>
-                    </TableHead>
-                  </>
-                )}
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('date')}
-                >
-                  <div className="flex items-center gap-2">
-                    Date
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
-              </TableRow>
-              
-              {/* Filter Row */}
-              {showFilters && (
-                <TableRow className="bg-gray-50 border-t">
-                  <TableCell></TableCell>
-                  {(navState.type !== 'project' && navState.type !== 'baseDocuments') && (
-                    <TableCell>
-                      <Input
-                        placeholder="Filter..."
-                        value={filters.client}
-                        onChange={(e) => setFilters({...filters, client: e.target.value})}
-                        className="h-8 text-xs"
-                      />
-                    </TableCell>
-                  )}
-                  {navState.type === 'all' && (
-                    <>
-                      <TableCell></TableCell>
-                      <TableCell>
-                        <Input
-                          placeholder="Status..."
-                          value={filters.status}
-                          onChange={(e) => setFilters({...filters, status: e.target.value})}
-                          className="h-8 text-xs"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          placeholder="Type..."
-                          value={filters.type}
-                          onChange={(e) => setFilters({...filters, type: e.target.value})}
-                          className="h-8 text-xs"
-                        />
-                      </TableCell>
-                    </>
-                  )}
-                  {(navState.type === 'client' || navState.type === 'baseDocuments') && <TableCell></TableCell>}
-                  {navState.type !== 'all' && (
-                    <>
-                      <TableCell>
-                        <Input
-                          placeholder="Filter..."
-                          value={filters.code}
-                          onChange={(e) => setFilters({...filters, code: e.target.value})}
-                          className="h-8 text-xs"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          placeholder="Filter..."
-                          value={filters.fileName}
-                          onChange={(e) => setFilters({...filters, fileName: e.target.value})}
-                          className="h-8 text-xs"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          placeholder="Filter..."
-                          value={filters.category}
-                          onChange={(e) => setFilters({...filters, category: e.target.value})}
-                          className="h-8 text-xs"
-                        />
-                      </TableCell>
-                    </>
-                  )}
-                  <TableCell></TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
-              )}
-            </TableHeader>
-            
-            <TableBody>
-              {/* Project/Base Documents View - Flat Document List */}
-              {(navState.type === 'project' || navState.type === 'baseDocuments') ? (
-                projectDocuments.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12">
-                      <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-gray-600 font-medium">No documents found</p>
-                      <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  projectDocuments.map((doc) => (
-                    <TableRow 
-                      key={doc._id}
-                      className="hover:bg-gray-50"
-                    >
-                      <TableCell></TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span 
-                            className="text-sm font-medium text-gray-900 font-mono truncate max-w-[300px]" 
-                            title={doc.documentCode || doc.fileName}
-                          >
-                            {doc.documentCode || doc.fileName}
-                          </span>
-                          {doc.isQueued && (
-                            <Badge className="bg-yellow-100 text-yellow-700 border-yellow-300 flex-shrink-0">
-                              <AlertCircle className="w-3 h-3 mr-1" />
-                              Needs Review
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-gray-500 truncate max-w-[300px] block" title={doc.fileName}>
-                          {doc.fileName}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-gray-600">{doc.category}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-gray-600">{formatDate(doc.uploadedAt)}</span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {doc.isQueued ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => router.push(`/uploads/${doc.queueJobId}`)}
-                              className="gap-1"
-                            >
-                              <Eye className="w-3 h-3" />
-                              Review
-                            </Button>
-                          ) : (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.push(`/docs/${doc._id}`)}
-                                className="gap-1"
-                              >
-                                <Eye className="w-3 h-3" />
-                                View
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedDocumentForMove({
-                                    id: doc._id,
-                                    clientId: navState.clientId as Id<"clients">,
-                                    projectId: navState.type === 'project' ? navState.projectId as Id<"projects"> : 'base-documents',
-                                    isBaseDocument: navState.type === 'baseDocuments' || doc.isBaseDocument,
-                                  });
-                                  setMoveModalOpen(true);
-                                }}
-                                className="gap-1"
-                                title="Move document"
-                              >
-                                <Move className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteDocument(doc._id);
-                                }}
-                                className="gap-1 text-red-600 hover:text-red-700"
-                                title="Delete document"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )
-              ) : currentViewData.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={navState.type === 'all' ? 7 : navState.type === 'client' ? 8 : 7} className="text-center py-12">
-                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-600 font-medium">No documents found</p>
-                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                currentViewData.map((client) => {
-                  return (
-                    <React.Fragment key={client.clientId}>
-                      {/* Client Row */}
-                      {navState.type === 'all' && (() => {
-                        const clientData = clientMap.get(client.clientId);
-                        return (
-                          <TableRow 
-                            className="hover:bg-gray-50 cursor-pointer"
-                            onClick={() => navigateToClient(client.clientId, client.clientName)}
-                          >
-                            <TableCell>
-                              <ChevronRight className="w-4 h-4 text-gray-400" />
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <Building2 className="w-4 h-4 text-gray-600" />
-                                <span className="font-medium">{client.clientName}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm text-gray-600">{client.totalDocuments}</span>
-                            </TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()}>
-                              <EditableStatusBadge
-                                status={clientData?.status as 'prospect' | 'active' | 'archived' | 'past' | undefined}
-                                onStatusChange={(newStatus) => handleStatusChange(client.clientId, newStatus)}
-                              />
-                            </TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()}>
-                              <EditableClientTypeBadge
-                                type={clientData?.type}
-                                onTypeChange={(newType) => handleTypeChange(client.clientId, newType)}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              {clientData?.createdAt ? (
-                                <span className="text-sm text-gray-600">{formatDate(clientData.createdAt)}</span>
-                              ) : (
-                                <span className="text-sm text-gray-400">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(`/clients/${client.clientId}`);
-                                }}
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })()}
-                      
-                      {/* Project Rows - Show when in client view */}
-                      {navState.type === 'client' && client.projects.map((project) => {
-                        const projectKey = `${client.clientId}-${project.projectId}`;
-                        const isBaseDocuments = project.projectId === 'base-documents';
-                        
-                        return (
-                          <TableRow 
-                            key={projectKey}
-                            className="hover:bg-gray-50 cursor-pointer"
-                            onClick={() => {
-                              if (isBaseDocuments) {
-                                navigateToBaseDocuments(client.clientId, client.clientName);
-                              } else {
-                                navigateToProject(client.clientId, client.clientName, project.projectId, project.projectName);
-                              }
-                            }}
-                          >
-                            <TableCell>
-                              <div className="ml-4">
-                                <ChevronRight className="w-3 h-3 text-gray-400" />
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2 ml-4">
-                                <FolderKanban className="w-4 h-4 text-gray-600" />
-                                <span>{project.projectName}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm text-gray-600">{project.documents.length}</span>
-                            </TableCell>
-                            <TableCell></TableCell>
-                            <TableCell></TableCell>
-                            <TableCell></TableCell>
-                            <TableCell>
-                              {project.projectId !== 'no-project' && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    router.push(`/projects/${project.projectId}`);
-                                  }}
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
+      {/* Sort + Filters */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
+        <span style={{ marginRight: 4 }}>Sort:</span>
+        {navState.type === 'all' && <DocSortHeader label="Client" col="client" sortColumn={sortColumn} onSort={handleSort} />}
+        {navState.type !== 'all' && (
+          <>
+            <DocSortHeader label="Document Name" col="code" sortColumn={sortColumn} onSort={handleSort} />
+            <DocSortHeader label="File Name" col="fileName" sortColumn={sortColumn} onSort={handleSort} />
+            <DocSortHeader label="Category" col="category" sortColumn={sortColumn} onSort={handleSort} />
+          </>
+        )}
+        <DocSortHeader label="Date" col="date" sortColumn={sortColumn} onSort={handleSort} />
       </div>
+
+      {showFilters && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {(navState.type !== 'project' && navState.type !== 'baseDocuments') && (
+            <Input placeholder="Filter client..." value={filters.client} onChange={(e) => setFilters({ ...filters, client: e.target.value })} style={{ width: 180 }} />
+          )}
+          {navState.type === 'all' && (
+            <>
+              <Input placeholder="Status..." value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} style={{ width: 140 }} />
+              <Input placeholder="Type..." value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })} style={{ width: 140 }} />
+            </>
+          )}
+          {navState.type !== 'all' && (
+            <>
+              <Input placeholder="Filter code..." value={filters.code} onChange={(e) => setFilters({ ...filters, code: e.target.value })} style={{ width: 180 }} />
+              <Input placeholder="Filter file name..." value={filters.fileName} onChange={(e) => setFilters({ ...filters, fileName: e.target.value })} style={{ width: 180 }} />
+              <Input placeholder="Filter category..." value={filters.category} onChange={(e) => setFilters({ ...filters, category: e.target.value })} style={{ width: 180 }} />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Project / Base Documents view — flat document list */}
+      {(navState.type === 'project' || navState.type === 'baseDocuments') ? (
+        <DataTable
+          rows={projectDocuments}
+          getRowKey={(doc) => doc._id}
+          empty={<EmptyState icon={<FileText size={32} />} title="No documents found" body="Try adjusting your filters" />}
+          columns={[
+            {
+              key: 'name',
+              header: 'Document Name',
+              render: (doc) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontWeight: 500, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.documentCode || doc.fileName}>
+                    {doc.documentCode || doc.fileName}
+                  </span>
+                  {doc.isQueued && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '2px 6px', borderRadius: 2, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, textTransform: 'uppercase', background: `${colors.accent.yellow}20`, color: colors.accent.yellow, border: `1px solid ${colors.accent.yellow}40` }}>
+                      <AlertCircle size={11} />
+                      Needs Review
+                    </span>
+                  )}
+                </div>
+              ),
+            },
+            { key: 'fileName', header: 'Original File Name', render: (doc) => <span title={doc.fileName} style={{ color: colors.text.muted, fontSize: 11 }}>{doc.fileName}</span> },
+            { key: 'category', header: 'Category', render: (doc) => <span style={{ color: colors.text.secondary }}>{doc.category}</span> },
+            { key: 'date', header: 'Date', mono: true, render: (doc) => <span style={{ color: colors.text.secondary }}>{formatDate(doc.uploadedAt)}</span> },
+            {
+              key: 'actions',
+              header: 'Actions',
+              width: 130,
+              align: 'right',
+              render: (doc) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                  {doc.isQueued ? (
+                    <Button variant="ghost" size="sm" onClick={() => router.push(`/uploads/${doc.queueJobId}`)}>
+                      <Eye size={12} />
+                      Review
+                    </Button>
+                  ) : (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={() => router.push(`/docs/${doc._id}`)}>
+                        <Eye size={12} />
+                        View
+                      </Button>
+                      <IconButton
+                        label="Move document"
+                        onClick={() => {
+                          setSelectedDocumentForMove({
+                            id: doc._id,
+                            clientId: navState.clientId as Id<"clients">,
+                            projectId: navState.type === 'project' ? navState.projectId as Id<"projects"> : 'base-documents',
+                            isBaseDocument: navState.type === 'baseDocuments' || doc.isBaseDocument,
+                          });
+                          setMoveModalOpen(true);
+                        }}
+                      >
+                        <Move size={12} />
+                      </IconButton>
+                      <IconButton label="Delete document" onClick={() => handleDeleteDocument(doc._id)}>
+                        <Trash2 size={12} style={{ color: colors.accent.red }} />
+                      </IconButton>
+                    </>
+                  )}
+                </div>
+              ),
+            },
+          ]}
+        />
+      ) : navState.type === 'client' ? (
+        /* Client view — project rows */
+        <DataTable
+          rows={currentViewData[0]?.projects ?? []}
+          getRowKey={(project) => `${currentViewData[0]?.clientId}-${project.projectId}`}
+          onRowClick={(project) => {
+            const client = currentViewData[0];
+            if (!client) return;
+            if (project.projectId === 'base-documents') {
+              navigateToBaseDocuments(client.clientId, client.clientName);
+            } else {
+              navigateToProject(client.clientId, client.clientName, project.projectId, project.projectName);
+            }
+          }}
+          empty={<EmptyState icon={<FileText size={32} />} title="No documents found" body="Try adjusting your filters" />}
+          columns={[
+            {
+              key: 'name',
+              header: 'Project',
+              render: (project) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FolderKanban size={16} style={{ color: colors.text.muted }} />
+                  <span>{project.projectName}</span>
+                </div>
+              ),
+            },
+            { key: 'count', header: 'Documents', width: 100, render: (project) => <span style={{ color: colors.text.muted }}>{project.documents.length}</span> },
+            {
+              key: 'actions',
+              header: 'Actions',
+              width: 80,
+              align: 'right',
+              render: (project) =>
+                project.projectId !== 'no-project' ? (
+                  <IconButton label="Open project" onClick={(e) => { e.stopPropagation(); router.push(`/projects/${project.projectId}`); }}>
+                    <ExternalLink size={12} />
+                  </IconButton>
+                ) : null,
+            },
+          ]}
+        />
+      ) : (
+        /* All view — client rows */
+        <DataTable
+          rows={currentViewData}
+          getRowKey={(client) => client.clientId}
+          onRowClick={(client) => navigateToClient(client.clientId, client.clientName)}
+          empty={<EmptyState icon={<FileText size={32} />} title="No documents found" body="Try adjusting your filters" />}
+          columns={[
+            {
+              key: 'name',
+              header: 'Client',
+              render: (client) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Building2 size={16} style={{ color: colors.text.muted }} />
+                  <span style={{ fontWeight: 500 }}>{client.clientName}</span>
+                </div>
+              ),
+            },
+            { key: 'count', header: 'Documents', width: 90, render: (client) => <span style={{ color: colors.text.muted }}>{client.totalDocuments}</span> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 120,
+              render: (client) => {
+                const clientData = clientMap.get(client.clientId);
+                return (
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <EditableStatusBadge
+                      status={clientData?.status as 'prospect' | 'active' | 'archived' | 'past' | undefined}
+                      onStatusChange={(newStatus) => handleStatusChange(client.clientId, newStatus)}
+                    />
+                  </span>
+                );
+              },
+            },
+            {
+              key: 'type',
+              header: 'Type',
+              width: 120,
+              render: (client) => {
+                const clientData = clientMap.get(client.clientId);
+                return (
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <EditableClientTypeBadge
+                      type={clientData?.type}
+                      onTypeChange={(newType) => handleTypeChange(client.clientId, newType)}
+                    />
+                  </span>
+                );
+              },
+            },
+            {
+              key: 'date',
+              header: 'Date',
+              mono: true,
+              render: (client) => {
+                const clientData = clientMap.get(client.clientId);
+                return clientData?.createdAt ? (
+                  <span style={{ color: colors.text.secondary }}>{formatDate(clientData.createdAt)}</span>
+                ) : (
+                  <span style={{ color: colors.text.dim }}>—</span>
+                );
+              },
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              width: 80,
+              align: 'right',
+              render: (client) => (
+                <IconButton label="Open client" onClick={(e) => { e.stopPropagation(); router.push(`/clients/${client.clientId}`); }}>
+                  <ExternalLink size={12} />
+                </IconButton>
+              ),
+            },
+          ]}
+        />
+      )}
 
       {/* Configure File Names Modal */}
       {(navState.type === 'client' || navState.type === 'project') && (
@@ -1050,6 +864,32 @@ export default function DocumentsTable({ documents, showFilters: externalShowFil
         />
       )}
     </div>
+  );
+}
+
+function DocSortHeader({
+  label,
+  col,
+  sortColumn,
+  onSort,
+}: {
+  label: string;
+  col: SortColumn;
+  sortColumn: SortColumn;
+  onSort: (col: SortColumn) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSort(col)}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent',
+        border: 'none', cursor: 'pointer', font: 'inherit', color: 'inherit',
+        letterSpacing: 'inherit', textTransform: 'inherit', padding: 0,
+      }}
+    >
+      {label}
+      <ArrowUpDown size={11} style={{ opacity: sortColumn === col ? 1 : 0.4 }} />
+    </button>
   );
 }
 

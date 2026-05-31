@@ -4,41 +4,43 @@ import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Upload, FileSpreadsheet, AlertCircle, Layers, Table } from 'lucide-react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { scanForPlaceholders } from '@/lib/placeholderMapper';
-import { loadExcelTemplateMetadata } from '@/lib/templateLoader';
+  Panel,
+  TabStrip,
+  DataTable,
+  StatusPill,
+  EmptyState,
+  Button,
+  IconButton,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  Modal,
+  SkeletonTable,
+  type Column,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { Plus, Edit, Trash2, Upload, FileSpreadsheet, Layers } from 'lucide-react';
+import type { ColorPalette } from '@/lib/colors';
 import TemplateUploadModal from '@/components/TemplateUploadModal';
 
 type ModelType = 'appraisal' | 'operating' | 'custom';
 type NewModelType = 'appraisal' | 'operating' | 'other';
 
+function modelTypeTone(type: ModelType | NewModelType, colors: ColorPalette): string {
+  switch (type) {
+    case 'appraisal':
+      return colors.accent.blue;
+    case 'operating':
+      return colors.accent.green;
+    default:
+      return colors.text.muted;
+  }
+}
+
 export default function ModelingTemplatesPage() {
+  const colors = useColors();
   const [activeTab, setActiveTab] = useState('optimized');
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isNewUploadOpen, setIsNewUploadOpen] = useState(false);
@@ -47,7 +49,7 @@ export default function ModelingTemplatesPage() {
   const [deleteNewTemplateId, setDeleteNewTemplateId] = useState<Id<'templateDefinitions'> | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<Id<'modelingTemplates'> | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  
+
   // Form state
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
@@ -82,19 +84,19 @@ export default function ModelingTemplatesPage() {
     try {
       // Create a temporary URL for the file
       const fileUrl = URL.createObjectURL(file);
-      
+
       // Load template metadata
-      const { metadata } = await loadExcelTemplateMetadata(fileUrl);
-      
+      const { loadExcelTemplateMetadata } = await import('@/lib/templateLoader');
+      await loadExcelTemplateMetadata(fileUrl);
+
       // Load first sheet to scan for placeholders
       // For now, we'll scan the first sheet only - can be enhanced later
-      const placeholderPattern = /<([^>]+)>/g;
       const foundPlaceholders = new Set<string>();
-      
+
       // We need to load the actual data to scan - for now, return empty array
       // This can be enhanced to actually load and scan sheets
       URL.revokeObjectURL(fileUrl);
-      
+
       return Array.from(foundPlaceholders);
     } catch (error) {
       console.error('Error scanning template:', error);
@@ -112,7 +114,7 @@ export default function ModelingTemplatesPage() {
     try {
       // Step 1: Upload file to Convex storage
       const uploadUrl = await generateUploadUrl();
-      
+
       if (!uploadUrl || typeof uploadUrl !== 'string') {
         throw new Error('Invalid upload URL received from Convex');
       }
@@ -125,7 +127,7 @@ export default function ModelingTemplatesPage() {
 
       if (!uploadResponse.ok) {
         const statusText = uploadResponse.statusText || 'Unknown error';
-        const errorText = await uploadResponse.text().catch(() => 'Could not read error response');
+        await uploadResponse.text().catch(() => 'Could not read error response');
         throw new Error(`Failed to upload file: HTTP ${uploadResponse.status} ${statusText}`);
       }
 
@@ -226,404 +228,378 @@ export default function ModelingTemplatesPage() {
     }
   };
 
-  const getModelTypeBadgeColor = (type: ModelType | NewModelType) => {
-    switch (type) {
-      case 'appraisal':
-        return 'bg-blue-100 text-blue-800';
-      case 'operating':
-        return 'bg-green-100 text-green-800';
-      case 'custom':
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
+  type NewTemplate = NonNullable<typeof newTemplates>[number];
+  type LegacyTemplate = NonNullable<typeof templates>[number];
+
+  const newColumns: Column<NewTemplate>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (t) => (
+        <div>
+          <div style={{ fontWeight: 500, color: colors.text.primary }}>{t.name}</div>
+          <div style={{ fontSize: 11, color: colors.text.muted }}>{t.description || 'No description'}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (t) => <StatusPill label={t.modelType} tone={modelTypeTone(t.modelType, colors)} />,
+    },
+    { key: 'version', header: 'Version', mono: true, render: (t) => `v${t.version}` },
+    { key: 'sheets', header: 'Sheets', mono: true, align: 'right', render: (t) => t.totalSheetCount },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (t) => (
+        <StatusPill
+          label={t.isActive ? 'Active' : 'Inactive'}
+          tone={t.isActive ? colors.accent.green : colors.text.dim}
+        />
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      width: 60,
+      render: (t) => (
+        <IconButton label="Delete" onClick={() => setDeleteNewTemplateId(t._id)}>
+          <Trash2 size={14} style={{ color: colors.accent.red }} />
+        </IconButton>
+      ),
+    },
+  ];
+
+  const legacyColumns: Column<LegacyTemplate>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (t) => (
+        <div>
+          <div style={{ fontWeight: 500, color: colors.text.primary }}>{t.name}</div>
+          <div style={{ fontSize: 11, color: colors.text.muted }}>{t.description || 'No description'}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (t) => <StatusPill label={t.modelType} tone={modelTypeTone(t.modelType, colors)} />,
+    },
+    { key: 'version', header: 'Version', mono: true, render: (t) => t.version },
+    {
+      key: 'placeholders',
+      header: 'Placeholders',
+      mono: true,
+      align: 'right',
+      render: (t) => (t.placeholderCodes ? t.placeholderCodes.length : '—'),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (t) => (
+        <StatusPill
+          label={t.isActive ? 'Active' : 'Inactive'}
+          tone={t.isActive ? colors.accent.green : colors.text.dim}
+        />
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      width: 80,
+      render: (t) => (
+        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+          <IconButton label="Edit" onClick={() => handleEdit(t._id)}>
+            <Edit size={14} />
+          </IconButton>
+          <IconButton label="Delete" onClick={() => setDeleteTemplateId(t._id)}>
+            <Trash2 size={14} style={{ color: colors.accent.red }} />
+          </IconButton>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div style={{ background: colors.bg.light, minHeight: '100vh' }}>
+      <div style={{ maxWidth: 1152, margin: '0 auto', padding: '32px 24px' }}>
         {/* Page Header */}
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Modeling Templates</h1>
-            <p className="mt-2 text-gray-600">
-              Manage financial model templates for the modeling section
-            </p>
-          </div>
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: colors.text.primary }}>
+            Modeling Templates
+          </h1>
+          <p style={{ marginTop: 8, fontSize: 13, color: colors.text.secondary }}>
+            Manage financial model templates for the modeling section
+          </p>
         </div>
 
-        {/* Tabs for Old vs New System */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className="flex items-center justify-between mb-6">
-            <TabsList>
-              <TabsTrigger value="optimized" className="flex items-center gap-2">
-                <Layers className="w-4 h-4" />
-                Optimized Templates
-              </TabsTrigger>
-              <TabsTrigger value="legacy" className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4" />
-                Legacy Templates
-              </TabsTrigger>
-            </TabsList>
-            
-            {activeTab === 'optimized' && (
-              <Button onClick={() => setIsNewUploadOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Upload Template
-              </Button>
-            )}
-            {activeTab === 'legacy' && (
-              <Button onClick={() => setIsUploadDialogOpen(true)} variant="outline">
-                <Plus className="w-4 h-4 mr-2" />
-                Upload Legacy Template
-              </Button>
-            )}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ marginLeft: -24 }}>
+            <TabStrip
+              entityType="dashboard"
+              activeTab={activeTab}
+              onChange={setActiveTab}
+              tabs={[
+                { id: 'optimized', label: 'Optimized Templates' },
+                { id: 'legacy', label: 'Legacy Templates' },
+              ]}
+            />
           </div>
+          {activeTab === 'optimized' && (
+            <Button variant="primary" onClick={() => setIsNewUploadOpen(true)}>
+              <Plus size={14} />
+              Upload Template
+            </Button>
+          )}
+          {activeTab === 'legacy' && (
+            <Button variant="secondary" onClick={() => setIsUploadDialogOpen(true)}>
+              <Plus size={14} />
+              Upload Legacy Template
+            </Button>
+          )}
+        </div>
 
-          {/* Optimized Templates Tab */}
-          <TabsContent value="optimized">
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
-                <strong>Optimized Templates</strong> use the new sheet-by-sheet architecture for faster loading, 
+        {/* Optimized Templates Tab */}
+        {activeTab === 'optimized' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              style={{
+                borderRadius: 4,
+                border: `1px solid ${colors.accent.blue}40`,
+                background: `${colors.accent.blue}15`,
+                padding: 14,
+              }}
+            >
+              <p style={{ fontSize: 12, color: colors.text.secondary }}>
+                <strong>Optimized Templates</strong> use the new sheet-by-sheet architecture for faster loading,
                 lazy sheet loading, and support for dynamic sheet generation (e.g., multi-site models).
               </p>
             </div>
-            
-            {newTemplates === undefined ? (
-              <div className="text-center py-12 text-gray-500">Loading templates...</div>
-            ) : newTemplates.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Layers className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                  <p className="text-gray-600 mb-4">No optimized templates uploaded yet</p>
-                  <Button onClick={() => setIsNewUploadOpen(true)}>
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload Your First Template
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {newTemplates.map((template) => (
-                  <Card key={template._id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="text-lg">{template.name}</CardTitle>
-                          <CardDescription className="mt-1">
-                            {template.description || 'No description'}
-                          </CardDescription>
-                        </div>
-                        <Badge className={getModelTypeBadgeColor(template.modelType)}>
-                          {template.modelType}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">Version:</span>
-                          <span className="font-medium">v{template.version}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">Sheets:</span>
-                          <span className="font-medium">{template.totalSheetCount}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">Status:</span>
-                          <Badge variant={template.isActive ? 'default' : 'secondary'}>
-                            {template.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </div>
-                        {template.dynamicGroups && template.dynamicGroups.length > 0 && (
-                          <div className="text-sm">
-                            <span className="text-gray-500">Dynamic Groups:</span>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {template.dynamicGroups.map((group) => (
-                                <Badge key={group.groupId} variant="outline" className="text-xs">
-                                  {group.label} ({group.sheetIds.length} sheets)
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex gap-2 pt-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setDeleteNewTemplateId(template._id)}
-                            className="flex-1 text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4 mr-1" />
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
 
-          {/* Legacy Templates Tab */}
-          <TabsContent value="legacy">
-            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800">
-                <strong>Legacy Templates</strong> use the original Excel-based system. 
+            {newTemplates === undefined ? (
+              <SkeletonTable rows={4} cols={6} />
+            ) : (
+              <DataTable
+                rows={newTemplates}
+                columns={newColumns}
+                getRowKey={(t) => t._id}
+                empty={
+                  <EmptyState
+                    icon={<Layers size={40} />}
+                    title="No optimized templates uploaded yet"
+                    action={
+                      <Button variant="primary" onClick={() => setIsNewUploadOpen(true)}>
+                        <Upload size={14} />
+                        Upload Your First Template
+                      </Button>
+                    }
+                  />
+                }
+              />
+            )}
+          </div>
+        )}
+
+        {/* Legacy Templates Tab */}
+        {activeTab === 'legacy' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              style={{
+                borderRadius: 4,
+                border: `1px solid ${colors.accent.yellow}40`,
+                background: `${colors.accent.yellow}15`,
+                padding: 14,
+              }}
+            >
+              <p style={{ fontSize: 12, color: colors.text.secondary }}>
+                <strong>Legacy Templates</strong> use the original Excel-based system.
                 Consider migrating to optimized templates for better performance.
               </p>
             </div>
-            
+
             {templates === undefined ? (
-              <div className="text-center py-12 text-gray-500">Loading templates...</div>
-            ) : templates.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <FileSpreadsheet className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                  <p className="text-gray-600 mb-4">No legacy templates uploaded</p>
-                  <Button onClick={() => setIsUploadDialogOpen(true)} variant="outline">
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload Legacy Template
-                  </Button>
-                </CardContent>
-              </Card>
+              <SkeletonTable rows={4} cols={6} />
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {templates.map((template) => (
-                  <Card key={template._id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="text-lg">{template.name}</CardTitle>
-                          <CardDescription className="mt-1">
-                            {template.description || 'No description'}
-                          </CardDescription>
-                        </div>
-                        <Badge className={getModelTypeBadgeColor(template.modelType)}>
-                          {template.modelType}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">Version:</span>
-                          <span className="font-medium">{template.version}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">Status:</span>
-                          <Badge variant={template.isActive ? 'default' : 'secondary'}>
-                            {template.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </div>
-                        {template.placeholderCodes && template.placeholderCodes.length > 0 && (
-                          <div className="text-sm">
-                            <span className="text-gray-500">Placeholders:</span>
-                            <span className="ml-2 font-medium">{template.placeholderCodes.length}</span>
-                          </div>
-                        )}
-                        <div className="flex gap-2 pt-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEdit(template._id)}
-                            className="flex-1"
-                          >
-                            <Edit className="w-4 h-4 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setDeleteTemplateId(template._id)}
-                            className="flex-1 text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4 mr-1" />
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+              <DataTable
+                rows={templates}
+                columns={legacyColumns}
+                getRowKey={(t) => t._id}
+                empty={
+                  <EmptyState
+                    icon={<FileSpreadsheet size={40} />}
+                    title="No legacy templates uploaded"
+                    action={
+                      <Button variant="secondary" onClick={() => setIsUploadDialogOpen(true)}>
+                        <Upload size={14} />
+                        Upload Legacy Template
+                      </Button>
+                    }
+                  />
+                }
+              />
             )}
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
 
         {/* Upload Dialog */}
-        <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Upload Template</DialogTitle>
-              <DialogDescription>
-                Upload a new Excel template file (.xlsx) for use in the modeling section
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label htmlFor="template-name">Template Name *</Label>
-                <Input
-                  id="template-name"
-                  value={templateName}
-                  onChange={(e) => setTemplateName(e.target.value)}
-                  placeholder="e.g., Appraisal Model v2.0"
-                />
-              </div>
-              <div>
-                <Label htmlFor="template-description">Description</Label>
-                <Textarea
-                  id="template-description"
-                  value={templateDescription}
-                  onChange={(e) => setTemplateDescription(e.target.value)}
-                  placeholder="Brief description of this template..."
-                  rows={3}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="template-type">Model Type *</Label>
-                  <Select value={templateModelType} onValueChange={(v) => setTemplateModelType(v as ModelType)}>
-                    <SelectTrigger id="template-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="appraisal">Appraisal</SelectItem>
-                      <SelectItem value="operating">Operating</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="template-version">Version *</Label>
-                  <Input
-                    id="template-version"
-                    value={templateVersion}
-                    onChange={(e) => setTemplateVersion(e.target.value)}
-                    placeholder="1.0.0"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="template-file">Template File (.xlsx) *</Label>
-                <Input
-                  id="template-file"
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleFileSelect}
-                />
-                {selectedFile && (
-                  <p className="mt-2 text-sm text-gray-600">
-                    Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                  </p>
-                )}
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
+        <Modal
+          open={isUploadDialogOpen}
+          onClose={() => setIsUploadDialogOpen(false)}
+          title="Upload Template"
+          width={640}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsUploadDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleUpload} disabled={isUploading}>
+              <Button variant="primary" onClick={handleUpload} disabled={isUploading}>
                 {isUploading ? 'Uploading...' : 'Upload Template'}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </>
+          }
+        >
+          <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>
+            Upload a new Excel template file (.xlsx) for use in the modeling section
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Field label="Template Name *">
+              <Input
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="e.g., Appraisal Model v2.0"
+              />
+            </Field>
+            <Field label="Description">
+              <Textarea
+                value={templateDescription}
+                onChange={(e) => setTemplateDescription(e.target.value)}
+                placeholder="Brief description of this template..."
+                rows={3}
+              />
+            </Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <Field label="Model Type *">
+                <Select
+                  value={templateModelType}
+                  onChange={(e) => setTemplateModelType(e.target.value as ModelType)}
+                >
+                  <option value="appraisal">Appraisal</option>
+                  <option value="operating">Operating</option>
+                  <option value="custom">Custom</option>
+                </Select>
+              </Field>
+              <Field label="Version *">
+                <Input
+                  value={templateVersion}
+                  onChange={(e) => setTemplateVersion(e.target.value)}
+                  placeholder="1.0.0"
+                />
+              </Field>
+            </div>
+            <Field
+              label="Template File (.xlsx) *"
+              hint={
+                selectedFile
+                  ? `Selected: ${selectedFile.name} (${(selectedFile.size / 1024 / 1024).toFixed(2)} MB)`
+                  : undefined
+              }
+            >
+              <Input type="file" accept=".xlsx,.xls" onChange={handleFileSelect} />
+            </Field>
+          </div>
+        </Modal>
 
         {/* Edit Dialog */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit Template</DialogTitle>
-              <DialogDescription>
-                Update template metadata
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label htmlFor="edit-template-name">Template Name *</Label>
-                <Input
-                  id="edit-template-name"
-                  value={templateName}
-                  onChange={(e) => setTemplateName(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-template-description">Description</Label>
-                <Textarea
-                  id="edit-template-description"
-                  value={templateDescription}
-                  onChange={(e) => setTemplateDescription(e.target.value)}
-                  rows={3}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-template-type">Model Type *</Label>
-                  <Select value={templateModelType} onValueChange={(v) => setTemplateModelType(v as ModelType)}>
-                    <SelectTrigger id="edit-template-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="appraisal">Appraisal</SelectItem>
-                      <SelectItem value="operating">Operating</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="edit-template-version">Version *</Label>
-                  <Input
-                    id="edit-template-version"
-                    value={templateVersion}
-                    onChange={(e) => setTemplateVersion(e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+        <Modal
+          open={isEditDialogOpen}
+          onClose={() => setIsEditDialogOpen(false)}
+          title="Edit Template"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleUpdate}>Update Template</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <Button variant="primary" onClick={handleUpdate}>
+                Update Template
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>Update template metadata</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Field label="Template Name *">
+              <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} />
+            </Field>
+            <Field label="Description">
+              <Textarea
+                value={templateDescription}
+                onChange={(e) => setTemplateDescription(e.target.value)}
+                rows={3}
+              />
+            </Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <Field label="Model Type *">
+                <Select
+                  value={templateModelType}
+                  onChange={(e) => setTemplateModelType(e.target.value as ModelType)}
+                >
+                  <option value="appraisal">Appraisal</option>
+                  <option value="operating">Operating</option>
+                  <option value="custom">Custom</option>
+                </Select>
+              </Field>
+              <Field label="Version *">
+                <Input value={templateVersion} onChange={(e) => setTemplateVersion(e.target.value)} />
+              </Field>
+            </div>
+          </div>
+        </Modal>
 
         {/* Delete Legacy Template Confirmation */}
-        <AlertDialog open={!!deleteTemplateId} onOpenChange={(open) => !open && setDeleteTemplateId(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Template?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the template.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+        <Modal
+          open={!!deleteTemplateId}
+          onClose={() => setDeleteTemplateId(null)}
+          title="Delete Template?"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDeleteTemplateId(null)}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={handleDelete}>
                 Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 12, color: colors.text.secondary }}>
+            This action cannot be undone. This will permanently delete the template.
+          </p>
+        </Modal>
 
         {/* Delete Optimized Template Confirmation */}
-        <AlertDialog open={!!deleteNewTemplateId} onOpenChange={(open) => !open && setDeleteNewTemplateId(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Optimized Template?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the template and all its sheet data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteNewTemplate} className="bg-red-600 hover:bg-red-700">
+        <Modal
+          open={!!deleteNewTemplateId}
+          onClose={() => setDeleteNewTemplateId(null)}
+          title="Delete Optimized Template?"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDeleteNewTemplateId(null)}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={handleDeleteNewTemplate}>
                 Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 12, color: colors.text.secondary }}>
+            This action cannot be undone. This will permanently delete the template and all its sheet data.
+          </p>
+        </Modal>
 
         {/* New Template Upload Modal */}
         <TemplateUploadModal
@@ -635,4 +611,3 @@ export default function ModelingTemplatesPage() {
     </div>
   );
 }
-

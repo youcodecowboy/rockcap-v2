@@ -2,22 +2,18 @@
 
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Panel, StatTile, Button, IconButton, StatusPill, EmptyState, SkeletonTable } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Sparkles,
   Undo2,
   X,
-  TrendingUp,
-  Calendar,
-  FileType,
-  RefreshCw,
   CheckCircle2,
-  XCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 
 export default function KeywordLearningDashboard() {
+  const colors = useColors();
   const recentEvents = useQuery(api.keywordLearning.getRecentLearningEvents, { limit: 20 });
   const stats = useQuery(api.keywordLearning.getLearningStats);
   const undoLearnedKeyword = useMutation(api.keywordLearning.undoLearnedKeyword);
@@ -67,179 +63,112 @@ export default function KeywordLearningDashboard() {
   const isLoading = recentEvents === undefined || stats === undefined;
 
   return (
-    <div className="space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-100 rounded-lg">
-                <Sparkles className="w-5 h-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.totalKeywordsLearned ?? '-'}</p>
-                <p className="text-xs text-gray-500">Total Learned</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Calendar className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.thisWeek ?? '-'}</p>
-                <p className="text-xs text-gray-500">This Week</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <TrendingUp className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.thisMonth ?? '-'}</p>
-                <p className="text-xs text-gray-500">This Month</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <FileType className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats?.fileTypesWithLearning ?? '-'}</p>
-                <p className="text-xs text-gray-500">File Types</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Stats Tiles */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 1, background: colors.border.light }}>
+        <StatTile label="Total Learned" value={stats?.totalKeywordsLearned ?? '-'} accent={colors.accent.yellow} />
+        <StatTile label="This Week" value={stats?.thisWeek ?? '-'} accent={colors.accent.blue} />
+        <StatTile label="This Month" value={stats?.thisMonth ?? '-'} accent={colors.accent.green} />
+        <StatTile label="File Types" value={stats?.fileTypesWithLearning ?? '-'} accent={colors.accent.purple} />
       </div>
 
       {/* Recent Learning Events */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-500" />
-              Recent Auto-Learned Keywords
-            </CardTitle>
-            <CardDescription>
-              Keywords automatically learned from user corrections. These are now used for
-              deterministic document classification.
-            </CardDescription>
-          </div>
-          {recentEvents && recentEvents.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleDismissAll}>
-              <X className="w-4 h-4 mr-1" />
+      <Panel
+        title="Recent Auto-Learned Keywords"
+        accent={colors.accent.yellow}
+        actions={
+          recentEvents && recentEvents.length > 0 ? (
+            <Button variant="secondary" size="sm" onClick={handleDismissAll}>
+              <X style={{ width: 14, height: 14 }} />
               Dismiss All
             </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
-            </div>
-          ) : recentEvents && recentEvents.length > 0 ? (
-            <div className="space-y-3">
-              {recentEvents.map((event) => (
-                <div
-                  key={event._id}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-amber-100 rounded-lg">
-                      <Sparkles className="w-4 h-4 text-amber-600" />
+          ) : undefined
+        }
+      >
+        <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
+          Keywords automatically learned from user corrections. These are now used for
+          deterministic document classification.
+        </p>
+        {isLoading ? (
+          <SkeletonTable rows={4} cols={2} />
+        ) : recentEvents && recentEvents.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {recentEvents.map((event) => (
+              <div
+                key={event._id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 14,
+                  background: colors.bg.cardAlt,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <Sparkles style={{ width: 16, height: 16, color: colors.accent.yellow }} />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontWeight: 500, color: colors.text.primary }}>{event.keyword}</span>
+                      <StatusPill label={event.fileType} tone={colors.accent.blue} />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900">{event.keyword}</span>
-                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
-                          {event.fileType}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500">
-                        Learned from {event.correctionCount} correction
-                        {event.correctionCount !== 1 ? 's' : ''} &middot;{' '}
-                        {new Date(event.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleUndo(event._id)}
-                      disabled={processingIds.has(event._id)}
-                      title="Undo - Remove this keyword from the file type"
-                    >
-                      <Undo2 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDismiss(event._id)}
-                      disabled={processingIds.has(event._id)}
-                      title="Dismiss - Hide this notification"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+                    <p style={{ fontSize: 13, color: colors.text.muted }}>
+                      Learned from {event.correctionCount} correction
+                      {event.correctionCount !== 1 ? 's' : ''} &middot;{' '}
+                      {new Date(event.createdAt).toLocaleDateString()}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="mx-auto w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                <CheckCircle2 className="w-6 h-6 text-gray-400" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <IconButton
+                    label="Undo - Remove this keyword from the file type"
+                    onClick={() => handleUndo(event._id)}
+                    disabled={processingIds.has(event._id)}
+                  >
+                    <Undo2 style={{ width: 16, height: 16 }} />
+                  </IconButton>
+                  <IconButton
+                    label="Dismiss - Hide this notification"
+                    onClick={() => handleDismiss(event._id)}
+                    disabled={processingIds.has(event._id)}
+                  >
+                    <X style={{ width: 16, height: 16 }} />
+                  </IconButton>
+                </div>
               </div>
-              <h3 className="text-sm font-medium text-gray-900 mb-1">No recent learning events</h3>
-              <p className="text-sm text-gray-500">
-                Keywords will appear here when the system learns from user corrections.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={<CheckCircle2 style={{ width: 24, height: 24 }} />}
+            title="No recent learning events"
+            body="Keywords will appear here when the system learns from user corrections."
+          />
+        )}
+      </Panel>
 
       {/* How it works */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">How Keyword Learning Works</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
-            <li>
-              When you correct a document&apos;s file type (e.g., AI said &quot;IMR&quot; but you corrected
-              to &quot;RedBook Valuation&quot;), the system records the document&apos;s keywords.
-            </li>
-            <li>
-              After 3+ similar corrections, the system identifies common keywords across those
-              documents.
-            </li>
-            <li>
-              These keywords are automatically added to the correct file type definition to improve
-              future classifications.
-            </li>
-            <li>
-              You can undo any learned keyword if it was incorrectly associated, or dismiss the
-              notification to keep the keyword.
-            </li>
-          </ol>
-        </CardContent>
-      </Card>
+      <Panel title="How Keyword Learning Works">
+        <ol style={{ listStyle: 'decimal', listStylePosition: 'inside', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: colors.text.secondary, margin: 0, padding: 0 }}>
+          <li>
+            When you correct a document&apos;s file type (e.g., AI said &quot;IMR&quot; but you corrected
+            to &quot;RedBook Valuation&quot;), the system records the document&apos;s keywords.
+          </li>
+          <li>
+            After 3+ similar corrections, the system identifies common keywords across those
+            documents.
+          </li>
+          <li>
+            These keywords are automatically added to the correct file type definition to improve
+            future classifications.
+          </li>
+          <li>
+            You can undo any learned keyword if it was incorrectly associated, or dismiss the
+            notification to keep the keyword.
+          </li>
+        </ol>
+      </Panel>
     </div>
   );
 }

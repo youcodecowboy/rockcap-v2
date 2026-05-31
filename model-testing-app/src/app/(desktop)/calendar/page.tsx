@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Calendar as CalendarIcon, Plus } from 'lucide-react';
+import { useState, useMemo, type CSSProperties } from 'react';
+import { Plus, AlertTriangle } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { Calendar, momentLocalizer, View } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { Button } from '@/components/ui/button';
+import { Panel, Button } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import EventModal from '@/components/EventModal';
 import './calendar.css';
 
@@ -29,6 +30,7 @@ interface CalendarEvent {
 }
 
 export default function CalendarPage() {
+  const colors = useColors();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>('month');
   const [selectedEvent, setSelectedEvent] = useState<Id<'events'> | null>(null);
@@ -120,47 +122,78 @@ export default function CalendarPage() {
     setView(newView);
   };
 
+  // Tokenize Google Calendar colorIds onto canon accent tones. The grid lib
+  // keeps its own layout CSS, but event chips derive their tint from tokens.
   const eventStyleGetter = (event: CalendarEvent) => {
     const colorId = event.resource?.colorId || '1';
-    // Google Calendar color mapping (simplified)
-    const colors: Record<string, { backgroundColor: string; borderColor: string }> = {
-      '1': { backgroundColor: '#a4bdfc', borderColor: '#1a73e8' },
-      '2': { backgroundColor: '#7ae7bf', borderColor: '#0b8043' },
-      '3': { backgroundColor: '#dbadff', borderColor: '#7b1fa2' },
-      '4': { backgroundColor: '#ff887c', borderColor: '#d50000' },
-      '5': { backgroundColor: '#fbd75b', borderColor: '#f09300' },
-      '6': { backgroundColor: '#ffb878', borderColor: '#e67c73' },
-      '7': { backgroundColor: '#46d6db', borderColor: '#039be5' },
-      '8': { backgroundColor: '#e1e1e1', borderColor: '#616161' },
-      '9': { backgroundColor: '#5484ed', borderColor: '#3f51b5' },
-      '10': { backgroundColor: '#51b749', borderColor: '#0b8043' },
-      '11': { backgroundColor: '#dc2127', borderColor: '#d50000' },
+    const toneMap: Record<string, string> = {
+      '1': colors.accent.blue,
+      '2': colors.accent.green,
+      '3': colors.accent.purple,
+      '4': colors.accent.red,
+      '5': colors.accent.yellow,
+      '6': colors.accent.orange,
+      '7': colors.accent.cyan,
+      '8': colors.text.muted,
+      '9': colors.accent.indigo,
+      '10': colors.accent.green,
+      '11': colors.accent.red,
     };
-
-    const color = colors[colorId] || colors['1'];
+    const tone = toneMap[colorId] || colors.accent.blue;
 
     return {
       style: {
-        backgroundColor: color.backgroundColor,
-        borderColor: color.borderColor,
-        borderLeftWidth: '4px',
-        borderRadius: '4px',
-        color: '#000',
-        fontSize: '14px',
+        backgroundColor: `${tone}20`,
+        borderColor: tone,
+        borderLeftWidth: '3px',
+        borderRadius: '2px',
+        color: colors.text.primary,
+        fontSize: '12px',
         padding: '2px 4px',
       },
     };
   };
 
+  // CSS variables consumed by calendar.css so the react-big-calendar grid
+  // tracks the active theme tokens (the lib's layout CSS stays untouched).
+  const calendarVars = {
+    '--cal-surface': colors.bg.card,
+    '--cal-toolbar-bg': colors.bg.cardAlt,
+    '--cal-toolbar-fg': colors.text.primary,
+    '--cal-border': colors.border.default,
+    '--cal-header-bg': colors.bg.light,
+    '--cal-header-fg': colors.text.secondary,
+    '--cal-cell-fg': colors.text.secondary,
+    '--cal-off-range-bg': colors.bg.light,
+    '--cal-off-range-fg': colors.text.dim,
+    '--cal-today-bg': `${colors.accent.blue}12`,
+    '--cal-accent': colors.accent.blue,
+    '--cal-accent-soft': `${colors.accent.blue}1a`,
+    '--cal-btn-bg': colors.bg.card,
+    '--cal-btn-fg': colors.text.secondary,
+    '--cal-btn-border': colors.border.default,
+    '--cal-btn-active-bg': colors.accent.blue,
+    '--cal-btn-active-fg': '#ffffff',
+    '--cal-muted-fg': colors.text.muted,
+  } as CSSProperties;
+
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div style={{ minHeight: '100vh', background: colors.bg.light }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Development Banner */}
-        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <div
+          style={{
+            marginBottom: 24,
+            padding: 12,
+            borderRadius: 4,
+            background: `${colors.accent.yellow}15`,
+            border: `1px solid ${colors.accent.yellow}40`,
+          }}
+        >
           <div className="flex items-center gap-2">
-            <span className="text-amber-600">🚧</span>
-            <p className="text-sm text-amber-800">
-              <span className="font-medium">In Development</span> — Not all features are fully functional. Google Calendar sync coming soon.
+            <AlertTriangle className="w-4 h-4" style={{ color: colors.accent.yellow }} />
+            <p style={{ fontSize: 12, color: colors.text.secondary }}>
+              <span style={{ fontWeight: 500 }}>In Development</span> — Not all features are fully functional. Google Calendar sync coming soon.
             </p>
           </div>
         </div>
@@ -168,19 +201,20 @@ export default function CalendarPage() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Calendar</h1>
-            <p className="mt-2 text-lg text-gray-600">
+            <h1 style={{ fontSize: 24, fontWeight: 300, color: colors.text.primary }}>Calendar</h1>
+            <p style={{ marginTop: 6, fontSize: 13, color: colors.text.muted }}>
               Manage your events and schedule
             </p>
           </div>
           <Button
+            variant="primary"
+            accent={colors.accent.blue}
             onClick={() => {
               setSelectedEvent(null);
               setNewEventStart(null);
               setNewEventEnd(null);
               setIsEventModalOpen(true);
             }}
-            className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             New Event
@@ -188,31 +222,33 @@ export default function CalendarPage() {
         </div>
 
         {/* Calendar */}
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <Calendar
-            localizer={localizer}
-            events={calendarEvents}
-            startAccessor="start"
-            endAccessor="end"
-            style={{ height: 700 }}
-            view={view}
-            onView={handleViewChange}
-            date={currentDate}
-            onNavigate={handleNavigate}
-            onSelectSlot={handleSelectSlot}
-            onSelectEvent={handleSelectEvent}
-            selectable
-            eventPropGetter={eventStyleGetter}
-            popup
-            formats={{
-              dayFormat: 'ddd M/D',
-              dayHeaderFormat: 'dddd M/D',
-              monthHeaderFormat: 'MMMM YYYY',
-              dayRangeHeaderFormat: ({ start, end }) =>
-                `${moment(start).format('MMM D')} - ${moment(end).format('MMM D, YYYY')}`,
-            }}
-          />
-        </div>
+        <Panel padded={false}>
+          <div className="rbc-canon" style={calendarVars}>
+            <Calendar
+              localizer={localizer}
+              events={calendarEvents}
+              startAccessor="start"
+              endAccessor="end"
+              style={{ height: 700 }}
+              view={view}
+              onView={handleViewChange}
+              date={currentDate}
+              onNavigate={handleNavigate}
+              onSelectSlot={handleSelectSlot}
+              onSelectEvent={handleSelectEvent}
+              selectable
+              eventPropGetter={eventStyleGetter}
+              popup
+              formats={{
+                dayFormat: 'ddd M/D',
+                dayHeaderFormat: 'dddd M/D',
+                monthHeaderFormat: 'MMMM YYYY',
+                dayRangeHeaderFormat: ({ start, end }) =>
+                  `${moment(start).format('MMM D')} - ${moment(end).format('MMM D, YYYY')}`,
+              }}
+            />
+          </div>
+        </Panel>
 
         {/* Event Modal */}
         {isEventModalOpen && (
@@ -239,4 +275,3 @@ export default function CalendarPage() {
     </div>
   );
 }
-

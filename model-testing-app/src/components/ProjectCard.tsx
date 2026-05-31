@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Id } from '../../convex/_generated/dataModel';
 import { useDocumentsByProject } from '@/lib/documentStorage';
 import StatusBadge from '@/components/StatusBadge';
-import { Badge } from '@/components/ui/badge';
+import { FlagChip } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   FileText,
   Calendar,
@@ -35,6 +37,8 @@ interface ProjectCardProps {
 
 export default function ProjectCard({ project, isPast = false }: ProjectCardProps) {
   const router = useRouter();
+  const colors = useColors();
+  const [hover, setHover] = useState(false);
   const projectId = project._id as Id<"projects">;
   const documents = useDocumentsByProject(projectId) || [];
   
@@ -156,37 +160,58 @@ export default function ProjectCard({ project, isPast = false }: ProjectCardProp
   const address = formatAddress();
   const loanAmount = formatLoanAmount();
 
+  const labelStyle = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    color: colors.text.muted,
+  };
+
   return (
     <div
-      className={`bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-all cursor-pointer group ${
-        isPast ? 'opacity-75' : ''
-      }`}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       onClick={() => router.push(`/projects/${projectId}`)}
+      style={{
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.default}`,
+        borderTop: `2px solid ${colors.entityTypes.project}`,
+        borderRadius: 4,
+        padding: 20,
+        cursor: 'pointer',
+        opacity: isPast ? 0.7 : 1,
+        transition: 'background 100ms linear',
+        ...(hover ? { background: colors.bg.cardAlt } : null),
+      }}
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-2">
-            <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: colors.text.primary }}>
               {project.name}
             </h3>
-            {project.status && (
-              <StatusBadge status={project.status} />
-            )}
+            {project.status && <StatusBadge status={project.status} />}
           </div>
           {project.description && (
-            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{project.description}</p>
+            <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 12 }} className="line-clamp-2">
+              {project.description}
+            </p>
           )}
         </div>
-        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 transition-colors flex-shrink-0 ml-4" />
+        <ChevronRight
+          size={18}
+          style={{ color: hover ? colors.entityTypes.project : colors.text.dim, flexShrink: 0, marginLeft: 16 }}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4" style={{ gap: 16, marginBottom: 16 }}>
         {/* Document Count */}
-        <div className="flex items-start gap-2">
-          <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <FileText size={14} style={{ color: colors.text.dim, marginTop: 2, flexShrink: 0 }} />
           <div>
-            <div className="text-xs text-gray-500">Documents</div>
-            <div className="text-sm font-medium text-gray-900">
+            <div style={labelStyle}>Documents</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary, marginTop: 2 }}>
               {documentCount} {documentCount === 1 ? 'document' : 'documents'}
             </div>
           </div>
@@ -194,33 +219,33 @@ export default function ProjectCard({ project, isPast = false }: ProjectCardProp
 
         {/* Last Document Date */}
         {lastDocumentDate && (
-          <div className="flex items-start gap-2">
-            <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <Calendar size={14} style={{ color: colors.text.dim, marginTop: 2, flexShrink: 0 }} />
             <div>
-              <div className="text-xs text-gray-500">Last Document</div>
-              <div className="text-sm font-medium text-gray-900">{lastDocumentDate}</div>
+              <div style={labelStyle}>Last Document</div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary, marginTop: 2 }}>{lastDocumentDate}</div>
             </div>
           </div>
         )}
 
         {/* Loan Amount */}
         {loanAmount && (
-          <div className="flex items-start gap-2">
-            <DollarSign className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <DollarSign size={14} style={{ color: colors.text.dim, marginTop: 2, flexShrink: 0 }} />
             <div>
-              <div className="text-xs text-gray-500">Loan Amount</div>
-              <div className="text-sm font-medium text-gray-900">{loanAmount}</div>
+              <div style={labelStyle}>Loan Amount</div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary, marginTop: 2 }}>{loanAmount}</div>
             </div>
           </div>
         )}
 
         {/* Address */}
         {address && (
-          <div className="flex items-start gap-2">
-            <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <MapPin size={14} style={{ color: colors.text.dim, marginTop: 2, flexShrink: 0 }} />
             <div>
-              <div className="text-xs text-gray-500">Location</div>
-              <div className="text-sm font-medium text-gray-900 line-clamp-1">{address}</div>
+              <div style={labelStyle}>Location</div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary, marginTop: 2 }} className="line-clamp-1">{address}</div>
             </div>
           </div>
         )}
@@ -228,20 +253,14 @@ export default function ProjectCard({ project, isPast = false }: ProjectCardProp
 
       {/* Extracted Data Summary */}
       {extractedSummary && extractedSummary.length > 0 && (
-        <div className="pt-4 border-t border-gray-100">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="w-4 h-4 text-gray-400" />
-            <span className="text-xs font-medium text-gray-500">Extracted Data</span>
+        <div style={{ paddingTop: 16, borderTop: `1px solid ${colors.border.light}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <TrendingUp size={14} style={{ color: colors.text.dim }} />
+            <span style={labelStyle}>Extracted Data</span>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {extractedSummary.map((item, index) => (
-              <Badge
-                key={index}
-                variant="secondary"
-                className="text-xs bg-blue-50 text-blue-700 border-blue-200"
-              >
-                {item}
-              </Badge>
+              <FlagChip key={index} label={item} severity="info" />
             ))}
           </div>
         </div>
@@ -249,9 +268,9 @@ export default function ProjectCard({ project, isPast = false }: ProjectCardProp
 
       {/* Loan Number */}
       {project.loanNumber && (
-        <div className="pt-3 border-t border-gray-100 mt-3">
-          <div className="text-xs text-gray-500">Loan Number</div>
-          <div className="text-sm font-medium text-gray-900">{project.loanNumber}</div>
+        <div style={{ paddingTop: 12, borderTop: `1px solid ${colors.border.light}`, marginTop: 12 }}>
+          <div style={labelStyle}>Loan Number</div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary, marginTop: 2 }}>{project.loanNumber}</div>
         </div>
       )}
     </div>

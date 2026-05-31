@@ -24,10 +24,20 @@ import {
   Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useColors } from '@/lib/useColors';
+import {
+  Panel,
+  StatTile,
+  DataTable,
+  EmptyState,
+  StatusPill,
+  FlagChip,
+  Button,
+  Field,
+  Input,
+  Select,
+  SkeletonTable,
+} from '@/components/layouts';
 
 interface ProjectDataTabProps {
   projectId: Id<"projects">;
@@ -47,22 +57,22 @@ function formatCurrency(value: number): string {
 // Helper to format values based on data type
 function formatValue(value: any, dataType: string): string {
   if (value === null || value === undefined) return '-';
-  
+
   if (dataType === 'currency') {
     const numValue = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^0-9.-]/g, ''));
     return isNaN(numValue) ? String(value) : formatCurrency(numValue);
   }
-  
+
   if (dataType === 'percentage') {
     const numValue = typeof value === 'number' ? value : parseFloat(String(value));
     return isNaN(numValue) ? String(value) : `${numValue.toFixed(2)}%`;
   }
-  
+
   if (dataType === 'number') {
     const numValue = typeof value === 'number' ? value : parseFloat(String(value));
     return isNaN(numValue) ? String(value) : numValue.toLocaleString();
   }
-  
+
   return String(value);
 }
 
@@ -86,6 +96,8 @@ export default function ProjectDataTab({
   projectId,
   projectName,
 }: ProjectDataTabProps) {
+  const colors = useColors();
+  const accent = colors.entityTypes.project;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -106,11 +118,11 @@ export default function ProjectDataTab({
   // Filter items
   const filteredItems = useMemo(() => {
     if (!dataLibrary) return [];
-    
+
     return dataLibrary.filter((item: any) => {
       // Skip computed items from display (they're for template population)
       if (item.isComputed) return false;
-      
+
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -121,12 +133,12 @@ export default function ProjectDataTab({
           return false;
         }
       }
-      
+
       // Category filter
       if (selectedCategory !== 'all' && item.category !== selectedCategory) {
         return false;
       }
-      
+
       return true;
     });
   }, [dataLibrary, searchQuery, selectedCategory]);
@@ -168,47 +180,63 @@ export default function ProjectDataTab({
 
   // Loading state
   if (!dataLibrary) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
-      </div>
-    );
+    return <SkeletonTable rows={6} cols={5} />;
   }
 
   // Pending extractions banner component
   const PendingExtractionsBanner = () => {
     if (!pendingExtractions?.needsAttention) return null;
-    
+
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="font-medium text-amber-800">Extractions Pending Confirmation</h4>
-            <p className="text-sm text-amber-700 mt-1">
+      <div
+        style={{
+          background: `${colors.accent.orange}12`,
+          border: `1px solid ${colors.accent.orange}40`,
+          borderLeft: `3px solid ${colors.accent.orange}`,
+          borderRadius: 4,
+          padding: 14,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <AlertCircle size={18} color={colors.accent.orange} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            <h4 style={{ fontSize: 13, fontWeight: 600, color: colors.accent.orange }}>
+              Extractions Pending Confirmation
+            </h4>
+            <div style={{ fontSize: 12, color: colors.text.secondary, marginTop: 4, lineHeight: 1.5 }}>
               {pendingExtractions.pendingJobCount > 0 && (
-                <span>
-                  <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Loader2 size={12} className="animate-spin" />
                   {pendingExtractions.pendingJobCount} extraction(s) processing...
                 </span>
               )}
               {pendingExtractions.hasUnconfirmed && (
-                <span className="block mt-1">
+                <span style={{ display: 'block', marginTop: 4 }}>
                   {pendingExtractions.unconfirmedCount} extraction(s) with {pendingExtractions.unconfirmedItemCount} items awaiting confirmation.
                 </span>
               )}
               {pendingExtractions.hasPendingMerge && (
-                <span className="block mt-1">
+                <span style={{ display: 'block', marginTop: 4 }}>
                   {pendingExtractions.pendingMergeCount} confirmed extraction(s) pending merge to library.
                 </span>
               )}
-            </p>
-            <Link 
-              href="/modeling" 
-              className="inline-flex items-center gap-1 text-sm font-medium text-amber-800 hover:text-amber-900 mt-2"
+            </div>
+            <Link
+              href="/modeling"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 12,
+                fontWeight: 500,
+                color: colors.accent.orange,
+                marginTop: 8,
+                textDecoration: 'none',
+              }}
             >
               Go to Modeling to confirm extractions
-              <ExternalLink className="w-3 h-3" />
+              <ExternalLink size={12} />
             </Link>
           </div>
         </div>
@@ -219,97 +247,104 @@ export default function ProjectDataTab({
   // Empty state
   if (dataLibrary.length === 0 || filteredItems.length === 0 && !searchQuery && selectedCategory === 'all') {
     return (
-      <div className="space-y-4">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <PendingExtractionsBanner />
-        <div className="bg-card rounded-lg border border-border p-12 text-center">
-          <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">Data Library</h3>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Financial data extracted from project documents will appear here.
-            Upload spreadsheets, financial statements, and appraisals to see extracted data points.
-          </p>
-          <div className="mt-6 p-4 bg-muted rounded-lg inline-block">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <FileSpreadsheet className="w-5 h-5 text-green-600" />
-              <span>Upload documents in the Documents tab to extract data</span>
-            </div>
-          </div>
-        </div>
+        <EmptyState
+          icon={<Database size={40} />}
+          title="Data Library"
+          body="Financial data extracted from project documents will appear here. Upload spreadsheets, financial statements, and appraisals to see extracted data points."
+          action={
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 12,
+                color: colors.text.muted,
+                padding: '10px 14px',
+                borderRadius: 4,
+                background: colors.bg.cardAlt,
+                border: `1px solid ${colors.border.default}`,
+              }}
+            >
+              <FileSpreadsheet size={18} color={colors.entityTypes.client} />
+              Upload documents in the Documents tab to extract data
+            </span>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Pending Extractions Banner */}
       <PendingExtractionsBanner />
-      
+
       {/* Header Stats */}
-      <div className="bg-card rounded-lg border border-border p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 rounded-lg">
-              <Database className="w-5 h-5 text-indigo-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Data Library</h2>
-              <p className="text-sm text-muted-foreground">
-                Extracted from {stats?.totalDocuments || 0} document{(stats?.totalDocuments || 0) !== 1 ? 's' : ''}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-indigo-600">{stats?.totalItems || 0}</div>
-              <div className="text-muted-foreground">Data Points</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{Object.keys(stats?.byCategory || {}).length}</div>
-              <div className="text-muted-foreground">Categories</div>
-            </div>
-            {stats?.manualOverrides && stats.manualOverrides > 0 && (
-              <div className="text-center">
-                <div className="text-2xl font-bold text-amber-600">{stats.manualOverrides}</div>
-                <div className="text-muted-foreground">Overrides</div>
-              </div>
-            )}
-          </div>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 1, background: colors.border.default }}>
+        <StatTile
+          label="Data Points"
+          value={stats?.totalItems || 0}
+          meta={`Extracted from ${stats?.totalDocuments || 0} document${(stats?.totalDocuments || 0) !== 1 ? 's' : ''}`}
+          accent={accent}
+        />
+        <StatTile
+          label="Categories"
+          value={Object.keys(stats?.byCategory || {}).length}
+          accent={colors.accent.blue}
+        />
+        {stats?.manualOverrides && stats.manualOverrides > 0 && (
+          <StatTile
+            label="Overrides"
+            value={stats.manualOverrides}
+            accent={colors.accent.orange}
+          />
+        )}
       </div>
 
       {/* Filters */}
-      <div className="bg-card rounded-lg border border-border p-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <Panel accent={accent}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
           {/* Search */}
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <Search
+              size={16}
+              color={colors.text.muted}
+              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+            />
             <Input
               type="text"
               placeholder="Search data items..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              style={{ paddingLeft: 32 }}
             />
           </div>
 
           {/* Category Filter */}
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
-              <SelectValue placeholder="All Categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
+          <div style={{ position: 'relative', width: 200 }}>
+            <Filter
+              size={14}
+              color={colors.text.muted}
+              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', zIndex: 1 }}
+            />
+            <Select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              style={{ paddingLeft: 30 }}
+            >
+              <option value="all">All Categories</option>
               {categories.map((category) => (
-                <SelectItem key={category} value={category}>
+                <option key={category} value={category}>
                   {category}
-                </SelectItem>
+                </option>
               ))}
-            </SelectContent>
-          </Select>
+            </Select>
+          </div>
 
           {/* Expand/Collapse All */}
-          <div className="flex items-center gap-1">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Button variant="ghost" size="sm" onClick={expandAll}>
               Expand All
             </Button>
@@ -318,121 +353,161 @@ export default function ProjectDataTab({
             </Button>
           </div>
         </div>
-      </div>
+      </Panel>
 
       {/* Data Items by Category */}
-      <div className="space-y-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {Object.entries(itemsByCategory)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([category, items]) => {
             const isExpanded = expandedCategories.has(category);
             // Calculate total excluding subtotals to avoid double-counting
             const categoryTotal = items
-              .filter((item: any) => 
-                item.currentDataType === 'currency' && 
+              .filter((item: any) =>
+                item.currentDataType === 'currency' &&
                 !item.isSubtotal // Exclude subtotals from total
               )
               .reduce((sum: number, item: any) => sum + (item.currentValueNormalized || 0), 0);
 
             return (
-              <div key={category} className="bg-card rounded-lg border border-border overflow-hidden">
+              <div
+                key={category}
+                style={{
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  overflow: 'hidden',
+                }}
+              >
                 {/* Category Header */}
                 <button
                   onClick={() => toggleCategory(category)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-muted transition-colors"
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: 14,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'background 100ms linear',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = colors.bg.cardAlt)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <div className="flex items-center gap-3">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     {isExpanded ? (
-                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                      <ChevronDown size={18} color={colors.text.muted} />
                     ) : (
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                      <ChevronRight size={18} color={colors.text.muted} />
                     )}
-                    <FolderOpen className={`w-5 h-5 ${isExpanded ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-                    <span className="font-medium text-foreground">{category}</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {items.length} item{items.length !== 1 ? 's' : ''}
-                    </Badge>
+                    <FolderOpen size={18} color={isExpanded ? accent : colors.text.muted} />
+                    <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{category}</span>
+                    <StatusPill label={`${items.length} item${items.length !== 1 ? 's' : ''}`} tone={colors.text.muted} />
                   </div>
                   {categoryTotal > 0 && (
-                    <div className="text-right">
-                      <span className="text-sm font-medium text-foreground">
+                    <div style={{ textAlign: 'right' }}>
+                      <span
+                        style={{
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: 12,
+                          fontWeight: 500,
+                          color: colors.text.primary,
+                        }}
+                      >
                         {formatCurrency(categoryTotal)}
                       </span>
-                      <span className="text-xs text-muted-foreground ml-1">total</span>
+                      <span style={{ fontSize: 11, color: colors.text.muted, marginLeft: 4 }}>total</span>
                     </div>
                   )}
                 </button>
 
                 {/* Category Items */}
                 {isExpanded && (
-                  <div className="border-t border-border">
-                    <table className="w-full">
-                      <thead className="bg-muted">
-                        <tr>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Item
-                          </th>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Code
-                          </th>
-                          <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Value
-                          </th>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Source
-                          </th>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Updated
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {items.map((item: any) => (
-                          <tr key={item._id} className={`hover:bg-muted ${item.isSubtotal ? 'bg-muted/50' : ''}`}>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">
-                                  {getDataTypeIcon(item.currentDataType)}
+                  <div style={{ borderTop: `1px solid ${colors.border.default}` }}>
+                    <DataTable
+                      rows={items}
+                      getRowKey={(item: any) => item._id}
+                      columns={[
+                        {
+                          key: 'item',
+                          header: 'Item',
+                          render: (item: any) => (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                              <span style={{ color: colors.text.muted, display: 'inline-flex', flexShrink: 0 }}>
+                                {getDataTypeIcon(item.currentDataType)}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  color: item.isSubtotal ? colors.text.muted : colors.text.primary,
+                                  fontStyle: item.isSubtotal ? 'italic' : 'normal',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {item.originalName}
+                              </span>
+                              {item.isSubtotal && <FlagChip label="subtotal" severity="info" />}
+                              {item.hasMultipleSources && (
+                                <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+                                  <FlagChip label="Multi" severity="info" />
                                 </span>
-                                <span className={`text-sm ${item.isSubtotal ? 'text-muted-foreground italic' : 'text-foreground'}`}>{item.originalName}</span>
-                                {item.isSubtotal && (
-                                  <Badge variant="outline" className="text-[10px] h-4 text-muted-foreground">
-                                    subtotal
-                                  </Badge>
-                                )}
-                                {item.hasMultipleSources && (
-                                  <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                    <RefreshCw className="w-2.5 h-2.5 mr-0.5" />
-                                    Multi
-                                  </Badge>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <code className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
-                                {item.itemCode}
-                              </code>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span className="text-sm font-medium text-foreground">
-                                {formatValue(item.currentValue, item.currentDataType)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="text-xs text-muted-foreground truncate max-w-[150px] block">
-                                {item.currentSourceDocumentName}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Clock className="w-3 h-3" />
-                                {item.lastUpdatedAt ? new Date(item.lastUpdatedAt).toLocaleDateString() : '-'}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                              )}
+                            </div>
+                          ),
+                        },
+                        {
+                          key: 'code',
+                          header: 'Code',
+                          mono: true,
+                          width: 140,
+                          render: (item: any) => item.itemCode,
+                        },
+                        {
+                          key: 'value',
+                          header: 'Value',
+                          mono: true,
+                          align: 'right',
+                          width: 120,
+                          render: (item: any) => formatValue(item.currentValue, item.currentDataType),
+                        },
+                        {
+                          key: 'source',
+                          header: 'Source',
+                          width: 160,
+                          render: (item: any) => (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: colors.text.muted,
+                                display: 'block',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {item.currentSourceDocumentName}
+                            </span>
+                          ),
+                        },
+                        {
+                          key: 'updated',
+                          header: 'Updated',
+                          mono: true,
+                          align: 'right',
+                          width: 110,
+                          render: (item: any) => (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                              <Clock size={12} color={colors.text.muted} />
+                              {item.lastUpdatedAt ? new Date(item.lastUpdatedAt).toLocaleDateString() : '-'}
+                            </span>
+                          ),
+                        },
+                      ]}
+                    />
                   </div>
                 )}
               </div>
@@ -442,19 +517,21 @@ export default function ProjectDataTab({
 
       {/* No Results */}
       {filteredItems.length === 0 && (searchQuery || selectedCategory !== 'all') && (
-        <div className="bg-card rounded-lg border border-border p-8 text-center">
-          <Search className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-          <p className="text-muted-foreground">No data items match your filters</p>
-          <Button
-            variant="link"
-            onClick={() => {
-              setSearchQuery('');
-              setSelectedCategory('all');
-            }}
-          >
-            Clear filters
-          </Button>
-        </div>
+        <EmptyState
+          icon={<Search size={28} />}
+          title="No data items match your filters"
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedCategory('all');
+              }}
+            >
+              Clear filters
+            </Button>
+          }
+        />
       )}
     </div>
   );

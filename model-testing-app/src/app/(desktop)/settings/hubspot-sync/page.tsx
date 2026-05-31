@@ -3,15 +3,17 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+  Panel,
+  Section,
+  Row,
+  StatusPill,
+  Button,
+  Field,
+  Input,
+  SkeletonText,
+} from "@/components/layouts";
+import { useColors } from "@/lib/useColors";
 import {
   RefreshCw,
   CheckCircle2,
@@ -24,6 +26,7 @@ import {
   Briefcase,
   Activity,
 } from "lucide-react";
+import type { ColorPalette } from "@/lib/colors";
 
 type StageStatus = "pending" | "running" | "success" | "error";
 
@@ -81,129 +84,115 @@ function formatDate(dateString?: string) {
   return new Date(dateString).toLocaleString();
 }
 
-function LastSyncBadge({ status }: { status?: string }) {
-  if (!status) return null;
-  if (status === "success")
-    return (
-      <Badge variant="default" className="bg-green-500">
-        <CheckCircle2 className="size-3 mr-1" />
-        Success
-      </Badge>
-    );
-  if (status === "error")
-    return (
-      <Badge variant="destructive">
-        <XCircle className="size-3 mr-1" />
-        Error
-      </Badge>
-    );
-  if (status === "in_progress")
-    return (
-      <Badge variant="secondary">
-        <Clock className="size-3 mr-1" />
-        In Progress
-      </Badge>
-    );
-  return null;
+function lastSyncTone(status: string | undefined, colors: ColorPalette): string {
+  if (status === "success") return colors.accent.green;
+  if (status === "error") return colors.accent.red;
+  if (status === "in_progress") return colors.accent.blue;
+  return colors.text.dim;
 }
 
-function StageStatusIcon({ status }: { status: StageStatus }) {
-  if (status === "pending")
-    return <Clock className="size-4 text-muted-foreground" />;
+function StageStatusIcon({ status, colors }: { status: StageStatus; colors: ColorPalette }) {
+  if (status === "pending") return <Clock size={16} style={{ color: colors.text.muted }} />;
   if (status === "running")
-    return <Loader2 className="size-4 text-blue-500 animate-spin" />;
+    return <Loader2 size={16} className="animate-spin" style={{ color: colors.accent.blue }} />;
   if (status === "success")
-    return <CheckCircle2 className="size-4 text-green-500" />;
-  return <XCircle className="size-4 text-red-500" />;
+    return <CheckCircle2 size={16} style={{ color: colors.accent.green }} />;
+  return <XCircle size={16} style={{ color: colors.accent.red }} />;
 }
 
-function StageCard({
+function StageRow({
   stage,
   state,
   enabled,
   isRunning,
   onRetry,
+  colors,
 }: {
   stage: (typeof STAGES)[number];
   state: StageState;
   enabled: boolean;
   isRunning: boolean;
   onRetry: () => void;
+  colors: ColorPalette;
 }) {
   const Icon = stage.icon;
   const synced = state.stats?.[stage.statKey];
   const errors = state.stats?.errors;
 
+  const tone =
+    state.status === "running"
+      ? colors.accent.blue
+      : state.status === "success"
+      ? colors.accent.green
+      : state.status === "error"
+      ? colors.accent.red
+      : colors.border.default;
+
   return (
     <div
-      className={`flex items-center gap-4 rounded-lg border px-4 py-3 transition-colors ${
-        !enabled
-          ? "opacity-40"
-          : state.status === "running"
-          ? "border-blue-200 bg-blue-50/50"
-          : state.status === "success"
-          ? "border-green-200 bg-green-50/50"
-          : state.status === "error"
-          ? "border-red-200 bg-red-50/50"
-          : "border-border"
-      }`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        borderRadius: 4,
+        border: `1px solid ${state.status === "pending" ? colors.border.default : tone + "40"}`,
+        background:
+          state.status === "pending" || !enabled ? colors.bg.card : `${tone}10`,
+        padding: "10px 14px",
+        opacity: enabled ? 1 : 0.4,
+        transition: "background 100ms linear, border-color 100ms linear",
+      }}
     >
-      {/* Stage icon */}
-      <div className="shrink-0">
+      <div style={{ flexShrink: 0 }}>
         <Icon
-          className={`size-5 ${
-            !enabled
-              ? "text-muted-foreground"
-              : state.status === "running"
-              ? "text-blue-500"
-              : state.status === "success"
-              ? "text-green-600"
-              : state.status === "error"
-              ? "text-red-600"
-              : "text-muted-foreground"
-          }`}
+          size={18}
+          style={{
+            color:
+              !enabled || state.status === "pending"
+                ? colors.text.muted
+                : tone,
+          }}
         />
       </div>
 
-      {/* Label + error message */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">{stage.label}</p>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{stage.label}</p>
         {state.status === "error" && state.errorMessage && (
-          <p className="text-xs text-red-600 truncate mt-0.5">
+          <p
+            style={{
+              fontSize: 11,
+              color: colors.accent.red,
+              marginTop: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {state.errorMessage}
           </p>
         )}
       </div>
 
-      {/* Stats on success */}
       {state.status === "success" && (
-        <div className="text-xs text-muted-foreground shrink-0">
+        <div style={{ fontSize: 11, color: colors.text.muted, flexShrink: 0 }}>
           {synced !== undefined && (
-            <span className="font-medium text-foreground">{synced} synced</span>
+            <span style={{ fontWeight: 500, color: colors.text.primary }}>{synced} synced</span>
           )}
           {errors !== undefined && errors > 0 && (
-            <span className="text-red-500 ml-2">{errors} errors</span>
+            <span style={{ color: colors.accent.red, marginLeft: 8 }}>{errors} errors</span>
           )}
         </div>
       )}
 
-      {/* Retry button on error */}
       {state.status === "error" && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="shrink-0 h-7 text-xs"
-          onClick={onRetry}
-          disabled={isRunning}
-        >
-          <RefreshCw className="size-3 mr-1" />
+        <Button variant="secondary" size="sm" onClick={onRetry} disabled={isRunning}>
+          <RefreshCw size={12} />
           Retry
         </Button>
       )}
 
-      {/* Status icon */}
-      <div className="shrink-0">
-        <StageStatusIcon status={state.status} />
+      <div style={{ flexShrink: 0 }}>
+        <StageStatusIcon status={state.status} colors={colors} />
       </div>
     </div>
   );
@@ -217,6 +206,7 @@ const INITIAL_STAGES: Record<StageId, StageState> = {
 };
 
 export default function HubSpotSyncPage() {
+  const colors = useColors();
   const syncConfig = useQuery(api.hubspotSync.getSyncConfig as any);
 
   const [stages, setStages] =
@@ -324,225 +314,240 @@ export default function HubSpotSyncPage() {
   );
 
   return (
-    <div className="container mx-auto p-6 max-w-3xl space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold mb-1 flex items-center gap-2">
-          <Database className="size-7" />
-          HubSpot Sync
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          V2 pipeline (Apr 2026): runs as 4 sequential stages to prevent
-          timeouts. Companies → Contacts → Deals → Engagements. Each stage
-          can be retried independently.
-        </p>
-      </div>
+    <div style={{ background: colors.bg.light, minHeight: "100vh" }}>
+      <div
+        style={{
+          maxWidth: 768,
+          margin: "0 auto",
+          padding: "32px 24px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+        }}
+      >
+        {/* Header */}
+        <div>
+          <h1
+            style={{
+              fontSize: 24,
+              fontWeight: 700,
+              color: colors.text.primary,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 4,
+            }}
+          >
+            <Database size={26} />
+            HubSpot Sync
+          </h1>
+          <p style={{ fontSize: 12, color: colors.text.secondary, lineHeight: 1.5 }}>
+            V2 pipeline (Apr 2026): runs as 4 sequential stages to prevent
+            timeouts. Companies → Contacts → Deals → Engagements. Each stage
+            can be retried independently.
+          </p>
+        </div>
 
-      {/* Last sync status */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Last Sync</CardTitle>
-          <CardDescription>
-            Status and stats from the most recent sync run
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        {/* Last sync status */}
+        <Panel title="Last Sync">
           {syncConfig === undefined ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
+            <SkeletonText lines={2} />
           ) : !syncConfig?.lastSyncAt ? (
-            <p className="text-sm text-muted-foreground">Never synced</p>
+            <p style={{ fontSize: 12, color: colors.text.muted }}>Never synced</p>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Completed</span>
-                <span className="font-medium text-sm">
-                  {formatDate(syncConfig.lastSyncAt)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Status</span>
-                <LastSyncBadge status={syncConfig.lastSyncStatus} />
-              </div>
+            <Section title="Most recent run">
+              <Row label="Completed" value={formatDate(syncConfig.lastSyncAt)} mono />
+              <Row
+                label="Status"
+                value={
+                  <StatusPill
+                    label={syncConfig.lastSyncStatus ?? "unknown"}
+                    tone={lastSyncTone(syncConfig.lastSyncStatus, colors)}
+                  />
+                }
+              />
               {lastStats && (
-                <div className="pt-3 border-t grid grid-cols-2 gap-x-6 gap-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Companies</span>
-                    <span className="font-medium">
-                      {lastStats.companiesSynced ?? "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Contacts</span>
-                    <span className="font-medium">
-                      {lastStats.contactsSynced ?? "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Deals</span>
-                    <span className="font-medium">
-                      {lastStats.dealsSynced ?? "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Activities</span>
-                    <span className="font-medium">
-                      {lastStats.activitiesSynced ?? "—"}
-                    </span>
-                  </div>
+                <>
+                  <Row label="Companies" value={lastStats.companiesSynced ?? "—"} mono />
+                  <Row label="Contacts" value={lastStats.contactsSynced ?? "—"} mono />
+                  <Row label="Deals" value={lastStats.dealsSynced ?? "—"} mono />
+                  <Row label="Activities" value={lastStats.activitiesSynced ?? "—"} mono />
                   {(lastStats.errors ?? 0) > 0 && (
-                    <div className="flex justify-between text-sm col-span-2 text-destructive">
-                      <span>Errors</span>
-                      <span className="font-medium">{lastStats.errors}</span>
-                    </div>
+                    <Row
+                      label="Errors"
+                      value={lastStats.errors}
+                      mono
+                      valueColor={colors.accent.red}
+                    />
                   )}
-                </div>
+                </>
               )}
-            </div>
+            </Section>
           )}
-        </CardContent>
-      </Card>
+        </Panel>
 
-      {/* Sync options */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Sync Options</CardTitle>
-          <CardDescription>
-            Configure what to include in the next sync run
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <label
-              className="text-sm font-medium block mb-1"
-              htmlFor="maxRecords"
-            >
-              Max records per object
-            </label>
-            <input
-              id="maxRecords"
-              type="number"
-              min={1}
-              placeholder="Leave blank for unlimited"
-              value={maxRecords}
-              onChange={(e) => setMaxRecords(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Include stages</p>
-            {STAGES.map((stage) => (
-              <label
-                key={stage.id}
-                className="flex items-center gap-2 cursor-pointer"
+        {/* Sync options */}
+        <Panel title="Sync Options">
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Field label="Max records per object">
+              <Input
+                id="maxRecords"
+                type="number"
+                min={1}
+                placeholder="Leave blank for unlimited"
+                value={maxRecords}
+                onChange={(e) => setMaxRecords(e.target.value)}
+              />
+            </Field>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <p
+                style={{
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  fontSize: 9,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: colors.text.muted,
+                  fontWeight: 500,
+                }}
               >
+                Include stages
+              </p>
+              {STAGES.map((stage) => (
+                <label
+                  key={stage.id}
+                  style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabled[stage.id]}
+                    onChange={(e) => toggleEnabled(stage.id, e.target.checked)}
+                    disabled={isRunning}
+                    style={{ width: 16, height: 16, accentColor: colors.accent.blue }}
+                  />
+                  <span style={{ fontSize: 12, color: colors.text.primary }}>{stage.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div style={{ paddingTop: 12, borderTop: `1px solid ${colors.border.light}` }}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
                 <input
                   type="checkbox"
-                  checked={enabled[stage.id]}
-                  onChange={(e) => toggleEnabled(stage.id, e.target.checked)}
-                  className="size-4 rounded border-gray-300"
+                  checked={forceFull}
+                  onChange={(e) => setForceFull(e.target.checked)}
                   disabled={isRunning}
+                  style={{ width: 16, height: 16, marginTop: 2, accentColor: colors.accent.blue }}
                 />
-                <span className="text-sm">{stage.label}</span>
-              </label>
-            ))}
-          </div>
-
-          <div className="pt-3 border-t border-border">
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={forceFull}
-                onChange={(e) => setForceFull(e.target.checked)}
-                className="size-4 rounded border-gray-300 mt-0.5"
-                disabled={isRunning}
-              />
-              <span className="text-sm">
-                <span className="font-medium">Force full resync</span>
-                <span className="block text-xs text-muted-foreground mt-0.5">
-                  {syncConfig?.lastSyncAt
-                    ? `Default is incremental — only records modified since last sync (${new Date(syncConfig.lastSyncAt).toLocaleString()}). Check this to re-pull everything.`
-                    : "First sync (no lastSyncAt on record); this pulls everything by default."}
+                <span style={{ fontSize: 12, color: colors.text.primary }}>
+                  <span style={{ fontWeight: 500 }}>Force full resync</span>
+                  <span style={{ display: "block", fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+                    {syncConfig?.lastSyncAt
+                      ? `Default is incremental — only records modified since last sync (${new Date(syncConfig.lastSyncAt).toLocaleString()}). Check this to re-pull everything.`
+                      : "First sync (no lastSyncAt on record); this pulls everything by default."}
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        </Panel>
 
-      {/* Stage progress cards */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Sync Progress</CardTitle>
-          <CardDescription>
+        {/* Stage progress */}
+        <Panel title="Sync Progress">
+          <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 12 }}>
             Stages run sequentially. A stage failure stops the chain — use
             Retry to resume from that stage.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {STAGES.map((stage) => (
-            <StageCard
-              key={stage.id}
-              stage={stage}
-              state={stages[stage.id]}
-              enabled={enabled[stage.id]}
-              isRunning={isRunning}
-              onRetry={() => retryStage(stage.id)}
-            />
-          ))}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {STAGES.map((stage) => (
+              <StageRow
+                key={stage.id}
+                stage={stage}
+                state={stages[stage.id]}
+                enabled={enabled[stage.id]}
+                isRunning={isRunning}
+                onRetry={() => retryStage(stage.id)}
+                colors={colors}
+              />
+            ))}
 
-          {/* Final success banner */}
-          {allDone && !isRunning && (
-            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 mt-2">
-              <CheckCircle2 className="size-5 text-green-600 shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-green-900">
-                  All stages completed
-                </p>
-                <p className="text-xs text-green-700">
-                  HubSpot sync finished successfully.
+            {/* Final success banner */}
+            {allDone && !isRunning && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  borderRadius: 4,
+                  border: `1px solid ${colors.accent.green}40`,
+                  background: `${colors.accent.green}15`,
+                  padding: "10px 14px",
+                  marginTop: 8,
+                }}
+              >
+                <CheckCircle2 size={18} style={{ color: colors.accent.green, flexShrink: 0 }} />
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: colors.accent.green }}>
+                    All stages completed
+                  </p>
+                  <p style={{ fontSize: 11, color: colors.text.muted }}>
+                    HubSpot sync finished successfully.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Error banner */}
+            {anyError && !isRunning && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  borderRadius: 4,
+                  border: `1px solid ${colors.accent.red}40`,
+                  background: `${colors.accent.red}15`,
+                  padding: "10px 14px",
+                  marginTop: 8,
+                }}
+              >
+                <XCircle size={18} style={{ color: colors.accent.red, flexShrink: 0 }} />
+                <p style={{ fontSize: 12, color: colors.accent.red }}>
+                  Sync stopped due to an error. Retry the failed stage or run the
+                  full sync again.
                 </p>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        </Panel>
 
-          {/* Error banner */}
-          {anyError && !isRunning && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 mt-2">
-              <XCircle className="size-5 text-red-600 shrink-0" />
-              <p className="text-sm text-red-800">
-                Sync stopped due to an error. Retry the failed stage or run the
-                full sync again.
-              </p>
-            </div>
+        {/* Run button */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <Button
+            variant="primary"
+            accent={colors.accent.blue}
+            onClick={runAllStages}
+            disabled={isRunning}
+            style={{ width: "100%", justifyContent: "center", padding: "10px 14px" }}
+          >
+            {isRunning ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <RefreshCw size={16} />
+                Run Sync
+              </>
+            )}
+          </Button>
+          {isRunning && (
+            <p style={{ fontSize: 11, textAlign: "center", color: colors.text.muted }}>
+              Running stages sequentially — do not close this page.
+            </p>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Run button */}
-      <div className="space-y-2">
-        <Button
-          size="lg"
-          className="w-full"
-          onClick={runAllStages}
-          disabled={isRunning}
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="size-4 mr-2 animate-spin" />
-              Syncing...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="size-4 mr-2" />
-              Run Sync
-            </>
-          )}
-        </Button>
-        {isRunning && (
-          <p className="text-xs text-center text-muted-foreground">
-            Running stages sequentially — do not close this page.
-          </p>
-        )}
+        </div>
       </div>
     </div>
   );

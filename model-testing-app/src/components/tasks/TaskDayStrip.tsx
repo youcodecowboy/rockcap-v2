@@ -1,6 +1,8 @@
 'use client';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { IconButton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 
 interface TaskDayStripProps {
   dateCounts: Record<string, number> | undefined;
@@ -9,6 +11,8 @@ interface TaskDayStripProps {
   weekOffset: number;
   onWeekChange: (offset: number) => void;
 }
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 function getDayInfo(offset: number) {
   const date = new Date();
@@ -33,6 +37,7 @@ export function getWeekRange(weekOffset: number) {
 }
 
 export default function TaskDayStrip({ dateCounts, selectedDate, onSelectDate, weekOffset, onWeekChange }: TaskDayStripProps) {
+  const colors = useColors();
   const startOffset = weekOffset * 7;
   const days = Array.from({ length: 7 }, (_, i) => getDayInfo(startOffset + i));
 
@@ -44,26 +49,21 @@ export default function TaskDayStrip({ dateCounts, selectedDate, onSelectDate, w
     : `${firstDay.dayNum} ${firstDay.monthShort} – ${lastDay.dayNum} ${lastDay.monthShort}`;
 
   const todayIso = new Date().toISOString().split('T')[0];
+  const accent = colors.accent.blue;
 
   return (
     <div>
       {/* Week navigation header */}
       <div className="flex items-center justify-between mb-2">
-        <button
-          onClick={() => onWeekChange(weekOffset - 1)}
-          className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--m-border)] bg-white text-[var(--m-text-secondary)] active:bg-[var(--m-bg-subtle)]"
-          aria-label="Previous week"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <span className="text-xs font-semibold text-[var(--m-text-primary)]">{weekLabel}</span>
-        <button
-          onClick={() => onWeekChange(weekOffset + 1)}
-          className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--m-border)] bg-white text-[var(--m-text-secondary)] active:bg-[var(--m-bg-subtle)]"
-          aria-label="Next week"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        <IconButton label="Previous week" onClick={() => onWeekChange(weekOffset - 1)}>
+          <ChevronLeft size={16} />
+        </IconButton>
+        <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.05em', fontWeight: 500, color: colors.text.primary }}>
+          {weekLabel}
+        </span>
+        <IconButton label="Next week" onClick={() => onWeekChange(weekOffset + 1)}>
+          <ChevronRight size={16} />
+        </IconButton>
       </div>
 
       {/* Day cards */}
@@ -77,38 +77,80 @@ export default function TaskDayStrip({ dateCounts, selectedDate, onSelectDate, w
             <button
               key={day.iso}
               onClick={() => onSelectDate(isSelected ? null : day.iso)}
-              className={`flex-1 flex flex-col items-center py-2 rounded-lg transition-colors relative ${
-                isSelected
-                  ? 'bg-[var(--m-accent)] text-white shadow-sm'
+              className="flex-1 flex flex-col items-center relative"
+              style={{
+                padding: '8px 0',
+                borderRadius: 4,
+                cursor: 'pointer',
+                transition: 'background 100ms linear',
+                background: isSelected ? accent : colors.bg.card,
+                border: isSelected
+                  ? `1px solid ${accent}`
                   : isToday
-                  ? 'bg-white border-2 border-[var(--m-accent)]'
-                  : 'bg-white border border-[var(--m-border)]'
-              }`}
+                  ? `2px solid ${accent}`
+                  : `1px solid ${colors.border.default}`,
+              }}
             >
               {/* Today label */}
               {isToday && !isSelected && (
-                <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-white bg-[var(--m-accent)] px-1.5 rounded-full leading-[14px]">
+                <span
+                  className="absolute left-1/2 -translate-x-1/2"
+                  style={{
+                    top: -6,
+                    fontFamily: MONO,
+                    fontSize: 8,
+                    fontWeight: 600,
+                    letterSpacing: '0.05em',
+                    color: '#ffffff',
+                    background: accent,
+                    padding: '0 6px',
+                    borderRadius: 999,
+                    lineHeight: '14px',
+                  }}
+                >
                   TODAY
                 </span>
               )}
-              <span className={`text-[10px] ${
-                isSelected ? 'opacity-80' : isToday ? 'text-[var(--m-accent)] font-medium' : 'text-[var(--m-text-tertiary)]'
-              }`}>
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  letterSpacing: '0.04em',
+                  color: isSelected ? 'rgba(255,255,255,0.85)' : isToday ? accent : colors.text.muted,
+                  fontWeight: isToday && !isSelected ? 500 : 400,
+                }}
+              >
                 {day.dayShort}
               </span>
-              <span className={`text-sm font-bold ${
-                isSelected ? '' : isToday ? 'text-[var(--m-accent)]' : 'text-[var(--m-text-primary)]'
-              }`}>
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: isSelected ? '#ffffff' : isToday ? accent : colors.text.primary,
+                }}
+              >
                 {day.dayNum}
               </span>
-              {/* Task count card */}
-              <div className={`mt-1 min-w-[20px] px-1 py-0.5 rounded text-center text-[11px] font-semibold leading-none ${
-                isSelected
-                  ? count > 0 ? 'bg-white/20 text-white' : 'text-white/40'
-                  : count > 0
-                  ? 'bg-[var(--m-accent-subtle)] text-[var(--m-accent)]'
-                  : 'text-[var(--m-text-placeholder)]'
-              }`}>
+              {/* Task count */}
+              <div
+                style={{
+                  marginTop: 4,
+                  minWidth: 20,
+                  padding: '1px 4px',
+                  borderRadius: 3,
+                  textAlign: 'center',
+                  fontFamily: MONO,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  lineHeight: 1.2,
+                  background: isSelected
+                    ? count > 0 ? 'rgba(255,255,255,0.2)' : 'transparent'
+                    : count > 0 ? `${accent}20` : 'transparent',
+                  color: isSelected
+                    ? count > 0 ? '#ffffff' : 'rgba(255,255,255,0.4)'
+                    : count > 0 ? accent : colors.text.dim,
+                }}
+              >
                 {count}
               </div>
             </button>
@@ -120,7 +162,18 @@ export default function TaskDayStrip({ dateCounts, selectedDate, onSelectDate, w
       {weekOffset !== 0 && (
         <button
           onClick={() => onWeekChange(0)}
-          className="mt-1.5 w-full text-center text-[11px] text-[var(--m-accent)] font-medium py-1"
+          className="mt-1.5 w-full text-center"
+          style={{
+            fontFamily: MONO,
+            fontSize: 11,
+            letterSpacing: '0.04em',
+            color: accent,
+            fontWeight: 500,
+            padding: '4px 0',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+          }}
         >
           ← Back to this week
         </button>

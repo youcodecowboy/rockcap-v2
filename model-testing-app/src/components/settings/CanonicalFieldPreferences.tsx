@@ -1,24 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Eye, EyeOff, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { ChevronDown, ChevronRight, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Panel, Button, IconButton, Field, Input, Select, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   CLIENT_CANONICAL_FIELDS,
   PROJECT_CANONICAL_FIELDS,
@@ -50,6 +35,7 @@ export default function CanonicalFieldPreferences({
   preferences,
   onSave,
 }: CanonicalFieldPreferencesProps) {
+  const colors = useColors();
   const canonicalFields = entityType === 'client' ? CLIENT_CANONICAL_FIELDS : PROJECT_CANONICAL_FIELDS;
 
   const [hiddenFields, setHiddenFields] = useState<string[]>(preferences?.hiddenFields || []);
@@ -168,64 +154,65 @@ export default function CanonicalFieldPreferences({
   const categories = Object.keys(groupedFields);
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Summary */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-900">Field Configuration</p>
-            <p className="text-xs text-gray-500 mt-1">
-              {Object.keys(canonicalFields).length} standard fields, {customFields.length} custom fields
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+      <Panel title="Field Configuration">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <p style={{ fontSize: 11, color: colors.text.muted }}>
+            {Object.keys(canonicalFields).length} standard fields, {customFields.length} custom fields
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {hiddenFields.length > 0 && (
-              <Badge variant="outline" className="bg-gray-100 text-gray-700">
-                {hiddenFields.length} hidden
-              </Badge>
+              <StatusPill label={`${hiddenFields.length} hidden`} tone={colors.text.muted} />
             )}
             {Object.keys(customLabels).length > 0 && (
-              <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                {Object.keys(customLabels).length} renamed
-              </Badge>
+              <StatusPill label={`${Object.keys(customLabels).length} renamed`} tone={colors.accent.blue} />
             )}
           </div>
         </div>
-      </div>
+      </Panel>
 
       {/* Field Categories */}
-      <div className="space-y-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {categories.map((category) => {
           const fields = groupedFields[category];
           const hiddenCount = fields.filter(f => hiddenFields.includes(f.path)).length;
           const isExpanded = expandedCategories.includes(category);
 
           return (
-            <Collapsible key={category} open={isExpanded} onOpenChange={() => toggleCategory(category)}>
-              <CollapsibleTrigger asChild>
-                <button className="flex items-center justify-between w-full p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors text-left">
-                  <div className="flex items-center gap-2">
-                    {isExpanded ? (
-                      <ChevronDown className="w-4 h-4 text-gray-500" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-gray-500" />
-                    )}
-                    <span className="font-medium text-sm text-gray-900">
-                      {categoryLabels[category] || category}
-                    </span>
-                    <Badge variant="secondary" className="text-xs">
-                      {fields.length}
-                    </Badge>
-                  </div>
-                  {hiddenCount > 0 && (
-                    <Badge variant="outline" className="text-xs bg-gray-100">
-                      {hiddenCount} hidden
-                    </Badge>
+            <div key={category}>
+              <button
+                onClick={() => toggleCategory(category)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  padding: '10px 14px',
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {isExpanded ? (
+                    <ChevronDown style={{ width: 16, height: 16, color: colors.text.muted }} />
+                  ) : (
+                    <ChevronRight style={{ width: 16, height: 16, color: colors.text.muted }} />
                   )}
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="mt-2 space-y-2 pl-6">
+                  <span style={{ fontWeight: 500, fontSize: 13, color: colors.text.primary }}>
+                    {categoryLabels[category] || category}
+                  </span>
+                  <StatusPill label={String(fields.length)} tone={colors.text.muted} />
+                </span>
+                {hiddenCount > 0 && (
+                  <StatusPill label={`${hiddenCount} hidden`} tone={colors.text.muted} />
+                )}
+              </button>
+              {isExpanded && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 24 }}>
                   {fields.map(({ path, config }) => {
                     const isHidden = hiddenFields.includes(path);
                     const hasCustomLabel = customLabels[path];
@@ -234,22 +221,30 @@ export default function CanonicalFieldPreferences({
                     return (
                       <div
                         key={path}
-                        className={`flex items-center justify-between p-2 rounded-lg ${
-                          isHidden ? 'bg-gray-50 opacity-60' : 'bg-white border'
-                        }`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: 8,
+                          borderRadius: 4,
+                          background: colors.bg.card,
+                          border: `1px solid ${colors.border.default}`,
+                          opacity: isHidden ? 0.6 : 1,
+                        }}
                       >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <Switch
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                          <input
+                            type="checkbox"
                             checked={!isHidden}
-                            onCheckedChange={() => toggleFieldVisibility(path)}
+                            onChange={() => toggleFieldVisibility(path)}
+                            style={{ width: 16, height: 16, cursor: 'pointer', accentColor: colors.accent.blue }}
                           />
-                          <div className="flex-1 min-w-0">
+                          <div style={{ flex: 1, minWidth: 0 }}>
                             {editingLabel === path ? (
-                              <div className="flex items-center gap-2">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <Input
                                   value={editingLabelValue}
                                   onChange={(e) => setEditingLabelValue(e.target.value)}
-                                  className="h-7 text-sm"
                                   placeholder={config.label}
                                   autoFocus
                                   onKeyDown={(e) => {
@@ -257,176 +252,146 @@ export default function CanonicalFieldPreferences({
                                     if (e.key === 'Escape') cancelEditingLabel();
                                   }}
                                 />
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 w-7 p-0"
-                                  onClick={() => saveCustomLabel(path)}
-                                >
-                                  <Check className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 w-7 p-0"
-                                  onClick={cancelEditingLabel}
-                                >
-                                  <X className="w-3 h-3" />
-                                </Button>
+                                <IconButton label="Save" onClick={() => saveCustomLabel(path)}>
+                                  <Check style={{ width: 12, height: 12 }} />
+                                </IconButton>
+                                <IconButton label="Cancel" onClick={cancelEditingLabel}>
+                                  <X style={{ width: 12, height: 12 }} />
+                                </IconButton>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <span className={`text-sm ${isHidden ? 'text-gray-400' : 'text-gray-900'}`}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 13, color: isHidden ? colors.text.dim : colors.text.primary }}>
                                   {displayLabel}
                                 </span>
                                 {hasCustomLabel && (
-                                  <Badge variant="outline" className="text-[10px] px-1">
-                                    custom
-                                  </Badge>
+                                  <StatusPill label="custom" tone={colors.accent.purple} />
                                 )}
                               </div>
                             )}
                             {config.description && !editingLabel && (
-                              <p className="text-xs text-gray-400 truncate">{config.description}</p>
+                              <p style={{ fontSize: 11, color: colors.text.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{config.description}</p>
                             )}
                           </div>
                         </div>
                         {editingLabel !== path && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
-                            onClick={() => startEditingLabel(path, config.label)}
-                          >
-                            <Edit2 className="w-3 h-3 text-gray-400" />
-                          </Button>
+                          <IconButton label="Edit label" onClick={() => startEditingLabel(path, config.label)}>
+                            <Edit2 style={{ width: 12, height: 12, color: colors.text.dim }} />
+                          </IconButton>
                         )}
                       </div>
                     );
                   })}
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
+              )}
+            </div>
           );
         })}
       </div>
 
       {/* Custom Fields Section */}
-      <div className="space-y-3 pt-4 border-t">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-900">Custom Fields</h3>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowAddCustom(!showAddCustom)}
-          >
-            <Plus className="w-4 h-4 mr-1" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 16, borderTop: `1px solid ${colors.border.default}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>Custom Fields</h3>
+          <Button size="sm" variant="secondary" onClick={() => setShowAddCustom(!showAddCustom)}>
+            <Plus style={{ width: 14, height: 14 }} />
             Add Field
           </Button>
         </div>
 
         {showAddCustom && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Field Name *</Label>
+          <Panel accent={colors.accent.blue}>
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+              <Field label="Field Name *">
                 <Input
                   value={newField.label || ''}
                   onChange={(e) => setNewField(prev => ({ ...prev, label: e.target.value }))}
                   placeholder="e.g., Custom Metric"
                 />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Category *</Label>
+              </Field>
+              <Field label="Category *">
                 <Input
                   value={newField.category || ''}
                   onChange={(e) => setNewField(prev => ({ ...prev, category: e.target.value }))}
                   placeholder="e.g., custom or financial"
                 />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Field Type</Label>
+              </Field>
+              <Field label="Field Type">
                 <Select
                   value={newField.type || 'string'}
-                  onValueChange={(value) => setNewField(prev => ({ ...prev, type: value as FieldType }))}
+                  onChange={(e) => setNewField(prev => ({ ...prev, type: e.target.value as FieldType }))}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="string">Text</SelectItem>
-                    <SelectItem value="number">Number</SelectItem>
-                    <SelectItem value="currency">Currency</SelectItem>
-                    <SelectItem value="date">Date</SelectItem>
-                    <SelectItem value="percentage">Percentage</SelectItem>
-                    <SelectItem value="boolean">Yes/No</SelectItem>
-                  </SelectContent>
+                  <option value="string">Text</option>
+                  <option value="number">Number</option>
+                  <option value="currency">Currency</option>
+                  <option value="date">Date</option>
+                  <option value="percentage">Percentage</option>
+                  <option value="boolean">Yes/No</option>
                 </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Description</Label>
+              </Field>
+              <Field label="Description">
                 <Input
                   value={newField.description || ''}
                   onChange={(e) => setNewField(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Optional description"
                 />
-              </div>
+              </Field>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={() => setShowAddCustom(false)}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <Button size="sm" variant="secondary" onClick={() => setShowAddCustom(false)}>
                 Cancel
               </Button>
               <Button
                 size="sm"
+                variant="primary"
                 onClick={addCustomField}
                 disabled={!newField.label?.trim() || !newField.category?.trim()}
               >
                 Add Field
               </Button>
             </div>
-          </div>
+          </Panel>
         )}
 
         {customFields.length > 0 ? (
-          <div className="space-y-2">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {customFields.map((field) => (
               <div
                 key={field.id}
-                className="flex items-center justify-between p-2 bg-white rounded-lg border"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 8,
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                }}
               >
-                <div className="flex items-center gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-900">{field.label}</span>
-                      <Badge variant="outline" className="text-[10px]">{field.type}</Badge>
-                      <Badge variant="secondary" className="text-[10px]">{field.category}</Badge>
-                    </div>
-                    {field.description && (
-                      <p className="text-xs text-gray-400">{field.description}</p>
-                    )}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: colors.text.primary }}>{field.label}</span>
+                    <StatusPill label={field.type} tone={colors.text.muted} />
+                    <StatusPill label={field.category} tone={colors.accent.indigo} />
                   </div>
+                  {field.description && (
+                    <p style={{ fontSize: 11, color: colors.text.dim }}>{field.description}</p>
+                  )}
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => removeCustomField(field.id)}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </Button>
+                <IconButton label="Remove field" onClick={() => removeCustomField(field.id)}>
+                  <Trash2 style={{ width: 12, height: 12, color: colors.accent.red }} />
+                </IconButton>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-500 text-center py-4">
-            No custom fields added yet
-          </p>
+          <EmptyState title="No custom fields added yet" />
         )}
       </div>
 
       {/* Save Button */}
-      <div className="flex justify-end pt-4 border-t">
-        <Button onClick={handleSave}>Save Field Preferences</Button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: `1px solid ${colors.border.default}` }}>
+        <Button variant="primary" onClick={handleSave}>Save Field Preferences</Button>
       </div>
     </div>
   );

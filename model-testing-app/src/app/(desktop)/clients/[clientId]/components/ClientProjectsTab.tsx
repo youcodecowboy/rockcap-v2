@@ -5,31 +5,29 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Panel,
+  DataTable,
+  type Column,
+  StatusPill,
+  EmptyState,
+  Button,
+  Modal,
+  Field,
+  Input,
+  projectStatusTone,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   FolderKanban,
   Plus,
   Search,
-  Calendar,
-  ChevronRight,
-  Briefcase,
-  FileText,
-  Building2,
   Trash2,
   ArrowLeft,
 } from 'lucide-react';
 import { useDocumentsByProject } from '@/lib/documentStorage';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface ClientProjectsTabProps {
   clientId: Id<"clients">;
@@ -42,6 +40,7 @@ export default function ClientProjectsTab({
   clientName,
   projects,
 }: ClientProjectsTabProps) {
+  const colors = useColors();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -82,11 +81,11 @@ export default function ClientProjectsTab({
         projectShortcode: newProjectShortcode.trim() || undefined,
         clientRoles: [{ clientId: clientId, role: 'primary' }],
       });
-      
+
       setShowCreateDialog(false);
       setNewProjectName('');
       setNewProjectShortcode('');
-      
+
       // Navigate to the new project
       router.push(`/clients/${clientId}/projects/${projectId}`);
     } catch (error) {
@@ -97,179 +96,198 @@ export default function ClientProjectsTab({
     }
   };
 
-  const getStatusBadge = (status?: string) => {
-    switch (status) {
-      case 'active':
-        return <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>;
-      case 'completed':
-        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Completed</Badge>;
-      case 'on-hold':
-        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">On Hold</Badge>;
-      case 'cancelled':
-        return <Badge className="bg-red-100 text-red-800 border-red-200">Cancelled</Badge>;
-      case 'inactive':
-        return <Badge className="bg-gray-100 text-gray-800 border-gray-200">Inactive</Badge>;
-      default:
-        return <Badge variant="outline">{status || 'Unknown'}</Badge>;
-    }
+  // Docs count is fetched per-project via a hook; a tiny cell component keeps
+  // the hook call legal (one per row) while feeding the count into the table.
+  const DocsCount = ({ projectId }: { projectId: Id<"projects"> }) => {
+    const documents = useDocumentsByProject(projectId) || [];
+    return <>{documents.length}</>;
   };
 
-  const ProjectCard = ({ project, isDeleted }: { project: any; isDeleted?: boolean }) => {
-    const documents = useDocumentsByProject(project._id) || [];
+  const fmtLoan = (amount?: number) =>
+    typeof amount === 'number'
+      ? `£${amount.toLocaleString('en-GB')}`
+      : '—';
 
-    return (
-      <Card
-        className={`hover:shadow-md transition-shadow cursor-pointer ${isDeleted ? 'opacity-60' : ''}`}
-        onClick={() => router.push(`/clients/${clientId}/projects/${project._id}`)}
-      >
-        <CardContent className="p-4">
-          <div className="flex items-start gap-4">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-              project.status === 'active' ? 'bg-purple-100' : 'bg-gray-100'
-            }`}>
-              <Briefcase className={`w-6 h-6 ${
-                project.status === 'active' ? 'text-purple-600' : 'text-gray-500'
-              }`} />
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="font-semibold text-foreground truncate">{project.name}</h3>
-                {getStatusBadge(project.status)}
-              </div>
-              
-              {project.projectShortcode && (
-                <p className="text-sm text-muted-foreground font-mono mt-0.5">{project.projectShortcode}</p>
-              )}
-              
-              {project.description && (
-                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{project.description}</p>
-              )}
-              
-              <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <FileText className="w-4 h-4" />
-                  {documents.length} documents
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-4 h-4" />
-                  {new Date(project.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-            </div>
+  const fmtDate = (iso?: string) =>
+    iso ? new Date(iso).toLocaleDateString('en-GB') : '—';
 
-            <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
+  const columns: Column<any>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (p) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+          <span style={{ fontWeight: 500, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {p.name}
+          </span>
+          {p.projectShortcode && (
+            <span style={{ fontFamily: MONO, fontSize: 9, color: colors.text.muted }}>
+              {p.projectShortcode}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'stage',
+      header: 'Stage',
+      width: 120,
+      render: (p) => (
+        <StatusPill label={p.status || 'unknown'} tone={projectStatusTone(p.status, colors)} />
+      ),
+    },
+    {
+      key: 'loan',
+      header: 'Loan amount',
+      mono: true,
+      align: 'right',
+      width: 140,
+      render: (p) => fmtLoan(p.loanAmount),
+    },
+    {
+      key: 'docs',
+      header: 'Docs',
+      align: 'right',
+      width: 70,
+      render: (p) => <DocsCount projectId={p._id} />,
+    },
+    {
+      key: 'activity',
+      header: 'Last activity',
+      mono: true,
+      align: 'right',
+      width: 120,
+      render: (p) => fmtDate(p.lastActivityDate ?? p.createdAt),
+    },
+  ];
+
+  const goToProject = (p: any) => router.push(`/clients/${clientId}/projects/${p._id}`);
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flex: 1,
+            maxWidth: 360,
+            padding: '0 10px',
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 4,
+          }}
+        >
+          <Search size={14} color={colors.text.muted} style={{ flexShrink: 0 }} />
+          <input
             placeholder="Search projects..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            style={{
+              flex: 1,
+              padding: '7px 0',
+              fontSize: 12,
+              color: colors.text.primary,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+            }}
           />
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
-          <Plus className="w-4 h-4" />
+        <Button variant="primary" accent={colors.entityTypes.project} onClick={() => setShowCreateDialog(true)}>
+          <Plus size={14} />
           New Project
         </Button>
       </div>
 
       {/* Projects */}
       {showDeleted ? (
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Deleted Projects ({deletedProjects?.length ?? 0})
-            </h3>
-            {deletedProjects && deletedProjects.length > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {deletedProjects.map((project: any) => (
-                  <ProjectCard key={project._id} project={project} isDeleted />
-                ))}
-              </div>
-            ) : (
-              <div className="bg-card rounded-lg border border-border p-12 text-center">
-                <Trash2 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">No deleted projects</h3>
-              </div>
-            )}
-          </div>
-        </div>
+        <Panel title={`Deleted Projects (${deletedProjects?.length ?? 0})`}>
+          <DataTable
+            rows={deletedProjects ?? []}
+            getRowKey={(p) => p._id}
+            onRowClick={goToProject}
+            columns={columns}
+            empty={
+              <EmptyState
+                icon={<Trash2 size={28} />}
+                title="No deleted projects"
+              />
+            }
+          />
+        </Panel>
       ) : filteredProjects.length === 0 ? (
-        <div className="bg-card rounded-lg border border-border p-12 text-center">
-          <FolderKanban className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">
-            {searchQuery ? 'No projects found' : 'No projects yet'}
-          </h3>
-          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-            {searchQuery
+        <EmptyState
+          icon={<FolderKanban size={32} />}
+          title={searchQuery ? 'No projects found' : 'No projects yet'}
+          body={
+            searchQuery
               ? 'Try adjusting your search terms'
-              : `Create your first project for ${clientName} to get started.`}
-          </p>
-          {!searchQuery && (
-            <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Create Project
-            </Button>
-          )}
-        </div>
+              : `Create your first project for ${clientName} to get started.`
+          }
+          action={
+            !searchQuery ? (
+              <Button variant="primary" accent={colors.entityTypes.project} onClick={() => setShowCreateDialog(true)}>
+                <Plus size={14} />
+                Create Project
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* Active Projects */}
           {activeProjects.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Active Projects ({activeProjects.length})
-              </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {activeProjects.map((project: any) => (
-                  <ProjectCard key={project._id} project={project} />
-                ))}
-              </div>
-            </div>
+            <Panel title={`Active Projects (${activeProjects.length})`} accent={colors.entityTypes.project} padded={false}>
+              <DataTable
+                rows={activeProjects}
+                getRowKey={(p) => p._id}
+                onRowClick={goToProject}
+                columns={columns}
+              />
+            </Panel>
           )}
 
           {/* Other Projects */}
           {otherProjects.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Other Projects ({otherProjects.length})
-              </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {otherProjects.map((project: any) => (
-                  <ProjectCard key={project._id} project={project} />
-                ))}
-              </div>
-            </div>
+            <Panel title={`Other Projects (${otherProjects.length})`} padded={false}>
+              <DataTable
+                rows={otherProjects}
+                getRowKey={(p) => p._id}
+                onRowClick={goToProject}
+                columns={columns}
+              />
+            </Panel>
           )}
         </div>
       )}
 
       {/* Show Deleted Toggle */}
       {(deletedProjectsCount ?? 0) > 0 && (
-        <div className="mt-4">
+        <div>
           <button
             onClick={() => setShowDeleted(!showDeleted)}
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              color: colors.text.muted,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+            }}
           >
             {showDeleted ? (
               <>
-                <ArrowLeft className="w-3 h-3" />
+                <ArrowLeft size={12} />
                 Back to active projects
               </>
             ) : (
               <>
-                <Trash2 className="w-3 h-3" />
+                <Trash2 size={12} />
                 Show deleted ({deletedProjectsCount})
               </>
             )}
@@ -277,48 +295,15 @@ export default function ClientProjectsTab({
         </div>
       )}
 
-      {/* Create Project Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FolderKanban className="w-5 h-5" />
-              Create New Project
-            </DialogTitle>
-            <DialogDescription>
-              Create a new project for {clientName}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">
-                Project Name <span className="text-red-500">*</span>
-              </label>
-              <Input
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="e.g., Wimbledon Development Phase 2"
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">
-                Project Shortcode
-              </label>
-              <Input
-                value={newProjectShortcode}
-                onChange={(e) => setNewProjectShortcode(e.target.value.toUpperCase().slice(0, 10))}
-                placeholder="e.g., WIMBDEV2"
-                maxLength={10}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Max 10 characters. Used for document naming.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
+      {/* Create Project Modal */}
+      <Modal
+        open={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
+        title="Create New Project"
+        footer={
+          <>
             <Button
-              variant="outline"
+              variant="secondary"
               onClick={() => {
                 setShowCreateDialog(false);
                 setNewProjectName('');
@@ -329,14 +314,38 @@ export default function ClientProjectsTab({
               Cancel
             </Button>
             <Button
+              variant="primary"
+              accent={colors.entityTypes.project}
               onClick={handleCreateProject}
               disabled={!newProjectName.trim() || isCreating}
             >
               {isCreating ? 'Creating...' : 'Create Project'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 11, color: colors.text.muted }}>
+            Create a new project for {clientName}
+          </div>
+          <Field label="Project Name">
+            <Input
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              placeholder="e.g., Wimbledon Development Phase 2"
+              autoFocus
+            />
+          </Field>
+          <Field label="Project Shortcode" hint="Max 10 characters. Used for document naming.">
+            <Input
+              value={newProjectShortcode}
+              onChange={(e) => setNewProjectShortcode(e.target.value.toUpperCase().slice(0, 10))}
+              placeholder="e.g., WIMBDEV2"
+              maxLength={10}
+            />
+          </Field>
+        </div>
+      </Modal>
     </div>
   );
 }

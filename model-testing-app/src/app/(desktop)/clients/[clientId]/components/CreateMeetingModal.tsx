@@ -4,19 +4,11 @@ import { useState, useCallback, useRef } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
+import { useColors } from '@/lib/useColors';
+import { Modal, Button, StatusPill, FlagChip } from '@/components/layouts';
 import {
   Loader2,
   Upload,
-  FileText,
   Sparkles,
   Calendar,
   Users,
@@ -61,6 +53,27 @@ interface ExtractionResult {
   confidence: number;
 }
 
+function FieldLabel({ children, colors }: { children: React.ReactNode; colors: ReturnType<typeof useColors>; }) {
+  return (
+    <div
+      style={{
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: 9,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: colors.text.muted,
+        fontWeight: 500,
+        marginBottom: 4,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function CreateMeetingModal({
   isOpen,
   onClose,
@@ -68,6 +81,7 @@ export default function CreateMeetingModal({
   clientName,
   onMeetingCreated,
 }: CreateMeetingModalProps) {
+  const colors = useColors();
   const [isExtracting, setIsExtracting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [extractionError, setExtractionError] = useState<string | null>(null);
@@ -203,252 +217,273 @@ export default function CreateMeetingModal({
     }
   };
 
+  const errorBlock = extractionError ? (
+    <div
+      className="p-3 rounded flex items-center gap-2"
+      style={{ background: `${colors.accent.red}15`, border: `1px solid ${colors.accent.red}40`, fontSize: 13, color: colors.accent.red }}
+    >
+      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+      {extractionError}
+    </div>
+  ) : null;
+
+  const footer = !extractionResult ? (
+    <Button
+      variant="primary"
+      accent={colors.entityTypes.client}
+      onClick={handleExtract}
+      disabled={isExtracting || !selectedFile}
+    >
+      {isExtracting ? (
+        <>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Extracting Meeting Data...
+        </>
+      ) : (
+        <>
+          <Sparkles className="w-4 h-4" />
+          Extract Meeting Data
+        </>
+      )}
+    </Button>
+  ) : (
+    <>
+      <Button variant="secondary" onClick={handleClose}>Cancel</Button>
+      <Button
+        variant="primary"
+        accent={colors.entityTypes.client}
+        onClick={handleSaveExtraction}
+        disabled={isSaving}
+      >
+        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Meeting'}
+      </Button>
+    </>
+  );
+
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Add Meeting for {clientName}</DialogTitle>
-        </DialogHeader>
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      title={`Add Meeting for ${clientName}`}
+      width={640}
+      footer={footer}
+    >
+      {!extractionResult ? (
+        <div className="space-y-4">
+          {/* Drag & Drop Zone */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={() => fileInputRef.current?.click()}
+            className="p-8 text-center cursor-pointer transition-colors"
+            style={{
+              border: `2px dashed ${
+                isDragging ? colors.accent.blue : selectedFile ? colors.entityTypes.client : colors.border.mid
+              }`,
+              borderRadius: 4,
+              background: isDragging
+                ? `${colors.accent.blue}10`
+                : selectedFile
+                  ? `${colors.entityTypes.client}10`
+                  : colors.bg.card,
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.txt,.md"
+              onChange={handleFileInputChange}
+              className="hidden"
+            />
 
-        <div className="flex-1 overflow-y-auto mt-4">
-          {!extractionResult ? (
-            <div className="space-y-4">
-              {/* Drag & Drop Zone */}
-              <div
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onClick={() => fileInputRef.current?.click()}
-                className={`
-                  border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                  ${isDragging
-                    ? 'border-blue-500 bg-blue-50'
-                    : selectedFile
-                      ? 'border-green-500 bg-green-50'
-                      : 'border-border hover:border-border hover:bg-muted'
-                  }
-                `}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.doc,.docx,.txt,.md"
-                  onChange={handleFileInputChange}
-                  className="hidden"
-                />
-
-                {selectedFile ? (
-                  <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center mb-3">
-                      <File className="w-6 h-6 text-green-600" />
-                    </div>
-                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {(selectedFile.size / 1024).toFixed(1)} KB
-                    </p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedFile(null);
-                      }}
-                      className="mt-2 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Remove
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center mb-3">
-                      <Upload className="w-6 h-6 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm font-medium text-foreground">
-                      Drop your meeting notes here
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      or click to browse files
-                    </p>
-                    <div className="flex gap-2 mt-3">
-                      <Badge variant="outline" className="text-xs">PDF</Badge>
-                      <Badge variant="outline" className="text-xs">DOCX</Badge>
-                      <Badge variant="outline" className="text-xs">TXT</Badge>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {extractionError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  {extractionError}
+            {selectedFile ? (
+              <div className="flex flex-col items-center">
+                <div
+                  className="w-12 h-12 rounded flex items-center justify-center mb-3"
+                  style={{ background: `${colors.entityTypes.client}15`, color: colors.entityTypes.client }}
+                >
+                  <File className="w-6 h-6" />
                 </div>
-              )}
+                <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{selectedFile.name}</p>
+                <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </p>
+                <div className="mt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedFile(null);
+                    }}
+                  >
+                    <X className="w-3 h-3" />
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <div
+                  className="w-12 h-12 rounded flex items-center justify-center mb-3"
+                  style={{ background: colors.bg.cardAlt, color: colors.text.muted }}
+                >
+                  <Upload className="w-6 h-6" />
+                </div>
+                <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
+                  Drop your meeting notes here
+                </p>
+                <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+                  or click to browse files
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <FlagChip label="PDF" severity="info" />
+                  <FlagChip label="DOCX" severity="info" />
+                  <FlagChip label="TXT" severity="info" />
+                </div>
+              </div>
+            )}
+          </div>
 
-              <div className="bg-muted rounded-lg p-4">
-                <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-blue-500" />
-                  AI Extraction
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Our AI will automatically extract meeting details including attendees,
-                  key discussion points, decisions made, and action items from your document.
+          {errorBlock}
+
+          <div className="p-4 rounded" style={{ background: colors.bg.cardAlt }}>
+            <h4
+              className="mb-2 flex items-center gap-2"
+              style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}
+            >
+              <Sparkles className="w-4 h-4" style={{ color: colors.accent.blue }} />
+              AI Extraction
+            </h4>
+            <p style={{ fontSize: 11, color: colors.text.muted, lineHeight: 1.6 }}>
+              Our AI will automatically extract meeting details including attendees,
+              key discussion points, decisions made, and action items from your document.
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* Extraction Preview */
+        <div className="space-y-4">
+          <div
+            className="p-3 rounded flex items-center justify-between"
+            style={{ background: `${colors.entityTypes.client}15`, border: `1px solid ${colors.entityTypes.client}40` }}
+          >
+            <span style={{ fontSize: 13, color: colors.entityTypes.client }}>
+              Extracted with {Math.round(extractionResult.confidence * 100)}% confidence
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setExtractionResult(null)}>
+              Re-extract
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <FieldLabel colors={colors}>Title</FieldLabel>
+              <p style={{ fontWeight: 500, color: colors.text.primary }}>{extractionResult.title}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel colors={colors}>Date</FieldLabel>
+                <p className="flex items-center gap-1" style={{ color: colors.text.primary }}>
+                  <Calendar className="w-4 h-4" style={{ color: colors.text.muted }} />
+                  {new Date(extractionResult.meetingDate).toLocaleDateString()}
                 </p>
               </div>
-
-              <Button
-                onClick={handleExtract}
-                disabled={isExtracting || !selectedFile}
-                className="w-full"
-              >
-                {isExtracting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Extracting Meeting Data...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Extract Meeting Data
-                  </>
-                )}
-              </Button>
+              <div>
+                <FieldLabel colors={colors}>Type</FieldLabel>
+                <StatusPill label={extractionResult.meetingType || 'other'} tone={colors.accent.blue} />
+              </div>
             </div>
-          ) : (
-            /* Extraction Preview */
-            <div className="space-y-4">
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
-                <span className="text-sm text-green-700">
-                  Extracted with {Math.round(extractionResult.confidence * 100)}% confidence
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setExtractionResult(null)}
-                  className="text-xs"
-                >
-                  Re-extract
-                </Button>
+
+            <div>
+              <FieldLabel colors={colors}>Summary</FieldLabel>
+              <p style={{ fontSize: 13, color: colors.text.primary }}>{extractionResult.summary}</p>
+            </div>
+
+            <div>
+              <FieldLabel colors={colors}>
+                <Users className="w-3 h-3" />
+                Attendees ({extractionResult.attendees.length})
+              </FieldLabel>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {extractionResult.attendees.map((a, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      padding: '2px 8px',
+                      background: colors.bg.cardAlt,
+                      border: `1px solid ${colors.border.light}`,
+                      borderRadius: 2,
+                      fontSize: 11,
+                      color: colors.text.secondary,
+                    }}
+                  >
+                    {a.name}
+                    {a.role && <span style={{ color: colors.text.dim, marginLeft: 4 }}>({a.role})</span>}
+                  </span>
+                ))}
               </div>
+            </div>
 
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-xs text-muted-foreground">Title</Label>
-                  <p className="font-medium">{extractionResult.title}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Date</Label>
-                    <p className="flex items-center gap-1">
-                      <Calendar className="w-4 h-4 text-muted-foreground" />
-                      {new Date(extractionResult.meetingDate).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Type</Label>
-                    <Badge variant="secondary">{extractionResult.meetingType || 'other'}</Badge>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-muted-foreground">Summary</Label>
-                  <p className="text-sm text-foreground">{extractionResult.summary}</p>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Users className="w-3 h-3" />
-                    Attendees ({extractionResult.attendees.length})
-                  </Label>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {extractionResult.attendees.map((a, i) => (
-                      <Badge key={i} variant="outline" className="text-xs">
-                        {a.name}
-                        {a.role && <span className="text-muted-foreground ml-1">({a.role})</span>}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                {extractionResult.keyPoints.length > 0 && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Key Points ({extractionResult.keyPoints.length})</Label>
-                    <ul className="text-sm text-foreground list-disc list-inside mt-1">
-                      {extractionResult.keyPoints.slice(0, 3).map((p, i) => (
-                        <li key={i}>{p}</li>
-                      ))}
-                      {extractionResult.keyPoints.length > 3 && (
-                        <li className="text-muted-foreground">+{extractionResult.keyPoints.length - 3} more</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                {extractionResult.decisions.length > 0 && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Decisions ({extractionResult.decisions.length})</Label>
-                    <ul className="text-sm text-foreground list-disc list-inside mt-1">
-                      {extractionResult.decisions.slice(0, 3).map((d, i) => (
-                        <li key={i}>{d}</li>
-                      ))}
-                      {extractionResult.decisions.length > 3 && (
-                        <li className="text-muted-foreground">+{extractionResult.decisions.length - 3} more</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                {extractionResult.actionItems.length > 0 && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                      <CheckSquare className="w-3 h-3" />
-                      Action Items ({extractionResult.actionItems.length})
-                    </Label>
-                    <ul className="text-sm text-foreground mt-1 space-y-1">
-                      {extractionResult.actionItems.slice(0, 3).map((item, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <CheckSquare className="w-3 h-3 mt-1 text-amber-500" />
-                          <span>
-                            {item.description}
-                            {item.assignee && (
-                              <span className="text-muted-foreground ml-1">- {item.assignee}</span>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                      {extractionResult.actionItems.length > 3 && (
-                        <li className="text-muted-foreground ml-5">+{extractionResult.actionItems.length - 3} more</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              {extractionError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  {extractionError}
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" onClick={handleClose} className="flex-1">
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveExtraction} disabled={isSaving} className="flex-1">
-                  {isSaving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    'Save Meeting'
+            {extractionResult.keyPoints.length > 0 && (
+              <div>
+                <FieldLabel colors={colors}>Key Points ({extractionResult.keyPoints.length})</FieldLabel>
+                <ul style={{ fontSize: 13, color: colors.text.primary, margin: '4px 0 0 0', paddingLeft: 18 }}>
+                  {extractionResult.keyPoints.slice(0, 3).map((p, i) => (
+                    <li key={i}>{p}</li>
+                  ))}
+                  {extractionResult.keyPoints.length > 3 && (
+                    <li style={{ color: colors.text.muted }}>+{extractionResult.keyPoints.length - 3} more</li>
                   )}
-                </Button>
+                </ul>
               </div>
-            </div>
-          )}
+            )}
+
+            {extractionResult.decisions.length > 0 && (
+              <div>
+                <FieldLabel colors={colors}>Decisions ({extractionResult.decisions.length})</FieldLabel>
+                <ul style={{ fontSize: 13, color: colors.text.primary, margin: '4px 0 0 0', paddingLeft: 18 }}>
+                  {extractionResult.decisions.slice(0, 3).map((d, i) => (
+                    <li key={i}>{d}</li>
+                  ))}
+                  {extractionResult.decisions.length > 3 && (
+                    <li style={{ color: colors.text.muted }}>+{extractionResult.decisions.length - 3} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {extractionResult.actionItems.length > 0 && (
+              <div>
+                <FieldLabel colors={colors}>
+                  <CheckSquare className="w-3 h-3" />
+                  Action Items ({extractionResult.actionItems.length})
+                </FieldLabel>
+                <ul style={{ fontSize: 13, color: colors.text.primary, margin: '4px 0 0 0', listStyle: 'none', padding: 0 }} className="space-y-1">
+                  {extractionResult.actionItems.slice(0, 3).map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <CheckSquare className="w-3 h-3 mt-1" style={{ color: colors.accent.yellow }} />
+                      <span>
+                        {item.description}
+                        {item.assignee && (
+                          <span style={{ color: colors.text.muted, marginLeft: 4 }}>- {item.assignee}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                  {extractionResult.actionItems.length > 3 && (
+                    <li style={{ color: colors.text.muted, marginLeft: 20 }}>+{extractionResult.actionItems.length - 3} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {errorBlock}
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+    </Modal>
   );
 }

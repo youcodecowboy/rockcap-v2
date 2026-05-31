@@ -3,7 +3,8 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useDocument, useGetFileUrl } from '@/lib/documentStorage';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
+import { Button, IconButton, EmptyState, SkeletonCard } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useMutation } from 'convex/react';
@@ -15,6 +16,7 @@ import ReaderSidebar from './components/ReaderSidebar';
 const XlsxPreview = dynamic(() => import('@/components/preview/XlsxPreview'), { ssr: false });
 
 export default function DocumentReaderPage() {
+  const colors = useColors();
   const params = useParams();
   const router = useRouter();
   const documentId = params.documentId as string;
@@ -63,9 +65,9 @@ export default function DocumentReaderPage() {
 
   if (!document) {
     return (
-      <div className="h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-          <p className="text-gray-500">Loading document...</p>
+      <div className="h-screen flex items-center justify-center" style={{ background: colors.bg.light, padding: 24 }}>
+        <div style={{ width: 360 }}>
+          <SkeletonCard lines={4} />
         </div>
       </div>
     );
@@ -95,49 +97,38 @@ export default function DocumentReaderPage() {
     }
   };
 
-  const getFileIcon = () => {
-    if (isPDF) return <FileText className="w-16 h-16 text-red-500" />;
-    if (isImage) return <FileImage className="w-16 h-16 text-blue-500" />;
-    return <File className="w-16 h-16 text-gray-500" />;
+  const getFileIcon = (size = 64) => {
+    if (isPDF) return <FileText style={{ width: size, height: size, color: colors.accent.red }} />;
+    if (isImage) return <FileImage style={{ width: size, height: size, color: colors.accent.blue }} />;
+    return <File style={{ width: size, height: size, color: colors.text.muted }} />;
   };
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col">
+    <div className="h-screen flex flex-col" style={{ background: colors.bg.light }}>
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
+      <div
+        className="flex items-center justify-between shrink-0"
+        style={{ background: colors.bg.card, borderBottom: `1px solid ${colors.border.default}`, padding: '12px 16px' }}
+      >
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleBack}
-            className="gap-2"
-          >
+          <Button variant="ghost" size="sm" onClick={handleBack}>
             <ArrowLeft className="w-4 h-4" />
             Back
           </Button>
-          <div className="h-6 w-px bg-gray-200" />
-          <h1 className="text-sm font-medium text-gray-900 truncate max-w-md">
+          <div style={{ height: 24, width: 1, background: colors.border.default }} />
+          <h1
+            className="truncate"
+            style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, maxWidth: 420 }}
+          >
             {document.displayName || document.documentCode || document.fileName}
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleOpenInNewTab}
-            disabled={!fileUrl}
-            className="gap-2"
-          >
+          <Button variant="secondary" size="sm" onClick={handleOpenInNewTab} disabled={!fileUrl}>
             <ExternalLink className="w-4 h-4" />
             Open in New Tab
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownload}
-            disabled={!fileUrl}
-            className="gap-2"
-          >
+          <Button variant="secondary" size="sm" onClick={handleDownload} disabled={!fileUrl}>
             <Download className="w-4 h-4" />
             Download
           </Button>
@@ -147,13 +138,13 @@ export default function DocumentReaderPage() {
       {/* Main content - 75/25 split */}
       <div className="flex-1 flex overflow-hidden">
         {/* Document Preview - 75% */}
-        <div className="w-3/4 bg-gray-200 overflow-auto p-4">
+        <div className="w-3/4 overflow-auto" style={{ background: colors.bg.cardAlt, padding: 16 }}>
           {!fileUrl ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
                 {getFileIcon()}
-                <p className="text-gray-500 mt-4">File content not available.</p>
-                <p className="text-sm text-gray-400 mt-1">
+                <p style={{ color: colors.text.muted, marginTop: 16 }}>File content not available.</p>
+                <p style={{ fontSize: 12, color: colors.text.dim, marginTop: 4 }}>
                   This document may have been uploaded before file content storage was implemented.
                 </p>
               </div>
@@ -161,26 +152,30 @@ export default function DocumentReaderPage() {
           ) : isPDF ? (
             <iframe
               src={`${fileUrl}#toolbar=1&navpanes=0`}
-              className="w-full h-full bg-white rounded-lg shadow-sm border border-gray-300"
+              className="w-full h-full"
+              style={{ background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.mid}` }}
               title={document.fileName}
             />
           ) : isXlsx ? (
             <div className="h-full flex flex-col">
               {/* Zoom toolbar */}
-              <div className="flex items-center justify-center gap-1 mb-2 flex-shrink-0">
-                <Button variant="outline" size="sm" onClick={xlsxZoomOut} className="h-8 w-8 p-0" aria-label="Zoom out">
+              <div className="flex items-center justify-center gap-1 flex-shrink-0" style={{ marginBottom: 8 }}>
+                <IconButton label="Zoom out" onClick={xlsxZoomOut}>
                   <ZoomOut className="w-4 h-4" />
-                </Button>
-                <span className="text-xs text-gray-600 w-12 text-center font-medium tabular-nums">
+                </IconButton>
+                <span
+                  className="text-center tabular-nums"
+                  style={{ fontSize: 11, color: colors.text.muted, width: 48, fontWeight: 500 }}
+                >
                   {Math.round(xlsxZoom * 100)}%
                 </span>
-                <Button variant="outline" size="sm" onClick={xlsxZoomIn} className="h-8 w-8 p-0" aria-label="Zoom in">
+                <IconButton label="Zoom in" onClick={xlsxZoomIn}>
                   <ZoomIn className="w-4 h-4" />
-                </Button>
+                </IconButton>
                 {xlsxZoom !== 1 && (
-                  <Button variant="outline" size="sm" onClick={xlsxZoomReset} className="h-8 w-8 p-0 ml-1" aria-label="Reset zoom">
+                  <IconButton label="Reset zoom" onClick={xlsxZoomReset} style={{ marginLeft: 4 }}>
                     <RotateCcw className="w-3.5 h-3.5" />
-                  </Button>
+                  </IconButton>
                 )}
               </div>
               {/* Scrollable canvas — flex flex-col so XlsxPreview's outer
@@ -201,30 +196,31 @@ export default function DocumentReaderPage() {
               <img
                 src={fileUrl}
                 alt={document.fileName}
-                className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                className="max-w-full max-h-full object-contain"
+                style={{ borderRadius: 4 }}
               />
             </div>
           ) : (
             <div className="h-full flex items-center justify-center">
-              <div className="text-center bg-white p-8 rounded-lg shadow-sm border border-gray-200">
-                {getFileIcon()}
-                <p className="text-gray-700 mt-4 font-medium">{document.fileName}</p>
-                <p className="text-sm text-gray-500 mt-2">
-                  This file type cannot be previewed in the browser.
-                </p>
-                <Button
-                  onClick={handleDownload}
-                  className="mt-4"
-                >
-                  Download to View
-                </Button>
-              </div>
+              <EmptyState
+                icon={getFileIcon(40)}
+                title={document.fileName}
+                body="This file type cannot be previewed in the browser."
+                action={
+                  <Button variant="primary" onClick={handleDownload}>
+                    Download to View
+                  </Button>
+                }
+              />
             </div>
           )}
         </div>
 
         {/* Sidebar - 25% */}
-        <div className="w-1/4 bg-white border-l border-gray-200 overflow-hidden flex flex-col">
+        <div
+          className="w-1/4 overflow-hidden flex flex-col"
+          style={{ background: colors.bg.card, borderLeft: `1px solid ${colors.border.default}` }}
+        >
           <ReaderSidebar document={document} documentId={docId} />
         </div>
       </div>

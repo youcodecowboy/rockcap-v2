@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { IconButton, FlagChip, Textarea, Field } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +29,7 @@ interface DocumentNoteCardProps {
 }
 
 export default function DocumentNoteCard({ note }: DocumentNoteCardProps) {
+  const colors = useColors();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(note.content);
   const [isSaving, setIsSaving] = useState(false);
@@ -89,69 +90,101 @@ export default function DocumentNoteCard({ note }: DocumentNoteCardProps) {
 
   if (isEditing) {
     return (
-      <div className="p-3 rounded border bg-white border-gray-200">
-        <textarea
-          value={editContent}
-          onChange={(e) => setEditContent(e.target.value)}
-          className="w-full text-sm min-h-[60px] p-2 border border-gray-200 rounded bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          autoFocus
-        />
-        <div className="flex items-center justify-end gap-2 mt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCancel}
-            className="h-6 w-6 p-0"
-          >
+      <div
+        style={{
+          padding: 12,
+          borderRadius: 4,
+          background: colors.bg.card,
+          border: `1px solid ${colors.border.default}`,
+        }}
+      >
+        <Field>
+          <Textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            style={{ minHeight: 60 }}
+            autoFocus
+          />
+        </Field>
+        <div className="flex items-center justify-end gap-1" style={{ marginTop: 8 }}>
+          <IconButton label="Cancel" onClick={handleCancel}>
             <X className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+          </IconButton>
+          <IconButton
+            label="Save"
             onClick={handleSave}
             disabled={isSaving || !editContent.trim()}
-            className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
+            style={{ color: colors.accent.green }}
           >
             <Check className="w-4 h-4" />
-          </Button>
+          </IconButton>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-3 rounded border bg-white border-gray-200 group">
+    <div
+      className="group"
+      style={{
+        padding: 12,
+        borderRadius: 4,
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.default}`,
+      }}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
+          <div
+            className="flex items-center justify-center"
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              background: colors.bg.cardAlt,
+              fontSize: 10,
+              fontWeight: 500,
+              color: colors.text.muted,
+            }}
+          >
             {note.createdByInitials}
           </div>
-          <span className="text-xs text-gray-500">{formatDate(note.createdAt)}</span>
+          <span style={{ fontSize: 11, color: colors.text.muted }}>{formatDate(note.createdAt)}</span>
         </div>
         <div className="flex items-center gap-1">
           {note.addedToIntelligence && (
-            <Badge variant="outline" className="text-[10px] h-5 px-1.5 gap-1 bg-blue-50 text-blue-700 border-blue-200">
-              <Brain className="w-3 h-3" />
-              {note.intelligenceTarget === 'project' ? 'Project' : 'Client'}
-            </Badge>
+            <FlagChip
+              label={note.intelligenceTarget === 'project' ? 'Project' : 'Client'}
+              severity="info"
+            />
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              <button
+                aria-label="Note actions"
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 24,
+                  height: 24,
+                  background: 'transparent',
+                  border: 'none',
+                  color: colors.text.muted,
+                  cursor: 'pointer',
+                }}
               >
                 <MoreVertical className="w-4 h-4" />
-              </Button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setIsEditing(true)}>
                 <Pencil className="w-4 h-4 mr-2" />
                 Edit
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleDelete} className="text-red-600">
+              <DropdownMenuItem onClick={handleDelete} style={{ color: colors.accent.red }}>
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete
               </DropdownMenuItem>
@@ -161,7 +194,7 @@ export default function DocumentNoteCard({ note }: DocumentNoteCardProps) {
       </div>
 
       {/* Content */}
-      <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+      <p className="whitespace-pre-wrap" style={{ fontSize: 12, color: colors.text.secondary }}>{note.content}</p>
     </div>
   );
 }

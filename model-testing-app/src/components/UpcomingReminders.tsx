@@ -2,12 +2,13 @@
 
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Panel, EmptyState, SkeletonText } from '@/components/layouts';
 import { Clock, Calendar } from 'lucide-react';
 import Link from 'next/link';
-import { Id } from '../../convex/_generated/dataModel';
+import { useColors } from '@/lib/useColors';
 
 export default function UpcomingReminders() {
+  const colors = useColors();
   const reminders = useQuery(api.reminders.getUpcoming, { days: 7, limit: 3 });
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
@@ -37,116 +38,102 @@ export default function UpcomingReminders() {
 
   if (reminders === undefined) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="w-5 h-5" />
-            Upcoming Reminders
-          </CardTitle>
-          <CardDescription>Your reminders for the next 7 days</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-4 text-gray-500">Loading...</div>
-        </CardContent>
-      </Card>
+      <Panel title="Upcoming Reminders" accent={colors.accent.orange}>
+        <SkeletonText lines={3} />
+      </Panel>
     );
   }
 
   if (reminders.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="w-5 h-5" />
-            Upcoming Reminders
-          </CardTitle>
-          <CardDescription>Your reminders for the next 7 days</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-4 text-gray-500">
-            <p className="mb-2">No upcoming reminders</p>
+      <Panel title="Upcoming Reminders" accent={colors.accent.orange}>
+        <EmptyState
+          icon={<Clock size={28} />}
+          title="No upcoming reminders"
+          body="Your reminders for the next 7 days will appear here."
+          action={
             <Link
               href="/reminders"
-              className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+              style={{ fontSize: 12, color: colors.accent.blue, textDecoration: 'none' }}
             >
               Create a reminder
             </Link>
-          </div>
-        </CardContent>
-      </Card>
+          }
+        />
+      </Panel>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Clock className="w-5 h-5" />
-          Upcoming Reminders
-        </CardTitle>
-        <CardDescription>Your reminders for the next 7 days</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {reminders.map((reminder) => {
-            const clientName = reminder.clientId
-              ? clients?.find(c => c._id === reminder.clientId)?.name
-              : undefined;
-            const projectName = reminder.projectId
-              ? projects?.find(p => p._id === reminder.projectId)?.name
-              : undefined;
+    <Panel title="Upcoming Reminders" accent={colors.accent.orange}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {reminders.map((reminder) => {
+          const clientName = reminder.clientId
+            ? clients?.find(c => c._id === reminder.clientId)?.name
+            : undefined;
+          const projectName = reminder.projectId
+            ? projects?.find(p => p._id === reminder.projectId)?.name
+            : undefined;
 
-            return (
-              <div
-                key={reminder._id}
-                className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-gray-900 mb-1">{reminder.title}</h3>
-                    {reminder.description && (
-                      <p className="text-sm text-gray-600 mb-1 line-clamp-1">
-                        {reminder.description}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        <span>{formatTime(reminder.scheduledFor)}</span>
-                      </div>
-                      {clientName && (
-                        <Link
-                          href={`/clients/${reminder.clientId}`}
-                          className="hover:text-blue-600 hover:underline"
-                        >
-                          {clientName}
-                        </Link>
-                      )}
-                      {projectName && (
-                        <Link
-                          href={`/projects/${reminder.projectId}`}
-                          className="hover:text-blue-600 hover:underline"
-                        >
-                          {projectName}
-                        </Link>
-                      )}
+          return (
+            <div
+              key={reminder._id}
+              style={{
+                padding: 12,
+                background: colors.bg.light,
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, marginBottom: 4 }}>
+                    {reminder.title}
+                  </h3>
+                  {reminder.description && (
+                    <p
+                      style={{ fontSize: 12, color: colors.text.muted, marginBottom: 4 }}
+                      className="line-clamp-1"
+                    >
+                      {reminder.description}
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: colors.text.muted }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Calendar size={12} />
+                      <span>{formatTime(reminder.scheduledFor)}</span>
                     </div>
+                    {clientName && (
+                      <Link
+                        href={`/clients/${reminder.clientId}`}
+                        style={{ color: colors.accent.blue, textDecoration: 'none' }}
+                      >
+                        {clientName}
+                      </Link>
+                    )}
+                    {projectName && (
+                      <Link
+                        href={`/projects/${reminder.projectId}`}
+                        style={{ color: colors.accent.blue, textDecoration: 'none' }}
+                      >
+                        {projectName}
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <Link
-            href="/reminders"
-            className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
-          >
-            View all reminders →
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${colors.border.default}` }}>
+        <Link
+          href="/reminders"
+          style={{ fontSize: 12, color: colors.accent.blue, textDecoration: 'none' }}
+        >
+          View all reminders →
+        </Link>
+      </div>
+    </Panel>
   );
 }
-

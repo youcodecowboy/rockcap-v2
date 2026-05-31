@@ -3,22 +3,48 @@
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import {
   FileText,
   ExternalLink,
   AlertTriangle,
   History,
-  Loader2,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { StatusPill, Skeleton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
 import {
   getConfidenceColor,
   getConfidenceLabel,
   getRelativeTimeString,
-  CONFIDENCE_BADGE_STYLES,
+  type ConfidenceLevel,
   type EvidenceEntry,
 } from './intelligenceUtils';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+function confidenceTone(level: ConfidenceLevel, colors: ColorPalette): string {
+  if (level === 'green') return colors.accent.green;
+  if (level === 'amber') return colors.accent.orange;
+  return colors.accent.red;
+}
+
+function SectionHeading({ children, color }: { children: ReactNode; color: string }) {
+  return (
+    <h4
+      style={{
+        fontFamily: MONO,
+        fontSize: 9,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        fontWeight: 500,
+        color,
+      }}
+    >
+      {children}
+    </h4>
+  );
+}
 
 interface IntelligenceCardExpandedProps {
   evidenceTrail: EvidenceEntry[];
@@ -35,6 +61,8 @@ export function IntelligenceCardExpanded({
   projectId,
   fieldPath,
 }: IntelligenceCardExpandedProps) {
+  const colors = useColors();
+
   // Fetch document analysis on-demand when expanded
   const document = useQuery(
     api.documents.get,
@@ -63,75 +91,65 @@ export function IntelligenceCardExpanded({
   );
 
   return (
-    <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3 space-y-4 text-sm">
+    <div
+      className="px-4 py-3 space-y-4"
+      style={{ borderTop: `1px solid ${colors.border.light}`, background: colors.bg.light }}
+    >
       {/* Source Document Panel */}
       {sourceDocumentId && (
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            Source Document
-          </h4>
+          <SectionHeading color={colors.text.muted}>Source Document</SectionHeading>
           {document === undefined ? (
-            <div className="flex items-center gap-2 text-gray-400 py-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Loading document...</span>
+            <div className="py-2">
+              <Skeleton width="60%" height={14} />
             </div>
           ) : document === null ? (
-            <p className="text-xs text-gray-400 italic">Document not found</p>
+            <p style={{ fontSize: 11, fontStyle: 'italic', color: colors.text.dim }}>Document not found</p>
           ) : (
-            <div className="bg-white rounded-md border border-gray-200 p-3 space-y-2">
+            <div
+              className="p-3 space-y-2"
+              style={{ background: colors.bg.card, border: `1px solid ${colors.border.default}`, borderRadius: 4 }}
+            >
               <div className="flex items-start justify-between gap-2">
                 <a
                   href={`/docs/${sourceDocumentId}/`}
-                  className="flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:text-blue-900 hover:underline"
+                  className="flex items-center gap-1.5"
+                  style={{ fontSize: 13, fontWeight: 500, color: colors.accent.blue }}
                 >
-                  <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                  <FileText size={14} style={{ flexShrink: 0 }} />
                   <span className="truncate">{document.name || document.fileName}</span>
-                  <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-60" />
+                  <ExternalLink size={12} style={{ flexShrink: 0, opacity: 0.6 }} />
                 </a>
               </div>
 
               {/* Category tags */}
               {document.category && (
                 <div className="flex items-center gap-1.5">
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-1.5 py-0"
-                  >
-                    {document.category}
-                  </Badge>
+                  <StatusPill label={document.category} tone={colors.text.muted} />
                   {document.fileTypeDetected && document.fileTypeDetected !== document.category && (
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] px-1.5 py-0 text-gray-500"
-                    >
-                      {document.fileTypeDetected}
-                    </Badge>
+                    <StatusPill label={document.fileTypeDetected} tone={colors.text.dim} />
                   )}
                 </div>
               )}
 
               {/* Executive summary */}
               {document.documentAnalysis?.executiveSummary && (
-                <p className="text-xs text-gray-600 leading-relaxed">
+                <p style={{ fontSize: 11, lineHeight: 1.5, color: colors.text.secondary }}>
                   {document.documentAnalysis.executiveSummary}
                 </p>
               )}
 
               {/* Extraction metadata */}
-              <div className="flex items-center gap-3 text-[11px] text-gray-400 pt-1">
-                {currentEntry?.pageNumber && (
-                  <span>Page {currentEntry.pageNumber}</span>
-                )}
+              <div
+                className="flex items-center gap-3 pt-1"
+                style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}
+              >
+                {currentEntry?.pageNumber && <span>Page {currentEntry.pageNumber}</span>}
                 {currentEntry?.extractedAt && (
-                  <span>
-                    Extracted{' '}
-                    {getRelativeTimeString(currentEntry.extractedAt as string)}
-                  </span>
+                  <span>Extracted {getRelativeTimeString(currentEntry.extractedAt as string)}</span>
                 )}
                 {currentEntry?.method && (
-                  <span className="capitalize">
-                    {(currentEntry.method as string).replace(/_/g, ' ')}
-                  </span>
+                  <span className="capitalize">{(currentEntry.method as string).replace(/_/g, ' ')}</span>
                 )}
               </div>
             </div>
@@ -142,10 +160,19 @@ export function IntelligenceCardExpanded({
       {/* Evidence Panel */}
       {currentEntry?.sourceText && (
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            Evidence
-          </h4>
-          <blockquote className="border-l-4 border-l-indigo-400 bg-indigo-50/50 pl-3 pr-2 py-2 text-xs text-gray-700 italic leading-relaxed rounded-r-md">
+          <SectionHeading color={colors.text.muted}>Evidence</SectionHeading>
+          <blockquote
+            className="pl-3 pr-2 py-2"
+            style={{
+              borderLeft: `3px solid ${colors.accent.indigo}`,
+              background: `${colors.accent.indigo}10`,
+              borderRadius: '0 4px 4px 0',
+              fontSize: 11,
+              fontStyle: 'italic',
+              lineHeight: 1.5,
+              color: colors.text.secondary,
+            }}
+          >
             &ldquo;{String(currentEntry.sourceText)}&rdquo;
           </blockquote>
         </div>
@@ -155,38 +182,30 @@ export function IntelligenceCardExpanded({
       {conflicts.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            <h4 className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
-              Conflicting Values
-            </h4>
+            <AlertTriangle size={14} style={{ color: colors.accent.orange }} />
+            <SectionHeading color={colors.accent.orange}>Conflicting Values</SectionHeading>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2">
+          <div
+            className="p-3 space-y-2"
+            style={{ background: `${colors.accent.orange}10`, border: `1px solid ${colors.accent.orange}40`, borderRadius: 4 }}
+          >
             {conflicts.map((conflict, idx) => {
               const level = getConfidenceColor(conflict.confidence);
               return (
-                <div
-                  key={idx}
-                  className="flex items-start justify-between gap-2 text-xs"
-                >
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium text-gray-900">
+                <div key={idx} className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0" style={{ fontSize: 11 }}>
+                    <span style={{ fontWeight: 500, color: colors.text.primary }}>
                       {String(conflict.value)}
                     </span>
                     {conflict.sourceDocumentName && (
-                      <span className="text-gray-500 ml-1.5">
+                      <span style={{ marginLeft: 6, color: colors.text.muted }}>
                         from {String(conflict.sourceDocumentName)}
                       </span>
                     )}
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'text-[10px] px-1.5 py-0 flex-shrink-0',
-                      CONFIDENCE_BADGE_STYLES[level]
-                    )}
-                  >
-                    {getConfidenceLabel(conflict.confidence)}
-                  </Badge>
+                  <span style={{ flexShrink: 0 }}>
+                    <StatusPill label={getConfidenceLabel(conflict.confidence)} tone={confidenceTone(level, colors)} />
+                  </span>
                 </div>
               );
             })}
@@ -198,22 +217,21 @@ export function IntelligenceCardExpanded({
       {priorValues.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
-            <History className="w-3.5 h-3.5 text-gray-400" />
-            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-              Prior Values
-            </h4>
+            <History size={14} style={{ color: colors.text.dim }} />
+            <SectionHeading color={colors.text.dim}>Prior Values</SectionHeading>
           </div>
           <div className="space-y-1.5">
             {priorValues.map((prior, idx) => (
               <div
                 key={idx}
-                className="flex items-center justify-between gap-2 text-xs opacity-60"
+                className="flex items-center justify-between gap-2"
+                style={{ fontSize: 11, opacity: 0.6 }}
               >
-                <span className="line-through text-gray-600">
+                <span style={{ textDecoration: 'line-through', color: colors.text.secondary }}>
                   {String(prior.value)}
                 </span>
                 {prior.sourceDocumentName && (
-                  <span className="text-gray-400 truncate max-w-[150px]">
+                  <span className="truncate max-w-[150px]" style={{ color: colors.text.dim }}>
                     {String(prior.sourceDocumentName)}
                   </span>
                 )}

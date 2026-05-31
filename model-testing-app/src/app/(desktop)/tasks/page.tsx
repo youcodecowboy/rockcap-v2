@@ -4,15 +4,27 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { Plus } from 'lucide-react';
-import TaskSummaryPills from '@/components/tasks/TaskSummaryPills';
+import { Plus, CheckSquare } from 'lucide-react';
+import {
+  Button,
+  StatTile,
+  Panel,
+  TabStrip,
+  EmptyState,
+  Modal,
+  Skeleton,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import TaskDayStrip, { getWeekRange } from '@/components/tasks/TaskDayStrip';
 import TaskListItem from '@/components/tasks/TaskListItem';
 import TaskDetailSheet from '@/components/tasks/TaskDetailSheet';
 import TaskCreationFlow from '@/components/tasks/TaskCreationFlow';
 import { groupTasksByDate } from '@/components/tasks/groupTasksByDate';
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 export default function TasksPage() {
+  const colors = useColors();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<Id<'tasks'> | null>(null);
   const [showCreation, setShowCreation] = useState(false);
@@ -66,26 +78,62 @@ export default function TasksPage() {
     return groupTasksByDate(displayTasks);
   }, [displayTasks, selectedDate]);
 
+  const summaryTiles: { key: keyof NonNullable<typeof metrics>; label: string; accent: string }[] = [
+    { key: 'todo', label: 'To Do', accent: colors.accent.blue },
+    { key: 'inProgress', label: 'In Progress', accent: colors.accent.blue },
+    { key: 'meetingsToday', label: 'Meetings', accent: colors.accent.indigo },
+    { key: 'completed', label: 'Completed', accent: colors.accent.green },
+    { key: 'overdue', label: 'Overdue', accent: colors.accent.red },
+    { key: 'dueToday', label: 'Due Today', accent: colors.accent.yellow },
+  ];
+
+  const groupLabelStyle = {
+    fontFamily: MONO,
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    fontWeight: 500,
+    marginBottom: 8,
+  };
+
   return (
-    <div className="bg-gray-50 min-h-screen p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div style={{ minHeight: '100vh', background: colors.bg.base, padding: 32 }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
-            <p className="mt-1 text-gray-500">Manage your tasks and reminders</p>
+            <h1 style={{ fontSize: 28, fontWeight: 300, color: colors.text.primary }}>Tasks</h1>
+            <p style={{ marginTop: 4, fontSize: 13, color: colors.text.muted }}>Manage your tasks and reminders</p>
           </div>
-          <button
-            onClick={() => setShowCreation(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
+          <Button variant="primary" accent={colors.accent.blue} onClick={() => setShowCreation(true)}>
+            <Plus size={14} />
             New Task
-          </button>
+          </Button>
         </div>
 
-        {/* Summary + Day Strip */}
-        <TaskSummaryPills metrics={metrics} />
+        {/* Summary tiles */}
+        {metrics && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 1,
+              background: colors.border.light,
+              border: `1px solid ${colors.border.light}`,
+            }}
+          >
+            {summaryTiles.map(tile => (
+              <StatTile
+                key={tile.key}
+                label={tile.label}
+                value={metrics[tile.key]}
+                accent={tile.accent}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Day Strip */}
         <TaskDayStrip
           dateCounts={dateCounts}
           selectedDate={selectedDate}
@@ -95,39 +143,40 @@ export default function TasksPage() {
         />
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-gray-200">
-          {(['tasks', 'reminders'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab
-                  ? 'border-blue-700 text-blue-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab === 'tasks' ? 'Tasks' : 'Reminders'}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={[
+            { id: 'tasks', label: 'Tasks' },
+            { id: 'reminders', label: 'Reminders' },
+          ]}
+          activeTab={activeTab}
+          onChange={(id) => setActiveTab(id as 'tasks' | 'reminders')}
+          entityType="deal"
+        />
 
         {/* Two-panel layout */}
         {activeTab === 'tasks' ? (
-          <div className="flex gap-6">
+          <div style={{ display: 'flex', gap: 24 }}>
             {/* Left: task list */}
-            <div className="flex-1 min-w-0">
-              {displayTasks.length === 0 ? (
-                <div className="text-center py-12 text-sm text-gray-400">
-                  {selectedDate ? 'No tasks due on this day' : 'No tasks yet'}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {tasks === undefined ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} height={56} />
+                  ))}
                 </div>
+              ) : displayTasks.length === 0 ? (
+                <EmptyState
+                  icon={<CheckSquare size={28} />}
+                  title={selectedDate ? 'No tasks due on this day' : 'No tasks yet'}
+                />
               ) : groupedTasks ? (
                 groupedTasks.map(group => (
-                  <div key={group.label} className="mb-5">
-                    <div className={`text-xs font-semibold uppercase tracking-wider mb-2 ${group.color}`}>
+                  <div key={group.label} style={{ marginBottom: 20 }}>
+                    <div style={{ ...groupLabelStyle, color: colors.text.muted }}>
                       {group.label}
-                      <span className="text-gray-400 font-normal ml-1.5">({group.tasks.length})</span>
+                      <span style={{ color: colors.text.dim, fontWeight: 400, marginLeft: 6 }}>({group.tasks.length})</span>
                     </div>
-                    <div className="space-y-2">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {group.tasks.map(task => (
                         <TaskListItem
                           key={task._id}
@@ -141,10 +190,8 @@ export default function TasksPage() {
                 ))
               ) : (
                 <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                    {sectionLabel}
-                  </div>
-                  <div className="space-y-2">
+                  <div style={{ ...groupLabelStyle, color: colors.text.muted }}>{sectionLabel}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {displayTasks.map(task => (
                       <TaskListItem
                         key={task._id}
@@ -159,7 +206,16 @@ export default function TasksPage() {
             </div>
 
             {/* Right: detail panel */}
-            <div className="w-[400px] flex-shrink-0 bg-white border border-gray-200 rounded-lg min-h-[400px]">
+            <div
+              style={{
+                width: 400,
+                flexShrink: 0,
+                background: colors.bg.card,
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+                minHeight: 400,
+              }}
+            >
               <TaskDetailSheet
                 taskId={selectedTaskId}
                 isOpen={true}
@@ -169,46 +225,47 @@ export default function TasksPage() {
             </div>
           </div>
         ) : (
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <p className="text-sm text-gray-500 mb-4">Your reminders</p>
-            {reminders && reminders.length > 0 ? (
-              <div className="space-y-2">
+          <Panel title="Reminders" accent={colors.accent.blue}>
+            {reminders && reminders.filter(r => r.status !== 'completed').length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {reminders.filter(r => r.status !== 'completed').map(reminder => (
-                  <div key={reminder._id} className="border border-gray-200 rounded-lg p-3">
-                    <div className="text-sm font-medium text-gray-900">{reminder.title}</div>
+                  <div
+                    key={reminder._id}
+                    style={{
+                      border: `1px solid ${colors.border.default}`,
+                      borderRadius: 4,
+                      padding: 12,
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{reminder.title}</div>
                     {reminder.description && (
-                      <div className="text-xs text-gray-500 mt-1">{reminder.description}</div>
+                      <div style={{ fontSize: 12, color: colors.text.muted, marginTop: 4 }}>{reminder.description}</div>
                     )}
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim, marginTop: 4 }}>
                       {new Date(reminder.scheduledFor).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-400">No reminders</p>
+              <EmptyState icon={<CheckSquare size={28} />} title="No reminders" />
             )}
-          </div>
+          </Panel>
         )}
       </div>
 
       {/* Creation modal */}
-      {showCreation && (
-        <>
-          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setShowCreation(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-8">
-            <div className="bg-white rounded-2xl w-[500px] h-[600px] shadow-xl overflow-hidden">
-              <TaskCreationFlow
-                onTaskCreated={(taskId) => {
-                  setShowCreation(false);
-                  setSelectedTaskId(taskId as Id<'tasks'>);
-                }}
-                onClose={() => setShowCreation(false)}
-              />
-            </div>
-          </div>
-        </>
-      )}
+      <Modal open={showCreation} onClose={() => setShowCreation(false)} title="New Task" width={500}>
+        <div style={{ height: 560 }}>
+          <TaskCreationFlow
+            onTaskCreated={(taskId) => {
+              setShowCreation(false);
+              setSelectedTaskId(taskId as Id<'tasks'>);
+            }}
+            onClose={() => setShowCreation(false)}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

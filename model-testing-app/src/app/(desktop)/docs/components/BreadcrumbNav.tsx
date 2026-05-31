@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronRight, Home, Inbox } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useColors } from '@/lib/useColors';
 
 interface BreadcrumbNavProps {
   clientName?: string;
@@ -22,12 +22,31 @@ export default function BreadcrumbNav({
   onClientClick,
   onProjectClick,
 }: BreadcrumbNavProps) {
+  const colors = useColors();
+
+  const crumbBtn = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 8px',
+    borderRadius: 4,
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 12,
+    transition: 'background 100ms linear, color 100ms linear',
+  } as const;
+
+  const sep = <ChevronRight className="w-4 h-4" style={{ color: colors.text.dim }} />;
+
   return (
-    <nav className="flex items-center gap-1 text-sm">
+    <nav className="flex items-center gap-1">
       {/* Home */}
       <button
         onClick={onHomeClick}
-        className="flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+        style={{ ...crumbBtn, color: colors.text.muted }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; e.currentTarget.style.color = colors.text.primary; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = colors.text.muted; }}
       >
         <Home className="w-4 h-4" />
         <span>Documents</span>
@@ -36,8 +55,11 @@ export default function BreadcrumbNav({
       {/* Inbox path */}
       {isInbox && (
         <>
-          <ChevronRight className="w-4 h-4 text-gray-400" />
-          <span className="flex items-center gap-1 px-2 py-1 text-gray-900 font-medium">
+          {sep}
+          <span
+            className="flex items-center gap-1"
+            style={{ padding: '4px 8px', fontSize: 12, fontWeight: 500, color: colors.text.primary }}
+          >
             <Inbox className="w-4 h-4" />
             Inbox
           </span>
@@ -47,44 +69,50 @@ export default function BreadcrumbNav({
       {/* Client */}
       {clientName && !isInbox && (
         <>
-          <ChevronRight className="w-4 h-4 text-gray-400" />
-          <button
-            onClick={onClientClick}
-            className={cn(
-              "px-2 py-1 rounded transition-colors",
-              folderName || projectName
-                ? "hover:bg-gray-100 text-gray-600 hover:text-gray-900"
-                : "text-gray-900 font-medium"
-            )}
-          >
-            {clientName}
-          </button>
+          {sep}
+          {folderName || projectName ? (
+            <button
+              onClick={onClientClick}
+              style={{ ...crumbBtn, color: colors.text.muted }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; e.currentTarget.style.color = colors.text.primary; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = colors.text.muted; }}
+            >
+              {clientName}
+            </button>
+          ) : (
+            <span style={{ padding: '4px 8px', fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+              {clientName}
+            </span>
+          )}
         </>
       )}
 
       {/* Project */}
       {projectName && (
         <>
-          <ChevronRight className="w-4 h-4 text-gray-400" />
-          <button
-            onClick={onProjectClick}
-            className={cn(
-              "px-2 py-1 rounded transition-colors",
-              folderName
-                ? "hover:bg-gray-100 text-gray-600 hover:text-gray-900"
-                : "text-gray-900 font-medium"
-            )}
-          >
-            {projectName}
-          </button>
+          {sep}
+          {folderName ? (
+            <button
+              onClick={onProjectClick}
+              style={{ ...crumbBtn, color: colors.text.muted }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; e.currentTarget.style.color = colors.text.primary; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = colors.text.muted; }}
+            >
+              {projectName}
+            </button>
+          ) : (
+            <span style={{ padding: '4px 8px', fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+              {projectName}
+            </span>
+          )}
         </>
       )}
 
       {/* Folder */}
       {folderName && (
         <>
-          <ChevronRight className="w-4 h-4 text-gray-400" />
-          <span className="px-2 py-1 text-gray-900 font-medium">
+          {sep}
+          <span style={{ padding: '4px 8px', fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
             {folderName}
           </span>
         </>

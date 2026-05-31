@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { Edit2, Check, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
+import { Button, IconButton, Input, Textarea } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface EditableFieldProps {
   value: string;
@@ -27,6 +28,7 @@ export default function EditableField({
   onSave,
   onCancel,
 }: EditableFieldProps) {
+  const colors = useColors();
   const [isEditing, setIsEditing] = useState(false);
   const [editedValue, setEditedValue] = useState(value);
 
@@ -51,20 +53,26 @@ export default function EditableField({
     }
   };
 
+  const labelStyle = {
+    fontFamily: MONO,
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    color: colors.text.muted,
+    fontWeight: 500,
+  };
+
   if (isEditing) {
     return (
       <div className={`space-y-2 ${className}`}>
-        {label && (
-          <label className="text-sm font-medium text-gray-700 block">
-            {label}
-          </label>
-        )}
+        {label && <label style={{ ...labelStyle, display: 'block' }}>{label}</label>}
         <div className="flex items-start gap-2">
           {multiline ? (
             <Textarea
               value={editedValue}
               onChange={(e) => setEditedValue(e.target.value)}
-              className="flex-1 min-h-[100px]"
+              className="flex-1"
+              style={{ minHeight: 100 }}
               placeholder={placeholder}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
@@ -90,21 +98,12 @@ export default function EditableField({
               autoFocus
             />
           )}
-          <Button
-            size="sm"
-            onClick={handleSave}
-            className="flex-shrink-0"
-          >
-            <Check className="w-4 h-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCancel}
-            className="flex-shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </Button>
+          <IconButton label="Save" onClick={handleSave} style={{ flexShrink: 0 }}>
+            <Check size={14} />
+          </IconButton>
+          <IconButton label="Cancel" onClick={handleCancel} style={{ flexShrink: 0 }}>
+            <X size={14} />
+          </IconButton>
         </div>
       </div>
     );
@@ -114,35 +113,29 @@ export default function EditableField({
     <div className={`group relative ${className}`}>
       {label && (
         <div className="flex items-center justify-between mb-1">
-          <label className="text-sm font-medium text-gray-700">
-            {label}
-          </label>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleStartEdit}
-            className="h-6 w-6 p-0"
-            title="Edit"
-          >
-            <Edit2 className="w-3 h-3 text-gray-500" />
-          </Button>
+          <label style={labelStyle}>{label}</label>
+          <IconButton label="Edit" onClick={handleStartEdit}>
+            <Edit2 size={12} />
+          </IconButton>
         </div>
       )}
-      <div className="text-sm text-gray-900 whitespace-pre-wrap relative">
-        {value || <span className="text-gray-400 italic">{placeholder || 'No content'}</span>}
+      <div
+        className="whitespace-pre-wrap relative"
+        style={{ fontSize: 13, color: colors.text.primary }}
+      >
+        {value || (
+          <span style={{ color: colors.text.dim, fontStyle: 'italic' }}>
+            {placeholder || 'No content'}
+          </span>
+        )}
         {!label && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleStartEdit}
-            className="h-6 w-6 p-0 absolute top-0 right-0"
-            title="Edit"
-          >
-            <Edit2 className="w-3 h-3 text-gray-500" />
-          </Button>
+          <span className="absolute top-0 right-0">
+            <IconButton label="Edit" onClick={handleStartEdit}>
+              <Edit2 size={12} />
+            </IconButton>
+          </span>
         )}
       </div>
     </div>
   );
 }
-

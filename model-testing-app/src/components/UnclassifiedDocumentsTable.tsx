@@ -10,17 +10,9 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { 
+import { Button, IconButton, Input, DataTable, EmptyState, type Column } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import {
   FileText,
   Eye,
   ArrowUpDown,
@@ -58,6 +50,7 @@ export default function UnclassifiedDocumentsTable({
   onFiltersChange 
 }: UnclassifiedDocumentsTableProps) {
   const router = useRouter();
+  const colors = useColors();
   const updateDocumentCode = useUpdateDocumentCode();
   const deleteDocument = useDeleteDocument();
   
@@ -146,157 +139,114 @@ export default function UnclassifiedDocumentsTable({
     await updateDocumentCode({ id, documentCode: newCode });
   };
   
-  return (
-    <div className="space-y-4">
-      {/* Table */}
-      <div className="border rounded-lg bg-white overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-gray-50 sticky top-0 z-10">
-              <TableRow>
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('code')}
-                >
-                  <div className="flex items-center gap-2">
-                    Document Code
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('fileName')}
-                >
-                  <div className="flex items-center gap-2">
-                    File Name
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('category')}
-                >
-                  <div className="flex items-center gap-2">
-                    Category
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('date')}
-                >
-                  <div className="flex items-center gap-2">
-                    Date
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
-              </TableRow>
-              
-              {/* Filter Row */}
-              {showFilters && (
-                <TableRow className="bg-gray-50 border-t">
-                  <TableCell>
-                    <Input
-                      placeholder="Filter..."
-                      value={filters.code}
-                      onChange={(e) => setFilters({...filters, code: e.target.value})}
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      placeholder="Filter..."
-                      value={filters.fileName}
-                      onChange={(e) => setFilters({...filters, fileName: e.target.value})}
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      placeholder="Filter..."
-                      value={filters.category}
-                      onChange={(e) => setFilters({...filters, category: e.target.value})}
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell></TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
-              )}
-            </TableHeader>
-            
-            <TableBody>
-              {filteredAndSorted.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12">
-                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-600 font-medium">No documents found</p>
-                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredAndSorted.map((doc) => (
-                  <TableRow 
-                    key={doc._id}
-                    className="hover:bg-gray-50"
-                  >
-                    <TableCell>
-                      <DocumentCodeEditor
-                        documentCode={doc.documentCode}
-                        fileName={doc.fileName}
-                        onSave={(newCode) => handleUpdateDocumentCode(doc._id, newCode)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs text-gray-500 truncate max-w-[300px] block" title={doc.fileName}>
-                        {doc.fileName}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-gray-600">{doc.category}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-gray-600">{formatDate(doc.uploadedAt)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => router.push(`/docs/${doc._id}`)}
-                          className="gap-1"
-                        >
-                          <Eye className="w-3 h-3" />
-                          View
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteDocument(doc._id)}
-                          className="gap-1 text-red-600 hover:text-red-700"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+  const HeaderSort = ({ label, col }: { label: string; col: SortColumn }) => (
+    <button
+      onClick={() => handleSort(col)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        font: 'inherit',
+        color: 'inherit',
+        letterSpacing: 'inherit',
+        textTransform: 'inherit',
+        padding: 0,
+      }}
+    >
+      {label}
+      <ArrowUpDown size={11} style={{ opacity: sortColumn === col ? 1 : 0.4 }} />
+    </button>
+  );
+
+  const columns: Column<UnclassifiedDocument>[] = [
+    {
+      key: 'code',
+      header: 'Document Code',
+      render: (doc) => (
+        <DocumentCodeEditor
+          documentCode={doc.documentCode}
+          fileName={doc.fileName}
+          onSave={(newCode) => handleUpdateDocumentCode(doc._id, newCode)}
+        />
+      ),
+    },
+    {
+      key: 'fileName',
+      header: 'File Name',
+      render: (doc) => (
+        <span title={doc.fileName} style={{ color: colors.text.muted, fontSize: 11 }}>
+          {doc.fileName}
+        </span>
+      ),
+    },
+    {
+      key: 'category',
+      header: 'Category',
+      render: (doc) => <span style={{ color: colors.text.secondary }}>{doc.category}</span>,
+    },
+    {
+      key: 'date',
+      header: 'Date',
+      mono: true,
+      render: (doc) => <span style={{ color: colors.text.secondary }}>{formatDate(doc.uploadedAt)}</span>,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: 120,
+      align: 'right',
+      render: (doc) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+          <Button variant="ghost" size="sm" onClick={() => router.push(`/docs/${doc._id}`)}>
+            <Eye size={12} />
+            View
+          </Button>
+          <IconButton label="Delete" onClick={() => handleDeleteDocument(doc._id)}>
+            <Trash2 size={12} style={{ color: colors.accent.red }} />
+          </IconButton>
         </div>
+      ),
+    },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Sort controls (canon DataTable headers are plain text) */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
+        <span style={{ marginRight: 4 }}>Sort:</span>
+        <HeaderSort label="Code" col="code" />
+        <HeaderSort label="File Name" col="fileName" />
+        <HeaderSort label="Category" col="category" />
+        <HeaderSort label="Date" col="date" />
       </div>
-      
+
+      {showFilters && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          <Input placeholder="Filter code..." value={filters.code} onChange={(e) => setFilters({ ...filters, code: e.target.value })} />
+          <Input placeholder="Filter file name..." value={filters.fileName} onChange={(e) => setFilters({ ...filters, fileName: e.target.value })} />
+          <Input placeholder="Filter category..." value={filters.category} onChange={(e) => setFilters({ ...filters, category: e.target.value })} />
+        </div>
+      )}
+
+      <DataTable
+        rows={filteredAndSorted}
+        getRowKey={(doc) => doc._id}
+        columns={columns}
+        empty={
+          <EmptyState
+            icon={<FileText size={32} />}
+            title="No documents found"
+            body="Try adjusting your filters"
+          />
+        }
+      />
+
       {/* Action Buttons */}
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-          className="gap-2"
-        >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+        <Button variant="secondary" size="sm" onClick={() => setShowFilters(!showFilters)}>
           {showFilters ? 'Hide Filters' : 'Show Filters'}
         </Button>
       </div>

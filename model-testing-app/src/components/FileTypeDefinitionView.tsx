@@ -3,15 +3,9 @@
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { FileText, Download, X } from 'lucide-react';
+import { Modal, Button, StatusPill, SkeletonText } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { FileText, Download } from 'lucide-react';
 
 interface FileTypeDefinitionViewProps {
   definitionId: Id<'fileTypeDefinitions'>;
@@ -22,6 +16,7 @@ export default function FileTypeDefinitionView({
   definitionId,
   onClose,
 }: FileTypeDefinitionViewProps) {
+  const colors = useColors();
   const definition = useQuery(api.fileTypeDefinitions.getById, { id: definitionId });
   const fileUrl = useQuery(
     api.fileTypeDefinitions.getFileUrl,
@@ -39,142 +34,124 @@ export default function FileTypeDefinitionView({
 
   if (!definition) {
     return (
-      <Dialog open={true} onOpenChange={onClose}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Loading File Type Definition</DialogTitle>
-          </DialogHeader>
-          <div className="text-center py-8">Loading...</div>
-        </DialogContent>
-      </Dialog>
+      <Modal open={true} onClose={onClose} title="Loading File Type Definition" width={760}>
+        <SkeletonText lines={6} />
+      </Modal>
     );
   }
 
+  const sectionHeading = { fontSize: 13, fontWeight: 600, color: colors.text.secondary, marginBottom: 8 };
+
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            {definition.fileType}
-          </DialogTitle>
-          <DialogDescription>
-            {definition.isSystemDefault && (
-              <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs mr-2">
-                System Default
+    <Modal
+      open={true}
+      onClose={onClose}
+      title={definition.fileType}
+      width={840}
+      footer={<Button variant="primary" onClick={onClose}>Close</Button>}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        {definition.isSystemDefault && (
+          <StatusPill label="System Default" tone={colors.accent.blue} />
+        )}
+        <span style={{ fontSize: 13, color: colors.text.secondary }}>
+          Category: {definition.category}
+          {definition.parentType && ` • Subtype of: ${definition.parentType}`}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Description */}
+        <div>
+          <h3 style={sectionHeading}>Description</h3>
+          <p style={{ fontSize: 13, color: colors.text.primary, whiteSpace: 'pre-wrap' }}>{definition.description}</p>
+          <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>
+            {definition.description.trim().split(/\s+/).length} words
+          </p>
+        </div>
+
+        {/* Keywords */}
+        <div>
+          <h3 style={sectionHeading}>Keywords ({definition.keywords.length})</h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {definition.keywords.map((keyword, index) => (
+              <StatusPill key={index} label={keyword} tone={colors.text.muted} />
+            ))}
+          </div>
+        </div>
+
+        {/* Identification Rules */}
+        <div>
+          <h3 style={sectionHeading}>Identification Rules ({definition.identificationRules.length})</h3>
+          <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: 0, padding: 0, listStyle: 'none' }}>
+            {definition.identificationRules.map((rule, index) => (
+              <li key={index} style={{ fontSize: 13, color: colors.text.primary, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span style={{ color: colors.text.dim, marginTop: 1 }}>•</span>
+                <span>{rule}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Category Rules */}
+        {definition.categoryRules && (
+          <div>
+            <h3 style={sectionHeading}>Category Rules</h3>
+            <p style={{ fontSize: 13, color: colors.text.primary }}>{definition.categoryRules}</p>
+          </div>
+        )}
+
+        {/* Example File */}
+        {definition.exampleFileStorageId && (
+          <div>
+            <h3 style={sectionHeading}>Example File</h3>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: 12,
+                background: colors.bg.cardAlt,
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+              }}
+            >
+              <FileText style={{ width: 20, height: 20, color: colors.text.muted }} />
+              <span style={{ fontSize: 13, color: colors.text.primary, flex: 1 }}>
+                {definition.exampleFileName || 'Example file'}
               </span>
-            )}
-            Category: {definition.category}
-            {definition.parentType && ` • Subtype of: ${definition.parentType}`}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-6 mt-4">
-          {/* Description */}
-          <div>
-            <h3 className="font-semibold text-sm text-gray-700 mb-2">Description</h3>
-            <p className="text-sm text-gray-900 whitespace-pre-wrap">{definition.description}</p>
-            <p className="text-xs text-gray-500 mt-1">
-              {definition.description.trim().split(/\s+/).length} words
-            </p>
-          </div>
-
-          {/* Keywords */}
-          <div>
-            <h3 className="font-semibold text-sm text-gray-700 mb-2">
-              Keywords ({definition.keywords.length})
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {definition.keywords.map((keyword, index) => (
-                <span
-                  key={index}
-                  className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm"
-                >
-                  {keyword}
-                </span>
-              ))}
+              <Button variant="secondary" size="sm" onClick={handleDownloadExample}>
+                <Download style={{ width: 14, height: 14 }} />
+                Download
+              </Button>
             </div>
           </div>
+        )}
 
-          {/* Identification Rules */}
-          <div>
-            <h3 className="font-semibold text-sm text-gray-700 mb-2">
-              Identification Rules ({definition.identificationRules.length})
-            </h3>
-            <ul className="space-y-2">
-              {definition.identificationRules.map((rule, index) => (
-                <li key={index} className="text-sm text-gray-900 flex items-start gap-2">
-                  <span className="text-gray-400 mt-1">•</span>
-                  <span>{rule}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Category Rules */}
-          {definition.categoryRules && (
+        {/* Metadata */}
+        <div style={{ paddingTop: 16, borderTop: `1px solid ${colors.border.default}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 13 }}>
             <div>
-              <h3 className="font-semibold text-sm text-gray-700 mb-2">Category Rules</h3>
-              <p className="text-sm text-gray-900">{definition.categoryRules}</p>
+              <span style={{ color: colors.text.muted }}>Created:</span>{' '}
+              <span style={{ color: colors.text.primary }}>
+                {new Date(definition.createdAt).toLocaleDateString()}
+              </span>
             </div>
-          )}
-
-          {/* Example File */}
-          {definition.exampleFileStorageId && (
             <div>
-              <h3 className="font-semibold text-sm text-gray-700 mb-2">Example File</h3>
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <FileText className="w-5 h-5 text-gray-600" />
-                <span className="text-sm text-gray-900 flex-1">
-                  {definition.exampleFileName || 'Example file'}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownloadExample}
-                  className="flex items-center gap-1"
-                >
-                  <Download className="w-4 h-4" />
-                  Download
-                </Button>
-              </div>
+              <span style={{ color: colors.text.muted }}>Last Updated:</span>{' '}
+              <span style={{ color: colors.text.primary }}>
+                {new Date(definition.updatedAt).toLocaleDateString()}
+              </span>
             </div>
-          )}
-
-          {/* Metadata */}
-          <div className="pt-4 border-t">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">Created:</span>{' '}
-                <span className="text-gray-900">
-                  {new Date(definition.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Last Updated:</span>{' '}
-                <span className="text-gray-900">
-                  {new Date(definition.updatedAt).toLocaleDateString()}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Status:</span>{' '}
-                <span
-                  className={`font-medium ${
-                    definition.isActive ? 'text-green-600' : 'text-gray-500'
-                  }`}
-                >
-                  {definition.isActive ? 'Active' : 'Inactive'}
-                </span>
-              </div>
+            <div>
+              <span style={{ color: colors.text.muted }}>Status:</span>{' '}
+              <span style={{ fontWeight: 500, color: definition.isActive ? colors.accent.green : colors.text.muted }}>
+                {definition.isActive ? 'Active' : 'Inactive'}
+              </span>
             </div>
           </div>
         </div>
-
-        <div className="flex justify-end mt-6">
-          <Button onClick={onClose}>Close</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </Modal>
   );
 }
-

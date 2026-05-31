@@ -5,32 +5,33 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useColors } from '@/lib/useColors';
 import {
-  Building2,
+  Panel,
+  StatTile,
+  StatusPill,
+  FlagChip,
+  EmptyState,
+  Button,
+  IconButton,
+  Input,
+  projectStatusTone,
+} from '@/components/layouts';
+import {
   Mail,
   Phone,
   Globe,
   MapPin,
   FileText,
-  FolderKanban,
   Calendar,
   ExternalLink,
   Briefcase,
   Pencil,
   CheckSquare,
   Clock,
-  AlertCircle,
   Check,
   X,
   StickyNote,
-  DollarSign,
-  User,
-  Video,
-  TrendingUp,
   ChevronRight,
 } from 'lucide-react';
 import MissingDocumentsCard from './MissingDocumentsCard';
@@ -86,6 +87,7 @@ export default function ClientOverviewTab({
   onTabChange,
 }: ClientOverviewTabProps) {
   const router = useRouter();
+  const colors = useColors();
   const [isEditingStageNote, setIsEditingStageNote] = useState(false);
   const [stageNoteValue, setStageNoteValue] = useState(client.stageNote || '');
   const [isEditingDealValue, setIsEditingDealValue] = useState(false);
@@ -184,13 +186,13 @@ export default function ClientOverviewTab({
     setIsEditingDealValue(false);
   };
 
-  // Get priority color
-  const getPriorityColor = (priority?: string) => {
+  // Get priority severity for FlagChip
+  const getPrioritySeverity = (priority?: string): 'ok' | 'info' | 'warn' => {
     switch (priority) {
-      case 'high': return 'text-red-600 bg-red-50 border-red-200';
-      case 'medium': return 'text-amber-600 bg-amber-50 border-amber-200';
-      case 'low': return 'text-green-600 bg-green-50 border-green-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'high': return 'warn';
+      case 'medium': return 'info';
+      case 'low': return 'ok';
+      default: return 'info';
     }
   };
 
@@ -210,6 +212,33 @@ export default function ClientOverviewTab({
     router.push(`/clients/${clientId}?tab=checklist`);
   };
 
+  const labelStyle = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    color: colors.text.muted,
+    fontWeight: 500,
+  };
+
+  const linkStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 13,
+    fontWeight: 500,
+    color: colors.accent.blue,
+    textDecoration: 'none',
+  };
+
+  // Reusable field for the company info grid
+  const InfoField = ({ label, children, colSpan }: { label: string; children: React.ReactNode; colSpan?: boolean }) => (
+    <div className={colSpan ? 'md:col-span-2' : undefined}>
+      <p style={{ ...labelStyle, margin: 0, marginBottom: 4 }}>{label}</p>
+      {children}
+    </div>
+  );
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       {/* Left Column - Knowledge Library */}
@@ -223,47 +252,49 @@ export default function ClientOverviewTab({
       {/* Right Column - Everything Else */}
       <div className="lg:col-span-3 space-y-4">
         {/* Stage Note - Slim Banner */}
-        <div className="bg-card rounded-lg border border-l-4 border-l-blue-500 px-4 py-2">
-          <div className="flex items-center gap-3">
-            <StickyNote className="w-4 h-4 text-blue-500 flex-shrink-0" />
+        <div
+          style={{
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderLeft: `3px solid ${colors.accent.blue}`,
+            borderRadius: 4,
+            padding: '8px 14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <StickyNote size={16} color={colors.accent.blue} style={{ flexShrink: 0 }} />
             {isEditingStageNote ? (
-              <div className="flex items-center gap-2 flex-1">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                 <Input
                   value={stageNoteValue}
                   onChange={(e) => setStageNoteValue(e.target.value)}
                   placeholder="Enter current stage/status (e.g., 'Awaiting KYC docs', 'Loan approved - closing')"
-                  className="flex-1 h-7 text-sm"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSaveStageNote();
                     if (e.key === 'Escape') handleCancelStageNote();
                   }}
                 />
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleSaveStageNote}>
-                  <Check className="w-4 h-4 text-green-600" />
-                </Button>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleCancelStageNote}>
-                  <X className="w-4 h-4 text-muted-foreground" />
-                </Button>
+                <IconButton label="Save" onClick={handleSaveStageNote}>
+                  <Check size={16} color={colors.accent.green} />
+                </IconButton>
+                <IconButton label="Cancel" onClick={handleCancelStageNote}>
+                  <X size={16} color={colors.text.muted} />
+                </IconButton>
               </div>
             ) : (
-              <div className="flex items-center gap-2 flex-1">
-                <span className="text-sm flex-1">
-                  <span className="font-semibold text-foreground">Status:</span>{' '}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <span style={{ fontSize: 13, flex: 1, color: colors.text.primary }}>
+                  <span style={{ fontWeight: 600 }}>Status:</span>{' '}
                   {client.stageNote ? (
-                    <span className="font-medium text-foreground">{client.stageNote}</span>
+                    <span style={{ fontWeight: 500 }}>{client.stageNote}</span>
                   ) : (
-                    <span className="text-muted-foreground italic">Click to add...</span>
+                    <span style={{ color: colors.text.muted, fontStyle: 'italic' }}>Click to add...</span>
                   )}
                 </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => setIsEditingStageNote(true)}
-                >
-                  <Pencil className="w-3 h-3" />
-                </Button>
+                <IconButton label="Edit status" onClick={() => setIsEditingStageNote(true)}>
+                  <Pencil size={12} />
+                </IconButton>
               </div>
             )}
           </div>
@@ -271,118 +302,101 @@ export default function ClientOverviewTab({
 
         {/* Key Metrics Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Deal Value - Editable */}
-        <div
-          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-green-300 transition-colors group"
-          onClick={!isEditingDealValue ? handleStartEditDealValue : undefined}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-              <DollarSign className="w-5 h-5 text-green-600" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1">
-                <p className="text-xs text-muted-foreground font-medium">Deal Value</p>
-                {!isEditingDealValue && mainProject && (
-                  <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                )}
+          {/* Deal Value - Editable */}
+          {isEditingDealValue ? (
+            <div
+              style={{
+                background: colors.bg.card,
+                border: `1px solid ${colors.border.default}`,
+                borderTop: `2px solid ${colors.entityTypes.client}`,
+                borderRadius: 4,
+                padding: '12px 14px',
+              }}
+            >
+              <div style={{ ...labelStyle }}>Deal Value</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }} onClick={(e) => e.stopPropagation()}>
+                <span style={{ fontSize: 18, fontWeight: 300, color: colors.text.muted }}>$</span>
+                <Input
+                  type="text"
+                  value={dealValueInput}
+                  onChange={(e) => setDealValueInput(e.target.value)}
+                  placeholder="0"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveDealValue();
+                    if (e.key === 'Escape') handleCancelDealValue();
+                  }}
+                />
+                <IconButton label="Save" onClick={handleSaveDealValue}>
+                  <Check size={16} color={colors.accent.green} />
+                </IconButton>
+                <IconButton label="Cancel" onClick={handleCancelDealValue}>
+                  <X size={16} color={colors.text.muted} />
+                </IconButton>
               </div>
-              {isEditingDealValue ? (
-                <div className="flex items-center gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
-                  <span className="text-lg font-semibold text-muted-foreground">$</span>
-                  <Input
-                    type="text"
-                    value={dealValueInput}
-                    onChange={(e) => setDealValueInput(e.target.value)}
-                    placeholder="0"
-                    className="h-8 text-lg font-semibold w-24"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveDealValue();
-                      if (e.key === 'Escape') handleCancelDealValue();
-                    }}
-                  />
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleSaveDealValue}>
-                    <Check className="w-4 h-4 text-green-600" />
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleCancelDealValue}>
-                    <X className="w-4 h-4 text-muted-foreground" />
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-lg font-semibold text-foreground truncate">
+            </div>
+          ) : (
+            <StatTile
+              label="Deal Value"
+              accent={colors.entityTypes.client}
+              value={
+                <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
                   {totalDealValue > 0 ? formatCurrency(totalDealValue) : '—'}
-                  {!mainProject && <span className="text-xs font-normal text-muted-foreground ml-1">(no projects)</span>}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+                  {!mainProject && <span style={{ fontSize: 11, color: colors.text.muted }}>(no projects)</span>}
+                </span>
+              }
+              meta={mainProject ? 'Click to edit' : undefined}
+              onClick={handleStartEditDealValue}
+            />
+          )}
 
-        {/* Active Projects */}
-        <div
-          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
-          onClick={() => router.push(`/clients/${clientId}?tab=projects`)}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
-              <FolderKanban className="w-5 h-5 text-purple-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground font-medium">Active Projects</p>
-              <p className="text-lg font-semibold text-foreground">
-                {activeProjectsCount} <span className="text-sm font-normal text-muted-foreground">of {projects.length}</span>
-              </p>
-            </div>
-          </div>
-        </div>
+          {/* Active Projects */}
+          <StatTile
+            label="Active Projects"
+            accent={colors.entityTypes.project}
+            value={
+              <span>
+                {activeProjectsCount}{' '}
+                <span style={{ fontSize: 13, color: colors.text.muted }}>of {projects.length}</span>
+              </span>
+            }
+            onClick={() => router.push(`/clients/${clientId}?tab=projects`)}
+          />
 
-        {/* Primary Contact */}
-        <div
-          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
-          onClick={() => router.push(`/clients/${clientId}?tab=contacts`)}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-              <User className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground font-medium">Primary Contact</p>
-              {primaryContact ? (
-                <div>
-                  <p className="text-sm font-semibold text-foreground truncate">{primaryContact.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{primaryContact.role || primaryContact.email || '—'}</p>
-                </div>
+          {/* Primary Contact */}
+          <StatTile
+            label="Primary Contact"
+            accent={colors.accent.blue}
+            value={
+              primaryContact ? (
+                <span style={{ fontSize: 15, fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  {primaryContact.name}
+                </span>
               ) : (
-                <p className="text-sm text-muted-foreground">No contacts</p>
-              )}
-            </div>
-          </div>
-        </div>
+                <span style={{ fontSize: 15, color: colors.text.muted }}>No contacts</span>
+              )
+            }
+            meta={primaryContact ? (primaryContact.role || primaryContact.email || '—') : undefined}
+            onClick={() => router.push(`/clients/${clientId}?tab=contacts`)}
+          />
 
-        {/* Last Meeting */}
-        <div
-          className="bg-card rounded-lg border p-4 cursor-pointer hover:border-blue-300 transition-colors"
-          onClick={() => router.push(`/clients/${clientId}?tab=meetings`)}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
-              <Video className="w-5 h-5 text-orange-600" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground font-medium">Last Meeting</p>
-              {lastMeeting ? (
-                <div>
-                  <p className="text-sm font-semibold text-foreground truncate">{lastMeeting.title}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(lastMeeting.meetingDate).toLocaleDateString()}</p>
-                </div>
+          {/* Last Meeting */}
+          <StatTile
+            label="Last Meeting"
+            accent={colors.accent.orange}
+            value={
+              lastMeeting ? (
+                <span style={{ fontSize: 15, fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  {lastMeeting.title}
+                </span>
               ) : (
-                <p className="text-sm text-muted-foreground">No meetings</p>
-              )}
-            </div>
-          </div>
+                <span style={{ fontSize: 15, color: colors.text.muted }}>No meetings</span>
+              )
+            }
+            meta={lastMeeting ? new Date(lastMeeting.meetingDate).toLocaleDateString() : undefined}
+            onClick={() => router.push(`/clients/${clientId}?tab=meetings`)}
+          />
         </div>
-      </div>
 
         {/* HubSpot parity section — desktop port of the mobile Overview hero
             (SyncStrip + OpenDeals + RecentActivity + Beauhurst). Conditional
@@ -394,303 +408,276 @@ export default function ClientOverviewTab({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Left - Company Info + Recent Activity */}
           <div className="lg:col-span-2 space-y-4">
-          {/* Company Information Card */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between py-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Building2 className="w-4 h-4" />
-                Company Information
-              </CardTitle>
-              {onOpenSettings && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs"
-                  onClick={onOpenSettings}
-                >
-                  <Pencil className="w-3 h-3 mr-1" />
-                  Edit
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
+            {/* Company Information Card */}
+            <Panel
+              title="Company Information"
+              actions={
+                onOpenSettings ? (
+                  <Button variant="ghost" size="sm" onClick={onOpenSettings}>
+                    <Pencil size={12} />
+                    Edit
+                  </Button>
+                ) : undefined
+              }
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Company Name</p>
-                  <p className="text-sm font-medium">{client.companyName || client.name}</p>
-                </div>
+                <InfoField label="Company Name">
+                  <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, margin: 0 }}>{client.companyName || client.name}</p>
+                </InfoField>
 
                 {client.industry && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Industry</p>
-                    <p className="text-sm font-medium">{client.industry}</p>
-                  </div>
+                  <InfoField label="Industry">
+                    <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, margin: 0 }}>{client.industry}</p>
+                  </InfoField>
                 )}
 
                 {formatAddress() && (
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-muted-foreground">Address</p>
-                    <p className="text-sm font-medium flex items-start gap-2">
-                      <MapPin className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <InfoField label="Address" colSpan>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, margin: 0, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <MapPin size={12} color={colors.text.muted} style={{ marginTop: 3, flexShrink: 0 }} />
                       {formatAddress()}
                     </p>
-                  </div>
+                  </InfoField>
                 )}
 
                 {client.email && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Email</p>
-                    <a
-                      href={`mailto:${client.email}`}
-                      className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1.5"
-                    >
-                      <Mail className="w-3 h-3" />
+                  <InfoField label="Email">
+                    <a href={`mailto:${client.email}`} style={linkStyle}>
+                      <Mail size={12} />
                       {client.email}
                     </a>
-                  </div>
+                  </InfoField>
                 )}
 
                 {client.phone && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Phone</p>
-                    <a
-                      href={`tel:${client.phone}`}
-                      className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1.5"
-                    >
-                      <Phone className="w-3 h-3" />
+                  <InfoField label="Phone">
+                    <a href={`tel:${client.phone}`} style={linkStyle}>
+                      <Phone size={12} />
                       {client.phone}
                     </a>
-                  </div>
+                  </InfoField>
                 )}
 
                 {client.website && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Website</p>
+                  <InfoField label="Website">
                     <a
                       href={client.website.startsWith('http') ? client.website : `https://${client.website}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1.5"
+                      style={linkStyle}
                     >
-                      <Globe className="w-3 h-3" />
+                      <Globe size={12} />
                       {client.website}
-                      <ExternalLink className="w-2.5 h-2.5" />
+                      <ExternalLink size={10} />
                     </a>
-                  </div>
+                  </InfoField>
                 )}
 
-                <div>
-                  <p className="text-xs text-muted-foreground">Client Since</p>
-                  <p className="text-sm font-medium flex items-center gap-1.5">
-                    <Calendar className="w-3 h-3 text-muted-foreground" />
+                <InfoField label="Client Since">
+                  <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Calendar size={12} color={colors.text.muted} />
                     {new Date(client.createdAt).toLocaleDateString()}
                   </p>
-                </div>
+                </InfoField>
 
                 {client.tags && client.tags.length > 0 && (
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-muted-foreground mb-1.5">Tags</p>
-                    <div className="flex flex-wrap gap-1">
+                  <InfoField label="Tags" colSpan>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {client.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+                        <StatusPill key={tag} label={tag} tone={colors.text.muted} />
                       ))}
                     </div>
-                  </div>
+                  </InfoField>
                 )}
 
                 {client.notes && (
-                  <div className="md:col-span-2">
-                    <p className="text-xs text-muted-foreground">Notes</p>
-                    <p className="text-sm text-foreground whitespace-pre-wrap">
+                  <InfoField label="Notes" colSpan>
+                    <p style={{ fontSize: 13, color: colors.text.primary, whiteSpace: 'pre-wrap', margin: 0 }}>
                       {client.notes.substring(0, 300)}
                       {client.notes.length > 300 && '...'}
                     </p>
-                  </div>
+                  </InfoField>
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </Panel>
 
-          {/* Recent internal work (documents + projects). Renamed from
-              'Recent Activity' because the new ClientHubSpotSection above
-              also has a 'Recent activity' card showing HubSpot engagements
-              — two things named the same thing was confusing (Task A sub-item
-              'dedup duplicate Recent Activity'). These two sections now have
-              distinct labels: 'Recent activity' (HubSpot) + 'Recent work'
-              (internal docs/projects). */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between py-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <TrendingUp className="w-4 h-4" />
-                Recent work
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
+            {/* Recent internal work (documents + projects). Renamed from
+                'Recent Activity' because the new ClientHubSpotSection above
+                also has a 'Recent activity' card showing HubSpot engagements
+                — two things named the same thing was confusing (Task A sub-item
+                'dedup duplicate Recent Activity'). These two sections now have
+                distinct labels: 'Recent activity' (HubSpot) + 'Recent work'
+                (internal docs/projects). */}
+            <Panel title="Recent work">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Recent Documents Section */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Documents</p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-6 px-2"
-                      onClick={() => onTabChange?.('documents')}
-                    >
-                      View All <ChevronRight className="w-3 h-3 ml-1" />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <p style={{ ...labelStyle, margin: 0 }}>Documents</p>
+                    <Button variant="ghost" size="sm" onClick={() => onTabChange?.('documents')}>
+                      View All <ChevronRight size={12} />
                     </Button>
                   </div>
                   {recentDocuments.length === 0 ? (
-                    <p className="text-muted-foreground text-sm py-2">No documents yet</p>
+                    <EmptyState icon={<FileText size={20} />} title="No documents yet" />
                   ) : (
-                    <div className="space-y-1">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {recentDocuments.slice(0, 3).map((doc: any) => (
-                        <div
-                          key={doc._id}
-                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                          onClick={() => router.push(`/docs/${doc._id}`)}
-                        >
-                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
+                        <RowItem key={doc._id} onClick={() => router.push(`/docs/${doc._id}`)}>
+                          <FileText size={16} color={colors.text.muted} style={{ flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {doc.displayName || doc.documentCode || doc.fileName}
                             </p>
                           </div>
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">
-                            {doc.category}
-                          </Badge>
-                          <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                          <StatusPill label={doc.category} tone={colors.text.muted} />
+                          <span style={{ fontSize: 10, color: colors.text.muted, flexShrink: 0, fontFamily: 'ui-monospace, monospace' }}>
                             {new Date(doc.uploadedAt).toLocaleDateString()}
                           </span>
-                        </div>
+                        </RowItem>
                       ))}
                     </div>
                   )}
                 </div>
 
-                <div className="border-t" />
+                <div style={{ borderTop: `1px solid ${colors.border.light}` }} />
 
                 {/* Projects Section */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Projects</p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-6 px-2"
-                      onClick={() => onTabChange?.('projects')}
-                    >
-                      View All <ChevronRight className="w-3 h-3 ml-1" />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <p style={{ ...labelStyle, margin: 0 }}>Projects</p>
+                    <Button variant="ghost" size="sm" onClick={() => onTabChange?.('projects')}>
+                      View All <ChevronRight size={12} />
                     </Button>
                   </div>
                   {projects.length === 0 ? (
-                    <p className="text-muted-foreground text-sm py-2">No projects yet</p>
+                    <EmptyState icon={<Briefcase size={20} />} title="No projects yet" />
                   ) : (
-                    <div className="space-y-1">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {projects.slice(0, 3).map((project: any) => (
-                        <div
-                          key={project._id}
-                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                          onClick={() => router.push(`/clients/${clientId}/projects/${project._id}`)}
-                        >
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                            project.status === 'active' ? 'bg-green-100' : 'bg-gray-100'
-                          }`}>
-                            <Briefcase className={`w-3.5 h-3.5 ${
-                              project.status === 'active' ? 'text-green-600' : 'text-gray-500'
-                            }`} />
+                        <RowItem key={project._id} onClick={() => router.push(`/clients/${clientId}/projects/${project._id}`)}>
+                          <div
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 4,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                              background: project.status === 'active' ? `${colors.accent.green}15` : colors.bg.cardAlt,
+                            }}
+                          >
+                            <Briefcase size={14} color={project.status === 'active' ? colors.accent.green : colors.text.muted} />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{project.name}</p>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.name}</p>
                           </div>
                           {project.loanAmount && (
-                            <span className="text-xs text-muted-foreground flex-shrink-0">
+                            <span style={{ fontSize: 11, color: colors.text.muted, flexShrink: 0, fontFamily: 'ui-monospace, monospace' }}>
                               {formatCurrency(project.loanAmount)}
                             </span>
                           )}
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0 flex-shrink-0 ${
-                              project.status === 'active'
-                                ? 'bg-green-50 text-green-700 border-green-200'
-                                : 'bg-gray-50 text-gray-700 border-gray-200'
-                            }`}
-                          >
-                            {project.status || 'Unknown'}
-                          </Badge>
-                        </div>
+                          <StatusPill label={project.status || 'Unknown'} tone={projectStatusTone(project.status, colors)} />
+                        </RowItem>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </Panel>
+          </div>
 
           {/* Right - Active Tasks */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between py-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <CheckSquare className="w-4 h-4" />
-                Active Tasks
-                {activeTasks.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 text-[10px]">
-                    {activeTasks.length}
-                  </Badge>
-                )}
-              </CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs h-6 px-2"
-                onClick={() => onTabChange?.('tasks')}
-              >
+          <Panel
+            title={`Active Tasks${activeTasks.length > 0 ? ` · ${activeTasks.length}` : ''}`}
+            actions={
+              <Button variant="ghost" size="sm" onClick={() => onTabChange?.('tasks')}>
                 View All
               </Button>
-            </CardHeader>
-            <CardContent>
-              {activeTasks.length === 0 ? (
-                <p className="text-muted-foreground text-sm text-center py-4">No active tasks</p>
-              ) : (
-                <div className="space-y-2">
-                  {activeTasks.map((task: any) => (
+            }
+          >
+            {activeTasks.length === 0 ? (
+              <EmptyState icon={<CheckSquare size={20} />} title="No active tasks" />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {activeTasks.map((task: any) => (
+                  <RowItem
+                    key={task._id}
+                    align="flex-start"
+                    onClick={() => router.push(`/clients/${clientId}?tab=tasks&task=${task._id}`)}
+                  >
                     <div
-                      key={task._id}
-                      className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                      onClick={() => router.push(`/clients/${clientId}?tab=tasks&task=${task._id}`)}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0 ${
-                        task.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-400'
-                      }`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{task.title}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0 ${getPriorityColor(task.priority)}`}
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        marginTop: 6,
+                        flexShrink: 0,
+                        background: task.status === 'in_progress' ? colors.accent.blue : colors.text.dim,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                        <FlagChip label={task.priority || 'medium'} severity={getPrioritySeverity(task.priority)} />
+                        {task.dueDate && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 2,
+                              fontFamily: 'ui-monospace, monospace',
+                              color: new Date(task.dueDate) < new Date() ? colors.accent.red : colors.text.muted,
+                            }}
                           >
-                            {task.priority || 'medium'}
-                          </Badge>
-                          {task.dueDate && (
-                            <span className={`text-[10px] flex items-center gap-0.5 ${
-                              new Date(task.dueDate) < new Date() ? 'text-red-500' : 'text-muted-foreground'
-                            }`}>
-                              <Clock className="w-2.5 h-2.5" />
-                              {new Date(task.dueDate).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
+                            <Clock size={10} />
+                            {new Date(task.dueDate).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
+                  </RowItem>
+                ))}
+              </div>
+            )}
+          </Panel>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Hoverable clickable row — replaces the hover:bg-muted row blocks.
+function RowItem({
+  children,
+  onClick,
+  align = 'center',
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  align?: 'center' | 'flex-start';
+}) {
+  const colors = useColors();
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'flex',
+        alignItems: align,
+        gap: 12,
+        padding: 8,
+        borderRadius: 4,
+        cursor: onClick ? 'pointer' : 'default',
+        background: hover ? colors.bg.cardAlt : 'transparent',
+        transition: 'background 100ms linear',
+      }}
+    >
+      {children}
     </div>
   );
 }

@@ -10,24 +10,30 @@ import {
 } from '@/lib/templateStorage';
 import {
   getFunnels,
-  getFunnelById,
 } from '@/lib/funnelStorage';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
+import {
+  Panel,
+  StatTile,
+  StatusPill,
+  EmptyState,
+  Button,
+  Field,
+  Input,
+  TabStrip,
+  SkeletonText,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   ArrowRight,
   Clock,
   FileText,
   Sparkles,
   Plus,
-  Edit2,
   Search,
   ArrowLeft,
-  Mail,
 } from 'lucide-react';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 const prospectTypeLabels = {
   'new-prospect': 'New Prospect',
@@ -35,14 +41,24 @@ const prospectTypeLabels = {
   'reactivation': 'Reactivation',
 };
 
-const prospectTypeColors = {
-  'new-prospect': 'bg-blue-100 text-blue-800',
-  'existing-prospect': 'bg-green-100 text-green-800',
-  'reactivation': 'bg-orange-100 text-orange-800',
-};
+// Maps the prospect-type taxonomy onto canon accent tokens.
+function prospectTypeTone(
+  type: 'new-prospect' | 'existing-prospect' | 'reactivation',
+  colors: ReturnType<typeof useColors>,
+): string {
+  switch (type) {
+    case 'new-prospect':
+      return colors.accent.blue;
+    case 'existing-prospect':
+      return colors.accent.green;
+    case 'reactivation':
+      return colors.accent.orange;
+  }
+}
 
 function TemplateLibraryContent() {
   const router = useRouter();
+  const colors = useColors();
   const searchParams = useSearchParams();
   const prospectTypeParam = searchParams.get('prospectType') as 'new-prospect' | 'existing-prospect' | 'reactivation' | null;
   const returnUrl = searchParams.get('returnUrl') || '/prospects';
@@ -60,7 +76,7 @@ function TemplateLibraryContent() {
   const loadData = () => {
     const allTemplates = getAllTemplates();
     setTemplates(allTemplates);
-    
+
     const allFunnels = getFunnels();
     setFunnels(allFunnels);
   };
@@ -84,7 +100,7 @@ function TemplateLibraryContent() {
     : templates;
 
   const searchedFunnels = searchQuery.trim()
-    ? filteredFunnels.filter(f => 
+    ? filteredFunnels.filter(f =>
         f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         f.description?.toLowerCase().includes(searchQuery.toLowerCase())
       )
@@ -108,329 +124,392 @@ function TemplateLibraryContent() {
       .filter(item => item.template);
   };
 
+  const typeFilters: { key: 'all' | 'new-prospect' | 'existing-prospect' | 'reactivation'; label: string }[] = [
+    { key: 'all', label: 'All Types' },
+    { key: 'new-prospect', label: 'New Prospect' },
+    { key: 'existing-prospect', label: 'Existing Prospect' },
+    { key: 'reactivation', label: 'Reactivation' },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div style={{ minHeight: '100vh', background: colors.bg.light }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
           <Link
             href={returnUrl}
-            className="text-blue-600 hover:text-blue-700 mb-4 inline-block flex items-center gap-2"
+            className="mb-4 inline-flex items-center gap-2"
+            style={{ fontSize: 12, color: colors.accent.blue }}
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </Link>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Email Template Library</h1>
-              <p className="mt-2 text-gray-600">
+              <h1 style={{ fontSize: 24, fontWeight: 300, color: colors.text.primary }}>
+                Email Template Library
+              </h1>
+              <p style={{ marginTop: 6, fontSize: 13, color: colors.text.muted }}>
                 Browse and manage email templates and funnels for different prospect types
               </p>
             </div>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
+            <Button variant="primary" accent={colors.entityTypes.prospect}>
+              <Plus className="w-4 h-4" />
               Create Template
             </Button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="flex items-center gap-4 flex-wrap">
-            {/* Search */}
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search templates and funnels..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
+        <div style={{ marginBottom: 24 }}>
+          <Panel padded>
+            <div className="flex items-center gap-4 flex-wrap">
+              {/* Search */}
+              <div className="flex-1 min-w-[200px]">
+                <div className="relative">
+                  <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+                    style={{ color: colors.text.dim }}
+                  />
+                  <div style={{ paddingLeft: 26 }}>
+                    <Input
+                      placeholder="Search templates and funnels..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Prospect Type Filter */}
+              <div className="flex gap-2">
+                {typeFilters.map((tf) => {
+                  const active = selectedProspectType === tf.key;
+                  return (
+                    <Button
+                      key={tf.key}
+                      variant={active ? 'primary' : 'secondary'}
+                      size="sm"
+                      accent={tf.key === 'all' ? colors.accent.blue : prospectTypeTone(tf.key, colors)}
+                      onClick={() => setSelectedProspectType(tf.key)}
+                    >
+                      {tf.key !== 'all' && (
+                        <StatusPill label={tf.label.split(' ')[0]} tone={prospectTypeTone(tf.key, colors)} />
+                      )}
+                      {tf.label}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
-
-            {/* Prospect Type Filter */}
-            <div className="flex gap-2">
-              <Button
-                variant={selectedProspectType === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedProspectType('all')}
-              >
-                All Types
-              </Button>
-              <Button
-                variant={selectedProspectType === 'new-prospect' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedProspectType('new-prospect')}
-              >
-                <Badge className={`mr-2 ${prospectTypeColors['new-prospect']}`}>New</Badge>
-                New Prospect
-              </Button>
-              <Button
-                variant={selectedProspectType === 'existing-prospect' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedProspectType('existing-prospect')}
-              >
-                <Badge className={`mr-2 ${prospectTypeColors['existing-prospect']}`}>Existing</Badge>
-                Existing Prospect
-              </Button>
-              <Button
-                variant={selectedProspectType === 'reactivation' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedProspectType('reactivation')}
-              >
-                <Badge className={`mr-2 ${prospectTypeColors['reactivation']}`}>Reactivate</Badge>
-                Reactivation
-              </Button>
-            </div>
-          </div>
+          </Panel>
         </div>
 
         {/* Main Content */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'funnels' | 'templates')} className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="funnels" className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              Funnels & Sequences
-              {filteredFunnels.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {filteredFunnels.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="templates" className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              Individual Templates
-              {filteredTemplates.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {filteredTemplates.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
+        <TabStrip
+          entityType="prospect"
+          tabs={[
+            { id: 'funnels', label: 'Funnels & Sequences', count: filteredFunnels.length },
+            { id: 'templates', label: 'Individual Templates', count: filteredTemplates.length },
+          ]}
+          activeTab={activeTab}
+          onChange={(k) => setActiveTab(k as 'funnels' | 'templates')}
+        />
 
-          {/* Funnels Tab */}
-          <TabsContent value="funnels" className="space-y-6">
-            {selectedProspectType === 'all' && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <Card 
-                  className="cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-blue-300"
-                  onClick={() => setSelectedProspectType('new-prospect')}
+        <div style={{ marginTop: 24 }}>
+          {activeTab === 'funnels' ? (
+            <div className="space-y-6">
+              {selectedProspectType === 'all' && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gap: 1,
+                    background: colors.border.default,
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: 4,
+                    overflow: 'hidden',
+                    marginBottom: 24,
+                  }}
                 >
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Badge className={prospectTypeColors['new-prospect']}>New Prospect</Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-gray-900 mb-1">
-                      {funnels.filter(f => f.prospectType === 'new-prospect').length}
-                    </p>
-                    <p className="text-sm text-gray-600">funnels available</p>
-                  </CardContent>
-                </Card>
-                <Card 
-                  className="cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-green-300"
-                  onClick={() => setSelectedProspectType('existing-prospect')}
-                >
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Badge className={prospectTypeColors['existing-prospect']}>Existing Prospect</Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-gray-900 mb-1">
-                      {funnels.filter(f => f.prospectType === 'existing-prospect').length}
-                    </p>
-                    <p className="text-sm text-gray-600">funnels available</p>
-                  </CardContent>
-                </Card>
-                <Card 
-                  className="cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-orange-300"
-                  onClick={() => setSelectedProspectType('reactivation')}
-                >
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Badge className={prospectTypeColors['reactivation']}>Reactivation</Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-gray-900 mb-1">
-                      {funnels.filter(f => f.prospectType === 'reactivation').length}
-                    </p>
-                    <p className="text-sm text-gray-600">funnels available</p>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+                  {(['new-prospect', 'existing-prospect', 'reactivation'] as const).map((pt) => (
+                    <StatTile
+                      key={pt}
+                      label={prospectTypeLabels[pt]}
+                      value={funnels.filter(f => f.prospectType === pt).length}
+                      meta="funnels available"
+                      accent={prospectTypeTone(pt, colors)}
+                      onClick={() => setSelectedProspectType(pt)}
+                    />
+                  ))}
+                </div>
+              )}
 
-            {searchedFunnels.length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
-                <Sparkles className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No funnels found</h3>
-                <p className="text-gray-600 mb-4">
-                  {searchQuery.trim() 
-                    ? 'Try adjusting your search query.' 
-                    : selectedProspectType !== 'all'
-                    ? `Create a funnel for ${prospectTypeLabels[selectedProspectType]}.`
-                    : 'Create your first email funnel.'}
-                </p>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Funnel
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {searchedFunnels.map((funnel) => {
-                  const funnelTemplates = getFunnelTemplates(funnel);
-                  return (
-                    <Card key={funnel.id} className="hover:shadow-lg transition-shadow">
-                      <CardHeader>
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <CardTitle className="text-xl">{funnel.name}</CardTitle>
-                              <Badge className={prospectTypeColors[funnel.prospectType]}>
-                                {prospectTypeLabels[funnel.prospectType]}
-                              </Badge>
-                            </div>
-                            {funnel.description && (
-                              <CardDescription className="text-base">{funnel.description}</CardDescription>
-                            )}
-                          </div>
+              {searchedFunnels.length === 0 ? (
+                <EmptyState
+                  icon={<Sparkles className="w-10 h-10" />}
+                  title="No funnels found"
+                  body={
+                    searchQuery.trim()
+                      ? 'Try adjusting your search query.'
+                      : selectedProspectType !== 'all'
+                      ? `Create a funnel for ${prospectTypeLabels[selectedProspectType]}.`
+                      : 'Create your first email funnel.'
+                  }
+                  action={
+                    <Button variant="primary" accent={colors.entityTypes.prospect}>
+                      <Plus className="w-4 h-4" />
+                      Create Funnel
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {searchedFunnels.map((funnel) => {
+                    const funnelTemplates = getFunnelTemplates(funnel);
+                    return (
+                      <Panel
+                        key={funnel.id}
+                        title={funnel.name}
+                        accent={prospectTypeTone(funnel.prospectType, colors)}
+                        actions={
+                          <StatusPill
+                            label={prospectTypeLabels[funnel.prospectType]}
+                            tone={prospectTypeTone(funnel.prospectType, colors)}
+                          />
+                        }
+                      >
+                        {funnel.description && (
+                          <p style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 14 }}>
+                            {funnel.description}
+                          </p>
+                        )}
+                        <div
+                          style={{
+                            fontFamily: MONO,
+                            fontSize: 9,
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: colors.text.muted,
+                            marginBottom: 10,
+                          }}
+                        >
+                          Email Sequence · {funnelTemplates.length} emails
                         </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-700 mb-3">
-                            Email Sequence ({funnelTemplates.length} emails):
-                          </div>
-                          <div className="space-y-3">
-                            {funnelTemplates.map((item, idx) => (
+                        <div className="space-y-3">
+                          {funnelTemplates.map((item, idx) => (
+                            <div
+                              key={item.templateId}
+                              className="flex items-start gap-4"
+                              style={{
+                                padding: 14,
+                                background: colors.bg.cardAlt,
+                                border: `1px solid ${colors.border.default}`,
+                                borderRadius: 4,
+                              }}
+                            >
                               <div
-                                key={item.templateId}
-                                className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200"
+                                className="flex-shrink-0 flex items-center justify-center"
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 4,
+                                  background: `${colors.accent.blue}20`,
+                                  color: colors.accent.blue,
+                                  fontFamily: MONO,
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                }}
                               >
-                                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-700">
-                                  {item.order}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-semibold text-gray-900">
-                                      {item.template?.name || 'Unknown Template'}
+                                {item.order}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
+                                    {item.template?.name || 'Unknown Template'}
+                                  </span>
+                                  {item.delayDays !== undefined && item.delayDays > 0 && (
+                                    <span
+                                      className="inline-flex items-center gap-1"
+                                      style={{
+                                        fontFamily: MONO,
+                                        fontSize: 9,
+                                        padding: '2px 6px',
+                                        borderRadius: 2,
+                                        border: `1px solid ${colors.border.default}`,
+                                        color: colors.text.muted,
+                                      }}
+                                    >
+                                      <Clock className="w-3 h-3" />
+                                      {item.delayDays} day{item.delayDays !== 1 ? 's' : ''} delay
                                     </span>
-                                    {item.delayDays !== undefined && item.delayDays > 0 && (
-                                      <Badge variant="outline" className="text-xs">
-                                        <Clock className="w-3 h-3 mr-1" />
-                                        {item.delayDays} day{item.delayDays !== 1 ? 's' : ''} delay
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  {item.template?.description && (
-                                    <p className="text-sm text-gray-600 line-clamp-2">
-                                      {item.template.description}
-                                    </p>
-                                  )}
-                                  {item.template?.subject && (
-                                    <p className="text-xs text-gray-500 mt-2 font-mono bg-white p-2 rounded border">
-                                      {item.template.subject.substring(0, 80)}
-                                      {item.template.subject.length > 80 && '...'}
-                                    </p>
                                   )}
                                 </div>
-                                {idx < funnelTemplates.length - 1 && (
-                                  <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-2" />
+                                {item.template?.description && (
+                                  <p
+                                    className="line-clamp-2"
+                                    style={{ fontSize: 12, color: colors.text.secondary }}
+                                  >
+                                    {item.template.description}
+                                  </p>
+                                )}
+                                {item.template?.subject && (
+                                  <p
+                                    style={{
+                                      fontFamily: MONO,
+                                      fontSize: 10,
+                                      color: colors.text.muted,
+                                      marginTop: 8,
+                                      background: colors.bg.card,
+                                      padding: 8,
+                                      borderRadius: 2,
+                                      border: `1px solid ${colors.border.default}`,
+                                    }}
+                                  >
+                                    {item.template.subject.substring(0, 80)}
+                                    {item.template.subject.length > 80 && '...'}
+                                  </p>
                                 )}
                               </div>
-                            ))}
-                          </div>
+                              {idx < funnelTemplates.length - 1 && (
+                                <ArrowRight
+                                  className="w-5 h-5 flex-shrink-0 mt-2"
+                                  style={{ color: colors.text.dim }}
+                                />
+                              )}
+                            </div>
+                          ))}
                         </div>
-                        <div className="pt-4 border-t border-gray-200">
+                        <div style={{ paddingTop: 16, marginTop: 16, borderTop: `1px solid ${colors.border.default}` }}>
                           <Button
-                            className="w-full"
+                            variant="primary"
+                            accent={colors.entityTypes.prospect}
+                            style={{ width: '100%', justifyContent: 'center' }}
                             onClick={() => handleSelectFunnel(funnel.id)}
                           >
                             Use This Funnel
                           </Button>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Templates Tab */}
-          <TabsContent value="templates" className="space-y-6">
-            {searchedTemplates.length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No templates found</h3>
-                <p className="text-gray-600 mb-4">
-                  {searchQuery.trim() 
-                    ? 'Try adjusting your search query.' 
-                    : 'Create your first email template.'}
-                </p>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Template
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {searchedTemplates.map((template) => (
-                  <Card key={template.id} className="hover:shadow-lg transition-shadow flex flex-col">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="text-lg mb-2">{template.name}</CardTitle>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="secondary" className="text-xs">
-                              {template.category}
-                            </Badge>
-                            {template.prospectType && (
-                              <Badge className={`text-xs ${prospectTypeColors[template.prospectType]}`}>
-                                {prospectTypeLabels[template.prospectType]}
-                              </Badge>
-                            )}
-                          </div>
+                      </Panel>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {searchedTemplates.length === 0 ? (
+                <EmptyState
+                  icon={<FileText className="w-10 h-10" />}
+                  title="No templates found"
+                  body={
+                    searchQuery.trim()
+                      ? 'Try adjusting your search query.'
+                      : 'Create your first email template.'
+                  }
+                  action={
+                    <Button variant="primary" accent={colors.entityTypes.prospect}>
+                      <Plus className="w-4 h-4" />
+                      Create Template
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {searchedTemplates.map((template) => (
+                    <Panel
+                      key={template.id}
+                      title={template.name}
+                      accent={
+                        template.prospectType
+                          ? prospectTypeTone(template.prospectType, colors)
+                          : colors.border.mid
+                      }
+                      actions={
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <StatusPill label={template.category} tone={colors.text.muted} />
+                          {template.prospectType && (
+                            <StatusPill
+                              label={prospectTypeLabels[template.prospectType]}
+                              tone={prospectTypeTone(template.prospectType, colors)}
+                            />
+                          )}
                         </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="flex-1 flex flex-col">
+                      }
+                    >
                       {template.description && (
-                        <p className="text-sm text-gray-600 mb-4">{template.description}</p>
+                        <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 14 }}>
+                          {template.description}
+                        </p>
                       )}
-                      <div className="flex-1">
-                        <div className="text-xs font-semibold text-gray-700 mb-2">Subject:</div>
-                        <div className="bg-gray-50 p-3 rounded border border-gray-200 font-mono text-xs text-gray-900 mb-4">
-                          {template.subject}
-                        </div>
-                        <div className="text-xs font-semibold text-gray-700 mb-2">Preview:</div>
-                        <div className="bg-gray-50 p-3 rounded border border-gray-200 text-xs text-gray-700 line-clamp-4">
-                          {template.body.substring(0, 200)}
-                          {template.body.length > 200 && '...'}
-                        </div>
+                      <div
+                        style={{
+                          fontFamily: MONO,
+                          fontSize: 9,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: colors.text.muted,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Subject
                       </div>
-                      <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div
+                        style={{
+                          background: colors.bg.cardAlt,
+                          padding: 10,
+                          borderRadius: 2,
+                          border: `1px solid ${colors.border.default}`,
+                          fontFamily: MONO,
+                          fontSize: 11,
+                          color: colors.text.primary,
+                          marginBottom: 14,
+                        }}
+                      >
+                        {template.subject}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: MONO,
+                          fontSize: 9,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: colors.text.muted,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Preview
+                      </div>
+                      <div
+                        className="line-clamp-4"
+                        style={{
+                          background: colors.bg.cardAlt,
+                          padding: 10,
+                          borderRadius: 2,
+                          border: `1px solid ${colors.border.default}`,
+                          fontSize: 11,
+                          color: colors.text.secondary,
+                        }}
+                      >
+                        {template.body.substring(0, 200)}
+                        {template.body.length > 200 && '...'}
+                      </div>
+                      <div style={{ paddingTop: 16, marginTop: 16, borderTop: `1px solid ${colors.border.default}` }}>
                         <Button
-                          variant="outline"
-                          className="w-full"
+                          variant="secondary"
+                          style={{ width: '100%', justifyContent: 'center' }}
                           onClick={() => handleSelectTemplate(template.id)}
                         >
                           Use This Template
                         </Button>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+                    </Panel>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -439,15 +518,13 @@ function TemplateLibraryContent() {
 export default function TemplateLibraryPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading templates...</p>
-        </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
+        <SkeletonText />
+        <SkeletonText />
+        <SkeletonText />
       </div>
     }>
       <TemplateLibraryContent />
     </Suspense>
   );
 }
-

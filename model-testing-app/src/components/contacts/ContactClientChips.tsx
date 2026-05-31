@@ -1,5 +1,7 @@
 'use client';
 
+import { useColors } from '@/lib/useColors';
+
 interface Client {
   _id: string;
   name: string;
@@ -18,18 +20,34 @@ export default function ContactClientChips({
   selectedClientId,
   onSelectClient,
 }: ContactClientChipsProps) {
+  const colors = useColors();
+  const accent = colors.entityTypes.contact;
+
   // Only show clients that have at least one contact
   const relevantClients = clients.filter(c => contactClientIds.has(c._id));
+
+  const chipStyle = (selected: boolean) => ({
+    flexShrink: 0,
+    whiteSpace: 'nowrap' as const,
+    padding: '4px 12px',
+    borderRadius: 2,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 9,
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase' as const,
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'background 100ms linear, border-color 100ms linear',
+    background: selected ? `${accent}20` : colors.bg.card,
+    color: selected ? accent : colors.text.secondary,
+    border: `1px solid ${selected ? `${accent}40` : colors.border.default}`,
+  });
 
   return (
     <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
       <button
         onClick={() => onSelectClient(null)}
-        className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-          selectedClientId === null
-            ? 'bg-[var(--m-accent)] text-white'
-            : 'bg-white border border-[var(--m-border)] text-[var(--m-text-secondary)]'
-        }`}
+        style={chipStyle(selectedClientId === null)}
       >
         All
       </button>
@@ -37,11 +55,7 @@ export default function ContactClientChips({
         <button
           key={client._id}
           onClick={() => onSelectClient(selectedClientId === client._id ? null : client._id)}
-          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap ${
-            selectedClientId === client._id
-              ? 'bg-[var(--m-accent)] text-white'
-              : 'bg-white border border-[var(--m-border)] text-[var(--m-text-secondary)]'
-          }`}
+          style={chipStyle(selectedClientId === client._id)}
         >
           {client.name}
         </button>

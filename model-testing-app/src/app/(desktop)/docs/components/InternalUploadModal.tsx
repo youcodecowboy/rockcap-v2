@@ -4,15 +4,8 @@ import { useState, useCallback, useRef } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { useUser } from '@clerk/nextjs';
 import { api } from '../../../../../convex/_generated/api';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
+import { Modal, Button, StatusPill, IconButton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Upload,
   X,
@@ -23,7 +16,6 @@ import {
   Building,
   User,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface InternalUploadModalProps {
   isOpen: boolean;
@@ -53,6 +45,7 @@ export default function InternalUploadModal({
   folderId,
   folderName,
 }: InternalUploadModalProps) {
+  const colors = useColors();
   const { user } = useUser();
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -231,160 +224,156 @@ export default function InternalUploadModal({
 
   const ScopeIcon = scope === 'internal' ? Building : User;
   const scopeLabel = scope === 'internal' ? 'RockCap Internal' : 'Personal';
-  const scopeColor = scope === 'internal' ? 'blue' : 'purple';
+  const scopeColor = scope === 'internal' ? colors.accent.blue : colors.accent.purple;
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ScopeIcon className={`w-5 h-5 text-${scopeColor}-600`} />
-            Upload to {scopeLabel}
-          </DialogTitle>
-        </DialogHeader>
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      width={512}
+      title={`Upload to ${scopeLabel}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={handleClose} disabled={isProcessing}>
+            {completedCount > 0 && !pendingCount ? 'Done' : 'Cancel'}
+          </Button>
+          {pendingCount > 0 && (
+            <Button variant="primary" accent={scopeColor} onClick={handleUploadAll} disabled={isProcessing}>
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  Upload {pendingCount} {pendingCount === 1 ? 'File' : 'Files'}
+                </>
+              )}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Destination Info */}
+        <div
+          className="flex items-center gap-2"
+          style={{ fontSize: 12, color: colors.text.secondary, background: `${scopeColor}15`, padding: 8, borderRadius: 4 }}
+        >
+          <ScopeIcon className="w-4 h-4" style={{ color: scopeColor }} />
+          <span>Uploading to:</span>
+          <StatusPill label={folderName} tone={scopeColor} />
+        </div>
 
-        <div className="space-y-4">
-          {/* Destination Info */}
-          <div className={`flex items-center gap-2 text-sm text-gray-600 bg-${scopeColor}-50 p-2 rounded-md`}>
-            <span>Uploading to:</span>
-            <Badge variant="outline" className={`bg-${scopeColor}-100 text-${scopeColor}-700 border-${scopeColor}-200`}>
-              {folderName}
-            </Badge>
-          </div>
+        {/* Drop Zone */}
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            border: `1px dashed ${isDragOver ? scopeColor : colors.border.mid}`,
+            borderRadius: 4,
+            padding: 32,
+            textAlign: 'center',
+            cursor: 'pointer',
+            background: isDragOver ? `${scopeColor}15` : 'transparent',
+            transition: 'background 100ms linear, border-color 100ms linear',
+          }}
+        >
+          <Upload className="w-10 h-10 mx-auto mb-3" style={{ color: isDragOver ? scopeColor : colors.text.dim }} />
+          <p style={{ fontSize: 12, color: colors.text.secondary }}>
+            <span style={{ fontWeight: 500, color: scopeColor }}>Click to upload</span> or drag and drop
+          </p>
+          <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>PDF, Word, Excel, Images</p>
+        </div>
 
-          {/* Drop Zone */}
-          <div
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onClick={() => fileInputRef.current?.click()}
-            className={cn(
-              "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
-              isDragOver
-                ? `border-${scopeColor}-500 bg-${scopeColor}-50`
-                : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-            )}
-          >
-            <Upload className={cn(
-              "w-10 h-10 mx-auto mb-3",
-              isDragOver ? `text-${scopeColor}-500` : "text-gray-400"
-            )} />
-            <p className="text-sm text-gray-600">
-              <span className={`font-medium text-${scopeColor}-600`}>Click to upload</span> or drag and drop
-            </p>
-            <p className="text-xs text-gray-500 mt-1">PDF, Word, Excel, Images</p>
-          </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFileSelect}
+          className="hidden"
+          accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.xlsm,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
+        />
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={handleFileSelect}
-            className="hidden"
-            accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.xlsm,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
-          />
-
-          {/* File List */}
-          {files.length > 0 && (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {files.map(file => (
-                <div
-                  key={file.id}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
-                >
-                  <FileText className="w-8 h-8 text-gray-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {file.file.name}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      {file.status === 'pending' && (
-                        <span className="text-xs text-gray-500">Ready to upload</span>
-                      )}
-                      {file.status === 'uploading' && (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                          <span className="text-xs text-blue-600">Uploading...</span>
-                        </>
-                      )}
-                      {file.status === 'analyzing' && (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
-                          <span className="text-xs text-amber-600">Processing...</span>
-                        </>
-                      )}
-                      {file.status === 'complete' && (
-                        <>
-                          <CheckCircle className="w-3 h-3 text-green-500" />
-                          <span className="text-xs text-green-600">Complete</span>
-                        </>
-                      )}
-                      {file.status === 'error' && (
-                        <>
-                          <AlertCircle className="w-3 h-3 text-red-500" />
-                          <span className="text-xs text-red-600">{file.error || 'Error'}</span>
-                        </>
-                      )}
-                    </div>
-                    {(file.status === 'uploading' || file.status === 'analyzing') && (
-                      <Progress value={file.progress} className="h-1 mt-2" />
+        {/* File List */}
+        {files.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+            {files.map(file => (
+              <div
+                key={file.id}
+                className="flex items-center gap-3"
+                style={{ padding: 12, background: colors.bg.cardAlt, borderRadius: 4 }}
+              >
+                <FileText className="w-7 h-7 flex-shrink-0" style={{ color: colors.text.dim }} />
+                <div className="flex-1 min-w-0">
+                  <p className="truncate" style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                    {file.file.name}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {file.status === 'pending' && (
+                      <span style={{ fontSize: 11, color: colors.text.muted }}>Ready to upload</span>
+                    )}
+                    {file.status === 'uploading' && (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" style={{ color: colors.accent.blue }} />
+                        <span style={{ fontSize: 11, color: colors.accent.blue }}>Uploading...</span>
+                      </>
+                    )}
+                    {file.status === 'analyzing' && (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" style={{ color: colors.accent.orange }} />
+                        <span style={{ fontSize: 11, color: colors.accent.orange }}>Processing...</span>
+                      </>
+                    )}
+                    {file.status === 'complete' && (
+                      <>
+                        <CheckCircle className="w-3 h-3" style={{ color: colors.accent.green }} />
+                        <span style={{ fontSize: 11, color: colors.accent.green }}>Complete</span>
+                      </>
+                    )}
+                    {file.status === 'error' && (
+                      <>
+                        <AlertCircle className="w-3 h-3" style={{ color: colors.accent.red }} />
+                        <span style={{ fontSize: 11, color: colors.accent.red }}>{file.error || 'Error'}</span>
+                      </>
                     )}
                   </div>
-                  {file.status === 'pending' && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeFile(file.id);
-                      }}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+                  {(file.status === 'uploading' || file.status === 'analyzing') && (
+                    <div style={{ height: 4, borderRadius: 2, background: colors.bg.base, marginTop: 8, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${file.progress}%`, background: scopeColor, transition: 'width 150ms linear' }} />
+                    </div>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-4 border-t">
-            <div className="text-sm text-gray-500">
-              {completedCount > 0 && (
-                <span className="text-green-600">{completedCount} uploaded</span>
-              )}
-              {completedCount > 0 && pendingCount > 0 && ' • '}
-              {pendingCount > 0 && (
-                <span>{pendingCount} pending</span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleClose} disabled={isProcessing}>
-                {completedCount > 0 && !pendingCount ? 'Done' : 'Cancel'}
-              </Button>
-              {pendingCount > 0 && (
-                <Button
-                  onClick={handleUploadAll}
-                  disabled={isProcessing}
-                  className={scope === 'internal' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload {pendingCount} {pendingCount === 1 ? 'File' : 'Files'}
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
+                {file.status === 'pending' && (
+                  <IconButton
+                    label="Remove file"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFile(file.id);
+                    }}
+                  >
+                    <X className="w-4 h-4" />
+                  </IconButton>
+                )}
+              </div>
+            ))}
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        )}
+
+        {/* Status summary */}
+        {(completedCount > 0 || pendingCount > 0) && (
+          <div style={{ fontSize: 12, color: colors.text.muted }}>
+            {completedCount > 0 && (
+              <span style={{ color: colors.accent.green }}>{completedCount} uploaded</span>
+            )}
+            {completedCount > 0 && pendingCount > 0 && ' • '}
+            {pendingCount > 0 && <span>{pendingCount} pending</span>}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

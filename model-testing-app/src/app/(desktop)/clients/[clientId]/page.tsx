@@ -13,17 +13,6 @@ import {
   useContactsByClient,
 } from '@/lib/clientStorage';
 import { useDocumentsByClient } from '@/lib/documentStorage';
-import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import EditableStatusBadge from '@/components/EditableStatusBadge';
 import EditableClientTypeBadge from '@/components/EditableClientTypeBadge';
 import {
@@ -42,6 +31,8 @@ import {
   type Kpi,
   type TabDef,
   SkeletonText,
+  Button,
+  Modal,
 } from '@/components/layouts';
 import { ClientDetailAside } from './components/ClientDetailAside';
 
@@ -208,17 +199,17 @@ function ClientProfileContent() {
 
   const actions = (
     <>
-      <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }}>
-        <Settings className="w-3.5 h-3.5 mr-1" /> Settings
+      <Button size="sm" variant="ghost" onClick={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }}>
+        <Settings className="w-3.5 h-3.5" /> Settings
       </Button>
-      <Button size="sm" onClick={() => handleTabChange('projects')} className="bg-black text-white hover:bg-gray-800 h-7 text-xs px-2.5">
-        <Plus className="w-3.5 h-3.5 mr-1" /> New Project
+      <Button size="sm" variant="primary" accent={colors.entityTypes.client} onClick={() => handleTabChange('projects')}>
+        <Plus className="w-3.5 h-3.5" /> New Project
       </Button>
-      <Button size="sm" variant="ghost" className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-7 text-xs px-2" onClick={() => setFlagModalOpen(true)}>
-        <Flag className="w-3.5 h-3.5 mr-1" /> Flag
+      <Button size="sm" variant="ghost" accent={colors.accent.orange} onClick={() => setFlagModalOpen(true)} style={{ color: colors.accent.orange }}>
+        <Flag className="w-3.5 h-3.5" /> Flag
       </Button>
-      <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setShowArchiveDialog(true)}>
-        <Archive className="w-3.5 h-3.5 mr-1" /> Archive
+      <Button size="sm" variant="ghost" onClick={() => setShowArchiveDialog(true)}>
+        <Archive className="w-3.5 h-3.5" /> Archive
       </Button>
     </>
   );
@@ -283,22 +274,21 @@ function ClientProfileContent() {
       </EntityDetailScaffold>
 
       {/* Archive Dialog */}
-      <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archive Client?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will archive the client. You can restore them later by changing their status.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleArchiveClient}>
-              Archive
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Modal
+        open={showArchiveDialog}
+        onClose={() => setShowArchiveDialog(false)}
+        title="Archive client?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowArchiveDialog(false)}>Cancel</Button>
+            <Button variant="danger" onClick={handleArchiveClient}>Archive</Button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.secondary }}>
+          This will archive the client. You can restore them later by changing their status.
+        </p>
+      </Modal>
 
       {/* Settings Panel */}
       <ClientSettingsPanel

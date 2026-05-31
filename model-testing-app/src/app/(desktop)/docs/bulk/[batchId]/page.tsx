@@ -24,21 +24,9 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { Button, IconButton, StatusPill, Modal, Input, EmptyState, SkeletonCard } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Progress } from '@/components/ui/progress';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import BulkReviewTable from '@/components/BulkReviewTable';
 import NewProjectsPanel, { NewProjectEntry, buildNewProjectEntries } from '@/components/NewProjectsPanel';
 import VersionCandidatesPanel from '@/components/VersionCandidatesPanel';
@@ -48,6 +36,7 @@ import { getUserInitials } from '@/lib/documentNaming';
 import { toast } from 'sonner';
 
 export default function BulkReviewPage() {
+  const colors = useColors();
   const params = useParams();
   const router = useRouter();
   const { user } = useUser();
@@ -60,7 +49,7 @@ export default function BulkReviewPage() {
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [showUploadMore, setShowUploadMore] = useState(false);
   const [filingResult, setFilingResult] = useState<{ totalFiled: number; totalErrors: number } | null>(null);
-  
+
   // Shortcode editing state
   const [isEditingShortcode, setIsEditingShortcode] = useState(false);
   const [shortcodeInput, setShortcodeInput] = useState('');
@@ -91,7 +80,7 @@ export default function BulkReviewPage() {
     api.knowledgeLibrary.getAllChecklistItemsForClient,
     batch?.clientId ? { clientId: batch.clientId, projectId: effectiveProjectId } : "skip"
   );
-  
+
   // Calculate checklist stats
   const checklistStats = useMemo(() => {
     if (!checklistItems) return null;
@@ -100,7 +89,7 @@ export default function BulkReviewPage() {
     const missing = total - fulfilled;
     return { total, fulfilled, missing };
   }, [checklistItems]);
-  
+
   // Query projects for multi-project batches (also fetches when items suggest new projects)
   const clientProjects = useQuery(
     api.projects.getByClient,
@@ -110,8 +99,8 @@ export default function BulkReviewPage() {
   // Check shortcode availability
   const shortcodeAvailable = useQuery(
     api.projects.isShortcodeAvailable,
-    shortcodeInput && shortcodeInput !== batch?.projectShortcode 
-      ? { shortcode: shortcodeInput } 
+    shortcodeInput && shortcodeInput !== batch?.projectShortcode
+      ? { shortcode: shortcodeInput }
       : "skip"
   );
 
@@ -242,7 +231,7 @@ export default function BulkReviewPage() {
   const handleSaveShortcode = async () => {
     if (!batch?.projectId || !shortcodeInput || shortcodeInput.length === 0) return;
     if (shortcodeInput !== batch.projectShortcode && shortcodeAvailable === false) return;
-    
+
     setShortcodeSaving(true);
     try {
       // Update project shortcode
@@ -250,13 +239,13 @@ export default function BulkReviewPage() {
         id: batch.projectId,
         projectShortcode: shortcodeInput.toUpperCase(),
       });
-      
-      // Update batch shortcode 
+
+      // Update batch shortcode
       await updateBatch({
         batchId,
         projectShortcode: shortcodeInput.toUpperCase(),
       });
-      
+
       setIsEditingShortcode(false);
     } catch (error) {
       console.error('Failed to save shortcode:', error);
@@ -370,8 +359,10 @@ export default function BulkReviewPage() {
   // Loading state
   if (!batch || !items || !stats) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center" style={{ minHeight: 400, padding: 24 }}>
+        <div style={{ width: 360 }}>
+          <SkeletonCard lines={4} />
+        </div>
       </div>
     );
   }
@@ -379,12 +370,16 @@ export default function BulkReviewPage() {
   // Discarded batch — redirect
   if (batch.isDeleted) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-        <Trash2 className="w-8 h-8 text-muted-foreground" />
-        <p className="text-muted-foreground">This upload has been discarded.</p>
-        <Button variant="outline" onClick={() => router.push('/filing')}>
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Filing
-        </Button>
+      <div className="flex items-center justify-center" style={{ minHeight: 400, padding: 24 }}>
+        <EmptyState
+          icon={<Trash2 className="w-8 h-8" />}
+          title="This upload has been discarded"
+          action={
+            <Button variant="secondary" onClick={() => router.push('/filing')}>
+              <ArrowLeft className="w-4 h-4" /> Back to Filing
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -396,57 +391,61 @@ export default function BulkReviewPage() {
   const getStatusInfo = () => {
     switch (batch.status) {
       case 'uploading':
-        return { label: 'Uploading', color: 'bg-blue-100 text-blue-700', icon: Loader2 };
+        return { label: 'Uploading', tone: colors.accent.blue, icon: Loader2 };
       case 'processing':
-        return { label: 'Processing', color: 'bg-blue-100 text-blue-700', icon: Loader2 };
+        return { label: 'Processing', tone: colors.accent.blue, icon: Loader2 };
       case 'review':
-        return { label: 'Ready for Review', color: 'bg-amber-100 text-amber-700', icon: AlertTriangle };
+        return { label: 'Ready for Review', tone: colors.accent.orange, icon: AlertTriangle };
       case 'completed':
-        return { label: 'Completed', color: 'bg-green-100 text-green-700', icon: CheckCircle2 };
+        return { label: 'Completed', tone: colors.accent.green, icon: CheckCircle2 };
       case 'partial':
-        return { label: 'Partially Completed', color: 'bg-orange-100 text-orange-700', icon: AlertTriangle };
+        return { label: 'Partially Completed', tone: colors.accent.orange, icon: AlertTriangle };
       default:
-        return { label: batch.status, color: 'bg-gray-100 text-gray-700', icon: Clock };
+        return { label: batch.status, tone: colors.text.muted, icon: Clock };
     }
   };
 
   const statusInfo = getStatusInfo();
-  const StatusIcon = statusInfo.icon;
+
+  const infoTileStyle = (clickable: boolean): React.CSSProperties => ({
+    flex: 1,
+    background: colors.bg.card,
+    border: `1px solid ${colors.border.default}`,
+    borderRadius: 4,
+    padding: 12,
+    cursor: clickable ? 'pointer' : 'default',
+  });
+
+  const tileLabelStyle: React.CSSProperties = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: colors.text.muted,
+    fontWeight: 500,
+  };
 
   return (
-    <div className="px-6 py-4 max-w-[1600px] mx-auto space-y-4">
+    <div style={{ padding: '16px 24px', maxWidth: 1600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push('/filing')}
-            className="h-8"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1" />
+          <Button variant="ghost" size="sm" onClick={() => router.push('/filing')}>
+            <ArrowLeft className="w-4 h-4" />
             Back
           </Button>
           <div>
-            <h1 className="text-xl font-semibold">Bulk Upload Review</h1>
-            <p className="text-sm text-muted-foreground">
+            <h1 style={{ fontSize: 18, fontWeight: 600, color: colors.text.primary }}>Bulk Upload Review</h1>
+            <p style={{ fontSize: 12, color: colors.text.muted }}>
               Review and file {batch.totalFiles} documents
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={statusInfo.color}>
-            <StatusIcon className={`w-3 h-3 mr-1 ${batch.status === 'processing' || batch.status === 'uploading' ? 'animate-spin' : ''}`} />
-            {statusInfo.label}
-          </Badge>
+          <StatusPill label={statusInfo.label} tone={statusInfo.tone} />
           {batch.status !== 'completed' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-destructive"
-              onClick={() => setShowDiscardDialog(true)}
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1" />
+            <Button variant="ghost" size="sm" onClick={() => setShowDiscardDialog(true)}>
+              <Trash2 className="w-3.5 h-3.5" />
               Discard
             </Button>
           )}
@@ -456,128 +455,129 @@ export default function BulkReviewPage() {
       {/* Batch Info - Compact horizontal layout */}
       <div className="flex flex-wrap items-stretch gap-3">
         {/* Client Card - Clickable */}
-        <Card 
-          className="flex-1 min-w-[180px] cursor-pointer hover:border-primary/50 transition-colors"
+        <div
+          className="flex items-center gap-3"
+          style={{ ...infoTileStyle(true), minWidth: 180 }}
           onClick={() => router.push(`/clients/${batch.clientId}`)}
         >
-          <CardContent className="p-3 flex items-center gap-3">
-            <Building2 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground">Client</p>
-              <p className="font-medium text-sm truncate">{batch.clientName}</p>
-            </div>
-            <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-          </CardContent>
-        </Card>
+          <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.muted }} />
+          <div className="min-w-0 flex-1">
+            <p style={tileLabelStyle}>Client</p>
+            <p className="truncate" style={{ fontWeight: 500, fontSize: 13, color: colors.text.primary }}>{batch.clientName}</p>
+          </div>
+          <ExternalLink className="w-3 h-3 flex-shrink-0" style={{ color: colors.text.muted }} />
+        </div>
 
         {/* Project Card - Clickable if has project */}
-        <Card 
-          className={`flex-1 min-w-[200px] ${batch.projectId ? 'cursor-pointer hover:border-primary/50' : ''} transition-colors`}
+        <div
+          className="flex items-center gap-3"
+          style={{ ...infoTileStyle(!!batch.projectId), minWidth: 200 }}
           onClick={() => batch.projectId && router.push(`/docs/project/${batch.projectId}`)}
         >
-          <CardContent className="p-3 flex items-center gap-3">
-            <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground">Project</p>
-              <div className="flex items-center gap-2">
-                <p className="font-medium text-sm truncate">
-                  {effectiveProjectName || 'Client-level'}
-                </p>
-                {batch.projectId && (
-                  isEditingShortcode ? (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        value={shortcodeInput}
-                        onChange={(e) => setShortcodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
-                        placeholder="CODE"
-                        className="h-5 w-16 text-[10px] font-mono uppercase px-1"
-                        maxLength={10}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-5 w-5 p-0"
-                        onClick={(e) => { e.stopPropagation(); handleSaveShortcode(); }}
-                        disabled={shortcodeSaving || !shortcodeInput || (shortcodeInput !== batch.projectShortcode && shortcodeAvailable === false)}
-                      >
-                        {shortcodeSaving ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5 text-green-600" />}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-5 w-5 p-0"
-                        onClick={(e) => { e.stopPropagation(); setIsEditingShortcode(false); setShortcodeInput(batch.projectShortcode || ''); }}
-                      >
-                        <X className="w-2.5 h-2.5 text-red-600" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <Badge 
-                      variant={batch.projectShortcode ? "secondary" : "outline"} 
-                      className={`text-[10px] h-5 font-mono ${!batch.projectShortcode ? 'text-amber-600 border-amber-300' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); setShortcodeInput(batch.projectShortcode || ''); setIsEditingShortcode(true); }}
+          <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.muted }} />
+          <div className="min-w-0 flex-1">
+            <p style={tileLabelStyle}>Project</p>
+            <div className="flex items-center gap-2">
+              <p className="truncate" style={{ fontWeight: 500, fontSize: 13, color: colors.text.primary }}>
+                {effectiveProjectName || 'Client-level'}
+              </p>
+              {batch.projectId && (
+                isEditingShortcode ? (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      value={shortcodeInput}
+                      onChange={(e) => setShortcodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
+                      placeholder="CODE"
+                      maxLength={10}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ width: 80, padding: '2px 6px', fontSize: 10, fontFamily: 'ui-monospace, monospace', textTransform: 'uppercase' }}
+                    />
+                    <IconButton
+                      label="Save shortcode"
+                      onClick={(e) => { e.stopPropagation(); handleSaveShortcode(); }}
+                      disabled={shortcodeSaving || !shortcodeInput || (shortcodeInput !== batch.projectShortcode && shortcodeAvailable === false)}
+                      style={{ width: 20, height: 20, color: colors.accent.green }}
                     >
-                      {batch.projectShortcode || 'Set code'}
-                      <Pencil className="w-2 h-2 ml-1" />
-                    </Badge>
-                  )
-                )}
-              </div>
+                      {shortcodeSaving ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                    </IconButton>
+                    <IconButton
+                      label="Cancel"
+                      onClick={(e) => { e.stopPropagation(); setIsEditingShortcode(false); setShortcodeInput(batch.projectShortcode || ''); }}
+                      style={{ width: 20, height: 20, color: colors.accent.red }}
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </IconButton>
+                  </div>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShortcodeInput(batch.projectShortcode || ''); setIsEditingShortcode(true); }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 6px',
+                      borderRadius: 2,
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      fontSize: 9,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      background: `${batch.projectShortcode ? colors.text.muted : colors.accent.orange}20`,
+                      color: batch.projectShortcode ? colors.text.muted : colors.accent.orange,
+                      border: `1px solid ${batch.projectShortcode ? colors.text.muted : colors.accent.orange}40`,
+                    }}
+                  >
+                    {batch.projectShortcode || 'Set code'}
+                    <Pencil className="w-2 h-2" />
+                  </button>
+                )
+              )}
             </div>
-            {batch.projectId && <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
-          </CardContent>
-        </Card>
+          </div>
+          {batch.projectId && <ExternalLink className="w-3 h-3 flex-shrink-0" style={{ color: colors.text.muted }} />}
+        </div>
 
         {/* Progress Card - Compact */}
-        <Card className="flex-1 min-w-[160px]">
-          <CardContent className="p-3">
-            <div className="flex items-center gap-3">
-              <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">Progress</p>
-                <Progress value={progress} className="h-1.5 mt-1" />
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  {batch.processedFiles} processed · {batch.filedFiles} filed
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-3" style={{ ...infoTileStyle(false), minWidth: 160 }}>
+          <Clock className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.muted }} />
+          <div className="min-w-0 flex-1">
+            <p style={tileLabelStyle}>Progress</p>
+            <Progress value={progress} className="h-1.5 mt-1" />
+            <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 4 }}>
+              {batch.processedFiles} processed · {batch.filedFiles} filed
+            </p>
+          </div>
+        </div>
 
         {/* Checklist Status Card - Only show if checklist items exist */}
         {checklistStats && checklistStats.total > 0 && (
-          <Card 
-            className="flex-1 min-w-[140px] cursor-pointer hover:border-primary/50 transition-colors"
+          <div
+            className="flex items-center gap-3"
+            style={{ ...infoTileStyle(true), minWidth: 140 }}
             onClick={() => router.push(`/clients/${batch.clientId}?tab=checklist`)}
           >
-            <CardContent className="p-3 flex items-center gap-3">
-              <ClipboardList className={`w-4 h-4 flex-shrink-0 ${checklistStats.missing > 0 ? 'text-amber-500' : 'text-green-500'}`} />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">Checklist</p>
-                <p className={`font-medium text-sm ${checklistStats.missing > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                  {checklistStats.missing > 0 ? (
-                    <>{checklistStats.missing} missing</>
-                  ) : (
-                    <>All complete</>
-                  )}
-                </p>
-              </div>
-              <span className="text-[10px] text-muted-foreground">
-                {checklistStats.fulfilled}/{checklistStats.total}
-              </span>
-            </CardContent>
-          </Card>
+            <ClipboardList
+              className="w-4 h-4 flex-shrink-0"
+              style={{ color: checklistStats.missing > 0 ? colors.accent.orange : colors.accent.green }}
+            />
+            <div className="min-w-0 flex-1">
+              <p style={tileLabelStyle}>Checklist</p>
+              <p style={{ fontWeight: 500, fontSize: 13, color: checklistStats.missing > 0 ? colors.accent.orange : colors.accent.green }}>
+                {checklistStats.missing > 0 ? `${checklistStats.missing} missing` : 'All complete'}
+              </p>
+            </div>
+            <span style={{ fontSize: 10, color: colors.text.muted }}>
+              {checklistStats.fulfilled}/{checklistStats.total}
+            </span>
+          </div>
         )}
       </div>
 
       {/* Classification Badge - More compact */}
-      <div className="flex items-center gap-3 text-sm">
-        <Badge variant="outline" className="text-xs h-6">
-          {batch.isInternal ? 'Internal' : 'External'}
-        </Badge>
+      <div className="flex items-center gap-3">
+        <StatusPill label={batch.isInternal ? 'Internal' : 'External'} tone={colors.text.muted} />
         {batch.instructions && (
-          <span className="text-xs text-muted-foreground truncate max-w-md">
+          <span className="truncate" style={{ fontSize: 11, color: colors.text.muted, maxWidth: 448 }}>
             Instructions: "{batch.instructions.slice(0, 60)}{batch.instructions.length > 60 ? '...' : ''}"
           </span>
         )}
@@ -585,109 +585,87 @@ export default function BulkReviewPage() {
 
       {/* Background Processing Progress */}
       {batch.processingMode === 'background' && batch.status === 'processing' && (
-        <Card className="border-blue-200 bg-blue-50/50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-blue-100">
-                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+        <div style={{ background: `${colors.accent.blue}15`, border: `1px solid ${colors.accent.blue}40`, borderRadius: 4, padding: 16 }}>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin flex-shrink-0" style={{ color: colors.accent.blue }} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                <h3 style={{ fontWeight: 500, color: colors.text.primary }}>Processing in Background</h3>
+                <span style={{ fontSize: 12, color: colors.accent.blue }}>
+                  {batch.processedFiles} of {batch.totalFiles} files
+                </span>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-medium text-blue-900">Processing in Background</h3>
-                  <span className="text-sm text-blue-700">
-                    {batch.processedFiles} of {batch.totalFiles} files
-                  </span>
-                </div>
-                <Progress value={(batch.processedFiles / batch.totalFiles) * 100} className="h-2" />
-                {batch.estimatedCompletionTime && (
-                  <p className="text-xs text-blue-600 mt-2">
-                    Estimated completion: {new Date(batch.estimatedCompletionTime).toLocaleTimeString()}
-                  </p>
-                )}
-              </div>
+              <Progress value={(batch.processedFiles / batch.totalFiles) * 100} className="h-2" />
+              {batch.estimatedCompletionTime && (
+                <p style={{ fontSize: 11, color: colors.accent.blue, marginTop: 8 }}>
+                  Estimated completion: {new Date(batch.estimatedCompletionTime).toLocaleTimeString()}
+                </p>
+              )}
             </div>
-            <p className="text-sm text-blue-700 mt-3">
-              Your files are being processed in the background. You can safely navigate away, start another upload, or come back later — you&apos;ll get a notification when it&apos;s done.
-              This page will automatically update as files are processed.
-            </p>
-            <div className="mt-2">
-              <Button
-                variant="link"
-                size="sm"
-                className="text-blue-700 hover:text-blue-900 p-0 h-auto"
-                onClick={() => router.push('/docs/upload')}
-              >
-                Start Another Upload →
+          </div>
+          <p style={{ fontSize: 12, color: colors.text.secondary, marginTop: 12 }}>
+            Your files are being processed in the background. You can safely navigate away, start another upload, or come back later — you&apos;ll get a notification when it&apos;s done.
+            This page will automatically update as files are processed.
+          </p>
+          <div style={{ marginTop: 8 }}>
+            <Button variant="ghost" size="sm" onClick={() => router.push('/docs/upload')} style={{ padding: 0, color: colors.accent.blue }}>
+              Start Another Upload →
+            </Button>
+          </div>
+          {stuckCount > 0 && (
+            <div className="flex justify-end" style={{ marginTop: 12 }}>
+              <Button variant="secondary" size="sm" onClick={handleRetryAllStuck} disabled={isRetryingAll}>
+                {isRetryingAll ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Retry Stuck Files ({stuckCount})
               </Button>
             </div>
-            {stuckCount > 0 && (
-              <div className="mt-3 flex justify-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                  onClick={handleRetryAllStuck}
-                  disabled={isRetryingAll}
-                >
-                  {isRetryingAll ? (
-                    <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3 h-3 mr-2" />
-                  )}
-                  Retry Stuck Files ({stuckCount})
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
 
       {/* Stuck items warning - shown when batch is not in processing state */}
       {batch.status !== 'processing' && stuckCount > 0 && (
-        <Card className="border-amber-200 bg-amber-50/50">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-full bg-amber-100">
-                  <AlertTriangle className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-amber-900">
-                    {stuckCount} file{stuckCount > 1 ? 's' : ''} need attention
-                  </h3>
-                  <p className="text-sm text-amber-700">
-                    {stuckCount} file{stuckCount > 1 ? 's are' : ' is'} stuck in processing or failed.
-                  </p>
-                </div>
+        <div style={{ background: `${colors.accent.orange}15`, border: `1px solid ${colors.accent.orange}40`, borderRadius: 4, padding: 16 }}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" style={{ color: colors.accent.orange }} />
+              <div>
+                <h3 style={{ fontWeight: 500, color: colors.text.primary }}>
+                  {stuckCount} file{stuckCount > 1 ? 's' : ''} need attention
+                </h3>
+                <p style={{ fontSize: 12, color: colors.text.secondary }}>
+                  {stuckCount} file{stuckCount > 1 ? 's are' : ' is'} stuck in processing or failed.
+                </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-100"
-                onClick={handleRetryAllStuck}
-                disabled={isRetryingAll}
-              >
-                {isRetryingAll ? (
-                  <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3 mr-2" />
-                )}
-                Retry All Stuck ({stuckCount})
-              </Button>
             </div>
-          </CardContent>
-        </Card>
+            <Button variant="secondary" size="sm" onClick={handleRetryAllStuck} disabled={isRetryingAll} style={{ flexShrink: 0 }}>
+              {isRetryingAll ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3 h-3" />
+              )}
+              Retry All Stuck ({stuckCount})
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Warnings */}
       {stats.unresolvedDuplicates > 0 && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div
+          className="flex items-start gap-3"
+          style={{ padding: 16, background: `${colors.accent.orange}15`, border: `1px solid ${colors.accent.orange}40`, borderRadius: 4 }}
+        >
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" style={{ color: colors.accent.orange, marginTop: 2 }} />
           <div>
-            <div className="font-medium text-amber-800">
+            <div style={{ fontWeight: 500, color: colors.text.primary }}>
               {stats.unresolvedDuplicates} duplicate{stats.unresolvedDuplicates > 1 ? 's' : ''} detected
             </div>
-            <p className="text-sm text-amber-700 mt-1">
+            <p style={{ fontSize: 12, color: colors.text.secondary, marginTop: 4 }}>
               Please select a version type (minor or significant change) for each duplicate before filing.
             </p>
           </div>
@@ -696,27 +674,31 @@ export default function BulkReviewPage() {
 
       {/* Filing Result */}
       {filingResult && (
-        <div className={`p-4 rounded-lg flex items-start gap-3 ${
-          filingResult.totalErrors > 0 
-            ? 'bg-orange-50 border border-orange-200'
-            : 'bg-green-50 border border-green-200'
-        }`}>
+        <div
+          className="flex items-start gap-3"
+          style={{
+            padding: 16,
+            borderRadius: 4,
+            background: filingResult.totalErrors > 0 ? `${colors.accent.orange}15` : `${colors.accent.green}15`,
+            border: `1px solid ${(filingResult.totalErrors > 0 ? colors.accent.orange : colors.accent.green)}40`,
+          }}
+        >
           {filingResult.totalErrors > 0 ? (
-            <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" style={{ color: colors.accent.orange, marginTop: 2 }} />
           ) : (
-            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0" style={{ color: colors.accent.green, marginTop: 2 }} />
           )}
           <div>
-            <div className={`font-medium ${filingResult.totalErrors > 0 ? 'text-orange-800' : 'text-green-800'}`}>
+            <div style={{ fontWeight: 500, color: colors.text.primary }}>
               {filingResult.totalFiled} document{filingResult.totalFiled !== 1 ? 's' : ''} filed successfully
               {filingResult.totalErrors > 0 && `, ${filingResult.totalErrors} error${filingResult.totalErrors !== 1 ? 's' : ''}`}
             </div>
             {filingResult.totalFiled > 0 && (
               <Button
-                variant="link"
+                variant="ghost"
                 size="sm"
-                className="p-0 h-auto mt-1"
                 onClick={() => router.push(`/docs?clientId=${batch.clientId}`)}
+                style={{ padding: 0, marginTop: 4, color: colors.accent.blue }}
               >
                 View in Document Library →
               </Button>
@@ -747,18 +729,21 @@ export default function BulkReviewPage() {
       {/* Review Table */}
       {/* Multi-project summary */}
       {isEffectivelyMultiProject && items && (
-        <div className="flex items-center gap-4 text-sm p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-          <span className="font-medium">{items.length} documents</span>
-          <span className="text-gray-400">|</span>
-          <span>{new Set(items.map((i: any) => i.itemProjectId).filter(Boolean)).size} projects assigned</span>
-          <span className="text-gray-400">|</span>
-          <span>{items.filter((i: any) => i.suggestedProjectName && !i.itemProjectId).length} new projects suggested</span>
+        <div
+          className="flex items-center gap-4"
+          style={{ fontSize: 12, padding: 12, background: `${colors.accent.blue}15`, border: `1px solid ${colors.accent.blue}40`, borderRadius: 4 }}
+        >
+          <span style={{ fontWeight: 500, color: colors.text.primary }}>{items.length} documents</span>
+          <span style={{ color: colors.text.dim }}>|</span>
+          <span style={{ color: colors.text.secondary }}>{new Set(items.map((i: any) => i.itemProjectId).filter(Boolean)).size} projects assigned</span>
+          <span style={{ color: colors.text.dim }}>|</span>
+          <span style={{ color: colors.text.secondary }}>{items.filter((i: any) => i.suggestedProjectName && !i.itemProjectId).length} new projects suggested</span>
         </div>
       )}
 
       {/* Review Table */}
       {items && items.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
+        <div style={{ textAlign: 'center', padding: '48px 0', color: colors.text.muted }}>
           All items have been removed from this batch.
         </div>
       ) : (
@@ -778,41 +763,38 @@ export default function BulkReviewPage() {
       )}
 
       {/* Action Bar - Compact */}
-      <div className="flex items-center justify-between p-3 bg-background border-t sticky bottom-0 z-40">
-        <div className="text-sm text-muted-foreground">
+      <div
+        className="flex items-center justify-between sticky bottom-0"
+        style={{ padding: 12, background: colors.bg.base, borderTop: `1px solid ${colors.border.default}`, zIndex: 40 }}
+      >
+        <div style={{ fontSize: 12, color: colors.text.muted }}>
           {stats.statusCounts.ready_for_review} file{stats.statusCounts.ready_for_review !== 1 ? 's' : ''} ready to file
         </div>
         <div className="flex items-center gap-2">
           {batch.status === 'completed' || batch.status === 'partial' ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/docs?clientId=${batch.clientId}`)}
-            >
-              <FileCheck className="w-4 h-4 mr-2" />
+            <Button variant="secondary" size="sm" onClick={() => router.push(`/docs?clientId=${batch.clientId}`)}>
+              <FileCheck className="w-4 h-4" />
               View Documents
             </Button>
           ) : (
             <>
-              <Button
-                variant="outline"
-                onClick={() => setShowUploadMore(true)}
-              >
-                <Plus className="w-4 h-4 mr-2" />
+              <Button variant="secondary" onClick={() => setShowUploadMore(true)}>
+                <Plus className="w-4 h-4" />
                 Upload More
               </Button>
               <Button
+                variant="primary"
                 onClick={() => setShowFileAllDialog(true)}
                 disabled={!canFileAll || isFilingAll || hasNewProjectDuplicates}
               >
                 {isFilingAll ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Filing...
                   </>
                 ) : (
                   <>
-                    <FileCheck className="w-4 h-4 mr-2" />
+                    <FileCheck className="w-4 h-4" />
                     File All Documents ({stats.statusCounts.ready_for_review})
                   </>
                 )}
@@ -823,56 +805,50 @@ export default function BulkReviewPage() {
       </div>
 
       {/* Confirm File All Dialog */}
-      <AlertDialog open={showFileAllDialog} onOpenChange={setShowFileAllDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>File All Documents?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div>
-                <p>
-                  This will file {stats.statusCounts.ready_for_review} document{stats.statusCounts.ready_for_review !== 1 ? 's' : ''} to the document library
-                  under <strong>{batch.clientName}</strong>
-                  {batch.projectName && <> / <strong>{batch.projectName}</strong></>}.
-                </p>
-                <p className="mt-2">
-                  Documents will be named using the new naming convention with your initials ({uploaderInitials}).
-                </p>
-                {items.some(i => i.extractionEnabled && i.status === 'ready_for_review') && (
-                  <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <p className="text-sm text-blue-800 font-medium">
-                      📊 Data Extraction Queued
-                    </p>
-                    <p className="text-xs text-blue-700 mt-1">
-                      {items.filter(i => i.extractionEnabled && i.status === 'ready_for_review').length} spreadsheet(s) will be processed for data extraction after filing.
-                      You can safely leave this page - extraction runs in the background.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleFileAll}>
-              File All Documents
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Modal
+        open={showFileAllDialog}
+        onClose={() => setShowFileAllDialog(false)}
+        title="File All Documents?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowFileAllDialog(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleFileAll}>File All Documents</Button>
+          </>
+        }
+      >
+        <div style={{ fontSize: 12, color: colors.text.secondary }}>
+          <p>
+            This will file {stats.statusCounts.ready_for_review} document{stats.statusCounts.ready_for_review !== 1 ? 's' : ''} to the document library
+            under <strong style={{ color: colors.text.primary }}>{batch.clientName}</strong>
+            {batch.projectName && <> / <strong style={{ color: colors.text.primary }}>{batch.projectName}</strong></>}.
+          </p>
+          <p style={{ marginTop: 8 }}>
+            Documents will be named using the new naming convention with your initials ({uploaderInitials}).
+          </p>
+          {items.some(i => i.extractionEnabled && i.status === 'ready_for_review') && (
+            <div style={{ marginTop: 12, padding: 12, background: `${colors.accent.blue}15`, borderRadius: 4, border: `1px solid ${colors.accent.blue}40` }}>
+              <p style={{ fontSize: 12, color: colors.accent.blue, fontWeight: 500 }}>
+                Data Extraction Queued
+              </p>
+              <p style={{ fontSize: 11, color: colors.text.secondary, marginTop: 4 }}>
+                {items.filter(i => i.extractionEnabled && i.status === 'ready_for_review').length} spreadsheet(s) will be processed for data extraction after filing.
+                You can safely leave this page - extraction runs in the background.
+              </p>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Discard Batch Dialog */}
-      <AlertDialog open={showDiscardDialog} onOpenChange={setShowDiscardDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard This Upload?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently discard all {batch.totalFiles} files in this batch and delete the uploaded files from storage. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+      <Modal
+        open={showDiscardDialog}
+        onClose={() => setShowDiscardDialog(false)}
+        title="Discard This Upload?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowDiscardDialog(false)}>Cancel</Button>
+            <Button
+              variant="danger"
               disabled={isDiscarding}
               onClick={async () => {
                 setIsDiscarding(true);
@@ -887,16 +863,20 @@ export default function BulkReviewPage() {
             >
               {isDiscarding ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Discarding...
                 </>
               ) : (
                 'Discard Batch'
               )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.secondary }}>
+          This will permanently discard all {batch.totalFiles} files in this batch and delete the uploaded files from storage. This action cannot be undone.
+        </p>
+      </Modal>
 
       {/* Upload More Modal */}
       <UploadMoreModal

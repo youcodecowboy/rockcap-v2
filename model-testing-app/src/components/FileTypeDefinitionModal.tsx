@@ -4,26 +4,9 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { X, Plus, Trash2, Upload, Sparkles, FolderOpen, FileType } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Modal, Button, IconButton, Field, Input, Textarea, Select, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { Plus, Trash2, Sparkles, FolderOpen, FileType } from 'lucide-react';
 
 interface FileTypeDefinitionModalProps {
   isOpen: boolean;
@@ -38,6 +21,7 @@ export default function FileTypeDefinitionModal({
   mode,
   definitionId,
 }: FileTypeDefinitionModalProps) {
+  const colors = useColors();
   const definition = useQuery(
     api.fileTypeDefinitions.getById,
     definitionId ? { id: definitionId } : 'skip'
@@ -194,11 +178,11 @@ export default function FileTypeDefinitionModal({
     try {
       // Generate upload URL from Convex
       const uploadUrl = await generateUploadUrl();
-      
+
       if (!uploadUrl || typeof uploadUrl !== 'string') {
         throw new Error('Invalid upload URL received from Convex');
       }
-      
+
       // Upload file to Convex storage
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -236,7 +220,7 @@ export default function FileTypeDefinitionModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (wordCount < 100) {
       alert(`Description must be at least 100 words. Current: ${wordCount} words.`);
       return;
@@ -312,341 +296,292 @@ export default function FileTypeDefinitionModal({
     }
   };
 
+  const sectionDividerStyle = { borderTop: `1px solid ${colors.border.default}`, paddingTop: 16, marginTop: 16 };
+  const inlineLabelStyle = { fontSize: 13, fontWeight: 500, color: colors.text.primary };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {mode === 'create' ? 'Add New File Type' : 'Edit File Type Definition'}
-          </DialogTitle>
-          <DialogDescription>
-            {mode === 'create'
-              ? 'Add a new file type definition with examples to help the filing agent categorize files accurately.'
-              : 'Edit the file type definition. System defaults cannot be edited.'}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={mode === 'create' ? 'Add New File Type' : 'Edit File Type Definition'}
+      width={760}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="file-type-definition-form" variant="primary" disabled={isSubmitting || wordCount < 100}>
+            {isSubmitting ? 'Saving...' : mode === 'create' ? 'Create File Type' : 'Save Changes'}
+          </Button>
+        </>
+      }
+    >
+      <p style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 16 }}>
+        {mode === 'create'
+          ? 'Add a new file type definition with examples to help the filing agent categorize files accurately.'
+          : 'Edit the file type definition. System defaults cannot be edited.'}
+      </p>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Basic Information */}
-          <div className="space-y-4">
+      <form id="file-type-definition-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Basic Information */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Field label="File Type Name *">
+            <Input
+              id="fileType"
+              value={fileType}
+              onChange={(e) => setFileType(e.target.value)}
+              placeholder="e.g., RedBook Valuation, Initial Monitoring Report"
+              required
+            />
+          </Field>
+
+          <Field label="Category *">
+            <Input
+              id="category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="e.g., Appraisals, Inspections, Legal Documents"
+              required
+            />
+          </Field>
+
+          <Field label="Parent Type (if subtype)" hint="Optional: If this is a subtype of an existing document type, enter the parent type name.">
+            <Input
+              id="parentType"
+              value={parentType}
+              onChange={(e) => setParentType(e.target.value)}
+              placeholder="e.g., Legal Documents (if this is a subtype)"
+            />
+          </Field>
+
+          <Field
+            label={`Description * (${wordCount}/100 words minimum)`}
+            hint={wordCount < 100 ? `Need ${100 - wordCount} more words` : 'Description meets minimum requirement'}
+          >
+            <Textarea
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Provide a detailed description of what this file type is (minimum 100 words)..."
+              rows={6}
+              required
+              style={wordCount < 100 ? { borderColor: colors.accent.red } : undefined}
+            />
+          </Field>
+        </div>
+
+        {/* Keywords */}
+        <div>
+          <span style={inlineLabelStyle}>Keywords</span>
+          <p style={{ fontSize: 11, color: colors.text.muted, margin: '4px 0 8px' }}>
+            Keywords that help identify this file type in content and filenames
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {keywords.map((keyword, index) => (
+              <div key={index} style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={keyword}
+                  onChange={(e) => handleKeywordChange(index, e.target.value)}
+                  placeholder="e.g., rics, valuation report, redbook"
+                />
+                {keywords.length > 1 && (
+                  <IconButton type="button" label="Remove keyword" onClick={() => handleRemoveKeyword(index)}>
+                    <Trash2 style={{ width: 16, height: 16 }} />
+                  </IconButton>
+                )}
+              </div>
+            ))}
             <div>
-              <Label htmlFor="fileType">
-                File Type Name <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="fileType"
-                value={fileType}
-                onChange={(e) => setFileType(e.target.value)}
-                placeholder="e.g., RedBook Valuation, Initial Monitoring Report"
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="category">
-                Category <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g., Appraisals, Inspections, Legal Documents"
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="parentType">Parent Type (if subtype)</Label>
-              <Input
-                id="parentType"
-                value={parentType}
-                onChange={(e) => setParentType(e.target.value)}
-                placeholder="e.g., Legal Documents (if this is a subtype)"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Optional: If this is a subtype of an existing document type, enter the parent type name.
-              </p>
-            </div>
-
-            <div>
-              <Label htmlFor="description">
-                Description <span className="text-red-500">*</span> ({wordCount}/100 words minimum)
-              </Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Provide a detailed description of what this file type is (minimum 100 words)..."
-                rows={6}
-                required
-                className={wordCount < 100 ? 'border-red-300' : ''}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {wordCount < 100
-                  ? `Need ${100 - wordCount} more words`
-                  : 'Description meets minimum requirement'}
-              </p>
-            </div>
-          </div>
-
-          {/* Keywords */}
-          <div>
-            <Label>Keywords</Label>
-            <p className="text-xs text-gray-500 mb-2">
-              Keywords that help identify this file type in content and filenames
-            </p>
-            <div className="space-y-2">
-              {keywords.map((keyword, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    value={keyword}
-                    onChange={(e) => handleKeywordChange(index, e.target.value)}
-                    placeholder="e.g., rics, valuation report, redbook"
-                  />
-                  {keywords.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemoveKeyword(index)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={handleAddKeyword}>
-                <Plus className="w-4 h-4 mr-1" />
+              <Button type="button" variant="secondary" size="sm" onClick={handleAddKeyword}>
+                <Plus style={{ width: 14, height: 14 }} />
                 Add Keyword
               </Button>
             </div>
           </div>
+        </div>
 
-          {/* Deterministic Verification Settings */}
-          <div className="border-t pt-4 mt-4">
-            <div className="flex items-center gap-2 mb-3">
-              <FolderOpen className="w-4 h-4 text-blue-500" />
-              <Label className="text-sm font-medium">Filing Settings</Label>
-            </div>
-            <p className="text-xs text-gray-500 mb-4">
-              Configure where documents of this type should be filed and how to match them by filename.
-            </p>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="targetFolderKey">Target Folder Key</Label>
-                <Input
-                  id="targetFolderKey"
-                  value={targetFolderKey}
-                  onChange={(e) => setTargetFolderKey(e.target.value)}
-                  placeholder="e.g., kyc, appraisals, background"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  The folder where documents of this type should be filed
-                </p>
-              </div>
-
-              <div>
-                <Label htmlFor="targetLevel">Target Level</Label>
-                <Select value={targetLevel} onValueChange={(v) => setTargetLevel(v as 'client' | 'project')}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="client">Client Level</SelectItem>
-                    <SelectItem value="project">Project Level</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Client-level for identity docs, project-level for project-specific
-                </p>
-              </div>
-            </div>
+        {/* Deterministic Verification Settings */}
+        <div style={sectionDividerStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <FolderOpen style={{ width: 16, height: 16, color: colors.accent.blue }} />
+            <span style={inlineLabelStyle}>Filing Settings</span>
           </div>
+          <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 16 }}>
+            Configure where documents of this type should be filed and how to match them by filename.
+          </p>
 
-          {/* Filename Patterns */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <FileType className="w-4 h-4 text-green-500" />
-              <Label>Filename Patterns</Label>
-            </div>
-            <p className="text-xs text-gray-500 mb-2">
-              Patterns to match in filenames for quick identification (case-insensitive)
-            </p>
-            <div className="space-y-2">
-              {filenamePatterns.map((pattern, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    value={pattern}
-                    onChange={(e) => handleFilenamePatternChange(index, e.target.value)}
-                    placeholder="e.g., valuation, rics, market value"
-                  />
-                  {filenamePatterns.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemoveFilenamePattern(index)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={handleAddFilenamePattern}>
-                <Plus className="w-4 h-4 mr-1" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Field label="Target Folder Key" hint="The folder where documents of this type should be filed">
+              <Input
+                id="targetFolderKey"
+                value={targetFolderKey}
+                onChange={(e) => setTargetFolderKey(e.target.value)}
+                placeholder="e.g., kyc, appraisals, background"
+              />
+            </Field>
+
+            <Field label="Target Level" hint="Client-level for identity docs, project-level for project-specific">
+              <Select value={targetLevel} onChange={(e) => setTargetLevel(e.target.value as 'client' | 'project')}>
+                <option value="client">Client Level</option>
+                <option value="project">Project Level</option>
+              </Select>
+            </Field>
+          </div>
+        </div>
+
+        {/* Filename Patterns */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <FileType style={{ width: 16, height: 16, color: colors.accent.green }} />
+            <span style={inlineLabelStyle}>Filename Patterns</span>
+          </div>
+          <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 8 }}>
+            Patterns to match in filenames for quick identification (case-insensitive)
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {filenamePatterns.map((pattern, index) => (
+              <div key={index} style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={pattern}
+                  onChange={(e) => handleFilenamePatternChange(index, e.target.value)}
+                  placeholder="e.g., valuation, rics, market value"
+                />
+                {filenamePatterns.length > 1 && (
+                  <IconButton type="button" label="Remove pattern" onClick={() => handleRemoveFilenamePattern(index)}>
+                    <Trash2 style={{ width: 16, height: 16 }} />
+                  </IconButton>
+                )}
+              </div>
+            ))}
+            <div>
+              <Button type="button" variant="secondary" size="sm" onClick={handleAddFilenamePattern}>
+                <Plus style={{ width: 14, height: 14 }} />
                 Add Pattern
               </Button>
             </div>
           </div>
+        </div>
 
-          {/* Exclude Patterns */}
-          <div>
-            <Label>Exclude Patterns</Label>
-            <p className="text-xs text-gray-500 mb-2">
-              Patterns to exclude (prevents false positives, e.g., &quot;template&quot;, &quot;guide&quot;)
-            </p>
-            <div className="space-y-2">
-              {excludePatterns.map((pattern, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    value={pattern}
-                    onChange={(e) => handleExcludePatternChange(index, e.target.value)}
-                    placeholder="e.g., template, guide, instructions"
-                  />
-                  {excludePatterns.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemoveExcludePattern(index)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={handleAddExcludePattern}>
-                <Plus className="w-4 h-4 mr-1" />
+        {/* Exclude Patterns */}
+        <div>
+          <span style={inlineLabelStyle}>Exclude Patterns</span>
+          <p style={{ fontSize: 11, color: colors.text.muted, margin: '4px 0 8px' }}>
+            Patterns to exclude (prevents false positives, e.g., &quot;template&quot;, &quot;guide&quot;)
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {excludePatterns.map((pattern, index) => (
+              <div key={index} style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={pattern}
+                  onChange={(e) => handleExcludePatternChange(index, e.target.value)}
+                  placeholder="e.g., template, guide, instructions"
+                />
+                {excludePatterns.length > 1 && (
+                  <IconButton type="button" label="Remove exclusion" onClick={() => handleRemoveExcludePattern(index)}>
+                    <Trash2 style={{ width: 16, height: 16 }} />
+                  </IconButton>
+                )}
+              </div>
+            ))}
+            <div>
+              <Button type="button" variant="secondary" size="sm" onClick={handleAddExcludePattern}>
+                <Plus style={{ width: 14, height: 14 }} />
                 Add Exclusion
               </Button>
             </div>
           </div>
+        </div>
 
-          {/* Learned Keywords (read-only display) */}
-          {mode === 'edit' && definition?.learnedKeywords && definition.learnedKeywords.length > 0 && (
-            <div className="border-t pt-4 mt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                <Label className="text-sm font-medium">Auto-Learned Keywords</Label>
-              </div>
-              <p className="text-xs text-gray-500 mb-3">
-                Keywords automatically learned from user corrections
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {definition.learnedKeywords.map((lk, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-amber-50 text-amber-700 border border-amber-200"
-                  >
-                    {lk.keyword}
-                    {lk.correctionCount && (
-                      <span className="ml-1 text-xs text-amber-500">
-                        ({lk.correctionCount} corrections)
-                      </span>
-                    )}
-                  </span>
-                ))}
-              </div>
-              {definition.lastLearnedAt && (
-                <p className="text-xs text-gray-400 mt-2">
-                  Last learned: {new Date(definition.lastLearnedAt).toLocaleDateString()}
-                </p>
-              )}
+        {/* Learned Keywords (read-only display) */}
+        {mode === 'edit' && definition?.learnedKeywords && definition.learnedKeywords.length > 0 && (
+          <div style={sectionDividerStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Sparkles style={{ width: 16, height: 16, color: colors.accent.yellow }} />
+              <span style={inlineLabelStyle}>Auto-Learned Keywords</span>
             </div>
-          )}
-
-          {/* Identification Rules */}
-          <div>
-            <Label>Identification Rules</Label>
-            <p className="text-xs text-gray-500 mb-2">
-              Specific rules for identifying this file type
+            <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
+              Keywords automatically learned from user corrections
             </p>
-            <div className="space-y-2">
-              {identificationRules.map((rule, index) => (
-                <div key={index} className="flex gap-2">
-                  <Textarea
-                    value={rule}
-                    onChange={(e) => handleRuleChange(index, e.target.value)}
-                    placeholder="e.g., Look for 'RICS' branding or logos in the document"
-                    rows={2}
-                  />
-                  {identificationRules.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemoveRule(index)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {definition.learnedKeywords.map((lk, index) => (
+                <StatusPill
+                  key={index}
+                  label={lk.correctionCount ? `${lk.keyword} (${lk.correctionCount} corrections)` : lk.keyword}
+                  tone={colors.accent.yellow}
+                />
               ))}
-              <Button type="button" variant="outline" size="sm" onClick={handleAddRule}>
-                <Plus className="w-4 h-4 mr-1" />
+            </div>
+            {definition.lastLearnedAt && (
+              <p style={{ fontSize: 11, color: colors.text.dim, marginTop: 8 }}>
+                Last learned: {new Date(definition.lastLearnedAt).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Identification Rules */}
+        <div>
+          <span style={inlineLabelStyle}>Identification Rules</span>
+          <p style={{ fontSize: 11, color: colors.text.muted, margin: '4px 0 8px' }}>
+            Specific rules for identifying this file type
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {identificationRules.map((rule, index) => (
+              <div key={index} style={{ display: 'flex', gap: 8 }}>
+                <Textarea
+                  value={rule}
+                  onChange={(e) => handleRuleChange(index, e.target.value)}
+                  placeholder="e.g., Look for 'RICS' branding or logos in the document"
+                  rows={2}
+                  style={{ flex: 1 }}
+                />
+                {identificationRules.length > 1 && (
+                  <IconButton type="button" label="Remove rule" onClick={() => handleRemoveRule(index)} style={{ alignSelf: 'flex-start' }}>
+                    <Trash2 style={{ width: 16, height: 16 }} />
+                  </IconButton>
+                )}
+              </div>
+            ))}
+            <div>
+              <Button type="button" variant="secondary" size="sm" onClick={handleAddRule}>
+                <Plus style={{ width: 14, height: 14 }} />
                 Add Rule
               </Button>
             </div>
           </div>
+        </div>
 
-          {/* Category Rules */}
-          <div>
-            <Label htmlFor="categoryRules">Category Rules (Optional)</Label>
-            <Textarea
-              id="categoryRules"
-              value={categoryRules}
-              onChange={(e) => setCategoryRules(e.target.value)}
-              placeholder="Explain why this file type belongs to this category..."
-              rows={3}
-            />
-          </div>
+        {/* Category Rules */}
+        <Field label="Category Rules (Optional)">
+          <Textarea
+            id="categoryRules"
+            value={categoryRules}
+            onChange={(e) => setCategoryRules(e.target.value)}
+            placeholder="Explain why this file type belongs to this category..."
+            rows={3}
+          />
+        </Field>
 
-          {/* Example File */}
-          <div>
-            <Label htmlFor="exampleFile">Example File (Optional)</Label>
-            <p className="text-xs text-gray-500 mb-2">
-              Upload an example file to help the system learn this file type
-            </p>
-            <Input
-              id="exampleFile"
-              type="file"
-              onChange={handleFileChange}
-              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls"
-            />
-            {exampleFile && (
-              <p className="text-sm text-gray-600 mt-2">
-                Selected: {exampleFile.name} ({(exampleFile.size / 1024).toFixed(2)} KB)
-              </p>
-            )}
-            {exampleFileStorageId && mode === 'edit' && !exampleFile && (
-              <p className="text-sm text-gray-600 mt-2">
-                Current example file: {definition?.exampleFileName || 'Uploaded file'}
-              </p>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || wordCount < 100}>
-              {isSubmitting ? 'Saving...' : mode === 'create' ? 'Create File Type' : 'Save Changes'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        {/* Example File */}
+        <Field label="Example File (Optional)" hint="Upload an example file to help the system learn this file type">
+          <Input
+            id="exampleFile"
+            type="file"
+            onChange={handleFileChange}
+            accept=".pdf,.doc,.docx,.txt,.xlsx,.xls"
+          />
+        </Field>
+        {exampleFile && (
+          <p style={{ fontSize: 13, color: colors.text.secondary, marginTop: -12 }}>
+            Selected: {exampleFile.name} ({(exampleFile.size / 1024).toFixed(2)} KB)
+          </p>
+        )}
+        {exampleFileStorageId && mode === 'edit' && !exampleFile && (
+          <p style={{ fontSize: 13, color: colors.text.secondary, marginTop: -12 }}>
+            Current example file: {definition?.exampleFileName || 'Uploaded file'}
+          </p>
+        )}
+      </form>
+    </Modal>
   );
 }
-

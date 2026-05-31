@@ -1,6 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Flag, Bell, AtSign } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
+import { EmptyState, StatusPill } from '@/components/layouts';
 import { relativeTime, ENTITY_TYPE_SHORT } from '@/components/threads/utils';
 
 export interface InboxItem {
@@ -27,14 +30,14 @@ interface InboxItemListProps {
   onSelect: (id: string) => void;
 }
 
-function getIcon(item: InboxItem) {
+function ItemIcon({ item, colors }: { item: InboxItem; colors: ReturnType<typeof useColors> }) {
   if (item.kind === 'flag') {
-    return <Flag className="h-4 w-4 text-orange-500 flex-shrink-0" />;
+    return <Flag size={16} style={{ color: colors.accent.orange, flexShrink: 0 }} />;
   }
   if (item.data.type === 'flag') {
-    return <AtSign className="h-4 w-4 text-blue-500 flex-shrink-0" />;
+    return <AtSign size={16} style={{ color: colors.accent.blue, flexShrink: 0 }} />;
   }
-  return <Bell className="h-4 w-4 text-gray-400 flex-shrink-0" />;
+  return <Bell size={16} style={{ color: colors.text.dim, flexShrink: 0 }} />;
 }
 
 function getTitle(item: InboxItem): string {
@@ -63,63 +66,106 @@ function isUnread(item: InboxItem): boolean {
   return item.data.isRead === false;
 }
 
+function ItemRow({
+  item,
+  selected,
+  onSelect,
+  colors,
+}: {
+  item: InboxItem;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const [hover, setHover] = useState(false);
+  const unread = isUnread(item);
+  const urgent = item.kind === 'flag' && item.data.priority === 'urgent';
+  const accent = selected
+    ? colors.text.primary
+    : urgent
+      ? colors.accent.red
+      : 'transparent';
+
+  return (
+    <button
+      onClick={() => onSelect(item.id)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="w-full text-left px-4 py-3"
+      style={{
+        background: selected ? colors.bg.card : hover ? colors.bg.cardAlt : 'transparent',
+        borderLeft: `2px solid ${accent}`,
+        transition: 'background 100ms linear',
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5">
+          <ItemIcon item={item} colors={colors} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {item.kind === 'flag' && item.data.entityType && (
+                <StatusPill
+                  label={ENTITY_TYPE_SHORT[item.data.entityType] || item.data.entityType}
+                  tone={colors.text.muted}
+                />
+              )}
+              <span
+                className="truncate"
+                style={{
+                  fontSize: 13,
+                  fontWeight: unread ? 600 : 400,
+                  color: unread ? colors.text.primary : colors.text.secondary,
+                }}
+              >
+                {getTitle(item)}
+              </span>
+            </div>
+            <span
+              className="whitespace-nowrap flex-shrink-0"
+              style={{ fontSize: 11, color: colors.text.dim }}
+            >
+              {relativeTime(item.createdAt)}
+            </span>
+          </div>
+          <p className="mt-0.5 truncate" style={{ fontSize: 12, color: colors.text.muted }}>
+            {getPreview(item)}
+          </p>
+          {item.entityContext && (
+            <p className="mt-0.5 truncate" style={{ fontSize: 11, color: colors.text.dim }}>
+              {item.entityContext}
+            </p>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function InboxItemList({ items, selectedId, onSelect }: InboxItemListProps) {
+  const colors = useColors();
+
   if (items.length === 0) {
     return (
-      <div className="flex items-center justify-center py-16 px-4">
-        <p className="text-sm text-gray-400">No items to show</p>
+      <div className="p-4">
+        <EmptyState icon={<Bell size={20} />} title="No items to show" />
       </div>
     );
   }
 
   return (
-    <div className="divide-y divide-gray-100">
-      {items.map((item) => {
-        const selected = item.id === selectedId;
-        const unread = isUnread(item);
-        const urgent = item.kind === 'flag' && item.data.priority === 'urgent';
-
-        return (
-          <button
-            key={item.id}
-            onClick={() => onSelect(item.id)}
-            className={`w-full text-left px-4 py-3 transition-colors ${
-              selected
-                ? 'bg-white border-l-2 border-l-gray-900'
-                : 'hover:bg-gray-100 border-l-2 border-l-transparent'
-            } ${urgent && !selected ? 'border-l-red-500' : ''}`}
-          >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5">{getIcon(item)}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {item.kind === 'flag' && item.data.entityType && (
-                      <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-gray-100 text-gray-500 uppercase tracking-wide flex-shrink-0">
-                        {ENTITY_TYPE_SHORT[item.data.entityType] || item.data.entityType}
-                      </span>
-                    )}
-                    <span
-                      className={`text-sm truncate ${
-                        unread ? 'font-semibold text-gray-900' : 'font-normal text-gray-700'
-                      }`}
-                    >
-                      {getTitle(item)}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-gray-400 whitespace-nowrap flex-shrink-0">
-                    {relativeTime(item.createdAt)}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5 truncate">{getPreview(item)}</p>
-                {item.entityContext && (
-                  <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.entityContext}</p>
-                )}
-              </div>
-            </div>
-          </button>
-        );
-      })}
+    <div style={{ borderTop: `1px solid ${colors.border.light}` }}>
+      {items.map((item) => (
+        <div key={item.id} style={{ borderBottom: `1px solid ${colors.border.light}` }}>
+          <ItemRow
+            item={item}
+            selected={item.id === selectedId}
+            onSelect={onSelect}
+            colors={colors}
+          />
+        </div>
+      ))}
     </div>
   );
 }

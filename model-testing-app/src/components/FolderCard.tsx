@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2, FolderKanban, FileText, Clock } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { useColors } from '@/lib/useColors';
 
 interface FolderCardProps {
   type: 'client' | 'project';
@@ -24,6 +25,10 @@ export default function FolderCard({
   onClick,
 }: FolderCardProps) {
   const router = useRouter();
+  const colors = useColors();
+  const [hover, setHover] = useState(false);
+
+  const accent = type === 'client' ? colors.entityTypes.client : colors.entityTypes.project;
 
   const handleClick = () => {
     if (onClick) {
@@ -39,13 +44,13 @@ export default function FolderCard({
 
   const formatLastUpdated = (dateString: string | null) => {
     if (!dateString) return 'Never';
-    
+
     const date = new Date(dateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffHours / 24);
-    
+
     if (diffHours < 1) return 'Just now';
     if (diffHours === 1) return '1 hour ago';
     if (diffHours < 24) return `${diffHours} hours ago`;
@@ -57,37 +62,71 @@ export default function FolderCard({
   return (
     <div
       onClick={handleClick}
-      className="bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: colors.bg.card,
+        border: `1px solid ${hover ? accent : colors.border.default}`,
+        borderTop: `2px solid ${accent}`,
+        borderRadius: 4,
+        padding: 14,
+        cursor: 'pointer',
+        transition: 'border-color 100ms linear',
+      }}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
           {type === 'client' ? (
-            <Building2 className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <Building2 size={18} style={{ color: accent, flexShrink: 0 }} />
           ) : (
-            <FolderKanban className="w-5 h-5 text-purple-600 flex-shrink-0" />
+            <FolderKanban size={18} style={{ color: accent, flexShrink: 0 }} />
           )}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: hover ? accent : colors.text.primary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                transition: 'color 100ms linear',
+              }}
+            >
               {name}
             </h3>
             {clientName && (
-              <p className="text-sm text-gray-500 truncate mt-0.5">{clientName}</p>
+              <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {clientName}
+              </p>
             )}
           </div>
         </div>
-        <Badge variant="outline" className="flex-shrink-0">
-          <FileText className="w-3 h-3 mr-1" />
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            flexShrink: 0,
+            padding: '2px 7px',
+            borderRadius: 2,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 9,
+            color: colors.text.muted,
+            border: `1px solid ${colors.border.default}`,
+          }}
+        >
+          <FileText size={11} />
           {documentCount}
-        </Badge>
+        </span>
       </div>
-      
+
       {lastUpdated && (
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <Clock className="w-3 h-3" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: colors.text.muted }}>
+          <Clock size={11} />
           <span>Updated {formatLastUpdated(lastUpdated)}</span>
         </div>
       )}
     </div>
   );
 }
-

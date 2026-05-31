@@ -5,9 +5,8 @@ import { useQuery } from 'convex/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Button, Input, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Search,
   Inbox,
@@ -15,11 +14,9 @@ import {
   Briefcase,
   Plus,
   ChevronRight,
-  Folder,
   Building,
   User,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import InternalFolderList from './InternalFolderList';
 import PersonalFolderList from './PersonalFolderList';
 import { FolderSelection } from '@/types/folders';
@@ -65,6 +62,7 @@ export default function DocsSidebar({
   selectedPersonalFolder,
   onPersonalFolderSelect,
 }: DocsSidebarProps) {
+  const colors = useColors();
   const [filterType, setFilterType] = useState<FilterType>('all');
 
   // Queries
@@ -108,18 +106,18 @@ export default function DocsSidebar({
 
   const getTypeIcon = (type?: string) => {
     if (type?.toLowerCase() === 'lender') {
-      return <Building2 className="w-4 h-4 text-blue-500" />;
+      return <Building2 className="w-4 h-4" style={{ color: colors.entityTypes.lender }} />;
     }
-    return <Briefcase className="w-4 h-4 text-green-500" />;
+    return <Briefcase className="w-4 h-4" style={{ color: colors.entityTypes.client }} />;
   };
 
   const getTypeBadge = (type?: string) => {
     const t = type?.toLowerCase();
     if (t === 'lender') {
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">Lender</Badge>;
+      return <StatusPill label="Lender" tone={colors.entityTypes.lender} />;
     }
     if (t === 'borrower') {
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 border-green-200">Borrower</Badge>;
+      return <StatusPill label="Borrower" tone={colors.entityTypes.client} />;
     }
     return null;
   };
@@ -136,19 +134,28 @@ export default function DocsSidebar({
     onPersonalFolderSelect(null);
   };
 
+  // Segmented control button (scope toggle + filter tabs)
+  const segButton = (active: boolean): React.CSSProperties => ({
+    background: active ? colors.bg.card : 'transparent',
+    color: active ? colors.text.primary : colors.text.muted,
+    border: `1px solid ${active ? colors.border.default : 'transparent'}`,
+    borderRadius: 3,
+    cursor: 'pointer',
+    transition: 'background 100ms linear, color 100ms linear',
+  });
+
   return (
-    <div className="w-[260px] border-r border-gray-200 bg-gray-50 flex flex-col h-full">
+    <div
+      className="w-[260px] flex flex-col h-full"
+      style={{ borderRight: `1px solid ${colors.border.default}`, background: colors.bg.light }}
+    >
       {/* Scope Toggle */}
-      <div className="px-2 py-2 border-b border-gray-200">
-        <div className="flex bg-gray-200 rounded-lg p-0.5">
+      <div className="px-2 py-2" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
+        <div className="flex p-0.5" style={{ background: colors.bg.cardAlt, borderRadius: 4 }}>
           <button
             onClick={() => handleScopeChange('client')}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md transition-colors min-w-0",
-              activeScope === 'client'
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            )}
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium min-w-0"
+            style={segButton(activeScope === 'client')}
             title="Client Documents"
           >
             <Building2 className="w-3.5 h-3.5 flex-shrink-0" />
@@ -156,12 +163,8 @@ export default function DocsSidebar({
           </button>
           <button
             onClick={() => handleScopeChange('internal')}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md transition-colors min-w-0",
-              activeScope === 'internal'
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            )}
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium min-w-0"
+            style={segButton(activeScope === 'internal')}
             title="RockCap Internal Documents"
           >
             <Building className="w-3.5 h-3.5 flex-shrink-0" />
@@ -169,12 +172,8 @@ export default function DocsSidebar({
           </button>
           <button
             onClick={() => handleScopeChange('personal')}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md transition-colors min-w-0",
-              activeScope === 'personal'
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            )}
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium min-w-0"
+            style={segButton(activeScope === 'personal')}
             title="Personal Documents"
           >
             <User className="w-3.5 h-3.5 flex-shrink-0" />
@@ -185,36 +184,42 @@ export default function DocsSidebar({
 
       {/* Search - only show for client scope */}
       {activeScope === 'client' && (
-        <div className="p-3 border-b border-gray-200">
+        <div className="p-3" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4"
+              style={{ color: colors.text.dim, pointerEvents: 'none', zIndex: 1 }}
+            />
             <Input
               placeholder="Search clients..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-8 h-9 text-sm bg-white"
+              style={{ paddingLeft: 32 }}
             />
           </div>
         </div>
       )}
 
       {/* Inbox - show for all scopes */}
-      <div className="px-2 py-2 border-b border-gray-200">
+      <div className="px-2 py-2" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
         <button
           onClick={onInboxSelect}
-          className={cn(
-            "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors",
-            isInboxSelected
-              ? "bg-blue-100 text-blue-900"
-              : "hover:bg-gray-100 text-gray-700"
-          )}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm"
+          style={{
+            background: isInboxSelected ? `${colors.accent.blue}15` : 'transparent',
+            color: isInboxSelected ? colors.accent.blue : colors.text.secondary,
+            border: `1px solid ${isInboxSelected ? `${colors.accent.blue}40` : 'transparent'}`,
+            transition: 'background 100ms linear',
+          }}
+          onMouseEnter={(e) => { if (!isInboxSelected) e.currentTarget.style.background = colors.bg.cardAlt; }}
+          onMouseLeave={(e) => { if (!isInboxSelected) e.currentTarget.style.background = 'transparent'; }}
         >
           <Inbox className="w-4 h-4" />
           <span className="font-medium">Inbox</span>
           {(unfiledCount ?? 0) > 0 && (
-            <Badge variant="secondary" className="ml-auto text-xs">
-              {unfiledCount}
-            </Badge>
+            <span className="ml-auto">
+              <StatusPill label={String(unfiledCount)} tone={colors.accent.orange} />
+            </span>
           )}
         </button>
       </div>
@@ -223,18 +228,14 @@ export default function DocsSidebar({
       {activeScope === 'client' && (
         <>
           {/* Filter Tabs - only for client scope */}
-          <div className="px-2 py-2 border-b border-gray-200">
-            <div className="flex gap-1 bg-gray-200 rounded-md p-0.5">
+          <div className="px-2 py-2" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
+            <div className="flex gap-1 p-0.5" style={{ background: colors.bg.cardAlt, borderRadius: 4 }}>
               {(['all', 'borrower', 'lender'] as FilterType[]).map((type) => (
                 <button
                   key={type}
                   onClick={() => setFilterType(type)}
-                  className={cn(
-                    "flex-1 px-2 py-1 text-xs font-medium rounded transition-colors capitalize",
-                    filterType === type
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  )}
+                  className="flex-1 px-2 py-1 text-xs font-medium capitalize"
+                  style={segButton(filterType === type)}
                 >
                   {type === 'all' ? 'All' : type}
                 </button>
@@ -253,8 +254,8 @@ export default function DocsSidebar({
           />
 
           {/* Add Client Button */}
-          <div className="p-3 border-t border-gray-200">
-            <Button variant="outline" size="sm" className="w-full gap-2">
+          <div className="p-3" style={{ borderTop: `1px solid ${colors.border.default}` }}>
+            <Button variant="secondary" size="sm" style={{ width: '100%', justifyContent: 'center' }}>
               <Plus className="w-4 h-4" />
               Add Client
             </Button>
@@ -297,6 +298,7 @@ function ClientList({
   getTypeIcon,
   getTypeBadge,
 }: ClientListProps) {
+  const colors = useColors();
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -309,9 +311,10 @@ function ClientList({
   if (clients.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-4">
-        <div className="text-center text-gray-500 text-sm">
-          {searchQuery ? 'No clients match your search' : 'No clients yet'}
-        </div>
+        <EmptyState
+          icon={<Building2 className="w-10 h-10" />}
+          title={searchQuery ? 'No clients match your search' : 'No clients yet'}
+        />
       </div>
     );
   }
@@ -330,6 +333,7 @@ function ClientList({
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const client = clients[virtualRow.index];
+          const selected = selectedClientId === client._id;
           return (
             <div
               key={client._id}
@@ -345,24 +349,27 @@ function ClientList({
             >
               <button
                 onClick={() => onClientSelect(client._id)}
-                className={cn(
-                  "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left",
-                  selectedClientId === client._id
-                    ? "bg-blue-100 text-blue-900"
-                    : "hover:bg-gray-100 text-gray-700"
-                )}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left"
+                style={{
+                  background: selected ? `${colors.accent.blue}15` : 'transparent',
+                  color: selected ? colors.accent.blue : colors.text.secondary,
+                  border: `1px solid ${selected ? `${colors.accent.blue}40` : 'transparent'}`,
+                  transition: 'background 100ms linear',
+                }}
+                onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = colors.bg.cardAlt; }}
+                onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
               >
                 {getTypeIcon(client.type)}
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{client.name}</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     {getTypeBadge(client.type)}
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs" style={{ color: colors.text.muted }}>
                       {client.documentCount} docs
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.dim }} />
               </button>
             </div>
           );

@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { Select } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface DatePickerCompactProps {
   value: string; // ISO date string (YYYY-MM-DD)
@@ -9,6 +13,7 @@ interface DatePickerCompactProps {
 }
 
 export default function DatePickerCompact({ value, onChange, minDate }: DatePickerCompactProps) {
+  const colors = useColors();
   const today = minDate || new Date();
   const currentYear = today.getFullYear();
   const currentMonth = today.getMonth() + 1;
@@ -83,7 +88,7 @@ export default function DatePickerCompact({ value, onChange, minDate }: DatePick
 
   return (
     <div className="flex items-center gap-2">
-      <select
+      <Select
         value={selectedMonth}
         onChange={(e) => {
           const newMonth = parseInt(e.target.value);
@@ -95,7 +100,7 @@ export default function DatePickerCompact({ value, onChange, minDate }: DatePick
             setSelectedDay(daysInNewMonth);
           }
         }}
-        className="px-2 py-1 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        style={{ width: 'auto', padding: '5px 8px' }}
       >
         {availableMonths.map((month, index) => {
           const monthNum = selectedYear === currentYear ? currentMonth + index : index + 1;
@@ -105,25 +110,26 @@ export default function DatePickerCompact({ value, onChange, minDate }: DatePick
             </option>
           );
         })}
-      </select>
+      </Select>
 
-      <select
+      <Select
         value={selectedDay}
         onChange={(e) => {
           setIsInternalChange(true);
           setSelectedDay(parseInt(e.target.value));
         }}
-        className="px-2 py-1 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        style={{ width: 'auto', padding: '5px 8px' }}
       >
         {days.map((day) => (
           <option key={day} value={day}>
             {day}
           </option>
         ))}
-      </select>
+      </Select>
 
-      <span className="text-sm text-gray-500 font-medium">{selectedYear}</span>
+      <span style={{ fontFamily: MONO, fontSize: 12, color: colors.text.muted, fontWeight: 500 }}>
+        {selectedYear}
+      </span>
     </div>
   );
 }
-

@@ -6,7 +6,7 @@
  *   Search field
  *   Open deals section (expanded by default)
  *   Closed Won / Closed Lost collapsibles (collapsed by default)
- *   Tapping a deal opens DealDetailDialog — a shadcn Dialog equivalent
+ *   Tapping a deal opens DealDetailModal — a canon Modal equivalent
  *   of the mobile slide-up sheet.
  */
 
@@ -18,15 +18,13 @@ import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import {
   Search, Calendar, Clock, ChevronRight, ChevronDown,
-  ExternalLink, User, Pencil, Check, X,
+  ExternalLink, User, Pencil, Check, X, Briefcase,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from '@/components/ui/dialog';
+  Panel, StatTile, DataTable, EmptyState, StatusPill,
+  Button, Field, Input, Row, Modal,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 
 interface Props {
   clientId: Id<'clients'>;
@@ -58,67 +56,27 @@ function formatLastActivity(iso?: string): string {
 }
 
 /** Keyword-based stage tone categoriser — mirror of mobile dealStageColors. */
-function stageTone(stageName?: string): { bg: string; text: string; border: string } {
-  if (!stageName) return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
+function stageTone(stageName: string | undefined, colors: ReturnType<typeof useColors>): string {
+  if (!stageName) return colors.accent.blue;
   const lower = stageName.toLowerCase();
-  if (/closed won|won/.test(lower))
-    return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
-  if (/closed lost|lost/.test(lower))
-    return { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200' };
-  if (/contract|appointment|scheduled/.test(lower))
-    return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' };
-  if (/proposal|initial|qualification/.test(lower))
-    return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
-  if (/negotiation|discovery|demo/.test(lower))
-    return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' };
-  return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
+  if (/closed won|won/.test(lower)) return colors.accent.green;
+  if (/closed lost|lost/.test(lower)) return colors.text.muted;
+  if (/contract|appointment|scheduled/.test(lower)) return colors.accent.yellow;
+  if (/proposal|initial|qualification/.test(lower)) return colors.accent.blue;
+  if (/negotiation|discovery|demo/.test(lower)) return colors.accent.purple;
+  return colors.accent.blue;
 }
 
-function DealRow({
-  deal, onClick,
-}: {
-  deal: any;
-  onClick: () => void;
-}) {
-  const tone = stageTone(deal.stageName);
-  return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-card border rounded-lg p-3 hover:bg-muted/40 transition-colors flex flex-col gap-2"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate">{deal.name}</p>
-          {deal.spvName ? (
-            <p className="text-[11px] text-muted-foreground mt-0.5">SPV: {deal.spvName}</p>
-          ) : null}
-        </div>
-        <p className="text-base font-bold whitespace-nowrap">{formatMoney(deal.amount)}</p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <span className={`px-2 py-0.5 rounded-full border ${tone.bg} ${tone.text} ${tone.border} font-medium`}>
-          {deal.stageName ?? '—'}
-        </span>
-        <span className="inline-flex items-center gap-1 text-muted-foreground">
-          <Calendar className="w-3 h-3" />
-          {deal.closeDate ? formatDate(deal.closeDate) : 'No close date'}
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1 text-muted-foreground">
-          <Clock className="w-3 h-3" />
-          {formatLastActivity(deal.lastActivityDate)}
-        </span>
-      </div>
-    </button>
-  );
-}
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
-function DealDetailDialog({
+function DealDetailModal({
   deal, open, onOpenChange,
 }: {
   deal: any | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const colors = useColors();
   const linkedContacts = useQuery(
     api.contacts.listByIds,
     deal?.linkedContactIds?.length ? { ids: deal.linkedContactIds } : 'skip',
@@ -140,7 +98,7 @@ function DealDetailDialog({
   }, [deal?._id]);
 
   if (!deal) return null;
-  const tone = stageTone(deal.stageName);
+  const tone = stageTone(deal.stageName, colors);
   const probabilityPct = deal.probability ? Math.round(deal.probability * 100) : null;
 
   const handleSave = async () => {
@@ -161,156 +119,242 @@ function DealDetailDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px] max-h-[92vh] overflow-y-auto p-0">
-        <DialogHeader className="px-5 pt-5 pb-3 border-b flex-row items-start gap-2 space-y-0">
-          <div className="flex-1 min-w-0">
-            <DialogDescription className="text-[10px] uppercase tracking-wide">
-              Deal
-            </DialogDescription>
-            <DialogTitle className="text-lg mt-0.5">{deal.name}</DialogTitle>
-          </div>
-          {editing ? (
-            <div className="flex gap-1">
-              <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={saving}>
-                <X className="w-3.5 h-3.5" />
-              </Button>
-              <Button size="sm" onClick={handleSave} disabled={saving}>
-                <Check className="w-3.5 h-3.5 mr-1" />
-                {saving ? 'Saving…' : 'Save'}
-              </Button>
-            </div>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-              <Pencil className="w-3.5 h-3.5" />
+    <Modal
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title="Deal"
+      width={640}
+      footer={
+        editing ? (
+          <>
+            <Button variant="secondary" onClick={() => setEditing(false)} disabled={saving}>
+              <X size={14} /> Cancel
             </Button>
-          )}
-        </DialogHeader>
+            <Button variant="primary" accent={colors.entityTypes.client} onClick={handleSave} disabled={saving}>
+              <Check size={14} /> {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        ) : (
+          <Button variant="secondary" onClick={() => setEditing(true)}>
+            <Pencil size={14} /> Edit
+          </Button>
+        )
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 500, color: colors.text.primary }}>{deal.name}</div>
 
-        <div className="p-5 space-y-4">
-          {/* Amount + Stage */}
-          <Card>
-            <CardContent className="p-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase">Amount</p>
-                <p className="text-2xl font-bold mt-0.5">{formatMoney(deal.amount)}</p>
+        {/* Amount + Stage */}
+        <Panel>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
+                Amount
               </div>
-              <span
-                className={`self-center px-3 py-1 rounded-full border text-xs font-semibold ${tone.bg} ${tone.text} ${tone.border}`}
-              >
-                {deal.stageName ?? '—'}
-              </span>
-            </CardContent>
-          </Card>
+              <div style={{ fontSize: 28, fontWeight: 300, color: colors.text.primary, marginTop: 4, fontFamily: MONO }}>
+                {formatMoney(deal.amount)}
+              </div>
+            </div>
+            <div style={{ alignSelf: 'center' }}>
+              <StatusPill label={deal.stageName ?? '—'} tone={tone} />
+            </div>
+          </div>
+        </Panel>
 
-          {/* Details grid */}
-          <Card>
-            <CardHeader className="py-3 flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-[10px] uppercase text-muted-foreground tracking-wide">
-                Details
-              </CardTitle>
+        {/* Details grid */}
+        <Panel
+          title="Details"
+          actions={
+            editing ? (
+              <span style={{ fontSize: 10, fontStyle: 'italic', color: colors.text.muted }}>
+                Saves locally only — won't push to HubSpot
+              </span>
+            ) : undefined
+          }
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16, rowGap: 12 }}>
+            <div>
               {editing ? (
-                <p className="text-[10px] italic text-muted-foreground">
-                  Saves locally only — won't push to HubSpot
-                </p>
-              ) : null}
-            </CardHeader>
-            <CardContent className="pb-4 grid grid-cols-2 gap-x-4 gap-y-3">
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase">Close date</p>
-                {editing ? (
+                <Field label="Close date">
                   <Input
                     value={editClose}
                     onChange={(e) => setEditClose(e.target.value)}
                     placeholder="YYYY-MM-DD"
-                    className="h-7 text-xs mt-1"
                   />
-                ) : (
-                  <p className="text-sm font-medium mt-0.5">
-                    {deal.closeDate ? formatDate(deal.closeDate) : 'No date'}
-                  </p>
-                )}
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase">Probability</p>
-                <p className="text-sm font-medium mt-0.5">
-                  {probabilityPct !== null ? `${probabilityPct}%` : '—'}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase">Pipeline</p>
-                <p className="text-sm font-medium mt-0.5">{deal.pipelineName ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase">Deal type</p>
-                {editing ? (
+                </Field>
+              ) : (
+                <Row label="Close date" value={deal.closeDate ? formatDate(deal.closeDate) : 'No date'} mono />
+              )}
+            </div>
+            <div>
+              <Row label="Probability" value={probabilityPct !== null ? `${probabilityPct}%` : '—'} mono />
+            </div>
+            <div>
+              <Row label="Pipeline" value={deal.pipelineName ?? '—'} />
+            </div>
+            <div>
+              {editing ? (
+                <Field label="Deal type">
                   <Input
                     value={editType}
                     onChange={(e) => setEditType(e.target.value)}
                     placeholder="e.g. new business"
-                    className="h-7 text-xs mt-1"
                   />
-                ) : (
-                  <p className="text-sm font-medium mt-0.5">{deal.dealType ?? '—'}</p>
-                )}
+                </Field>
+              ) : (
+                <Row label="Deal type" value={deal.dealType ?? '—'} />
+              )}
+            </div>
+            {deal.spvName ? (
+              <div style={{ gridColumn: 'span 2' }}>
+                <Row label="SPV" value={deal.spvName} />
               </div>
-              {deal.spvName ? (
-                <div className="col-span-2">
-                  <p className="text-[10px] text-muted-foreground uppercase">SPV</p>
-                  <p className="text-sm font-medium mt-0.5">{deal.spvName}</p>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+            ) : null}
+          </div>
+        </Panel>
 
-          {/* HubSpot link */}
-          {deal.hubspotUrl ? (
-            <a
-              href={deal.hubspotUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2.5 p-3 bg-card border rounded-lg hover:bg-muted/40 transition-colors"
+        {/* HubSpot link */}
+        {deal.hubspotUrl ? (
+          <a
+            href={deal.hubspotUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: 12,
+              background: colors.bg.card,
+              border: `1px solid ${colors.border.default}`,
+              borderRadius: 4,
+              textDecoration: 'none',
+            }}
+          >
+            <div
+              style={{
+                width: 32, height: 32, borderRadius: 4,
+                background: colors.bg.cardAlt,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
             >
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                <ExternalLink className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <span className="text-sm font-medium flex-1">Open in HubSpot</span>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </a>
-          ) : null}
+              <ExternalLink size={16} style={{ color: colors.text.muted }} />
+            </div>
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: colors.text.primary }}>Open in HubSpot</span>
+            <ChevronRight size={16} style={{ color: colors.text.muted }} />
+          </a>
+        ) : null}
 
-          {/* Linked contacts */}
-          {linkedContacts && linkedContacts.length > 0 ? (
-            <Card>
-              <CardHeader className="py-3">
-                <CardTitle className="text-[10px] uppercase text-muted-foreground tracking-wide">
-                  Linked contacts ({linkedContacts.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pb-4 space-y-2.5">
-                {linkedContacts.slice(0, 5).map((c: any) => (
-                  <div key={c._id} className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      <User className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.name}</p>
-                      {c.role ? (
-                        <p className="text-[11px] text-muted-foreground truncate">{c.role}</p>
-                      ) : null}
-                    </div>
+        {/* Linked contacts */}
+        {linkedContacts && linkedContacts.length > 0 ? (
+          <Panel title={`Linked contacts (${linkedContacts.length})`}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {linkedContacts.slice(0, 5).map((c: any) => (
+                <div key={c._id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div
+                    style={{
+                      width: 32, height: 32, borderRadius: 4,
+                      background: colors.bg.cardAlt,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <User size={16} style={{ color: colors.text.muted }} />
                   </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
-      </DialogContent>
-    </Dialog>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.name}
+                    </div>
+                    {c.role ? (
+                      <div style={{ fontSize: 11, color: colors.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.role}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+function DealTable({
+  deals, onRowClick, emptyLabel,
+}: {
+  deals: any[];
+  onRowClick: (deal: any) => void;
+  emptyLabel: string;
+}) {
+  const colors = useColors();
+  return (
+    <DataTable
+      rows={deals}
+      getRowKey={(d) => d._id}
+      onRowClick={onRowClick}
+      empty={<EmptyState icon={<Briefcase size={20} />} title={emptyLabel} />}
+      columns={[
+        {
+          key: 'name',
+          header: 'Deal',
+          render: (d: any) => (
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {d.name}
+              </div>
+              {d.spvName ? (
+                <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>SPV: {d.spvName}</div>
+              ) : null}
+            </div>
+          ),
+        },
+        {
+          key: 'stage',
+          header: 'Stage',
+          width: 160,
+          render: (d: any) => <StatusPill label={d.stageName ?? '—'} tone={stageTone(d.stageName, colors)} />,
+        },
+        {
+          key: 'amount',
+          header: 'Amount',
+          mono: true,
+          align: 'right',
+          width: 110,
+          render: (d: any) => formatMoney(d.amount),
+        },
+        {
+          key: 'close',
+          header: 'Close date',
+          mono: true,
+          align: 'right',
+          width: 130,
+          render: (d: any) => (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: colors.text.secondary }}>
+              <Calendar size={11} style={{ color: colors.text.muted }} />
+              {d.closeDate ? formatDate(d.closeDate) : '—'}
+            </span>
+          ),
+        },
+        {
+          key: 'activity',
+          header: 'Last activity',
+          mono: true,
+          align: 'right',
+          width: 110,
+          render: (d: any) => (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: colors.text.muted }}>
+              <Clock size={11} />
+              {formatLastActivity(d.lastActivityDate)}
+            </span>
+          ),
+        },
+      ]}
+    />
   );
 }
 
 export default function ClientDealsTab({ clientId }: Props) {
+  const colors = useColors();
   const deals = useQuery(api.deals.listForClient, { clientId }) ?? [];
 
   const [search, setSearch] = useState('');
@@ -341,98 +385,96 @@ export default function ClientDealsTab({ clientId }: Props) {
     <div className="p-6 space-y-4 max-w-5xl mx-auto">
       {/* Summary strip */}
       <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Open', total: sum(open), count: open.length, tone: 'text-foreground' },
-          { label: 'Won', total: sum(won), count: won.length, tone: 'text-emerald-600' },
-          { label: 'Lost', total: sum(lost), count: lost.length, tone: 'text-muted-foreground' },
-        ].map((s) => (
-          <Card key={s.label} className="text-center">
-            <CardContent className="py-3">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase">
-                {s.label}
-              </p>
-              <p className={`text-lg font-bold ${s.tone} mt-0.5`}>
-                {formatMoney(s.total)}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                {s.count} deal{s.count !== 1 ? 's' : ''}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        <StatTile
+          label="Open"
+          value={<span style={{ fontFamily: MONO }}>{formatMoney(sum(open))}</span>}
+          meta={`${open.length} deal${open.length !== 1 ? 's' : ''}`}
+          accent={colors.accent.blue}
+        />
+        <StatTile
+          label="Won"
+          value={<span style={{ fontFamily: MONO }}>{formatMoney(sum(won))}</span>}
+          meta={`${won.length} deal${won.length !== 1 ? 's' : ''}`}
+          accent={colors.accent.green}
+        />
+        <StatTile
+          label="Lost"
+          value={<span style={{ fontFamily: MONO }}>{formatMoney(sum(lost))}</span>}
+          meta={`${lost.length} deal${lost.length !== 1 ? 's' : ''}`}
+          accent={colors.accent.red}
+        />
       </div>
 
       {/* Search */}
-      <div className="relative">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Search size={16} style={{ color: colors.text.muted, flexShrink: 0 }} />
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search deals..."
-          className="pl-9"
         />
       </div>
 
       {/* Open section */}
       <section className="space-y-2">
-        <div className="flex items-center gap-2 px-1">
-          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-          <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px' }}>
+          <ChevronDown size={14} style={{ color: colors.text.muted }} />
+          <h2 style={{ fontFamily: MONO, fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
             Open ({open.length})
           </h2>
         </div>
-        <div className="space-y-2">
-          {open.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic p-3">No open deals</p>
-          ) : (
-            open.map((d: any) => (
-              <DealRow key={d._id} deal={d} onClick={() => setSelectedDeal(d)} />
-            ))
-          )}
-        </div>
+        <DealTable deals={open} onRowClick={setSelectedDeal} emptyLabel="No open deals" />
       </section>
 
       {/* Won / Lost collapsibles */}
       {[
-        { label: 'Closed Won', deals: won, tone: 'text-emerald-600' },
-        { label: 'Closed Lost', deals: lost, tone: 'text-muted-foreground' },
+        { label: 'Closed Won', deals: won, tone: colors.accent.green },
+        { label: 'Closed Lost', deals: lost, tone: colors.text.muted },
       ].map((group) => {
         const isExpanded = expandedGroups.has(group.label);
         return (
           <section key={group.label} className="space-y-2">
             <button
               onClick={() => toggleGroup(group.label)}
-              className="w-full flex items-center gap-2 bg-card border rounded-lg px-4 py-2.5 hover:bg-muted/40 transition-colors"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: colors.bg.card,
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+                padding: '10px 14px',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
             >
               <ChevronRight
-                className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                size={14}
+                style={{ color: colors.text.muted, transition: 'transform 100ms linear', transform: isExpanded ? 'rotate(90deg)' : 'none' }}
               />
-              <span className="text-xs font-semibold flex-1 text-left">{group.label}</span>
-              <span className={`text-[11px] font-semibold ${group.tone}`}>
+              <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{group.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: group.tone, fontFamily: MONO }}>
                 {formatMoney(sum(group.deals))}
               </span>
-              <span className="text-[11px] text-muted-foreground">
+              <span style={{ fontSize: 11, color: colors.text.muted }}>
                 · {group.deals.length} deals
               </span>
             </button>
             {isExpanded ? (
-              <div className="space-y-2 pl-4">
-                {group.deals.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic p-3">
-                    No {group.label.toLowerCase()} deals
-                  </p>
-                ) : (
-                  group.deals.map((d: any) => (
-                    <DealRow key={d._id} deal={d} onClick={() => setSelectedDeal(d)} />
-                  ))
-                )}
+              <div style={{ paddingLeft: 16 }}>
+                <DealTable
+                  deals={group.deals}
+                  onRowClick={setSelectedDeal}
+                  emptyLabel={`No ${group.label.toLowerCase()} deals`}
+                />
               </div>
             ) : null}
           </section>
         );
       })}
 
-      <DealDetailDialog
+      <DealDetailModal
         deal={selectedDeal}
         open={selectedDeal !== null}
         onOpenChange={(open) => !open && setSelectedDeal(null)}

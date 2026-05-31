@@ -1,9 +1,10 @@
 'use client';
 
 import { Communication } from '@/types';
-import { Mail, Phone, FileText, Calendar, Users } from 'lucide-react';
+import { Mail, Phone, FileText, Calendar, Users, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import { Button, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 
 interface CommunicationTimelineProps {
   communications: Communication[];
@@ -18,19 +19,21 @@ const typeIcons = {
   other: FileText,
 };
 
-const typeColors = {
-  email: 'bg-blue-100 text-blue-600',
-  meeting: 'bg-purple-100 text-purple-600',
-  call: 'bg-green-100 text-green-600',
-  document: 'bg-gray-100 text-gray-600',
-  other: 'bg-gray-100 text-gray-600',
-};
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 export default function CommunicationTimeline({
   communications,
-  getDocumentName,
 }: CommunicationTimelineProps) {
   const router = useRouter();
+  const colors = useColors();
+
+  const typeTones: Record<string, string> = {
+    email: colors.accent.blue,
+    meeting: colors.accent.purple,
+    call: colors.accent.green,
+    document: colors.text.muted,
+    other: colors.text.muted,
+  };
 
   // Group communications by date
   const grouped = communications.reduce((acc, comm) => {
@@ -43,7 +46,7 @@ export default function CommunicationTimeline({
   }, {} as Record<string, Communication[]>);
 
   // Sort dates descending
-  const sortedDates = Object.keys(grouped).sort((a, b) => 
+  const sortedDates = Object.keys(grouped).sort((a, b) =>
     new Date(b).getTime() - new Date(a).getTime()
   );
 
@@ -51,79 +54,107 @@ export default function CommunicationTimeline({
     return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  if (sortedDates.length === 0) {
+    return <EmptyState icon={<MessageSquare size={24} />} title="No communications found" />;
+  }
+
   return (
-    <div className="space-y-6">
-      {sortedDates.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          No communications found.
-        </div>
-      ) : (
-        sortedDates.map((date) => (
-          <div key={date}>
-            <div className="sticky top-0 bg-gray-50 py-2 mb-3 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-700">{date}</h3>
-            </div>
-            <div className="space-y-3">
-              {grouped[date].map((comm) => {
-                const Icon = typeIcons[comm.type] || typeIcons.other;
-                const colorClass = typeColors[comm.type] || typeColors.other;
-                
-                return (
-                  <div
-                    key={comm.id}
-                    className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-lg ${colorClass} flex-shrink-0`}>
-                        <Icon className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1">
-                            {comm.subject && (
-                              <h4 className="font-semibold text-gray-900 mb-1">
-                                {comm.subject}
-                              </h4>
-                            )}
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <span className="capitalize">{comm.type}</span>
-                              <span>•</span>
-                              <span>{formatTime(comm.date)}</span>
-                            </div>
-                          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {sortedDates.map((date) => (
+        <div key={date}>
+          <div
+            style={{
+              position: 'sticky',
+              top: 0,
+              background: colors.bg.light,
+              padding: '8px 0',
+              marginBottom: 12,
+              borderBottom: `1px solid ${colors.border.default}`,
+            }}
+          >
+            <h3
+              style={{
+                fontFamily: MONO,
+                fontSize: 9,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                fontWeight: 500,
+                color: colors.text.muted,
+              }}
+            >
+              {date}
+            </h3>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {grouped[date].map((comm) => {
+              const Icon = typeIcons[comm.type] || typeIcons.other;
+              const tone = typeTones[comm.type] || typeTones.other;
+
+              return (
+                <div
+                  key={comm.id}
+                  style={{
+                    background: colors.bg.card,
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: 4,
+                    padding: 14,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div
+                      style={{
+                        padding: 8,
+                        borderRadius: 4,
+                        background: `${tone}15`,
+                        color: tone,
+                        flexShrink: 0,
+                        display: 'flex',
+                      }}
+                    >
+                      <Icon size={18} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ marginBottom: 8 }}>
+                        {comm.subject && (
+                          <h4 style={{ fontSize: 14, fontWeight: 600, color: colors.text.primary, marginBottom: 2 }}>
+                            {comm.subject}
+                          </h4>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: colors.text.muted }}>
+                          <span style={{ textTransform: 'capitalize' }}>{comm.type}</span>
+                          <span>•</span>
+                          <span style={{ fontFamily: MONO }}>{formatTime(comm.date)}</span>
                         </div>
-
-                        {comm.participants && comm.participants.length > 0 && (
-                          <div className="flex items-center gap-2 mb-2">
-                            <Users className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-600">
-                              {comm.participants.join(', ')}
-                            </span>
-                          </div>
-                        )}
-
-                        {comm.summary && (
-                          <p className="text-sm text-gray-700 mb-2">{comm.summary}</p>
-                        )}
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => router.push(`/docs/${comm.documentId}`)}
-                          className="text-blue-600 hover:text-blue-700 h-auto py-1"
-                        >
-                          View Document
-                        </Button>
                       </div>
+
+                      {comm.participants && comm.participants.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <Users size={14} style={{ color: colors.text.dim }} />
+                          <span style={{ fontSize: 12, color: colors.text.secondary }}>
+                            {comm.participants.join(', ')}
+                          </span>
+                        </div>
+                      )}
+
+                      {comm.summary && (
+                        <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 8 }}>{comm.summary}</p>
+                      )}
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => router.push(`/docs/${comm.documentId}`)}
+                      >
+                        View Document
+                      </Button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
-        ))
-      )}
+        </div>
+      ))}
     </div>
   );
 }
-

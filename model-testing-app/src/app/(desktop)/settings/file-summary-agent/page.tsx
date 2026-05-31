@@ -4,14 +4,22 @@ import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useColors } from '@/lib/useColors';
+import {
+  Panel,
+  Button,
+  StatusPill,
+  FlagChip,
+  EmptyState,
+  Skeleton,
+} from '@/components/layouts';
 import { Plus, FileText, Edit2, Trash2, Eye } from 'lucide-react';
 import FileTypeDefinitionDrawer from '@/components/FileTypeDefinitionDrawer';
 import FileTypeDefinitionView from '@/components/FileTypeDefinitionView';
 import KeywordLearningDashboard from '@/components/settings/KeywordLearningDashboard';
 
 export default function FileSummaryAgentSettings() {
+  const colors = useColors();
   const [selectedDefinition, setSelectedDefinition] = useState<Id<'fileTypeDefinitions'> | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -76,25 +84,28 @@ export default function FileSummaryAgentSettings() {
   const categories = Object.keys(groupedDefinitions).sort();
 
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div style={{ background: colors.bg.light, minHeight: '100vh' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
         <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">File Summary Agent Settings</h1>
-            <p className="mt-2 text-gray-600">
-              Manage file types and examples for automatic file categorization. Add new file types with examples to improve the filing agent's accuracy.
-            </p>
+          <div className="flex items-center gap-3">
+            <FileText style={{ width: 22, height: 22, color: colors.text.muted }} />
+            <div>
+              <h1 style={{ fontSize: 22, fontWeight: 300, color: colors.text.primary }}>File Summary Agent Settings</h1>
+              <p style={{ marginTop: 4, fontSize: 12, color: colors.text.muted, maxWidth: 640 }}>
+                Manage file types and examples for automatic file categorization. Add new file types with examples to improve the filing agent's accuracy.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {definitions !== undefined && definitions.length === 0 && (
-              <Button onClick={handleSeedDefinitions} variant="outline" className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
+              <Button onClick={handleSeedDefinitions} variant="secondary">
+                <FileText style={{ width: 14, height: 14 }} />
                 Seed Default Definitions
               </Button>
             )}
-            <Button onClick={handleAdd} className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
+            <Button onClick={handleAdd} variant="primary">
+              <Plus style={{ width: 14, height: 14 }} />
               Add File Type
             </Button>
           </div>
@@ -107,111 +118,91 @@ export default function FileSummaryAgentSettings() {
 
         {/* File Type Definitions Library */}
         {definitions === undefined ? (
-          <Card>
-            <CardContent className="py-8">
-              <div className="text-center text-gray-500">Loading file type definitions...</div>
-            </CardContent>
-          </Card>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Skeleton height={120} />
+            <Skeleton height={120} />
+          </div>
         ) : definitions.length === 0 ? (
-          <Card>
-            <CardContent className="py-8">
-              <div className="text-center">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 mb-4">No file type definitions found.</p>
-                <Button onClick={handleAdd}>Add Your First File Type</Button>
-              </div>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={<FileText size={24} />}
+            title="No file type definitions found"
+            action={<Button variant="primary" onClick={handleAdd}>Add Your First File Type</Button>}
+          />
         ) : (
           <div className="space-y-6">
             {categories.map((category) => (
-              <Card key={category}>
-                <CardHeader>
-                  <CardTitle className="text-xl">{category}</CardTitle>
-                  <CardDescription>
-                    {groupedDefinitions[category].length} file type{groupedDefinitions[category].length !== 1 ? 's' : ''}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {groupedDefinitions[category].map((def) => (
-                      <div
-                        key={def._id}
-                        className={`flex items-center justify-between p-4 border rounded-lg ${
-                          def.isActive ? 'bg-white' : 'bg-gray-50 opacity-60'
-                        }`}
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-gray-900">{def.fileType}</h3>
-                            {def.isSystemDefault && (
-                              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
-                                System Default
-                              </span>
-                            )}
-                            {!def.isActive && (
-                              <span className="text-xs px-2 py-1 bg-gray-200 text-gray-600 rounded">
-                                Inactive
-                              </span>
-                            )}
-                            {def.parentType && (
-                              <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded">
-                                Subtype of {def.parentType}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                            {def.description.substring(0, 150)}...
-                          </p>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                            <span>{def.keywords.length} keywords</span>
-                            <span>{def.identificationRules.length} identification rules</span>
-                            {def.exampleFileName && (
-                              <span className="flex items-center gap-1">
-                                <FileText className="w-3 h-3" />
-                                Example file
-                              </span>
-                            )}
-                          </div>
+              <Panel
+                key={category}
+                title={category}
+              >
+                <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
+                  {groupedDefinitions[category].length} file type{groupedDefinitions[category].length !== 1 ? 's' : ''}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {groupedDefinitions[category].map((def) => (
+                    <div
+                      key={def._id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 14,
+                        border: `1px solid ${colors.border.default}`,
+                        borderRadius: 4,
+                        background: colors.bg.card,
+                        opacity: def.isActive ? 1 : 0.6,
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <h3 style={{ fontSize: 13, fontWeight: 600, color: colors.text.primary }}>{def.fileType}</h3>
+                          {def.isSystemDefault && <FlagChip severity="info" label="System Default" />}
+                          {!def.isActive && <StatusPill label="Inactive" tone={colors.text.dim} />}
+                          {def.parentType && (
+                            <FlagChip severity="info" label={`Subtype of ${def.parentType}`} />
+                          )}
                         </div>
-                        <div className="flex items-center gap-2 ml-4">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleView(def._id)}
-                            className="flex items-center gap-1"
-                          >
-                            <Eye className="w-4 h-4" />
-                            View
-                          </Button>
-                          {!def.isSystemDefault && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEdit(def._id)}
-                                className="flex items-center gap-1"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                                Edit
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(def._id)}
-                                className="flex items-center gap-1 text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Delete
-                              </Button>
-                            </>
+                        <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>
+                          {def.description.substring(0, 150)}...
+                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, fontSize: 10, color: colors.text.dim, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                          <span>{def.keywords.length} keywords</span>
+                          <span>{def.identificationRules.length} identification rules</span>
+                          {def.exampleFileName && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <FileText style={{ width: 12, height: 12 }} />
+                              Example file
+                            </span>
                           )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 16 }}>
+                        <Button variant="ghost" size="sm" onClick={() => handleView(def._id)}>
+                          <Eye style={{ width: 14, height: 14 }} />
+                          View
+                        </Button>
+                        {!def.isSystemDefault && (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => handleEdit(def._id)}>
+                              <Edit2 style={{ width: 14, height: 14 }} />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(def._id)}
+                              style={{ color: colors.accent.red }}
+                            >
+                              <Trash2 style={{ width: 14, height: 14 }} />
+                              Delete
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
             ))}
           </div>
         )}
@@ -244,4 +235,3 @@ export default function FileSummaryAgentSettings() {
     </div>
   );
 }
-

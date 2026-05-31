@@ -4,26 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Modal, Field, Select, Button } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Loader2, FolderInput, Building2, FolderKanban, ChevronRight, ChevronDown, Folder } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 type DestinationType = 'project' | 'client';
 
@@ -44,6 +28,7 @@ export default function BulkMoveModal({
   currentProjectId,
   onMoveComplete,
 }: BulkMoveModalProps) {
+  const colors = useColors();
   const [selectedClientId, setSelectedClientId] = useState<Id<'clients'> | null>(
     currentClientId || null
   );
@@ -156,203 +141,204 @@ export default function BulkMoveModal({
   const selectedProject = projects.find((p) => p._id === selectedProjectId);
   const selectedFolder = activeFolders.find((f: any) => f.folderType === selectedFolderId);
 
+  const destToggleStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: '8px 12px',
+    borderRadius: 4,
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+    background: active ? `${colors.accent.blue}15` : 'transparent',
+    color: active ? colors.accent.blue : colors.text.secondary,
+    border: `1px solid ${active ? `${colors.accent.blue}40` : colors.border.default}`,
+    transition: 'background 100ms linear, border-color 100ms linear',
+  });
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FolderInput className="w-5 h-5" />
-            Move {documentIds.length} Document{documentIds.length !== 1 ? 's' : ''}
-          </DialogTitle>
-          <DialogDescription>
-            Choose a destination to move the selected documents.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          {/* Client Selector */}
-          <div className="space-y-1.5">
-            <Label className="flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5" />
-              Client
-            </Label>
-            <Select
-              value={selectedClientId ?? ''}
-              onValueChange={(val) => setSelectedClientId(val as Id<'clients'>)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a client..." />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((client) => (
-                  <SelectItem key={client._id} value={client._id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Destination Type Toggle */}
-          {selectedClientId && (
-            <div className="space-y-1.5">
-              <Label>Destination Type</Label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDestinationType('project')}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md border text-sm font-medium transition-colors',
-                    destinationType === 'project'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  )}
-                >
-                  <FolderKanban className="w-4 h-4" />
-                  Project Folder
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDestinationType('client')}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md border text-sm font-medium transition-colors',
-                    destinationType === 'client'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  )}
-                >
-                  <Building2 className="w-4 h-4" />
-                  Client Folder
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Project Selector (only for project destination type) */}
-          {selectedClientId && destinationType === 'project' && (
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                <FolderKanban className="w-3.5 h-3.5" />
-                Project
-              </Label>
-              <Select
-                value={selectedProjectId ?? ''}
-                onValueChange={(val) => setSelectedProjectId(val as Id<'projects'>)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a project..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project._id} value={project._id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Folder Selector */}
-          {selectedClientId &&
-            (destinationType === 'client' || selectedProjectId) &&
-            activeFolders.length > 0 && (
-              <div className="space-y-1.5">
-                <Label>Folder</Label>
-                <div className="max-h-44 overflow-y-auto space-y-1 rounded-md border border-gray-200 p-1">
-                  {moveRootFolders.map((folder: any) => {
-                    const renderMoveFolder = (f: any, depth: number = 0): React.ReactNode => {
-                      const fId = f._id.toString();
-                      const children = moveChildMap[fId] || [];
-                      const hasChildren = children.length > 0;
-                      const isExpanded = expandedMoveTargets.has(fId);
-                      return (
-                        <div key={f._id}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedFolderId(f.folderType)}
-                            className={cn(
-                              'w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2',
-                              selectedFolderId === f.folderType
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'hover:bg-gray-50 border border-transparent'
-                            )}
-                            style={{ paddingLeft: `${12 + depth * 16}px` }}
-                          >
-                            {hasChildren && (
-                              <span
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const next = new Set(expandedMoveTargets);
-                                  if (next.has(fId)) next.delete(fId); else next.add(fId);
-                                  setExpandedMoveTargets(next);
-                                }}
-                                className="flex-shrink-0 cursor-pointer"
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-                                ) : (
-                                  <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                                )}
-                              </span>
-                            )}
-                            <Folder className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                            <span className="truncate">{f.name}</span>
-                          </button>
-                          {hasChildren && isExpanded && (
-                            <div>
-                              {children.map((child: any) => renderMoveFolder(child, depth + 1))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    };
-                    return renderMoveFolder(folder);
-                  })}
-                </div>
-              </div>
-            )}
-
-          {/* No folders available message */}
-          {selectedClientId &&
-            (destinationType === 'client' || selectedProjectId) &&
-            activeFolders.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-2">
-                No folders available for this destination.
-              </p>
-            )}
-
-          {/* Summary */}
-          {canMove && selectedClient && selectedFolder && (
-            <div className="bg-gray-50 rounded-lg p-3 text-sm">
-              <div className="font-medium text-gray-700 mb-1">Moving to:</div>
-              <div className="text-gray-600">
-                {selectedClient.name}
-                {destinationType === 'project' && selectedProject && (
-                  <> &rsaquo; {selectedProject.name}</>
-                )}
-                {' '}&rsaquo; {selectedFolder.name}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isMoving}>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      width={448}
+      title={`Move ${documentIds.length} Document${documentIds.length !== 1 ? 's' : ''}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isMoving}>
             Cancel
           </Button>
-          <Button onClick={handleMove} disabled={!canMove || isMoving}>
+          <Button variant="primary" accent={colors.accent.blue} onClick={handleMove} disabled={!canMove || isMoving}>
             {isMoving ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Moving...
               </>
             ) : (
               `Move ${documentIds.length} Document${documentIds.length !== 1 ? 's' : ''}`
             )}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <div className="flex items-center gap-2" style={{ fontSize: 11, color: colors.text.muted, marginBottom: 14 }}>
+        <FolderInput className="w-3.5 h-3.5" />
+        Choose a destination to move the selected documents.
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Client Selector */}
+        <Field label="Client">
+          <Select
+            value={selectedClientId ?? ''}
+            onChange={(e) => setSelectedClientId((e.target.value || null) as Id<'clients'>)}
+          >
+            <option value="">Select a client...</option>
+            {clients.map((client) => (
+              <option key={client._id} value={client._id}>
+                {client.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        {/* Destination Type Toggle */}
+        {selectedClientId && (
+          <Field label="Destination Type">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setDestinationType('project')} style={destToggleStyle(destinationType === 'project')}>
+                <FolderKanban className="w-4 h-4" />
+                Project Folder
+              </button>
+              <button type="button" onClick={() => setDestinationType('client')} style={destToggleStyle(destinationType === 'client')}>
+                <Building2 className="w-4 h-4" />
+                Client Folder
+              </button>
+            </div>
+          </Field>
+        )}
+
+        {/* Project Selector (only for project destination type) */}
+        {selectedClientId && destinationType === 'project' && (
+          <Field label="Project">
+            <Select
+              value={selectedProjectId ?? ''}
+              onChange={(e) => setSelectedProjectId((e.target.value || null) as Id<'projects'>)}
+            >
+              <option value="">Select a project...</option>
+              {projects.map((project) => (
+                <option key={project._id} value={project._id}>
+                  {project.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
+        {/* Folder Selector */}
+        {selectedClientId &&
+          (destinationType === 'client' || selectedProjectId) &&
+          activeFolders.length > 0 && (
+            <Field label="Folder">
+              <div
+                style={{
+                  maxHeight: 176,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  borderRadius: 4,
+                  border: `1px solid ${colors.border.default}`,
+                  padding: 4,
+                }}
+              >
+                {moveRootFolders.map((folder: any) => {
+                  const renderMoveFolder = (f: any, depth: number = 0): React.ReactNode => {
+                    const fId = f._id.toString();
+                    const children = moveChildMap[fId] || [];
+                    const hasChildren = children.length > 0;
+                    const isExpanded = expandedMoveTargets.has(fId);
+                    const isSelected = selectedFolderId === f.folderType;
+                    return (
+                      <div key={f._id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFolderId(f.folderType)}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '8px 12px',
+                            paddingLeft: 12 + depth * 16,
+                            borderRadius: 4,
+                            fontSize: 12,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            cursor: 'pointer',
+                            background: isSelected ? `${colors.accent.blue}15` : 'transparent',
+                            color: isSelected ? colors.accent.blue : colors.text.primary,
+                            border: `1px solid ${isSelected ? `${colors.accent.blue}40` : 'transparent'}`,
+                            transition: 'background 100ms linear',
+                          }}
+                        >
+                          {hasChildren && (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const next = new Set(expandedMoveTargets);
+                                if (next.has(fId)) next.delete(fId); else next.add(fId);
+                                setExpandedMoveTargets(next);
+                              }}
+                              style={{ flexShrink: 0, cursor: 'pointer', color: colors.text.dim }}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              )}
+                            </span>
+                          )}
+                          <Folder className="w-3.5 h-3.5 flex-shrink-0" style={{ color: colors.accent.yellow }} />
+                          <span className="truncate">{f.name}</span>
+                        </button>
+                        {hasChildren && isExpanded && (
+                          <div>
+                            {children.map((child: any) => renderMoveFolder(child, depth + 1))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  };
+                  return renderMoveFolder(folder);
+                })}
+              </div>
+            </Field>
+          )}
+
+        {/* No folders available message */}
+        {selectedClientId &&
+          (destinationType === 'client' || selectedProjectId) &&
+          activeFolders.length === 0 && (
+            <p style={{ fontSize: 12, color: colors.text.muted, textAlign: 'center', padding: '8px 0' }}>
+              No folders available for this destination.
+            </p>
+          )}
+
+        {/* Summary */}
+        {canMove && selectedClient && selectedFolder && (
+          <div style={{ background: colors.bg.cardAlt, borderRadius: 4, padding: 12, fontSize: 12 }}>
+            <div style={{ fontWeight: 500, color: colors.text.secondary, marginBottom: 4 }}>Moving to:</div>
+            <div style={{ color: colors.text.muted }}>
+              {selectedClient.name}
+              {destinationType === 'project' && selectedProject && (
+                <> &rsaquo; {selectedProject.name}</>
+              )}
+              {' '}&rsaquo; {selectedFolder.name}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

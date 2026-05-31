@@ -3,21 +3,11 @@
 import React, { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
+import { Button, Modal, Field, Input, Textarea } from '@/components/layouts';
 import { Loader2 } from 'lucide-react';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { FILE_CATEGORIES, FILE_TYPES } from '@/lib/categories';
+import { useColors } from '@/lib/useColors';
 import { toast } from 'sonner';
 
 interface CreateCustomTypeModalProps {
@@ -40,6 +30,7 @@ export function CreateCustomTypeModal({
   onCreated,
   existingCustomTypes = [],
 }: CreateCustomTypeModalProps) {
+  const colors = useColors();
   const [name, setName] = useState(initialName);
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
@@ -124,73 +115,59 @@ export function CreateCustomTypeModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create Custom Document Type</DialogTitle>
-          <DialogDescription>
-            Add a new document type so it can be used for classification.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="custom-type-name">Name</Label>
-            <Input
-              id="custom-type-name"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (nameError) validateName(e.target.value);
-              }}
-              placeholder="e.g. Development Appraisal"
-            />
-            {nameError && (
-              <p className="text-xs text-destructive">{nameError}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Category</Label>
-            <SearchableSelect
-              options={categoryOptions}
-              value={category}
-              onSelect={setCategory}
-              placeholder="Select a category..."
-            />
-            {!category && saving && (
-              <p className="text-xs text-destructive">Category is required</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="custom-type-description">Description</Label>
-            <Textarea
-              id="custom-type-description"
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                if (descriptionError) validateDescription(e.target.value);
-              }}
-              placeholder="Briefly describe this document type so the AI can recognize it in future uploads..."
-              rows={3}
-            />
-            {descriptionError && (
-              <p className="text-xs text-destructive">{descriptionError}</p>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+    <Modal
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title="Create Custom Document Type"
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving || !name.trim() || !category}>
-            {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+          <Button variant="primary" onClick={handleSave} disabled={saving || !name.trim() || !category}>
+            {saving && <Loader2 size={14} className="animate-spin" />}
             Create Type
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>
+        Add a new document type so it can be used for classification.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Field label="Name" error={nameError || undefined}>
+          <Input
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (nameError) validateName(e.target.value);
+            }}
+            placeholder="e.g. Development Appraisal"
+          />
+        </Field>
+
+        <Field label="Category" error={!category && saving ? 'Category is required' : undefined}>
+          <SearchableSelect
+            options={categoryOptions}
+            value={category}
+            onSelect={setCategory}
+            placeholder="Select a category..."
+          />
+        </Field>
+
+        <Field label="Description" error={descriptionError || undefined}>
+          <Textarea
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              if (descriptionError) validateDescription(e.target.value);
+            }}
+            placeholder="Briefly describe this document type so the AI can recognize it in future uploads..."
+            rows={3}
+          />
+        </Field>
+      </div>
+    </Modal>
   );
 }

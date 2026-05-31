@@ -4,21 +4,9 @@ import { useState, useCallback } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Upload, FileSpreadsheet, Loader2, CheckCircle2 } from 'lucide-react';
+import { Modal, Button, Field, Input, Textarea, Select } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { Upload, Loader2, CheckCircle2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SheetClassificationModal, { 
   ParsedSheetInfo, 
@@ -41,6 +29,7 @@ export default function TemplateUploadModal({
   onClose,
   onSuccess,
 }: TemplateUploadModalProps) {
+  const colors = useColors();
   // Form state
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
@@ -377,136 +366,136 @@ export default function TemplateUploadModal({
 
   return (
     <>
-      <Dialog open={isOpen && step !== 'classify'} onOpenChange={(open) => !open && handleClose()}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5" />
-              {step === 'done' ? 'Template Created' : 'Upload Template'}
-            </DialogTitle>
-            <DialogDescription>
-              {step === 'form' && 'Upload an Excel template file (.xlsx) with optional dynamic sheet configuration'}
-              {step === 'parsing' && 'Parsing Excel file...'}
-              {step === 'uploading' && 'Creating template...'}
-              {step === 'done' && 'Your template is ready to use!'}
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Form Step */}
-          {step === 'form' && (
+      <Modal
+        open={isOpen && step !== 'classify'}
+        onClose={handleClose}
+        title={step === 'done' ? 'Template Created' : 'Upload Template'}
+        width={640}
+        footer={
+          step === 'form' ? (
             <>
-              <div className="space-y-4 py-4">
-                {error && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                    {error}
-                  </div>
-                )}
-                
-                <div>
-                  <Label htmlFor="template-name">Template Name *</Label>
-                  <Input
-                    id="template-name"
-                    value={templateName}
-                    onChange={(e) => setTemplateName(e.target.value)}
-                    placeholder="e.g., Appraisal Model v2.0"
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="template-description">Description</Label>
-                  <Textarea
-                    id="template-description"
-                    value={templateDescription}
-                    onChange={(e) => setTemplateDescription(e.target.value)}
-                    placeholder="Brief description of this template..."
-                    rows={3}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="template-type">Model Type *</Label>
-                  <Select value={templateModelType} onValueChange={(v) => setTemplateModelType(v as ModelType)}>
-                    <SelectTrigger id="template-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="appraisal">Appraisal</SelectItem>
-                      <SelectItem value="operating">Operating</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label htmlFor="template-file">Template File (.xlsx) *</Label>
-                  <div className="mt-2">
-                    <label
-                      htmlFor="template-file"
-                      className="flex items-center justify-center w-full h-32 px-4 transition bg-white border-2 border-gray-300 border-dashed rounded-lg appearance-none cursor-pointer hover:border-gray-400 focus:outline-none"
-                    >
-                      <div className="flex flex-col items-center space-y-2">
-                        <Upload className="w-8 h-8 text-gray-400" />
-                        <span className="text-sm text-gray-500">
-                          {selectedFile ? selectedFile.name : 'Click to select or drag and drop'}
-                        </span>
-                        {selectedFile && (
-                          <span className="text-xs text-gray-400">
-                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                          </span>
-                        )}
-                      </div>
-                      <input
-                        id="template-file"
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={handleFileSelect}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-              </div>
-              
-              <DialogFooter>
-                <Button variant="outline" onClick={handleClose}>
-                  Cancel
-                </Button>
-                <Button onClick={handleStartParsing} disabled={!selectedFile || !templateName.trim()}>
-                  Continue
-                </Button>
-              </DialogFooter>
+              <Button variant="secondary" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleStartParsing} disabled={!selectedFile || !templateName.trim()}>
+                Continue
+              </Button>
             </>
-          )}
+          ) : undefined
+        }
+      >
+        <p style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 16 }}>
+          {step === 'form' && 'Upload an Excel template file (.xlsx) with optional dynamic sheet configuration'}
+          {step === 'parsing' && 'Parsing Excel file...'}
+          {step === 'uploading' && 'Creating template...'}
+          {step === 'done' && 'Your template is ready to use!'}
+        </p>
 
-          {/* Parsing/Uploading Step */}
-          {(step === 'parsing' || step === 'uploading') && (
-            <div className="py-8 space-y-4">
-              <div className="flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        {/* Form Step */}
+        {step === 'form' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {error && (
+              <div style={{ padding: 12, background: `${colors.accent.red}15`, border: `1px solid ${colors.accent.red}40`, borderRadius: 4, color: colors.accent.red, fontSize: 13 }}>
+                {error}
               </div>
-              <div className="text-center">
-                <p className="text-sm font-medium text-gray-900">{statusMessage}</p>
-              </div>
-              <Progress value={progress} className="w-full" />
-            </div>
-          )}
+            )}
 
-          {/* Done Step */}
-          {step === 'done' && (
-            <div className="py-8 space-y-4">
-              <div className="flex items-center justify-center">
-                <CheckCircle2 className="w-12 h-12 text-green-600" />
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-medium text-gray-900">Template Created Successfully!</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {parsedSheets.length} sheets processed
-                </p>
-              </div>
+            <Field label="Template Name *">
+              <Input
+                id="template-name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="e.g., Appraisal Model v2.0"
+              />
+            </Field>
+
+            <Field label="Description">
+              <Textarea
+                id="template-description"
+                value={templateDescription}
+                onChange={(e) => setTemplateDescription(e.target.value)}
+                placeholder="Brief description of this template..."
+                rows={3}
+              />
+            </Field>
+
+            <Field label="Model Type *">
+              <Select value={templateModelType} onChange={(e) => setTemplateModelType(e.target.value as ModelType)}>
+                <option value="appraisal">Appraisal</option>
+                <option value="operating">Operating</option>
+                <option value="other">Other</option>
+              </Select>
+            </Field>
+
+            <Field label="Template File (.xlsx) *">
+              <label
+                htmlFor="template-file"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '100%',
+                  height: 128,
+                  padding: '0 16px',
+                  background: colors.bg.cardAlt,
+                  border: `2px dashed ${colors.border.mid}`,
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <Upload style={{ width: 32, height: 32, color: colors.text.dim }} />
+                  <span style={{ fontSize: 13, color: colors.text.muted }}>
+                    {selectedFile ? selectedFile.name : 'Click to select or drag and drop'}
+                  </span>
+                  {selectedFile && (
+                    <span style={{ fontSize: 11, color: colors.text.dim }}>
+                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                    </span>
+                  )}
+                </div>
+                <input
+                  id="template-file"
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            </Field>
+          </div>
+        )}
+
+        {/* Parsing/Uploading Step */}
+        {(step === 'parsing' || step === 'uploading') && (
+          <div style={{ padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Loader2 className="animate-spin" style={{ width: 32, height: 32, color: colors.accent.blue }} />
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{statusMessage}</p>
+            </div>
+            <div style={{ width: '100%', height: 6, background: colors.bg.cardAlt, borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ width: `${progress}%`, height: '100%', background: colors.accent.blue, transition: 'width 200ms linear' }} />
+            </div>
+          </div>
+        )}
+
+        {/* Done Step */}
+        {step === 'done' && (
+          <div style={{ padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle2 style={{ width: 48, height: 48, color: colors.accent.green }} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 16, fontWeight: 500, color: colors.text.primary }}>Template Created Successfully</p>
+              <p style={{ fontSize: 13, color: colors.text.muted, marginTop: 4 }}>
+                {parsedSheets.length} sheets processed
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Sheet Classification Modal */}
       {step === 'classify' && (

@@ -4,13 +4,10 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { useColors } from '@/lib/useColors';
+import { Panel, Button, Field, Input, Select, StatusPill, FlagChip, EmptyState } from '@/components/layouts';
 import { Switch } from '@/components/ui/switch';
-import { FileText, Building2, FolderKanban, CheckCircle2, AlertCircle, X, Edit2, Save, User, Eye, EyeOff, Pencil } from 'lucide-react';
+import { FileText, Building2, FolderKanban, X, Save, User, Eye, EyeOff, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useDocument, useGetFileUrl } from '@/lib/documentStorage';
 import { useClients, useProjectsByClient, useCreateClient, useCreateProject, useClient, useProject } from '@/lib/clientStorage';
@@ -22,23 +19,19 @@ import CommentsSection from '@/components/CommentsSection';
 import FolderSelectionModal from '@/components/FolderSelectionModal';
 import { useState, useEffect, useMemo } from 'react';
 import { AnalysisResult } from '@/types';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { generateDocumentCode, generateInternalDocumentCode } from '@/lib/documentCodeUtils';
 import { useCreateDocument, useCreateInternalDocument } from '@/lib/documentStorage';
 import { useSaveProspectingContext } from '@/lib/prospectingStorage';
 import { useCreateEnrichment } from '@/lib/clientStorage';
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 export default function UploadSummaryPage() {
+  const colors = useColors();
   const params = useParams();
   const router = useRouter();
   const jobId = params.jobId as Id<"fileUploadQueue">;
-  
+
   const job = useQuery(api.fileQueue.getJob, { jobId });
   const updateJobStatus = useMutation(api.fileQueue.updateJobStatus);
   const markAsRead = useMutation(api.fileQueue.markAsRead);
@@ -52,7 +45,7 @@ export default function UploadSummaryPage() {
   const [codeEditorModalOpen, setCodeEditorModalOpen] = useState(false);
   const [folderSelectionModalOpen, setFolderSelectionModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'summary' | 'preview'>('summary');
-  
+
   // Editable state
   const [editedDocumentCode, setEditedDocumentCode] = useState<string>('');
   const [editedSummary, setEditedSummary] = useState<string>('');
@@ -69,25 +62,25 @@ export default function UploadSummaryPage() {
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isFiling, setIsFiling] = useState(false);
-  
+
   // Filing hooks
   const createDocument = useCreateDocument();
   const createInternalDocument = useCreateInternalDocument();
   const saveProspectingContext = useSaveProspectingContext();
   const createEnrichment = useCreateEnrichment();
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
-  
+
   // Update filedDocumentId when job loads or updates
   useEffect(() => {
     if (job?.documentId) {
       setFiledDocumentId(job.documentId);
     }
   }, [job?.documentId]);
-  
+
   const document = useDocument(filedDocumentId || undefined);
   const analysisResult = job?.analysisResult as AnalysisResult | undefined;
   const fileUrl = useGetFileUrl(document?.fileStorageId || job?.fileStorageId);
-  
+
   // Clients and projects - always call hooks
   const clients = useClients() || [];
   const projects = useProjectsByClient(editedClientId ? (editedClientId as Id<"clients">) : undefined) || [];
@@ -128,7 +121,7 @@ export default function UploadSummaryPage() {
       setEditedCategory(analysisResult.category || '');
       // Note: Client/project auto-population happens in separate useEffect hooks
       // after clients/projects are loaded to ensure we have the full lists
-      
+
       // Auto-generate document code immediately if we have client info
       if (analysisResult.clientName || analysisResult.suggestedClientName) {
         const clientName = analysisResult.clientName || analysisResult.suggestedClientName || '';
@@ -146,7 +139,7 @@ export default function UploadSummaryPage() {
   // Auto-populate client from AI suggestion when clients are loaded
   useEffect(() => {
     if (analysisResult?.suggestedClientName && clients.length > 0 && !editedClientId && !document) {
-      const matchingClient = clients.find(c => 
+      const matchingClient = clients.find(c =>
         c.name.toLowerCase() === analysisResult.suggestedClientName?.toLowerCase()
       );
       if (matchingClient) {
@@ -158,7 +151,7 @@ export default function UploadSummaryPage() {
   // Auto-select project when client is set and we have a suggested project name
   useEffect(() => {
     if (analysisResult?.suggestedProjectName && editedClientId && projects.length > 0 && !editedProjectId && !document) {
-      const matchingProject = projects.find(p => 
+      const matchingProject = projects.find(p =>
         p.name.toLowerCase() === analysisResult.suggestedProjectName?.toLowerCase()
       );
       if (matchingProject) {
@@ -203,18 +196,17 @@ export default function UploadSummaryPage() {
   // Early return AFTER all hooks
   if (!job) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-            <p className="text-gray-500">Upload job not found.</p>
-            <Button
-              variant="outline"
-              onClick={() => router.push('/')}
-              className="mt-4"
-            >
-              Back to Home
-            </Button>
-          </div>
+      <div style={{ minHeight: '100vh', background: colors.bg.light }}>
+        <div style={{ maxWidth: 1280, margin: '0 auto', padding: '32px 24px' }}>
+          <EmptyState
+            icon={<FileText size={40} />}
+            title="Upload job not found"
+            action={
+              <Button variant="secondary" onClick={() => router.push('/')}>
+                Back to Home
+              </Button>
+            }
+          />
         </div>
       </div>
     );
@@ -230,7 +222,7 @@ export default function UploadSummaryPage() {
     if (!confirm('Are you sure you want to delete this upload job?')) {
       return;
     }
-    
+
     setIsDeleting(true);
     try {
       await deleteJob({ jobId });
@@ -291,7 +283,7 @@ export default function UploadSummaryPage() {
         // Create internal document
         const uploadedAt = new Date().toISOString();
         const documentCode = generateInternalDocumentCode(editedCategory || analysisResult?.category || 'Document', uploadedAt);
-        
+
         const internalDocumentId = await createInternalDocument({
           fileStorageId: job.fileStorageId,
           fileName: job.fileName,
@@ -311,13 +303,13 @@ export default function UploadSummaryPage() {
           status: 'completed',
           documentCode,
         });
-        
+
         // Internal documents use a different table, so we don't set filedDocumentId
         // The job will be marked as completed below
       } else {
         // Get userId from job for uploadedBy
         const uploadedBy = job?.userId ? (job.userId as Id<"users">) : undefined;
-        
+
         // Generate document code if not already set
         let finalDocumentCode = editedDocumentCode;
         if (!finalDocumentCode) {
@@ -332,7 +324,7 @@ export default function UploadSummaryPage() {
             );
           }
         }
-        
+
         // Create regular document record
         const documentId = await createDocument({
           fileStorageId: job.fileStorageId,
@@ -385,7 +377,7 @@ export default function UploadSummaryPage() {
           for (const suggestion of analysisResult.enrichmentSuggestions) {
             try {
               let suggestionType: 'email' | 'phone' | 'address' | 'company' | 'contact' | 'date' | 'other' = 'other';
-              
+
               const typeStr = suggestion.type as string;
               if (typeStr === 'email') {
                 suggestionType = 'email';
@@ -443,7 +435,7 @@ export default function UploadSummaryPage() {
           .then(data => {
             if (data.success && data.prospectingContext && saveProspectingContext) {
               const sanitizedRelationshipContext = data.prospectingContext.relationshipContext ? {
-                sentiment: data.prospectingContext.relationshipContext.sentiment && 
+                sentiment: data.prospectingContext.relationshipContext.sentiment &&
                            ['positive', 'neutral', 'negative'].includes(data.prospectingContext.relationshipContext.sentiment.toLowerCase())
                   ? data.prospectingContext.relationshipContext.sentiment.toLowerCase() as 'positive' | 'neutral' | 'negative'
                   : undefined,
@@ -453,7 +445,7 @@ export default function UploadSummaryPage() {
               } : undefined;
 
               const sanitizedTimeline = data.prospectingContext.timeline ? {
-                urgency: data.prospectingContext.timeline.urgency && 
+                urgency: data.prospectingContext.timeline.urgency &&
                          ['high', 'medium', 'low'].includes(data.prospectingContext.timeline.urgency.toLowerCase())
                   ? data.prospectingContext.timeline.urgency.toLowerCase() as 'high' | 'medium' | 'low'
                   : undefined,
@@ -518,7 +510,7 @@ export default function UploadSummaryPage() {
 
         setFiledDocumentId(documentId);
       }
-      
+
       setIsFiling(false);
       alert('Document filed successfully!');
     } catch (error) {
@@ -572,69 +564,71 @@ export default function UploadSummaryPage() {
   };
 
   const isPDF = job.fileType === 'application/pdf' || job.fileName.toLowerCase().endsWith('.pdf');
-  const isExcel = job.fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+  const isExcel = job.fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
                   job.fileType === 'application/vnd.ms-excel' ||
                   job.fileName.toLowerCase().endsWith('.xlsx') ||
                   job.fileName.toLowerCase().endsWith('.xls');
 
+  const sectionHeaderStyle: React.CSSProperties = {
+    fontFamily: MONO,
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: colors.text.muted,
+    fontWeight: 500,
+    display: 'block',
+    marginBottom: 6,
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 transition-opacity duration-300 ease-in-out" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 transition-all duration-300 ease-in-out">
-        {/* Page Title - Following UI Styling Guide */}
-        <div className="mb-8 flex items-center justify-between">
+    <div style={{ minHeight: '100vh', background: colors.bg.light }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '32px 24px 96px' }}>
+        {/* Page Title */}
+        <div style={{ marginBottom: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <h1 className="text-3xl text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
+            <h1 style={{ fontSize: 28, fontWeight: 700, color: colors.text.primary, margin: 0 }}>
               File Summary
             </h1>
-            <p className="mt-2 text-gray-600" style={{ fontWeight: 400 }}>
+            <p style={{ marginTop: 8, color: colors.text.muted, fontSize: 13 }}>
               Review and confirm file analysis results
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {analysisResult && (
               <Button
-                variant={viewMode === 'preview' ? 'default' : 'outline'}
+                variant={viewMode === 'preview' ? 'primary' : 'secondary'}
+                accent={colors.text.primary}
                 onClick={() => setViewMode(viewMode === 'summary' ? 'preview' : 'summary')}
-                className={viewMode === 'preview' ? 'bg-black text-white hover:bg-gray-800' : ''}
               >
                 {viewMode === 'preview' ? (
                   <>
-                    <EyeOff className="w-4 h-4 mr-2" />
+                    <EyeOff size={16} />
                     Summary
                   </>
                 ) : (
                   <>
-                    <Eye className="w-4 h-4 mr-2" />
+                    <Eye size={16} />
                     Preview
                   </>
                 )}
               </Button>
             )}
             {filedDocumentId && hasChanges && (
-              <Button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="bg-black text-white hover:bg-gray-800 flex items-center gap-2"
-              >
-                <Save className="w-4 h-4" />
+              <Button variant="primary" accent={colors.text.primary} onClick={handleSave} disabled={isSaving}>
+                <Save size={16} />
                 {isSaving ? 'Saving...' : 'Save Changes'}
               </Button>
             )}
             {filedDocumentId && (
               <Link href={`/docs/${filedDocumentId}`}>
-                <Button variant="outline">
-                  <FileText className="w-4 h-4 mr-2" />
+                <Button variant="secondary">
+                  <FileText size={16} />
                   View Document
                 </Button>
               </Link>
             )}
-            <Button
-              variant="ghost"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="text-black hover:text-gray-800"
-            >
-              <X className="w-4 h-4 mr-2" />
+            <Button variant="ghost" onClick={handleDelete} disabled={isDeleting}>
+              <X size={16} />
               Delete Upload
             </Button>
           </div>
@@ -642,30 +636,30 @@ export default function UploadSummaryPage() {
 
         {/* Preview View */}
         {viewMode === 'preview' && fileUrl && (
-          <Card key={`preview-${jobId}`} className="mb-6 transition-opacity duration-300 ease-in-out">
-            <CardContent className="p-0">
+          <div key={`preview-${jobId}`} style={{ marginBottom: 24 }}>
+            <Panel padded={false}>
               {isPDF ? (
                 <iframe
                   src={fileUrl}
-                  className="w-full h-[800px] border-0"
+                  style={{ width: '100%', height: 800, border: 0 }}
                   title={job.fileName}
                 />
               ) : isExcel && analysisResult?.extractedData ? (
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold mb-4">Extracted Data</h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse border border-gray-300">
+                <div style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: colors.text.primary }}>Extracted Data</h3>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ minWidth: '100%', borderCollapse: 'collapse', border: `1px solid ${colors.border.default}` }}>
                       <thead>
-                        <tr className="bg-gray-100">
+                        <tr style={{ background: colors.bg.light }}>
                           {(() => {
-                            const dataArray = Array.isArray(analysisResult.extractedData) 
-                              ? analysisResult.extractedData 
-                              : analysisResult.extractedData 
-                                ? [analysisResult.extractedData] 
+                            const dataArray = Array.isArray(analysisResult.extractedData)
+                              ? analysisResult.extractedData
+                              : analysisResult.extractedData
+                                ? [analysisResult.extractedData]
                                 : [];
                             const firstRow = dataArray[0] || {};
                             return Object.keys(firstRow).map((key) => (
-                              <th key={key} className="border border-gray-300 px-4 py-2 text-left font-semibold">
+                              <th key={key} style={{ border: `1px solid ${colors.border.default}`, padding: '8px 16px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: colors.text.primary }}>
                                 {key}
                               </th>
                             ));
@@ -674,17 +668,17 @@ export default function UploadSummaryPage() {
                       </thead>
                       <tbody>
                         {(() => {
-                          const dataArray = Array.isArray(analysisResult.extractedData) 
-                            ? analysisResult.extractedData 
-                            : analysisResult.extractedData 
-                              ? [analysisResult.extractedData] 
+                          const dataArray = Array.isArray(analysisResult.extractedData)
+                            ? analysisResult.extractedData
+                            : analysisResult.extractedData
+                              ? [analysisResult.extractedData]
                               : [];
                           return dataArray.slice(0, 100).map((row: any, idx: number) => {
                             const firstRow = dataArray[0] || {};
                             return (
                               <tr key={idx}>
                                 {Object.keys(firstRow).map((key) => (
-                                  <td key={key} className="border border-gray-300 px-4 py-2">
+                                  <td key={key} style={{ border: `1px solid ${colors.border.default}`, padding: '8px 16px', fontSize: 12, color: colors.text.secondary }}>
                                     {row[key] || ''}
                                   </td>
                                 ))}
@@ -697,142 +691,118 @@ export default function UploadSummaryPage() {
                   </div>
                 </div>
               ) : (
-                <div className="p-12 text-center text-gray-500">
-                  <p>Preview not available for this file type.</p>
-                </div>
+                <EmptyState icon={<FileText size={40} />} title="Preview not available for this file type" />
               )}
-            </CardContent>
-          </Card>
+            </Panel>
+          </div>
         )}
 
         {/* Summary View */}
         {viewMode === 'summary' && (
-          <div key={`summary-${jobId}`} className="transition-opacity duration-300 ease-in-out">
-            <>
-            {/* Full-Width Header - Following UI Styling Guide */}
-            <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  {/* Document Code/Name - Editable with Pencil Icon */}
-                  <div className="mb-3 flex items-center gap-2">
-                    <div className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
-                      {editedDocumentCode || 'Document code will be generated'}
+          <div key={`summary-${jobId}`}>
+            {/* Full-Width Header */}
+            <div style={{ marginBottom: 24 }}>
+              <Panel>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div style={{ flex: 1 }}>
+                    {/* Document Code/Name */}
+                    <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: colors.text.primary }}>
+                        {editedDocumentCode || 'Document code will be generated'}
+                      </div>
+                      {editedDocumentCode && (
+                        <Button variant="ghost" size="sm" onClick={() => setCodeEditorModalOpen(true)}>
+                          <Pencil size={12} />
+                          Edit Code
+                        </Button>
+                      )}
                     </div>
-                    {editedDocumentCode && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setCodeEditorModalOpen(true)}
-                        className="h-6 px-2 text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        <Pencil className="w-3 h-3 mr-1" />
-                        Edit Code
-                      </Button>
+                    {job.fileName && (
+                      <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+                        Original filename: <span style={{ fontFamily: MONO }}>{job.fileName}</span>
+                      </p>
                     )}
-                  </div>
-                  {job.fileName && (
-                    <p className="text-sm text-gray-500 mb-3">
-                      Original filename: <span className="font-mono">{job.fileName}</span>
-                    </p>
-                  )}
 
-                  {/* Metadata Row */}
-                  <div className="flex items-center gap-4 text-sm text-gray-600 flex-wrap">
-                    <span>{formatFileSize(job.fileSize)}</span>
-                    <span>•</span>
-                    <span>Uploaded {new Date(job.createdAt).toLocaleString()}</span>
-                    {uploadedByUser && (
-                      <>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <User className="w-3 h-3" />
-                          Uploaded by: {uploadedByUser.name || uploadedByUser.email}
-                        </span>
-                      </>
-                    )}
-                    {analysisResult && (
-                      <>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          Confidence: 
-                          <Badge 
-                            variant={analysisResult.confidence >= 0.9 ? "default" : "secondary"}
-                            className={analysisResult.confidence < 0.9 ? "bg-yellow-100 text-yellow-700" : ""}
-                          >
-                            {(analysisResult.confidence * 100).toFixed(0)}%
-                          </Badge>
-                        </span>
-                      </>
-                    )}
-                    {job.status === 'completed' && (
-                      <>
-                        <span>•</span>
-                        <Badge className="bg-green-100 text-green-700">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          Filed
-                        </Badge>
-                      </>
-                    )}
-                    {job.status === 'needs_confirmation' && (
-                      <>
-                        <span>•</span>
-                        <Badge className="bg-yellow-100 text-yellow-700">
-                          <AlertCircle className="w-3 h-3 mr-1" />
-                          Needs Review
-                        </Badge>
-                      </>
-                    )}
+                    {/* Metadata Row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 12, color: colors.text.secondary, flexWrap: 'wrap' }}>
+                      <span>{formatFileSize(job.fileSize)}</span>
+                      <span>•</span>
+                      <span>Uploaded {new Date(job.createdAt).toLocaleString()}</span>
+                      {uploadedByUser && (
+                        <>
+                          <span>•</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <User size={12} />
+                            Uploaded by: {uploadedByUser.name || uploadedByUser.email}
+                          </span>
+                        </>
+                      )}
+                      {analysisResult && (
+                        <>
+                          <span>•</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            Confidence:
+                            <StatusPill
+                              label={`${(analysisResult.confidence * 100).toFixed(0)}%`}
+                              tone={analysisResult.confidence >= 0.9 ? colors.accent.green : colors.accent.yellow}
+                            />
+                          </span>
+                        </>
+                      )}
+                      {job.status === 'completed' && (
+                        <>
+                          <span>•</span>
+                          <FlagChip label="Filed" severity="ok" />
+                        </>
+                      )}
+                      {job.status === 'needs_confirmation' && (
+                        <>
+                          <span>•</span>
+                          <FlagChip label="Needs Review" severity="warn" />
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Panel>
             </div>
 
             {/* Custom Instructions Section */}
             {job.hasCustomInstructions && (
-              <Card className="mb-6">
-                <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-                  <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-                    Custom Instructions
-                  </span>
-                  {!filedDocumentId && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setInstructionsModalOpen(true)}
-                      className="bg-white text-blue-600 hover:bg-gray-100"
-                    >
-                      {job.customInstructions ? 'Edit Instructions' : 'Add Instructions'}
-                    </Button>
-                  )}
-                </div>
-                <CardContent className="pt-4">
+              <div style={{ marginBottom: 24 }}>
+                <Panel
+                  title="Custom Instructions"
+                  accent={colors.accent.blue}
+                  actions={
+                    !filedDocumentId ? (
+                      <Button variant="secondary" size="sm" onClick={() => setInstructionsModalOpen(true)}>
+                        {job.customInstructions ? 'Edit Instructions' : 'Add Instructions'}
+                      </Button>
+                    ) : undefined
+                  }
+                >
                   {job.customInstructions ? (
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{job.customInstructions}</p>
+                    <div style={{ padding: 12, background: colors.bg.light, borderRadius: 4 }}>
+                      <p style={{ fontSize: 12, color: colors.text.primary, whiteSpace: 'pre-wrap', margin: 0 }}>{job.customInstructions}</p>
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500 italic">
-                      No instructions provided yet. Click "Add Instructions" to provide context for better filing accuracy.
+                    <p style={{ fontSize: 12, color: colors.text.muted, fontStyle: 'italic', margin: 0 }}>
+                      No instructions provided yet. Click &quot;Add Instructions&quot; to provide context for better filing accuracy.
                     </p>
                   )}
-                </CardContent>
-              </Card>
+                </Panel>
+              </div>
             )}
 
             {/* Two-Column Layout */}
             {analysisResult && job.status !== 'error' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Left Column: File Assignment */}
-                <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
-                  <div className="bg-blue-600 text-white px-3 py-2">
-                    <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-                      File Assignment
-                    </span>
-                  </div>
-                  <CardContent className="pt-4 space-y-5 min-h-[600px]">
+                <Panel title="File Assignment" accent={colors.accent.blue}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minHeight: 600 }}>
                     {/* Internal Document Toggle */}
-                    <div className="flex items-center justify-between">
-                      <label htmlFor="internal" className="text-sm font-medium text-gray-700">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label htmlFor="internal" style={{ fontSize: 12, fontWeight: 500, color: colors.text.secondary }}>
                         Mark as Internal Document
                       </label>
                       <Switch
@@ -844,36 +814,32 @@ export default function UploadSummaryPage() {
 
                     {/* AI Suggestions Display */}
                     {!isInternal && (analysisResult?.suggestedClientName || analysisResult?.suggestedProjectName) && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h3 className="text-sm font-medium text-blue-900 mb-2">AI Suggestions</h3>
+                      <div style={{ padding: 12, background: `${colors.accent.blue}15`, border: `1px solid ${colors.accent.blue}40`, borderRadius: 4 }}>
+                        <h3 style={{ fontSize: 12, fontWeight: 500, color: colors.accent.blue, marginBottom: 8 }}>AI Suggestions</h3>
                         {analysisResult.suggestedClientName && (
-                          <p className="text-sm text-blue-800 mb-1">
-                            <span className="font-semibold">Suggested Client:</span> {analysisResult.suggestedClientName}
+                          <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>Suggested Client:</span> {analysisResult.suggestedClientName}
                             {editedClientId && selectedClient?.name === analysisResult.suggestedClientName && (
-                              <span className="ml-2 text-green-600">✓ Selected</span>
+                              <span style={{ color: colors.accent.green }}>✓ Selected</span>
                             )}
                             {!editedClientId && analysisResult.suggestedClientName && (
-                              <Badge variant="outline" className="ml-2 text-xs bg-yellow-100 text-yellow-800 border-yellow-300">
-                                New
-                              </Badge>
+                              <FlagChip label="New" severity="warn" />
                             )}
                           </p>
                         )}
                         {analysisResult.suggestedProjectName && (
-                          <p className="text-sm text-blue-800">
-                            <span className="font-semibold">Suggested Project:</span> {analysisResult.suggestedProjectName}
+                          <p style={{ fontSize: 12, color: colors.text.secondary, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>Suggested Project:</span> {analysisResult.suggestedProjectName}
                             {editedProjectId && selectedProject?.name === analysisResult.suggestedProjectName && (
-                              <span className="ml-2 text-green-600">✓ Selected</span>
+                              <span style={{ color: colors.accent.green }}>✓ Selected</span>
                             )}
                             {!editedProjectId && analysisResult.suggestedProjectName && (
-                              <Badge variant="outline" className="ml-2 text-xs bg-yellow-100 text-yellow-800 border-yellow-300">
-                                New
-                              </Badge>
+                              <FlagChip label="New" severity="warn" />
                             )}
                           </p>
                         )}
                         {analysisResult.reasoning && (
-                          <p className="text-xs text-blue-700 mt-2 italic">
+                          <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 8, fontStyle: 'italic' }}>
                             {analysisResult.reasoning.split('The property address')[0].split('No client from')[0].trim()}
                           </p>
                         )}
@@ -882,251 +848,232 @@ export default function UploadSummaryPage() {
 
                     {/* Client Selection - Always visible unless internal */}
                     {!isInternal && (
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                          Client {editedClientId || analysisResult?.suggestedClientName ? '' : '*'}
-                        </label>
+                      <Field label={`Client ${editedClientId || analysisResult?.suggestedClientName ? '' : '*'}`}>
                         {isCreatingClient ? (
-                            <div className="space-y-2">
-                              <Input
-                                value={newClientName || analysisResult?.suggestedClientName || ''}
-                                onChange={(e) => setNewClientName(e.target.value)}
-                                placeholder="Enter client name"
-                                onKeyDown={async (e) => {
-                                  if (e.key === 'Enter' && newClientName.trim()) {
-                                    try {
-                                      const clientId = await createClient({ name: newClientName.trim() });
-                                      setEditedClientId(clientId as string);
-                                      setIsCreatingClient(false);
-                                      setNewClientName('');
-                                    } catch (error) {
-                                      console.error('Error creating client:', error);
-                                      alert('Failed to create client');
-                                    }
-                                  } else if (e.key === 'Escape') {
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Input
+                              value={newClientName || analysisResult?.suggestedClientName || ''}
+                              onChange={(e) => setNewClientName(e.target.value)}
+                              placeholder="Enter client name"
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter' && newClientName.trim()) {
+                                  try {
+                                    const clientId = await createClient({ name: newClientName.trim() });
+                                    setEditedClientId(clientId as string);
                                     setIsCreatingClient(false);
                                     setNewClientName('');
+                                  } catch (error) {
+                                    console.error('Error creating client:', error);
+                                    alert('Failed to create client');
                                   }
-                                }}
-                                autoFocus
-                              />
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={async () => {
-                                    if (!newClientName.trim()) return;
-                                    try {
-                                      const clientId = await createClient({ name: newClientName.trim() });
-                                      setEditedClientId(clientId as string);
-                                      setIsCreatingClient(false);
-                                      setNewClientName('');
-                                    } catch (error) {
-                                      console.error('Error creating client:', error);
-                                      alert('Failed to create client');
-                                    }
-                                  }}
-                                >
-                                  Create
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setIsCreatingClient(false);
-                                    setNewClientName('');
-                                  }}
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <Select
-                              value={editedClientId || ''}
-                              onValueChange={(value) => {
-                                if (value === 'new') {
-                                  setNewClientName(analysisResult?.suggestedClientName || '');
-                                  setIsCreatingClient(true);
-                                } else {
-                                  setEditedClientId(value);
-                                  setEditedProjectId(null);
+                                } else if (e.key === 'Escape') {
+                                  setIsCreatingClient(false);
+                                  setNewClientName('');
                                 }
                               }}
-                            >
-                              <SelectTrigger className="truncate">
-                                <SelectValue placeholder={
-                                  editedClientId 
-                                    ? undefined 
-                                    : analysisResult?.suggestedClientName 
-                                      ? `Use suggested: ${analysisResult.suggestedClientName.length > 40 ? analysisResult.suggestedClientName.substring(0, 40) + '...' : analysisResult.suggestedClientName}` 
-                                      : "Select a client"
-                                } />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {clients.map((client) => (
-                                  <SelectItem key={client._id} value={client._id}>
-                                    {client.name}
-                                  </SelectItem>
-                                ))}
-                                <SelectItem value="new">+ Create New Client</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
-                      </div>
+                              autoFocus
+                            />
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={async () => {
+                                  if (!newClientName.trim()) return;
+                                  try {
+                                    const clientId = await createClient({ name: newClientName.trim() });
+                                    setEditedClientId(clientId as string);
+                                    setIsCreatingClient(false);
+                                    setNewClientName('');
+                                  } catch (error) {
+                                    console.error('Error creating client:', error);
+                                    alert('Failed to create client');
+                                  }
+                                }}
+                              >
+                                Create
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setIsCreatingClient(false);
+                                  setNewClientName('');
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Select
+                            value={editedClientId || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === 'new') {
+                                setNewClientName(analysisResult?.suggestedClientName || '');
+                                setIsCreatingClient(true);
+                              } else {
+                                setEditedClientId(value);
+                                setEditedProjectId(null);
+                              }
+                            }}
+                          >
+                            <option value="" disabled>
+                              {analysisResult?.suggestedClientName
+                                ? `Use suggested: ${analysisResult.suggestedClientName.length > 40 ? analysisResult.suggestedClientName.substring(0, 40) + '...' : analysisResult.suggestedClientName}`
+                                : 'Select a client'}
+                            </option>
+                            {clients.map((client) => (
+                              <option key={client._id} value={client._id}>
+                                {client.name}
+                              </option>
+                            ))}
+                            <option value="new">+ Create New Client</option>
+                          </Select>
+                        )}
+                      </Field>
                     )}
 
                     {/* Project Selection - Always visible unless internal */}
                     {!isInternal && (
-                          <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">
-                              Project
-                            </label>
-                            {isCreatingProject ? (
-                              <div className="space-y-3">
-                                <Input
-                                  value={newProjectName || analysisResult?.suggestedProjectName || ''}
-                                  onChange={(e) => setNewProjectName(e.target.value)}
-                                  placeholder="Enter project name"
-                                  className="w-full"
-                                  onKeyDown={async (e) => {
-                                    if (e.key === 'Enter' && newProjectName.trim() && (editedClientId || analysisResult?.suggestedClientName)) {
-                                      try {
-                                        // If no client selected but we have a suggested one, create client first
-                                        let clientIdToUse = editedClientId;
-                                        if (!clientIdToUse && analysisResult?.suggestedClientName) {
-                                          const clientId = await createClient({ name: analysisResult.suggestedClientName });
-                                          clientIdToUse = clientId as string;
-                                          setEditedClientId(clientIdToUse);
-                                        }
-                                        if (clientIdToUse) {
-                                          const projectId = await createProject({
-                                            name: newProjectName.trim(),
-                                            clientRoles: [{
-                                              clientId: clientIdToUse as Id<"clients">,
-                                              role: "client",
-                                            }],
-                                          });
-                                          setEditedProjectId(projectId as string);
-                                          setIsCreatingProject(false);
-                                          setNewProjectName('');
-                                        }
-                                      } catch (error) {
-                                        console.error('Error creating project:', error);
-                                        alert('Failed to create project');
-                                      }
-                                    } else if (e.key === 'Escape') {
+                      <Field label="Project">
+                        {isCreatingProject ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <Input
+                              value={newProjectName || analysisResult?.suggestedProjectName || ''}
+                              onChange={(e) => setNewProjectName(e.target.value)}
+                              placeholder="Enter project name"
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter' && newProjectName.trim() && (editedClientId || analysisResult?.suggestedClientName)) {
+                                  try {
+                                    // If no client selected but we have a suggested one, create client first
+                                    let clientIdToUse = editedClientId;
+                                    if (!clientIdToUse && analysisResult?.suggestedClientName) {
+                                      const clientId = await createClient({ name: analysisResult.suggestedClientName });
+                                      clientIdToUse = clientId as string;
+                                      setEditedClientId(clientIdToUse);
+                                    }
+                                    if (clientIdToUse) {
+                                      const projectId = await createProject({
+                                        name: newProjectName.trim(),
+                                        clientRoles: [{
+                                          clientId: clientIdToUse as Id<"clients">,
+                                          role: "client",
+                                        }],
+                                      });
+                                      setEditedProjectId(projectId as string);
                                       setIsCreatingProject(false);
                                       setNewProjectName('');
                                     }
-                                  }}
-                                  autoFocus
-                                />
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    onClick={async () => {
-                                      if (!newProjectName.trim()) return;
-                                      try {
-                                        // If no client selected but we have a suggested one, create client first
-                                        let clientIdToUse = editedClientId;
-                                        if (!clientIdToUse && analysisResult?.suggestedClientName) {
-                                          const clientId = await createClient({ name: analysisResult.suggestedClientName });
-                                          clientIdToUse = clientId as string;
-                                          setEditedClientId(clientIdToUse);
-                                        }
-                                        if (clientIdToUse) {
-                                          const projectId = await createProject({
-                                            name: newProjectName.trim(),
-                                            clientRoles: [{
-                                              clientId: clientIdToUse as Id<"clients">,
-                                              role: "client",
-                                            }],
-                                          });
-                                          setEditedProjectId(projectId as string);
-                                          setIsCreatingProject(false);
-                                          setNewProjectName('');
-                                        }
-                                      } catch (error) {
-                                        console.error('Error creating project:', error);
-                                        alert('Failed to create project');
-                                      }
-                                    }}
-                                  >
-                                    Create
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
+                                  } catch (error) {
+                                    console.error('Error creating project:', error);
+                                    alert('Failed to create project');
+                                  }
+                                } else if (e.key === 'Escape') {
+                                  setIsCreatingProject(false);
+                                  setNewProjectName('');
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={async () => {
+                                  if (!newProjectName.trim()) return;
+                                  try {
+                                    // If no client selected but we have a suggested one, create client first
+                                    let clientIdToUse = editedClientId;
+                                    if (!clientIdToUse && analysisResult?.suggestedClientName) {
+                                      const clientId = await createClient({ name: analysisResult.suggestedClientName });
+                                      clientIdToUse = clientId as string;
+                                      setEditedClientId(clientIdToUse);
+                                    }
+                                    if (clientIdToUse) {
+                                      const projectId = await createProject({
+                                        name: newProjectName.trim(),
+                                        clientRoles: [{
+                                          clientId: clientIdToUse as Id<"clients">,
+                                          role: "client",
+                                        }],
+                                      });
+                                      setEditedProjectId(projectId as string);
                                       setIsCreatingProject(false);
                                       setNewProjectName('');
-                                    }}
-                                  >
-                                    Cancel
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <Select
-                                value={editedProjectId || ''}
-                                onValueChange={(value) => {
-                                  if (value === 'new') {
-                                    setNewProjectName(analysisResult?.suggestedProjectName || '');
-                                    setIsCreatingProject(true);
-                                  } else {
-                                    setEditedProjectId(value);
+                                    }
+                                  } catch (error) {
+                                    console.error('Error creating project:', error);
+                                    alert('Failed to create project');
                                   }
                                 }}
-                                disabled={!editedClientId && !analysisResult?.suggestedClientName}
                               >
-                                <SelectTrigger className="truncate">
-                                  <SelectValue placeholder={
-                                    !editedClientId && !analysisResult?.suggestedClientName 
-                                      ? "Select a client first" 
-                                      : editedProjectId 
-                                        ? undefined 
-                                        : analysisResult?.suggestedProjectName 
-                                          ? `Use suggested: ${analysisResult.suggestedProjectName.length > 40 ? analysisResult.suggestedProjectName.substring(0, 40) + '...' : analysisResult.suggestedProjectName}` 
-                                          : "Select a project"
-                                  } />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {projects.map((project) => (
-                                    <SelectItem key={project._id} value={project._id}>
-                                      {project.name}
-                                    </SelectItem>
-                                  ))}
-                                  <SelectItem value="new">+ Create New Project</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            )}
+                                Create
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setIsCreatingProject(false);
+                                  setNewProjectName('');
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
                           </div>
+                        ) : (
+                          <Select
+                            value={editedProjectId || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === 'new') {
+                                setNewProjectName(analysisResult?.suggestedProjectName || '');
+                                setIsCreatingProject(true);
+                              } else {
+                                setEditedProjectId(value);
+                              }
+                            }}
+                            disabled={!editedClientId && !analysisResult?.suggestedClientName}
+                          >
+                            <option value="" disabled>
+                              {!editedClientId && !analysisResult?.suggestedClientName
+                                ? 'Select a client first'
+                                : analysisResult?.suggestedProjectName
+                                  ? `Use suggested: ${analysisResult.suggestedProjectName.length > 40 ? analysisResult.suggestedProjectName.substring(0, 40) + '...' : analysisResult.suggestedProjectName}`
+                                  : 'Select a project'}
+                            </option>
+                            {projects.map((project) => (
+                              <option key={project._id} value={project._id}>
+                                {project.name}
+                              </option>
+                            ))}
+                            <option value="new">+ Create New Project</option>
+                          </Select>
                         )}
-
+                      </Field>
+                    )}
 
                     {/* File Document Button - Show when not filed yet */}
                     {!filedDocumentId && (
                       <Button
+                        variant="primary"
+                        accent={colors.text.primary}
                         onClick={handleFileDocument}
                         disabled={isFiling || (!isInternal && !editedClientId)}
-                        className="w-full bg-black text-white hover:bg-gray-800"
+                        style={{ width: '100%', justifyContent: 'center' }}
                       >
                         {isFiling ? 'Filing...' : 'File Document'}
                       </Button>
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+                </Panel>
 
                 {/* Right Column: File Analysis */}
-                <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0">
-                  <div className="bg-blue-600 text-white px-3 py-2">
-                    <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-                      File Analysis
-                    </span>
-                  </div>
-                  <CardContent className="pt-4 space-y-4">
+                <Panel title="File Analysis" accent={colors.accent.blue}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     {/* Summary - Editable with Edit Icon */}
-                    <div className="relative">
+                    <div style={{ position: 'relative' }}>
                       <EditableField
                         value={editedSummary}
                         onChange={setEditedSummary}
@@ -1138,7 +1085,7 @@ export default function UploadSummaryPage() {
                     </div>
 
                     {/* Reasoning - Editable with Edit Icon */}
-                    <div className="relative">
+                    <div style={{ position: 'relative' }}>
                       <EditableField
                         value={editedReasoning}
                         onChange={setEditedReasoning}
@@ -1150,8 +1097,8 @@ export default function UploadSummaryPage() {
                     </div>
 
                     {/* File Type and Category - Editable with Edit Icon */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="relative">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      <div style={{ position: 'relative' }}>
                         <EditableField
                           value={editedFileType}
                           onChange={setEditedFileType}
@@ -1160,7 +1107,7 @@ export default function UploadSummaryPage() {
                           className="relative"
                         />
                       </div>
-                      <div className="relative">
+                      <div style={{ position: 'relative' }}>
                         <EditableField
                           value={editedCategory}
                           onChange={setEditedCategory}
@@ -1174,17 +1121,14 @@ export default function UploadSummaryPage() {
                     {/* Confidence */}
                     {analysisResult && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                          Confidence
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-200 rounded-full h-2">
+                        <label style={sectionHeaderStyle}>Confidence</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, background: colors.bg.cardAlt, borderRadius: 999, height: 8 }}>
                             <div
-                              className="bg-blue-600 h-2 rounded-full"
-                              style={{ width: `${analysisResult.confidence * 100}%` }}
+                              style={{ background: colors.accent.blue, height: 8, borderRadius: 999, width: `${analysisResult.confidence * 100}%` }}
                             />
                           </div>
-                          <span className="text-sm text-gray-600">
+                          <span style={{ fontSize: 12, color: colors.text.secondary }}>
                             {(analysisResult.confidence * 100).toFixed(0)}%
                           </span>
                         </div>
@@ -1194,22 +1138,20 @@ export default function UploadSummaryPage() {
                     {/* Folder Placement - Moved here from File Assignment */}
                     {!isInternal && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                          Folder Placement
-                        </label>
-                        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="flex items-center gap-2 text-sm mb-2">
+                        <label style={sectionHeaderStyle}>Folder Placement</label>
+                        <div style={{ padding: 12, background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 8 }}>
                             {isBaseDocument ? (
                               <>
-                                <Building2 className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                                <span className="text-gray-900 truncate">
+                                <Building2 size={16} style={{ color: colors.text.muted, flexShrink: 0 }} />
+                                <span style={{ color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   Base Documents ({selectedClient?.name || analysisResult?.suggestedClientName || 'Client'})
                                 </span>
                               </>
                             ) : editedProjectId || analysisResult?.suggestedProjectName ? (
                               <>
-                                <FolderKanban className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                                <span className="text-gray-900 truncate">
+                                <FolderKanban size={16} style={{ color: colors.text.muted, flexShrink: 0 }} />
+                                <span style={{ color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {(() => {
                                     const projectName = selectedProject?.name || analysisResult?.suggestedProjectName || 'Project';
                                     return projectName.length > 50 ? projectName.substring(0, 50) + '...' : projectName;
@@ -1218,8 +1160,8 @@ export default function UploadSummaryPage() {
                               </>
                             ) : (
                               <>
-                                <FolderKanban className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                                <span className="text-gray-900 truncate">
+                                <FolderKanban size={16} style={{ color: colors.text.muted, flexShrink: 0 }} />
+                                <span style={{ color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   Will be placed in Base Documents or Project folder when selected
                                 </span>
                               </>
@@ -1227,10 +1169,10 @@ export default function UploadSummaryPage() {
                           </div>
                           {(editedClientId || analysisResult?.suggestedClientName) && (
                             <Button
-                              variant="outline"
+                              variant="secondary"
                               size="sm"
                               onClick={() => setFolderSelectionModalOpen(true)}
-                              className="w-full"
+                              style={{ width: '100%', justifyContent: 'center' }}
                             >
                               File Elsewhere
                             </Button>
@@ -1242,16 +1184,27 @@ export default function UploadSummaryPage() {
                     {/* Extracted Data */}
                     {analysisResult?.extractedData && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-2 block">
-                          Extracted Data
-                        </label>
-                        <pre className="text-xs bg-gray-50 p-3 rounded-lg overflow-auto max-h-64 border border-gray-200">
+                        <label style={sectionHeaderStyle}>Extracted Data</label>
+                        <pre
+                          style={{
+                            fontSize: 11,
+                            fontFamily: MONO,
+                            background: colors.bg.light,
+                            padding: 12,
+                            borderRadius: 4,
+                            overflow: 'auto',
+                            maxHeight: 256,
+                            border: `1px solid ${colors.border.default}`,
+                            color: colors.text.secondary,
+                            margin: 0,
+                          }}
+                        >
                           {JSON.stringify(analysisResult.extractedData, null, 2)}
                         </pre>
                       </div>
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+                </Panel>
               </div>
             )}
 
@@ -1260,7 +1213,6 @@ export default function UploadSummaryPage() {
               jobId={!filedDocumentId ? jobId : undefined}
               documentId={filedDocumentId || undefined}
             />
-            </>
           </div>
         )}
 

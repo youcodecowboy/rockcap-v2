@@ -5,7 +5,8 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { Building2, FolderKanban, X, Search } from 'lucide-react';
-import { Input } from './ui/input';
+import { Input } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 
 interface ClientProjectSearchProps {
   selectedClientId?: Id<'clients'>;
@@ -28,6 +29,7 @@ export default function ClientProjectSearch({
   onClientSuggestionAccept,
   onProjectSuggestionAccept,
 }: ClientProjectSearchProps) {
+  const colors = useColors();
   const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [projectSearchQuery, setProjectSearchQuery] = useState('');
   const [showClientResults, setShowClientResults] = useState(false);
@@ -72,14 +74,26 @@ export default function ClientProjectSearch({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const dropdownStyle = {
+    position: 'absolute' as const,
+    zIndex: 100,
+    width: '100%',
+    marginTop: 4,
+    background: colors.bg.card,
+    border: `1px solid ${colors.border.default}`,
+    borderRadius: 4,
+    maxHeight: 240,
+    overflowY: 'auto' as const,
+  };
+
   return (
     <div className="flex items-center gap-3 flex-wrap">
       {/* Client Search */}
       <div className="relative flex-1 min-w-[200px]" ref={clientRef}>
         <div className="flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-gray-400" />
+          <Building2 className="w-4 h-4" style={{ color: colors.text.muted }} />
           <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: colors.text.muted }} />
             <Input
               type="text"
               value={selectedClient ? selectedClient.name : clientSearchQuery}
@@ -96,7 +110,7 @@ export default function ClientProjectSearch({
                 }
               }}
               placeholder="Search client..."
-              className="pl-8 pr-8"
+              style={{ paddingLeft: 30, paddingRight: 30 }}
             />
             {selectedClient && (
               <button
@@ -104,7 +118,8 @@ export default function ClientProjectSearch({
                   onClientSelect(undefined);
                   setClientSearchQuery('');
                 }}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                style={{ color: colors.text.muted }}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -115,7 +130,15 @@ export default function ClientProjectSearch({
         {/* Suggestion Badge */}
         {suggestedClient && !selectedClientId && (
           <div className="mt-1 flex items-center gap-2">
-            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+            <span
+              style={{
+                fontSize: 11,
+                color: colors.accent.blue,
+                background: `${colors.accent.blue}20`,
+                padding: '2px 8px',
+                borderRadius: 4,
+              }}
+            >
               Suggested: {suggestedClient.name}
             </span>
             <button
@@ -123,7 +146,7 @@ export default function ClientProjectSearch({
                 onClientSelect(suggestedClientId);
                 onClientSuggestionAccept?.();
               }}
-              className="text-xs text-blue-600 hover:text-blue-700 underline"
+              style={{ fontSize: 11, color: colors.accent.blue, textDecoration: 'underline' }}
             >
               Accept
             </button>
@@ -132,7 +155,7 @@ export default function ClientProjectSearch({
 
         {/* Dropdown Results */}
         {showClientResults && filteredClients.length > 0 && (
-          <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          <div style={dropdownStyle}>
             {filteredClients.map((client) => (
               <button
                 key={client._id}
@@ -142,13 +165,16 @@ export default function ClientProjectSearch({
                   setClientSearchQuery('');
                   setShowClientResults(false);
                 }}
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
+                className="w-full text-left px-3 py-2 flex items-center gap-2"
+                style={{ background: 'transparent' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = colors.bg.cardAlt)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <Building2 className="w-4 h-4 text-gray-400" />
+                <Building2 className="w-4 h-4" style={{ color: colors.text.muted }} />
                 <div>
-                  <div className="font-medium text-sm">{client.name}</div>
+                  <div style={{ fontWeight: 500, fontSize: 12, color: colors.text.primary }}>{client.name}</div>
                   {client.companyName && (
-                    <div className="text-xs text-gray-500">{client.companyName}</div>
+                    <div style={{ fontSize: 11, color: colors.text.muted }}>{client.companyName}</div>
                   )}
                 </div>
               </button>
@@ -160,9 +186,9 @@ export default function ClientProjectSearch({
       {/* Project Search */}
       <div className="relative flex-1 min-w-[200px]" ref={projectRef}>
         <div className="flex items-center gap-2">
-          <FolderKanban className="w-4 h-4 text-gray-400" />
+          <FolderKanban className="w-4 h-4" style={{ color: colors.text.muted }} />
           <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: colors.text.muted }} />
             <Input
               type="text"
               value={selectedProject ? selectedProject.name : projectSearchQuery}
@@ -180,7 +206,7 @@ export default function ClientProjectSearch({
               }}
               placeholder="Search project..."
               disabled={!selectedClientId}
-              className="pl-8 pr-8"
+              style={{ paddingLeft: 30, paddingRight: 30 }}
             />
             {selectedProject && (
               <button
@@ -188,7 +214,8 @@ export default function ClientProjectSearch({
                   onProjectSelect(undefined);
                   setProjectSearchQuery('');
                 }}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                style={{ color: colors.text.muted }}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -199,7 +226,15 @@ export default function ClientProjectSearch({
         {/* Suggestion Badge */}
         {suggestedProject && !selectedProjectId && selectedClientId && (
           <div className="mt-1 flex items-center gap-2">
-            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+            <span
+              style={{
+                fontSize: 11,
+                color: colors.accent.blue,
+                background: `${colors.accent.blue}20`,
+                padding: '2px 8px',
+                borderRadius: 4,
+              }}
+            >
               Suggested: {suggestedProject.name}
             </span>
             <button
@@ -207,7 +242,7 @@ export default function ClientProjectSearch({
                 onProjectSelect(suggestedProjectId);
                 onProjectSuggestionAccept?.();
               }}
-              className="text-xs text-blue-600 hover:text-blue-700 underline"
+              style={{ fontSize: 11, color: colors.accent.blue, textDecoration: 'underline' }}
             >
               Accept
             </button>
@@ -216,7 +251,7 @@ export default function ClientProjectSearch({
 
         {/* Dropdown Results */}
         {showProjectResults && filteredProjects.length > 0 && selectedClientId && (
-          <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          <div style={dropdownStyle}>
             {filteredProjects.map((project) => (
               <button
                 key={project._id}
@@ -226,10 +261,13 @@ export default function ClientProjectSearch({
                   setProjectSearchQuery('');
                   setShowProjectResults(false);
                 }}
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
+                className="w-full text-left px-3 py-2 flex items-center gap-2"
+                style={{ background: 'transparent' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = colors.bg.cardAlt)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <FolderKanban className="w-4 h-4 text-gray-400" />
-                <div className="font-medium text-sm">{project.name}</div>
+                <FolderKanban className="w-4 h-4" style={{ color: colors.text.muted }} />
+                <div style={{ fontWeight: 500, fontSize: 12, color: colors.text.primary }}>{project.name}</div>
               </button>
             ))}
           </div>
@@ -238,4 +276,3 @@ export default function ClientProjectSearch({
     </div>
   );
 }
-

@@ -4,15 +4,20 @@ import { useState, useMemo } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { Plus } from 'lucide-react';
+import { Plus, Users } from 'lucide-react';
 import ContactSearchBar from '@/components/contacts/ContactSearchBar';
 import ContactClientChips from '@/components/contacts/ContactClientChips';
 import ContactListItem from '@/components/contacts/ContactListItem';
 import ContactDetailSheet from '@/components/contacts/ContactDetailSheet';
 import ContactCreateForm from '@/components/contacts/ContactCreateForm';
 import { groupContactsByLetter } from '@/components/contacts/groupContactsByLetter';
+import { Button, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 export default function RolodexPage() {
+  const colors = useColors();
   const [search, setSearch] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<Id<'contacts'> | null>(null);
@@ -56,23 +61,35 @@ export default function RolodexPage() {
   const grouped = useMemo(() => groupContactsByLetter(filteredContacts), [filteredContacts]);
 
   return (
-    <div className="bg-gray-50 min-h-screen p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div style={{ background: colors.bg.base, minHeight: '100vh', padding: 32 }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Contacts</h1>
-            <p className="mt-1 text-gray-500">
+            <div
+              style={{
+                fontFamily: MONO,
+                fontSize: 9,
+                fontWeight: 500,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: colors.text.muted,
+              }}
+            >
+              Contacts
+            </div>
+            <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>
               {filteredContacts.length} contact{filteredContacts.length !== 1 ? 's' : ''}
-            </p>
+            </div>
           </div>
-          <button
+          <Button
+            variant="primary"
+            accent={colors.entityTypes.contact}
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors"
           >
-            <Plus className="w-4 h-4" />
+            <Plus size={14} />
             New Contact
-          </button>
+          </Button>
         </div>
 
         {/* Search + Chips */}
@@ -85,20 +102,48 @@ export default function RolodexPage() {
         />
 
         {/* Two-panel layout */}
-        <div className="flex gap-6">
+        <div style={{ display: 'flex', gap: 24 }}>
           {/* Left: A-Z list */}
-          <div className="flex-1 min-w-0">
+          <div style={{ flex: 1, minWidth: 0 }}>
             {grouped.length === 0 ? (
-              <div className="text-center py-12 text-sm text-gray-400">
-                {search || selectedClientId ? 'No contacts found' : 'No contacts yet'}
-              </div>
+              <EmptyState
+                icon={<Users size={40} />}
+                title={search || selectedClientId ? 'No contacts found' : 'No contacts yet'}
+                body={
+                  search || selectedClientId
+                    ? 'Adjust your search or client filter to find a contact.'
+                    : 'Add your first contact to start building your rolodex.'
+                }
+                action={
+                  <Button
+                    variant="primary"
+                    accent={colors.entityTypes.contact}
+                    onClick={() => setShowCreate(true)}
+                  >
+                    <Plus size={14} />
+                    New Contact
+                  </Button>
+                }
+              />
             ) : (
               grouped.map(group => (
-                <div key={group.letter} className="mb-4">
-                  <div className="text-xs font-bold text-blue-700 pb-1.5 border-b border-gray-200 mb-1">
+                <div key={group.letter} style={{ marginBottom: 16 }}>
+                  <div
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 9,
+                      fontWeight: 500,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: colors.entityTypes.contact,
+                      paddingBottom: 6,
+                      borderBottom: `1px solid ${colors.border.default}`,
+                      marginBottom: 4,
+                    }}
+                  >
                     {group.letter}
                   </div>
-                  <div className="space-y-0.5">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {group.contacts.map(contact => (
                       <ContactListItem
                         key={contact._id}
@@ -114,7 +159,16 @@ export default function RolodexPage() {
           </div>
 
           {/* Right: detail panel */}
-          <div className="w-[400px] flex-shrink-0 bg-white border border-gray-200 rounded-lg min-h-[400px]">
+          <div
+            style={{
+              width: 400,
+              flexShrink: 0,
+              background: colors.bg.card,
+              border: `1px solid ${colors.border.default}`,
+              borderRadius: 4,
+              minHeight: 400,
+            }}
+          >
             <ContactDetailSheet
               contactId={selectedContactId}
               isOpen={true}
@@ -128,9 +182,31 @@ export default function RolodexPage() {
       {/* Create modal */}
       {showCreate && (
         <>
-          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setShowCreate(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-8">
-            <div className="bg-white rounded-2xl w-[500px] h-[600px] shadow-xl overflow-hidden">
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 40 }}
+            onClick={() => setShowCreate(false)}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 50,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 32,
+            }}
+          >
+            <div
+              style={{
+                background: colors.bg.card,
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+                width: 500,
+                height: 600,
+                overflow: 'hidden',
+              }}
+            >
               <ContactCreateForm
                 onCreated={() => setShowCreate(false)}
                 onClose={() => setShowCreate(false)}

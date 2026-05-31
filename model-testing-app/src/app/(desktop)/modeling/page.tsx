@@ -5,10 +5,9 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { ChevronLeft, ChevronRight, Calculator, Save, Plus, Download, Settings, AlertTriangle, Trash2, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Button, StatusPill, EmptyState, Field, Select } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 // Tabs removed - using unified toolbar layout
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ExcelDataEditor from '@/components/ExcelDataEditor';
 import WorkbookEditor from '@/components/WorkbookEditor';
 import ModelOutputSummary from '@/components/ModelOutputSummary';
@@ -28,6 +27,7 @@ import { buildPlaceholderConfigFromMappings } from '@/lib/mappingConfigBuilder';
 import { populateTemplateWithCodifiedData, toLegacyPopulationResult, CodifiedItem, getOverflowSummary, CategoryOverflow, clearUnusedPlaceholders, countRemainingPlaceholders, mergeComputedTotals, ProjectDataItem } from '@/lib/codifiedTemplatePopulator';
 
 export default function ModelingPage() {
+  const colors = useColors();
   const [selectedProjectId, setSelectedProjectId] = useState<Id<"projects"> | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<Id<"scenarios"> | null>(null);
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
@@ -923,30 +923,37 @@ export default function ModelingPage() {
   }, [templateSheets, originalTemplateSheets, codifiedExtraction]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50">
+    <div className="flex flex-col h-[calc(100vh-4rem)]" style={{ background: colors.bg.base }}>
       {/* Development Banner */}
-      <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex-shrink-0">
+      <div
+        className="px-4 py-2 flex-shrink-0"
+        style={{ background: `${colors.accent.yellow}15`, borderBottom: `1px solid ${colors.accent.yellow}40` }}
+      >
         <div className="flex items-center gap-2">
-          <span className="text-amber-600">🚧</span>
-          <p className="text-sm text-amber-800">
-            <span className="font-medium">In Development</span> — Not all features are fully functional. Template population and export work, but advanced modeling features are coming soon.
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.yellow }} />
+          <p className="text-sm" style={{ color: colors.text.secondary }}>
+            <span style={{ fontWeight: 500, color: colors.text.primary }}>In Development</span> — Not all features are fully functional. Template population and export work, but advanced modeling features are coming soon.
           </p>
         </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
       {/* Left Sidebar - Projects List */}
-      <div className={`${isSidebarMinimized ? 'w-16' : 'w-56'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out relative overflow-visible z-30`}>
+      <div
+        className={`${isSidebarMinimized ? 'w-16' : 'w-56'} flex flex-col transition-all duration-300 ease-in-out relative overflow-visible z-30`}
+        style={{ background: colors.bg.card, borderRight: `1px solid ${colors.border.default}` }}
+      >
         {/* Minimize Toggle Button */}
         <button
           onClick={() => setIsSidebarMinimized(!isSidebarMinimized)}
-          className="absolute -right-3 top-4 z-10 p-1 bg-white border border-gray-200 rounded-full shadow-sm hover:bg-gray-50 transition-colors"
+          className="absolute -right-3 top-4 z-10 p-1 rounded-full transition-colors"
+          style={{ background: colors.bg.card, border: `1px solid ${colors.border.default}`, color: colors.text.secondary }}
           title={isSidebarMinimized ? 'Expand sidebar' : 'Minimize sidebar'}
         >
           {isSidebarMinimized ? (
-            <ChevronRight className="w-4 h-4 text-gray-600" />
+            <ChevronRight className="w-4 h-4" />
           ) : (
-            <ChevronLeft className="w-4 h-4 text-gray-600" />
+            <ChevronLeft className="w-4 h-4" />
           )}
         </button>
 
@@ -954,21 +961,22 @@ export default function ModelingPage() {
           <>
             {/* Level 1 Header - Clients */}
             {sidebarView === 'clients' && (
-              <div className="p-4 border-b border-gray-200">
+              <div className="p-4" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-lg font-semibold text-gray-900">Modeling</h2>
+                  <h2 className="text-lg" style={{ fontWeight: 600, color: colors.text.primary }}>Modeling</h2>
                   <button
                     onClick={() => {
                       setIsSettingsOpen(true);
                       setViewMode('settings');
                     }}
-                    className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
+                    className="p-1.5 rounded-md transition-colors"
+                    style={{ color: colors.text.secondary }}
                     title="Modeling Settings"
                   >
-                    <Settings className="w-4 h-4 text-gray-600" />
+                    <Settings className="w-4 h-4" />
                   </button>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs" style={{ color: colors.text.muted }}>
                   Select a client to view projects
                 </p>
               </div>
@@ -976,14 +984,15 @@ export default function ModelingPage() {
 
             {/* Level 2 Header - Projects */}
             {sidebarView === 'projects' && (
-              <div className="border-b border-gray-200">
+              <div style={{ borderBottom: `1px solid ${colors.border.default}` }}>
                 <div className="flex items-center justify-between px-4 py-3">
                   <button
                     onClick={() => {
                       setSidebarView('clients');
                       setSelectedClientName(null);
                     }}
-                    className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                    className="flex items-center gap-2 text-sm transition-colors"
+                    style={{ color: colors.text.secondary }}
                   >
                     <ChevronLeft className="w-4 h-4" />
                     <span>All Clients</span>
@@ -993,22 +1002,31 @@ export default function ModelingPage() {
                       setIsSettingsOpen(true);
                       setViewMode('settings');
                     }}
-                    className="p-1.5 hover:bg-gray-200 rounded-md transition-colors"
+                    className="p-1.5 rounded-md transition-colors"
+                    style={{ color: colors.text.secondary }}
                     title="Modeling Settings"
                   >
-                    <Settings className="w-4 h-4 text-gray-600" />
+                    <Settings className="w-4 h-4" />
                   </button>
                 </div>
-                <div className={`px-4 py-3 border-t border-gray-200 ${
-                  selectedClientName === 'No Client' ? 'bg-amber-50' : 'bg-gray-50'
-                }`}>
-                  <div className={`font-medium ${
-                    selectedClientName === 'No Client' ? 'text-amber-700 italic' : 'text-gray-900'
-                  }`}>{selectedClientName}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
+                <div
+                  className="px-4 py-3"
+                  style={{
+                    borderTop: `1px solid ${colors.border.default}`,
+                    background: selectedClientName === 'No Client' ? `${colors.accent.yellow}15` : colors.bg.cardAlt,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 500,
+                      fontStyle: selectedClientName === 'No Client' ? 'italic' : 'normal',
+                      color: selectedClientName === 'No Client' ? colors.accent.yellow : colors.text.primary,
+                    }}
+                  >{selectedClientName}</div>
+                  <div className="text-xs mt-0.5" style={{ color: colors.text.muted }}>
                     {projectsForSelectedClient.length} project{projectsForSelectedClient.length !== 1 ? 's' : ''}
                     {selectedClientName === 'No Client' && (
-                      <span className="block text-amber-600 mt-1">Assign these projects to a client</span>
+                      <span className="block mt-1" style={{ color: colors.accent.yellow }}>Assign these projects to a client</span>
                     )}
                   </div>
                 </div>
@@ -1017,7 +1035,7 @@ export default function ModelingPage() {
 
             {/* Level 3 Header - Models */}
             {sidebarView === 'models' && (
-              <div className="border-b border-gray-200">
+              <div style={{ borderBottom: `1px solid ${colors.border.default}` }}>
                 <div className="flex items-center justify-between px-4 py-3">
                   <button
                     onClick={() => {
@@ -1025,7 +1043,8 @@ export default function ModelingPage() {
                       setSelectedProjectId(null);
                       setTemplateSheets(null);
                     }}
-                    className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                    className="flex items-center gap-2 text-sm transition-colors"
+                    style={{ color: colors.text.secondary }}
                   >
                     <ChevronLeft className="w-4 h-4" />
                     <span>{selectedClientName}</span>
@@ -1035,10 +1054,11 @@ export default function ModelingPage() {
                       setIsSettingsOpen(true);
                       setViewMode('settings');
                     }}
-                    className="p-1.5 hover:bg-gray-200 rounded-md transition-colors"
+                    className="p-1.5 rounded-md transition-colors"
+                    style={{ color: colors.text.secondary }}
                     title="Modeling Settings"
                   >
-                    <Settings className="w-4 h-4 text-gray-600" />
+                    <Settings className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -1046,26 +1066,30 @@ export default function ModelingPage() {
                 {selectedClientName === 'No Client' && selectedProjectId && (
                   <button
                     onClick={() => setIsAssignClientModalOpen(true)}
-                    className="w-full px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2 hover:bg-amber-100 transition-colors text-left"
+                    className="w-full px-4 py-2 flex items-center gap-2 transition-colors text-left"
+                    style={{ background: `${colors.accent.yellow}15`, borderTop: `1px solid ${colors.accent.yellow}40` }}
                   >
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                    <span className="text-xs text-amber-700 flex-1 truncate">Unassigned</span>
-                    <span className="text-xs text-amber-600 font-medium flex-shrink-0">Assign →</span>
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: colors.accent.yellow }} />
+                    <span className="text-xs flex-1 truncate" style={{ color: colors.accent.yellow }}>Unassigned</span>
+                    <span className="text-xs flex-shrink-0" style={{ color: colors.accent.yellow, fontWeight: 500 }}>Assign →</span>
                   </button>
                 )}
 
-                <div className={`px-4 py-3 border-t border-gray-200 flex items-center justify-between ${
-                  selectedClientName === 'No Client' ? 'bg-amber-50/50' : 'bg-gray-50'
-                }`}>
+                <div
+                  className="px-4 py-3 flex items-center justify-between"
+                  style={{
+                    borderTop: `1px solid ${colors.border.default}`,
+                    background: selectedClientName === 'No Client' ? `${colors.accent.yellow}10` : colors.bg.cardAlt,
+                  }}
+                >
                   <div>
-                    <div className="font-medium text-gray-900">{selectedProject?.name}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">Saved models</div>
+                    <div style={{ fontWeight: 500, color: colors.text.primary }}>{selectedProject?.name}</div>
+                    <div className="text-xs mt-0.5" style={{ color: colors.text.muted }}>Saved models</div>
                   </div>
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => setViewMode('data-library')}
-                    className="text-xs h-7"
                   >
                     Data Library
                   </Button>
@@ -1074,8 +1098,8 @@ export default function ModelingPage() {
             )}
           </>
         ) : (
-          <div className="p-2 border-b border-gray-200 flex justify-center">
-            <Calculator className="w-5 h-5 text-gray-600" />
+          <div className="p-2 flex justify-center" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
+            <Calculator className="w-5 h-5" style={{ color: colors.text.secondary }} />
           </div>
         )}
 
@@ -1084,40 +1108,44 @@ export default function ModelingPage() {
           <div className="flex-1 overflow-y-auto animate-in slide-in-from-left-2 duration-200">
             {clientsWithProjects === undefined || clientsWithProjects.length === 0 ? (
               projectsWithData === undefined ? (
-                <div className="p-4 text-sm text-gray-500">Loading...</div>
+                <div className="p-4 text-sm" style={{ color: colors.text.muted }}>Loading...</div>
               ) : (
-                <div className="p-4 text-sm text-gray-500">
+                <div className="p-4 text-sm" style={{ color: colors.text.muted }}>
                   No clients with extracted data found.
                 </div>
               )
             ) : (
-              <div className="divide-y divide-gray-200">
+              <div style={{ borderTop: `1px solid ${colors.border.light}` }}>
                 {clientsWithProjects.map((client) => (
-                  <div key={client.name} className="group relative">
+                  <div key={client.name} className="group relative" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
                     <button
                       onClick={() => {
                         setSelectedClientName(client.name);
                         setSidebarView('projects');
                       }}
-                      className={`w-full text-left p-4 hover:bg-gray-50 transition-colors group ${
-                        client.isNoClient ? 'bg-amber-50/50' : ''
-                      }`}
+                      className="w-full text-left p-4 transition-colors group"
+                      style={{ background: client.isNoClient ? `${colors.accent.yellow}10` : 'transparent' }}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
-                          <div className={`font-medium mb-1 ${
-                            client.isNoClient ? 'text-amber-700 italic' : 'text-gray-900'
-                          }`}>
+                          <div
+                            className="mb-1"
+                            style={{
+                              fontWeight: 500,
+                              fontStyle: client.isNoClient ? 'italic' : 'normal',
+                              color: client.isNoClient ? colors.accent.yellow : colors.text.primary,
+                            }}
+                          >
                             {client.name}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs" style={{ color: colors.text.muted }}>
                             {client.projects.length} project{client.projects.length !== 1 ? 's' : ''}
                             {client.isNoClient && (
-                              <span className="ml-1.5 text-amber-600">• needs assignment</span>
+                              <span className="ml-1.5" style={{ color: colors.accent.yellow }}>• needs assignment</span>
                             )}
                           </div>
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-all flex-shrink-0" style={{ color: colors.text.dim }} />
                       </div>
                     </button>
                   </div>
@@ -1131,13 +1159,13 @@ export default function ModelingPage() {
         {!isSidebarMinimized && sidebarView === 'projects' && selectedClientName && (
           <div className="flex-1 overflow-y-auto animate-in slide-in-from-right-2 duration-200">
             {projectsForSelectedClient.length === 0 ? (
-              <div className="p-4 text-sm text-gray-500">
+              <div className="p-4 text-sm" style={{ color: colors.text.muted }}>
                 No projects found for this client.
               </div>
             ) : (
-              <div className="divide-y divide-gray-200">
+              <div style={{ borderTop: `1px solid ${colors.border.light}` }}>
                 {projectsForSelectedClient.map((project: any) => (
-                  <div key={project._id} className="group relative">
+                  <div key={project._id} className="group relative" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
                     <button
                       onClick={() => {
                         setSelectedProjectId(project._id);
@@ -1153,12 +1181,12 @@ export default function ModelingPage() {
                           setActiveDocumentId(mostRecent._id);
                         }
                       }}
-                      className="w-full text-left p-4 hover:bg-gray-50 transition-colors group"
+                      className="w-full text-left p-4 transition-colors group"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900 mb-1">{project.name}</div>
-                          <div className="text-xs text-gray-400 space-y-0.5">
+                          <div className="mb-1" style={{ fontWeight: 500, color: colors.text.primary }}>{project.name}</div>
+                          <div className="text-xs space-y-0.5" style={{ color: colors.text.dim }}>
                             {(project as any).extractionDate && (
                               <div>Extracted: {new Date((project as any).extractionDate).toLocaleDateString()}</div>
                             )}
@@ -1167,7 +1195,7 @@ export default function ModelingPage() {
                             )}
                           </div>
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-all flex-shrink-0" style={{ color: colors.text.dim }} />
                       </div>
                     </button>
                   </div>
@@ -1181,15 +1209,15 @@ export default function ModelingPage() {
         {!isSidebarMinimized && sidebarView === 'models' && selectedProjectId && (
           <div className="flex-1 overflow-y-auto animate-in slide-in-from-right-2 duration-200">
               {projectModelRuns === undefined ? (
-                <div className="p-4 text-sm text-gray-500">Loading saved models...</div>
+                <div className="p-4 text-sm" style={{ color: colors.text.muted }}>Loading saved models...</div>
               ) : projectModelRuns.length === 0 ? (
-                <div className="p-4 text-sm text-gray-500 text-center">
-                  <Calculator className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                <div className="p-4 text-sm text-center" style={{ color: colors.text.muted }}>
+                  <Calculator className="w-8 h-8 mx-auto mb-2" style={{ color: colors.text.dim }} />
                   <p>No saved models yet</p>
-                  <p className="text-xs mt-1">Run a model and save it to see it here</p>
+                  <p className="text-xs mt-1" style={{ color: colors.text.dim }}>Run a model and save it to see it here</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200">
+                <div style={{ borderTop: `1px solid ${colors.border.light}` }}>
                   {projectModelRuns.map((run: any) => {
                     const templateName = run.metadata?.description 
                       || run.inputs?.templateName 
@@ -1207,25 +1235,24 @@ export default function ModelingPage() {
                             setViewMode('scenario');
                           }
                         }}
-                        className="w-full text-left p-4 hover:bg-blue-50 transition-colors"
+                        className="w-full text-left p-4 transition-colors"
+                        style={{ borderBottom: `1px solid ${colors.border.light}` }}
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium text-gray-900 truncate">
+                        <div className="flex items-center justify-between mb-1 gap-2">
+                          <span className="truncate" style={{ fontWeight: 500, color: colors.text.primary }}>
                             {templateName}
                           </span>
-                          <Badge variant="secondary" className="text-xs flex-shrink-0 ml-2">
-                            v{run.version}
-                          </Badge>
+                          <StatusPill label={`v${run.version}`} tone={colors.accent.blue} />
                         </div>
-                        <div className="text-xs text-gray-500">
-                          {runDate.toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric', 
-                            year: 'numeric' 
+                        <div className="text-xs" style={{ color: colors.text.muted }}>
+                          {runDate.toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
                           })}
                         </div>
                         {run.versionName && (
-                          <div className="text-xs text-gray-400 mt-1 font-mono">
+                          <div className="text-xs mt-1" style={{ color: colors.text.dim, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
                             {run.versionName}
                           </div>
                         )}
@@ -1242,11 +1269,11 @@ export default function ModelingPage() {
           <div className="flex-1 overflow-y-auto py-2">
             {projectsWithData === undefined ? (
               <div className="flex justify-center p-2">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: colors.text.dim }}></div>
               </div>
             ) : projectsWithData.length === 0 ? (
               <div className="flex justify-center p-2">
-                <Calculator className="w-5 h-5 text-gray-400" />
+                <Calculator className="w-5 h-5" style={{ color: colors.text.dim }} />
               </div>
             ) : (
               <div className="space-y-1 px-2">
@@ -1257,11 +1284,12 @@ export default function ModelingPage() {
                       setSelectedProjectId(project._id);
                       setIsSidebarMinimized(false);
                     }}
-                    className={`w-full p-2 rounded-md transition-colors flex justify-center ${
+                    className="w-full p-2 rounded-md transition-colors flex justify-center"
+                    style={
                       selectedProjectId === project._id
-                        ? 'bg-blue-100 text-blue-600'
-                        : 'hover:bg-gray-100 text-gray-600'
-                    }`}
+                        ? { background: `${colors.accent.blue}20`, color: colors.accent.blue }
+                        : { color: colors.text.secondary }
+                    }
                     title={project.name}
                   >
                     <Calculator className="w-5 h-5" />
@@ -1274,7 +1302,7 @@ export default function ModelingPage() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col bg-white relative z-10" style={{ width: 0, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
+      <div className="flex-1 flex flex-col relative z-10" style={{ background: colors.bg.card, width: 0, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
         {/* Settings View */}
         {viewMode === 'settings' ? (
           <ModelingSettings onClose={() => {
@@ -1283,44 +1311,47 @@ export default function ModelingPage() {
           }} />
         ) : !selectedProjectId && !isStandaloneDocument ? (
           /* No Project Selected - Empty State */
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            <div className="text-center w-full max-w-md px-4">
-              <Calculator className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-              <p className="text-lg mb-2">Select a project to begin modeling</p>
-              <p className="text-sm mb-6">Choose a project with Excel extracted data from the sidebar</p>
-              <Button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log('New Document button clicked (empty state)');
-                  const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
-                  console.log('Created blank grid:', blankGrid.length, 'rows x', blankGrid[0]?.length, 'cols');
-                  setSpreadsheetData(blankGrid);
-                  setIsStandaloneDocument(true);
-                  setSelectedProjectId(null);
-                  setSelectedScenarioId(null);
-                  setTemplateSheets(null);
-                  setLazyWorkbook(null);
-                  setLazyMetadata(null);
-                  setLoadedSheets(new Set());
-                  setActiveTab('input');
-                  console.log('State updated, isStandaloneDocument should be true');
-                }}
-                className="w-full flex items-center justify-center gap-2"
-                type="button"
-              >
-                <Plus className="w-4 h-4" />
-                New Document
-              </Button>
-            </div>
+          <div className="flex-1 flex items-center justify-center p-6">
+            <EmptyState
+              icon={<Calculator className="w-12 h-12" />}
+              title="Select a project to begin modeling"
+              body="Choose a project with Excel extracted data from the sidebar."
+              action={
+                <Button
+                  variant="primary"
+                  accent={colors.accent.blue}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('New Document button clicked (empty state)');
+                    const blankGrid = Array.from({ length: 50 }, () => Array.from({ length: 10 }, () => ''));
+                    console.log('Created blank grid:', blankGrid.length, 'rows x', blankGrid[0]?.length, 'cols');
+                    setSpreadsheetData(blankGrid);
+                    setIsStandaloneDocument(true);
+                    setSelectedProjectId(null);
+                    setSelectedScenarioId(null);
+                    setTemplateSheets(null);
+                    setLazyWorkbook(null);
+                    setLazyMetadata(null);
+                    setLoadedSheets(new Set());
+                    setActiveTab('input');
+                    console.log('State updated, isStandaloneDocument should be true');
+                  }}
+                  type="button"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Document
+                </Button>
+              }
+            />
           </div>
         ) : isLoadingTemplate ? (
           /* Loading State */
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-              <p className="text-gray-600">Loading template...</p>
-              <p className="text-sm text-gray-500 mt-2">This may take a moment for large files</p>
+              <div className="inline-block animate-spin rounded-full h-12 w-12 mb-4" style={{ borderBottom: `2px solid ${colors.accent.blue}` }}></div>
+              <p style={{ color: colors.text.secondary }}>Loading template...</p>
+              <p className="text-sm mt-2" style={{ color: colors.text.muted }}>This may take a moment for large files</p>
             </div>
           </div>
         ) : viewMode === 'data-library' && selectedProjectId && excelDocuments.length > 0 ? (
@@ -1344,19 +1375,20 @@ export default function ModelingPage() {
           /* Model View - Toolbar + Status Bars + Workbook Editor */
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Model View Toolbar */}
-            <div 
-              className="px-4 py-2 border-b border-gray-200 flex items-center gap-3 flex-shrink-0"
-              style={{ 
-                width: '100%', 
-                maxWidth: '100%', 
+            <div
+              className="px-4 py-2 flex items-center gap-3 flex-shrink-0"
+              style={{
+                width: '100%',
+                maxWidth: '100%',
                 overflow: 'hidden',
                 flexWrap: 'nowrap',
+                borderBottom: `1px solid ${colors.border.default}`,
               }}
             >
               {/* Left side - Model name */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Calculator className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-gray-900">
+                <Calculator className="w-4 h-4" style={{ color: colors.accent.blue }} />
+                <span className="text-sm" style={{ fontWeight: 500, color: colors.text.primary }}>
                   {selectedTemplate?.name || 'Model'}
                 </span>
               </div>
@@ -1364,20 +1396,19 @@ export default function ModelingPage() {
               {/* Center actions */}
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Button
-                  variant="default"
+                  variant="primary"
+                  accent={colors.accent.blue}
                   size="sm"
                   onClick={() => setIsSaveModelModalOpen(true)}
                   disabled={!selectedProjectId || !templateSheets || templateSheets.length === 0}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
                 >
                   <Save className="w-4 h-4" />
                   Save Model
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={handleExportToExcel}
-                  className="flex items-center gap-2"
                   title="Export current data to Excel"
                 >
                   <Download className="w-4 h-4" />
@@ -1386,16 +1417,15 @@ export default function ModelingPage() {
                 {/* Refresh Population - Re-runs codified template population */}
                 {codifiedExtraction?.items && codifiedExtraction.items.length > 0 && (
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={handleRefreshPopulation}
-                    className={`flex items-center gap-1 ${
-                      codifiedExtraction.isFullyConfirmed 
-                        ? 'text-green-600 border-green-300 hover:bg-green-50 hover:text-green-700' 
-                        : 'text-amber-600 border-amber-300 hover:bg-amber-50 hover:text-amber-700'
-                    }`}
-                    title={codifiedExtraction.isFullyConfirmed 
-                      ? "Re-run template population with codified data" 
+                    style={{
+                      color: codifiedExtraction.isFullyConfirmed ? colors.accent.green : colors.accent.yellow,
+                      borderColor: `${codifiedExtraction.isFullyConfirmed ? colors.accent.green : colors.accent.yellow}40`,
+                    }}
+                    title={codifiedExtraction.isFullyConfirmed
+                      ? "Re-run template population with codified data"
                       : "Re-run population (some items not confirmed)"
                     }
                   >
@@ -1409,10 +1439,16 @@ export default function ModelingPage() {
 
               {/* Right side - Sheet dropdown */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                <label className="text-sm text-gray-600">Sheet:</label>
+                <label
+                  className="flex-shrink-0"
+                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}
+                >
+                  Sheet
+                </label>
                 <Select
                   value={selectedSheet || templateSheets[0]?.name || ''}
-                  onValueChange={(value) => {
+                  onChange={(e) => {
+                    const value = e.target.value;
                     setSelectedSheet(value);
                     // Load sheet on demand if not already loaded
                     if (lazyWorkbook && lazyMetadata && templateSheets) {
@@ -1425,7 +1461,7 @@ export default function ModelingPage() {
                             const loadedSheet = loadSheetData(lazyWorkbook, value, meta);
                             setTemplateSheets(prevSheets => {
                               if (!prevSheets) return prevSheets;
-                              return prevSheets.map(sheet => 
+                              return prevSheets.map(sheet =>
                                 sheet.name === value ? loadedSheet : sheet
                               );
                             });
@@ -1437,31 +1473,30 @@ export default function ModelingPage() {
                       }
                     }
                   }}
+                  style={{ width: 180 }}
                 >
-                  <SelectTrigger className="w-[180px] h-8 text-sm">
-                    <SelectValue placeholder="Select sheet" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templateSheets.map(sheet => (
-                      <SelectItem key={sheet.name} value={sheet.name}>
-                        {sheet.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  {templateSheets.map(sheet => (
+                    <option key={sheet.name} value={sheet.name}>
+                      {sheet.name}
+                    </option>
+                  ))}
                 </Select>
               </div>
             </div>
             
             {/* Population Status - Only in model view */}
             {populationResult && (
-              <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-sm flex-shrink-0">
+              <div
+                className="px-4 py-2 text-sm flex-shrink-0"
+                style={{ background: `${colors.accent.blue}15`, borderBottom: `1px solid ${colors.accent.blue}40` }}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="font-medium text-blue-900">
+                    <span style={{ fontWeight: 500, color: colors.accent.blue }}>
                       {populationResult.matchedPlaceholders.size} placeholders matched
                     </span>
                     {populationResult.unmatchedPlaceholders.length > 0 && (
-                      <span className="text-orange-600">
+                      <span style={{ color: colors.accent.orange }}>
                         ({populationResult.unmatchedPlaceholders.length} unmatched)
                       </span>
                     )}
@@ -1469,7 +1504,6 @@ export default function ModelingPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setIsPlaceholderModalOpen(true)}
-                      className="h-6 text-xs"
                     >
                       View Details
                     </Button>
@@ -1477,23 +1511,23 @@ export default function ModelingPage() {
                   <div className="flex items-center gap-3">
                     {remainingPlaceholders && remainingPlaceholders.total > 0 && (
                       <>
-                        <span className="text-gray-600 text-xs">
+                        <span className="text-xs" style={{ color: colors.text.secondary }}>
                           {remainingPlaceholders.total} placeholder{remainingPlaceholders.total !== 1 ? 's' : ''} remaining
                         </span>
                         <Button
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           onClick={handleClearUnusedPlaceholders}
-                          className="h-6 text-xs flex items-center gap-1 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                          style={{ color: colors.accent.red, borderColor: `${colors.accent.red}40` }}
                         >
                           <Trash2 className="w-3 h-3" />
                           Clear Unused
                         </Button>
                       </>
                     )}
-                    {(populationResult.cleanupReport.rowsHidden.length > 0 || 
+                    {(populationResult.cleanupReport.rowsHidden.length > 0 ||
                       populationResult.cleanupReport.rowsDeleted.length > 0) && (
-                      <span className="text-gray-600">
+                      <span style={{ color: colors.text.secondary }}>
                         {populationResult.cleanupReport.rowsHidden.length + populationResult.cleanupReport.rowsDeleted.length} rows cleaned up
                       </span>
                     )}
@@ -1504,19 +1538,22 @@ export default function ModelingPage() {
 
             {/* Overflow Warnings - Only in model view */}
             {overflowWarnings.length > 0 && (
-              <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm flex-shrink-0">
+              <div
+                className="px-4 py-3 text-sm flex-shrink-0"
+                style={{ background: `${colors.accent.yellow}15`, borderBottom: `1px solid ${colors.accent.yellow}40` }}
+              >
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: colors.accent.yellow }} />
                   <div>
-                    <span className="font-medium text-amber-800">
+                    <span style={{ fontWeight: 500, color: colors.text.primary }}>
                       Some items couldn&apos;t fit in template fallback slots:
                     </span>
-                    <ul className="mt-1 space-y-0.5 text-amber-700">
+                    <ul className="mt-1 space-y-0.5" style={{ color: colors.text.secondary }}>
                       {overflowWarnings.map((warning, idx) => (
                         <li key={idx} className="text-xs">• {warning}</li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-xs text-amber-600">
+                    <p className="mt-2 text-xs" style={{ color: colors.text.muted }}>
                       Consider adding more fallback rows to your template or reviewing these items.
                     </p>
                   </div>
@@ -1567,7 +1604,7 @@ export default function ModelingPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="flex items-center justify-center h-full" style={{ color: colors.text.muted }}>
                   <p>Please select a sheet from the dropdown</p>
                 </div>
               )}
@@ -1576,19 +1613,21 @@ export default function ModelingPage() {
         ) : viewMode === 'scenario' && selectedScenarioId && spreadsheetData.length > 0 ? (
           /* Scenario Editor - ExcelDataEditor for editing scenario data */
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-2 border-b border-gray-200 bg-white flex items-center justify-between">
+            <div
+              className="px-4 py-2 flex items-center justify-between"
+              style={{ background: colors.bg.card, borderBottom: `1px solid ${colors.border.default}` }}
+            >
               <div className="flex items-center gap-2">
-                <Calculator className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-gray-900">
+                <Calculator className="w-4 h-4" style={{ color: colors.accent.blue }} />
+                <span className="text-sm" style={{ fontWeight: 500, color: colors.text.primary }}>
                   {selectedScenario?.name || 'Scenario'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={handleExportToExcel}
-                  className="flex items-center gap-2"
                   title="Export to Excel"
                 >
                   <Download className="w-4 h-4" />
@@ -1623,12 +1662,12 @@ export default function ModelingPage() {
           />
         ) : (
           /* Empty State */
-          <div className="flex items-center justify-center h-full text-gray-500">
-            <div className="text-center max-w-md px-4">
-              <Calculator className="w-20 h-20 mx-auto mb-6 text-gray-400" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Select a Project</h3>
-              <p className="text-sm text-gray-600 mb-8">Choose a project with extracted data from the sidebar to begin modeling</p>
-            </div>
+          <div className="flex items-center justify-center h-full p-6">
+            <EmptyState
+              icon={<Calculator className="w-12 h-12" />}
+              title="Select a Project"
+              body="Choose a project with extracted data from the sidebar to begin modeling."
+            />
           </div>
         )}
       </div>

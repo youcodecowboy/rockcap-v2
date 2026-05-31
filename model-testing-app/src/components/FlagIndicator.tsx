@@ -3,6 +3,7 @@
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Flag } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
 
 interface FlagIndicatorProps {
   entityType: "document" | "meeting" | "task" | "project" | "client" | "checklist_item";
@@ -10,12 +11,20 @@ interface FlagIndicatorProps {
 }
 
 export function FlagIndicator({ entityType, entityId }: FlagIndicatorProps) {
+  const colors = useColors();
   const count = useQuery(api.flags.getOpenCountByEntity, { entityType, entityId });
   if (!count) return null;
   return (
-    <span className="inline-flex items-center gap-0.5 text-orange-500" title={`${count} open flag${count > 1 ? 's' : ''}`}>
-      <Flag className="h-3 w-3" />
-      {count > 1 && <span className="text-xs">{count}</span>}
+    <span
+      title={`${count} open flag${count > 1 ? 's' : ''}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 2, color: colors.accent.orange }}
+    >
+      <Flag style={{ width: 12, height: 12 }} />
+      {count > 1 && (
+        <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10 }}>
+          {count}
+        </span>
+      )}
     </span>
   );
 }

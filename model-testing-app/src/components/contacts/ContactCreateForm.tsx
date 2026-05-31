@@ -5,6 +5,8 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { ArrowLeft, Loader2 } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
+import { Field, Input, Textarea, Button, IconButton } from '@/components/layouts';
 
 interface ContactCreateFormProps {
   onCreated: () => void;
@@ -12,6 +14,8 @@ interface ContactCreateFormProps {
 }
 
 export default function ContactCreateForm({ onCreated, onClose }: ContactCreateFormProps) {
+  const colors = useColors();
+  const accent = colors.entityTypes.contact;
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -51,89 +55,118 @@ export default function ContactCreateForm({ onCreated, onClose }: ContactCreateF
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--m-bg)]">
+    <div className="flex flex-col h-full" style={{ background: colors.bg.base }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--m-border)]">
-        <button onClick={onClose} className="text-[var(--m-text-tertiary)]">
+      <div
+        className="flex items-center justify-between px-4 py-3"
+        style={{ borderBottom: `1px solid ${colors.border.default}` }}
+      >
+        <IconButton label="Back" onClick={onClose}>
           <ArrowLeft className="w-5 h-5" />
-        </button>
-        <span className="text-[15px] font-bold text-[var(--m-text-primary)]">New Contact</span>
-        <div className="w-5" />
+        </IconButton>
+        <span
+          style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 10,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            fontWeight: 500,
+            color: colors.text.secondary,
+          }}
+        >
+          New Contact
+        </span>
+        <div className="w-7" />
       </div>
 
       {/* Form */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {/* Name (required) */}
-        <div>
-          <label className="text-[11px] font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider">
-            Name <span className="text-red-500">*</span>
-          </label>
-          <input
+        <Field label="Name *">
+          <Input
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Full name"
-            className="w-full mt-1 border border-[var(--m-border)] rounded-lg px-3 py-2.5 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none focus:border-[var(--m-accent)]"
           />
-        </div>
+        </Field>
 
-        {/* Email */}
-        <div>
-          <label className="text-[11px] font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider">Email</label>
-          <input
+        <Field label="Email">
+          <Input
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
             placeholder="email@example.com"
-            className="w-full mt-1 border border-[var(--m-border)] rounded-lg px-3 py-2.5 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none focus:border-[var(--m-accent)]"
           />
-        </div>
+        </Field>
 
-        {/* Phone */}
-        <div>
-          <label className="text-[11px] font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider">Phone</label>
-          <input
+        <Field label="Phone">
+          <Input
             type="tel"
             value={phone}
             onChange={e => setPhone(e.target.value)}
             placeholder="+44 7700 900000"
-            className="w-full mt-1 border border-[var(--m-border)] rounded-lg px-3 py-2.5 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none focus:border-[var(--m-accent)]"
           />
-        </div>
+        </Field>
 
-        {/* Role */}
-        <div>
-          <label className="text-[11px] font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider">Role</label>
-          <input
+        <Field label="Role">
+          <Input
             value={role}
             onChange={e => setRole(e.target.value)}
             placeholder="e.g. Solicitor, Surveyor, Broker"
-            className="w-full mt-1 border border-[var(--m-border)] rounded-lg px-3 py-2.5 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none focus:border-[var(--m-accent)]"
           />
-        </div>
+        </Field>
 
-        {/* Client (searchable dropdown) */}
-        <div>
-          <label className="text-[11px] font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider">Client</label>
+        {/* Client (searchable) */}
+        <Field label="Client">
           {selectedClientName ? (
-            <div className="mt-1 flex items-center justify-between border border-[var(--m-border)] rounded-lg px-3 py-2.5">
-              <span className="text-[13px] text-[var(--m-text-primary)] font-medium">{selectedClientName}</span>
-              <button onClick={() => { setClientId(''); setClientSearch(''); }} className="text-[var(--m-text-tertiary)] text-xs">Clear</button>
+            <div
+              className="flex items-center justify-between"
+              style={{
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+                padding: '7px 10px',
+              }}
+            >
+              <span style={{ fontSize: 12, color: colors.text.primary, fontWeight: 500 }}>{selectedClientName}</span>
+              <button
+                onClick={() => { setClientId(''); setClientSearch(''); }}
+                style={{ fontSize: 11, color: colors.text.muted, background: 'transparent', border: 'none', cursor: 'pointer' }}
+              >
+                Clear
+              </button>
             </div>
           ) : (
-            <div className="mt-1">
-              <input
+            <div>
+              <Input
                 value={clientSearch}
                 onChange={e => setClientSearch(e.target.value)}
                 placeholder="Search clients..."
-                className="w-full border border-[var(--m-border)] rounded-lg px-3 py-2.5 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none focus:border-[var(--m-accent)]"
               />
               {clientSearch && filteredClients.length > 0 && (
-                <div className="mt-1 border border-[var(--m-border)] rounded-lg bg-white max-h-[150px] overflow-y-auto">
+                <div
+                  style={{
+                    marginTop: 4,
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: 4,
+                    background: colors.bg.card,
+                    maxHeight: 150,
+                    overflowY: 'auto',
+                  }}
+                >
                   {filteredClients.map(c => (
                     <button
                       key={c._id}
                       onClick={() => { setClientId(c._id); setClientSearch(''); }}
-                      className="w-full text-left px-3 py-2 text-[13px] text-[var(--m-text-primary)] hover:bg-[var(--m-bg-subtle)] border-b border-[var(--m-border-subtle)] last:border-b-0"
+                      className="w-full text-left"
+                      style={{
+                        padding: '8px 10px',
+                        fontSize: 12,
+                        color: colors.text.primary,
+                        background: 'transparent',
+                        borderBottom: `1px solid ${colors.border.light}`,
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = colors.bg.cardAlt)}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       {c.name}
                     </button>
@@ -142,34 +175,33 @@ export default function ContactCreateForm({ onCreated, onClose }: ContactCreateF
               )}
             </div>
           )}
-        </div>
+        </Field>
 
-        {/* Notes */}
-        <div>
-          <label className="text-[11px] font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider">Notes</label>
-          <textarea
+        <Field label="Notes">
+          <Textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
             placeholder="Any additional notes..."
             rows={3}
-            className="w-full mt-1 border border-[var(--m-border)] rounded-lg px-3 py-2.5 text-[13px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] outline-none focus:border-[var(--m-accent)] resize-none"
           />
-        </div>
+        </Field>
       </div>
 
       {/* Submit button */}
       <div className="px-4 pb-4 pt-2">
-        <button
+        <Button
+          variant="primary"
+          accent={accent}
           onClick={handleSubmit}
           disabled={!name.trim() || isSubmitting}
-          className="w-full py-3 bg-[var(--m-accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+          style={{ width: '100%', justifyContent: 'center', padding: '10px 14px' }}
         >
           {isSubmitting ? (
-            <span className="flex items-center justify-center gap-2">
+            <>
               <Loader2 className="w-4 h-4 animate-spin" /> Creating...
-            </span>
+            </>
           ) : 'Create Contact'}
-        </button>
+        </Button>
       </div>
     </div>
   );

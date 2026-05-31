@@ -12,52 +12,27 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { 
-  ChevronRight, 
-  FolderKanban, 
+import { Button, IconButton, Input, Select, Field, DataTable, EmptyState, Modal, type Column } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import {
+  ChevronRight,
+  FolderKanban,
   FileText,
   Eye,
   ArrowUpDown,
   ChevronLeft,
   Move,
   Trash2,
-  Plus,
 } from 'lucide-react';
 import { Id } from '../../convex/_generated/dataModel';
 import DocumentCodeEditor from '@/components/DocumentCodeEditor';
-import { 
-  useUpdateInternalDocumentCode, 
+import {
+  useUpdateInternalDocumentCode,
   useDeleteInternalDocument,
   useUpdateInternalDocumentFolder,
   useInternalDocumentFolders,
   useCreateInternalDocumentFolder,
 } from '@/lib/documentStorage';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 // Types
 interface InternalDocument {
@@ -107,6 +82,7 @@ export default function InternalDocumentsTable({
   onFiltersChange
 }: InternalDocumentsTableProps) {
   const router = useRouter();
+  const colors = useColors();
   const updateDocumentCode = useUpdateInternalDocumentCode();
   const deleteDocument = useDeleteInternalDocument();
   const updateFolder = useUpdateInternalDocumentFolder();
@@ -397,362 +373,250 @@ export default function InternalDocumentsTable({
     await updateDocumentCode({ id, documentCode: newCode });
   };
   
+  const HeaderSort = ({ label, col }: { label: string; col: SortColumn }) => (
+    <button
+      onClick={() => handleSort(col)}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent',
+        border: 'none', cursor: 'pointer', font: 'inherit', color: 'inherit',
+        letterSpacing: 'inherit', textTransform: 'inherit', padding: 0,
+      }}
+    >
+      {label}
+      <ArrowUpDown size={11} style={{ opacity: sortColumn === col ? 1 : 0.4 }} />
+    </button>
+  );
+
+  const docColumns: Column<InternalDocument>[] = [
+    {
+      key: 'code',
+      header: 'Document Code',
+      render: (doc) => (
+        <DocumentCodeEditor
+          documentCode={doc.documentCode}
+          fileName={doc.fileName}
+          onSave={(newCode) => handleUpdateDocumentCode(doc._id, newCode)}
+          isInternal={true}
+        />
+      ),
+    },
+    {
+      key: 'fileName',
+      header: 'File Name',
+      render: (doc) => <span title={doc.fileName} style={{ color: colors.text.muted, fontSize: 11 }}>{doc.fileName}</span>,
+    },
+    { key: 'category', header: 'Category', render: (doc) => <span style={{ color: colors.text.secondary }}>{doc.category}</span> },
+    { key: 'date', header: 'Date', mono: true, render: (doc) => <span style={{ color: colors.text.secondary }}>{formatDate(doc.uploadedAt)}</span> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: 140,
+      align: 'right',
+      render: (doc) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+          <Button variant="ghost" size="sm" onClick={() => router.push(`/docs/${doc._id}`)}>
+            <Eye size={12} />
+            View
+          </Button>
+          <IconButton label="Move to folder" onClick={() => { setSelectedDocumentForMove(doc._id); setShowMoveDialog(true); }}>
+            <Move size={12} />
+          </IconButton>
+          <IconButton label="Delete" onClick={() => handleDeleteDocument(doc._id)}>
+            <Trash2 size={12} style={{ color: colors.accent.red }} />
+          </IconButton>
+        </div>
+      ),
+    },
+  ];
+
+  const folderColumns: Column<FolderGroup>[] = [
+    {
+      key: 'folder',
+      header: 'Folder',
+      render: (folder) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ChevronRight size={16} style={{ color: colors.text.dim }} />
+          <FolderKanban size={16} style={{ color: colors.text.muted }} />
+          <span style={{ fontWeight: 500, color: colors.text.primary }}>{folder.folderName}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'count',
+      header: 'Documents',
+      render: (folder) => (
+        <span style={{ color: colors.text.muted }}>
+          {folder.documents.length} document{folder.documents.length !== 1 ? 's' : ''}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: 80,
+      align: 'right',
+      render: (folder) =>
+        folder.folderId ? (
+          <IconButton
+            label="Delete folder"
+            onClick={(e) => {
+              e.stopPropagation();
+              // TODO: Implement folder deletion
+            }}
+          >
+            <Trash2 size={12} style={{ color: colors.accent.red }} />
+          </IconButton>
+        ) : null,
+    },
+  ];
+
+  const docCount = (currentViewData as InternalDocument[]).length;
+
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Breadcrumbs and Navigation */}
       {navState.type !== 'all' && (
-        <div className="flex items-center justify-between gap-4 pb-3 border-b">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={navigateBack}
-                disabled={navHistoryIndex === 0}
-                className="h-8 w-8 p-0"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={navigateForward}
-                disabled={navHistoryIndex >= navHistory.length - 1}
-                className="h-8 w-8 p-0"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <button
-                onClick={navigateToAll}
-                className="hover:text-gray-900 transition-colors"
-              >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, paddingBottom: 12, borderBottom: `1px solid ${colors.border.default}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <IconButton label="Back" onClick={navigateBack} disabled={navHistoryIndex === 0}>
+              <ChevronLeft size={16} />
+            </IconButton>
+            <IconButton label="Forward" onClick={navigateForward} disabled={navHistoryIndex >= navHistory.length - 1}>
+              <ChevronRight size={16} />
+            </IconButton>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: colors.text.muted }}>
+              <button onClick={navigateToAll} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.muted, font: 'inherit' }}>
                 All Documents
               </button>
-              <ChevronRight className="w-3 h-3" />
-              <span className="text-gray-900 font-medium">{navState.folderName}</span>
+              <ChevronRight size={12} />
+              <span style={{ color: colors.text.primary, fontWeight: 500 }}>{navState.folderName}</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500 whitespace-nowrap">
-              {(currentViewData as InternalDocument[]).length} document{(currentViewData as InternalDocument[]).length !== 1 ? 's' : ''}
-            </span>
-          </div>
+          <span style={{ fontSize: 12, color: colors.text.muted, whiteSpace: 'nowrap' }}>
+            {docCount} document{docCount !== 1 ? 's' : ''}
+          </span>
         </div>
       )}
-      
-      {/* Table */}
-      <div className="border rounded-lg bg-white overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-gray-50 sticky top-0 z-10">
-              <TableRow>
-                <TableHead className="w-[40px]"></TableHead>
-                {navState.type === 'all' && (
-                  <TableHead 
-                    className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      Folder
-                    </div>
-                  </TableHead>
-                )}
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('code')}
-                >
-                  <div className="flex items-center gap-2">
-                    Document Code
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('fileName')}
-                >
-                  <div className="flex items-center gap-2">
-                    File Name
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('category')}
-                >
-                  <div className="flex items-center gap-2">
-                    Category
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleSort('date')}
-                >
-                  <div className="flex items-center gap-2">
-                    Date
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
-              </TableRow>
-              
-              {/* Filter Row */}
-              {showFilters && (
-                <TableRow className="bg-gray-50 border-t">
-                  <TableCell></TableCell>
-                  {navState.type === 'all' && <TableCell></TableCell>}
-                  <TableCell>
-                    <Input
-                      placeholder="Filter..."
-                      value={filters.code}
-                      onChange={(e) => setFilters({...filters, code: e.target.value})}
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      placeholder="Filter..."
-                      value={filters.fileName}
-                      onChange={(e) => setFilters({...filters, fileName: e.target.value})}
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      placeholder="Filter..."
-                      value={filters.category}
-                      onChange={(e) => setFilters({...filters, category: e.target.value})}
-                      className="h-8 text-xs"
-                    />
-                  </TableCell>
-                  <TableCell></TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
-              )}
-            </TableHeader>
-            
-            <TableBody>
-              {/* Folder View - Flat Document List */}
-              {navState.type === 'folder' ? (
-                (currentViewData as InternalDocument[]).length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-12">
-                      <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-gray-600 font-medium">No documents in this folder</p>
-                      <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  (currentViewData as InternalDocument[]).map((doc) => (
-                    <TableRow 
-                      key={doc._id}
-                      className="hover:bg-gray-50"
-                    >
-                      <TableCell></TableCell>
-                      <TableCell>
-                        <DocumentCodeEditor
-                          documentCode={doc.documentCode}
-                          fileName={doc.fileName}
-                          onSave={(newCode) => handleUpdateDocumentCode(doc._id, newCode)}
-                          isInternal={true}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-gray-500 truncate max-w-[300px] block" title={doc.fileName}>
-                          {doc.fileName}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-gray-600">{doc.category}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-gray-600">{formatDate(doc.uploadedAt)}</span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push(`/docs/${doc._id}`)}
-                            className="gap-1"
-                          >
-                            <Eye className="w-3 h-3" />
-                            View
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDocumentForMove(doc._id);
-                              setShowMoveDialog(true);
-                            }}
-                            className="gap-1"
-                            title="Move to folder"
-                          >
-                            <Move className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteDocument(doc._id)}
-                            className="gap-1 text-red-600 hover:text-red-700"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )
-              ) : currentViewData.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12">
-                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-600 font-medium">No documents found</p>
-                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                (currentViewData as FolderGroup[]).map((folder) => (
-                      <TableRow 
-                        key={folder.folderId || 'unorganized'}
-                        className="hover:bg-gray-50 cursor-pointer"
-                        onClick={() => {
-                          const folderIdToNavigate = folder.folderId === null ? 'unorganized' : folder.folderId;
-                          navigateToFolder(folderIdToNavigate, folder.folderName);
-                        }}
-                      >
-                        <TableCell>
-                          <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <FolderKanban className="w-4 h-4 text-gray-600" />
-                            <span className="font-medium">{folder.folderName}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell colSpan={4}>
-                          <span className="text-sm text-gray-600">{folder.documents.length} document{folder.documents.length !== 1 ? 's' : ''}</span>
-                        </TableCell>
-                        <TableCell>
-                          {folder.folderId && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                // TODO: Implement folder deletion
-                              }}
-                              className="text-red-600 hover:text-red-700"
-                              title="Delete folder"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+
+      {/* Sort + Filters */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
+        <span style={{ marginRight: 4 }}>Sort:</span>
+        <HeaderSort label="Code" col="code" />
+        <HeaderSort label="File Name" col="fileName" />
+        <HeaderSort label="Category" col="category" />
+        <HeaderSort label="Date" col="date" />
       </div>
-      
+
+      {showFilters && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          <Input placeholder="Filter code..." value={filters.code} onChange={(e) => setFilters({ ...filters, code: e.target.value })} />
+          <Input placeholder="Filter file name..." value={filters.fileName} onChange={(e) => setFilters({ ...filters, fileName: e.target.value })} />
+          <Input placeholder="Filter category..." value={filters.category} onChange={(e) => setFilters({ ...filters, category: e.target.value })} />
+        </div>
+      )}
+
+      {navState.type === 'folder' ? (
+        <DataTable
+          rows={currentViewData as InternalDocument[]}
+          getRowKey={(doc) => doc._id}
+          columns={docColumns}
+          empty={<EmptyState icon={<FileText size={32} />} title="No documents in this folder" body="Try adjusting your filters" />}
+        />
+      ) : (
+        <DataTable
+          rows={currentViewData as FolderGroup[]}
+          getRowKey={(folder) => folder.folderId || 'unorganized'}
+          onRowClick={(folder) => {
+            const folderIdToNavigate = folder.folderId === null ? 'unorganized' : folder.folderId;
+            navigateToFolder(folderIdToNavigate, folder.folderName);
+          }}
+          columns={folderColumns}
+          empty={<EmptyState icon={<FileText size={32} />} title="No documents found" body="Try adjusting your filters" />}
+        />
+      )}
+
       {/* Move Document Dialog */}
-      <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Move Document to Folder</DialogTitle>
-            <DialogDescription>
-              Select a folder to move this document to, or leave unorganized.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="folderSelect">Folder</Label>
-              <Select
-                onValueChange={async (value) => {
-                  if (selectedDocumentForMove) {
-                    if (value === 'none') {
-                      await handleMoveDocument(selectedDocumentForMove, null);
-                    } else if (value === 'new') {
-                      // Create new folder - prompt for name
-                      const folderName = prompt('Enter folder name:');
-                      if (folderName && folderName.trim()) {
-                        try {
-                          const newFolderId = await createFolder({ name: folderName.trim() });
-                          await handleMoveDocument(selectedDocumentForMove, newFolderId);
-                        } catch (error: any) {
-                          alert(error.message || 'Failed to create folder');
-                        }
-                      }
-                    } else {
-                      await handleMoveDocument(selectedDocumentForMove, value);
+      <Modal
+        open={showMoveDialog}
+        onClose={() => setShowMoveDialog(false)}
+        title="Move Document to Folder"
+        footer={
+          <Button variant="secondary" onClick={() => setShowMoveDialog(false)}>
+            Cancel
+          </Button>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+          Select a folder to move this document to, or leave unorganized.
+        </p>
+        <Field label="Folder">
+          <Select
+            defaultValue=""
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (selectedDocumentForMove) {
+                if (value === 'none') {
+                  await handleMoveDocument(selectedDocumentForMove, null);
+                } else if (value === 'new') {
+                  const folderName = prompt('Enter folder name:');
+                  if (folderName && folderName.trim()) {
+                    try {
+                      const newFolderId = await createFolder({ name: folderName.trim() });
+                      await handleMoveDocument(selectedDocumentForMove, newFolderId);
+                    } catch (error: any) {
+                      alert(error.message || 'Failed to create folder');
                     }
                   }
-                }}
-              >
-                <SelectTrigger id="folderSelect">
-                  <SelectValue placeholder="Select a folder" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Unorganized</SelectItem>
-                  <SelectItem value="new">+ Create New Folder</SelectItem>
-                  {folders.map((folder: Folder) => (
-                    <SelectItem key={folder._id} value={folder._id}>
-                      {folder.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMoveDialog(false)}>
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
+                } else if (value) {
+                  await handleMoveDocument(selectedDocumentForMove, value);
+                }
+              }
+            }}
+          >
+            <option value="" disabled>Select a folder</option>
+            <option value="none">Unorganized</option>
+            <option value="new">+ Create New Folder</option>
+            {folders.map((folder: Folder) => (
+              <option key={folder._id} value={folder._id}>
+                {folder.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Modal>
+
       {/* Create Folder Dialog */}
-      <Dialog open={showCreateFolderDialog} onOpenChange={setShowCreateFolderDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Folder</DialogTitle>
-            <DialogDescription>
-              Enter a name for the new folder. Folders are created when you move documents to them.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="newFolderName">Folder Name</Label>
-              <Input
-                id="newFolderName"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="e.g., Marketing Materials"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleCreateFolder();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateFolderDialog(false)}>
+      <Modal
+        open={showCreateFolderDialog}
+        onClose={() => setShowCreateFolderDialog(false)}
+        title="Create New Folder"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowCreateFolderDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+            <Button variant="primary" onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
               Create Folder
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
+          </>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+          Enter a name for the new folder. Folders are created when you move documents to them.
+        </p>
+        <Field label="Folder Name">
+          <Input
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            placeholder="e.g., Marketing Materials"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleCreateFolder();
+              }
+            }}
+          />
+        </Field>
+      </Modal>
     </div>
   );
 }

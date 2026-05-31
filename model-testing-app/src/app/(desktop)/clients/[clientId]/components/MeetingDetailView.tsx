@@ -4,9 +4,8 @@ import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+import { useColors } from '@/lib/useColors';
+import { Button, IconButton, StatusPill, FlagChip } from '@/components/layouts';
 import {
   Calendar,
   Users,
@@ -23,6 +22,7 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle2,
+  Check,
   Flag,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
@@ -78,16 +78,45 @@ const meetingTypeLabels: Record<string, string> = {
   other: 'Meeting',
 };
 
-const meetingTypeColors: Record<string, string> = {
-  progress: 'bg-blue-100 text-blue-700',
-  kickoff: 'bg-green-100 text-green-700',
-  review: 'bg-purple-100 text-purple-700',
-  site_visit: 'bg-orange-100 text-orange-700',
-  call: 'bg-gray-100 text-gray-700',
-  other: 'bg-gray-100 text-gray-600',
-};
+function meetingTypeTone(type: string | undefined, colors: ReturnType<typeof useColors>): string {
+  switch (type) {
+    case 'progress':
+      return colors.accent.blue;
+    case 'kickoff':
+      return colors.accent.green;
+    case 'review':
+      return colors.accent.purple;
+    case 'site_visit':
+      return colors.accent.orange;
+    default:
+      return colors.text.muted;
+  }
+}
+
+function SectionHeading({ icon, children, colors }: { icon: React.ReactNode; children: React.ReactNode; colors: ReturnType<typeof useColors>; }) {
+  return (
+    <h2
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: 10,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: colors.text.muted,
+        fontWeight: 500,
+        margin: '0 0 12px 0',
+      }}
+    >
+      {icon}
+      {children}
+    </h2>
+  );
+}
 
 export default function MeetingDetailView({ meeting, clientId, onClose }: MeetingDetailViewProps) {
+  const colors = useColors();
   const [promotingItemId, setPromotingItemId] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [flagModalOpen, setFlagModalOpen] = useState(false);
@@ -105,7 +134,6 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
     day: 'numeric',
   });
 
-  const pendingActions = meeting.actionItems.filter(a => a.status === 'pending');
   const completedActions = meeting.actionItems.filter(a => a.status === 'completed');
 
   const handleToggleActionItem = async (itemId: string, currentStatus: string) => {
@@ -171,52 +199,49 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Header */}
-      <div className="border-b border-border bg-card sticky top-0 z-10">
+      <div
+        className="sticky top-0 z-10"
+        style={{ background: colors.bg.card, borderBottom: `1px solid ${colors.border.default}` }}
+      >
         <div className="p-6">
           <div className="flex items-start justify-between mb-4">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
                 {meeting.meetingType && (
-                  <Badge
-                    variant="secondary"
-                    className={`${meetingTypeColors[meeting.meetingType] || meetingTypeColors.other}`}
-                  >
-                    {meetingTypeLabels[meeting.meetingType] || meeting.meetingType}
-                  </Badge>
+                  <StatusPill
+                    label={meetingTypeLabels[meeting.meetingType] || meeting.meetingType}
+                    tone={meetingTypeTone(meeting.meetingType, colors)}
+                  />
                 )}
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <div
+                  className="flex items-center gap-1.5"
+                  style={{ fontSize: 13, color: colors.text.muted }}
+                >
                   <Calendar className="w-4 h-4" />
                   {formattedDate}
                 </div>
               </div>
-              <h1 className="text-2xl font-bold text-foreground">{meeting.title}</h1>
+              <h1 style={{ fontSize: 24, fontWeight: 600, color: colors.text.primary, margin: 0 }}>
+                {meeting.title}
+              </h1>
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setFlagModalOpen(true)}
-                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                title="Flag for Review"
-              >
-                <Flag className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDelete}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
+              <IconButton label="Flag for Review" onClick={() => setFlagModalOpen(true)}>
+                <Flag className="w-4 h-4" style={{ color: colors.accent.orange }} />
+              </IconButton>
+              <IconButton label="Delete meeting" onClick={handleDelete}>
+                <Trash2 className="w-4 h-4" style={{ color: colors.accent.red }} />
+              </IconButton>
             </div>
           </div>
 
           {/* Attendees */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2" style={{ fontSize: 13, color: colors.text.muted }}>
             <Users className="w-4 h-4" />
-            <span className="font-medium">{meeting.attendees.length} attendees:</span>
-            <span className="text-muted-foreground">
+            <span style={{ fontWeight: 500, color: colors.text.secondary }}>
+              {meeting.attendees.length} attendees:
+            </span>
+            <span>
               {meeting.attendees.slice(0, 3).map(a => a.name).join(', ')}
               {meeting.attendees.length > 3 && ` +${meeting.attendees.length - 3} more`}
             </span>
@@ -224,13 +249,11 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
 
           {/* Source Document */}
           {meeting.sourceDocumentName && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="mt-2 flex items-center gap-2" style={{ fontSize: 13, color: colors.text.muted }}>
               <FileText className="w-4 h-4" />
               <span>From: {meeting.sourceDocumentName}</span>
               {meeting.extractionConfidence && (
-                <Badge variant="outline" className="text-xs">
-                  {Math.round(meeting.extractionConfidence * 100)}% confidence
-                </Badge>
+                <FlagChip label={`${Math.round(meeting.extractionConfidence * 100)}% confidence`} severity="info" />
               )}
             </div>
           )}
@@ -239,34 +262,33 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
 
       {/* Verification Banner */}
       {meeting.verified === false && (
-        <div className="mx-6 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+        <div
+          className="mx-6 mt-4 p-4 rounded"
+          style={{ background: `${colors.accent.yellow}15`, border: `1px solid ${colors.accent.yellow}40` }}
+        >
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: colors.accent.yellow }} />
             <div className="flex-1">
-              <p className="text-sm font-medium text-amber-800">
+              <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
                 This meeting was auto-extracted{meeting.sourceDocumentName ? ` from "${meeting.sourceDocumentName}"` : ''}. Please review before approving.
               </p>
               <div className="flex items-center gap-2 mt-3">
                 <Button
+                  variant="primary"
+                  accent={colors.accent.green}
+                  size="sm"
                   onClick={handleVerify}
                   disabled={isVerifying}
-                  size="sm"
-                  className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   {isVerifying ? (
-                    <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="w-4 h-4 mr-1" />
+                    <CheckCircle2 className="w-4 h-4" />
                   )}
                   Approve Meeting
                 </Button>
-                <Button
-                  onClick={handleDismiss}
-                  variant="outline"
-                  size="sm"
-                  className="text-red-600 border-red-200 hover:bg-red-50"
-                >
-                  <Trash2 className="w-4 h-4 mr-1" />
+                <Button variant="danger" size="sm" onClick={handleDismiss}>
+                  <Trash2 className="w-4 h-4" />
                   Dismiss
                 </Button>
               </div>
@@ -279,25 +301,19 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
       <div className="p-6 space-y-6">
         {/* Summary */}
         <section>
-          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-            <MessageSquare className="w-4 h-4" />
-            Summary
-          </h2>
-          <p className="text-foreground leading-relaxed">{meeting.summary}</p>
+          <SectionHeading icon={<MessageSquare className="w-4 h-4" />} colors={colors}>Summary</SectionHeading>
+          <p style={{ color: colors.text.primary, lineHeight: 1.65 }}>{meeting.summary}</p>
         </section>
 
         {/* Key Points */}
         {meeting.keyPoints.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <Lightbulb className="w-4 h-4" />
-              Key Points
-            </h2>
-            <ul className="space-y-2">
+            <SectionHeading icon={<Lightbulb className="w-4 h-4" />} colors={colors}>Key Points</SectionHeading>
+            <ul className="space-y-2" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {meeting.keyPoints.map((point, index) => (
                 <li key={index} className="flex items-start gap-3">
-                  <span className="text-blue-500 mt-0.5">•</span>
-                  <span className="text-foreground">{point}</span>
+                  <span style={{ color: colors.accent.blue, marginTop: 2 }}>•</span>
+                  <span style={{ color: colors.text.primary }}>{point}</span>
                 </li>
               ))}
             </ul>
@@ -307,15 +323,12 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
         {/* Decisions */}
         {meeting.decisions.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <CheckSquare className="w-4 h-4" />
-              Decisions Made
-            </h2>
-            <ul className="space-y-2">
+            <SectionHeading icon={<CheckSquare className="w-4 h-4" />} colors={colors}>Decisions Made</SectionHeading>
+            <ul className="space-y-2" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {meeting.decisions.map((decision, index) => (
                 <li key={index} className="flex items-start gap-3">
-                  <span className="text-green-500 mt-0.5">✓</span>
-                  <span className="text-foreground">{decision}</span>
+                  <span style={{ color: colors.accent.green, marginTop: 2 }}>✓</span>
+                  <span style={{ color: colors.text.primary }}>{decision}</span>
                 </li>
               ))}
             </ul>
@@ -325,33 +338,52 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
         {/* Action Items */}
         {meeting.actionItems.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <ListChecks className="w-4 h-4" />
+            <SectionHeading icon={<ListChecks className="w-4 h-4" />} colors={colors}>
               Action Items
-              <Badge variant="secondary" className="text-xs">
-                {completedActions.length}/{meeting.actionItems.length} complete
-              </Badge>
-            </h2>
+              <FlagChip label={`${completedActions.length}/${meeting.actionItems.length} complete`} severity="info" />
+            </SectionHeading>
             <div className="space-y-3">
               {meeting.actionItems.map((item) => (
                 <div
                   key={item.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg border ${
-                    item.status === 'completed'
-                      ? 'bg-muted border-border'
-                      : 'bg-card border-border'
-                  }`}
+                  className="flex items-start gap-3 p-3 rounded"
+                  style={{
+                    background: item.status === 'completed' ? colors.bg.cardAlt : colors.bg.card,
+                    border: `1px solid ${colors.border.default}`,
+                  }}
                 >
-                  <Checkbox
-                    checked={item.status === 'completed'}
-                    onCheckedChange={() => handleToggleActionItem(item.id, item.status)}
-                    className="mt-0.5"
-                  />
+                  <button
+                    role="checkbox"
+                    aria-checked={item.status === 'completed'}
+                    onClick={() => handleToggleActionItem(item.id, item.status)}
+                    style={{
+                      marginTop: 2,
+                      width: 16,
+                      height: 16,
+                      flexShrink: 0,
+                      borderRadius: 3,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: item.status === 'completed' ? colors.entityTypes.client : colors.bg.card,
+                      border: `1px solid ${item.status === 'completed' ? colors.entityTypes.client : colors.border.mid}`,
+                      color: '#fff',
+                    }}
+                  >
+                    {item.status === 'completed' && <Check className="w-3 h-3" />}
+                  </button>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm ${item.status === 'completed' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                    <p
+                      style={{
+                        fontSize: 13,
+                        color: item.status === 'completed' ? colors.text.muted : colors.text.primary,
+                        textDecoration: item.status === 'completed' ? 'line-through' : 'none',
+                      }}
+                    >
                       {item.description}
                     </p>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3 mt-1" style={{ fontSize: 11, color: colors.text.muted }}>
                       {item.assignee && (
                         <span className="flex items-center gap-1">
                           <User className="w-3 h-3" />
@@ -372,23 +404,19 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
                       size="sm"
                       onClick={() => handlePromoteToTask(item)}
                       disabled={promotingItemId === item.id || !currentUser}
-                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 text-xs"
                     >
                       {promotingItemId === item.id ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
                         <>
-                          <ArrowRight className="w-3 h-3 mr-1" />
+                          <ArrowRight className="w-3 h-3" />
                           Create Task
                         </>
                       )}
                     </Button>
                   )}
                   {item.taskId && (
-                    <Badge variant="outline" className="text-xs text-green-600 border-green-200">
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      Task Created
-                    </Badge>
+                    <FlagChip label="Task Created" severity="ok" />
                   )}
                 </div>
               ))}
@@ -398,24 +426,34 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
 
         {/* Attendees Detail */}
         <section>
-          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Attendees
-          </h2>
+          <SectionHeading icon={<Users className="w-4 h-4" />} colors={colors}>Attendees</SectionHeading>
           <div className="grid grid-cols-2 gap-3">
             {meeting.attendees.map((attendee, index) => (
               <div
                 key={index}
-                className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card"
+                className="flex items-center gap-3 p-3 rounded"
+                style={{ background: colors.bg.card, border: `1px solid ${colors.border.default}` }}
               >
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ background: colors.bg.cardAlt, color: colors.text.muted }}
+                >
                   <User className="w-4 h-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
+                  <p
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: colors.text.primary,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {attendee.name}
                   </p>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2" style={{ fontSize: 11, color: colors.text.muted }}>
                     {attendee.role && <span>{attendee.role}</span>}
                     {attendee.role && attendee.company && <span>•</span>}
                     {attendee.company && (
@@ -434,11 +472,8 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
         {/* Notes */}
         {meeting.notes && (
           <section>
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              Additional Notes
-            </h2>
-            <p className="text-foreground whitespace-pre-wrap">{meeting.notes}</p>
+            <SectionHeading icon={<FileText className="w-4 h-4" />} colors={colors}>Additional Notes</SectionHeading>
+            <p style={{ color: colors.text.primary, whiteSpace: 'pre-wrap' }}>{meeting.notes}</p>
           </section>
         )}
       </div>

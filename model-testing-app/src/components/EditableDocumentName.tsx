@@ -2,16 +2,8 @@
 
 import { useState } from 'react';
 import { Edit2, Check, X, FileText, Building2, FolderKanban } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Button, IconButton, Input, Modal } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
@@ -37,6 +29,7 @@ export default function EditableDocumentName({
   projectName,
   onUpdate,
 }: EditableDocumentNameProps) {
+  const colors = useColors();
   const [isEditing, setIsEditing] = useState(false);
   const [editedCode, setEditedCode] = useState(documentCode || '');
   const [showBulkDialog, setShowBulkDialog] = useState(false);
@@ -119,13 +112,13 @@ export default function EditableDocumentName({
 
   return (
     <>
-      <div className="flex items-start gap-2">
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         {isEditing ? (
-          <div className="flex-1 flex items-center gap-2">
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
             <Input
               value={editedCode}
               onChange={(e) => setEditedCode(e.target.value)}
-              className="text-2xl font-bold h-10"
+              style={{ fontSize: 24, fontWeight: 700 }}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -136,43 +129,33 @@ export default function EditableDocumentName({
               }}
             />
             <Button
-              variant="default"
-              size="sm"
+              variant="primary"
+              accent={colors.accent.blue}
               onClick={handleSave}
               disabled={editedCode.trim() === ''}
-              className="h-10"
             >
-              <Check className="w-4 h-4 mr-1" />
+              <Check size={16} />
               Save
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCancel}
-              className="h-10"
-            >
-              <X className="w-4 h-4" />
-            </Button>
+            <IconButton label="Cancel" onClick={handleCancel}>
+              <X size={16} />
+            </IconButton>
           </div>
         ) : (
-          <div className="flex-1">
-            <div className="flex items-center gap-2 group">
-              <h1 className="text-2xl font-bold text-gray-900">
+          <div style={{ flex: 1 }}>
+            <div className="group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h1 style={{ fontSize: 24, fontWeight: 700, color: colors.text.primary }}>
                 {displayCode}
               </h1>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleEdit}
-                className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Edit document name"
-              >
-                <Edit2 className="w-4 h-4 text-gray-500" />
-              </Button>
+              <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <IconButton label="Edit document name" onClick={handleEdit}>
+                  <Edit2 size={16} />
+                </IconButton>
+              </span>
             </div>
             {documentCode && fileName !== documentCode && (
-              <p className="text-sm text-gray-500 mt-1.5">
-                Original filename: <span className="font-mono">{fileName}</span>
+              <p style={{ fontSize: 12, color: colors.text.muted, marginTop: 6 }}>
+                Original filename: <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{fileName}</span>
               </p>
             )}
           </div>
@@ -180,77 +163,78 @@ export default function EditableDocumentName({
       </div>
 
       {/* Bulk Update Dialog */}
-      <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Apply Document Name</DialogTitle>
-            <DialogDescription className="text-sm text-gray-600">
-              Choose where to apply this document name change
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <button
-              onClick={() => handleBulkUpdate('single')}
-              disabled={isUpdating}
-              className="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-            >
-              <div className="flex items-start gap-3">
-                <div className="p-2 rounded-md bg-gray-100 group-hover:bg-blue-100 transition-colors">
-                  <FileText className="w-5 h-5 text-gray-600 group-hover:text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-gray-900 mb-0.5">This Document Only</div>
-                  <div className="text-sm text-gray-500">Update only this document&apos;s name</div>
-                </div>
-              </div>
-            </button>
-            {clientId && clientName && (
-              <button
-                onClick={() => handleBulkUpdate('client')}
-                disabled={isUpdating}
-                className="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-md bg-gray-100 group-hover:bg-green-100 transition-colors">
-                    <Building2 className="w-5 h-5 text-gray-600 group-hover:text-green-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900 mb-0.5">All Client Documents</div>
-                    <div className="text-sm text-gray-500 truncate">{clientName}</div>
-                  </div>
-                </div>
-              </button>
-            )}
-            {projectId && projectName && (
-              <button
-                onClick={() => handleBulkUpdate('project')}
-                disabled={isUpdating}
-                className="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-md bg-gray-100 group-hover:bg-purple-100 transition-colors">
-                    <FolderKanban className="w-5 h-5 text-gray-600 group-hover:text-purple-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900 mb-0.5">All Project Documents</div>
-                    <div className="text-sm text-gray-500 truncate">{projectName}</div>
-                  </div>
-                </div>
-              </button>
-            )}
-          </div>
-          <DialogFooter className="mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowBulkDialog(false)}
-              disabled={isUpdating}
-            >
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal
+        open={showBulkDialog}
+        onClose={() => setShowBulkDialog(false)}
+        title="Apply Document Name"
+        footer={
+          <Button variant="secondary" onClick={() => setShowBulkDialog(false)} disabled={isUpdating}>
+            Cancel
+          </Button>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+          Choose where to apply this document name change
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <ScopeButton onClick={() => handleBulkUpdate('single')} disabled={isUpdating} accent={colors.accent.blue} Icon={FileText} title="This Document Only" subtitle="Update only this document's name" />
+          {clientId && clientName && (
+            <ScopeButton onClick={() => handleBulkUpdate('client')} disabled={isUpdating} accent={colors.entityTypes.client} Icon={Building2} title="All Client Documents" subtitle={clientName} />
+          )}
+          {projectId && projectName && (
+            <ScopeButton onClick={() => handleBulkUpdate('project')} disabled={isUpdating} accent={colors.entityTypes.project} Icon={FolderKanban} title="All Project Documents" subtitle={projectName} />
+          )}
+        </div>
+      </Modal>
     </>
+  );
+}
+
+function ScopeButton({
+  onClick,
+  disabled,
+  accent,
+  Icon,
+  title,
+  subtitle,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  accent: string;
+  Icon: typeof FileText;
+  title: string;
+  subtitle: string;
+}) {
+  const colors = useColors();
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        padding: 14,
+        borderRadius: 4,
+        border: `1px solid ${hover ? accent : colors.border.default}`,
+        background: hover ? `${accent}10` : colors.bg.card,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'border-color 100ms linear, background 100ms linear',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ padding: 8, borderRadius: 4, background: `${accent}15` }}>
+          <Icon size={18} style={{ color: accent }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: colors.text.primary, marginBottom: 2 }}>{title}</div>
+          <div style={{ fontSize: 11, color: colors.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</div>
+        </div>
+      </div>
+    </button>
   );
 }
 

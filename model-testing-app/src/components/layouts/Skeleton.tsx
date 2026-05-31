@@ -27,6 +27,16 @@ export function SkeletonText({ lines = 3 }: { lines?: number }) {
   );
 }
 
+export function SkeletonCard({ lines = 3 }: { lines?: number }) {
+  const colors = useColors();
+  return (
+    <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <Skeleton width="40%" height={10} />
+      <SkeletonText lines={lines} />
+    </div>
+  );
+}
+
 export function SkeletonTable({ rows = 8, cols = 4 }: { rows?: number; cols?: number }) {
   const colors = useColors();
   return (

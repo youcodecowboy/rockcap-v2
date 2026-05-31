@@ -5,9 +5,10 @@ import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import PermanentDeleteModal from './PermanentDeleteModal';
+import { useColors } from '@/lib/useColors';
+import { Button } from '@/components/layouts';
 
 interface RestorationBannerProps {
   entityType: 'client' | 'project';
@@ -28,6 +29,7 @@ export default function RestorationBanner({
   onRestored,
   onPermanentlyDeleted,
 }: RestorationBannerProps) {
+  const colors = useColors();
   const [isRestoring, setIsRestoring] = useState(false);
   const [showPermanentDelete, setShowPermanentDelete] = useState(false);
 
@@ -62,28 +64,30 @@ export default function RestorationBanner({
 
   return (
     <>
-      <div className="bg-amber-50 border border-amber-200 px-4 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-amber-800 text-sm">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+          padding: '12px 16px',
+          background: `${colors.accent.yellow}15`,
+          borderLeft: `3px solid ${colors.accent.yellow}`,
+          border: `1px solid ${colors.accent.yellow}40`,
+          borderRadius: 4,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: colors.text.primary }}>
+          <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0, color: colors.accent.yellow }} />
           <span>
             This {entityType} was moved to trash on {formattedDate}.
           </span>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Button
-            size="sm"
-            onClick={handleRestore}
-            disabled={isRestoring}
-            className="h-7 text-xs"
-          >
-            {isRestoring ? 'Restoring...' : 'Restore'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Button variant="primary" size="sm" onClick={handleRestore} disabled={isRestoring}>
+            {isRestoring ? 'Restoring…' : 'Restore'}
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 text-xs"
-            onClick={() => setShowPermanentDelete(true)}
-          >
+          <Button variant="danger" size="sm" onClick={() => setShowPermanentDelete(true)}>
             Delete Permanently
           </Button>
         </div>

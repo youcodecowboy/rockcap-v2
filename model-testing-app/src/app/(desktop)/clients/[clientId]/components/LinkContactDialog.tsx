@@ -1,7 +1,7 @@
 /**
  * LinkContactDialog — desktop port of the mobile LinkContactModal.
  *
- * Renders a shadcn Dialog with a search box over ALL contacts. Clicking
+ * Renders a canon Modal with a search box over ALL contacts. Clicking
  * a result calls `contacts.linkToClient` which sets `contact.clientId`,
  * then closes. The parent `contacts.getByClient` query reactively picks
  * up the new contact without any refetch.
@@ -13,12 +13,11 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Search, Check, Loader2, UserPlus } from 'lucide-react';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Check, Loader2 } from 'lucide-react';
+import { Modal, Field, Input } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface LinkContactDialogProps {
   open: boolean;
@@ -32,6 +31,7 @@ interface LinkContactDialogProps {
 export default function LinkContactDialog({
   open, onOpenChange, clientId, clientName, alreadyLinkedIds = [],
 }: LinkContactDialogProps) {
+  const colors = useColors();
   const [query, setQuery] = useState('');
   const [linkingId, setLinkingId] = useState<string | null>(null);
 
@@ -73,82 +73,148 @@ export default function LinkContactDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px] p-0 overflow-hidden">
-        <DialogHeader className="px-5 pt-5 pb-3 border-b">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <UserPlus className="w-4 h-4" />
-            Link Contact to {clientName}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            Search contacts by name, email, role, or company. Tap to link.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="p-4 border-b">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Start typing..."
-              className="pl-9"
-            />
+    <Modal
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title={`Link contact to ${clientName}`}
+      width={560}
+    >
+      <Field
+        label="Search contacts"
+        hint="Search by name, email, role, or company. Click a result to link."
+      >
+        <Input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Start typing..."
+        />
+      </Field>
+
+      <div
+        style={{
+          maxHeight: 420,
+          overflowY: 'auto',
+          marginTop: 12,
+          border: `1px solid ${colors.border.default}`,
+          borderRadius: 4,
+        }}
+      >
+        {allContacts === undefined ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
+            <Loader2 size={16} className="animate-spin" style={{ color: colors.text.muted }} />
           </div>
-        </div>
-        <div className="max-h-[420px] overflow-y-auto">
-          {allContacts === undefined ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-12">
-              {query.trim()
-                ? 'No contacts match your search'
-                : 'Start typing to search contacts'}
-            </p>
-          ) : (
-            <div className="divide-y divide-border">
-              {!query.trim() ? (
-                <p className="px-4 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-                  Recent ({filtered.length})
-                </p>
-              ) : null}
-              {filtered.map((c: any) => {
-                const linking = linkingId === String(c._id);
-                return (
-                  <button
-                    key={c._id}
-                    onClick={() => handleLink(c._id)}
-                    disabled={linking}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors text-left disabled:opacity-50"
+        ) : filtered.length === 0 ? (
+          <p style={{ fontSize: 12, color: colors.text.muted, textAlign: 'center', padding: '40px 0' }}>
+            {query.trim()
+              ? 'No contacts match your search'
+              : 'Start typing to search contacts'}
+          </p>
+        ) : (
+          <div>
+            {!query.trim() ? (
+              <p
+                style={{
+                  padding: '8px 14px 4px',
+                  fontFamily: MONO,
+                  fontSize: 9,
+                  fontWeight: 500,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: colors.text.muted,
+                }}
+              >
+                Recent ({filtered.length})
+              </p>
+            ) : null}
+            {filtered.map((c: any, i: number) => {
+              const linking = linkingId === String(c._id);
+              return (
+                <button
+                  key={c._id}
+                  onClick={() => handleLink(c._id)}
+                  disabled={linking}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 14px',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    borderTop: i === 0 && !query.trim() ? `1px solid ${colors.border.light}` : i === 0 ? 'none' : `1px solid ${colors.border.light}`,
+                    cursor: linking ? 'wait' : 'pointer',
+                    opacity: linking ? 0.5 : 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      background: colors.bg.cardAlt,
+                      border: `1px solid ${colors.border.default}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: colors.text.secondary,
+                    }}
                   >
-                    <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0 text-xs font-medium">
-                      {(c.name?.[0] ?? '?').toUpperCase()}
+                    {(c.name?.[0] ?? '?').toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.name}
+                    </p>
+                    <p style={{ fontSize: 11, color: colors.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[c.role, c.company, c.email].filter(Boolean).join(' · ') || 'No details'}
+                    </p>
+                  </div>
+                  {linking ? (
+                    <span
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: 9,
+                        fontWeight: 500,
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                        color: colors.text.muted,
+                        background: colors.bg.cardAlt,
+                        border: `1px solid ${colors.border.default}`,
+                        padding: '2px 6px',
+                        borderRadius: 2,
+                      }}
+                    >
+                      Linking…
+                    </span>
+                  ) : (
+                    <div
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        background: `${colors.entityTypes.client}20`,
+                        border: `1px solid ${colors.entityTypes.client}40`,
+                        color: colors.entityTypes.client,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Check size={14} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.name}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {[c.role, c.company, c.email].filter(Boolean).join(' · ') ||
-                          'No details'}
-                      </p>
-                    </div>
-                    {linking ? (
-                      <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                        Linking…
-                      </span>
-                    ) : (
-                      <div className="w-7 h-7 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
-                        <Check className="w-3.5 h-3.5" />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

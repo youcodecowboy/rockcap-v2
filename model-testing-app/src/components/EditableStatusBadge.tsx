@@ -1,14 +1,7 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select';
 import { ChevronDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useColors } from '@/lib/useColors';
 
 type ClientStatus = 'prospect' | 'active' | 'archived' | 'past';
 
@@ -18,64 +11,82 @@ interface EditableStatusBadgeProps {
   className?: string;
 }
 
-const statusConfig = {
-  prospect: {
-    label: 'Prospective',
-    className: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  active: {
-    label: 'Active',
-    className: 'bg-green-100 text-green-800 border-green-200',
-  },
-  archived: {
-    label: 'Archived',
-    className: 'bg-gray-100 text-gray-800 border-gray-200',
-  },
-  past: {
-    label: 'Inactive',
-    className: 'bg-gray-100 text-gray-800 border-gray-200',
-  },
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+const STATUS_LABELS: Record<ClientStatus, string> = {
+  prospect: 'Prospective',
+  active: 'Active',
+  archived: 'Archived',
+  past: 'Inactive',
 };
 
-export default function EditableStatusBadge({ 
-  status, 
-  onStatusChange, 
-  className = '' 
-}: EditableStatusBadgeProps) {
-  const currentStatus = status || 'active';
-  const config = statusConfig[currentStatus] || statusConfig.active;
-  
-  return (
-    <Select
-      value={currentStatus}
-      onValueChange={(value) => onStatusChange(value as ClientStatus)}
-    >
-      <SelectTrigger
-        className={cn(
-          "h-auto py-0.5 px-2 border rounded-md cursor-pointer hover:opacity-80 transition-opacity shadow-none",
-          config.className,
-          "data-[state=open]:ring-2 data-[state=open]:ring-blue-500 data-[state=open]:ring-offset-1",
-          "focus:ring-0 focus-visible:ring-0",
-          "[&>svg]:hidden", // Hide the default SelectPrimitive.Icon chevron
-          className
-        )}
-      >
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium">{config.label}</span>
-          <ChevronDown className="w-3 h-3 opacity-60" />
-        </div>
-      </SelectTrigger>
-      <SelectContent>
-        {Object.entries(statusConfig).map(([value, config]) => (
-          <SelectItem key={value} value={value}>
-            <div className="flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", config.className.split(' ')[0])} />
-              <span>{config.label}</span>
-            </div>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
+function statusTone(status: ClientStatus, colors: ReturnType<typeof useColors>): string {
+  switch (status) {
+    case 'prospect':
+      return colors.accent.blue;
+    case 'active':
+      return colors.accent.green;
+    case 'archived':
+    case 'past':
+    default:
+      return colors.text.muted;
+  }
 }
 
+// Token-styled inline-editable status pill. A transparent native <select>
+// overlays a StatusPill-style chip so the edit/save logic stays identical.
+export default function EditableStatusBadge({
+  status,
+  onStatusChange,
+  className = '',
+}: EditableStatusBadgeProps) {
+  const colors = useColors();
+  const currentStatus = status || 'active';
+  const tone = statusTone(currentStatus, colors);
+
+  return (
+    <span className={className} style={{ position: 'relative', display: 'inline-flex' }}>
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '2px 7px',
+          borderRadius: 2,
+          fontFamily: MONO,
+          fontSize: 9,
+          lineHeight: 1.3,
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          background: `${tone}20`,
+          color: tone,
+          border: `1px solid ${tone}40`,
+          cursor: 'pointer',
+        }}
+      >
+        {STATUS_LABELS[currentStatus]}
+        <ChevronDown style={{ width: 10, height: 10, opacity: 0.6 }} />
+      </span>
+      <select
+        value={currentStatus}
+        onChange={(e) => onStatusChange(e.target.value as ClientStatus)}
+        aria-label="Change status"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          opacity: 0,
+          cursor: 'pointer',
+          appearance: 'none',
+        }}
+      >
+        {(Object.keys(STATUS_LABELS) as ClientStatus[]).map((value) => (
+          <option key={value} value={value}>
+            {STATUS_LABELS[value]}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}

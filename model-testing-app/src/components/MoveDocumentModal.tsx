@@ -4,15 +4,8 @@ import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Button, Modal } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { FolderKanban, FileText } from 'lucide-react';
 import { useQuery } from 'convex/react';
 
@@ -35,6 +28,7 @@ export default function MoveDocumentModal({
   currentIsBaseDocument,
   onMoveComplete,
 }: MoveDocumentModalProps) {
+  const colors = useColors();
   const [selectedDestination, setSelectedDestination] = useState<string | null>(null);
   const moveDocument = useMutation(api.documents.moveDocument);
   
@@ -75,62 +69,63 @@ export default function MoveDocumentModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Move Document</DialogTitle>
-          <DialogDescription>
-            Select a destination for this document. Documents can only be moved within the same client.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="space-y-2 py-4">
-          {destinations.map((dest) => {
-            const Icon = dest.icon;
-            const isCurrentLocation = 
-              (dest.id === 'base-documents' && currentIsBaseDocument) ||
-              (dest.id === currentProjectId && !currentIsBaseDocument);
-            
-            return (
-              <button
-                key={dest.id}
-                onClick={() => !isCurrentLocation && setSelectedDestination(dest.id)}
-                disabled={isCurrentLocation}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedDestination === dest.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : isCurrentLocation
-                    ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-5 h-5 text-gray-600" />
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900">{dest.name}</div>
-                    {isCurrentLocation && (
-                      <div className="text-xs text-gray-500 mt-1">Current location</div>
-                    )}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="Move Document"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleMove} 
-            disabled={!selectedDestination}
-          >
+          <Button variant="primary" onClick={handleMove} disabled={!selectedDestination}>
             Move Document
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+        Select a destination for this document. Documents can only be moved within the same client.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {destinations.map((dest) => {
+          const Icon = dest.icon;
+          const isCurrentLocation =
+            (dest.id === 'base-documents' && currentIsBaseDocument) ||
+            (dest.id === currentProjectId && !currentIsBaseDocument);
+          const isSelected = selectedDestination === dest.id;
+
+          return (
+            <button
+              key={dest.id}
+              onClick={() => !isCurrentLocation && setSelectedDestination(dest.id)}
+              disabled={isCurrentLocation}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: 12,
+                borderRadius: 4,
+                border: `1px solid ${isSelected ? colors.accent.blue : colors.border.default}`,
+                background: isSelected ? `${colors.accent.blue}15` : colors.bg.card,
+                opacity: isCurrentLocation ? 0.5 : 1,
+                cursor: isCurrentLocation ? 'not-allowed' : 'pointer',
+                transition: 'border-color 100ms linear, background 100ms linear',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Icon size={18} style={{ color: colors.text.muted }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{dest.name}</div>
+                  {isCurrentLocation && (
+                    <div style={{ fontSize: 10, color: colors.text.muted, marginTop: 2 }}>Current location</div>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
 

@@ -15,14 +15,16 @@
 'use client';
 
 import { useQuery } from 'convex/react';
-import Link from 'next/link';
 import {
-  TrendingUp, Clock, Building2, User, ExternalLink,
+  User, ExternalLink,
   StickyNote, Mail, Video, Phone, CheckSquare,
 } from 'lucide-react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Panel, Row } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface ClientHubSpotSectionProps {
   clientId: Id<'clients'>;
@@ -63,13 +65,13 @@ function fmtDateTime(iso?: string): string {
   }) + ', ' + time;
 }
 
-const ACTIVITY_TILE: Record<string, { bg: string; tint: string; Icon: typeof StickyNote; label: string }> = {
-  NOTE: { bg: '#f3e8ff', tint: '#9333ea', Icon: StickyNote, label: 'Note' },
-  EMAIL: { bg: '#ffedd5', tint: '#ea580c', Icon: Mail, label: 'Email' },
-  INCOMING_EMAIL: { bg: '#dcfce7', tint: '#059669', Icon: Mail, label: 'Email' },
-  MEETING: { bg: '#dbeafe', tint: '#2563eb', Icon: Video, label: 'Meeting' },
-  CALL: { bg: '#fef3c7', tint: '#d97706', Icon: Phone, label: 'Call' },
-  TASK: { bg: '#ffedd5', tint: '#ea580c', Icon: CheckSquare, label: 'Task' },
+const ACTIVITY_META: Record<string, { Icon: typeof StickyNote; label: string; accentKey: 'purple' | 'orange' | 'green' | 'blue' | 'yellow' }> = {
+  NOTE: { Icon: StickyNote, label: 'Note', accentKey: 'purple' },
+  EMAIL: { Icon: Mail, label: 'Email', accentKey: 'orange' },
+  INCOMING_EMAIL: { Icon: Mail, label: 'Email', accentKey: 'green' },
+  MEETING: { Icon: Video, label: 'Meeting', accentKey: 'blue' },
+  CALL: { Icon: Phone, label: 'Call', accentKey: 'yellow' },
+  TASK: { Icon: CheckSquare, label: 'Task', accentKey: 'orange' },
 };
 
 function fmtBeauhurstMoney(raw: any): string {
@@ -82,6 +84,8 @@ function fmtBeauhurstMoney(raw: any): string {
 }
 
 export default function ClientHubSpotSection({ clientId }: ClientHubSpotSectionProps) {
+  const colors = useColors();
+
   // Resolve the linked HubSpot company — the bridge we use everywhere else.
   const promotedCompanies = useQuery(api.companies.listByPromotedClient, { clientId });
   const primaryCompany = promotedCompanies?.[0];
@@ -111,19 +115,27 @@ export default function ClientHubSpotSection({ clientId }: ClientHubSpotSectionP
     beauhurstTurnover || beauhurstEbitda || beauhurstHeadcount || beauhurstStage;
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* Sync strip — owner + last sync + HubSpot link */}
-      <div className="flex flex-wrap items-center gap-2 px-1">
+      <div className="flex flex-wrap items-center gap-2" style={{ paddingLeft: 2, paddingRight: 2 }}>
         {primaryCompany.ownerName ? (
-          <div className="flex items-center gap-1 bg-muted px-2 py-0.5 rounded-full">
-            <User className="w-3 h-3 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">
+          <div
+            className="flex items-center gap-1"
+            style={{
+              background: colors.bg.cardAlt,
+              border: `1px solid ${colors.border.default}`,
+              borderRadius: 999,
+              padding: '2px 8px',
+            }}
+          >
+            <User size={11} style={{ color: colors.text.muted }} />
+            <span style={{ fontSize: 11, fontWeight: 500, color: colors.text.secondary }}>
               {primaryCompany.ownerName}
             </span>
           </div>
         ) : null}
         {primaryCompany.lastHubSpotSync ? (
-          <span className="text-xs text-muted-foreground">
+          <span style={{ fontSize: 11, color: colors.text.muted, fontFamily: MONO }}>
             Synced {fmtRelative(primaryCompany.lastHubSpotSync)}
           </span>
         ) : null}
@@ -132,39 +144,37 @@ export default function ClientHubSpotSection({ clientId }: ClientHubSpotSectionP
             href={primaryCompany.hubspotUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto flex items-center gap-1 text-xs font-medium text-foreground hover:text-primary"
+            className="ml-auto flex items-center gap-1"
+            style={{ fontSize: 11, fontWeight: 500, color: colors.accent.blue, textDecoration: 'none' }}
           >
             HubSpot
-            <ExternalLink className="w-3 h-3" />
+            <ExternalLink size={11} />
           </a>
         ) : null}
       </div>
 
       {/* Deals + Activity row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Open Deals card */}
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <div className="w-5 h-5 rounded-md bg-emerald-100 flex items-center justify-center">
-                <TrendingUp className="w-3 h-3 text-emerald-600" />
-              </div>
-              <span className="text-muted-foreground uppercase text-xs tracking-wide">
-                Open deals
+        {/* Open Deals panel */}
+        <Panel
+          title="Open deals"
+          accent={colors.entityTypes.client}
+          actions={
+            <span style={{ fontSize: 10, color: colors.text.muted, fontFamily: MONO }}>
+              {allDeals.length} total
+            </span>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 28, fontWeight: 300, color: colors.text.primary }}>
+                {formatMoney(openTotal)}
               </span>
-              <span className="ml-auto text-xs text-muted-foreground font-normal">
-                {allDeals.length} total
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pb-4">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold">{formatMoney(openTotal)}</span>
-              <span className="text-xs text-muted-foreground">
+              <span style={{ fontSize: 11, color: colors.text.muted }}>
                 in {openDeals.length} open deals
               </span>
             </div>
-            <div className="space-y-1.5">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {openDeals
                 .slice()
                 .sort((a: any, b: any) => (b.amount ?? 0) - (a.amount ?? 0))
@@ -172,113 +182,101 @@ export default function ClientHubSpotSection({ clientId }: ClientHubSpotSectionP
                 .map((d: any) => (
                   <div
                     key={d._id}
-                    className="flex justify-between items-start p-2 bg-muted/40 rounded-md border border-border"
+                    className="flex justify-between items-start"
+                    style={{
+                      padding: 8,
+                      background: colors.bg.cardAlt,
+                      border: `1px solid ${colors.border.light}`,
+                      borderRadius: 4,
+                    }}
                   >
-                    <div className="flex-1 min-w-0 mr-2">
-                      <div className="text-xs font-medium truncate">{d.name}</div>
-                      <div className="text-[10px] text-muted-foreground">
+                    <div className="flex-1 min-w-0" style={{ marginRight: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: colors.text.primary }} className="truncate">
+                        {d.name}
+                      </div>
+                      <div style={{ fontSize: 10, color: colors.text.muted }}>
                         {d.stageName ?? d.stage ?? '—'}
                       </div>
                     </div>
-                    <div className="text-xs font-semibold">{formatMoney(d.amount)}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: colors.text.primary, fontFamily: MONO }}>
+                      {formatMoney(d.amount)}
+                    </div>
                   </div>
                 ))}
               {openDeals.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">No open deals</p>
+                <p style={{ fontSize: 11, color: colors.text.muted, fontStyle: 'italic' }}>No open deals</p>
               ) : null}
             </div>
-            <div className="pt-2 border-t border-border flex justify-between text-[11px]">
-              <span className="text-muted-foreground">
-                Won <span className="text-emerald-600 font-semibold">{formatMoney(wonTotal)}</span>
+            <div
+              className="flex justify-between"
+              style={{ paddingTop: 8, borderTop: `1px solid ${colors.border.light}`, fontSize: 11 }}
+            >
+              <span style={{ color: colors.text.muted }}>
+                Won{' '}
+                <span style={{ color: colors.entityTypes.client, fontWeight: 600, fontFamily: MONO }}>
+                  {formatMoney(wonTotal)}
+                </span>
               </span>
-              <span className="text-muted-foreground">
-                Lost <span className="text-muted-foreground font-semibold">{formatMoney(lostTotal)}</span>
+              <span style={{ color: colors.text.muted }}>
+                Lost{' '}
+                <span style={{ color: colors.text.secondary, fontWeight: 600, fontFamily: MONO }}>
+                  {formatMoney(lostTotal)}
+                </span>
               </span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
 
-        {/* Recent Activity card */}
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <div className="w-5 h-5 rounded-md bg-orange-100 flex items-center justify-center">
-                <Clock className="w-3 h-3 text-orange-600" />
-              </div>
-              <span className="text-muted-foreground uppercase text-xs tracking-wide">
-                Recent activity
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pb-4">
-            {recentActivity.length > 0 ? (
-              <div className="space-y-3">
-                {recentActivity.map((a: any) => {
-                  const tile = ACTIVITY_TILE[a.activityType] ?? ACTIVITY_TILE.NOTE;
-                  const Icon = tile.Icon;
-                  return (
-                    <div key={a._id} className="flex items-start gap-2.5">
-                      <div
-                        className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: tile.bg }}
-                      >
-                        <Icon className="w-4 h-4" style={{ color: tile.tint }} />
+        {/* Recent Activity panel */}
+        <Panel title="Recent activity" accent={colors.accent.orange}>
+          {recentActivity.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {recentActivity.map((a: any) => {
+                const meta = ACTIVITY_META[a.activityType] ?? ACTIVITY_META.NOTE;
+                const Icon = meta.Icon;
+                const tint = colors.accent[meta.accentKey];
+                return (
+                  <div key={a._id} className="flex items-start gap-2.5">
+                    <div
+                      className="flex items-center justify-center shrink-0"
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 4,
+                        background: `${tint}15`,
+                        border: `1px solid ${tint}40`,
+                      }}
+                    >
+                      <Icon size={15} style={{ color: tint }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontSize: 10, color: colors.text.muted }}>
+                        <span style={{ fontWeight: 600, color: colors.text.secondary }}>{meta.label}</span>
+                        {' · '}
+                        {fmtDateTime(a.activityDate)}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] text-muted-foreground">
-                          <span className="font-medium text-foreground/70">{tile.label}</span>
-                          {' · '}
-                          {fmtDateTime(a.activityDate)}
-                        </div>
-                        <div className="text-xs truncate">
-                          {a.subject || a.bodyPreview || '(no subject)'}
-                        </div>
+                      <div style={{ fontSize: 11, color: colors.text.primary }} className="truncate">
+                        {a.subject || a.bodyPreview || '(no subject)'}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground italic">No activity yet</p>
-            )}
-          </CardContent>
-        </Card>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p style={{ fontSize: 11, color: colors.text.muted, fontStyle: 'italic' }}>No activity yet</p>
+          )}
+        </Panel>
       </div>
 
       {/* Beauhurst KPIs mini — only render if we have any data */}
       {hasBeauhurst ? (
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <div className="w-5 h-5 rounded-md bg-blue-100 flex items-center justify-center">
-                <Building2 className="w-3 h-3 text-blue-600" />
-              </div>
-              <span className="text-muted-foreground uppercase text-xs tracking-wide">
-                Beauhurst intel
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <div className="text-[10px] text-muted-foreground uppercase">Turnover</div>
-                <div className="text-sm font-semibold">{fmtBeauhurstMoney(beauhurstTurnover)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-muted-foreground uppercase">EBITDA</div>
-                <div className="text-sm font-semibold">{fmtBeauhurstMoney(beauhurstEbitda)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-muted-foreground uppercase">Headcount</div>
-                <div className="text-sm font-semibold">{beauhurstHeadcount ?? '—'}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-muted-foreground uppercase">Stage</div>
-                <div className="text-sm font-semibold">{beauhurstStage ?? '—'}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <Panel title="Beauhurst intel" accent={colors.accent.blue}>
+          <Row label="Turnover" value={fmtBeauhurstMoney(beauhurstTurnover)} mono />
+          <Row label="EBITDA" value={fmtBeauhurstMoney(beauhurstEbitda)} mono />
+          <Row label="Headcount" value={beauhurstHeadcount ?? '—'} mono />
+          <Row label="Stage" value={beauhurstStage ?? '—'} />
+        </Panel>
       ) : null}
     </div>
   );

@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
+import { Button, Field, Textarea } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import { Brain, Sparkles, Plus, X } from 'lucide-react';
 
 interface DocumentNoteFormProps {
@@ -16,6 +16,7 @@ interface DocumentNoteFormProps {
 }
 
 export default function DocumentNoteForm({ documentId, clientId, projectId }: DocumentNoteFormProps) {
+  const colors = useColors();
   const [isExpanded, setIsExpanded] = useState(false);
   const [content, setContent] = useState('');
   const [addToIntelligence, setAddToIntelligence] = useState(false);
@@ -61,10 +62,10 @@ export default function DocumentNoteForm({ documentId, clientId, projectId }: Do
   if (!isExpanded) {
     return (
       <Button
-        variant="outline"
+        variant="secondary"
         size="sm"
         onClick={() => setIsExpanded(true)}
-        className="w-full gap-2 text-gray-600"
+        style={{ width: '100%', justifyContent: 'center' }}
       >
         <Plus className="w-4 h-4" />
         Add Note
@@ -73,37 +74,56 @@ export default function DocumentNoteForm({ documentId, clientId, projectId }: Do
   }
 
   return (
-    <div className="p-3 rounded border bg-gray-50 border-gray-200">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-gray-700">Add Note</span>
-        <Button
-          variant="ghost"
-          size="sm"
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 4,
+        background: colors.bg.light,
+        border: `1px solid ${colors.border.default}`,
+      }}
+    >
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <span
+          style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 9,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: colors.text.muted,
+            fontWeight: 500,
+          }}
+        >
+          Add Note
+        </span>
+        <button
           onClick={handleCancel}
-          className="h-6 w-6 p-0"
+          aria-label="Cancel"
+          style={{ background: 'transparent', border: 'none', color: colors.text.muted, cursor: 'pointer', lineHeight: 1 }}
         >
           <X className="w-4 h-4" />
-        </Button>
+        </button>
       </div>
 
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="Add notes about this document for future reference..."
-        className="w-full text-sm min-h-[80px] p-2 border border-gray-200 rounded bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        autoFocus
-      />
+      <Field>
+        <Textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Add notes about this document for future reference..."
+          style={{ minHeight: 80 }}
+          autoFocus
+        />
+      </Field>
 
       {/* Intelligence Toggle */}
       {hasClient && (
-        <div className="mt-3 pt-3 border-t border-gray-200">
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${colors.border.default}` }}>
           <div className="flex items-center gap-2">
             <Switch
               checked={addToIntelligence}
               onCheckedChange={setAddToIntelligence}
               className="scale-90"
             />
-            <label className="text-xs text-gray-600 flex items-center gap-1">
+            <label className="flex items-center gap-1" style={{ fontSize: 11, color: colors.text.secondary }}>
               <Brain className="w-3 h-3" />
               Add to {hasProject ? 'project' : 'client'} intelligence
             </label>
@@ -111,9 +131,17 @@ export default function DocumentNoteForm({ documentId, clientId, projectId }: Do
 
           {/* Intelligence Target Options */}
           {addToIntelligence && hasProject && (
-            <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-100">
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-blue-700">File to:</span>
+            <div
+              style={{
+                marginTop: 8,
+                padding: 8,
+                borderRadius: 4,
+                background: `${colors.accent.blue}15`,
+                border: `1px solid ${colors.accent.blue}40`,
+              }}
+            >
+              <div className="flex items-center gap-3" style={{ fontSize: 11 }}>
+                <span style={{ color: colors.accent.blue }}>File to:</span>
                 <label className="flex items-center gap-1 cursor-pointer">
                   <input
                     type="radio"
@@ -122,7 +150,7 @@ export default function DocumentNoteForm({ documentId, clientId, projectId }: Do
                     onChange={() => setIntelligenceTarget("project")}
                     className="w-3 h-3"
                   />
-                  <span className="text-blue-700">Project</span>
+                  <span style={{ color: colors.accent.blue }}>Project</span>
                 </label>
                 <label className="flex items-center gap-1 cursor-pointer">
                   <input
@@ -132,14 +160,14 @@ export default function DocumentNoteForm({ documentId, clientId, projectId }: Do
                     onChange={() => setIntelligenceTarget("client")}
                     className="w-3 h-3"
                   />
-                  <span className="text-blue-700">Client</span>
+                  <span style={{ color: colors.accent.blue }}>Client</span>
                 </label>
               </div>
             </div>
           )}
 
           {addToIntelligence && (
-            <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1">
+            <p className="flex items-center gap-1" style={{ fontSize: 10, color: colors.text.muted, marginTop: 8 }}>
               <Sparkles className="w-3 h-3" />
               Note will be available for document generation via client intelligence
             </p>
@@ -148,20 +176,16 @@ export default function DocumentNoteForm({ documentId, clientId, projectId }: Do
       )}
 
       {/* Actions */}
-      <div className="flex items-center justify-end gap-2 mt-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleCancel}
-          className="text-xs h-7"
-        >
+      <div className="flex items-center justify-end gap-2" style={{ marginTop: 12 }}>
+        <Button variant="ghost" size="sm" onClick={handleCancel}>
           Cancel
         </Button>
         <Button
+          variant="primary"
+          accent={colors.accent.blue}
           size="sm"
           disabled={isSaving || !content.trim()}
           onClick={handleSave}
-          className="text-xs h-7"
         >
           {isSaving ? 'Saving...' : 'Save Note'}
         </Button>

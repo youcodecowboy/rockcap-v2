@@ -1,6 +1,8 @@
 'use client';
 
 import { Inbox, Bell } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
+import { EmptyState } from '@/components/layouts';
 import FlagDetailPanel from './FlagDetailPanel';
 
 interface InboxDetailPanelProps {
@@ -9,18 +11,28 @@ interface InboxDetailPanelProps {
 }
 
 function NotificationDetail({ id }: { id: string }) {
+  const colors = useColors();
   // We don't have a dedicated getNotification query, so we show basic info
   // The notification data is passed from the list — for now show a simple view
   return (
     <div className="p-6">
       <div className="flex items-center gap-2 mb-4">
-        <Bell className="h-5 w-5 text-gray-400" />
-        <h2 className="text-base font-semibold text-gray-900">Notification</h2>
+        <Bell size={20} style={{ color: colors.text.dim }} />
+        <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary }}>Notification</h2>
       </div>
-      <p className="text-sm text-gray-500">
+      <p style={{ fontSize: 13, color: colors.text.muted }}>
         Notification details will be shown here.
       </p>
-      <p className="text-[10px] text-gray-300 mt-4 font-mono">{id}</p>
+      <p
+        className="mt-4"
+        style={{
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontSize: 10,
+          color: colors.text.dim,
+        }}
+      >
+        {id}
+      </p>
     </div>
   );
 }
@@ -28,11 +40,8 @@ function NotificationDetail({ id }: { id: string }) {
 export default function InboxDetailPanel({ selectedId, selectedKind }: InboxDetailPanelProps) {
   if (!selectedId || !selectedKind) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <Inbox className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-          <p className="text-sm text-gray-400">Select an item to view details</p>
-        </div>
+      <div className="flex items-center justify-center h-full p-8">
+        <EmptyState icon={<Inbox size={32} />} title="Select an item to view details" />
       </div>
     );
   }

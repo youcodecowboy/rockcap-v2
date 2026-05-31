@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Calendar, Users, CheckSquare, AlertCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { useColors } from '@/lib/useColors';
+import { StatusPill } from '@/components/layouts';
 import { FlagIndicator } from '@/components/FlagIndicator';
 
 interface Attendee {
@@ -34,14 +36,20 @@ interface MeetingCardProps {
   onClick: () => void;
 }
 
-const meetingTypeColors: Record<string, string> = {
-  progress: 'bg-blue-100 text-blue-700',
-  kickoff: 'bg-green-100 text-green-700',
-  review: 'bg-purple-100 text-purple-700',
-  site_visit: 'bg-orange-100 text-orange-700',
-  call: 'bg-gray-100 text-gray-700',
-  other: 'bg-gray-100 text-gray-600',
-};
+function meetingTypeTone(type: string | undefined, colors: ReturnType<typeof useColors>): string {
+  switch (type) {
+    case 'progress':
+      return colors.accent.blue;
+    case 'kickoff':
+      return colors.accent.green;
+    case 'review':
+      return colors.accent.purple;
+    case 'site_visit':
+      return colors.accent.orange;
+    default:
+      return colors.text.muted;
+  }
+}
 
 const meetingTypeLabels: Record<string, string> = {
   progress: 'Progress',
@@ -53,6 +61,9 @@ const meetingTypeLabels: Record<string, string> = {
 };
 
 export default function MeetingCard({ meeting, isSelected, onClick }: MeetingCardProps) {
+  const colors = useColors();
+  const [hover, setHover] = useState(false);
+
   const pendingActions = meeting.actionItems.filter(a => a.status === 'pending').length;
   const completedActions = meeting.actionItems.filter(a => a.status === 'completed').length;
   const totalActions = meeting.actionItems.length;
@@ -69,67 +80,99 @@ export default function MeetingCard({ meeting, isSelected, onClick }: MeetingCar
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left p-3 hover:bg-muted transition-colors ${
-        isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
-      }`}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        padding: 12,
+        cursor: 'pointer',
+        border: 'none',
+        borderLeft: isSelected ? `3px solid ${colors.entityTypes.client}` : '3px solid transparent',
+        background: isSelected ? `${colors.entityTypes.client}15` : hover ? colors.bg.cardAlt : 'transparent',
+        transition: 'background 100ms linear',
+      }}
     >
-      {/* Header: Date + Type Badge */}
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Calendar className="w-3 h-3" />
+      {/* Header: Date + Type Pill */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 6 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 10,
+            color: colors.text.muted,
+          }}
+        >
+          <Calendar size={12} />
           <span>{formattedDate}{showYear ? `, ${year}` : ''}</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           {meeting.verified === false && (
-            <Badge
-              variant="secondary"
-              className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700"
-            >
-              Needs Review
-            </Badge>
+            <StatusPill label="Needs Review" tone={colors.accent.yellow} />
           )}
           {meeting.meetingType && (
-            <Badge
-              variant="secondary"
-              className={`text-[10px] px-1.5 py-0.5 ${meetingTypeColors[meeting.meetingType] || meetingTypeColors.other}`}
-            >
-              {meetingTypeLabels[meeting.meetingType] || meeting.meetingType}
-            </Badge>
+            <StatusPill
+              label={meetingTypeLabels[meeting.meetingType] || meeting.meetingType}
+              tone={meetingTypeTone(meeting.meetingType, colors)}
+            />
           )}
         </div>
       </div>
 
       {/* Title */}
-      <h4 className="font-medium text-foreground text-sm mb-1 line-clamp-1 flex items-center gap-1">
-        <span>{meeting.title}</span>
+      <h4
+        style={{
+          fontWeight: 500,
+          color: colors.text.primary,
+          fontSize: 13,
+          margin: '0 0 4px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{meeting.title}</span>
         <FlagIndicator entityType="meeting" entityId={meeting._id} />
       </h4>
 
       {/* Summary Preview */}
-      <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+      <p
+        style={{
+          fontSize: 12,
+          color: colors.text.muted,
+          margin: '0 0 8px 0',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}
+      >
         {meeting.summary}
       </p>
 
       {/* Footer: Attendees + Action Items */}
-      <div className="flex items-center justify-between text-xs">
-        {/* Attendees */}
-        <div className="flex items-center gap-1 text-muted-foreground">
-          <Users className="w-3 h-3" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: colors.text.muted }}>
+          <Users size={12} />
           <span>{meeting.attendees.length}</span>
         </div>
 
-        {/* Action Items Status */}
         {totalActions > 0 && (
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {pendingActions > 0 && (
-              <div className="flex items-center gap-1 text-amber-600">
-                <AlertCircle className="w-3 h-3" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: colors.accent.yellow }}>
+                <AlertCircle size={12} />
                 <span>{pendingActions}</span>
               </div>
             )}
             {completedActions > 0 && (
-              <div className="flex items-center gap-1 text-green-600">
-                <CheckSquare className="w-3 h-3" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: colors.accent.green }}>
+                <CheckSquare size={12} />
                 <span>{completedActions}/{totalActions}</span>
               </div>
             )}

@@ -13,9 +13,13 @@ import {
   Loader2,
   ChevronLeft,
 } from 'lucide-react';
+import { Button, IconButton, StatusPill, EmptyState, SkeletonText } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import ThreadEntry from './ThreadEntry';
 import EntityContextHeader from './EntityContextHeader';
-import { relativeTime, getInitial, ENTITY_TYPE_LABELS } from './utils';
+import { relativeTime, getInitial } from './utils';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface ThreadDetailViewProps {
   flagId: string;
@@ -30,6 +34,7 @@ export default function ThreadDetailView({
   showEntityContext = false,
   compact = false,
 }: ThreadDetailViewProps) {
+  const colors = useColors();
   const typedFlagId = flagId as Id<'flags'>;
 
   // Queries
@@ -79,6 +84,7 @@ export default function ThreadDetailView({
   const [resolveOnSend, setResolveOnSend] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+  const [replyFocused, setReplyFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
@@ -154,8 +160,8 @@ export default function ThreadDetailView({
   // Loading state
   if (flag === undefined) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      <div className="h-full px-5 py-4" style={{ background: colors.bg.card }}>
+        <SkeletonText lines={6} />
       </div>
     );
   }
@@ -163,11 +169,8 @@ export default function ThreadDetailView({
   // Not found
   if (flag === null) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <Flag className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-          <p className="text-sm text-gray-400">Flag not found</p>
-        </div>
+      <div className="flex items-center justify-center h-full px-5" style={{ background: colors.bg.card }}>
+        <EmptyState icon={<Flag className="w-8 h-8" />} title="Flag not found" />
       </div>
     );
   }
@@ -178,35 +181,34 @@ export default function ThreadDetailView({
   const assigneeName = userMap.get(flag.assignedTo) || null;
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full" style={{ background: colors.bg.card }}>
       {/* 1. Header bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+      <div
+        className="flex items-center justify-between px-4 py-2.5"
+        style={{ borderBottom: `1px solid ${colors.border.default}` }}
+      >
         <div className="flex items-center gap-2 min-w-0">
-          <button
-            onClick={onBack}
-            className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded hover:bg-gray-100 transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4 text-gray-500" />
-          </button>
-          <span className="text-sm font-semibold text-gray-900 truncate">
+          <IconButton label="Back" onClick={onBack}>
+            <ChevronLeft className="h-4 w-4" />
+          </IconButton>
+          <span className="text-sm font-semibold truncate" style={{ color: colors.text.primary }}>
             {noteFirstLine}
           </span>
-          <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide flex-shrink-0 ${
-              isOpen
-                ? 'bg-orange-50 text-orange-600'
-                : 'bg-green-50 text-green-600'
-            }`}
-          >
-            {flag.status}
+          <span className="flex-shrink-0">
+            <StatusPill
+              label={flag.status}
+              tone={isOpen ? colors.accent.orange : colors.accent.green}
+            />
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {isOpen ? (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              accent={colors.accent.green}
               onClick={handleResolve}
               disabled={isResolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded transition-colors disabled:opacity-50"
             >
               {isResolving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -214,12 +216,13 @@ export default function ThreadDetailView({
                 <CheckCircle2 className="h-3.5 w-3.5" />
               )}
               Resolve
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={handleReopen}
               disabled={isResolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded transition-colors disabled:opacity-50"
             >
               {isResolving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -227,15 +230,12 @@ export default function ThreadDetailView({
                 <RotateCcw className="h-3.5 w-3.5" />
               )}
               Reopen
-            </button>
+            </Button>
           )}
-          <button
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded transition-colors"
-          >
+          <Button variant="danger" size="sm" onClick={handleDelete}>
             <Trash2 className="h-3.5 w-3.5" />
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -251,45 +251,55 @@ export default function ThreadDetailView({
       )}
 
       {/* 3. Metadata bar */}
-      <div className="px-5 py-3 border-b border-gray-50">
-        <p className="text-xs text-gray-500">
-          Flagged by{' '}
-          <span className="font-medium text-gray-700">{creatorName || 'loading...'}</span>
-          {' \u00b7 '}
-          {relativeTime(flag.createdAt)}
-          {' \u00b7 Priority: '}
-          <span
-            className={`inline-flex items-center px-1.5 py-0 rounded text-[10px] font-semibold uppercase ${
-              flag.priority === 'urgent'
-                ? 'bg-red-50 text-red-600'
-                : 'bg-gray-100 text-gray-500'
-            }`}
-          >
-            {flag.priority}
+      <div className="px-5 py-3" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
+        <p className="text-xs flex items-center gap-1.5 flex-wrap" style={{ color: colors.text.muted }}>
+          <span>
+            Flagged by{' '}
+            <span className="font-medium" style={{ color: colors.text.secondary }}>
+              {creatorName || 'loading...'}
+            </span>
           </span>
+          <span style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}>
+            · {relativeTime(flag.createdAt)} ·
+          </span>
+          <span>Priority:</span>
+          <StatusPill
+            label={flag.priority}
+            tone={flag.priority === 'urgent' ? colors.accent.red : colors.text.muted}
+          />
         </p>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <p className="text-xs mt-1" style={{ color: colors.text.muted }}>
           Assigned to:{' '}
-          <span className="font-medium text-gray-700">{assigneeName || 'loading...'}</span>
+          <span className="font-medium" style={{ color: colors.text.secondary }}>
+            {assigneeName || 'loading...'}
+          </span>
         </p>
       </div>
 
       {/* 4. Original note */}
-      <div className="px-5 py-4 border-b border-gray-100">
+      <div className="px-5 py-4" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
         <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-medium">
+          <div
+            className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium"
+            style={{ background: colors.accent.orange, color: '#ffffff' }}
+          >
             {getInitial(creatorName)}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium text-gray-900">
+              <span className="text-sm font-medium" style={{ color: colors.text.primary }}>
                 {creatorName || 'Unknown'}
               </span>
-              <span className="text-[11px] text-gray-400 flex-shrink-0">
+              <span
+                className="flex-shrink-0"
+                style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}
+              >
                 {relativeTime(flag.createdAt)}
               </span>
             </div>
-            <p className="text-sm text-gray-800 mt-1 whitespace-pre-wrap">{flag.note}</p>
+            <p className="text-sm mt-1 whitespace-pre-wrap" style={{ color: colors.text.secondary }}>
+              {flag.note}
+            </p>
           </div>
         </div>
       </div>
@@ -297,37 +307,57 @@ export default function ThreadDetailView({
       {/* 5. Thread timeline */}
       <div className="flex-1 overflow-y-auto">
         {thread && thread.length > 0 ? (
-          <div className="divide-y divide-gray-50">
-            {thread.map((entry) => (
-              <ThreadEntry
+          <div>
+            {thread.map((entry, i) => (
+              <div
                 key={entry._id}
-                entryType={entry.entryType}
-                userName={entry.userId ? userMap.get(entry.userId) || null : null}
-                content={entry.content}
-                createdAt={entry.createdAt}
-                metadata={entry.metadata as Record<string, unknown> | undefined}
-              />
+                style={i > 0 ? { borderTop: `1px solid ${colors.border.light}` } : undefined}
+              >
+                <ThreadEntry
+                  entryType={entry.entryType}
+                  userName={entry.userId ? userMap.get(entry.userId) || null : null}
+                  content={entry.content}
+                  createdAt={entry.createdAt}
+                  metadata={entry.metadata as Record<string, unknown> | undefined}
+                />
+              </div>
             ))}
           </div>
         ) : thread !== undefined ? (
           <div className="flex items-center justify-center py-12">
-            <p className="text-xs text-gray-300">No replies yet</p>
+            <p style={{ fontSize: 11, color: colors.text.dim }}>No replies yet</p>
           </div>
         ) : null}
         <div ref={threadEndRef} />
       </div>
 
       {/* 6. Reply bar */}
-      <div className="border-t border-gray-200 px-5 py-3 bg-white">
+      <div
+        className="px-5 py-3"
+        style={{ borderTop: `1px solid ${colors.border.default}`, background: colors.bg.card }}
+      >
         <div className="flex items-end gap-3">
           <textarea
             ref={textareaRef}
             value={replyText}
             onChange={(e) => setReplyText(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={() => setReplyFocused(true)}
+            onBlur={() => setReplyFocused(false)}
             placeholder="Write a reply..."
             rows={1}
-            className="flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-gray-300"
+            className="flex-1 resize-none"
+            style={{
+              padding: '7px 10px',
+              fontSize: 12,
+              fontFamily: 'inherit',
+              color: colors.text.primary,
+              background: colors.bg.card,
+              border: `1px solid ${replyFocused ? colors.accent.blue : colors.border.default}`,
+              borderRadius: 4,
+              outline: 'none',
+              transition: 'border-color 100ms linear',
+            }}
           />
           <div className="flex items-center gap-3 flex-shrink-0">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -335,14 +365,19 @@ export default function ThreadDetailView({
                 type="checkbox"
                 checked={resolveOnSend}
                 onChange={(e) => setResolveOnSend(e.target.checked)}
-                className="rounded border-gray-300 text-green-600 focus:ring-green-500 h-3.5 w-3.5"
+                className="h-3.5 w-3.5"
+                style={{ accentColor: colors.accent.green }}
               />
-              <span className="text-[11px] text-gray-500 whitespace-nowrap">Resolve & send</span>
+              <span className="whitespace-nowrap" style={{ fontSize: 11, color: colors.text.muted }}>
+                Resolve & send
+              </span>
             </label>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              accent={colors.text.primary}
               onClick={handleSend}
               disabled={!replyText.trim() || isSending}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isSending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -350,11 +385,11 @@ export default function ThreadDetailView({
                 <Send className="h-3.5 w-3.5" />
               )}
               Send
-            </button>
+            </Button>
           </div>
         </div>
-        <p className="text-[10px] text-gray-300 mt-1.5">
-          Press {typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent) ? '\u2318' : 'Ctrl'}+Enter to send
+        <p className="mt-1.5" style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}>
+          Press {typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent) ? '⌘' : 'Ctrl'}+Enter to send
         </p>
       </div>
     </div>

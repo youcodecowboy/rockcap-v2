@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
-import { X, Pause, Pencil, Trash2 } from 'lucide-react';
+import { X, Pause, Pencil, Trash2, Save } from 'lucide-react';
+import { Button, IconButton, Field, Input, Textarea, Row, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 
 interface TaskDetailSheetProps {
   taskId: Id<'tasks'> | null;
@@ -13,6 +15,8 @@ interface TaskDetailSheetProps {
   variant: 'sheet' | 'panel';
 }
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 const statusOptions = [
   { value: 'todo', label: 'To Do' },
   { value: 'in_progress', label: 'In Progress' },
@@ -20,6 +24,7 @@ const statusOptions = [
 ] as const;
 
 export default function TaskDetailSheet({ taskId, isOpen, onClose, variant }: TaskDetailSheetProps) {
+  const colors = useColors();
   const task = useQuery(api.tasks.get, taskId ? { id: taskId } : 'skip');
   const updateTask = useMutation(api.tasks.update);
   const removeTask = useMutation(api.tasks.remove);
@@ -36,8 +41,8 @@ export default function TaskDetailSheet({ taskId, isOpen, onClose, variant }: Ta
   if (!task || !isOpen) {
     if (variant === 'panel') {
       return (
-        <div className="flex items-center justify-center h-full text-sm text-gray-400">
-          Select a task to view details
+        <div className="flex items-center justify-center h-full" style={{ padding: 24 }}>
+          <EmptyState title="Select a task to view details" />
         </div>
       );
     }
@@ -91,136 +96,129 @@ export default function TaskDetailSheet({ taskId, isOpen, onClose, variant }: Ta
     return new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   };
 
+  const sectionLabel = (text: string) => (
+    <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500, marginBottom: 6 }}>
+      {text}
+    </div>
+  );
+
   const content = (
     <div className={variant === 'sheet' ? '' : 'h-full overflow-y-auto'}>
       {variant === 'sheet' && (
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-9 h-1 rounded-full bg-[var(--m-border)]" />
+        <div className="flex justify-center" style={{ paddingTop: 12, paddingBottom: 8 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 999, background: colors.border.mid }} />
         </div>
       )}
 
-      <div className="px-4 pb-4">
+      <div style={{ padding: 16 }}>
         {/* Title + close */}
-        <div className="flex items-start justify-between mb-3">
-          <h2 className="text-base font-bold text-[var(--m-text-primary)] flex-1 pr-2">
+        <div className="flex items-start justify-between" style={{ marginBottom: 12 }}>
+          <div className="flex-1" style={{ paddingRight: 8 }}>
             {isEditing ? (
-              <input
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
-                className="w-full border border-[var(--m-border)] rounded px-2 py-1 text-base font-bold"
-              />
-            ) : task.title}
-          </h2>
+              <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+            ) : (
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: colors.text.primary }}>{task.title}</h2>
+            )}
+          </div>
           {variant === 'panel' && (
-            <button onClick={onClose} className="text-[var(--m-text-tertiary)]">
-              <X className="w-4 h-4" />
-            </button>
+            <IconButton label="Close" onClick={onClose}>
+              <X size={16} />
+            </IconButton>
           )}
         </div>
 
         {/* Status bar */}
-        <div className="flex gap-2 mb-2">
-          {statusOptions.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => handleStatusChange(opt.value)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                task.status === opt.value
-                  ? 'bg-[var(--m-accent)] text-white border-2 border-[var(--m-accent)]'
-                  : 'bg-white text-[var(--m-text-secondary)] border border-[var(--m-border)]'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="flex gap-2" style={{ marginBottom: 8 }}>
+          {statusOptions.map(opt => {
+            const active = task.status === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => handleStatusChange(opt.value)}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: 3,
+                  fontFamily: MONO,
+                  fontSize: 11,
+                  letterSpacing: '0.04em',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'background 100ms linear',
+                  border: `1px solid ${active ? colors.accent.blue : colors.border.default}`,
+                  background: active ? `${colors.accent.blue}20` : colors.bg.card,
+                  color: active ? colors.accent.blue : colors.text.secondary,
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Action row */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={handlePause}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              task.status === 'paused'
-                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                : 'bg-[var(--m-bg-subtle)] text-[var(--m-text-secondary)] border-[var(--m-border)]'
-            }`}
-          >
-            <Pause className="w-3 h-3" /> Pause
-          </button>
-          <button
-            onClick={isEditing ? saveEdit : startEditing}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--m-bg-subtle)] text-[var(--m-text-secondary)] border border-[var(--m-border)]"
-          >
-            <Pencil className="w-3 h-3" /> {isEditing ? 'Save' : 'Edit'}
-          </button>
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--m-bg-subtle)] text-red-600 border border-[var(--m-border)]"
-          >
-            <Trash2 className="w-3 h-3" /> Delete
-          </button>
+        <div className="flex gap-2" style={{ marginBottom: 16 }}>
+          <Button variant="secondary" size="sm" onClick={handlePause} accent={colors.accent.yellow}
+            style={task.status === 'paused' ? { background: `${colors.accent.yellow}20`, borderColor: `${colors.accent.yellow}40`, color: colors.accent.yellow } : undefined}>
+            <Pause size={12} /> Pause
+          </Button>
+          <Button variant="secondary" size="sm" onClick={isEditing ? saveEdit : startEditing}>
+            {isEditing ? <Save size={12} /> : <Pencil size={12} />} {isEditing ? 'Save' : 'Edit'}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setShowDeleteConfirm(true)} style={{ color: colors.accent.red }}>
+            <Trash2 size={12} /> Delete
+          </Button>
         </div>
 
         {/* Delete confirmation */}
         {showDeleteConfirm && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-            <p className="text-xs text-red-700 mb-2">Delete this task? This can't be undone.</p>
+          <div style={{ background: `${colors.accent.red}15`, border: `1px solid ${colors.accent.red}40`, borderRadius: 4, padding: 12, marginBottom: 16 }}>
+            <p style={{ fontSize: 11, color: colors.accent.red, marginBottom: 8 }}>Delete this task? This can't be undone.</p>
             <div className="flex gap-2">
-              <button onClick={handleDelete} className="px-3 py-1 bg-red-600 text-white text-xs rounded-lg font-medium">Delete</button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="px-3 py-1 bg-white text-xs rounded-lg border font-medium">Cancel</button>
+              <Button variant="danger" size="sm" onClick={handleDelete}>Delete</Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
             </div>
           </div>
         )}
 
         {/* Structured fields */}
-        <div className="border-t border-[var(--m-border-subtle)] pt-3 space-y-2">
-          {[
-            { label: 'Client', value: clientName || '—' },
-            { label: 'Project', value: projectName || '—' },
-            { label: 'Due', value: formatDate(task.dueDate) },
-            { label: 'Priority', value: task.priority ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1) : 'Medium' },
-            { label: 'Assigned', value: assigneeNames.join(', ') || '—' },
-            { label: 'Created', value: formatDate(task.createdAt) },
-          ].map(field => (
-            <div key={field.label} className="flex justify-between py-1.5">
-              <span className="text-xs text-[var(--m-text-tertiary)] font-medium">{field.label}</span>
-              <span className="text-xs text-[var(--m-text-primary)] font-semibold">{field.value}</span>
-            </div>
-          ))}
+        <div style={{ borderTop: `1px solid ${colors.border.light}`, paddingTop: 12 }}>
+          <Row label="Client" value={clientName || '—'} />
+          <Row label="Project" value={projectName || '—'} />
+          <Row label="Due" value={formatDate(task.dueDate)} mono />
+          <Row label="Priority" value={task.priority ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1) : 'Medium'} />
+          <Row label="Assigned" value={assigneeNames.join(', ') || '—'} />
+          <Row label="Created" value={formatDate(task.createdAt)} mono />
         </div>
 
         {/* Description */}
         {(task.description || isEditing) && (
-          <div className="mt-4">
-            <div className="text-xs font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider mb-1">Description</div>
+          <div style={{ marginTop: 16 }}>
             {isEditing ? (
-              <textarea
-                value={editDescription}
-                onChange={e => setEditDescription(e.target.value)}
-                className="w-full border border-[var(--m-border)] rounded-lg p-2 text-sm min-h-[60px]"
-              />
+              <Field label="Description">
+                <Textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={3} />
+              </Field>
             ) : (
-              <p className="text-sm text-[var(--m-text-secondary)] leading-relaxed">{task.description}</p>
+              <>
+                {sectionLabel('Description')}
+                <p style={{ fontSize: 12, color: colors.text.secondary, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{task.description}</p>
+              </>
             )}
           </div>
         )}
 
         {/* Notes */}
-        <div className="mt-4">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-semibold text-[var(--m-text-tertiary)] uppercase tracking-wider">Notes</span>
-          </div>
+        <div style={{ marginTop: 16 }}>
           {isEditing ? (
-            <textarea
-              value={editNotes}
-              onChange={e => setEditNotes(e.target.value)}
-              placeholder="Add notes..."
-              className="w-full border border-[var(--m-border)] rounded-lg p-2 text-sm min-h-[60px] bg-[var(--m-bg-subtle)]"
-            />
+            <Field label="Notes">
+              <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Add notes..." rows={3} />
+            </Field>
           ) : (
-            <div className="bg-[var(--m-bg-subtle)] border border-[var(--m-border)] rounded-lg p-2.5 text-xs text-[var(--m-text-secondary)] min-h-[40px]">
-              {task.notes || 'No notes yet'}
-            </div>
+            <>
+              {sectionLabel('Notes')}
+              <div style={{ background: colors.bg.cardAlt, border: `1px solid ${colors.border.default}`, borderRadius: 4, padding: 10, fontSize: 12, color: colors.text.secondary, minHeight: 40 }}>
+                {task.notes || 'No notes yet'}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -234,8 +232,17 @@ export default function TaskDetailSheet({ taskId, isOpen, onClose, variant }: Ta
   // Sheet mode
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 max-h-[75vh] overflow-y-auto shadow-xl animate-slide-up">
+      <div className="fixed inset-0 z-40" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onClose} />
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 overflow-y-auto animate-slide-up"
+        style={{
+          background: colors.bg.card,
+          borderTop: `1px solid ${colors.border.default}`,
+          borderTopLeftRadius: 4,
+          borderTopRightRadius: 4,
+          maxHeight: '75vh',
+        }}
+      >
         {content}
       </div>
     </>

@@ -1,45 +1,37 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, type CSSProperties } from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useColors } from '@/lib/useColors';
+import { Modal, Field, Input, Button } from '@/components/layouts';
 
-// Built-in types with their styling
+// Built-in types. `className` is retained for backward-compatible exports;
+// `tone` drives the canon token styling.
 const BUILT_IN_TYPES: Record<string, { label: string; className: string }> = {
-  borrower: {
-    label: 'Borrower',
-    className: 'bg-green-100 text-green-800 border-green-200',
-  },
-  lender: {
-    label: 'Lender',
-    className: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-  },
-  developer: {
-    label: 'Developer',
-    className: 'bg-amber-100 text-amber-800 border-amber-200',
-  },
-  broker: {
-    label: 'Broker',
-    className: 'bg-teal-100 text-teal-800 border-teal-200',
-  },
+  borrower: { label: 'Borrower', className: 'bg-green-100 text-green-800 border-green-200' },
+  lender: { label: 'Lender', className: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  developer: { label: 'Developer', className: 'bg-amber-100 text-amber-800 border-amber-200' },
+  broker: { label: 'Broker', className: 'bg-teal-100 text-teal-800 border-teal-200' },
 };
 
-// Colors for custom types (cycle through these)
+// Map a type key onto a palette accent key.
+const BUILT_IN_ACCENTS: Record<string, keyof ReturnType<typeof useColors>['accent']> = {
+  borrower: 'green',
+  lender: 'indigo',
+  developer: 'yellow',
+  broker: 'teal',
+};
+
+const CUSTOM_TYPE_ACCENTS: Array<keyof ReturnType<typeof useColors>['accent']> = [
+  'red',
+  'cyan',
+  'purple',
+  'orange',
+  'green',
+  'blue',
+];
+
+// Retained for backward-compatible custom-type styling in any external consumer.
 const CUSTOM_TYPE_COLORS = [
   'bg-rose-100 text-rose-800 border-rose-200',
   'bg-cyan-100 text-cyan-800 border-cyan-200',
@@ -52,7 +44,6 @@ const CUSTOM_TYPE_COLORS = [
 function getTypeConfig(type: string): { label: string; className: string } {
   const normalized = type.toLowerCase().replace(/[-_]/g, '');
 
-  // Check built-in types
   if (normalized === 'realestatedeveloper' || normalized === 'developer') {
     return BUILT_IN_TYPES.developer;
   }
@@ -60,7 +51,6 @@ function getTypeConfig(type: string): { label: string; className: string } {
     return BUILT_IN_TYPES[normalized];
   }
 
-  // Custom type — assign a color based on hash
   const hash = type.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
   const colorClass = CUSTOM_TYPE_COLORS[hash % CUSTOM_TYPE_COLORS.length];
   return {
@@ -68,6 +58,16 @@ function getTypeConfig(type: string): { label: string; className: string } {
     className: colorClass,
   };
 }
+
+function getTypeTone(type: string, colors: ReturnType<typeof useColors>): string {
+  const normalized = type.toLowerCase().replace(/[-_]/g, '');
+  const builtin = normalized === 'realestatedeveloper' ? 'developer' : normalized;
+  if (BUILT_IN_ACCENTS[builtin]) return colors.accent[BUILT_IN_ACCENTS[builtin]];
+  const hash = type.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return colors.accent[CUSTOM_TYPE_ACCENTS[hash % CUSTOM_TYPE_ACCENTS.length]];
+}
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface EditableClientTypeBadgeProps {
   type: string | undefined;
@@ -84,13 +84,15 @@ export default function EditableClientTypeBadge({
   customTypes = [],
   onAddCustomType,
   compact = false,
-  className = ''
+  className = '',
 }: EditableClientTypeBadgeProps) {
+  const colors = useColors();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
 
   const currentType = type?.toLowerCase() || 'borrower';
   const config = getTypeConfig(currentType);
+  const tone = getTypeTone(currentType, colors);
 
   // All available types: built-in + custom
   const allTypes = [
@@ -104,7 +106,6 @@ export default function EditableClientTypeBadge({
     const trimmed = newTypeName.trim();
     if (!trimmed) return;
     const key = trimmed.toLowerCase();
-    // Don't add if already exists
     if (allTypes.some((t) => t.key === key)) return;
     onAddCustomType?.(trimmed);
     onTypeChange(key);
@@ -112,95 +113,111 @@ export default function EditableClientTypeBadge({
     setShowAddDialog(false);
   };
 
+  const handleChange = (value: string) => {
+    if (value === '__add_new__') {
+      setShowAddDialog(true);
+      return;
+    }
+    onTypeChange(value);
+  };
+
+  // Compact: bare mono text; default: tone-filled pill. A transparent native
+  // <select> overlay preserves the existing edit logic without shadcn Select.
+  const pillStyle: CSSProperties = compact
+    ? {
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '0 2px',
+        fontFamily: MONO,
+        fontSize: 9,
+        lineHeight: 1.4,
+        color: colors.text.muted,
+        cursor: 'pointer',
+      }
+    : {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '2px 7px',
+        borderRadius: 2,
+        fontFamily: MONO,
+        fontSize: 9,
+        lineHeight: 1.3,
+        letterSpacing: '0.05em',
+        textTransform: 'uppercase',
+        background: `${tone}20`,
+        color: tone,
+        border: `1px solid ${tone}40`,
+        cursor: 'pointer',
+      };
+
   return (
     <>
-      <Select
-        value={currentType}
-        onValueChange={(value) => {
-          if (value === '__add_new__') {
-            setShowAddDialog(true);
-            return;
-          }
-          onTypeChange(value);
-        }}
-      >
-        <SelectTrigger
-          className={cn(
-            "h-auto cursor-pointer transition-all shadow-none",
-            "[&>svg]:hidden",
-            "focus:ring-0 focus-visible:ring-0",
-            compact
-              ? "py-0 px-1 border-transparent bg-transparent hover:border-gray-200 rounded text-[9px]"
-              : "py-0.5 px-2 border rounded-md hover:opacity-80",
-            compact
-              ? "text-gray-500 hover:text-gray-700"
-              : config.className,
-            !compact && "data-[state=open]:ring-2 data-[state=open]:ring-blue-500 data-[state=open]:ring-offset-1",
-            className
-          )}
+      <span className={className} style={{ position: 'relative', display: 'inline-flex' }}>
+        <span style={pillStyle}>
+          {config.label}
+          {!compact && <ChevronDown style={{ width: 10, height: 10, opacity: 0.6 }} />}
+        </span>
+        <select
+          value={currentType}
+          onChange={(e) => handleChange(e.target.value)}
+          aria-label="Change client type"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            opacity: 0,
+            cursor: 'pointer',
+            appearance: 'none',
+          }}
         >
-          <div className="flex items-center gap-0.5">
-            {compact ? (
-              <span className="font-medium text-[9px] leading-tight">{config.label}</span>
-            ) : (
-              <>
-                <span className="font-medium text-xs">{config.label}</span>
-                <ChevronDown className="w-3 h-3 opacity-60" />
-              </>
-            )}
-          </div>
-        </SelectTrigger>
-        <SelectContent>
           {allTypes.map((t) => (
-            <SelectItem key={t.key} value={t.key}>
-              <div className="flex items-center gap-2">
-                <div className={cn("w-2 h-2 rounded-full", t.className.split(' ')[0])} />
-                <span>{t.label}</span>
-              </div>
-            </SelectItem>
+            <option key={t.key} value={t.key}>
+              {t.label}
+            </option>
           ))}
-          {onAddCustomType && (
-            <>
-              <div className="border-t my-1" />
-              <SelectItem value="__add_new__">
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Plus className="w-3 h-3" />
-                  <span>Add new type...</span>
-                </div>
-              </SelectItem>
-            </>
-          )}
-        </SelectContent>
-      </Select>
+          {onAddCustomType && <option value="__add_new__">Add new type…</option>}
+        </select>
+      </span>
 
-      {/* Add new type dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-[360px]">
-          <DialogHeader>
-            <DialogTitle>Add Client Type</DialogTitle>
-          </DialogHeader>
-          <div className="py-3">
-            <Input
-              value={newTypeName}
-              onChange={(e) => setNewTypeName(e.target.value)}
-              placeholder="e.g. Investor, Fund Manager, Surveyor"
-              autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && handleAddType()}
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              This type will be available across all clients.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowAddDialog(false); setNewTypeName(''); }}>
+      {/* Add new type modal */}
+      <Modal
+        open={showAddDialog}
+        onClose={() => {
+          setShowAddDialog(false);
+          setNewTypeName('');
+        }}
+        title="Add Client Type"
+        width={360}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowAddDialog(false);
+                setNewTypeName('');
+              }}
+            >
               Cancel
             </Button>
-            <Button onClick={handleAddType} disabled={!newTypeName.trim()}>
+            <Button variant="primary" onClick={handleAddType} disabled={!newTypeName.trim()}>
+              <Plus style={{ width: 14, height: 14 }} />
               Add Type
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <Field label="Type name" hint="This type will be available across all clients.">
+          <Input
+            value={newTypeName}
+            onChange={(e) => setNewTypeName(e.target.value)}
+            placeholder="e.g. Investor, Fund Manager, Surveyor"
+            autoFocus
+            onKeyDown={(e) => e.key === 'Enter' && handleAddType()}
+          />
+        </Field>
+      </Modal>
     </>
   );
 }

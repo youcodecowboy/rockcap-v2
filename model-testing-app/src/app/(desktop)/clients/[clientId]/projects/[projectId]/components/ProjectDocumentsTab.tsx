@@ -8,6 +8,7 @@ import FolderBrowser from '@/app/(desktop)/docs/components/FolderBrowser';
 import FileList from '@/app/(desktop)/docs/components/FileList';
 import FileDetailPanel from '@/app/(desktop)/docs/components/FileDetailPanel';
 import { FolderSelection } from '@/types/folders';
+import { useColors } from '@/lib/useColors';
 
 interface Document {
   _id: Id<"documents">;
@@ -41,6 +42,7 @@ export default function ProjectDocumentsTab({
   clientName,
   clientType,
 }: ProjectDocumentsTabProps) {
+  const colors = useColors();
   const updateClient = useMutation(api.clients.update);
   const [selectedFolder, setSelectedFolder] = useState<FolderSelection | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
@@ -62,7 +64,7 @@ export default function ProjectDocumentsTab({
   }, []);
 
   return (
-    <div className="flex h-full overflow-hidden bg-card">
+    <div className="flex h-full overflow-hidden" style={{ background: colors.bg.card }}>
       {/* Folder Browser */}
       <FolderBrowser
         clientId={clientId}

@@ -12,20 +12,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Button as CanonButton, Modal } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import { SearchableSelect, SearchableSelectOption } from '@/components/ui/searchable-select';
 import { CreateCustomTypeModal } from '@/components/CreateCustomTypeModal';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   Tabs,
   TabsContent,
@@ -43,17 +34,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -97,6 +77,121 @@ import { FILE_CATEGORIES, FILE_TYPES as FILE_TYPES_LIST } from '@/lib/categories
 // Use the centralized categories and file types
 const CATEGORIES = [...FILE_CATEGORIES];
 const FILE_TYPES = [...FILE_TYPES_LIST];
+
+const BR_MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+// Adapter that maps the shadcn Button variant vocabulary used across this file
+// onto the canon Button. `className` is accepted but ignored (color-bearing
+// classes are dropped per canon); structural sizing falls back to the canon `sm`.
+function Button({
+  variant,
+  size,
+  className,
+  children,
+  ...rest
+}: {
+  variant?: 'default' | 'outline' | 'ghost' | 'destructive' | 'secondary';
+  size?: 'sm' | 'md';
+  className?: string;
+  children: React.ReactNode;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const canonVariant =
+    variant === 'outline' ? 'secondary'
+    : variant === 'destructive' ? 'danger'
+    : variant === 'default' ? 'primary'
+    : variant === 'ghost' ? 'ghost'
+    : 'secondary';
+  return (
+    <CanonButton variant={canonVariant} size={size === 'md' ? 'md' : 'sm'} {...rest}>
+      {children}
+    </CanonButton>
+  );
+}
+
+// Token-styled Badge — canon replacement for shadcn <Badge>. `tone` overrides the
+// neutral default; otherwise renders as a hairline neutral chip.
+function Badge({
+  children,
+  tone,
+  style,
+}: {
+  children: React.ReactNode;
+  tone?: string;
+  style?: React.CSSProperties;
+  // accepted for call-site compat; ignored
+  variant?: string;
+  className?: string;
+  title?: string;
+}) {
+  const colors = useColors();
+  const c = tone || colors.text.muted;
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        padding: '1px 6px',
+        borderRadius: 2,
+        fontFamily: BR_MONO,
+        fontSize: 9,
+        lineHeight: 1.4,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        background: tone ? `${c}20` : colors.bg.cardAlt,
+        color: c,
+        border: `1px solid ${tone ? `${c}40` : colors.border.default}`,
+        whiteSpace: 'nowrap',
+        ...style,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+// Token-styled checkbox — keeps the shadcn `checked`/`onCheckedChange` API.
+function Checkbox({
+  checked,
+  onCheckedChange,
+  disabled,
+  id,
+}: {
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+  disabled?: boolean;
+  id?: string;
+}) {
+  const colors = useColors();
+  return (
+    <button
+      id={id}
+      role="checkbox"
+      aria-checked={!!checked}
+      disabled={disabled}
+      onClick={() => onCheckedChange?.(!checked)}
+      style={{
+        width: 16,
+        height: 16,
+        borderRadius: 3,
+        flexShrink: 0,
+        border: `1px solid ${checked ? colors.accent.blue : colors.border.mid}`,
+        background: checked ? colors.accent.blue : 'transparent',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {checked && (
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+          <path d="M2.5 6.5L5 9L9.5 3.5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 // Default folder options for project-level (fallback if no custom folders loaded)
 const DEFAULT_PROJECT_FOLDERS = [
@@ -270,6 +365,7 @@ function IntelligenceFieldsPanel({
   hasProject: boolean;
   onUpdateIntelligence: () => void;
 }) {
+  const colors = useColors();
   const fields = item.extractedIntelligence?.fields || [];
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -329,9 +425,9 @@ function IntelligenceFieldsPanel({
   };
 
   const confidenceBadge = (confidence: number) => {
-    if (confidence >= 0.9) return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-[10px]">High</Badge>;
-    if (confidence >= 0.7) return <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 text-[10px]">Med</Badge>;
-    return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px]">Low</Badge>;
+    if (confidence >= 0.9) return <Badge tone={colors.accent.green}>High</Badge>;
+    if (confidence >= 0.7) return <Badge tone={colors.accent.yellow}>Med</Badge>;
+    return <Badge tone={colors.accent.red}>Low</Badge>;
   };
 
   return (
@@ -370,7 +466,7 @@ function IntelligenceFieldsPanel({
                 {field.isCanonical ? (
                   <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
                 ) : (
-                  <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                  <Sparkles size={12} style={{ color: colors.accent.orange, flexShrink: 0 }} />
                 )}
 
                 {/* Label + Qualifier */}
@@ -422,7 +518,7 @@ function IntelligenceFieldsPanel({
                 {confidenceBadge(field.confidence)}
 
                 {/* Scope badge */}
-                <Badge variant="outline" className={`text-[10px] ${field.scope === 'project' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
+                <Badge tone={field.scope === 'project' ? colors.accent.blue : colors.accent.orange}>
                   {field.scope === 'project' ? 'P' : 'C'}
                 </Badge>
 
@@ -548,6 +644,7 @@ export default function BulkReviewTable({
   isMultiProject,
   projects,
 }: BulkReviewTableProps) {
+  const colors = useColors();
   const [selectedItems, setSelectedItems] = useState<Set<Id<"bulkUploadItems">>>(new Set());
   const [expandedItems, setExpandedItems] = useState<Set<Id<"bulkUploadItems">>>(new Set());
   const [versionDialogItem, setVersionDialogItem] = useState<BulkUploadItem | null>(null);
@@ -583,6 +680,9 @@ export default function BulkReviewTable({
 
   // Flag state
   const [flagItem, setFlagItem] = useState<BulkUploadItem | null>(null);
+
+  // Bulk delete confirmation
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   // Checklist initialization retry
   const initializeChecklist = useMutation(api.knowledgeLibrary.initializeChecklistForProject);
@@ -929,29 +1029,29 @@ export default function BulkReviewTable({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return <Badge variant="secondary" className="text-[10px] h-5 px-1.5">Wait</Badge>;
+        return <Badge>Wait</Badge>;
       case 'processing':
         return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-[10px] h-5 px-1.5">
-            <Loader2 className="w-2.5 h-2.5 mr-0.5 animate-spin" />
+          <Badge tone={colors.accent.blue}>
+            <Loader2 size={10} className="animate-spin" />
           </Badge>
         );
       case 'ready_for_review':
-        return <Badge variant="default" className="text-[10px] h-5 px-1.5">Ready</Badge>;
+        return <Badge tone={colors.accent.blue}>Ready</Badge>;
       case 'filed':
         return (
-          <Badge variant="default" className="bg-green-100 text-green-700 text-[10px] h-5 px-1.5">
-            <CheckCircle2 className="w-2.5 h-2.5" />
+          <Badge tone={colors.accent.green}>
+            <CheckCircle2 size={10} />
           </Badge>
         );
       case 'error':
         return (
-          <Badge variant="destructive" className="text-[10px] h-5 px-1.5">
-            <XCircle className="w-2.5 h-2.5" />
+          <Badge tone={colors.accent.red}>
+            <XCircle size={10} />
           </Badge>
         );
       default:
-        return <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{status}</Badge>;
+        return <Badge>{status}</Badge>;
     }
   };
 
@@ -965,35 +1065,35 @@ export default function BulkReviewTable({
     <TooltipProvider>
       <div className="space-y-4">
         {/* Stats Bar - Compact */}
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg text-xs">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: colors.bg.light, border: `1px solid ${colors.border.default}` }}>
           <span className="font-medium">{stats.total} files</span>
           {stats.ready > 0 && (
-            <Badge variant="default" className="text-[10px] h-5">{stats.ready} ready</Badge>
+            <Badge tone={colors.accent.blue}>{stats.ready} ready</Badge>
           )}
           {stats.processing > 0 && (
-            <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-[10px] h-5">
+            <Badge tone={colors.accent.blue}>
               {stats.processing} processing
             </Badge>
           )}
           {stats.filed > 0 && (
-            <Badge variant="default" className="bg-green-100 text-green-700 text-[10px] h-5">
+            <Badge tone={colors.accent.green}>
               {stats.filed} filed
             </Badge>
           )}
           {stats.errors > 0 && (
-            <Badge variant="destructive" className="text-[10px] h-5">{stats.errors} errors</Badge>
+            <Badge tone={colors.accent.red}>{stats.errors} errors</Badge>
           )}
           {stats.unresolvedDuplicates > 0 && (
-            <Badge variant="outline" className="border-amber-500 text-amber-700 text-[10px] h-5">
-              <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />
+            <Badge tone={colors.accent.orange}>
+              <AlertTriangle size={10} />
               {stats.unresolvedDuplicates} duplicates
             </Badge>
           )}
           {stats.extractionEnabled > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Badge variant="outline" className="border-blue-500 text-blue-700 text-[10px] h-5">
-                  <Database className="w-2.5 h-2.5 mr-0.5" />
+                <Badge tone={colors.accent.blue}>
+                  <Database size={10} />
                   {stats.extractionEnabled} for extraction
                 </Badge>
               </TooltipTrigger>
@@ -1003,8 +1103,8 @@ export default function BulkReviewTable({
             </Tooltip>
           )}
           {(stats.deepExtractionComplete > 0 || stats.deepExtractionProcessing > 0) && (
-            <Badge variant="outline" className="border-emerald-500 text-emerald-700 text-[10px] h-5">
-              <Layers className="w-2.5 h-2.5 mr-0.5" />
+            <Badge tone={colors.accent.teal}>
+              <Layers size={10} />
               {stats.deepExtractionProcessing > 0
                 ? `${stats.deepExtractionProcessing} extracting...`
                 : `${stats.deepExtractionComplete} deep extracted`}
@@ -1016,8 +1116,8 @@ export default function BulkReviewTable({
           {/* Actions — always visible, disabled when nothing selected */}
           {selectedItems.size > 0 && (
             <>
-              <div className="w-px h-4 bg-gray-300" />
-              <span className="text-[10px] font-medium text-blue-700">{selectedItems.size} selected</span>
+              <div style={{ width: 1, height: 16, background: colors.border.mid }} />
+              <span style={{ fontSize: 10, fontWeight: 500, color: colors.accent.blue }}>{selectedItems.size} selected</span>
 
               {/* Bulk Set Type */}
               <Popover>
@@ -1127,37 +1227,10 @@ export default function BulkReviewTable({
               </Button>
 
               {/* Bulk Delete */}
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-6 text-[10px] gap-1 text-red-600 border-red-200 hover:bg-red-50">
-                    <Trash2 className="w-3 h-3" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete {selectedItems.size} items?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This removes them from this batch permanently. Files will be deleted from storage.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      className="bg-red-600 hover:bg-red-700"
-                      onClick={async () => {
-                        const batchId = items[0]?.batchId;
-                        if (!batchId) return;
-                        await deleteItems({ batchId, itemIds: Array.from(selectedItems) as any });
-                        setSelectedItems(new Set());
-                        toast.success(`Deleted ${selectedItems.size} items`);
-                      }}
-                    >
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+                <Trash2 size={12} />
+                Delete
+              </Button>
             </>
           )}
 
@@ -1200,7 +1273,7 @@ export default function BulkReviewTable({
                         setSelectedItems(new Set());
                       }}
                     >
-                      <Badge className="bg-green-100 text-green-800 text-[10px]">{project.projectShortcode || project.name}</Badge>
+                      <Badge tone={colors.accent.green}>{project.projectShortcode || project.name}</Badge>
                       <span className="truncate">{project.name}</span>
                     </button>
                   ))}
@@ -1273,7 +1346,7 @@ export default function BulkReviewTable({
             <TableBody>
               {items.map((item) => (
                 <React.Fragment key={item._id}>
-                  <TableRow className={item.isDuplicate && !item.versionType ? 'bg-amber-50' : ''}>
+                  <TableRow style={item.isDuplicate && !item.versionType ? { background: `${colors.accent.orange}10` } : undefined}>
                     <TableCell className="px-2">
                       <Checkbox
                         checked={selectedItems.has(item._id)}
@@ -1347,7 +1420,7 @@ export default function BulkReviewTable({
                           {item.fileTypeDetected && !item.userEdits?.fileTypeDetected && (
                             <Tooltip>
                               <TooltipTrigger>
-                                <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                                <Sparkles size={12} style={{ color: colors.accent.orange, flexShrink: 0 }} />
                               </TooltipTrigger>
                               <TooltipContent>AI suggested</TooltipContent>
                             </Tooltip>
@@ -1377,7 +1450,7 @@ export default function BulkReviewTable({
                           {item.category && !item.userEdits?.category && (
                             <Tooltip>
                               <TooltipTrigger>
-                                <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                                <Sparkles size={12} style={{ color: colors.accent.orange, flexShrink: 0 }} />
                               </TooltipTrigger>
                               <TooltipContent>AI suggested</TooltipContent>
                             </Tooltip>
@@ -1400,7 +1473,7 @@ export default function BulkReviewTable({
                           {item.targetFolder && !item.userEdits?.targetFolder && (
                             <Tooltip>
                               <TooltipTrigger>
-                                <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                                <Sparkles size={12} style={{ color: colors.accent.orange, flexShrink: 0 }} />
                               </TooltipTrigger>
                               <TooltipContent>AI suggested</TooltipContent>
                             </Tooltip>
@@ -1417,7 +1490,7 @@ export default function BulkReviewTable({
                       ) : (
                         <span className="text-xs truncate flex items-center gap-1">
                           {getFolderOptionsForItem(item).find(f => f.value === item.targetFolder)?.isCustom && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.accent.purple, flexShrink: 0 }} />
                           )}
                           {getFolderOptionsForItem(item).find(f => f.value === item.targetFolder)?.label || item.targetFolder || '-'}
                         </span>
@@ -1445,14 +1518,14 @@ export default function BulkReviewTable({
                                 </span>
                                 {item.suggestedChecklistItems && item.suggestedChecklistItems.length > 0 && 
                                   !(item.checklistItemIds?.length) && (
-                                  <Sparkles className="w-2.5 h-2.5 ml-auto text-amber-500" />
+                                  <Sparkles size={10} style={{ marginLeft: "auto", color: colors.accent.orange }} />
                                 )}
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-80 p-0 max-h-[400px] flex flex-col" align="start" side="left">
-                              <div className="p-3 border-b bg-muted/50 flex-shrink-0">
+                              <div className="p-3 border-b flex-shrink-0" style={{ background: colors.bg.light }}>
                                 <h4 className="font-medium text-sm">Link to Checklist</h4>
-                                <p className="text-xs text-muted-foreground mt-0.5">
+                                <p className="text-xs mt-0.5" style={{ color: colors.text.muted }}>
                                   Select requirements this document fulfills
                                 </p>
                               </div>
@@ -1460,8 +1533,8 @@ export default function BulkReviewTable({
                               <div className="flex-1 overflow-y-auto">
                                 {/* AI Suggestions */}
                                 {item.suggestedChecklistItems && item.suggestedChecklistItems.length > 0 && (
-                                  <div className="p-2 bg-amber-50 border-b">
-                                    <div className="flex items-center gap-1.5 text-xs font-medium text-amber-800 mb-2">
+                                  <div className="p-2 border-b" style={{ background: `${colors.accent.orange}10` }}>
+                                    <div className="flex items-center gap-1.5 text-xs font-medium mb-2" style={{ color: colors.accent.orange }}>
                                       <Sparkles className="w-3.5 h-3.5" />
                                       AI Suggested
                                     </div>
@@ -1488,7 +1561,7 @@ export default function BulkReviewTable({
                                             className="text-xs cursor-pointer flex-1"
                                           >
                                             <span className="font-medium">{suggestion.itemName}</span>
-                                            <span className="text-amber-600 ml-1">
+                                            <span className="ml-1" style={{ color: colors.accent.orange }}>
                                               ({Math.round(suggestion.confidence * 100)}%)
                                             </span>
                                           </label>
@@ -1501,8 +1574,8 @@ export default function BulkReviewTable({
                                 {/* Project-Level Checklist Items (shown first when project selected) */}
                                 {hasProject && Object.keys(projectChecklistGroups).length > 0 && (
                                   <div className="p-2 border-b">
-                                    <div className="text-[10px] font-semibold text-orange-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                    <div className="text-[10px] font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: colors.accent.orange }}>
+                                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.accent.orange }} />
                                       Project Requirements
                                     </div>
                                     {Object.entries(projectChecklistGroups).map(([category, catItems]) => (
@@ -1528,7 +1601,7 @@ export default function BulkReviewTable({
                                               >
                                                 {checkItem.name}
                                                 {isFulfilled && (
-                                                  <Badge variant="outline" className="ml-1.5 text-[9px] h-4 text-green-600">✓</Badge>
+                                                  <Badge tone={colors.accent.green}>✓</Badge>
                                                 )}
                                               </label>
                                             </div>
@@ -1541,8 +1614,8 @@ export default function BulkReviewTable({
 
                                 {/* No project items — offer initialization */}
                                 {hasProject && Object.keys(projectChecklistGroups).length === 0 && (
-                                  <div className="p-2 bg-amber-50 border-b flex items-center justify-between gap-2">
-                                    <p className="text-[10px] text-amber-700">
+                                  <div className="p-2 border-b flex items-center justify-between gap-2" style={{ background: `${colors.accent.orange}10` }}>
+                                    <p className="text-[10px]" style={{ color: colors.accent.orange }}>
                                       No project-level checklist items found.
                                     </p>
                                     {projectId && clientId && (
@@ -1588,8 +1661,8 @@ export default function BulkReviewTable({
                                 {/* Client-Level Checklist Items */}
                                 {Object.keys(clientChecklistGroups).length > 0 && (
                                   <div className="p-2">
-                                    <div className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                    <div className="text-[10px] font-semibold uppercase tracking-wide mb-2 flex items-center gap-1.5" style={{ color: colors.accent.blue }}>
+                                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.accent.blue }} />
                                       Client Requirements
                                     </div>
                                     {Object.entries(clientChecklistGroups).map(([category, catItems]) => (
@@ -1615,7 +1688,7 @@ export default function BulkReviewTable({
                                               >
                                                 {checkItem.name}
                                                 {isFulfilled && (
-                                                  <Badge variant="outline" className="ml-1.5 text-[9px] h-4 text-green-600">✓</Badge>
+                                                  <Badge tone={colors.accent.green}>✓</Badge>
                                                 )}
                                               </label>
                                             </div>
@@ -1712,7 +1785,7 @@ export default function BulkReviewTable({
                       ) : item.deepExtractionStatus === 'complete' ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Badge variant="secondary" className="text-[9px] h-5 px-1 bg-emerald-100 text-emerald-700">
+                            <Badge tone={colors.accent.teal}>
                               Deep
                             </Badge>
                           </TooltipTrigger>
@@ -2099,8 +2172,8 @@ export default function BulkReviewTable({
                               <TabsContent value="reasoning" className="mt-0">
                                 <div>
                                   <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">AI Classification Reasoning</span>
-                                  <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                                    <p className="text-sm text-blue-900 break-words whitespace-pre-wrap">
+                                  <div className="mt-2 p-3 rounded-lg" style={{ background: `${colors.accent.blue}10`, border: `1px solid ${colors.accent.blue}40` }}>
+                                    <p className="text-sm break-words whitespace-pre-wrap" style={{ color: colors.text.secondary }}>
                                       {item.classificationReasoning}
                                     </p>
                                   </div>
@@ -2110,27 +2183,24 @@ export default function BulkReviewTable({
                           </Tabs>
                           
                           {/* Deep Extraction Section */}
-                          {item.status === 'ready_for_review' && (
-                            <div className={`p-3 rounded border ${
-                              item.deepExtractionStatus === 'complete' ? 'bg-emerald-50 border-emerald-200' :
-                              item.deepExtractionStatus === 'processing' ? 'bg-blue-50 border-blue-200' :
-                              item.deepExtractionStatus === 'error' ? 'bg-red-50 border-red-200' :
-                              'bg-gray-50 border-gray-200'
-                            }`}>
+                          {item.status === 'ready_for_review' && (() => {
+                            const deTone =
+                              item.deepExtractionStatus === 'complete' ? colors.accent.teal :
+                              item.deepExtractionStatus === 'processing' ? colors.accent.blue :
+                              item.deepExtractionStatus === 'error' ? colors.accent.red :
+                              colors.text.muted;
+                            const deNeutral = !item.deepExtractionStatus;
+                            return (
+                            <div className="p-3 rounded" style={{ background: deNeutral ? colors.bg.light : `${deTone}10`, border: `1px solid ${deNeutral ? colors.border.default : `${deTone}40`}` }}>
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <span className={`text-sm font-medium ${
-                                    item.deepExtractionStatus === 'complete' ? 'text-emerald-800' :
-                                    item.deepExtractionStatus === 'processing' ? 'text-blue-800' :
-                                    item.deepExtractionStatus === 'error' ? 'text-red-800' :
-                                    'text-gray-700'
-                                  }`}>
+                                  <span className="text-sm font-medium" style={{ color: deNeutral ? colors.text.secondary : deTone }}>
                                     {item.deepExtractionStatus === 'complete' ? 'Deep Extraction Complete' :
                                      item.deepExtractionStatus === 'processing' ? 'Deep Extraction Running...' :
                                      item.deepExtractionStatus === 'error' ? 'Deep Extraction Failed' :
                                      'Deep Extraction Available'}
                                   </span>
-                                  <p className="text-xs mt-0.5 text-gray-500">
+                                  <p className="text-xs mt-0.5" style={{ color: colors.text.muted }}>
                                     {item.deepExtractionStatus === 'complete'
                                       ? 'Document re-analyzed with full text for richer intelligence and summaries.'
                                       : item.deepExtractionStatus === 'processing'
@@ -2170,17 +2240,18 @@ export default function BulkReviewTable({
                                   </Button>
                                 )}
                                 {item.deepExtractionStatus === 'processing' && (
-                                  <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                                  <Loader2 className="h-5 w-5 animate-spin" style={{ color: colors.accent.blue }} />
                                 )}
                               </div>
                             </div>
-                          )}
+                            );
+                          })()}
 
                           {/* User Notes Section */}
                           {item.status === 'ready_for_review' && (
-                            <div className="p-3 rounded border bg-gray-50 border-gray-200 mt-3">
+                            <div className="p-3 rounded border mt-3" style={{ background: colors.bg.light, borderColor: colors.border.default }}>
                               <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <span className="text-sm font-medium flex items-center gap-2" style={{ color: colors.text.secondary }}>
                                   <FileText className="w-4 h-4" />
                                   Document Notes
                                 </span>
@@ -2208,7 +2279,8 @@ export default function BulkReviewTable({
                                   }
                                 }}
                                 placeholder="Add notes about this document for future reference..."
-                                className="w-full text-sm min-h-[60px] p-2 border border-gray-200 rounded bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full text-sm min-h-[60px] p-2 rounded resize-y focus:outline-none"
+                                style={{ background: colors.bg.card, border: `1px solid ${colors.border.default}`, color: colors.text.primary }}
                               />
 
                               {editingNoteItemId === item._id && (
@@ -2254,16 +2326,11 @@ export default function BulkReviewTable({
                           )}
 
                           {item.error && (
-                            <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700 flex items-center justify-between gap-2">
+                            <div className="p-2 rounded text-sm flex items-center justify-between gap-2" style={{ background: `${colors.accent.red}10`, border: `1px solid ${colors.accent.red}40`, color: colors.accent.red }}>
                               <div>
                                 <span className="font-medium">Error:</span> {item.error}
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="shrink-0 text-xs h-7 border-red-300 text-red-700 hover:bg-red-100"
-                                onClick={() => handleRetryItem(item._id, item.batchId)}
-                              >
+                              <Button variant="destructive" size="sm" onClick={() => handleRetryItem(item._id, item.batchId)}>
                                 <RefreshCw className="w-3 h-3 mr-1" />
                                 Retry
                               </Button>
@@ -2271,16 +2338,11 @@ export default function BulkReviewTable({
                           )}
 
                           {item.status === 'processing' && isStuck(item) && (
-                            <div className="p-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-700 flex items-center justify-between gap-2">
+                            <div className="p-2 rounded text-sm flex items-center justify-between gap-2" style={{ background: `${colors.accent.orange}10`, border: `1px solid ${colors.accent.orange}40`, color: colors.accent.orange }}>
                               <div>
                                 <span className="font-medium">Stuck:</span> This file appears to be stuck in processing.
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="shrink-0 text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
-                                onClick={() => handleRetryItem(item._id, item.batchId)}
-                              >
+                              <Button variant="secondary" size="sm" onClick={() => handleRetryItem(item._id, item.batchId)}>
                                 <RefreshCw className="w-3 h-3 mr-1" />
                                 Retry
                               </Button>
@@ -2296,172 +2358,176 @@ export default function BulkReviewTable({
           </Table>
         </div>
 
+        {/* Bulk Delete Confirmation */}
+        <Modal
+          open={bulkDeleteOpen}
+          onClose={() => setBulkDeleteOpen(false)}
+          title={`Delete ${selectedItems.size} items?`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  const batchId = items[0]?.batchId;
+                  if (!batchId) return;
+                  const count = selectedItems.size;
+                  await deleteItems({ batchId, itemIds: Array.from(selectedItems) as any });
+                  setSelectedItems(new Set());
+                  setBulkDeleteOpen(false);
+                  toast.success(`Deleted ${count} items`);
+                }}
+              >
+                Delete
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 12, color: colors.text.muted }}>
+            This removes them from this batch permanently. Files will be deleted from storage.
+          </p>
+        </Modal>
+
         {/* Deep Extraction Confirmation Dialog */}
-        {deepExtractConfirm && (
-          <Dialog open={!!deepExtractConfirm} onOpenChange={() => setDeepExtractConfirm(null)}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Run Deep Extraction</DialogTitle>
-                <DialogDescription>
-                  {deepExtractConfirm.hasUserEdits ? (
-                    <><span className="text-amber-600 font-medium">Warning:</span> This document has manual corrections that will be overwritten by deep extraction results.</>
-                  ) : (
-                    <>Re-analyze <span className="font-medium">{deepExtractConfirm.fileName}</span> with the full document text for richer intelligence and summaries.</>
-                  )}
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button variant="outline" onClick={() => setDeepExtractConfirm(null)}>Cancel</Button>
-                <Button onClick={() => { handleDeepExtraction(deepExtractConfirm.itemId); setDeepExtractConfirm(null); }}>
-                  {deepExtractConfirm.hasUserEdits ? 'Override & Extract' : 'Run Deep Extraction'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
+        <Modal
+          open={!!deepExtractConfirm}
+          onClose={() => setDeepExtractConfirm(null)}
+          title="Run Deep Extraction"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDeepExtractConfirm(null)}>Cancel</Button>
+              <Button variant="primary" onClick={() => { if (deepExtractConfirm) handleDeepExtraction(deepExtractConfirm.itemId); setDeepExtractConfirm(null); }}>
+                {deepExtractConfirm?.hasUserEdits ? 'Override & Extract' : 'Run Deep Extraction'}
+              </Button>
+            </>
+          }
+        >
+          {deepExtractConfirm && (
+            <p style={{ fontSize: 12, color: colors.text.muted }}>
+              {deepExtractConfirm.hasUserEdits ? (
+                <><span style={{ color: colors.accent.orange, fontWeight: 500 }}>Warning:</span> This document has manual corrections that will be overwritten by deep extraction results.</>
+              ) : (
+                <>Re-analyze <span style={{ fontWeight: 500, color: colors.text.primary }}>{deepExtractConfirm.fileName}</span> with the full document text for richer intelligence and summaries.</>
+              )}
+            </p>
+          )}
+        </Modal>
 
         {/* Version Selection Dialog */}
-        <Dialog open={!!versionDialogItem} onOpenChange={() => setVersionDialogItem(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Duplicate Document Detected</DialogTitle>
-              <DialogDescription>
-                A document with a similar name already exists. Please select the version type for this upload.
-              </DialogDescription>
-            </DialogHeader>
-            {versionDialogItem && (
-              <div className="space-y-4 py-4">
-                <div className="p-3 bg-muted rounded-lg">
-                  <div className="text-sm font-medium">{versionDialogItem.fileName}</div>
-                  {versionDialogItem.generatedDocumentCode && (
-                    <div className="text-xs text-muted-foreground">
-                      {versionDialogItem.generatedDocumentCode}
-                    </div>
-                  )}
-                </div>
-                
-                <div className="space-y-3">
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start h-auto py-3"
-                    onClick={() => handleSetVersionType(versionDialogItem._id, 'minor')}
-                  >
-                    <div className="text-left">
-                      <div className="font-medium">Minor Change (V1.1)</div>
-                      <div className="text-xs text-muted-foreground">
-                        Small corrections, formatting changes, typo fixes
-                      </div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start h-auto py-3"
-                    onClick={() => handleSetVersionType(versionDialogItem._id, 'significant')}
-                  >
-                    <div className="text-left">
-                      <div className="font-medium">Significant Change (V2.0)</div>
-                      <div className="text-xs text-muted-foreground">
-                        Major updates, new content, structural changes
-                      </div>
-                    </div>
-                  </Button>
-                </div>
+        <Modal
+          open={!!versionDialogItem}
+          onClose={() => setVersionDialogItem(null)}
+          title="Duplicate Document Detected"
+          footer={<Button variant="ghost" onClick={() => setVersionDialogItem(null)}>Cancel</Button>}
+        >
+          <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>
+            A document with a similar name already exists. Please select the version type for this upload.
+          </p>
+          {versionDialogItem && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ padding: 12, background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{versionDialogItem.fileName}</div>
+                {versionDialogItem.generatedDocumentCode && (
+                  <div style={{ fontSize: 10, color: colors.text.muted, fontFamily: BR_MONO }}>
+                    {versionDialogItem.generatedDocumentCode}
+                  </div>
+                )}
               </div>
-            )}
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setVersionDialogItem(null)}>
-                Cancel
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <Button variant="secondary" onClick={() => handleSetVersionType(versionDialogItem._id, 'minor')} style={{ width: '100%', justifyContent: 'flex-start', height: 'auto', padding: 12 }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 500 }}>Minor Change (V1.1)</div>
+                    <div style={{ fontSize: 10, color: colors.text.muted }}>Small corrections, formatting changes, typo fixes</div>
+                  </div>
+                </Button>
+                <Button variant="secondary" onClick={() => handleSetVersionType(versionDialogItem._id, 'significant')} style={{ width: '100%', justifyContent: 'flex-start', height: 'auto', padding: 12 }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 500 }}>Significant Change (V2.0)</div>
+                    <div style={{ fontSize: 10, color: colors.text.muted }}>Major updates, new content, structural changes</div>
+                  </div>
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
 
         {/* Version Link to Existing Document Dialog */}
-        <Dialog open={!!versionLinkItem} onOpenChange={() => { setVersionLinkItem(null); setVersionLinkStep('select'); setVersionLinkTarget(null); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                {versionLinkStep === 'select' ? 'Link as Version' : 'Select Version Type'}
-              </DialogTitle>
-              <DialogDescription>
-                {versionLinkStep === 'select'
-                  ? 'Select an existing document this file is a new version of.'
-                  : 'Is this a minor or significant update?'}
-              </DialogDescription>
-            </DialogHeader>
-            {versionLinkItem && versionLinkStep === 'select' && (
-              <div className="space-y-3">
-                <div className="p-2 bg-muted rounded-lg">
-                  <div className="text-sm font-medium">{versionLinkItem.fileName}</div>
-                </div>
-                <div className="max-h-64 overflow-y-auto space-y-1">
-                  {versionLinkDocs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground p-2">No existing documents found to link to.</p>
-                  ) : (
-                    versionLinkDocs.map((doc: any) => (
+        <Modal
+          open={!!versionLinkItem}
+          onClose={() => { setVersionLinkItem(null); setVersionLinkStep('select'); setVersionLinkTarget(null); }}
+          title={versionLinkStep === 'select' ? 'Link as Version' : 'Select Version Type'}
+          footer={
+            versionLinkStep === 'select' ? (
+              <>
+                <Button variant="ghost" onClick={() => { setVersionLinkItem(null); setVersionLinkTarget(null); }}>Cancel</Button>
+                <Button variant="primary" disabled={!versionLinkTarget} onClick={() => setVersionLinkStep('type')}>Next</Button>
+              </>
+            ) : (
+              <Button variant="ghost" onClick={() => setVersionLinkStep('select')}>Back</Button>
+            )
+          }
+        >
+          <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+            {versionLinkStep === 'select'
+              ? 'Select an existing document this file is a new version of.'
+              : 'Is this a minor or significant update?'}
+          </p>
+          {versionLinkItem && versionLinkStep === 'select' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ padding: 8, background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{versionLinkItem.fileName}</div>
+              </div>
+              <div style={{ maxHeight: 256, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {versionLinkDocs.length === 0 ? (
+                  <p style={{ fontSize: 11, color: colors.text.muted, padding: 8 }}>No existing documents found to link to.</p>
+                ) : (
+                  versionLinkDocs.map((doc: any) => {
+                    const sel = versionLinkTarget === doc._id;
+                    return (
                       <button
                         key={doc._id}
-                        className={`w-full text-left px-3 py-2 rounded text-xs hover:bg-gray-100 flex items-center gap-2 ${
-                          versionLinkTarget === doc._id ? 'bg-blue-50 border border-blue-200' : ''
-                        }`}
                         onClick={() => setVersionLinkTarget(doc._id)}
+                        style={{
+                          width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: 4, fontSize: 11,
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          background: sel ? `${colors.accent.blue}15` : 'transparent',
+                          border: `1px solid ${sel ? `${colors.accent.blue}40` : 'transparent'}`,
+                          cursor: 'pointer',
+                        }}
                       >
-                        <FileText className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium">{doc.fileName}</div>
-                          <div className="text-muted-foreground truncate">
+                        <FileText size={14} style={{ flexShrink: 0, color: colors.text.muted }} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, color: colors.text.primary }}>{doc.fileName}</div>
+                          <div style={{ color: colors.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {doc.fileTypeDetected || doc.category} · {doc.version || 'V1.0'}
                           </div>
                         </div>
-                        {doc.version && (
-                          <Badge variant="outline" className="text-[9px] flex-shrink-0">{doc.version}</Badge>
-                        )}
+                        {doc.version && <Badge>{doc.version}</Badge>}
                       </button>
-                    ))
-                  )}
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+          {versionLinkItem && versionLinkStep === 'type' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Button variant="secondary" onClick={() => handleLinkVersion('minor')} style={{ width: '100%', justifyContent: 'flex-start', height: 'auto', padding: 12 }}>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontWeight: 500 }}>Minor Update</div>
+                  <div style={{ fontSize: 10, color: colors.text.muted }}>Small corrections, formatting changes</div>
                 </div>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => { setVersionLinkItem(null); setVersionLinkTarget(null); }}>Cancel</Button>
-                  <Button
-                    size="sm"
-                    disabled={!versionLinkTarget}
-                    onClick={() => setVersionLinkStep('type')}
-                  >
-                    Next
-                  </Button>
-                </DialogFooter>
-              </div>
-            )}
-            {versionLinkItem && versionLinkStep === 'type' && (
-              <div className="space-y-3 py-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3"
-                  onClick={() => handleLinkVersion('minor')}
-                >
-                  <div className="text-left">
-                    <div className="font-medium">Minor Update</div>
-                    <div className="text-xs text-muted-foreground">Small corrections, formatting changes</div>
-                  </div>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3"
-                  onClick={() => handleLinkVersion('significant')}
-                >
-                  <div className="text-left">
-                    <div className="font-medium">Significant Update</div>
-                    <div className="text-xs text-muted-foreground">Major updates, new content, structural changes</div>
-                  </div>
-                </Button>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => setVersionLinkStep('select')}>Back</Button>
-                </DialogFooter>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+              </Button>
+              <Button variant="secondary" onClick={() => handleLinkVersion('significant')} style={{ width: '100%', justifyContent: 'flex-start', height: 'auto', padding: 12 }}>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontWeight: 500 }}>Significant Update</div>
+                  <div style={{ fontSize: 10, color: colors.text.muted }}>Major updates, new content, structural changes</div>
+                </div>
+              </Button>
+            </div>
+          )}
+        </Modal>
 
       <CreateCustomTypeModal
         open={createTypeModalOpen}
@@ -2509,6 +2575,7 @@ function ProjectBadge({
   onAssign: (projectId: Id<"projects">) => void;
   onSetClientLevel: () => void;
 }) {
+  const colors = useColors();
   const [isOpen, setIsOpen] = useState(false);
 
   const assignedProject = item.itemProjectId
@@ -2526,45 +2593,41 @@ function ProjectBadge({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <button className="text-left max-w-full overflow-hidden">
+        <button style={{ textAlign: 'left', maxWidth: '100%', overflow: 'hidden', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
           {displayProject && (
-            <Badge className={`max-w-full truncate block ${assignedProject ? "bg-green-100 text-green-800 cursor-pointer hover:bg-green-200" : "bg-blue-100 text-blue-800 cursor-pointer hover:bg-blue-200"}`} title={displayProject.name}>
+            <Badge tone={assignedProject ? colors.accent.green : colors.accent.blue} style={{ maxWidth: '100%' }}>
               {displayProject.name}
-              {!assignedProject && <span className="ml-1 text-xs opacity-60">?</span>}
+              {!assignedProject && <span style={{ marginLeft: 4, opacity: 0.6 }}>?</span>}
             </Badge>
           )}
           {isNew && !displayProject && (
-            <Badge className="max-w-full truncate block bg-amber-100 text-amber-800 cursor-pointer hover:bg-amber-200" title={`New: ${item.suggestedProjectName}`}>
+            <Badge tone={colors.accent.orange} style={{ maxWidth: '100%' }}>
               New: {item.suggestedProjectName}
             </Badge>
           )}
           {isClientLevel && !displayProject && !isNew && (
-            <Badge variant="secondary" className="cursor-pointer">
-              Client-level
-            </Badge>
+            <Badge>Client-level</Badge>
           )}
           {!displayProject && !isNew && !isClientLevel && (
-            <Badge variant="outline" className="cursor-pointer text-gray-400">
-              Unassigned
-            </Badge>
+            <Badge>Unassigned</Badge>
           )}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-2">
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-gray-500 px-2 py-1">Assign to project</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <p style={{ fontSize: 11, fontWeight: 500, color: colors.text.muted, padding: '4px 8px' }}>Assign to project</p>
           {projects.map((p: any) => (
             <button
               key={p._id}
-              className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100"
+              style={{ width: '100%', textAlign: 'left', padding: '6px 8px', fontSize: 12, borderRadius: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.secondary }}
               onClick={() => { onAssign(p._id); setIsOpen(false); }}
             >
-              {p.name} {p.projectShortcode && <span className="text-gray-400">({p.projectShortcode})</span>}
+              {p.name} {p.projectShortcode && <span style={{ color: colors.text.dim }}>({p.projectShortcode})</span>}
             </button>
           ))}
-          <hr className="my-1" />
+          <div style={{ height: 1, background: colors.border.default, margin: '4px 0' }} />
           <button
-            className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 text-gray-600"
+            style={{ width: '100%', textAlign: 'left', padding: '6px 8px', fontSize: 12, borderRadius: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.muted }}
             onClick={() => { onSetClientLevel(); setIsOpen(false); }}
           >
             Client-level document
