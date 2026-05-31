@@ -1,12 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useColors } from "@/lib/useColors";
+import {
+  Panel,
+  DataTable,
+  StatusPill,
+  FlagChip,
+  Button,
+  Field,
+  Input,
+  EmptyState,
+  SkeletonTable,
+  type Column,
+} from "@/components/layouts";
 import {
   CheckCircle2,
   XCircle,
@@ -44,16 +53,60 @@ const STATUS_LABELS: Record<ApprovalStatus, string> = {
   cancelled: "Cancelled",
 };
 
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+
+function statusTone(status: ApprovalStatus, colors: ReturnType<typeof useColors>): string {
+  switch (status) {
+    case "pending":
+      return colors.accent.yellow;
+    case "approved":
+      return colors.accent.blue;
+    case "executed":
+      return colors.accent.green;
+    case "execution_failed":
+      return colors.accent.red;
+    case "rejected":
+      return colors.accent.red;
+    case "cancelled":
+    case "expired":
+    default:
+      return colors.text.dim;
+  }
+}
+
+function statusLabel(status: ApprovalStatus, entityType?: string): string {
+  switch (status) {
+    case "approved":
+      return "Executing";
+    case "executed":
+      return entityType === "document_publish" ? "Filed" : "Sent";
+    case "execution_failed":
+      return "Failed";
+    default:
+      return STATUS_LABELS[status] ?? status;
+  }
+}
+
 function DocFileLink({ file }: { file: any }) {
+  const colors = useColors();
   const url = useQuery(api.documents.getFileUrl as any, { storageId: file.storageId });
   return (
     <a
       href={url ?? undefined}
       target="_blank"
       rel="noopener noreferrer"
-      className={`inline-flex items-center gap-1 border rounded px-2 py-1 text-xs ${
-        url ? "text-blue-700 hover:bg-blue-50" : "text-gray-400 pointer-events-none"
-      }`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "4px 8px",
+        fontSize: 11,
+        borderRadius: 4,
+        border: `1px solid ${colors.border.default}`,
+        color: url ? colors.accent.blue : colors.text.dim,
+        pointerEvents: url ? undefined : "none",
+        textDecoration: "none",
+      }}
     >
       {file.format === "pdf" ? "View PDF" : "Download DOCX"}
     </a>
@@ -61,19 +114,20 @@ function DocFileLink({ file }: { file: any }) {
 }
 
 function DocumentPublishPreview({ payload }: { payload: any }) {
+  const colors = useColors();
   const files = payload?.files ?? [];
   return (
-    <div className="space-y-2 text-sm">
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
       <div>
-        <span className="text-gray-500">Title: </span>
-        <span className="font-medium">{payload?.title}</span>
+        <span style={{ color: colors.text.muted }}>Title: </span>
+        <span style={{ fontWeight: 500, color: colors.text.primary }}>{payload?.title}</span>
       </div>
-      <div className="flex items-center gap-2 text-xs text-gray-500">
-        <span className="font-mono">{payload?.docType}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: colors.text.muted }}>
+        <span style={{ fontFamily: MONO }}>{payload?.docType}</span>
         <span>·</span>
         <span>{payload?.category}</span>
       </div>
-      <div className="flex flex-wrap gap-2 pt-1">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
         {files.map((f: any) => (
           <DocFileLink key={f.storageId} file={f} />
         ))}
@@ -82,62 +136,8 @@ function DocumentPublishPreview({ payload }: { payload: any }) {
   );
 }
 
-function StatusBadge({ status, entityType }: { status: ApprovalStatus; entityType?: string }) {
-  switch (status) {
-    case "pending":
-      return (
-        <Badge variant="outline" className="border-amber-300 text-amber-800">
-          <Clock className="w-3.5 h-3.5 mr-1" />
-          Pending
-        </Badge>
-      );
-    case "approved":
-      return (
-        <Badge variant="outline" className="border-blue-300 text-blue-800">
-          <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-          Executing
-        </Badge>
-      );
-    case "executed":
-      return (
-        <Badge variant="default" className="bg-emerald-600">
-          <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-          {entityType === "document_publish" ? "Filed" : "Sent"}
-        </Badge>
-      );
-    case "execution_failed":
-      return (
-        <Badge variant="destructive">
-          <AlertTriangle className="w-3.5 h-3.5 mr-1" />
-          Failed
-        </Badge>
-      );
-    case "rejected":
-      return (
-        <Badge variant="outline" className="border-red-300 text-red-800">
-          <XCircle className="w-3.5 h-3.5 mr-1" />
-          Rejected
-        </Badge>
-      );
-    case "cancelled":
-      return (
-        <Badge variant="outline" className="border-gray-300 text-gray-700">
-          <Ban className="w-3.5 h-3.5 mr-1" />
-          Cancelled
-        </Badge>
-      );
-    case "expired":
-      return (
-        <Badge variant="outline" className="border-gray-300 text-gray-700">
-          Expired
-        </Badge>
-      );
-    default:
-      return <Badge variant="outline">{status}</Badge>;
-  }
-}
-
-function ApprovalCard({ approval }: { approval: any }) {
+function ApprovalRow({ approval }: { approval: any }) {
+  const colors = useColors();
   const [expanded, setExpanded] = useState(false);
   const [acting, setActing] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -185,69 +185,86 @@ function ApprovalCard({ approval }: { approval: any }) {
   const isPending = approval.status === "pending";
 
   return (
-    <Card className="mb-3">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center text-left w-full hover:bg-gray-50 -ml-2 px-2 py-1 rounded"
-            >
-              {expanded ? (
-                <ChevronDown className="w-4 h-4 mr-1 text-gray-400 flex-shrink-0" />
-              ) : (
-                <ChevronRight className="w-4 h-4 mr-1 text-gray-400 flex-shrink-0" />
-              )}
-              <span className="font-medium text-sm truncate">{approval.summary}</span>
-            </button>
-            <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 ml-5">
-              <span className="font-mono">{approval.entityType}</span>
-              {approval.requestSourceName && (
-                <>
-                  <span>·</span>
-                  <span>
-                    via <span className="font-medium">{approval.requestSourceName}</span>
-                  </span>
-                </>
-              )}
-              <span>·</span>
-              <span>{new Date(approval.requestedAt).toLocaleString()}</span>
-            </div>
+    <div
+      style={{
+        border: `1px solid ${colors.border.default}`,
+        borderRadius: 4,
+        background: colors.bg.card,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "12px 14px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              textAlign: "left",
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              color: colors.text.primary,
+            }}
+          >
+            {expanded ? (
+              <ChevronDown size={16} style={{ color: colors.text.dim, flexShrink: 0 }} />
+            ) : (
+              <ChevronRight size={16} style={{ color: colors.text.dim, flexShrink: 0 }} />
+            )}
+            <span style={{ fontWeight: 500, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {approval.summary}
+            </span>
+          </button>
+          <div style={{ marginTop: 4, marginLeft: 22, display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: colors.text.muted }}>
+            <span style={{ fontFamily: MONO }}>{approval.entityType}</span>
+            {approval.requestSourceName && (
+              <>
+                <span>·</span>
+                <span>
+                  via <span style={{ fontWeight: 500 }}>{approval.requestSourceName}</span>
+                </span>
+              </>
+            )}
+            <span>·</span>
+            <span>{new Date(approval.requestedAt).toLocaleString()}</span>
           </div>
-          <StatusBadge status={approval.status} entityType={approval.entityType} />
         </div>
-      </CardHeader>
+        <StatusPill label={statusLabel(approval.status, approval.entityType)} tone={statusTone(approval.status, colors)} />
+      </div>
 
       {expanded && (
-        <CardContent className="pt-0">
-          <div className="border-t pt-3 space-y-3">
+        <div style={{ padding: "0 14px 14px 14px" }}>
+          <div style={{ borderTop: `1px solid ${colors.border.light}`, paddingTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Render Gmail-specific preview if entityType matches */}
             {approval.entityType === "gmail_send" && approval.draftPayload && (
-              <div className="space-y-2 text-sm">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
                 <div>
-                  <span className="text-gray-500">To: </span>
-                  <span className="font-medium">
+                  <span style={{ color: colors.text.muted }}>To: </span>
+                  <span style={{ fontWeight: 500, color: colors.text.primary }}>
                     {(approval.draftPayload.to ?? []).join(", ")}
                   </span>
                 </div>
                 {approval.draftPayload.cc?.length > 0 && (
                   <div>
-                    <span className="text-gray-500">Cc: </span>
-                    <span>{approval.draftPayload.cc.join(", ")}</span>
+                    <span style={{ color: colors.text.muted }}>Cc: </span>
+                    <span style={{ color: colors.text.primary }}>{approval.draftPayload.cc.join(", ")}</span>
                   </div>
                 )}
                 <div>
-                  <span className="text-gray-500">Subject: </span>
-                  <span className="font-medium">{approval.draftPayload.subject}</span>
+                  <span style={{ color: colors.text.muted }}>Subject: </span>
+                  <span style={{ fontWeight: 500, color: colors.text.primary }}>{approval.draftPayload.subject}</span>
                 </div>
-                <div className="pt-2 border-t">
+                <div style={{ paddingTop: 8, borderTop: `1px solid ${colors.border.light}` }}>
                   {approval.draftPayload.bodyHtml ? (
                     <div
-                      className="prose prose-sm max-w-none text-gray-800"
+                      style={{ fontSize: 12, color: colors.text.secondary }}
                       dangerouslySetInnerHTML={{ __html: approval.draftPayload.bodyHtml }}
                     />
                   ) : (
-                    <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans">
+                    <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, color: colors.text.secondary, fontFamily: "inherit", margin: 0 }}>
                       {approval.draftPayload.bodyText}
                     </pre>
                   )}
@@ -262,66 +279,102 @@ function ApprovalCard({ approval }: { approval: any }) {
 
             {/* Generic payload dump for remaining types */}
             {approval.entityType !== "gmail_send" && approval.entityType !== "document_publish" && (
-              <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-96">
+              <pre
+                style={{
+                  fontSize: 11,
+                  fontFamily: MONO,
+                  background: colors.bg.light,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  padding: 12,
+                  overflow: "auto",
+                  maxHeight: 384,
+                  color: colors.text.secondary,
+                  margin: 0,
+                }}
+              >
                 {JSON.stringify(approval.draftPayload, null, 2)}
               </pre>
             )}
 
             {/* Execution outcome */}
             {approval.status === "executed" && approval.executionResult && (
-              <div className="text-xs bg-emerald-50 border border-emerald-200 rounded p-3 text-emerald-800">
-                <div className="font-medium mb-1">Executed</div>
-                <pre className="font-mono">
+              <div
+                style={{
+                  fontSize: 11,
+                  background: `${colors.accent.green}15`,
+                  border: `1px solid ${colors.accent.green}40`,
+                  borderRadius: 4,
+                  padding: 12,
+                  color: colors.accent.green,
+                }}
+              >
+                <div style={{ fontWeight: 500, marginBottom: 4 }}>Executed</div>
+                <pre style={{ fontFamily: MONO, margin: 0 }}>
                   {JSON.stringify(approval.executionResult, null, 2)}
                 </pre>
               </div>
             )}
             {approval.status === "execution_failed" && approval.executionError && (
-              <div className="text-xs bg-red-50 border border-red-200 rounded p-3 text-red-800">
-                <div className="font-medium mb-1">Execution error</div>
+              <div
+                style={{
+                  fontSize: 11,
+                  background: `${colors.accent.red}15`,
+                  border: `1px solid ${colors.accent.red}40`,
+                  borderRadius: 4,
+                  padding: 12,
+                  color: colors.accent.red,
+                }}
+              >
+                <div style={{ fontWeight: 500, marginBottom: 4 }}>Execution error</div>
                 {approval.executionError}
               </div>
             )}
             {approval.status === "rejected" && approval.rejectedReason && (
-              <div className="text-xs bg-gray-50 border rounded p-3 text-gray-700">
-                <div className="font-medium mb-1">Rejection reason</div>
+              <div
+                style={{
+                  fontSize: 11,
+                  background: colors.bg.light,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  padding: 12,
+                  color: colors.text.secondary,
+                }}
+              >
+                <div style={{ fontWeight: 500, marginBottom: 4 }}>Rejection reason</div>
                 {approval.rejectedReason}
               </div>
             )}
 
             {/* Actions */}
             {isPending && (
-              <div className="pt-2 border-t flex items-center gap-2">
-                <Button onClick={handleApprove} disabled={acting} size="sm">
+              <div style={{ paddingTop: 12, borderTop: `1px solid ${colors.border.light}`, display: "flex", alignItems: "center", gap: 8 }}>
+                <Button variant="primary" accent={colors.accent.green} onClick={handleApprove} disabled={acting} size="sm">
                   {acting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 size={14} className="animate-spin" />
                   ) : (
                     <>
-                      <CheckCircle2 className="w-4 h-4 mr-1" />
+                      <CheckCircle2 size={14} />
                       Approve
                     </>
                   )}
                 </Button>
                 {!showRejectForm ? (
-                  <Button
-                    onClick={() => setShowRejectForm(true)}
-                    disabled={acting}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <XCircle className="w-4 h-4 mr-1" />
+                  <Button onClick={() => setShowRejectForm(true)} disabled={acting} variant="danger" size="sm">
+                    <XCircle size={14} />
                     Reject
                   </Button>
                 ) : (
-                  <div className="flex items-center gap-2 flex-1">
-                    <input
-                      type="text"
-                      value={rejectReason}
-                      onChange={(e) => setRejectReason(e.target.value)}
-                      placeholder="Reason (optional)"
-                      className="flex-1 border rounded px-2 py-1 text-sm"
-                    />
-                    <Button onClick={handleReject} disabled={acting} variant="destructive" size="sm">
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                    <div style={{ flex: 1 }}>
+                      <Input
+                        type="text"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="Reason (optional)"
+                      />
+                    </div>
+                    <Button onClick={handleReject} disabled={acting} variant="danger" size="sm">
                       Confirm reject
                     </Button>
                     <Button
@@ -329,26 +382,27 @@ function ApprovalCard({ approval }: { approval: any }) {
                         setShowRejectForm(false);
                         setRejectReason("");
                       }}
-                      variant="outline"
+                      variant="secondary"
                       size="sm"
                     >
                       Cancel
                     </Button>
                   </div>
                 )}
-                <Button onClick={handleCancel} disabled={acting} variant="outline" size="sm">
+                <Button onClick={handleCancel} disabled={acting} variant="ghost" size="sm">
                   Cancel request
                 </Button>
               </div>
             )}
           </div>
-        </CardContent>
+        </div>
       )}
-    </Card>
+    </div>
   );
 }
 
 export default function ApprovalsPage() {
+  const colors = useColors();
   const [filter, setFilter] = useState<ApprovalStatus | "all">("pending");
   const counts = useQuery(api.approvals.getCounts as any);
   const approvals = useQuery(api.approvals.listAll as any, { status: filter, limit: 100 });
@@ -356,75 +410,70 @@ export default function ApprovalsPage() {
   const loading = approvals === undefined;
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
+    <div style={{ background: colors.bg.light, minHeight: "100vh" }}>
+      <div style={{ maxWidth: 896, margin: "0 auto", padding: "32px 24px" }}>
+        <div style={{ marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-              <Inbox className="w-6 h-6" />
+            <h1 style={{ fontSize: 24, fontWeight: 600, color: colors.text.primary, display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
+              <Inbox size={24} />
               Approvals
             </h1>
-            <p className="mt-1 text-gray-600">
+            <p style={{ marginTop: 4, color: colors.text.muted, fontSize: 13 }}>
               Drafts staged by skills, background jobs, and cadences. Review,
               approve, or reject. Approved actions execute automatically.
             </p>
           </div>
           {counts && (
-            <div className="flex items-center gap-2 text-sm">
-              {counts.pending > 0 && (
-                <Badge variant="outline" className="border-amber-300 text-amber-800">
-                  <Clock className="w-3.5 h-3.5 mr-1" />
-                  {counts.pending} pending
-                </Badge>
-              )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {counts.pending > 0 && <FlagChip label={`${counts.pending} pending`} severity="warn" />}
               {counts.executionFailed > 0 && (
-                <Badge variant="destructive">
-                  <AlertTriangle className="w-3.5 h-3.5 mr-1" />
-                  {counts.executionFailed} failed
-                </Badge>
+                <StatusPill label={`${counts.executionFailed} failed`} tone={colors.accent.red} />
               )}
             </div>
           )}
         </div>
 
-        <div className="mb-4 flex items-center gap-1 border-b">
-          {(
-            ["pending", "executed", "execution_failed", "rejected", "cancelled", "all"] as const
-          ).map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`px-3 py-2 text-sm border-b-2 transition-colors ${
-                filter === s
-                  ? "border-blue-600 text-blue-600 font-medium"
-                  : "border-transparent text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              {s === "all" ? "All" : STATUS_LABELS[s]}
-            </button>
-          ))}
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 4, borderBottom: `1px solid ${colors.border.default}` }}>
+          {(["pending", "executed", "execution_failed", "rejected", "cancelled", "all"] as const).map((s) => {
+            const active = filter === s;
+            return (
+              <button
+                key={s}
+                onClick={() => setFilter(s)}
+                style={{
+                  padding: "8px 12px",
+                  fontSize: 12,
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: `2px solid ${active ? colors.accent.blue : "transparent"}`,
+                  color: active ? colors.accent.blue : colors.text.muted,
+                  fontWeight: active ? 500 : 400,
+                  cursor: "pointer",
+                  transition: "color 100ms linear, border-color 100ms linear",
+                }}
+              >
+                {s === "all" ? "All" : STATUS_LABELS[s]}
+              </button>
+            );
+          })}
         </div>
 
         {loading ? (
-          <div className="text-sm text-gray-500 flex items-center justify-center py-12">
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            Loading approvals...
-          </div>
+          <SkeletonTable rows={6} cols={1} />
         ) : approvals.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-gray-500">
-              <Send className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-sm">
-                {filter === "pending"
-                  ? "No pending approvals. Skills will stage drafts here when they need human review."
-                  : `No ${STATUS_LABELS[filter as ApprovalStatus]?.toLowerCase() ?? filter} approvals.`}
-              </p>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={<Send size={40} />}
+            title="No approvals"
+            body={
+              filter === "pending"
+                ? "Skills will stage drafts here when they need human review."
+                : `No ${STATUS_LABELS[filter as ApprovalStatus]?.toLowerCase() ?? filter} approvals.`
+            }
+          />
         ) : (
-          <div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {approvals.map((approval: any) => (
-              <ApprovalCard key={approval._id} approval={approval} />
+              <ApprovalRow key={approval._id} approval={approval} />
             ))}
           </div>
         )}

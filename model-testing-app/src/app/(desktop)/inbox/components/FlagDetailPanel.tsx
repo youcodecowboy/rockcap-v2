@@ -12,15 +12,20 @@ import {
   Send,
   Loader2,
 } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
+import { Button, StatusPill, EmptyState, SkeletonText, Field } from '@/components/layouts';
 import ThreadEntry from './ThreadEntry';
 import EntityContextHeader from '@/components/threads/EntityContextHeader';
 import { relativeTime, getInitial } from '@/components/threads/utils';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface FlagDetailPanelProps {
   flagId: string;
 }
 
 export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
+  const colors = useColors();
   const typedFlagId = flagId as Id<'flags'>;
 
   // Queries
@@ -144,8 +149,8 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
   // Loading state
   if (flag === undefined) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      <div className="h-full p-6">
+        <SkeletonText lines={6} />
       </div>
     );
   }
@@ -153,11 +158,8 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
   // Not found
   if (flag === null) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <Flag className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-          <p className="text-sm text-gray-400">Flag not found</p>
-        </div>
+      <div className="flex items-center justify-center h-full p-8">
+        <EmptyState icon={<Flag size={28} />} title="Flag not found" />
       </div>
     );
   }
@@ -167,7 +169,7 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
   const assigneeName = userMap.get(flag.assignedTo) || null;
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full" style={{ background: colors.bg.base }}>
       {/* Entity context header */}
       <EntityContextHeader
         entityType={flag.entityType}
@@ -177,22 +179,22 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
       />
 
       {/* Action bar */}
-      <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100">
-        <span
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${
-            isOpen
-              ? 'bg-orange-50 text-orange-600'
-              : 'bg-green-50 text-green-600'
-          }`}
-        >
-          {flag.status}
-        </span>
+      <div
+        className="flex items-center justify-between px-5 py-2"
+        style={{ borderBottom: `1px solid ${colors.border.light}` }}
+      >
+        <StatusPill
+          label={flag.status}
+          tone={isOpen ? colors.accent.orange : colors.accent.green}
+        />
         <div className="flex items-center gap-2 flex-shrink-0">
           {isOpen ? (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              accent={colors.accent.green}
               onClick={handleResolve}
               disabled={isResolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded transition-colors disabled:opacity-50"
             >
               {isResolving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -200,12 +202,13 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
                 <CheckCircle2 className="h-3.5 w-3.5" />
               )}
               Resolve
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={handleReopen}
               disabled={isResolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded transition-colors disabled:opacity-50"
             >
               {isResolving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -213,58 +216,66 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
                 <RotateCcw className="h-3.5 w-3.5" />
               )}
               Reopen
-            </button>
+            </Button>
           )}
-          <button
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded transition-colors"
-          >
+          <Button variant="danger" size="sm" onClick={handleDelete}>
             <Trash2 className="h-3.5 w-3.5" />
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Flag metadata */}
-      <div className="px-5 py-3 border-b border-gray-50">
-        <p className="text-xs text-gray-500">
-          Flagged by{' '}
-          <span className="font-medium text-gray-700">{creatorName || 'loading...'}</span>
-          {' \u00b7 '}
-          {relativeTime(flag.createdAt)}
-          {' \u00b7 Priority: '}
-          <span
-            className={`inline-flex items-center px-1.5 py-0 rounded text-[10px] font-semibold uppercase ${
-              flag.priority === 'urgent'
-                ? 'bg-red-50 text-red-600'
-                : 'bg-gray-100 text-gray-500'
-            }`}
-          >
-            {flag.priority}
-          </span>
+      <div className="px-5 py-3" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
+        <p style={{ fontSize: 12, color: colors.text.muted }} className="flex items-center flex-wrap gap-1">
+          <span>Flagged by</span>
+          <span style={{ fontWeight: 500, color: colors.text.secondary }}>{creatorName || 'loading...'}</span>
+          <span>{'\u00b7'}</span>
+          <span>{relativeTime(flag.createdAt)}</span>
+          <span>{'\u00b7 Priority:'}</span>
+          <StatusPill
+            label={flag.priority}
+            tone={flag.priority === 'urgent' ? colors.accent.red : colors.text.muted}
+          />
         </p>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <p className="mt-1" style={{ fontSize: 12, color: colors.text.muted }}>
           Assigned to:{' '}
-          <span className="font-medium text-gray-700">{assigneeName || 'loading...'}</span>
+          <span style={{ fontWeight: 500, color: colors.text.secondary }}>{assigneeName || 'loading...'}</span>
         </p>
       </div>
 
       {/* Original note */}
-      <div className="px-5 py-4 border-b border-gray-100">
+      <div className="px-5 py-4" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
         <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-medium">
+          <div
+            className="flex-shrink-0 flex items-center justify-center"
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              background: colors.accent.orange,
+              color: '#ffffff',
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
             {getInitial(creatorName)}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium text-gray-900">
+              <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
                 {creatorName || 'Unknown'}
               </span>
-              <span className="text-[11px] text-gray-400 flex-shrink-0">
+              <span className="flex-shrink-0" style={{ fontSize: 11, color: colors.text.dim }}>
                 {relativeTime(flag.createdAt)}
               </span>
             </div>
-            <p className="text-sm text-gray-800 mt-1 whitespace-pre-wrap">{flag.note}</p>
+            <p
+              className="mt-1 whitespace-pre-wrap"
+              style={{ fontSize: 13, color: colors.text.secondary }}
+            >
+              {flag.note}
+            </p>
           </div>
         </div>
       </div>
@@ -272,52 +283,74 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
       {/* Thread timeline */}
       <div className="flex-1 overflow-y-auto">
         {thread && thread.length > 0 ? (
-          <div className="divide-y divide-gray-50">
+          <div>
             {thread.map((entry) => (
-              <ThreadEntry
-                key={entry._id}
-                entryType={entry.entryType}
-                userName={entry.userId ? userMap.get(entry.userId) || null : null}
-                content={entry.content}
-                createdAt={entry.createdAt}
-                metadata={entry.metadata as Record<string, unknown> | undefined}
-              />
+              <div key={entry._id} style={{ borderBottom: `1px solid ${colors.border.light}` }}>
+                <ThreadEntry
+                  entryType={entry.entryType}
+                  userName={entry.userId ? userMap.get(entry.userId) || null : null}
+                  content={entry.content}
+                  createdAt={entry.createdAt}
+                  metadata={entry.metadata as Record<string, unknown> | undefined}
+                />
+              </div>
             ))}
           </div>
         ) : thread !== undefined ? (
           <div className="flex items-center justify-center py-12">
-            <p className="text-xs text-gray-300">No replies yet</p>
+            <p style={{ fontSize: 12, color: colors.text.dim }}>No replies yet</p>
           </div>
         ) : null}
         <div ref={threadEndRef} />
       </div>
 
       {/* Reply bar */}
-      <div className="border-t border-gray-200 pl-5 pr-20 py-3 bg-white">
+      <div
+        className="pl-5 pr-20 py-3"
+        style={{ borderTop: `1px solid ${colors.border.default}`, background: colors.bg.card }}
+      >
         <div className="flex items-end gap-3">
-          <textarea
-            ref={textareaRef}
-            value={replyText}
-            onChange={(e) => setReplyText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Write a reply..."
-            rows={1}
-            className="flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-gray-300"
-          />
+          <div className="flex-1">
+            <Field label="Reply">
+              <textarea
+                ref={textareaRef}
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Write a reply..."
+                rows={1}
+                style={{
+                  width: '100%',
+                  resize: 'none',
+                  padding: '7px 10px',
+                  fontSize: 12,
+                  fontFamily: 'inherit',
+                  color: colors.text.primary,
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  outline: 'none',
+                }}
+              />
+            </Field>
+          </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={resolveOnSend}
                 onChange={(e) => setResolveOnSend(e.target.checked)}
-                className="rounded border-gray-300 text-green-600 focus:ring-green-500 h-3.5 w-3.5"
+                style={{ width: 14, height: 14, accentColor: colors.accent.green }}
               />
-              <span className="text-[11px] text-gray-500 whitespace-nowrap">Resolve & send</span>
+              <span className="whitespace-nowrap" style={{ fontSize: 11, color: colors.text.muted }}>
+                Resolve & send
+              </span>
             </label>
-            <button
+            <Button
+              variant="primary"
+              accent={colors.text.primary}
               onClick={handleSend}
               disabled={!replyText.trim() || isSending}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isSending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -325,10 +358,10 @@ export default function FlagDetailPanel({ flagId }: FlagDetailPanelProps) {
                 <Send className="h-3.5 w-3.5" />
               )}
               Send
-            </button>
+            </Button>
           </div>
         </div>
-        <p className="text-[10px] text-gray-300 mt-1.5">
+        <p className="mt-1.5" style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}>
           Press {typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent) ? '\u2318' : 'Ctrl'}+Enter to send
         </p>
       </div>

@@ -19,22 +19,34 @@ import { api } from '../../../../convex/_generated/api';
 import {
   Activity as ActivityIcon,
   StickyNote, Mail, Video, Phone, CheckSquare,
-  ArrowUpRight, ArrowDownLeft, User, Loader2,
+  ArrowUpRight, ArrowDownLeft,
   ChevronDown, ChevronUp, ExternalLink,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import {
+  Panel,
+  StatTile,
+  EmptyState,
+  Button,
+  SkeletonText,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 type FilterKey = 'all' | 'EMAIL' | 'MEETING' | 'NOTE' | 'CALL' | 'TASK';
 
-const TYPE_TILE: Record<string, { bg: string; tint: string; Icon: any; label: string }> = {
-  NOTE: { bg: '#f3e8ff', tint: '#9333ea', Icon: StickyNote, label: 'Note' },
-  EMAIL: { bg: '#ffedd5', tint: '#ea580c', Icon: Mail, label: 'Email' },
-  INCOMING_EMAIL: { bg: '#dcfce7', tint: '#059669', Icon: Mail, label: 'Email' },
-  MEETING: { bg: '#dbeafe', tint: '#2563eb', Icon: Video, label: 'Meeting' },
-  CALL: { bg: '#fef3c7', tint: '#d97706', Icon: Phone, label: 'Call' },
-  TASK: { bg: '#ffedd5', tint: '#ea580c', Icon: CheckSquare, label: 'Task' },
-};
+// Maps each HubSpot activity type onto a canon accent token + icon + label.
+function typeTile(colors: ColorPalette): Record<string, { tint: string; Icon: any; label: string }> {
+  return {
+    NOTE: { tint: colors.accent.purple, Icon: StickyNote, label: 'Note' },
+    EMAIL: { tint: colors.accent.orange, Icon: Mail, label: 'Email' },
+    INCOMING_EMAIL: { tint: colors.accent.green, Icon: Mail, label: 'Email' },
+    MEETING: { tint: colors.accent.blue, Icon: Video, label: 'Meeting' },
+    CALL: { tint: colors.accent.yellow, Icon: Phone, label: 'Call' },
+    TASK: { tint: colors.accent.orange, Icon: CheckSquare, label: 'Task' },
+  };
+}
 
 function fmtTime(iso?: string): string {
   if (!iso) return '';
@@ -73,9 +85,12 @@ function stripHtml(html?: string): string {
  * the activity has a hubspotUrl.
  */
 function ActivityRow({ activity }: { activity: any }) {
+  const colors = useColors();
   const [expanded, setExpanded] = useState(false);
+  const [hover, setHover] = useState(false);
 
-  const tile = TYPE_TILE[activity.activityType] ?? TYPE_TILE.NOTE;
+  const tiles = typeTile(colors);
+  const tile = tiles[activity.activityType] ?? tiles.NOTE;
   const Icon = tile.Icon;
   const isEmail =
     activity.activityType === 'EMAIL' || activity.activityType === 'INCOMING_EMAIL';
@@ -91,8 +106,9 @@ function ActivityRow({ activity }: { activity: any }) {
 
   return (
     <div
-      className="hover:bg-muted/40 transition-colors cursor-pointer"
       onClick={() => setExpanded((v) => !v)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -101,57 +117,76 @@ function ActivityRow({ activity }: { activity: any }) {
           setExpanded((v) => !v);
         }
       }}
+      style={{
+        cursor: 'pointer',
+        background: hover ? colors.bg.cardAlt : 'transparent',
+        transition: 'background 100ms linear',
+      }}
     >
-      <div className="flex items-start gap-3 p-3">
+      <div className="flex items-start gap-3" style={{ padding: 12 }}>
         <div
-          className="w-9 h-9 rounded-md flex items-center justify-center shrink-0 relative"
-          style={{ backgroundColor: tile.bg }}
+          className="flex items-center justify-center shrink-0 relative"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 4,
+            background: `${tile.tint}15`,
+            border: `1px solid ${tile.tint}40`,
+          }}
         >
           <Icon className="w-4 h-4" style={{ color: tile.tint }} />
           {isEmail && direction ? (
             <div
-              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center border-2 border-background"
+              className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center"
               style={{
-                backgroundColor: direction === 'outbound' ? '#ea580c' : '#059669',
+                width: 14,
+                height: 14,
+                borderRadius: 999,
+                border: `2px solid ${colors.bg.card}`,
+                backgroundColor: direction === 'outbound' ? colors.accent.orange : colors.accent.green,
               }}
             >
               {direction === 'outbound' ? (
-                <ArrowUpRight className="w-2 h-2 text-white" />
+                <ArrowUpRight className="w-2 h-2" style={{ color: '#fff' }} />
               ) : (
-                <ArrowDownLeft className="w-2 h-2 text-white" />
+                <ArrowDownLeft className="w-2 h-2" style={{ color: '#fff' }} />
               )}
             </div>
           ) : null}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
-            <p className="text-[11px] text-muted-foreground truncate">
-              <span className="font-medium text-foreground/70">{tile.label}</span>
+            <p className="truncate" style={{ fontSize: 11, color: colors.text.muted }}>
+              <span style={{ fontWeight: 500, color: colors.text.secondary }}>{tile.label}</span>
               {direction ? ` · ${direction}` : ''}
               {activity.ownerName ? ` · ${activity.ownerName}` : ''}
               {activity.companyName ? ` · ${activity.companyName}` : ''}
             </p>
-            <p className="text-[10px] text-muted-foreground whitespace-nowrap">
+            <p
+              className="whitespace-nowrap"
+              style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}
+            >
               {fmtTime(activity.activityDate)}
             </p>
           </div>
           {activity.subject ? (
             <p
-              className={
-                'text-sm font-medium text-foreground mt-0.5 ' +
-                (expanded ? '' : 'truncate')
-              }
+              className={expanded ? '' : 'truncate'}
+              style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, marginTop: 2 }}
             >
               {activity.subject}
             </p>
           ) : null}
           {/* Preview (collapsed) or full body (expanded) */}
           {expanded && fullBody ? (
-            <p className="text-xs text-foreground/80 whitespace-pre-wrap mt-1.5 leading-relaxed">
+            <p
+              className="whitespace-pre-wrap"
+              style={{ fontSize: 12, color: colors.text.secondary, marginTop: 6, lineHeight: 1.6 }}
+            >
               {fullBody}
             </p>
           ) : activity.bodyPreview ? (
-            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+            <p className="line-clamp-2" style={{ fontSize: 12, color: colors.text.muted, marginTop: 2 }}>
               {activity.bodyPreview}
             </p>
           ) : null}
@@ -159,14 +194,16 @@ function ActivityRow({ activity }: { activity: any }) {
           {/* Expanded detail row: link-out affordances + expand/collapse chevron */}
           {(hasMore || activity.hubspotUrl || activity.clientId) && expanded ? (
             <div
-              className="flex items-center gap-2 mt-3 pt-2 border-t border-border/60"
+              className="flex items-center gap-3"
+              style={{ marginTop: 12, paddingTop: 8, borderTop: `1px solid ${colors.border.light}` }}
               // Stop clicks on the affordances from collapsing the row again.
               onClick={(e) => e.stopPropagation()}
             >
               {activity.clientId ? (
                 <Link
                   href={`/clients/${activity.clientId}`}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground hover:text-primary"
+                  className="inline-flex items-center gap-1"
+                  style={{ fontSize: 11, fontWeight: 500, color: colors.accent.blue }}
                 >
                   Open client
                   <ChevronUp className="w-3 h-3 rotate-45" />
@@ -177,13 +214,17 @@ function ActivityRow({ activity }: { activity: any }) {
                   href={activity.hubspotUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground hover:text-primary"
+                  className="inline-flex items-center gap-1"
+                  style={{ fontSize: 11, fontWeight: 500, color: colors.accent.blue }}
                 >
                   Open in HubSpot
                   <ExternalLink className="w-3 h-3" />
                 </a>
               ) : null}
-              <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+              <span
+                className="ml-auto inline-flex items-center gap-1"
+                style={{ fontSize: 11, color: colors.text.muted }}
+              >
                 <ChevronUp className="w-3 h-3" />
                 Collapse
               </span>
@@ -192,7 +233,10 @@ function ActivityRow({ activity }: { activity: any }) {
 
           {/* Collapsed-state hint if there's more to see */}
           {hasMore && !expanded ? (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground mt-1.5 font-medium">
+            <span
+              className="inline-flex items-center gap-1"
+              style={{ fontSize: 10, color: colors.text.muted, marginTop: 6, fontWeight: 500 }}
+            >
               <ChevronDown className="w-3 h-3" />
               Read more
             </span>
@@ -217,6 +261,7 @@ function bucketOf(iso?: string): Bucket {
 }
 
 export default function GlobalActivityPage() {
+  const colors = useColors();
   const [filter, setFilter] = useState<FilterKey>('all');
 
   // Always fetch outbound/all in one query, and incoming emails in a second
@@ -269,21 +314,60 @@ export default function GlobalActivityPage() {
     { key: 'TASK', label: 'Tasks' },
   ];
 
+  // Summary counts by canonical type for the StatTile row.
+  const countOf = (type: FilterKey) =>
+    sorted.filter((a: any) =>
+      type === 'EMAIL'
+        ? a.activityType === 'EMAIL' || a.activityType === 'INCOMING_EMAIL'
+        : a.activityType === type,
+    ).length;
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-6 space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-          <ActivityIcon className="w-4 h-4 text-foreground" />
+        <div
+          className="flex items-center justify-center"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 4,
+            background: colors.bg.cardAlt,
+            border: `1px solid ${colors.border.default}`,
+          }}
+        >
+          <ActivityIcon className="w-4 h-4" style={{ color: colors.text.secondary }} />
         </div>
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Activity</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 style={{ fontSize: 20, fontWeight: 300, color: colors.text.primary }}>Activity</h1>
+          <p style={{ fontSize: 13, color: colors.text.muted }}>
             Unified feed of everything happening across the company — HubSpot
             engagements, activity, and CRM changes.
           </p>
         </div>
       </div>
+
+      {/* Summary tiles */}
+      {!loading && sorted.length > 0 && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+            gap: 1,
+            background: colors.border.default,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 4,
+            overflow: 'hidden',
+          }}
+        >
+          <StatTile label="Total" value={sorted.length} accent={colors.text.muted} />
+          <StatTile label="Emails" value={countOf('EMAIL')} accent={colors.accent.orange} />
+          <StatTile label="Meetings" value={countOf('MEETING')} accent={colors.accent.blue} />
+          <StatTile label="Notes" value={countOf('NOTE')} accent={colors.accent.purple} />
+          <StatTile label="Calls" value={countOf('CALL')} accent={colors.accent.yellow} />
+          <StatTile label="Tasks" value={countOf('TASK')} accent={colors.accent.orange} />
+        </div>
+      )}
 
       {/* Filter chips */}
       <div className="flex flex-wrap gap-2">
@@ -292,10 +376,10 @@ export default function GlobalActivityPage() {
           return (
             <Button
               key={f.key}
-              variant={active ? 'default' : 'outline'}
+              variant={active ? 'primary' : 'secondary'}
               size="sm"
+              accent={colors.accent.blue}
               onClick={() => setFilter(f.key)}
-              className="h-7 text-xs"
             >
               {f.label}
             </Button>
@@ -304,15 +388,13 @@ export default function GlobalActivityPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        <div className="space-y-2">
+          <SkeletonText />
+          <SkeletonText />
+          <SkeletonText />
         </div>
       ) : sorted.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center text-sm text-muted-foreground">
-            No activity yet
-          </CardContent>
-        </Card>
+        <EmptyState icon={<ActivityIcon className="w-10 h-10" />} title="No activity yet" />
       ) : (
         <div className="space-y-6">
           {(['Today', 'Yesterday', 'This week', 'Earlier this month', 'Older'] as Bucket[]).map(
@@ -320,23 +402,18 @@ export default function GlobalActivityPage() {
               const rows = grouped.get(bucket) ?? [];
               if (rows.length === 0) return null;
               return (
-                <section key={bucket} className="space-y-2">
-                  <div className="flex items-center gap-2 px-1">
-                    <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      {bucket}
-                    </h2>
-                    <span className="text-[10px] text-muted-foreground">
-                      · {rows.length}
-                    </span>
+                <Panel key={bucket} title={`${bucket} · ${rows.length}`} padded={false}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {rows.map((a: any, idx: number) => (
+                      <div
+                        key={a._id}
+                        style={idx > 0 ? { borderTop: `1px solid ${colors.border.light}` } : undefined}
+                      >
+                        <ActivityRow activity={a} />
+                      </div>
+                    ))}
                   </div>
-                  <Card>
-                    <CardContent className="p-0 divide-y divide-border">
-                      {rows.map((a: any) => (
-                        <ActivityRow key={a._id} activity={a} />
-                      ))}
-                    </CardContent>
-                  </Card>
-                </section>
+                </Panel>
               );
             },
           )}

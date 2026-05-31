@@ -4,14 +4,18 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Panel,
+  Button,
+  StatusPill,
+  EmptyState,
+  Row,
+  SkeletonCard,
+} from '@/components/layouts';
 import {
   ArrowLeft,
   Building2,
   Calendar,
-  ExternalLink,
   Mail,
   Phone,
   User,
@@ -19,43 +23,37 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { HubSpotLink } from '@/components/HubSpotLink';
+import { useColors } from '@/lib/useColors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 export default function ContactDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const colors = useColors();
   const contactId = params.contactId as string;
-  
+
   const contact = useQuery(api.contacts.get, { id: contactId as any });
 
   if (contact === undefined) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
-            <p className="text-gray-500">Loading contact...</p>
-          </div>
-        </div>
+      <div style={{ maxWidth: 1152, margin: '0 auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }
 
   if (!contact) {
     return (
-      <div className="container mx-auto p-6">
-        <Button
-          variant="ghost"
-          onClick={() => router.back()}
-          className="mb-4"
-        >
-          <ArrowLeft className="size-4 mr-2" />
-          Back
-        </Button>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-gray-500">Contact not found</p>
-          </CardContent>
-        </Card>
+      <div style={{ maxWidth: 1152, margin: '0 auto', padding: 24 }}>
+        <div style={{ marginBottom: 16 }}>
+          <Button variant="ghost" onClick={() => router.back()}>
+            <ArrowLeft size={14} />
+            Back
+          </Button>
+        </div>
+        <EmptyState icon={<User size={40} />} title="Contact not found" />
       </div>
     );
   }
@@ -65,26 +63,42 @@ export default function ContactDetailPage() {
   const deals = contact.deals || [];
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <div className="mb-6">
-        <Button
-          variant="ghost"
-          onClick={() => router.back()}
-          className="mb-4"
-        >
-          <ArrowLeft className="size-4 mr-2" />
-          Back
-        </Button>
-        
-        <div className="flex items-start justify-between">
+    <div style={{ maxWidth: 1152, margin: '0 auto', padding: 24 }}>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 16 }}>
+          <Button variant="ghost" onClick={() => router.back()}>
+            <ArrowLeft size={14} />
+            Back
+          </Button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+            <h1
+              style={{
+                fontSize: 24,
+                fontWeight: 500,
+                color: colors.text.primary,
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
               {contact.name}
               {contact.hubspotUrl && <HubSpotLink url={contact.hubspotUrl} />}
             </h1>
             {contact.role && (
-              <div className="text-lg text-muted-foreground flex items-center gap-2">
-                <Briefcase className="size-4" />
+              <div
+                style={{
+                  fontSize: 13,
+                  color: colors.text.muted,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Briefcase size={14} />
                 {contact.role}
               </div>
             )}
@@ -92,181 +106,204 @@ export default function ContactDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 24 }}>
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {/* Contact Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Contact Information</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {contact.email && (
-                  <div>
-                    <div className="text-sm text-muted-foreground mb-1">Email</div>
-                    <div className="text-base flex items-center gap-2">
-                      <Mail className="size-4" />
-                      <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
-                        {contact.email}
-                      </a>
-                    </div>
-                  </div>
-                )}
-                {contact.phone && (
-                  <div>
-                    <div className="text-sm text-muted-foreground mb-1">Phone</div>
-                    <div className="text-base flex items-center gap-2">
-                      <Phone className="size-4" />
-                      <a href={`tel:${contact.phone}`} className="text-primary hover:underline">
-                        {contact.phone}
-                      </a>
-                    </div>
-                  </div>
-                )}
-                {contact.company && (
-                  <div>
-                    <div className="text-sm text-muted-foreground mb-1">Company</div>
-                    <div className="text-base flex items-center gap-2">
-                      <Building2 className="size-4" />
+          <Panel title="Contact Information" accent={colors.entityTypes.contact}>
+            <div>
+              {contact.email && (
+                <Row
+                  label="Email"
+                  value={
+                    <a
+                      href={`mailto:${contact.email}`}
+                      style={{ color: colors.entityTypes.contact, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <Mail size={14} />
+                      {contact.email}
+                    </a>
+                  }
+                />
+              )}
+              {contact.phone && (
+                <Row
+                  label="Phone"
+                  value={
+                    <a
+                      href={`tel:${contact.phone}`}
+                      style={{ color: colors.entityTypes.contact, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <Phone size={14} />
+                      {contact.phone}
+                    </a>
+                  }
+                />
+              )}
+              {contact.company && (
+                <Row
+                  label="Company"
+                  value={
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Building2 size={14} />
                       {contact.company}
-                    </div>
-                  </div>
-                )}
-                {contact.hubspotLifecycleStageName && (
-                  <div>
-                    <div className="text-sm text-muted-foreground mb-1">Lifecycle Stage</div>
-                    <Badge variant="outline">{contact.hubspotLifecycleStageName}</Badge>
-                  </div>
-                )}
-                {contact.lastContactedDate && (
-                  <div>
-                    <div className="text-sm text-muted-foreground mb-1">Last Contacted</div>
-                    <div className="text-base flex items-center gap-2">
-                      <Calendar className="size-4" />
+                    </span>
+                  }
+                />
+              )}
+              {contact.hubspotLifecycleStageName && (
+                <Row
+                  label="Lifecycle Stage"
+                  value={<StatusPill label={contact.hubspotLifecycleStageName} tone={colors.accent.orange} />}
+                />
+              )}
+              {contact.lastContactedDate && (
+                <Row
+                  label="Last Contacted"
+                  value={
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Calendar size={14} />
                       {new Date(contact.lastContactedDate).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-                {contact.lastActivityDate && (
-                  <div>
-                    <div className="text-sm text-muted-foreground mb-1">Last Activity</div>
-                    <div className="text-base flex items-center gap-2">
-                      <Calendar className="size-4" />
+                    </span>
+                  }
+                />
+              )}
+              {contact.lastActivityDate && (
+                <Row
+                  label="Last Activity"
+                  value={
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Calendar size={14} />
                       {new Date(contact.lastActivityDate).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                    </span>
+                  }
+                />
+              )}
+            </div>
+          </Panel>
 
           {/* Associated Companies */}
           {companies.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Associated Companies</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {companies.map((company: any) => (
-                    <Link
-                      key={company._id}
-                      href={`/companies/${company._id}`}
-                      className="block p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+            <Panel title="Associated Companies" accent={colors.entityTypes.contact}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {companies.map((company: any) => (
+                  <Link
+                    key={company._id}
+                    href={`/companies/${company._id}`}
+                    style={{
+                      display: 'block',
+                      padding: 12,
+                      border: `1px solid ${colors.border.default}`,
+                      borderRadius: 4,
+                      background: colors.bg.cardAlt,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: colors.text.primary,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
                     >
-                      <div className="font-medium flex items-center gap-2">
-                        <Building2 className="size-4" />
-                        {company.name}
-                        {company.hubspotUrl && <HubSpotLink url={company.hubspotUrl} />}
+                      <Building2 size={14} />
+                      {company.name}
+                      {company.hubspotUrl && <HubSpotLink url={company.hubspotUrl} />}
+                    </div>
+                    {company.website && (
+                      <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>
+                        {company.website}
                       </div>
-                      {company.website && (
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {company.website}
-                        </div>
-                      )}
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </Panel>
           )}
 
           {/* Associated Deals */}
           {deals.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Associated Deals</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {deals.map((deal: any) => (
-                    <Link
-                      key={deal._id}
-                      href={`/deals/${deal._id}`}
-                      className="block p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+            <Panel title="Associated Deals" accent={colors.entityTypes.contact}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {deals.map((deal: any) => (
+                  <Link
+                    key={deal._id}
+                    href={`/deals/${deal._id}`}
+                    style={{
+                      display: 'block',
+                      padding: 12,
+                      border: `1px solid ${colors.border.default}`,
+                      borderRadius: 4,
+                      background: colors.bg.cardAlt,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: colors.text.primary,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
                     >
-                      <div className="font-medium flex items-center gap-2">
-                        <TrendingUp className="size-4" />
-                        {deal.name}
-                        {deal.hubspotUrl && <HubSpotLink url={deal.hubspotUrl} />}
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-1 flex items-center gap-4">
-                        {deal.stageName && <span>{deal.stageName}</span>}
-                        {deal.amount && (
-                          <span>
-                            {new Intl.NumberFormat('en-US', {
-                              style: 'currency',
-                              currency: 'USD',
-                            }).format(deal.amount)}
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                      <TrendingUp size={14} />
+                      {deal.name}
+                      {deal.hubspotUrl && <HubSpotLink url={deal.hubspotUrl} />}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: colors.text.muted,
+                        marginTop: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 16,
+                      }}
+                    >
+                      {deal.stageName && <span>{deal.stageName}</span>}
+                      {deal.amount && (
+                        <span style={{ fontFamily: MONO }}>
+                          {new Intl.NumberFormat('en-US', {
+                            style: 'currency',
+                            currency: 'USD',
+                          }).format(deal.amount)}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </Panel>
           )}
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {/* HubSpot Information */}
           {contact.hubspotContactId && (
-            <Card>
-              <CardHeader>
-                <CardTitle>HubSpot Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div>
-                  <div className="text-muted-foreground">Contact ID</div>
-                  <div className="font-mono">{contact.hubspotContactId}</div>
-                </div>
+            <Panel title="HubSpot Information" accent={colors.accent.orange}>
+              <div>
+                <Row label="Contact ID" value={contact.hubspotContactId} mono />
                 {contact.lastHubSpotSync && (
-                  <div>
-                    <div className="text-muted-foreground">Last Synced</div>
-                    <div>{new Date(contact.lastHubSpotSync).toLocaleString()}</div>
-                  </div>
+                  <Row label="Last Synced" value={new Date(contact.lastHubSpotSync).toLocaleString()} />
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </Panel>
           )}
 
           {/* Notes */}
           {contact.notes && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm whitespace-pre-wrap">{contact.notes}</p>
-              </CardContent>
-            </Card>
+            <Panel title="Notes" accent={colors.entityTypes.contact}>
+              <p style={{ fontSize: 12, color: colors.text.primary, whiteSpace: 'pre-wrap' }}>
+                {contact.notes}
+              </p>
+            </Panel>
           )}
         </div>
       </div>
     </div>
   );
 }
-

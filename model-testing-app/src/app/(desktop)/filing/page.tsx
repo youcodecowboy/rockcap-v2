@@ -2,25 +2,27 @@
 
 import Link from 'next/link';
 import BulkUpload from '@/components/BulkUpload';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { FileText, CheckCircle2, Sparkles, FolderOpen, ClipboardList } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
+import { Panel, Button } from '@/components/layouts';
+import { FileText, CheckCircle2, Sparkles } from 'lucide-react';
 
 export default function FilingAgent() {
+  const colors = useColors();
+
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div style={{ background: colors.bg.light, minHeight: '100vh' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '32px 24px' }}>
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Document Filing</h1>
-            <p className="mt-1 text-gray-600">
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: colors.text.primary, margin: 0 }}>Document Filing</h1>
+            <p style={{ marginTop: 4, color: colors.text.muted, fontSize: 13 }}>
               Upload documents to organize, classify, and link to your knowledge checklist
             </p>
           </div>
           <Link href="/docs">
-            <Button className="bg-black text-white hover:bg-gray-800 flex items-center gap-2">
-              <FileText className="w-4 h-4" />
+            <Button variant="primary" accent={colors.text.primary}>
+              <FileText size={16} />
               View Library
             </Button>
           </Link>
@@ -34,68 +36,55 @@ export default function FilingAgent() {
           </div>
 
           {/* Right Column: Info Cards */}
-          <div className="space-y-4">
-            <Card>
-              <CardContent className="pt-5 pb-4">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  AI-Powered Filing
-                </h3>
-                <ul className="text-sm text-muted-foreground space-y-2">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span>Automatic document classification</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Panel title="AI-Powered Filing" accent={colors.accent.orange}>
+              <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: colors.text.secondary, margin: 0, padding: 0, listStyle: 'none' }}>
+                {[
+                  'Automatic document classification',
+                  'Smart folder suggestions',
+                  'Checklist matching & linking',
+                  'Duplicate detection & versioning',
+                ].map((item) => (
+                  <li key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <CheckCircle2 size={14} style={{ color: colors.accent.green, marginTop: 2, flexShrink: 0 }} />
+                    <span>{item}</span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span>Smart folder suggestions</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span>Checklist matching & linking</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span>Duplicate detection & versioning</span>
-                  </li>
-                </ul>
-              </CardContent>
-            </Card>
+                ))}
+              </ul>
+            </Panel>
 
-            <Card>
-              <CardContent className="pt-5 pb-4">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <ClipboardList className="w-4 h-4 text-blue-500" />
-                  Checklist Integration
-                </h3>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Documents are matched to your client's knowledge checklist. Look for the 
-                  <Sparkles className="w-3 h-3 text-amber-500 inline mx-1" />
-                  icon to see AI suggestions.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Linked documents automatically mark checklist items as fulfilled.
-                </p>
-              </CardContent>
-            </Card>
+            <Panel title="Checklist Integration" accent={colors.accent.blue}>
+              <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 12 }}>
+                Documents are matched to your client&apos;s knowledge checklist. Look for the
+                <Sparkles size={12} style={{ color: colors.accent.orange, display: 'inline', margin: '0 4px', verticalAlign: 'middle' }} />
+                icon to see AI suggestions.
+              </p>
+              <p style={{ fontSize: 11, color: colors.text.muted, margin: 0 }}>
+                Linked documents automatically mark checklist items as fulfilled.
+              </p>
+            </Panel>
 
-            <Card>
-              <CardContent className="pt-5 pb-4">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <FolderOpen className="w-4 h-4 text-purple-500" />
-                  Document Naming
-                </h3>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Documents are automatically named:
-                </p>
-                <code className="text-[10px] bg-muted p-2 rounded block font-mono">
-                  PROJECT-TYPE-INT/EXT-INITIALS-VER-DATE
-                </code>
-                <p className="text-[10px] text-muted-foreground mt-2">
-                  e.g. WIMBPARK-APPRAISAL-EXT-JS-V1.0-2026-01-12
-                </p>
-              </CardContent>
-            </Card>
+            <Panel title="Document Naming" accent={colors.accent.purple}>
+              <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 8 }}>
+                Documents are automatically named:
+              </p>
+              <code
+                style={{
+                  fontSize: 10,
+                  background: colors.bg.cardAlt,
+                  padding: 8,
+                  borderRadius: 4,
+                  display: 'block',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  color: colors.text.primary,
+                }}
+              >
+                PROJECT-TYPE-INT/EXT-INITIALS-VER-DATE
+              </code>
+              <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 8 }}>
+                e.g. WIMBPARK-APPRAISAL-EXT-JS-V1.0-2026-01-12
+              </p>
+            </Panel>
           </div>
         </div>
       </div>

@@ -5,6 +5,8 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
+import { useColors } from '@/lib/useColors';
+import { SkeletonText } from '@/components/layouts';
 import InboxSidebar, { type InboxFilter } from './components/InboxSidebar';
 import InboxItemList, { type InboxItem } from './components/InboxItemList';
 import InboxDetailPanel from './components/InboxDetailPanel';
@@ -92,8 +94,10 @@ function InboxPageContent() {
     [updateParams]
   );
 
+  const colors = useColors();
+
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-white">
+    <div className="flex h-[calc(100vh-4rem)]" style={{ background: colors.bg.base }}>
       {/* Left Panel */}
       <InboxSidebar
         activeFilter={activeFilter}
@@ -120,8 +124,8 @@ export default function InboxPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex-1 flex items-center justify-center h-[calc(100vh-4rem)]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+        <div className="flex-1 h-[calc(100vh-4rem)] p-6">
+          <SkeletonText lines={6} />
         </div>
       }
     >
