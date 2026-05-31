@@ -15,11 +15,17 @@ interface StickyApprovalFooterProps {
   onSkip: () => void;
   onPrev: () => void;
   onNext: () => void;
+  // Outreach-ready gate (2026-05-30). Shown in the `researched` state (before a
+  // cadence package exists). canMarkReady gates the accept button on a completed
+  // intel run existing; onMarkReady/onUnmarkReady drive the flag.
+  canMarkReady?: boolean;
+  onMarkReady?: () => void;
+  onUnmarkReady?: () => void;
 }
 
 export function StickyApprovalFooter(props: StickyApprovalFooterProps) {
   const colors = useColors();
-  const { prospect, positionInList, totalInList, stateLabel, onApprove, onDeny, onRequestRevision, onSkip, onPrev, onNext } = props;
+  const { prospect, positionInList, totalInList, stateLabel, onApprove, onDeny, onRequestRevision, onSkip, onPrev, onNext, canMarkReady, onMarkReady, onUnmarkReady } = props;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -31,6 +37,8 @@ export function StickyApprovalFooter(props: StickyApprovalFooterProps) {
   }, [onPrev, onNext]);
 
   const state = prospect?.prospectState ?? "drafted";
+  const outreachReadyAt: string | undefined = prospect?.outreachReadyAt;
+  const readyDate = outreachReadyAt ? outreachReadyAt.slice(0, 10) : "";
 
   return (
     <div style={{
@@ -54,6 +62,42 @@ export function StickyApprovalFooter(props: StickyApprovalFooterProps) {
             <button onClick={onRequestRevision} style={btnStyle(colors, "warning")}>Request Revision</button>
             <button onClick={onApprove} style={btnStyle(colors, "primary")}>Approve &amp; Schedule →</button>
           </>
+        ) : state === "researched" ? (
+          // Accept gate — the operator blesses the intel before any outreach is
+          // composed. Pre-accept: primary button (disabled until an intel run
+          // exists). Post-accept: a green reviewed pill + an unmark link.
+          outreachReadyAt ? (
+            <>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500,
+                color: colors.accent.green,
+                background: `${colors.accent.green}14`,
+                border: `1px solid ${colors.accent.green}40`,
+              }}>
+                Reviewed ✓ ready for outreach{readyDate ? ` · ${readyDate}` : ""}
+              </span>
+              <button
+                onClick={onUnmarkReady}
+                style={{ background: "none", border: "none", color: colors.text.muted, fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: "6px 4px" }}
+              >
+                Unmark
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={canMarkReady ? onMarkReady : undefined}
+              disabled={!canMarkReady}
+              title={canMarkReady ? "Accept the intel and open this prospect for outreach drafting" : "Run prospect-intel first — there is no intel to accept yet"}
+              style={{
+                ...btnStyle(colors, "primary"),
+                opacity: canMarkReady ? 1 : 0.5,
+                cursor: canMarkReady ? "pointer" : "not-allowed",
+              }}
+            >
+              Accept intel — ready for outreach →
+            </button>
+          )
         ) : (
           <span style={{ color: colors.text.muted, fontSize: 11 }}>State: {state} — actions vary per state (v1.2.1)</span>
         )}

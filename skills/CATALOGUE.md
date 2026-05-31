@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 90 tools across 20 domains as of the corporate-structure pass: adds structure.renderChart (render a StructureGraph to a styled ownership-only SVG + data-URI + high/med/low verdict) + companies.mapGroup (one-call group map: CH numbers + directors + appointmentsLinks — the starting point for the corporate-structure walk). Prior pass (P4 docgen): adds document.generate. Prior pass (lender-tier-conflict): adds companies.getLenderTierConflict. Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme. Prior pass (corporate-group charges): adds companies.getGroupCharges. Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 93 tools across 20 domains. Latest pass (outreach gating, 2026-05-30): adds `client.markOutreachReady` / `client.clearOutreachReady` / `client.listOutreachReady` — the operator "accept → ready for outreach" gate between intel-only `prospect-intel` and the new `outreach-draft` skill (see [`skills/prospect-pipeline-gates.md`](./skills/prospect-pipeline-gates.md)). Prior pass (corporate-structure): adds structure.renderChart (render a StructureGraph to a styled ownership-only SVG + data-URI + high/med/low verdict) + companies.mapGroup (one-call group map: CH numbers + directors + appointmentsLinks — the starting point for the corporate-structure walk). Prior pass (P4 docgen): adds document.generate. Prior pass (lender-tier-conflict): adds companies.getLenderTierConflict. Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme. Prior pass (corporate-group charges): adds companies.getGroupCharges. Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -77,7 +77,7 @@ The deep-context tools are the spine:
 | `prospect.getDeepContext({clientId})` | **HEADLINE.** Comprehensive snapshot: prospect + contacts + cadences (split active/fired/queued) + replies + intel run + meetings + CH profile + clientIntelligence + touchpoints + deals + projects + pending approvals + summary block with 22 at-a-glance counts. FIRST tool call for any prospect-scoped question. |
 | `prospect.transitionState({clientId, newState})` | Move a prospect through the 9-state machine: researched / drafted / needs_revision / active / replied / engaged / promoted / parked / lost. `researched` is set by prospect-intel on completion (intel exists, no outreach drafted yet); later states are operator-driven. Side effect: schedules HubSpot push-back via existing sync. |
 
-### `client.*` — Client workflows (alias of prospect; for active clients) (5)
+### `client.*` — Client workflows (alias of prospect; for active clients) (8)
 
 | Tool | Purpose |
 |---|---|
@@ -86,6 +86,9 @@ The deep-context tools are the spine:
 | `client.list({filters?})` | List clients with optional filters. Use sparingly — `prospect.getDeepContext` is the recommended path for any specific entity. |
 | `client.getStats({clientId})` | Aggregate counts for a client. Subsumed by `getDeepContext.summary`; use only if you don't need the full context. |
 | `client.activate({clientId})` | **Sprint I.** Promote a prospect to active client. Atomic: patches `clients.status: "active"`, transitions `prospectState: "promoted"` (with audit fields), schedules HubSpot lifecycleStage push. Idempotent — returns `idempotent: true` if already active. The natural firing point is deal-intake: the moment a borrower's first meaningful doc batch arrives + a project is created. Distinct from `prospect.transitionState` (which only flips prospectState; doesn't touch client.status). |
+| `client.markOutreachReady({clientId})` | **Outreach gate (2026-05-30).** Accept a prospect's intel and mark it ready for outreach (sets `outreachReadyAt`/`outreachReadyBy`). The gate between `prospect-intel` (intel-only) and `outreach-draft` (drafts the package). Rejects (`no_completed_intel_run`) if no completed prospect-intel run exists. Idempotent. Does NOT draft, change `prospectState`, or touch HubSpot. Normally driven by the UI accept button; use the tool only when explicitly asked. See [`skills/prospect-pipeline-gates.md`](./skills/prospect-pipeline-gates.md). |
+| `client.clearOutreachReady({clientId})` | Clear the ready flag (the "unmark" action). Meaningful only pre-draft. Idempotent. |
+| `client.listOutreachReady()` | List prospects that are ready for outreach but NOT yet drafted (`outreachReadyAt` set AND `prospectState` still `researched`). Exactly the pool `outreach-draft` enumerates for "draft all outreach for ready companies"; drafted prospects drop out automatically (no double-draft). |
 
 ### `clients.*` — Bulk client field patching (1)
 

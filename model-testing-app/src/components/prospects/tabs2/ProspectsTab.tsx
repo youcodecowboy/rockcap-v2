@@ -34,11 +34,18 @@ export function ProspectsTab() {
   const colors = useColors();
   const router = useRouter();
   const [holdingOpen, setHoldingOpen] = useState(false);
+  // Outreach-ready filter (2026-05-30): surface the "accepted, awaiting draft"
+  // pool at a glance. Reads outreachReadyAt off the client rows already in scope.
+  const [readyOnly, setReadyOnly] = useState(false);
 
   const allClients = useQuery(api.clients.list as any, {}) ?? [];
-  const prospects = (allClients as any[]).filter(
+  const allProspects = (allClients as any[]).filter(
     (c) => c.status === "prospect" && c.prospectState,
   );
+  const readyCount = allProspects.filter((c) => c.outreachReadyAt).length;
+  const prospects = readyOnly
+    ? allProspects.filter((c) => c.outreachReadyAt)
+    : allProspects;
 
   // Bucket prospects by rung key. A client maps to exactly one rung via rungFor.
   const byRung = new Map<string, any[]>();
@@ -64,6 +71,35 @@ export function ProspectsTab() {
         overflow: "hidden",
       }}
     >
+      {/* Filter bar — "Ready for outreach" surfaces the accepted-but-not-drafted
+          pool (clients with outreachReadyAt set). */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "8px 14px", borderBottom: `1px solid ${colors.border.default}`,
+        background: colors.bg.card,
+      }}>
+        <button
+          onClick={() => setReadyOnly((v) => !v)}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "5px 10px", borderRadius: 4, cursor: "pointer",
+            fontSize: 10, fontWeight: 500, letterSpacing: "0.04em",
+            textTransform: "uppercase" as const,
+            border: `1px solid ${readyOnly ? colors.accent.green : colors.border.default}`,
+            background: readyOnly ? `${colors.accent.green}14` : colors.bg.card,
+            color: readyOnly ? colors.accent.green : colors.text.muted,
+          }}
+        >
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: colors.accent.green }} />
+          Ready for outreach
+          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10 }}>{readyCount}</span>
+        </button>
+        {readyOnly && (
+          <span style={{ fontSize: 10, color: colors.text.muted }}>
+            Showing accepted prospects awaiting outreach draft
+          </span>
+        )}
+      </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
@@ -80,7 +116,7 @@ export function ProspectsTab() {
           {prospects.length === 0 && (
             <tr>
               <td colSpan={7} style={{ ...tdStyle(colors), color: colors.text.muted, textAlign: "center" }}>
-                No prospects in the ladder yet.
+                {readyOnly ? "No prospects marked ready for outreach yet." : "No prospects in the ladder yet."}
               </td>
             </tr>
           )}
@@ -177,7 +213,25 @@ function ProspectRow({ client, rungLabel, colors, router }: { client: any; rungL
       </td>
       <td style={tdStyle(colors)}>{dealTypeLabel(client.dealType)}</td>
       <td style={tdStyle(colors)}>{client.dealSizeRange ?? "—"}</td>
-      <td style={tdStyle(colors)}>{rungLabel}</td>
+      <td style={tdStyle(colors)}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {rungLabel}
+          {client.outreachReadyAt && (
+            <span
+              title={`Accepted for outreach${client.outreachReadyAt ? ` · ${String(client.outreachReadyAt).slice(0, 10)}` : ""}`}
+              style={{
+                fontSize: 9, fontWeight: 600, letterSpacing: "0.04em",
+                padding: "1px 5px", borderRadius: 2,
+                color: colors.accent.green,
+                background: `${colors.accent.green}14`,
+                border: `1px solid ${colors.accent.green}40`,
+              }}
+            >
+              READY ✓
+            </span>
+          )}
+        </span>
+      </td>
       <td style={{ ...tdStyle(colors), color: colors.text.muted }}>—</td>
       <td style={{ ...tdStyle(colors), color: colors.text.muted }}>—</td>
       <td style={tdStyle(colors)}>

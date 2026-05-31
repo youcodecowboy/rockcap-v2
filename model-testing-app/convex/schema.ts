@@ -106,6 +106,16 @@ export default defineSchema({
       v.literal("unclassifiable"),
     )),
     dealSizeRange: v.optional(v.string()),
+
+    // ── Outreach-ready gate (2026-05-30) ──
+    // Lightweight internal "operator has accepted the intel; this prospect may
+    // now be drafted for outreach" flag. NOT a prospectState (the state machine
+    // is untouched) and NOT a HubSpot lifecycle change. Set by
+    // clients.markOutreachReady once a completed prospect-intel run exists;
+    // cleared by clients.clearOutreachReady. The outreach-draft skill enumerates
+    // ready-but-not-yet-drafted prospects via clients.listOutreachReady.
+    outreachReadyAt: v.optional(v.string()), // ISO timestamp of the accept
+    outreachReadyBy: v.optional(v.id("users")), // operator who accepted
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])

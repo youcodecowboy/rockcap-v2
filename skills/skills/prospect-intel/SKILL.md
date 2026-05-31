@@ -1,6 +1,6 @@
 # prospect-intel
 
-Step 1 of the deal lifecycle. Cold-prospect intelligence and template-mapped reachout.
+Step 1 of the deal lifecycle. Cold-prospect intelligence (intel-only — outreach is gated behind an operator accept and drafted by the separate `outreach-draft` skill; see `../prospect-pipeline-gates.md`).
 
 **v2 hardening (2026-05-25):** the skill now produces a deep multi-source intel report (the `intelMarkdown` field on the skillRun, rendered by the `/prospects/[id]` Intel tab) drawing from Companies House, the prospect's website, web search for company + director signals, and the existing RockCap intelligence base. The narrative `brief` is still the 2-paragraph operator-facing TL;DR; `intelMarkdown` is the full artefact.
 
@@ -36,26 +36,15 @@ Optional but useful:
 - **On `status: "already_running"`** (v1.2): a parallel run is in-flight. Surface the priorRunId + priorRunOwnerId + priorRunStartedAgoMinutes and ASK the operator before starting a competing run. The race-prevention contract: only one prospect-intel run per CH number at a time.
 - **Why 7 days**: Companies House charge filings can land any day; a new filing often justifies a fresh DNA analysis. Shorter than 7 risks blocking legitimate refreshes; longer leaves stale conclusions live.
 
-## Cadence package
+## Outreach is gated — this skill does NOT draft (2026-05-30)
 
-When the workflow produces a draft outreach (step 11), it does NOT stop at the initial message. Instead it produces a **cadence package**: the initial outreach plus 3 follow-ups, all pre-drafted at queue time, with sequential send dates.
+**prospect-intel is intel-only.** It no longer composes or queues the cold-outreach cadence package. The package is produced later, by the separate **`outreach-draft`** skill, and only after the operator has reviewed the intel and clicked **"Accept — ready for outreach"** on the prospect detail page (which sets `outreachReadyAt`). See `../prospect-pipeline-gates.md` for the four-gate flow end to end.
 
-**Why upfront drafting:** the follow-ups reference the initial pitch and intel. Drafting them at queue time keeps the narrative coherent (each follow-up builds on the prior); deferring composition to fire-time loses that thread. Operator approves the full package once (via the v1.2 `/prospects/[id]` Approve & Schedule button, which fires `cadences.approvePackage`).
+**Why the split.** Whether the old step 11 drafted a package used to track whether Apollo returned an email — not anything about the prospect — so the initial batch was non-deterministic (some prospects got 4 cadence rows, some got 0). Making the initial run uniform intel-only and putting an explicit operator accept gate before any drafting removes that variance and keeps outreach deliberate rather than a side effect of research.
 
-**Package shape (4 rows in `cadences`, all sharing a `packageId`):**
+**What moved to `outreach-draft`:** the cadence-package composition (4 touches, same `packageId`), the lender-tier gate (`companies.getLenderTierConflict` — park Tier 1 / soften Tier 2), the contactless held-draft rule (Phase 3 `needs_contact`), and the outreach references (`template-mapped-reachout`, `rockcap-outreach-voice`, `hook-ladder`, `compose-outreach-hook`, regional/sender-geography). prospect-intel keeps the intel references only.
 
-| Order | Type | nextDueAt offset from now | Content angle |
-|---|---|---|---|
-| 1 | `prospect_followup` | +0 days (immediate, post-approval) | The cold outreach itself (drawn from template-mapped-reachout reference) |
-| 2 | `prospect_followup` | +5 days | Soft nudge referencing the initial; new angle (one fresh piece of intel from sections 2-6 of the report) |
-| 3 | `prospect_followup` | +12 days | Stronger close referencing a specific scheme or charge filing (cite from sections 4-5) |
-| 4 | `prospect_followup` | +30 days | Final touch with a "should I stop reaching out?" close |
-
-**Implementation:** in workflow step 11, after composing the four messages, call `cadence.create` four times (one per row). Same `packageId` (a UUID generated at step start). `packageOrder` 1-4. Each row carries `preDraftedTouch: { subject, bodyText, bodyHtml }`. `isActive: true`. `sourceSkillRunId` set to the current runId. `packageApprovalStatus: "pending"` by default (v1.2 single-gate approval model).
-
-**Contactless held drafts (Phase 3):** the package is composed and queued **whether or not** a verified contact email exists. When one exists, pass `contactId` and the rows land `pending` as above. When none exists, **omit `contactId`** on all four calls: `cadence.create` then forces the rows to `isActive: false` + `packageApprovalStatus: "needs_contact"` + `needsContact: true` — a held draft that is reviewable on the board but that the dispatcher will never fire (it polls only active + approved rows). Step 11 also records a `no_contact` gap in that case. The drafts are never blocked by a missing contact; they are held until one is attached.
-
-If a reply arrives at any point, the cadence engine cancels all remaining package members automatically (via the by_contact_active index lookup). No skill action needed.
+**The invariant is unchanged:** no autonomous outreach. `outreach-draft` still lands every touch as a `pending` cadence that the operator approves via the existing Approve & Schedule button before anything fires.
 
 ## Outputs
 
@@ -64,9 +53,10 @@ Persisted to Convex via the MCP tool surface:
 1. A `clients` row in `status='prospect'` if one does not already exist for the matched company, OR an update to the existing prospect's `clientIntelligence` row. The clients row is linked via `skillRun.complete({linkedClientId})`.
 2. An updated `clientIntelligence` with sections: identity (legal name, trading names, registered address, incorporation date), key people (PSCs, officers), lender DNA summary (the charges-derived view), and an AI summary.
 3. Where useful, `knowledgeItems` for specific extracted figures (turnover, ebitda, headcount if visible from HubSpot Beauhurst metadata).
-4. Optional: a draft outreach email staged as a pending `approvals` row with `entityType: "client_communication"`. Subject and body composed using the template-mapped reachout reference. Only created if `triggerContext` makes a reachout plausible.
+4. **No outreach.** This skill does not stage any draft outreach, approval, or cadence (changed 2026-05-30 — see "Outreach is gated" above). Outreach is composed by `outreach-draft` after the operator accepts the intel.
 5. **v1.2 hardened:** the rich markdown `intelMarkdown` field on the skillRun row, written via `skillRun.complete({intelMarkdown})`. Structure per `references/intel-report-template.md`.
-6. **Prospect state:** the skill sets `prospectState: "researched"` on completion (via `prospect.transitionState`, step 12), reflecting that intel now exists for this prospect. It only sets `researched` if the prospect has no later state yet — it never downgrades a prospect already in `drafted`/`active`/etc. Later transitions are operator-driven: once the operator approves the produced cadence package, the CRM Approve button (`cadences.approvePackage`) and the reply event processor advance the state through `drafted` → `active` and beyond.
+6. **Prospect state:** the skill sets `prospectState: "researched"` on completion (via `prospect.transitionState`, step 12), reflecting that intel now exists for this prospect. It only sets `researched` if the prospect has no later state yet — it never downgrades a prospect already in `drafted`/`active`/etc. Later transitions are operator-driven: the operator clicks "Accept — ready for outreach" (sets `outreachReadyAt`), `outreach-draft` then composes the package and moves the prospect to `drafted`, and the CRM Approve button (`cadences.approvePackage`) plus the reply event processor advance it through `active` and beyond.
+6b. **Definition of Done manifest (2026-05-30):** the last section of `intelMarkdown` is a fixed `## Definition of Done` checklist (step 12) — one line per deliverable, each `DONE` or `SKIPPED — reason`, ending with the fixed `Outreach: not drafted — pending operator accept` line. Same shape every run, so the operator can eyeball completeness before accepting.
 
 7. **Draft per-scheme enrichment (v1.2.5):** one `prospectSchemes` row per live SPV, written via `companies.upsertProspectScheme` in step 10b. Each row is a draft (`operatorConfirmed: false`) containing the best available estimate of what the scheme is building — type, unit count, GDV range, planning references, confidence label, and source URLs. The operator confirms each row in the prospect detail Track Record tab; confirmed rows are never clobbered by a re-run.
 
@@ -123,24 +113,34 @@ What it does not do:
 
 10b. **Enrich live schemes (Track Record).** Load `references/scheme-from-charges.md` and follow it. Call `companies.getProspectSchemes({clientId})` to get the group's live schemes (the charge-bearing SPVs), then for the 5-7 most recent run the deep address → planning/web research and persist a draft estimate per scheme via `companies.upsertProspectScheme` (operatorConfirmed defaults false; the operator confirms in the Track Record tab). Estimates only, every figure cited. This populates the prospect detail Track Record tab.
 
-11. **Compose the cadence package** (unless a reachout is genuinely inappropriate, or the lender-tier gate parks it). **First, the lender-tier gate:** call `companies.getLenderTierConflict({clientId})` (source of truth `../../shared-references/lender-tiers.md`). If `action: "park"` (a Tier 1 / favourite lender such as Quantum), do NOT draft a cold package; this is a stop condition, and the prospect detail raises a "Parked — Tier 1 lender" flag. If `action: "soften"` (Tier 2), force the hook to the generic-market rung and avoid any scheme- or charge-specific reference. Otherwise: load `references/template-mapped-reachout.md`, select the canonical template by lender DNA, write the touch-1 hook via the `compose-outreach-hook` sub-skill (`../../sub-skills/compose-outreach-hook.md`) and the hook ladder (`../../shared-references/hook-ladder.md`), in Alex's voice (`../../shared-references/rockcap-outreach-voice.md`), and compose all four touches per the `## Cadence package` section above. Then queue the package via `cadence.create` (four calls, same `packageId`, `packageOrder` 1-4). The contact situation decides HOW the rows land — not WHETHER they are created:
+11. **Outreach is gated — do NOT draft in this run (2026-05-30).** The cadence package, the lender-tier gate, and the contactless held-draft rule all moved to the `outreach-draft` skill. Do not call `companies.getLenderTierConflict`, do not compose touches, do not call `cadence.create`. Outreach is produced only after the operator reviews this intel and clicks **"Accept — ready for outreach"** on the prospect detail page (which sets `outreachReadyAt`); a later session then runs `outreach-draft` for the ready prospects. The Apollo email status you captured in step 8 still matters — it travels on the contacts you created and `outreach-draft` reads it to decide contactless-vs-addressed — but nothing is drafted here. The final manifest line (step 12) records `Outreach: not drafted — pending operator accept`.
 
-    - **Verified contact email exists** → pass `contactId` on every `cadence.create` call. The rows land with `packageApprovalStatus: "pending"` (the v1.2 single-gate model); the operator approves the package via the CRM detail page.
-    - **No usable contact email** (Apollo `unavailable`/`not found`, or `emailStatus` blocks send) → **omit `contactId`** on every `cadence.create` call. The rows land **contactless**: the mutation forces `isActive: false` + `packageApprovalStatus: "needs_contact"` + `needsContact: true`, so the drafts are fully reviewable on the board but the dispatcher can never fire them. **Also record a `no_contact` gap** (`kind: "missing_data"`) so the operator is prompted to attach a verified contact, which makes the package fireable. Do NOT stop — the drafts are the deliverable.
+12. **Return + Definition-of-Done manifest.** First append a `## Definition of Done` section to the END of `intelMarkdown` (no schema change — it is part of the report). Emit it on **every** run, the same fixed checklist each time, each line either `DONE` or `SKIPPED — {reason}`:
 
-    **Stop conditions (no package at all):** only skip drafting when a reachout is genuinely not warranted — no trigger reason, a dissolved company, or a recent outbound send still awaiting a reply (see `## What goes wrong`). In those cases, say so and stop; missing contact is NOT one of these — it produces a held draft, not a stop.
+    ```
+    ## Definition of Done
+    - Onboarded (clients row + CH number): DONE / SKIPPED — reason
+    - CH synced + group walked: DONE / SKIPPED — reason
+    - Structure graph + chart embedded: DONE / SKIPPED — reason
+    - Contact per key person (+ Apollo status each): DONE / SKIPPED — reason
+    - 9 report sections present: DONE / SKIPPED — reason
+    - Per-scheme Track Record rows: DONE / SKIPPED — reason
+    - Lender DNA from the group book: DONE / SKIPPED — reason
+    - dealType + dealSizeRange set: DONE / SKIPPED — reason
+    - Gaps surfaced as chips: DONE / SKIPPED — reason
+    - Outreach: not drafted — pending operator accept (mark "Ready for outreach")
+    ```
 
-    The v1.2.4 fire-time email guard remains intact in both branches: even an approved package will not send until the target contact has a valid, non-blocked email — that is the point of the held `needs_contact` state.
+    The last line is fixed text on every run (outreach is gated, never drafted here). The "contact per key person" and "structure graph + chart" lines stay mandatory manifest items (the v3.1 People-tab contract + the structure chart). A line is `SKIPPED` only when the underlying step genuinely could not run (e.g. CH API unavailable) — record the reason, never silently drop the line.
 
-12. **Return**. Call `skillRun.complete` with:
+    Then call `skillRun.complete` with:
     - `status: "complete"` if everything ran, or `"complete_with_gaps"` if any gap was surfaced
     - `brief`: two-paragraph narrative summary (operator-facing TL;DR — what we found, what we recommend)
-    - `intelMarkdown`: the full report from step 10, built per `references/intel-report-template.md`
+    - `intelMarkdown`: the full report from step 10 **plus the Definition of Done section** appended at the end
     - `linkedClientId`: the clients row id
-    - `linkedApprovalIds`: any approvals staged in step 11
     - `gaps`: any gaps captured along the way
 
-    **Then set the prospect state.** After `skillRun.complete` returns, call `prospect.transitionState({ clientId, newState: "researched" })` to mark that intel now exists for this prospect. Guard against downgrade: only do this if the prospect has no later state yet (i.e., `prospectState` is unset or already `researched`). If the prospect is already in `drafted`, `active`, or any later state — because a prior run drafted a cadence or the operator has advanced it — do NOT call this; leave the later state intact. All transitions past `researched` are operator-driven (CRM Approve button + reply processor); the skill only owns this one initial transition.
+    **Then set the prospect state.** After `skillRun.complete` returns, call `prospect.transitionState({ clientId, newState: "researched" })` to mark that intel now exists for this prospect. Guard against downgrade: only do this if the prospect has no later state yet (i.e., `prospectState` is unset or already `researched`). If the prospect is already in `drafted`, `active`, or any later state, do NOT call this; leave the later state intact. All transitions past `researched` are operator-driven (the Accept gate, then `outreach-draft`, then the CRM Approve button + reply processor); the skill only owns this one initial transition.
 
 ## Style rules
 
@@ -160,19 +160,14 @@ This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalen
 - `companiesHouse:getCompanyByNumber` (Convex query) — for step 2 sync check
 - `client.list`, `client.get`, `client.create`, `client.checkExists` — for step 3
 - `intelligence.getClientIntelligence`, `intelligence.updateClientIntelligence`, `intelligence.addKnowledgeItem`, `intelligence.searchLenders`, `intelligence.searchPeople` — for steps 3, 9, 10
-- `contact.get`, `contact.getByClient` — for step 11 contact resolution
-- `approval.create` — for step 11 (staged reachout)
-- `cadence.create` — for step 11 (cadence package, 4 calls)
+- `contact.get`, `contact.getByClient`, `contact.create`, `contact.update` — for step 8 (contact per key person + Apollo enrichment)
 - `apollo.findEmail` — for step 8 (per-director email discovery; the v1.2.3 capability; cached 30 days at v1.2.4)
 - `companies.syncCompaniesHouse` — for step 2 (CH profile + charges sync)
 - `companies.getOfficerAppointments` — for step 8b (corporate-group mapping; consumes the `appointmentsLink` persisted on each officer row by step 2, via the `resolve-related-entities` sub-skill)
-- `contact.getByClient` — for step 11 (resolve the prospect's contact for cadence wiring)
 - `clients.setProspectFacts` — for step 10 (populate structured prospect facts on the clients row; v1.2.4)
 - `companies.getProspectSchemes` — for step 10b (read the group's live schemes + candidate addresses parsed from charge particulars).
 - `companies.upsertProspectScheme` — for step 10b (persist the per-scheme "what they're building" draft estimate; operator confirms in the Track Record tab).
-- `companies.getLenderTierConflict` — for step 11 (park Tier 1 / soften Tier 2 before drafting; drives the lender-tier prospect flag).
-
-**Important — cadence email guard (v1.2.4):** when you pass a `contactId`, `cadence.create` refuses to queue a cadence for a contact with no email OR with `emailStatus` in [questionable, spam_trap, invalid, bounced]. If you encounter this error in step 11, either fix the upstream contact via `apollo.findEmail` + `contact.update` (or pick a different contact) and retry, OR omit `contactId` to land a held `needs_contact` draft for board review (Phase 3 — see step 11). The guard surfaces the gap at cadence-creation time rather than at fire time. The guard does not apply when `contactId` is omitted (there is no contact to validate); the contactless held state is what prevents an unaddressed send.
+- `structure.renderChart` — for step 8b (render the corporate-structure chart embedded in the report).
 - `skillRun.start` (with dedup) — for step 1
 - `skillRun.complete` (with intelMarkdown) — for step 12
 - `prospect.transitionState` — for step 12 (set `prospectState: "researched"` on completion, guarded against downgrade)
@@ -191,7 +186,7 @@ The most common failure modes the skill is built to handle:
 1. **Multiple Companies House matches for the same name.** The skill surfaces top three by incorporation date and SIC code, asks the operator to pick.
 2. **No charges on file.** Either a very young company or one with no secured borrowings. The skill says so explicitly in section 4; classification falls back on company age, incorporation date, and visible Beauhurst/HubSpot signals.
 3. **A name that resolves to a dissolved company.** The skill checks status; if dissolved, returns sections 1 + 4 + a short brief and stops. Reactivation flow is not in this skill's scope.
-4. **A prospect that's already been touched recently.** The skill checks `touchpoints` for outbound contact in the last 90 days; if found, qualifies the reachout draft accordingly or stops if a recent send is still awaiting a reply.
+4. **A prospect that's already been touched recently.** The skill checks `touchpoints` for outbound contact in the last 90 days and notes any recent send + awaited reply in the report (section 6 / gaps), so the operator sees it before accepting. Acting on that signal (qualifying or skipping outreach) is `outreach-draft`'s job, not this skill's — intel only records it.
 5. **Sparse Companies House data (small or recently incorporated).** Classification confidence is reported low; the operator decides whether to proceed.
 6. **Website not findable (v2).** Phases 1-4 of the website scrape playbook fail. Section 2 is short, gap is recorded, web research in Phase A relies on press / planning queries alone.
 7. **Director name doesn't match real-person searches (v2).** Common for very common names or pseudonyms. Phase B logs "Not found in N queries" and moves on. Section 3 is sparse, gap recorded.
@@ -205,18 +200,14 @@ Loaded on demand during the workflow:
 
 - `references/lender-dna-from-charges.md` — how to extract lender DNA from the charge book and what patterns to look for. (Step 4.) Authored.
 - `references/bridging-vs-developer.md` — classification rules with signal-weighting table. (Step 5.) Authored.
-- `references/template-mapped-reachout.md` — the five canonical proven templates + Lender-DNA-to-template selection + the RCF check; defers tone to the outreach voice reference. (Step 11.) Authored.
 - **`references/intel-report-template.md`** (v2) — full markdown structure for the `intelMarkdown` field. (Step 10.)
 - **`references/website-scrape-playbook.md`** (v2) — URL discovery + page fetching + extraction format. (Step 6.)
 - **`references/web-research-playbook.md`** (v2) — exact queries for company-level + director-level + cross-reference research. (Steps 7, 8, 9.)
 - `../../shared-references/spv-structure-canon.md` — canonical UK property finance SPV chain (Sponsor → Borrower SPV → Lender SPV → Lender → Agent + Guarantors). Loaded when interpreting Companies House charges + officers + PSC data: helps recognise `Sponsor (X) Limited` patterns as scheme-specific SPVs, lender SPVs on charges, and parent-subsidiary structures. CH-perspective extraction guidance is in section "Perspective A — Companies House."
 - `../../sub-skills/resolve-related-entities.md` — the corporate-group walk. (Step 8b.) Given the prospect's persisted majority PSCs + key directors, walks each controller's other CH appointments via `companies.getOfficerAppointments` to surface likely sibling SPVs + the trading parent. Persists two things (surface-only; no rows created): the prose `borrower.related_entities` knowledge item, and the structured group CH-number set via `clients.setProspectFacts({relatedCompaniesHouseNumbers})` — the latter powers the CH-tab `companies.getGroupCharges` group-charges rollup. Authored.
 - `references/scheme-from-charges.md` — deep per-scheme enrichment (address → planning/web research → what they're building), persisted to `prospectSchemes`. (Step 10b.)
-- `../../shared-references/rockcap-outreach-voice.md` — canonical outreach voice (Alex Lundberg): opener skeleton, sign-off, verbatim quirks, hard rules. (Step 11.)
-- `../../shared-references/hook-ladder.md` — the 10 ranked hook types + the data each needs; fills the touch-1 hook. (Step 11.)
-- `../../shared-references/lender-tiers.md` — park (Tier 1) / soften (Tier 2) lender gate, checked before drafting. (Step 11.)
-- `../../shared-references/rockcap-regional-activity.md` and `sender-geography.md` — geographic hook data (rungs 4 and 3). (Step 11.)
-- `../../sub-skills/compose-outreach-hook.md` — selects and writes the touch-1 hook line from the prospect's intel. (Step 11.)
+
+The outreach references (`template-mapped-reachout`, `rockcap-outreach-voice`, `hook-ladder`, `lender-tiers`, `rockcap-regional-activity`, `sender-geography`, `compose-outreach-hook`) moved to the `outreach-draft` skill (2026-05-30). prospect-intel no longer loads them.
 
 ## Corpora (planned)
 

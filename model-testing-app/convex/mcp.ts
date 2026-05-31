@@ -91,6 +91,56 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Outreach-ready gate (2026-05-30) ──
+  // The operator "accept → ready for outreach" gate. prospect-intel is now
+  // intel-only; it never drafts. The operator reviews the intel and marks the
+  // prospect ready (sets outreachReadyAt). Then the outreach-draft skill drafts
+  // the cadence package for ready prospects. These tools are the agent-side
+  // surface of that gate. See skills/skills/prospect-pipeline-gates.md.
+  {
+    name: "client.markOutreachReady",
+    description:
+      "Accept a prospect's intel and mark it READY FOR OUTREACH. This is the operator gate between prospect-intel (intel-only) and outreach-draft (drafts the cadence package). Guard: rejects with `no_completed_intel_run` if no completed prospect-intel run exists for the client — you accept intel that exists. Idempotent (re-marking preserves the original accept timestamp). Does NOT draft anything and does NOT change prospectState or HubSpot lifecycle; it only sets outreachReadyAt/outreachReadyBy. Normally the operator clicks the UI accept button; use this tool only when explicitly asked to mark a prospect ready from the agent side.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string", description: "Convex id of the prospect clients row" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.clients.markOutreachReadyInternal, {
+        clientId: args.clientId,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "client.clearOutreachReady",
+    description:
+      "Clear the ready-for-outreach flag on a prospect (the 'unmark' action). Meaningful only pre-draft; once a prospect is drafted, readiness is moot (it has left the pool). Idempotent.",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string", description: "Convex id of the prospect clients row" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.clients.clearOutreachReadyInternal, {
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "client.listOutreachReady",
+    description:
+      "List prospects that are READY FOR OUTREACH but NOT YET DRAFTED (outreachReadyAt is set AND prospectState is still `researched`). This is exactly the pool the outreach-draft skill enumerates when the operator says 'draft all outreach for ready companies'. Drafted prospects drop out automatically (outreach-draft advances them past `researched`), so re-running the batch never double-drafts. Returns whole client rows.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (ctx, _userId, _args) => {
+      const result = await ctx.runQuery(api.clients.listOutreachReady, {});
+      return asText(result);
+    },
+  },
+
   // Project domain (the operational Deal table per ADR-0001)
   {
     name: "project.list",
