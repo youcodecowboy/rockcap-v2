@@ -2409,6 +2409,33 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  {
+    name: "intelligence.getKnowledgeItemsByClient",
+    description:
+      "Read back the structured knowledge items (facts) stored for a client — the AI-extracted (prospect-intel: lender DNA, classification, related entities) plus operator-entered facts that intelligence.addKnowledgeItem writes. Returns active items by default, sorted by category then fieldPath. Use this to read a client's captured facts without re-parsing the intel report's intelMarkdown (prospect.getDeepContext also now returns these under `knowledgeItems`). Optional category filter ('borrower'|'lender'|'project'|'financials'|'security'|'kyc'|'other') and status filter.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client" },
+        category: { type: "string", description: "Optional category filter (borrower / lender / project / financials / security / kyc / other)" },
+        status: {
+          type: "string",
+          enum: ["active", "flagged", "archived", "superseded"],
+          description: "Optional; defaults to active only",
+        },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.knowledgeLibrary.getKnowledgeItemsByClient, {
+        clientId: args.clientId,
+        category: args.category,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+
   // ── Operator context capture (2026-05-31) ──
   // The agent-side surface for the `client-context-capture` skill: a running
   // operator-knowledge reference (intelligence.appendContext) + a note lane
