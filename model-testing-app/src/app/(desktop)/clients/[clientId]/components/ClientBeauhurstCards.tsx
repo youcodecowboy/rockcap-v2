@@ -14,8 +14,8 @@ import { useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import { ExternalLink, Building2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useColors } from '@/lib/useColors';
+import { Panel, FlagChip, StatusPill, type FlagSeverity } from '@/components/layouts';
 
 interface Props {
   clientId: Id<'clients'>;
@@ -37,15 +37,16 @@ function fmtDate(iso?: string): string {
   return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
 }
 
-const SIGNAL_CATEGORIES: { key: string; label: string; tint: string }[] = [
-  { key: 'beauhurst_data_growth_signals', label: 'Growth', tint: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  { key: 'beauhurst_data_risk_signals', label: 'Risk', tint: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { key: 'beauhurst_data_innovation_signals', label: 'Innovation', tint: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { key: 'beauhurst_data_environmental_signals', label: 'Environmental', tint: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
-  { key: 'beauhurst_data_social_governance_signals', label: 'Social & gov', tint: 'bg-purple-50 text-purple-700 border-purple-200' },
+const SIGNAL_CATEGORIES: { key: string; label: string; severity: FlagSeverity }[] = [
+  { key: 'beauhurst_data_growth_signals', label: 'Growth', severity: 'ok' },
+  { key: 'beauhurst_data_risk_signals', label: 'Risk', severity: 'warn' },
+  { key: 'beauhurst_data_innovation_signals', label: 'Innovation', severity: 'info' },
+  { key: 'beauhurst_data_environmental_signals', label: 'Environmental', severity: 'ok' },
+  { key: 'beauhurst_data_social_governance_signals', label: 'Social & gov', severity: 'info' },
 ];
 
 export default function ClientBeauhurstCards({ clientId }: Props) {
+  const colors = useColors();
   const promotedCompanies = useQuery(api.companies.listByPromotedClient, { clientId });
   const primaryCompany = promotedCompanies?.[0];
 
@@ -69,14 +70,14 @@ export default function ClientBeauhurstCards({ clientId }: Props) {
   const accountsDate = md.beauhurst_data_date_of_accounts;
   const hasFinancials = turnover || ebitda || headcount || funding;
 
-  // Signals — flat list of {label, value, tint}
-  const signals: { label: string; value: string; tint: string }[] = [];
+  // Signals — flat list of {label, value, severity}
+  const signals: { label: string; value: string; severity: FlagSeverity }[] = [];
   for (const cat of SIGNAL_CATEGORIES) {
     const raw = md[cat.key];
     if (!raw) continue;
     for (const v of String(raw).split(';').slice(0, 3)) {
       const t = v.trim();
-      if (t) signals.push({ label: cat.label, value: t, tint: cat.tint });
+      if (t) signals.push({ label: cat.label, value: t, severity: cat.severity });
     }
   }
   const hasSignals = signals.length > 0;
@@ -87,141 +88,128 @@ export default function ClientBeauhurstCards({ clientId }: Props) {
     ? `https://find-and-update.company-information.service.gov.uk/company/${chId}`
     : null;
 
+  const labelStyle = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    color: colors.text.muted,
+  };
+
+  const linkStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    color: colors.accent.blue,
+    textDecoration: 'none',
+  };
+
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Section header */}
-      <div className="flex items-center gap-2 px-1">
-        <div className="w-5 h-5 rounded bg-blue-100 flex items-center justify-center">
-          <Building2 className="w-3 h-3 text-blue-600" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 2 }}>
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 4,
+            background: `${colors.accent.blue}15`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Building2 size={12} color={colors.accent.blue} />
         </div>
-        <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-          Beauhurst intel
-        </h2>
-        <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
-          CRM
-        </Badge>
+        <h2 style={{ ...labelStyle, fontWeight: 600, margin: 0 }}>Beauhurst intel</h2>
+        <StatusPill label="CRM" tone={colors.accent.blue} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Identity */}
         {hasIdentity ? (
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm">{primaryCompany.name}</CardTitle>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {[legalForm, stage].filter(Boolean).join(' · ') || '—'}
-              </p>
-            </CardHeader>
-            <CardContent className="pb-4 space-y-2 text-xs">
+          <Panel title={primaryCompany.name}>
+            <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 0, marginBottom: 12 }}>
+              {[legalForm, stage].filter(Boolean).join(' · ') || '—'}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
               {chUrl ? (
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Companies House</span>
-                  <a
-                    href={chUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 underline"
-                  >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: colors.text.muted }}>Companies House</span>
+                  <a href={chUrl} target="_blank" rel="noopener noreferrer" style={linkStyle}>
                     {chId}
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink size={12} />
                   </a>
                 </div>
               ) : null}
               {linkedin ? (
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">LinkedIn</span>
-                  <a
-                    href={linkedin}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 underline"
-                  >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: colors.text.muted }}>LinkedIn</span>
+                  <a href={linkedin} target="_blank" rel="noopener noreferrer" style={linkStyle}>
                     Profile
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink size={12} />
                   </a>
                 </div>
               ) : null}
               {beauhurstUrl ? (
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Beauhurst profile</span>
-                  <a
-                    href={beauhurstUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 underline"
-                  >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: colors.text.muted }}>Beauhurst profile</span>
+                  <a href={beauhurstUrl} target="_blank" rel="noopener noreferrer" style={linkStyle}>
                     Open
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink size={12} />
                   </a>
                 </div>
               ) : null}
-            </CardContent>
-          </Card>
+            </div>
+          </Panel>
         ) : null}
 
         {/* Financials */}
         {hasFinancials ? (
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm">Financials</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase">Turnover</p>
-                  <p className="text-sm font-semibold">{fmtMoney(turnover)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase">EBITDA</p>
-                  <p className="text-sm font-semibold">{fmtMoney(ebitda)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase">Headcount</p>
-                  <p className="text-sm font-semibold">{headcount ?? '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase">Funding</p>
-                  <p className="text-sm font-semibold">{fmtMoney(funding)}</p>
-                </div>
+          <Panel title="Financials">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <div>
+                <p style={{ ...labelStyle, margin: 0 }}>Turnover</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: colors.text.primary, margin: '2px 0 0' }}>{fmtMoney(turnover)}</p>
               </div>
-              {accountsDate ? (
-                <p className="text-[10px] text-muted-foreground mt-3">
-                  Accounts filed {fmtDate(accountsDate)}
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+              <div>
+                <p style={{ ...labelStyle, margin: 0 }}>EBITDA</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: colors.text.primary, margin: '2px 0 0' }}>{fmtMoney(ebitda)}</p>
+              </div>
+              <div>
+                <p style={{ ...labelStyle, margin: 0 }}>Headcount</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: colors.text.primary, margin: '2px 0 0' }}>{headcount ?? '—'}</p>
+              </div>
+              <div>
+                <p style={{ ...labelStyle, margin: 0 }}>Funding</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: colors.text.primary, margin: '2px 0 0' }}>{fmtMoney(funding)}</p>
+              </div>
+            </div>
+            {accountsDate ? (
+              <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 12, marginBottom: 0 }}>
+                Accounts filed {fmtDate(accountsDate)}
+              </p>
+            ) : null}
+          </Panel>
         ) : null}
 
         {/* Signals */}
         {hasSignals ? (
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm">Signals</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4">
-              <div className="flex flex-wrap gap-1.5">
-                {signals.slice(0, 12).map((s, i) => (
-                  <span
-                    key={i}
-                    className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${s.tint}`}
-                  >
-                    {s.value}
-                  </span>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <Panel title="Signals">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {signals.slice(0, 12).map((s, i) => (
+                <FlagChip key={i} label={s.value} severity={s.severity} />
+              ))}
+            </div>
+          </Panel>
         ) : null}
       </div>
 
       {/* Divider to separate CRM intel from AI-extracted doc intelligence */}
-      <div className="flex items-center gap-3 pt-1">
-        <div className="flex-1 h-px bg-border" />
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-          AI intel from docs
-        </span>
-        <div className="flex-1 h-px bg-border" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+        <div style={{ flex: 1, height: 1, background: colors.border.default }} />
+        <span style={{ ...labelStyle, fontWeight: 600 }}>AI intel from docs</span>
+        <div style={{ flex: 1, height: 1, background: colors.border.default }} />
       </div>
     </div>
   );

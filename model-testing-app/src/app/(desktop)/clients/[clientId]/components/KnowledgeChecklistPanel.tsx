@@ -4,26 +4,8 @@ import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Modal, Button, IconButton, StatusPill, FlagChip, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   CheckCircle2,
   Circle,
@@ -39,7 +21,6 @@ import {
   X,
   Check,
   Trash2,
-  Filter,
   ChevronDown,
   ChevronUp,
   ChevronRight,
@@ -47,7 +28,8 @@ import {
   Flag,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
-import { cn } from '@/lib/utils';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface LinkedDocument {
   _id: Id<"knowledgeChecklistDocumentLinks">;
@@ -93,8 +75,8 @@ export default function KnowledgeChecklistPanel({
   clientId,
   projectId,
   selectedCategory,
-  onCategoryChange,
 }: KnowledgeChecklistPanelProps) {
+  const colors = useColors();
   const [searchQuery, setSearchQuery] = useState('');
   const [phaseFilter, setPhaseFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
@@ -108,7 +90,7 @@ export default function KnowledgeChecklistPanel({
   // Query for available documents to link
   // @ts-ignore - Known Convex TypeScript type instantiation depth issue
   const documents = useQuery(api.documents.getByClient, { clientId }) as any[] | undefined;
-  
+
   // Query for linked documents when an item is expanded
   const linkedDocuments = useQuery(
     api.knowledgeLibrary.getLinkedDocuments,
@@ -160,18 +142,6 @@ export default function KnowledgeChecklistPanel({
     fulfilled: filteredItems.filter(i => i.status === 'fulfilled'),
   };
 
-  // Handle document linking
-  const handleLinkDocument = async (itemId: Id<"knowledgeChecklistItems">, documentId: Id<"documents">) => {
-    if (!user?._id) return;
-    
-    await linkDocument({
-      checklistItemId: itemId,
-      documentId,
-      userId: user._id,
-    });
-    setLinkingItemId(null);
-  };
-
   // Handle unlink all documents from an item
   const handleUnlinkAll = async (itemId: Id<"knowledgeChecklistItems">) => {
     if (confirm('Are you sure you want to unlink all documents from this requirement?')) {
@@ -182,9 +152,9 @@ export default function KnowledgeChecklistPanel({
 
   // Handle unlink specific document
   const handleUnlinkSpecific = async (itemId: Id<"knowledgeChecklistItems">, documentId: Id<"documents">) => {
-    await unlinkSpecificDocument({ 
-      checklistItemId: itemId, 
-      documentId 
+    await unlinkSpecificDocument({
+      checklistItemId: itemId,
+      documentId
     });
   };
 
@@ -289,27 +259,22 @@ export default function KnowledgeChecklistPanel({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'fulfilled':
-        return <CheckCircle2 className="w-5 h-5 text-green-500" />;
+        return <CheckCircle2 size={18} style={{ color: colors.entityTypes.client }} />;
       case 'pending_review':
-        return <Clock className="w-5 h-5 text-amber-500" />;
+        return <Clock size={18} style={{ color: colors.accent.yellow }} />;
       default:
-        return <Circle className="w-5 h-5 text-gray-300" />;
+        return <Circle size={18} style={{ color: colors.text.dim }} />;
     }
   };
 
-  // Get priority badge
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'required':
-        return <Badge variant="destructive" className="text-[10px] h-4">Required</Badge>;
-      case 'nice_to_have':
-        return <Badge variant="secondary" className="text-[10px] h-4">Nice to have</Badge>;
-      default:
-        return <Badge variant="outline" className="text-[10px] h-4">Optional</Badge>;
-    }
+  // Priority pill
+  const priorityPill = (priority: string) => {
+    if (priority === 'required') return <StatusPill label="Required" tone={colors.accent.red} />;
+    if (priority === 'nice_to_have') return <StatusPill label="Nice to have" tone={colors.accent.blue} />;
+    return <StatusPill label="Optional" tone={colors.text.muted} />;
   };
 
-  // Get phase badge
+  // Get phase label
   const getPhaseLabel = (phase: string) => {
     switch (phase) {
       case 'indicative_terms':
@@ -323,338 +288,286 @@ export default function KnowledgeChecklistPanel({
     }
   };
 
+  // Row accent tint by status
+  const itemAccent = (status: string) =>
+    status === 'fulfilled'
+      ? colors.entityTypes.client
+      : status === 'pending_review'
+      ? colors.accent.yellow
+      : colors.border.default;
+
   // Render single item
   const renderItem = (item: ChecklistItem) => (
-    <Card key={item._id} className={cn(
-      "mb-2 transition-all",
-      item.status === 'fulfilled' && "bg-green-50 border-green-200",
-      item.status === 'pending_review' && "bg-amber-50 border-amber-200"
-    )}>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          {/* Status Icon */}
-          <div className="mt-0.5">
-            {getStatusIcon(item.status)}
+    <div
+      key={item._id}
+      style={{
+        marginBottom: 8,
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.default}`,
+        borderLeft: `2px solid ${itemAccent(item.status)}`,
+        borderRadius: 4,
+        padding: 14,
+      }}
+    >
+      <div className="flex items-start gap-3">
+        {/* Status Icon */}
+        <div style={{ marginTop: 1 }}>
+          {getStatusIcon(item.status)}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h4 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{item.name}</h4>
+            {priorityPill(item.priority)}
+            {item.isCustom && (
+              item.customSource === 'llm' ? (
+                <FlagChip label="Dynamic" severity="info" />
+              ) : (
+                <FlagChip label="Custom" severity="info" />
+              )
+            )}
           </div>
 
-          {/* Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="font-medium text-foreground text-sm">{item.name}</h4>
-              {getPriorityBadge(item.priority)}
-              {item.isCustom && (
-                <Badge variant="outline" className="text-[10px] h-4 bg-purple-50 text-purple-700 border-purple-200">
-                  {item.customSource === 'llm' ? (
-                    <><Sparkles className="w-2.5 h-2.5 mr-1" />Dynamic</>
-                  ) : (
-                    'Custom'
-                  )}
-                </Badge>
-              )}
-            </div>
-            
-            {item.description && (
-              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.description}</p>
-            )}
+          {item.description && (
+            <p className="line-clamp-2" style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>{item.description}</p>
+          )}
 
-            <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
-              <span>{getPhaseLabel(item.phaseRequired)}</span>
-              <span>•</span>
-              <span>{item.category}</span>
-            </div>
+          <div className="flex items-center gap-2" style={{ marginTop: 8, fontSize: 10, color: colors.text.muted, fontFamily: MONO }}>
+            <span>{getPhaseLabel(item.phaseRequired)}</span>
+            <span>·</span>
+            <span>{item.category}</span>
+          </div>
 
-            {/* AI Suggestion */}
-            {item.status === 'pending_review' && item.suggestedDocumentId && (
-              <div className="mt-3 p-2 bg-amber-100 rounded-md">
-                <div className="flex items-center gap-2 text-xs text-amber-800">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span className="font-medium">AI Suggestion:</span>
-                  <span className="truncate">{item.suggestedDocumentName}</span>
-                  {item.suggestedConfidence && (
-                    <span className="text-amber-600">
-                      ({Math.round(item.suggestedConfidence * 100)}% confidence)
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="h-6 text-xs bg-green-600 hover:bg-green-700"
-                    onClick={() => handleConfirmSuggestion(item._id)}
-                  >
-                    <Check className="w-3 h-3 mr-1" />
-                    Confirm
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-xs"
-                    onClick={() => handleRejectSuggestion(item._id)}
-                  >
-                    <X className="w-3 h-3 mr-1" />
-                    Reject
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Linked Documents */}
-            {item.status === 'fulfilled' && item.primaryDocument && (
-              <div className="mt-2 space-y-2">
-                {/* Primary Document + Count */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setExpandedItemId(expandedItemId === item._id ? null : item._id)}
-                    className="flex items-center gap-2 text-xs hover:bg-muted rounded px-1 py-0.5 -ml-1"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-green-600" />
-                    <a
-                      href={`/docs/reader/${item.primaryDocument.documentId}`}
-                      className="text-green-700 font-medium truncate max-w-[150px] hover:underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {item.primaryDocument.documentName}
-                    </a>
-                    {(item.linkedDocumentCount || 0) > 1 && (
-                      <Badge variant="outline" className="text-[10px] h-4">
-                        +{(item.linkedDocumentCount || 1) - 1} more
-                      </Badge>
-                    )}
-                    {(item.linkedDocumentCount || 0) > 1 && (
-                      expandedItemId === item._id
-                        ? <ChevronUp className="w-3 h-3 text-muted-foreground" />
-                        : <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                    )}
-                  </button>
-                  {item.primaryDocument.linkedAt && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(item.primaryDocument.linkedAt).toLocaleDateString()}
-                    </span>
-                  )}
-                </div>
-
-                {/* Expanded List of All Linked Documents */}
-                {expandedItemId === item._id && linkedDocuments && linkedDocuments.length > 0 && (
-                  <div className="ml-4 space-y-1 border-l-2 border-green-200 pl-3">
-                    {linkedDocuments.map((doc) => (
-                      <div key={doc._id} className="flex items-center gap-2 text-xs group">
-                        <FileText className="w-3 h-3 text-muted-foreground" />
-                        <a
-                          href={`/docs/reader/${doc.documentId}`}
-                          className={cn(
-                            "truncate max-w-[140px] hover:underline",
-                            doc.isPrimary ? "text-green-700 font-medium" : "text-muted-foreground"
-                          )}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {doc.documentName}
-                        </a>
-                        {doc.isPrimary && (
-                          <Badge variant="outline" className="text-[9px] h-3 text-green-600">
-                            Primary
-                          </Badge>
-                        )}
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(doc.linkedAt).toLocaleDateString()}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500"
-                          onClick={() => handleUnlinkSpecific(item._id, doc.documentId)}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-blue-500"
-                          onClick={() => window.open(`/docs/${doc.documentId}`, '_blank')}
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
+          {/* AI Suggestion */}
+          {item.status === 'pending_review' && item.suggestedDocumentId && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 8,
+                background: `${colors.accent.yellow}12`,
+                border: `1px solid ${colors.accent.yellow}40`,
+                borderRadius: 4,
+              }}
+            >
+              <div className="flex items-center gap-2" style={{ fontSize: 11, color: colors.text.secondary }}>
+                <Sparkles size={13} style={{ color: colors.accent.yellow }} />
+                <span style={{ fontWeight: 500 }}>AI suggestion:</span>
+                <span className="truncate">{item.suggestedDocumentName}</span>
+                {item.suggestedConfidence && (
+                  <span style={{ color: colors.text.muted, fontFamily: MONO }}>
+                    ({Math.round(item.suggestedConfidence * 100)}% confidence)
+                  </span>
                 )}
               </div>
-            )}
-          </div>
+              <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
+                <Button variant="primary" accent={colors.entityTypes.client} size="sm" onClick={() => handleConfirmSuggestion(item._id)}>
+                  <Check size={12} />
+                  Confirm
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => handleRejectSuggestion(item._id)}>
+                  <X size={12} />
+                  Reject
+                </Button>
+              </div>
+            </div>
+          )}
 
-          {/* Actions */}
-          <div className="flex items-center gap-1">
-            {/* Link/Add Document Button - always available */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
-                    onClick={() => setLinkingItemId(item._id)}
+          {/* Linked Documents */}
+          {item.status === 'fulfilled' && item.primaryDocument && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Primary Document + Count */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setExpandedItemId(expandedItemId === item._id ? null : item._id)}
+                  className="flex items-center gap-2"
+                  style={{ fontSize: 11, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+                >
+                  <FileText size={13} style={{ color: colors.entityTypes.client }} />
+                  <a
+                    href={`/docs/reader/${item.primaryDocument.documentId}`}
+                    className="truncate"
+                    style={{ color: colors.entityTypes.client, fontWeight: 500, maxWidth: 150, textDecoration: 'none' }}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    {item.status === 'fulfilled' ? (
-                      <Plus className="w-4 h-4" />
-                    ) : (
-                      <LinkIcon className="w-4 h-4" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {item.status === 'fulfilled' ? 'Add another document' : 'Link document'}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                    {item.primaryDocument.documentName}
+                  </a>
+                  {(item.linkedDocumentCount || 0) > 1 && (
+                    <FlagChip label={`+${(item.linkedDocumentCount || 1) - 1} more`} severity="ok" />
+                  )}
+                  {(item.linkedDocumentCount || 0) > 1 && (
+                    expandedItemId === item._id
+                      ? <ChevronUp size={12} style={{ color: colors.text.muted }} />
+                      : <ChevronDown size={12} style={{ color: colors.text.muted }} />
+                  )}
+                </button>
+                {item.primaryDocument.linkedAt && (
+                  <span style={{ fontSize: 9, color: colors.text.muted, fontFamily: MONO }}>
+                    {new Date(item.primaryDocument.linkedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
 
-            {/* Unlink All Button - only for fulfilled items */}
-            {item.status === 'fulfilled' && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                      onClick={() => handleUnlinkAll(item._id)}
-                    >
-                      <Unlink className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Unlink all documents</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-
-            {/* View Primary Document */}
-            {item.primaryDocument && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-500"
-                      onClick={() => window.open(`/docs/${item.primaryDocument?.documentId}`, '_blank')}
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>View primary document</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-500"
-                    onClick={() => setFlaggingItem(item)}
-                  >
-                    <Flag className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Flag for review</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            {item.isCustom && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                      onClick={() => handleDeleteCustom(item._id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete requirement</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </div>
+              {/* Expanded List of All Linked Documents */}
+              {expandedItemId === item._id && linkedDocuments && linkedDocuments.length > 0 && (
+                <div style={{ marginLeft: 16, paddingLeft: 12, borderLeft: `2px solid ${colors.entityTypes.client}40`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {linkedDocuments.map((doc) => (
+                    <div key={doc._id} className="flex items-center gap-2 group" style={{ fontSize: 11 }}>
+                      <FileText size={12} style={{ color: colors.text.muted }} />
+                      <a
+                        href={`/docs/reader/${doc.documentId}`}
+                        className="truncate"
+                        style={{
+                          maxWidth: 140,
+                          textDecoration: 'none',
+                          color: doc.isPrimary ? colors.entityTypes.client : colors.text.muted,
+                          fontWeight: doc.isPrimary ? 500 : 400,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {doc.documentName}
+                      </a>
+                      {doc.isPrimary && <FlagChip label="Primary" severity="ok" />}
+                      <span style={{ fontSize: 9, color: colors.text.muted, fontFamily: MONO }}>
+                        {new Date(doc.linkedAt).toLocaleDateString()}
+                      </span>
+                      <span className="opacity-0 group-hover:opacity-100">
+                        <IconButton label="Unlink document" onClick={() => handleUnlinkSpecific(item._id, doc.documentId)}>
+                          <X size={12} />
+                        </IconButton>
+                      </span>
+                      <span className="opacity-0 group-hover:opacity-100">
+                        <IconButton label="Open document" onClick={() => window.open(`/docs/${doc.documentId}`, '_blank')}>
+                          <ExternalLink size={12} />
+                        </IconButton>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      </CardContent>
-    </Card>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1">
+          {/* Link/Add Document Button - always available */}
+          <IconButton
+            label={item.status === 'fulfilled' ? 'Add another document' : 'Link document'}
+            onClick={() => setLinkingItemId(item._id)}
+          >
+            {item.status === 'fulfilled' ? <Plus size={15} /> : <LinkIcon size={15} />}
+          </IconButton>
+
+          {/* Unlink All Button - only for fulfilled items */}
+          {item.status === 'fulfilled' && (
+            <IconButton label="Unlink all documents" onClick={() => handleUnlinkAll(item._id)}>
+              <Unlink size={15} />
+            </IconButton>
+          )}
+
+          {/* View Primary Document */}
+          {item.primaryDocument && (
+            <IconButton label="View primary document" onClick={() => window.open(`/docs/${item.primaryDocument?.documentId}`, '_blank')}>
+              <ExternalLink size={15} />
+            </IconButton>
+          )}
+
+          <IconButton label="Flag for review" onClick={() => setFlaggingItem(item)}>
+            <Flag size={15} />
+          </IconButton>
+
+          {item.isCustom && (
+            <IconButton label="Delete requirement" onClick={() => handleDeleteCustom(item._id)}>
+              <Trash2 size={15} />
+            </IconButton>
+          )}
+        </div>
+      </div>
+    </div>
   );
 
   return (
     <>
       <div className="flex flex-col h-full">
         {/* Header with filters */}
-        <div className="p-4 border-b border-border space-y-3">
+        <div style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-foreground">
+            <h3 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
               {selectedCategory || 'All Requirements'}
             </h3>
-            <div className="text-sm text-muted-foreground">
+            <div style={{ fontSize: 11, color: colors.text.muted, fontFamily: MONO }}>
               {filteredItems.filter(i => i.status === 'fulfilled').length} / {filteredItems.length} complete
             </div>
           </div>
 
           {/* Search and Filters */}
           <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
+            <div
+              className="flex items-center gap-2 flex-1"
+              style={{
+                background: colors.bg.card,
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+                padding: '0 10px',
+              }}
+            >
+              <Search size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
+              <input
                 placeholder="Search requirements..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8 text-sm"
+                style={{ flex: 1, padding: '6px 0', fontSize: 12, color: colors.text.primary, background: 'transparent', border: 'none', outline: 'none' }}
               />
             </div>
-            
-            <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-              <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue placeholder="Phase" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Phases</SelectItem>
-                <SelectItem value="indicative_terms">Indicative Terms</SelectItem>
-                <SelectItem value="credit_submission">Credit Submission</SelectItem>
-                <SelectItem value="post_credit">Post-Credit</SelectItem>
-                <SelectItem value="always">Always Required</SelectItem>
-              </SelectContent>
-            </Select>
 
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-28 h-8 text-xs">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="required">Required</SelectItem>
-                <SelectItem value="nice_to_have">Nice to have</SelectItem>
-                <SelectItem value="optional">Optional</SelectItem>
-              </SelectContent>
-            </Select>
+            <select
+              value={phaseFilter}
+              onChange={(e) => setPhaseFilter(e.target.value)}
+              style={{
+                padding: '6px 8px', fontSize: 11, color: colors.text.primary, background: colors.bg.card,
+                border: `1px solid ${colors.border.default}`, borderRadius: 4, cursor: 'pointer', outline: 'none',
+              }}
+            >
+              <option value="all">All Phases</option>
+              <option value="indicative_terms">Indicative Terms</option>
+              <option value="credit_submission">Credit Submission</option>
+              <option value="post_credit">Post-Credit</option>
+              <option value="always">Always Required</option>
+            </select>
+
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              style={{
+                padding: '6px 8px', fontSize: 11, color: colors.text.primary, background: colors.bg.card,
+                border: `1px solid ${colors.border.default}`, borderRadius: 4, cursor: 'pointer', outline: 'none',
+              }}
+            >
+              <option value="all">All</option>
+              <option value="required">Required</option>
+              <option value="nice_to_have">Nice to have</option>
+              <option value="optional">Optional</option>
+            </select>
           </div>
         </div>
 
         {/* Items List */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto" style={{ padding: 16 }}>
           {filteredItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <AlertCircle className="w-8 h-8 mb-2 text-gray-300" />
-              <p className="text-sm">No requirements found</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Try adjusting your filters
-              </p>
-            </div>
+            <EmptyState
+              icon={<AlertCircle size={32} />}
+              title="No requirements found"
+              body="Try adjusting your filters"
+            />
           ) : (
             <>
               {/* Pending Review Section */}
               {groupedItems.pending_review.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Clock className="w-4 h-4 text-amber-500" />
-                    <h4 className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+                <div style={{ marginBottom: 16 }}>
+                  <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+                    <Clock size={14} style={{ color: colors.accent.yellow }} />
+                    <h4 style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.accent.yellow, fontWeight: 500 }}>
                       Pending Review ({groupedItems.pending_review.length})
                     </h4>
                   </div>
@@ -664,10 +577,10 @@ export default function KnowledgeChecklistPanel({
 
               {/* Missing Section */}
               {groupedItems.missing.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Circle className="w-4 h-4 text-muted-foreground" />
-                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <div style={{ marginBottom: 16 }}>
+                  <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+                    <Circle size={14} style={{ color: colors.text.muted }} />
+                    <h4 style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
                       Missing ({groupedItems.missing.length})
                     </h4>
                   </div>
@@ -677,10 +590,10 @@ export default function KnowledgeChecklistPanel({
 
               {/* Fulfilled Section */}
               {groupedItems.fulfilled.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <h4 className="text-xs font-medium text-green-700 uppercase tracking-wide">
+                <div style={{ marginBottom: 16 }}>
+                  <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+                    <CheckCircle2 size={14} style={{ color: colors.entityTypes.client }} />
+                    <h4 style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.entityTypes.client, fontWeight: 500 }}>
                       Fulfilled ({groupedItems.fulfilled.length})
                     </h4>
                   </div>
@@ -692,108 +605,169 @@ export default function KnowledgeChecklistPanel({
         </div>
       </div>
 
-      {/* Document Linking Dialog */}
-      <Dialog
+      {/* Document Linking Modal */}
+      <Modal
         open={!!linkingItemId}
-        onOpenChange={() => {
+        onClose={() => {
           setLinkingItemId(null);
           setSelectedDocIds(new Set());
           setDocSearchQuery('');
           setCollapsedFolders(new Set());
         }}
+        title="Link documents"
+        width={680}
+        footer={
+          <>
+            <span style={{ fontSize: 10, color: colors.text.muted, marginRight: 'auto', fontFamily: MONO }}>
+              {selectedDocIds.size > 0
+                ? `${selectedDocIds.size} document${selectedDocIds.size > 1 ? 's' : ''} selected`
+                : 'Select documents to link'}
+            </span>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setLinkingItemId(null);
+                setSelectedDocIds(new Set());
+                setDocSearchQuery('');
+                setCollapsedFolders(new Set());
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              accent={colors.entityTypes.client}
+              disabled={selectedDocIds.size === 0 || isLinking}
+              onClick={handleBatchLinkDocuments}
+            >
+              {isLinking ? 'Linking' : `Link selected (${selectedDocIds.size})`}
+            </Button>
+          </>
+        }
       >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Link Documents</DialogTitle>
-            <DialogDescription>
-              Select one or more documents to link to this requirement
-            </DialogDescription>
-          </DialogHeader>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ fontSize: 11, color: colors.text.muted }}>
+            Select one or more documents to link to this requirement
+          </p>
 
           {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
+          <div
+            className="flex items-center gap-2"
+            style={{
+              background: colors.bg.card,
+              border: `1px solid ${colors.border.default}`,
+              borderRadius: 4,
+              padding: '0 10px',
+            }}
+          >
+            <Search size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
+            <input
               placeholder="Search documents..."
               value={docSearchQuery}
               onChange={(e) => setDocSearchQuery(e.target.value)}
-              className="pl-8 h-9 text-sm"
+              style={{ flex: 1, padding: '7px 0', fontSize: 12, color: colors.text.primary, background: 'transparent', border: 'none', outline: 'none' }}
             />
           </div>
 
-          <div className="max-h-[28rem] overflow-y-auto">
+          <div style={{ maxHeight: '28rem', overflowY: 'auto' }}>
             {groupedDocuments.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">
-                  {docSearchQuery ? 'No documents match your search' : 'No documents available'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {docSearchQuery ? 'Try a different search term' : 'Upload documents to the client\'s library first'}
-                </p>
-              </div>
+              <EmptyState
+                icon={<FileText size={32} />}
+                title={docSearchQuery ? 'No documents match your search' : 'No documents available'}
+                body={docSearchQuery ? 'Try a different search term' : "Upload documents to the client's library first"}
+              />
             ) : (
-              <div className="space-y-1">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {groupedDocuments.map(({ folderId, displayName, docs }) => {
                   const isCollapsed = collapsedFolders.has(folderId);
                   return (
                     <div key={folderId}>
                       {/* Folder Header */}
                       <button
-                        className="w-full flex items-center gap-2 px-2 py-2 text-left hover:bg-muted rounded-md transition-colors"
+                        className="w-full flex items-center gap-2 text-left"
+                        style={{ padding: '8px', borderRadius: 4, background: 'transparent', border: 'none', cursor: 'pointer' }}
                         onClick={() => toggleFolder(folderId)}
                       >
                         {isCollapsed ? (
-                          <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <ChevronRight size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
                         ) : (
-                          <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <ChevronDown size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
                         )}
-                        <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                        <span className="text-sm font-medium text-foreground">{displayName}</span>
-                        <span className="text-xs text-muted-foreground ml-auto">{docs.length}</span>
+                        <Folder size={14} style={{ color: colors.accent.yellow, flexShrink: 0 }} />
+                        <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{displayName}</span>
+                        <span style={{ fontSize: 10, color: colors.text.muted, marginLeft: 'auto', fontFamily: MONO }}>{docs.length}</span>
                       </button>
 
                       {/* Folder Contents */}
                       {!isCollapsed && (
-                        <div className="ml-6 space-y-0.5 mb-2">
+                        <div style={{ marginLeft: 24, display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 8 }}>
                           {docs.map((doc: any) => {
                             const isAlreadyLinked = alreadyLinkedIds.has(doc._id as string);
                             const isSelected = selectedDocIds.has(doc._id);
+                            const rowBg = isAlreadyLinked
+                              ? `${colors.entityTypes.client}10`
+                              : isSelected
+                              ? `${colors.accent.blue}10`
+                              : 'transparent';
+                            const rowBorder = isAlreadyLinked
+                              ? `${colors.entityTypes.client}40`
+                              : isSelected
+                              ? `${colors.accent.blue}40`
+                              : 'transparent';
+                            const checked = isAlreadyLinked || isSelected;
+                            const tickColor = isAlreadyLinked ? colors.entityTypes.client : colors.accent.blue;
                             return (
                               <label
                                 key={doc._id}
-                                className={cn(
-                                  "flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer transition-colors",
-                                  isAlreadyLinked
-                                    ? "bg-green-50 border border-green-100 cursor-default"
-                                    : isSelected
-                                    ? "bg-blue-50 border border-blue-200"
-                                    : "hover:bg-muted border border-transparent"
-                                )}
+                                className="flex items-center gap-3"
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRadius: 4,
+                                  cursor: isAlreadyLinked ? 'default' : 'pointer',
+                                  background: rowBg,
+                                  border: `1px solid ${rowBorder}`,
+                                }}
                               >
-                                <Checkbox
-                                  checked={isAlreadyLinked || isSelected}
+                                {/* Token-styled checkbox — keeps the original toggle logic */}
+                                <button
+                                  type="button"
+                                  role="checkbox"
+                                  aria-checked={checked}
                                   disabled={isAlreadyLinked}
-                                  onCheckedChange={() => !isAlreadyLinked && toggleDocSelection(doc._id)}
-                                />
-                                <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                  onClick={() => !isAlreadyLinked && toggleDocSelection(doc._id)}
+                                  style={{
+                                    width: 16,
+                                    height: 16,
+                                    flexShrink: 0,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: 3,
+                                    border: `1px solid ${checked ? tickColor : colors.border.mid}`,
+                                    background: checked ? tickColor : colors.bg.card,
+                                    color: '#ffffff',
+                                    cursor: isAlreadyLinked ? 'default' : 'pointer',
+                                    padding: 0,
+                                  }}
+                                >
+                                  {checked && <Check size={11} />}
+                                </button>
+                                <FileText size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-foreground truncate">
+                                  <p className="truncate" style={{ fontSize: 12, color: colors.text.primary }}>
                                     {doc.fileName}
                                   </p>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <Badge variant="secondary" className="text-[10px] h-4">
-                                      {doc.fileTypeDetected || doc.category}
-                                    </Badge>
-                                    <span className="text-[10px] text-muted-foreground">
+                                  <div className="flex items-center gap-2" style={{ marginTop: 2 }}>
+                                    <StatusPill label={doc.fileTypeDetected || doc.category || 'doc'} tone={colors.text.muted} />
+                                    <span style={{ fontSize: 9, color: colors.text.muted, fontFamily: MONO }}>
                                       {new Date(doc.uploadedAt).toLocaleDateString()}
                                     </span>
                                   </div>
                                 </div>
                                 {isAlreadyLinked && (
-                                  <Badge variant="outline" className="text-[10px] h-4 bg-green-100 text-green-700 border-green-200 flex-shrink-0">
-                                    Linked
-                                  </Badge>
+                                  <span style={{ flexShrink: 0 }}>
+                                    <FlagChip label="Linked" severity="ok" />
+                                  </span>
                                 )}
                               </label>
                             );
@@ -806,38 +780,8 @@ export default function KnowledgeChecklistPanel({
               </div>
             )}
           </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-2 border-t border-border">
-            <span className="text-xs text-muted-foreground">
-              {selectedDocIds.size > 0
-                ? `${selectedDocIds.size} document${selectedDocIds.size > 1 ? 's' : ''} selected`
-                : 'Select documents to link'}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setLinkingItemId(null);
-                  setSelectedDocIds(new Set());
-                  setDocSearchQuery('');
-                  setCollapsedFolders(new Set());
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={selectedDocIds.size === 0 || isLinking}
-                onClick={handleBatchLinkDocuments}
-              >
-                {isLinking ? 'Linking...' : `Link Selected (${selectedDocIds.size})`}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </Modal>
 
       {/* Flag Modal */}
       {flaggingItem && (

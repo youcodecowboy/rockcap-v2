@@ -5,37 +5,25 @@ import { useQuery, useMutation } from 'convex/react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Button, StatusPill, FlagChip, SkeletonText } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Building2,
   FolderKanban,
-  CheckCircle2,
-  Circle,
   Clock,
-  FileText,
-  Link as LinkIcon,
-  Unlink,
-  Plus,
   Mail,
-  Sparkles,
   ChevronRight,
-  AlertCircle,
-  FileCheck,
-  Search,
-  Filter,
   Brain,
   ExternalLink,
+  Plus,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 // Import sub-components (will create these next)
 import KnowledgeChecklistPanel from './KnowledgeChecklistPanel';
 import EmailRequestModal from './EmailRequestModal';
 import DynamicChecklistInput from './DynamicChecklistInput';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface ClientKnowledgeTabProps {
   clientId: Id<"clients">;
@@ -53,27 +41,34 @@ type ViewScope = 'client' | { projectId: Id<"projects">; projectName: string };
 
 // Small component to fetch and display project intelligence count
 function ProjectIntelligenceCount({ projectId }: { projectId: Id<"projects"> }) {
+  const colors = useColors();
   const stats = useQuery(api.knowledgeLibrary.getKnowledgeStats, { projectId });
 
   if (!stats || stats.total === 0) return null;
 
+  const label =
+    `${stats.total} intelligence item${stats.total !== 1 ? 's' : ''} extracted` +
+    (stats.canonical > 0 ? ` (${stats.canonical} canonical)` : '');
+
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-purple-100 text-purple-700">
-            <Brain className="w-2.5 h-2.5 mr-0.5" />
-            {stats.total}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p className="text-xs">
-            {stats.total} intelligence item{stats.total !== 1 ? 's' : ''} extracted
-            {stats.canonical > 0 && ` (${stats.canonical} canonical)`}
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <span
+      title={label}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        padding: '1px 5px',
+        borderRadius: 2,
+        fontFamily: MONO,
+        fontSize: 9,
+        background: `${colors.accent.purple}20`,
+        color: colors.accent.purple,
+        border: `1px solid ${colors.accent.purple}40`,
+      }}
+    >
+      <Brain size={10} />
+      {stats.total}
+    </span>
   );
 }
 
@@ -83,30 +78,19 @@ export default function ClientKnowledgeTab({
   clientType = 'borrower',
   projects,
 }: ClientKnowledgeTabProps) {
+  const colors = useColors();
   const router = useRouter();
   const [viewScope, setViewScope] = useState<ViewScope>('client');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showDynamicInput, setShowDynamicInput] = useState(false);
 
-  // Get client-level intelligence stats
-  const clientIntelligenceStats = useQuery(
-    api.knowledgeLibrary.getKnowledgeStats,
-    { clientId }
-  );
-
-  // Get intelligence stats for all projects
-  const projectIntelligenceStats = useMemo(() => {
-    const stats: Record<string, { total: number; canonical: number; flagged: number }> = {};
-    return stats;
-  }, []);
-
   // Queries
   const clientChecklist = useQuery(
     api.knowledgeLibrary.getClientLevelChecklist,
     { clientId }
   );
-  
+
   const hasChecklist = useQuery(
     api.knowledgeLibrary.hasChecklist,
     { clientId }
@@ -150,7 +134,7 @@ export default function ClientKnowledgeTab({
   // Get categories from current checklist
   const categories = useMemo(() => {
     const categoryMap = new Map<string, { total: number; fulfilled: number; missing: number; pendingReview: number }>();
-    
+
     for (const item of currentChecklist) {
       const existing = categoryMap.get(item.category) || { total: 0, fulfilled: 0, missing: 0, pendingReview: 0 };
       existing.total++;
@@ -184,7 +168,7 @@ export default function ClientKnowledgeTab({
       projectId: project._id,
       clientType,
     });
-    
+
     if (projectItems.created > 0) {
       console.log(`Initialized ${projectItems.created} checklist items for project`);
     }
@@ -193,19 +177,24 @@ export default function ClientKnowledgeTab({
   // Loading state
   if (hasChecklist === undefined || clientChecklist === undefined) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
+      <div style={{ padding: 24 }}>
+        <SkeletonText lines={8} />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full bg-muted overflow-hidden">
+    <div className="flex h-full overflow-hidden" style={{ background: colors.bg.light }}>
       {/* Column 1: Client/Projects Navigation */}
-      <div className="w-64 bg-card border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border flex-shrink-0">
-          <h3 className="font-medium text-foreground text-sm">Knowledge Library</h3>
-          <p className="text-xs text-muted-foreground mt-1">Document requirements checklist</p>
+      <div
+        className="flex flex-col"
+        style={{ width: 256, background: colors.bg.card, borderRight: `1px solid ${colors.border.default}` }}
+      >
+        <div style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}`, flexShrink: 0 }}>
+          <h3 style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
+            Knowledge Library
+          </h3>
+          <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 4 }}>Document requirements checklist</p>
         </div>
 
         {/* Client Section */}
@@ -215,30 +204,32 @@ export default function ClientKnowledgeTab({
               setViewScope('client');
               setSelectedCategory(null);
             }}
-            className={cn(
-              "w-full px-4 py-3 flex items-center gap-3 text-left transition-colors",
-              viewScope === 'client'
-                ? "bg-blue-50 border-l-2 border-blue-600"
-                : "hover:bg-muted border-l-2 border-transparent"
-            )}
+            className="w-full flex items-center gap-3 text-left"
+            style={{
+              padding: '12px 16px',
+              background: viewScope === 'client' ? `${colors.entityTypes.client}12` : 'transparent',
+              borderLeft: `2px solid ${viewScope === 'client' ? colors.entityTypes.client : 'transparent'}`,
+              cursor: 'pointer',
+              transition: 'background 100ms linear',
+            }}
           >
-            <Building2 className="w-5 h-5 text-muted-foreground" />
+            <Building2 size={18} style={{ color: viewScope === 'client' ? colors.entityTypes.client : colors.text.muted }} />
             <div className="flex-1 min-w-0">
-              <p className={cn(
-                "text-sm font-medium truncate",
-                viewScope === 'client' ? "text-blue-700" : "text-foreground"
-              )}>
+              <p
+                className="truncate"
+                style={{ fontSize: 12, fontWeight: 500, color: viewScope === 'client' ? colors.entityTypes.client : colors.text.primary }}
+              >
                 {clientName}
               </p>
-              <p className="text-xs text-muted-foreground">Client Documents (KYC)</p>
+              <p style={{ fontSize: 10, color: colors.text.muted }}>Client Documents (KYC)</p>
             </div>
             {checklistSummary?.client && (
-              <div className="flex items-center gap-1">
-                <span className="text-xs font-medium text-green-600">
+              <div className="flex items-center gap-1" style={{ fontFamily: MONO, fontSize: 10 }}>
+                <span style={{ fontWeight: 500, color: colors.entityTypes.client }}>
                   {checklistSummary.client.fulfilled}
                 </span>
-                <span className="text-xs text-muted-foreground">/</span>
-                <span className="text-xs text-muted-foreground">
+                <span style={{ color: colors.text.muted }}>/</span>
+                <span style={{ color: colors.text.muted }}>
                   {checklistSummary.client.total}
                 </span>
               </div>
@@ -247,9 +238,11 @@ export default function ClientKnowledgeTab({
 
           {/* Projects Section */}
           {projects.length > 0 && (
-            <div className="border-t border-border mt-2 pt-2">
-              <div className="px-4 py-2 flex items-center justify-between">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Projects</h4>
+            <div style={{ borderTop: `1px solid ${colors.border.default}`, marginTop: 8, paddingTop: 8 }}>
+              <div style={{ padding: '8px 16px' }}>
+                <h4 style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
+                  Projects
+                </h4>
               </div>
               {projects.map(project => {
                 const isSelected = viewScope !== 'client' && viewScope.projectId === project._id;
@@ -257,44 +250,45 @@ export default function ClientKnowledgeTab({
                   <div key={project._id} className="group">
                     <button
                       onClick={() => handleProjectClick(project)}
-                      className={cn(
-                        "w-full px-4 py-3 flex items-center gap-3 text-left transition-colors",
-                        isSelected
-                          ? "bg-purple-50 border-l-2 border-purple-600"
-                          : "hover:bg-muted border-l-2 border-transparent"
-                      )}
+                      className="w-full flex items-center gap-3 text-left"
+                      style={{
+                        padding: '12px 16px',
+                        background: isSelected ? `${colors.entityTypes.project}12` : 'transparent',
+                        borderLeft: `2px solid ${isSelected ? colors.entityTypes.project : 'transparent'}`,
+                        cursor: 'pointer',
+                        transition: 'background 100ms linear',
+                      }}
                     >
-                      <FolderKanban className="w-5 h-5 text-muted-foreground" />
+                      <FolderKanban size={18} style={{ color: isSelected ? colors.entityTypes.project : colors.text.muted }} />
                       <div className="flex-1 min-w-0">
-                        <p className={cn(
-                          "text-sm font-medium truncate",
-                          isSelected ? "text-purple-700" : "text-foreground"
-                        )}>
+                        <p
+                          className="truncate"
+                          style={{ fontSize: 12, fontWeight: 500, color: isSelected ? colors.entityTypes.project : colors.text.primary }}
+                        >
                           {project.name}
                         </p>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-2" style={{ marginTop: 2 }}>
                           {project.dealPhase && (
-                            <Badge variant="outline" className="text-[10px] h-4 px-1">
-                              {project.dealPhase.replace('_', ' ')}
-                            </Badge>
+                            <FlagChip label={project.dealPhase.replace('_', ' ')} severity="info" />
                           )}
                           <ProjectIntelligenceCount projectId={project._id} />
                         </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      <ChevronRight size={14} style={{ color: colors.text.muted }} />
                     </button>
                     {/* Quick link to project intelligence */}
-                    <div className="px-4 pb-2 -mt-1">
+                    <div style={{ padding: '0 16px 8px' }}>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           router.push(`/clients/${clientId}/projects/${project._id}?tab=knowledge`);
                         }}
-                        className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-purple-600 transition-colors"
+                        className="flex items-center gap-1.5"
+                        style={{ fontSize: 10, color: colors.text.muted, background: 'transparent', border: 'none', cursor: 'pointer' }}
                       >
-                        <Brain className="w-3 h-3" />
+                        <Brain size={12} />
                         <span>View extracted intelligence</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
+                        <ExternalLink size={10} />
                       </button>
                     </div>
                   </div>
@@ -305,18 +299,13 @@ export default function ClientKnowledgeTab({
         </div>
 
         {/* Bottom Actions */}
-        <div className="p-3 border-t border-border space-y-2 flex-shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start text-xs"
-            onClick={() => setShowEmailModal(true)}
-          >
-            <Mail className="w-3 h-3 mr-2" />
-            Request Missing Docs
+        <div style={{ padding: 12, borderTop: `1px solid ${colors.border.default}`, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Button variant="secondary" size="sm" onClick={() => setShowEmailModal(true)}>
+            <Mail size={12} />
+            Request missing docs
           </Button>
           {lastEmailGeneration && (
-            <p className="text-[10px] text-muted-foreground px-2">
+            <p style={{ fontSize: 9, color: colors.text.muted, padding: '0 8px', fontFamily: MONO }}>
               Last sent: {new Date(lastEmailGeneration).toLocaleDateString()}
             </p>
           )}
@@ -324,10 +313,15 @@ export default function ClientKnowledgeTab({
       </div>
 
       {/* Column 2: Categories */}
-      <div className="w-56 bg-card border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border flex-shrink-0">
-          <h4 className="font-medium text-foreground text-sm">Categories</h4>
-          <p className="text-xs text-muted-foreground mt-1">
+      <div
+        className="flex flex-col"
+        style={{ width: 224, background: colors.bg.card, borderRight: `1px solid ${colors.border.default}` }}
+      >
+        <div style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}`, flexShrink: 0 }}>
+          <h4 style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
+            Categories
+          </h4>
+          <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 4 }}>
             {viewScope === 'client' ? 'Client-level' : viewScope.projectName}
           </p>
         </div>
@@ -336,74 +330,70 @@ export default function ClientKnowledgeTab({
           {/* All Items Option */}
           <button
             onClick={() => setSelectedCategory(null)}
-            className={cn(
-              "w-full px-4 py-3 flex items-center justify-between text-left transition-colors",
-              selectedCategory === null
-                ? "bg-muted font-medium"
-                : "hover:bg-muted"
-            )}
+            className="w-full flex items-center justify-between text-left"
+            style={{
+              padding: '12px 16px',
+              background: selectedCategory === null ? colors.bg.cardAlt : 'transparent',
+              cursor: 'pointer',
+              transition: 'background 100ms linear',
+            }}
           >
-            <span className="text-sm text-foreground">All Items</span>
-            <Badge variant="secondary" className="text-xs">
-              {currentChecklist.length}
-            </Badge>
+            <span style={{ fontSize: 12, fontWeight: selectedCategory === null ? 500 : 400, color: colors.text.primary }}>All Items</span>
+            <StatusPill label={String(currentChecklist.length)} tone={colors.text.muted} />
           </button>
 
           {/* Category List */}
-          {categories.map(category => (
-            <button
-              key={category.name}
-              onClick={() => setSelectedCategory(category.name)}
-              className={cn(
-                "w-full px-4 py-3 text-left transition-colors border-b border-border",
-                selectedCategory === category.name
-                  ? "bg-muted"
-                  : "hover:bg-muted"
-              )}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className={cn(
-                  "text-sm truncate",
-                  selectedCategory === category.name ? "font-medium text-foreground" : "text-foreground"
-                )}>
-                  {category.name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {category.fulfilled}/{category.total}
-                </span>
-              </div>
-              <Progress 
-                value={category.percentage} 
-                className="h-1"
-              />
-              {category.pendingReview > 0 && (
-                <div className="flex items-center gap-1 mt-1">
-                  <Clock className="w-3 h-3 text-amber-500" />
-                  <span className="text-[10px] text-amber-600">
-                    {category.pendingReview} pending review
+          {categories.map(category => {
+            const isActive = selectedCategory === category.name;
+            return (
+              <button
+                key={category.name}
+                onClick={() => setSelectedCategory(category.name)}
+                className="w-full text-left"
+                style={{
+                  padding: '12px 16px',
+                  borderBottom: `1px solid ${colors.border.light}`,
+                  background: isActive ? colors.bg.cardAlt : 'transparent',
+                  cursor: 'pointer',
+                  transition: 'background 100ms linear',
+                }}
+              >
+                <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                  <span className="truncate" style={{ fontSize: 12, fontWeight: isActive ? 500 : 400, color: colors.text.primary }}>
+                    {category.name}
+                  </span>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: colors.text.muted }}>
+                    {category.fulfilled}/{category.total}
                   </span>
                 </div>
-              )}
-            </button>
-          ))}
+                {/* Progress bar */}
+                <div style={{ height: 3, borderRadius: 2, background: colors.bg.cardAlt, overflow: 'hidden' }}>
+                  <div style={{ width: `${category.percentage}%`, height: '100%', background: colors.entityTypes.client }} />
+                </div>
+                {category.pendingReview > 0 && (
+                  <div className="flex items-center gap-1" style={{ marginTop: 4 }}>
+                    <Clock size={11} style={{ color: colors.accent.yellow }} />
+                    <span style={{ fontSize: 9, color: colors.accent.yellow }}>
+                      {category.pendingReview} pending review
+                    </span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Add Dynamic Requirement */}
-        <div className="p-3 border-t border-border flex-shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start text-xs"
-            onClick={() => setShowDynamicInput(true)}
-          >
-            <Plus className="w-3 h-3 mr-2" />
-            Add Requirement
+        <div style={{ padding: 12, borderTop: `1px solid ${colors.border.default}`, flexShrink: 0 }}>
+          <Button variant="secondary" size="sm" onClick={() => setShowDynamicInput(true)}>
+            <Plus size={12} />
+            Add requirement
           </Button>
         </div>
       </div>
 
       {/* Column 3: Checklist Items */}
-      <div className="flex-1 bg-card flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: colors.bg.card }}>
         <KnowledgeChecklistPanel
           items={filteredItems}
           clientId={clientId}

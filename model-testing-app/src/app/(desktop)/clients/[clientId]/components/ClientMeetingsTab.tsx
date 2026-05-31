@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { useColors } from '@/lib/useColors';
+import { Button, Input, StatusPill, EmptyState, FlagChip } from '@/components/layouts';
 import MeetingCard from './MeetingCard';
 import MeetingDetailView from './MeetingDetailView';
 import CreateMeetingModal from './CreateMeetingModal';
@@ -48,6 +47,7 @@ export default function ClientMeetingsTab({
   clientId,
   clientName,
 }: ClientMeetingsTabProps) {
+  const colors = useColors();
   const [selectedMeetingId, setSelectedMeetingId] = useState<Id<"meetings"> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
@@ -125,55 +125,74 @@ export default function ClientMeetingsTab({
   };
 
   return (
-    <div className="flex h-full bg-muted overflow-hidden">
+    <div className="flex h-full overflow-hidden" style={{ background: colors.bg.light }}>
       {/* Left Sidebar - Meetings List */}
-      <div className={`${isSidebarMinimized ? 'w-16' : 'w-80'} bg-card border-r border-border flex flex-col transition-all duration-300 ease-in-out relative overflow-visible`}>
+      <div
+        className={`${isSidebarMinimized ? 'w-16' : 'w-80'} flex flex-col transition-all duration-300 ease-in-out relative overflow-visible`}
+        style={{ background: colors.bg.card, borderRight: `1px solid ${colors.border.default}` }}
+      >
         {/* Minimize Toggle Button */}
         <button
           onClick={() => setIsSidebarMinimized(!isSidebarMinimized)}
-          className="absolute -right-3 top-4 z-10 p-1 bg-card border border-border rounded-full shadow-sm hover:bg-muted transition-colors"
+          className="absolute -right-3 top-4 z-10 p-1 rounded-full transition-colors"
+          style={{ background: colors.bg.card, border: `1px solid ${colors.border.default}`, color: colors.text.muted }}
           title={isSidebarMinimized ? 'Expand sidebar' : 'Minimize sidebar'}
         >
           {isSidebarMinimized ? (
-            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            <ChevronRight className="w-4 h-4" />
           ) : (
-            <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+            <ChevronLeft className="w-4 h-4" />
           )}
         </button>
 
         {!isSidebarMinimized ? (
           <>
             {/* Header */}
-            <div className="p-4 border-b border-border">
+            <div className="p-4" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-foreground">Meetings</h2>
+                  <h2
+                    style={{
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      fontSize: 10,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: colors.text.muted,
+                      fontWeight: 500,
+                    }}
+                  >
+                    Meetings
+                  </h2>
                   {pendingActionsCount > 0 && (
-                    <Badge variant="destructive" className="text-xs">
-                      {pendingActionsCount} pending
-                    </Badge>
+                    <FlagChip label={`${pendingActionsCount} pending`} severity="warn" />
                   )}
                 </div>
               </div>
 
               {/* Add Meeting Button */}
-              <Button
-                onClick={() => setShowCreateModal(true)}
-                className="w-full bg-blue-600 hover:bg-blue-700 mb-3"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Meeting
-              </Button>
+              <div className="mb-3">
+                <Button
+                  variant="primary"
+                  accent={colors.entityTypes.client}
+                  onClick={() => setShowCreateModal(true)}
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Meeting
+                </Button>
+              </div>
 
               {/* Search */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+                  style={{ color: colors.text.muted }}
+                />
                 <Input
                   type="text"
                   placeholder="Search meetings..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9"
+                  style={{ paddingLeft: 32 } as any}
                 />
               </div>
 
@@ -181,14 +200,17 @@ export default function ClientMeetingsTab({
               <div className="mt-3">
                 <button
                   onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
-                  className="flex items-center justify-between w-full px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted rounded transition-colors"
+                  className="flex items-center justify-between w-full px-2 py-1.5 rounded transition-colors"
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: colors.text.muted,
+                  }}
                 >
                   <div className="flex items-center gap-1">
                     <Filter className="w-3 h-3" />
                     <span>Filters</span>
-                    {hasActiveFilters && (
-                      <Badge variant="secondary" className="text-[10px] px-1">1</Badge>
-                    )}
+                    {hasActiveFilters && <FlagChip label="1" severity="info" />}
                   </div>
                   {isFiltersExpanded ? (
                     <ChevronUp className="w-3 h-3" />
@@ -198,15 +220,10 @@ export default function ClientMeetingsTab({
                 </button>
 
                 {isFiltersExpanded && (
-                  <div className="mt-2 space-y-2 border-t border-border pt-2">
+                  <div className="mt-2 space-y-2 pt-2" style={{ borderTop: `1px solid ${colors.border.default}` }}>
                     {hasActiveFilters && (
-                      <Button
-                        onClick={clearAllFilters}
-                        variant="ghost"
-                        size="sm"
-                        className="w-full text-xs h-7"
-                      >
-                        <X className="w-3 h-3 mr-1" />
+                      <Button variant="ghost" size="sm" onClick={clearAllFilters}>
+                        <X className="w-3 h-3" />
                         Clear Filters
                       </Button>
                     )}
@@ -214,21 +231,38 @@ export default function ClientMeetingsTab({
                     {/* Type Filter */}
                     {meetingTypes.length > 0 && (
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
+                        <label
+                          className="mb-1 block"
+                          style={{
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                            fontSize: 9,
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: colors.text.muted,
+                            fontWeight: 500,
+                          }}
+                        >
+                          Type
+                        </label>
                         <div className="flex flex-wrap gap-1">
-                          {meetingTypes.map(type => (
-                            <button
-                              key={type}
-                              onClick={() => setFilterType(filterType === type ? null : type)}
-                              className={`px-2 py-1 text-xs rounded ${
-                                filterType === type
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-muted text-muted-foreground hover:bg-muted'
-                              }`}
-                            >
-                              {getMeetingTypeLabel(type)}
-                            </button>
-                          ))}
+                          {meetingTypes.map(type => {
+                            const active = filterType === type;
+                            return (
+                              <button
+                                key={type}
+                                onClick={() => setFilterType(active ? null : type)}
+                                className="px-2 py-1 rounded"
+                                style={{
+                                  fontSize: 11,
+                                  background: active ? `${colors.entityTypes.client}15` : colors.bg.cardAlt,
+                                  color: active ? colors.entityTypes.client : colors.text.muted,
+                                  border: `1px solid ${active ? `${colors.entityTypes.client}40` : colors.border.default}`,
+                                }}
+                              >
+                                {getMeetingTypeLabel(type)}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -240,33 +274,42 @@ export default function ClientMeetingsTab({
             {/* Meetings List - Grouped by Month */}
             <div className="flex-1 overflow-y-auto">
               {meetings === undefined ? (
-                <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+                <div className="p-4" style={{ fontSize: 12, color: colors.text.muted }}>Loading...</div>
               ) : filteredMeetings.length === 0 ? (
-                <div className="p-4 text-center">
-                  <Video className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    {hasActiveFilters || searchQuery
-                      ? 'No meetings match your filters.'
-                      : 'No meetings yet.'}
-                  </p>
+                <div className="p-4">
+                  <EmptyState
+                    icon={<Video size={28} />}
+                    title={hasActiveFilters || searchQuery ? 'No meetings match your filters' : 'No meetings yet'}
+                  />
                 </div>
               ) : (
                 <div>
                   {Object.entries(groupedMeetings).map(([month, monthMeetings]) => (
                     <div key={month}>
-                      <div className="px-4 py-2 bg-muted border-b border-border sticky top-0">
-                        <h3 className="text-xs font-semibold text-muted-foreground uppercase">
-                          {month}
-                        </h3>
+                      <div
+                        className="px-4 py-2 sticky top-0"
+                        style={{
+                          background: colors.bg.light,
+                          borderBottom: `1px solid ${colors.border.default}`,
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: 9,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: colors.text.muted,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {month}
                       </div>
-                      <div className="divide-y divide-border">
+                      <div style={{ borderBottom: `1px solid ${colors.border.light}` }}>
                         {monthMeetings.map((meeting: any) => (
-                          <MeetingCard
-                            key={meeting._id}
-                            meeting={meeting}
-                            isSelected={selectedMeetingId === meeting._id}
-                            onClick={() => setSelectedMeetingId(meeting._id)}
-                          />
+                          <div key={meeting._id} style={{ borderBottom: `1px solid ${colors.border.light}` }}>
+                            <MeetingCard
+                              meeting={meeting}
+                              isSelected={selectedMeetingId === meeting._id}
+                              onClick={() => setSelectedMeetingId(meeting._id)}
+                            />
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -278,40 +321,47 @@ export default function ClientMeetingsTab({
         ) : (
           /* Minimized sidebar view */
           <>
-            <div className="p-2 border-b border-border flex flex-col items-center gap-2">
+            <div
+              className="p-2 flex flex-col items-center gap-2"
+              style={{ borderBottom: `1px solid ${colors.border.default}` }}
+            >
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="p-2 rounded"
+                style={{ background: colors.entityTypes.client, color: '#ffffff' }}
                 title="Add Meeting"
               >
                 <Plus className="w-4 h-4" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto py-2">
-              {filteredMeetings.map((meeting: any) => (
-                <button
-                  key={meeting._id}
-                  onClick={() => {
-                    setSelectedMeetingId(meeting._id);
-                    setIsSidebarMinimized(false);
-                  }}
-                  className={`w-full p-2 flex justify-center ${
-                    selectedMeetingId === meeting._id
-                      ? 'bg-blue-100 text-blue-600'
-                      : 'hover:bg-muted text-muted-foreground'
-                  }`}
-                  title={meeting.title}
-                >
-                  <Calendar className="w-4 h-4" />
-                </button>
-              ))}
+              {filteredMeetings.map((meeting: any) => {
+                const active = selectedMeetingId === meeting._id;
+                return (
+                  <button
+                    key={meeting._id}
+                    onClick={() => {
+                      setSelectedMeetingId(meeting._id);
+                      setIsSidebarMinimized(false);
+                    }}
+                    className="w-full p-2 flex justify-center"
+                    style={{
+                      background: active ? `${colors.entityTypes.client}15` : 'transparent',
+                      color: active ? colors.entityTypes.client : colors.text.muted,
+                    }}
+                    title={meeting.title}
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col bg-card overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: colors.bg.card }}>
         {selectedMeeting ? (
           <MeetingDetailView
             meeting={selectedMeeting}
@@ -319,22 +369,22 @@ export default function ClientMeetingsTab({
             onClose={() => setSelectedMeetingId(null)}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center max-w-md">
-              <Video className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                {meetings.length === 0 ? 'No meetings yet' : 'Select a meeting'}
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {meetings.length === 0
+          <div className="flex-1 flex items-center justify-center p-6">
+            <EmptyState
+              icon={<Video size={40} />}
+              title={meetings.length === 0 ? 'No meetings yet' : 'Select a meeting'}
+              body={
+                meetings.length === 0
                   ? `Add meeting summaries to track discussions, decisions, and action items for ${clientName}.`
-                  : 'Select a meeting from the sidebar to view details, or add a new meeting.'}
-              </p>
-              <Button onClick={() => setShowCreateModal(true)} className="gap-2">
-                <Plus className="w-4 h-4" />
-                Add Meeting
-              </Button>
-            </div>
+                  : 'Select a meeting from the sidebar to view details, or add a new meeting.'
+              }
+              action={
+                <Button variant="primary" accent={colors.entityTypes.client} onClick={() => setShowCreateModal(true)}>
+                  <Plus className="w-4 h-4" />
+                  Add Meeting
+                </Button>
+              }
+            />
           </div>
         )}
       </div>

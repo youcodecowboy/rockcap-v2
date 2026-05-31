@@ -3,7 +3,8 @@
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Badge } from '@/components/ui/badge';
+import { useColors } from '@/lib/useColors';
+import { Panel, DataTable, EmptyState, StatusPill } from '@/components/layouts';
 import {
   FileText,
   MessageSquare,
@@ -31,6 +32,7 @@ export default function ClientCommunicationsTab({
   documents,
 }: ClientCommunicationsTabProps) {
   const router = useRouter();
+  const colors = useColors();
 
   // Group communications by date
   const groupedCommunications = useMemo(() => {
@@ -66,72 +68,106 @@ export default function ClientCommunicationsTab({
 
   if (communications.length === 0) {
     return (
-      <div className="bg-card rounded-lg border border-border p-12 text-center">
-        <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-foreground mb-2">No Communications</h3>
-        <p className="text-muted-foreground max-w-md mx-auto">
-          Communications will appear here as documents are uploaded and interactions are recorded.
-        </p>
-      </div>
+      <EmptyState
+        icon={<MessageSquare size={32} />}
+        title="No communications"
+        body="Communications will appear here as documents are uploaded and interactions are recorded."
+      />
     );
   }
 
   return (
-    <div className="bg-card rounded-lg border border-border">
-      <div className="px-6 py-4 border-b border-border">
-        <h3 className="text-lg font-semibold text-foreground">Communication Timeline</h3>
-        <p className="text-sm text-muted-foreground">{communications.length} interactions</p>
-      </div>
+    <Panel
+      title={`Communication Timeline · ${communications.length} interactions`}
+      accent={colors.entityTypes.client}
+      padded={false}
+    >
+      {Object.entries(groupedCommunications).map(([date, comms]) => (
+        <div key={date}>
+          {/* Date Header */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 14px',
+              background: colors.bg.light,
+              borderBottom: `1px solid ${colors.border.default}`,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: 9,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: colors.text.muted,
+              fontWeight: 500,
+            }}
+          >
+            <Calendar size={12} />
+            {date}
+          </div>
 
-      <div className="divide-y divide-border">
-        {Object.entries(groupedCommunications).map(([date, comms]) => (
-          <div key={date} className="py-4">
-            {/* Date Header */}
-            <div className="px-6 mb-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <Calendar className="w-4 h-4" />
-                {date}
-              </div>
-            </div>
-
-            {/* Communications for this date */}
-            <div className="space-y-2">
-              {comms.map((comm) => (
-                <div
-                  key={comm.id}
-                  className="px-6 py-3 hover:bg-muted cursor-pointer transition-colors"
-                  onClick={() => router.push(`/docs/${comm.documentId}`)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-foreground truncate">
-                          {getDocumentName(comm.documentId)}
-                        </p>
-                        <Badge variant="outline" className="text-xs">
-                          {getDocumentType(comm.documentId)}
-                        </Badge>
+          <DataTable
+            rows={comms}
+            getRowKey={(c) => c.id}
+            onRowClick={(c) => router.push(`/docs/${c.documentId}`)}
+            columns={[
+              {
+                key: 'document',
+                header: 'Document',
+                render: (c) => (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
+                    <FileText size={16} style={{ flexShrink: 0, marginTop: 2 }} color={colors.accent.blue} />
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: colors.text.primary,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {getDocumentName(c.documentId)}
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                        {comm.summary}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {new Date(comm.date).toLocaleTimeString('en-US', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </p>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: colors.text.muted,
+                          marginTop: 2,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {c.summary}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+                ),
+              },
+              {
+                key: 'type',
+                header: 'Type',
+                width: 160,
+                render: (c) => <StatusPill label={getDocumentType(c.documentId)} tone={colors.accent.blue} />,
+              },
+              {
+                key: 'time',
+                header: 'Time',
+                mono: true,
+                align: 'right',
+                width: 100,
+                render: (c) =>
+                  new Date(c.date).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+              },
+            ]}
+          />
+        </div>
+      ))}
+    </Panel>
   );
 }

@@ -7,7 +7,7 @@ import type { ColorPalette } from "@/lib/colors";
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md";
 
-interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "style"> {
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   /** Accent for the primary variant (defaults to the brand orange). */
@@ -30,7 +30,7 @@ function palette(variant: Variant, accent: string, colors: ColorPalette, hover: 
 
 // Canon button — replaces shadcn <Button>. Sharp radius, hairline border,
 // 100ms linear hover. Tones derive from useColors() (theme-aware).
-export function Button({ variant = "secondary", size = "md", accent, children, disabled, ...rest }: ButtonProps) {
+export function Button({ variant = "secondary", size = "md", accent, children, disabled, style, ...rest }: ButtonProps) {
   const colors = useColors();
   const [hover, setHover] = useState(false);
   const p = palette(variant, accent ?? colors.accent.orange, colors, hover && !disabled);
@@ -56,6 +56,7 @@ export function Button({ variant = "secondary", size = "md", accent, children, d
         opacity: disabled ? 0.5 : 1,
         transition: "background 100ms linear, border-color 100ms linear",
         whiteSpace: "nowrap",
+        ...style,
       }}
     >
       {children}
@@ -67,8 +68,9 @@ export function Button({ variant = "secondary", size = "md", accent, children, d
 export function IconButton({
   children,
   label,
+  style,
   ...rest
-}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "style"> & { label: string; children: ReactNode }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
   const colors = useColors();
   const [hover, setHover] = useState(false);
   return (
@@ -90,6 +92,7 @@ export function IconButton({
         borderRadius: 4,
         cursor: "pointer",
         transition: "background 100ms linear, border-color 100ms linear",
+        ...style,
       }}
     >
       {children}

@@ -4,27 +4,8 @@ import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Modal, Field, Input, Textarea, Select, Button, StatusPill, IconButton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Sparkles,
   Plus,
@@ -34,7 +15,6 @@ import {
   AlertCircle,
   FileText,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface ParsedRequirement {
   name: string;
@@ -54,8 +34,9 @@ export default function DynamicChecklistInput({
   projectId,
   onClose,
 }: DynamicChecklistInputProps) {
+  const colors = useColors();
   const [activeTab, setActiveTab] = useState<'llm' | 'manual'>('llm');
-  
+
   // LLM parsing state
   const [llmInput, setLlmInput] = useState('');
   const [isParsing, setIsParsing] = useState(false);
@@ -109,7 +90,7 @@ export default function DynamicChecklistInput({
       }
 
       const data = await response.json();
-      
+
       if (data.requirements && data.requirements.length > 0) {
         setParsedRequirements(data.requirements);
       } else {
@@ -168,210 +149,245 @@ export default function DynamicChecklistInput({
     }
   };
 
-  // Get priority badge
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'required':
-        return <Badge variant="destructive" className="text-[10px] h-4">Required</Badge>;
-      case 'nice_to_have':
-        return <Badge variant="secondary" className="text-[10px] h-4">Nice to have</Badge>;
-      default:
-        return <Badge variant="outline" className="text-[10px] h-4">Optional</Badge>;
-    }
+  // Priority → StatusPill tone
+  const priorityTone = (priority: string) =>
+    priority === 'required'
+      ? colors.accent.red
+      : priority === 'nice_to_have'
+      ? colors.accent.blue
+      : colors.text.muted;
+
+  const priorityLabel = (priority: string) =>
+    priority === 'required' ? 'Required' : priority === 'nice_to_have' ? 'Nice to have' : 'Optional';
+
+  // Token-styled tab trigger.
+  const tabButton = (key: 'llm' | 'manual', icon: React.ReactNode, label: string) => {
+    const active = activeTab === key;
+    return (
+      <button
+        onClick={() => setActiveTab(key)}
+        style={{
+          flex: 1,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          padding: '7px 10px',
+          fontSize: 11,
+          fontWeight: 500,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          color: active ? colors.text.primary : colors.text.muted,
+          background: active ? colors.bg.card : 'transparent',
+          border: `1px solid ${active ? colors.border.default : 'transparent'}`,
+          borderRadius: 4,
+          cursor: 'pointer',
+          transition: 'background 100ms linear, color 100ms linear',
+        }}
+      >
+        {icon}
+        {label}
+      </button>
+    );
   };
 
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="w-5 h-5 text-blue-600" />
-            Add Custom Requirements
-          </DialogTitle>
-          <DialogDescription>
-            Add new document requirements to the checklist
-          </DialogDescription>
-        </DialogHeader>
+    <Modal open onClose={onClose} title="Add custom requirements" width={560}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <p style={{ fontSize: 11, color: colors.text.muted }}>
+          Add new document requirements to the checklist
+        </p>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'llm' | 'manual')}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="llm" className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              AI Assisted
-            </TabsTrigger>
-            <TabsTrigger value="manual" className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              Manual Entry
-            </TabsTrigger>
-          </TabsList>
+        {/* Tabs */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 4,
+            padding: 4,
+            background: colors.bg.cardAlt,
+            border: `1px solid ${colors.border.light}`,
+            borderRadius: 4,
+          }}
+        >
+          {tabButton('llm', <Sparkles size={13} />, 'AI assisted')}
+          {tabButton('manual', <FileText size={13} />, 'Manual entry')}
+        </div>
 
-          {/* LLM Tab */}
-          <TabsContent value="llm" className="space-y-4 mt-4">
-            <div>
-              <Label className="text-sm font-medium mb-2 block">
-                Describe additional requirements
-              </Label>
+        {/* LLM Tab */}
+        {activeTab === 'llm' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Field
+              label="Describe additional requirements"
+              hint="Describe what additional documents you need in natural language. The AI will parse your text and extract structured requirements."
+            >
               <Textarea
                 placeholder="Example: This client is working on an additional project at another location, and we are going to do some due diligence on it. I will be asking them for some additional project plans and evaluation reports..."
                 value={llmInput}
                 onChange={(e) => setLlmInput(e.target.value)}
-                className="h-32"
+                rows={6}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Describe what additional documents you need in natural language. The AI will parse your text and extract structured requirements.
-              </p>
-            </div>
+            </Field>
 
             <Button
+              variant="primary"
+              accent={colors.entityTypes.client}
               onClick={handleParse}
               disabled={isParsing || !llmInput.trim()}
-              className="w-full"
             >
               {isParsing ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Parsing...
+                  <Loader2 size={14} className="animate-spin" />
+                  Parsing
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Parse Requirements
+                  <Sparkles size={14} />
+                  Parse requirements
                 </>
               )}
             </Button>
 
             {/* Parse Error */}
             {parseError && (
-              <div className="p-3 bg-red-50 rounded-lg flex items-start gap-2 text-sm text-red-700">
-                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div
+                className="flex items-start gap-2"
+                style={{
+                  padding: 10,
+                  background: `${colors.accent.red}10`,
+                  border: `1px solid ${colors.accent.red}40`,
+                  borderRadius: 4,
+                  fontSize: 11,
+                  color: colors.accent.red,
+                }}
+              >
+                <AlertCircle size={14} style={{ marginTop: 1, flexShrink: 0 }} />
                 <span>{parseError}</span>
               </div>
             )}
 
             {/* Parsed Requirements Preview */}
             {parsedRequirements.length > 0 && (
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">
-                  Parsed Requirements ({parsedRequirements.length})
-                </Label>
-                <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div
+                  style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 9,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color: colors.text.muted,
+                    fontWeight: 500,
+                  }}
+                >
+                  Parsed requirements ({parsedRequirements.length})
+                </div>
+                <div
+                  style={{
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: 4,
+                    maxHeight: 200,
+                    overflowY: 'auto',
+                  }}
+                >
                   {parsedRequirements.map((req, index) => (
-                    <div key={index} className="p-3 flex items-start gap-3">
+                    <div
+                      key={index}
+                      className="flex items-start gap-3"
+                      style={{
+                        padding: 10,
+                        borderBottom: index === parsedRequirements.length - 1 ? 'none' : `1px solid ${colors.border.light}`,
+                      }}
+                    >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm text-foreground">{req.name}</span>
-                          {getPriorityBadge(req.priority)}
+                          <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{req.name}</span>
+                          <StatusPill label={priorityLabel(req.priority)} tone={priorityTone(req.priority)} />
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 4 }}>
                           Category: {req.category}
                         </p>
                         {req.description && (
-                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                          <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 4 }} className="line-clamp-2">
                             {req.description}
                           </p>
                         )}
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                        onClick={() => handleRemoveParsed(index)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
+                      <IconButton label="Remove requirement" onClick={() => handleRemoveParsed(index)}>
+                        <X size={14} />
+                      </IconButton>
                     </div>
                   ))}
                 </div>
 
                 <Button
+                  variant="primary"
+                  accent={colors.entityTypes.client}
                   onClick={handleAddParsed}
-                  className="w-full bg-green-600 hover:bg-green-700"
                 >
-                  <Check className="w-4 h-4 mr-2" />
-                  Add {parsedRequirements.length} Requirement{parsedRequirements.length > 1 ? 's' : ''}
+                  <Check size={14} />
+                  Add {parsedRequirements.length} requirement{parsedRequirements.length > 1 ? 's' : ''}
                 </Button>
               </div>
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          {/* Manual Tab */}
-          <TabsContent value="manual" className="space-y-4 mt-4">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name" className="text-sm font-medium">
-                  Requirement Name *
-                </Label>
+        {/* Manual Tab */}
+        {activeTab === 'manual' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Field label="Requirement name *">
+              <Input
+                placeholder="e.g., Environmental Survey Report"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Category *">
                 <Input
-                  id="name"
-                  placeholder="e.g., Environmental Survey Report"
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
-                  className="mt-1"
+                  placeholder="e.g., Professional Reports"
+                  value={manualCategory}
+                  onChange={(e) => setManualCategory(e.target.value)}
                 />
-              </div>
+              </Field>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="category" className="text-sm font-medium">
-                    Category *
-                  </Label>
-                  <Input
-                    id="category"
-                    placeholder="e.g., Professional Reports"
-                    value={manualCategory}
-                    onChange={(e) => setManualCategory(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">
-                    Priority
-                  </Label>
-                  <Select value={manualPriority} onValueChange={(v: any) => setManualPriority(v)}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="required">Required</SelectItem>
-                      <SelectItem value="nice_to_have">Nice to have</SelectItem>
-                      <SelectItem value="optional">Optional</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="description" className="text-sm font-medium">
-                  Description
-                </Label>
-                <Textarea
-                  id="description"
-                  placeholder="Brief description of what this document should contain..."
-                  value={manualDescription}
-                  onChange={(e) => setManualDescription(e.target.value)}
-                  className="mt-1 h-20"
-                />
-              </div>
+              <Field label="Priority">
+                <Select value={manualPriority} onChange={(e) => setManualPriority(e.target.value as any)}>
+                  <option value="required">Required</option>
+                  <option value="nice_to_have">Nice to have</option>
+                  <option value="optional">Optional</option>
+                </Select>
+              </Field>
             </div>
 
+            <Field label="Description">
+              <Textarea
+                placeholder="Brief description of what this document should contain..."
+                value={manualDescription}
+                onChange={(e) => setManualDescription(e.target.value)}
+                rows={3}
+              />
+            </Field>
+
             <Button
+              variant="primary"
+              accent={colors.entityTypes.client}
               onClick={handleManualAdd}
               disabled={!manualName.trim() || !manualCategory.trim()}
-              className="w-full"
             >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Requirement
+              <Plus size={14} />
+              Add requirement
             </Button>
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </Modal>
   );
 }

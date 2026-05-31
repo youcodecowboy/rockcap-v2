@@ -1,34 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Plus,
   Mail,
   Phone,
   Copy,
   Check,
-  MoreVertical,
   Pencil,
   Trash2,
   User,
@@ -37,8 +18,21 @@ import {
   MessageSquare,
   Briefcase,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import {
+  Panel,
+  Button,
+  IconButton,
+  StatusPill,
+  EmptyState,
+  Modal,
+  Field,
+  Input,
+  Textarea,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import LinkContactDialog from './LinkContactDialog';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface Contact {
   _id: Id<"contacts">;
@@ -71,6 +65,7 @@ export default function ClientContactsTab({
   clientName,
   contacts,
 }: ClientContactsTabProps) {
+  const colors = useColors();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
@@ -117,7 +112,7 @@ export default function ClientContactsTab({
 
   const handleDelete = async (contactId: Id<"contacts">) => {
     if (!confirm('Are you sure you want to delete this contact?')) return;
-    
+
     setIsDeleting(contactId);
     try {
       await removeContact({ id: contactId });
@@ -130,26 +125,37 @@ export default function ClientContactsTab({
   };
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <h2 className="text-xl font-semibold text-foreground">Contacts</h2>
-          <p className="text-sm text-muted-foreground">
-            {contacts.length} contact{contacts.length !== 1 ? 's' : ''} for {clientName}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => setIsLinkDialogOpen(true)}
-            variant="outline"
-            className="gap-2"
+          <div
+            style={{
+              fontFamily: MONO,
+              fontSize: 9,
+              fontWeight: 500,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: colors.text.muted,
+            }}
           >
-            <UserPlus className="w-4 h-4" />
+            Contacts
+          </div>
+          <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>
+            {contacts.length} contact{contacts.length !== 1 ? 's' : ''} for {clientName}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button variant="secondary" onClick={() => setIsLinkDialogOpen(true)}>
+            <UserPlus size={14} />
             Link Existing
           </Button>
-          <Button onClick={() => setIsAddModalOpen(true)} className="gap-2">
-            <Plus className="w-4 h-4" />
+          <Button
+            variant="primary"
+            accent={colors.entityTypes.client}
+            onClick={() => setIsAddModalOpen(true)}
+          >
+            <Plus size={14} />
             Add Contact
           </Button>
         </div>
@@ -157,7 +163,13 @@ export default function ClientContactsTab({
 
       {/* Contact Cards Grid */}
       {contacts.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+            gap: 14,
+          }}
+        >
           {contacts.map((contact) => {
             const linkedCompanyName =
               (contact.linkedCompanyIds ?? [])
@@ -179,17 +191,21 @@ export default function ClientContactsTab({
           })}
         </div>
       ) : (
-        <div className="text-center py-12 bg-muted rounded-lg border-2 border-dashed border-border">
-          <User className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">No contacts yet</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Add your first contact to start building your network
-          </p>
-          <Button onClick={() => setIsAddModalOpen(true)} variant="outline" className="gap-2">
-            <Plus className="w-4 h-4" />
-            Add Contact
-          </Button>
-        </div>
+        <EmptyState
+          icon={<User size={40} />}
+          title="No contacts yet"
+          body="Add your first contact to start building your network."
+          action={
+            <Button
+              variant="primary"
+              accent={colors.entityTypes.client}
+              onClick={() => setIsAddModalOpen(true)}
+            >
+              <Plus size={14} />
+              Add Contact
+            </Button>
+          }
+        />
       )}
 
       {/* Link existing contact — search modal */}
@@ -237,8 +253,7 @@ function relativeDays(iso?: string): string | null {
 
 // Contact Card Component — reworked for Task C. Surfaces HubSpot origin,
 // linked-company context, lifecycle stage, last-contacted, and an 'Unlink
-// from client' action alongside Edit + Delete. Styling tightened for
-// consistency with the rest of the reworked desktop client profile.
+// from client' action alongside Edit + Delete. Restyled to the layout canon.
 function ContactCard({
   contact,
   linkedCompanyName,
@@ -258,6 +273,7 @@ function ContactCard({
   copiedEmail: string | null;
   isDeleting: boolean;
 }) {
+  const colors = useColors();
   const initials = contact.name
     .split(' ')
     .map((n) => n[0])
@@ -273,116 +289,127 @@ function ContactCard({
   );
 
   return (
-    <div className="bg-card rounded-lg border border-border p-5 hover:shadow-md hover:border-border transition-all">
+    <Panel padded>
       {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-lg shrink-0">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              background: `${colors.entityTypes.contact}20`,
+              border: `1px solid ${colors.entityTypes.contact}40`,
+              color: colors.entityTypes.contact,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              fontSize: 15,
+              fontWeight: 500,
+            }}
+          >
             {initials}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <h3 className="font-semibold text-foreground truncate">
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <h3 style={{ fontSize: 14, fontWeight: 500, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {contact.name}
               </h3>
-              {fromHubSpot ? (
-                <Badge
-                  variant="secondary"
-                  className="text-[9px] h-4 px-1.5 bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-50"
-                >
-                  HubSpot
-                </Badge>
-              ) : null}
+              {fromHubSpot ? <StatusPill label="HubSpot" tone={colors.accent.orange} /> : null}
             </div>
             {contact.role && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1 truncate">
-                <Briefcase className="w-3 h-3 shrink-0" />
-                <span className="truncate">{contact.role}</span>
+              <p
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 12,
+                  color: colors.text.muted,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  marginTop: 2,
+                }}
+              >
+                <Briefcase size={12} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contact.role}</span>
               </p>
             )}
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreVertical className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
-              <Pencil className="w-4 h-4 mr-2" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onUnlink}>
-              <User className="w-4 h-4 mr-2" />
-              Unlink from client
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onDelete}
-              className="text-red-600"
-              disabled={isDeleting}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          <IconButton label="Edit" onClick={onEdit}>
+            <Pencil size={14} />
+          </IconButton>
+          <IconButton label="Unlink from client" onClick={onUnlink}>
+            <User size={14} />
+          </IconButton>
+          <IconButton label={isDeleting ? 'Deleting' : 'Delete'} onClick={onDelete} disabled={isDeleting}>
+            <Trash2 size={14} style={{ color: colors.accent.red }} />
+          </IconButton>
+        </div>
       </div>
 
       {/* HubSpot enrichment chips — lifecycle + linked company + last-touch.
           Only renders if any are available to keep non-HubSpot cards clean. */}
       {lifecycle || linkedCompanyName || lastTouch ? (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {lifecycle ? (
-            <span className="text-[10px] font-medium text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-full">
-              {lifecycle}
-            </span>
-          ) : null}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+          {lifecycle ? <StatusPill label={lifecycle} tone={colors.text.muted} /> : null}
           {linkedCompanyName ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-              <Building2 className="w-2.5 h-2.5" />
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontFamily: MONO,
+                fontSize: 9,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                color: colors.accent.blue,
+                background: `${colors.accent.blue}20`,
+                border: `1px solid ${colors.accent.blue}40`,
+                padding: '2px 6px',
+                borderRadius: 2,
+              }}
+            >
+              <Building2 size={10} />
               {linkedCompanyName}
             </span>
           ) : null}
-          {lastTouch ? (
-            <span className="text-[10px] font-medium text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-full">
-              Last touch · {lastTouch}
-            </span>
-          ) : null}
+          {lastTouch ? <StatusPill label={`Last touch · ${lastTouch}`} tone={colors.text.muted} /> : null}
         </div>
       ) : null}
 
       {/* Contact Info */}
-      <div className="space-y-2 mb-4">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
         {contact.email && (
-          <div className="flex items-center justify-between group">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Mail className="w-4 h-4 text-muted-foreground" />
-              <span className="truncate">{contact.email}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: colors.text.secondary, minWidth: 0 }}>
+              <Mail size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contact.email}</span>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+            <IconButton
+              label={copiedEmail === contact.email ? 'Copied' : 'Copy email'}
               onClick={() => onCopyEmail(contact.email!)}
             >
               {copiedEmail === contact.email ? (
-                <Check className="w-3.5 h-3.5 text-green-500" />
+                <Check size={13} style={{ color: colors.accent.green }} />
               ) : (
-                <Copy className="w-3.5 h-3.5" />
+                <Copy size={13} />
               )}
-            </Button>
+            </IconButton>
           </div>
         )}
         {contact.phone && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Phone className="w-4 h-4 text-muted-foreground" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: colors.text.secondary }}>
+            <Phone size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
             <span>{contact.phone}</span>
           </div>
         )}
         {contact.company && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Building2 className="w-4 h-4 text-muted-foreground" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: colors.text.secondary }}>
+            <Building2 size={14} style={{ color: colors.text.muted, flexShrink: 0 }} />
             <span>{contact.company}</span>
           </div>
         )}
@@ -390,19 +417,49 @@ function ContactCard({
 
       {/* Notes */}
       {contact.notes && (
-        <div className="bg-muted rounded-md p-3 mb-4">
-          <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-            <MessageSquare className="w-3 h-3" />
+        <div
+          style={{
+            background: colors.bg.cardAlt,
+            border: `1px solid ${colors.border.light}`,
+            borderRadius: 4,
+            padding: 10,
+            marginBottom: 14,
+          }}
+        >
+          <p
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              fontFamily: MONO,
+              fontSize: 9,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              color: colors.text.muted,
+              marginBottom: 4,
+            }}
+          >
+            <MessageSquare size={11} />
             Notes
           </p>
-          <p className="text-sm text-foreground line-clamp-2">{contact.notes}</p>
+          <p
+            style={{
+              fontSize: 12,
+              color: colors.text.primary,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical' as const,
+              overflow: 'hidden',
+            }}
+          >
+            {contact.notes}
+          </p>
         </div>
       )}
 
       {/* Action Button */}
-      <Button 
-        variant="outline" 
-        className="w-full gap-2"
+      <Button
+        variant="secondary"
         onClick={() => {
           if (contact.email) {
             window.location.href = `mailto:${contact.email}`;
@@ -410,10 +467,10 @@ function ContactCard({
         }}
         disabled={!contact.email}
       >
-        <Mail className="w-4 h-4" />
+        <Mail size={14} />
         Contact Person
       </Button>
-    </div>
+    </Panel>
   );
 }
 
@@ -438,6 +495,7 @@ function ContactModal({
     notes?: string;
   }) => Promise<void>;
 }) {
+  const colors = useColors();
   const [formData, setFormData] = useState({
     name: '',
     role: '',
@@ -448,8 +506,11 @@ function ContactModal({
   });
   const [isSaving, setIsSaving] = useState(false);
 
-  // Reset form when modal opens with a contact
-  useState(() => {
+  // Sync the form from the contact prop whenever the modal opens. The canon
+  // Modal unmounts when closed, so this replaces the old shadcn Dialog's
+  // onOpenChange(open => handleOpen()) form-reset behaviour.
+  useEffect(() => {
+    if (!isOpen) return;
     if (contact) {
       setFormData({
         name: contact.name || '',
@@ -469,30 +530,7 @@ function ContactModal({
         notes: '',
       });
     }
-  });
-
-  // Update form when contact changes
-  const handleOpen = () => {
-    if (contact) {
-      setFormData({
-        name: contact.name || '',
-        role: contact.role || '',
-        email: contact.email || '',
-        phone: contact.phone || '',
-        company: contact.company || '',
-        notes: contact.notes || '',
-      });
-    } else {
-      setFormData({
-        name: '',
-        role: '',
-        email: '',
-        phone: '',
-        company: '',
-        notes: '',
-      });
-    }
-  };
+  }, [isOpen, contact]);
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
@@ -521,94 +559,84 @@ function ContactModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => {
-      if (open) {
-        handleOpen();
-      } else {
-        onClose();
-      }
-    }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {contact ? 'Edit Contact' : 'Add New Contact'}
-          </DialogTitle>
-          <DialogDescription>
-            {contact ? 'Update the contact information below.' : 'Add a new contact to your client.'}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                Name <span className="text-red-500">*</span>
-              </label>
-              <Input
-                placeholder="John Smith"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Role</label>
-              <Input
-                placeholder="CEO, Manager, etc."
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Email</label>
-              <Input
-                type="email"
-                placeholder="john@example.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Phone</label>
-              <Input
-                placeholder="+44 7XXX XXXXXX"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Company</label>
-            <Input
-              placeholder="Company name"
-              value={formData.company}
-              onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Notes</label>
-            <Textarea
-              placeholder="Any additional notes about this contact..."
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows={3}
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title={contact ? 'Edit contact' : 'Add new contact'}
+      width={560}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSaving}>
+          <Button
+            variant="primary"
+            accent={colors.entityTypes.client}
+            onClick={handleSave}
+            disabled={isSaving}
+          >
             {isSaving ? 'Saving...' : contact ? 'Save Changes' : 'Add Contact'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 14 }}>
+        {contact ? 'Update the contact information below.' : 'Add a new contact to your client.'}
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Field label="Name *">
+            <Input
+              placeholder="John Smith"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            />
+          </Field>
+          <Field label="Role">
+            <Input
+              placeholder="CEO, Manager, etc."
+              value={formData.role}
+              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+            />
+          </Field>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Field label="Email">
+            <Input
+              type="email"
+              placeholder="john@example.com"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
+          </Field>
+          <Field label="Phone">
+            <Input
+              placeholder="+44 7XXX XXXXXX"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            />
+          </Field>
+        </div>
+
+        <Field label="Company">
+          <Input
+            placeholder="Company name"
+            value={formData.company}
+            onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+          />
+        </Field>
+
+        <Field label="Notes">
+          <Textarea
+            placeholder="Any additional notes about this contact..."
+            value={formData.notes}
+            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            rows={3}
+          />
+        </Field>
+      </div>
+    </Modal>
   );
 }

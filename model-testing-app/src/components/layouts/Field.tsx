@@ -58,20 +58,22 @@ function controlStyle(colors: ReturnType<typeof useColors>, focused: boolean) {
   } as const;
 }
 
-export function Input(props: Omit<InputHTMLAttributes<HTMLInputElement>, "style">) {
+// Controls accept `style` and MERGE it after the canon base (caller can tweak
+// padding / min-height / mono without losing the theme styling).
+export function Input({ style, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   const colors = useColors();
   const [f, setF] = useState(false);
-  return <input {...props} onFocus={(e) => { setF(true); props.onFocus?.(e); }} onBlur={(e) => { setF(false); props.onBlur?.(e); }} style={controlStyle(colors, f)} />;
+  return <input {...props} onFocus={(e) => { setF(true); props.onFocus?.(e); }} onBlur={(e) => { setF(false); props.onBlur?.(e); }} style={{ ...controlStyle(colors, f), ...style }} />;
 }
 
-export function Textarea(props: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "style">) {
+export function Textarea({ style, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const colors = useColors();
   const [f, setF] = useState(false);
-  return <textarea {...props} onFocus={(e) => { setF(true); props.onFocus?.(e); }} onBlur={(e) => { setF(false); props.onBlur?.(e); }} style={{ ...controlStyle(colors, f), resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />;
+  return <textarea {...props} onFocus={(e) => { setF(true); props.onFocus?.(e); }} onBlur={(e) => { setF(false); props.onBlur?.(e); }} style={{ ...controlStyle(colors, f), resize: "vertical", minHeight: 72, fontFamily: "inherit", ...style }} />;
 }
 
-export function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "style"> & { children: ReactNode }) {
+export function Select({ style, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
   const colors = useColors();
   const [f, setF] = useState(false);
-  return <select {...props} onFocus={(e) => { setF(true); props.onFocus?.(e); }} onBlur={(e) => { setF(false); props.onBlur?.(e); }} style={{ ...controlStyle(colors, f), cursor: "pointer", appearance: "none" }} />;
+  return <select {...props} onFocus={(e) => { setF(true); props.onFocus?.(e); }} onBlur={(e) => { setF(false); props.onBlur?.(e); }} style={{ ...controlStyle(colors, f), cursor: "pointer", appearance: "none", ...style }} />;
 }
