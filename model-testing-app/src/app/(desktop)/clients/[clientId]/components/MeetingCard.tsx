@@ -69,13 +69,13 @@ export default function MeetingCard({ meeting, isSelected, onClick }: MeetingCar
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left p-3 hover:bg-gray-50 transition-colors ${
+      className={`w-full text-left p-3 hover:bg-muted transition-colors ${
         isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
       }`}
     >
       {/* Header: Date + Type Badge */}
       <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Calendar className="w-3 h-3" />
           <span>{formattedDate}{showYear ? `, ${year}` : ''}</span>
         </div>
@@ -100,20 +100,20 @@ export default function MeetingCard({ meeting, isSelected, onClick }: MeetingCar
       </div>
 
       {/* Title */}
-      <h4 className="font-medium text-gray-900 text-sm mb-1 line-clamp-1 flex items-center gap-1">
+      <h4 className="font-medium text-foreground text-sm mb-1 line-clamp-1 flex items-center gap-1">
         <span>{meeting.title}</span>
         <FlagIndicator entityType="meeting" entityId={meeting._id} />
       </h4>
 
       {/* Summary Preview */}
-      <p className="text-xs text-gray-600 line-clamp-2 mb-2">
+      <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
         {meeting.summary}
       </p>
 
       {/* Footer: Attendees + Action Items */}
       <div className="flex items-center justify-between text-xs">
         {/* Attendees */}
-        <div className="flex items-center gap-1 text-gray-500">
+        <div className="flex items-center gap-1 text-muted-foreground">
           <Users className="w-3 h-3" />
           <span>{meeting.attendees.length}</span>
         </div>

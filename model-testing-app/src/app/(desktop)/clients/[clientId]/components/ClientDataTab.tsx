@@ -177,7 +177,7 @@ export default function ClientDataTab({
   if (!dataLibrary) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
       </div>
     );
   }
@@ -185,15 +185,15 @@ export default function ClientDataTab({
   // Empty state - no projects with data
   if (projects.length === 0) {
     return (
-      <div className="bg-white p-12 text-center">
-        <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Data Library</h3>
-        <p className="text-gray-500 max-w-md mx-auto">
-          Financial data extracted from project documents will appear here. 
+      <div className="bg-card p-12 text-center">
+        <Database className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-foreground mb-2">Data Library</h3>
+        <p className="text-muted-foreground max-w-md mx-auto">
+          Financial data extracted from project documents will appear here.
           Upload spreadsheets to projects to see extracted data points.
         </p>
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg inline-block">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+        <div className="mt-6 p-4 bg-muted rounded-lg inline-block">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <FileSpreadsheet className="w-5 h-5 text-green-600" />
             <span>Upload documents to a project to extract data</span>
           </div>
@@ -203,15 +203,15 @@ export default function ClientDataTab({
   }
 
   return (
-    <div className="flex h-[calc(100vh-200px)] bg-white overflow-hidden">
+    <div className="flex h-[calc(100vh-200px)] bg-card overflow-hidden">
       {/* Project Sidebar */}
-      <div className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col">
+      <div className="w-64 bg-muted border-r border-border flex flex-col">
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
+        <div className="p-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
             Projects
           </h3>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Select a project to view its data
           </p>
         </div>
@@ -228,18 +228,18 @@ export default function ClientDataTab({
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors mb-1",
                   isSelected
                     ? "bg-blue-100 text-blue-900 border border-blue-200"
-                    : "hover:bg-gray-100 text-gray-700"
+                    : "hover:bg-muted text-foreground"
                 )}
               >
                 <Building2 className={cn(
                   "w-4 h-4 flex-shrink-0",
-                  isSelected ? "text-blue-600" : "text-gray-400"
+                  isSelected ? "text-blue-600" : "text-muted-foreground"
                 )} />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">
                     {project.projectName}
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-muted-foreground">
                     {project.itemCount} data point{project.itemCount !== 1 ? 's' : ''}
                   </div>
                 </div>
@@ -252,15 +252,15 @@ export default function ClientDataTab({
         </div>
 
         {/* Sidebar Footer - Summary */}
-        <div className="p-4 border-t border-gray-200 bg-white">
-          <div className="text-xs text-gray-500">
+        <div className="p-4 border-t border-border bg-card">
+          <div className="text-xs text-muted-foreground">
             <div className="flex justify-between">
               <span>Total Projects:</span>
-              <span className="font-medium text-gray-700">{projects.length}</span>
+              <span className="font-medium text-foreground">{projects.length}</span>
             </div>
             <div className="flex justify-between mt-1">
               <span>Total Data Points:</span>
-              <span className="font-medium text-gray-700">{stats?.totalItems || 0}</span>
+              <span className="font-medium text-foreground">{stats?.totalItems || 0}</span>
             </div>
           </div>
         </div>
@@ -269,17 +269,17 @@ export default function ClientDataTab({
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Content Header */}
-        <div className="p-4 border-b border-gray-200 bg-white">
+        <div className="p-4 border-b border-border bg-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Database className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="text-lg font-semibold text-foreground">
                   {selectedProject?.projectName || 'Data Library'}
                 </h2>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   {filteredItems.length} data point{filteredItems.length !== 1 ? 's' : ''} • {categories.length} categor{categories.length !== 1 ? 'ies' : 'y'}
                 </p>
               </div>
@@ -300,7 +300,7 @@ export default function ClientDataTab({
           {/* Search and Actions */}
           <div className="flex items-center gap-3 mt-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 type="text"
                 placeholder="Search data items..."
@@ -324,8 +324,8 @@ export default function ClientDataTab({
         <div className="flex-1 overflow-y-auto p-4">
           {filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <Search className="w-8 h-8 text-gray-300 mb-3" />
-              <p className="text-gray-500">
+              <Search className="w-8 h-8 text-muted-foreground mb-3" />
+              <p className="text-muted-foreground">
                 {searchQuery 
                   ? 'No data items match your search' 
                   : 'No data items in this project yet'}
@@ -355,96 +355,96 @@ export default function ClientDataTab({
                     .reduce((sum: number, item: any) => sum + (item.currentValueNormalized || 0), 0);
 
                   return (
-                    <div key={category} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <div key={category} className="bg-card rounded-lg border border-border overflow-hidden">
                       {/* Category Header */}
                       <button
                         onClick={() => toggleCategory(category)}
-                        className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                        className="w-full flex items-center justify-between p-4 hover:bg-muted transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           {isExpanded ? (
-                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                            <ChevronDown className="w-5 h-5 text-muted-foreground" />
                           ) : (
-                            <ChevronRight className="w-5 h-5 text-gray-400" />
+                            <ChevronRight className="w-5 h-5 text-muted-foreground" />
                           )}
-                          <FolderOpen className={`w-5 h-5 ${isExpanded ? 'text-blue-600' : 'text-gray-400'}`} />
-                          <span className="font-medium text-gray-900">{category}</span>
+                          <FolderOpen className={`w-5 h-5 ${isExpanded ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                          <span className="font-medium text-foreground">{category}</span>
                           <Badge variant="secondary" className="text-xs">
                             {items.length} item{items.length !== 1 ? 's' : ''}
                           </Badge>
                         </div>
                         {categoryTotal > 0 && (
                           <div className="text-right">
-                            <span className="text-sm font-medium text-gray-900">
+                            <span className="text-sm font-medium text-foreground">
                               {formatCurrency(categoryTotal)}
                             </span>
-                            <span className="text-xs text-gray-500 ml-1">total</span>
+                            <span className="text-xs text-muted-foreground ml-1">total</span>
                           </div>
                         )}
                       </button>
 
                       {/* Category Items */}
                       {isExpanded && (
-                        <div className="border-t border-gray-100">
+                        <div className="border-t border-border">
                           <table className="w-full">
-                            <thead className="bg-gray-50">
+                            <thead className="bg-muted">
                               <tr>
-                                <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                   Item
                                 </th>
-                                <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                   Code
                                 </th>
-                                <th className="text-right px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                   Value
                                 </th>
-                                <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                   Source
                                 </th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100">
+                            <tbody className="divide-y divide-border">
                               {items.map((item: any) => (
-                                <tr 
-                                  key={item._id} 
+                                <tr
+                                  key={item._id}
                                   className={cn(
-                                    "hover:bg-gray-50",
-                                    item.isSubtotal && "bg-gray-50/50"
+                                    "hover:bg-muted",
+                                    item.isSubtotal && "bg-muted/50"
                                   )}
                                 >
                                   <td className="px-4 py-3">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-gray-400">
+                                      <span className="text-muted-foreground">
                                         {getDataTypeIcon(item.currentDataType)}
                                       </span>
                                       <span className={cn(
                                         "text-sm",
-                                        item.isSubtotal ? "text-gray-500 italic" : "text-gray-900"
+                                        item.isSubtotal ? "text-muted-foreground italic" : "text-foreground"
                                       )}>
                                         {item.originalName}
                                       </span>
                                       {item.isSubtotal && (
-                                        <Badge variant="outline" className="text-[10px] h-4 text-gray-500">
+                                        <Badge variant="outline" className="text-[10px] h-4 text-muted-foreground">
                                           subtotal
                                         </Badge>
                                       )}
                                     </div>
                                   </td>
                                   <td className="px-4 py-3">
-                                    <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
+                                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
                                       {item.itemCode}
                                     </code>
                                   </td>
                                   <td className="px-4 py-3 text-right">
                                     <span className={cn(
                                       "text-sm font-medium",
-                                      item.isSubtotal ? "text-gray-500" : "text-gray-900"
+                                      item.isSubtotal ? "text-muted-foreground" : "text-foreground"
                                     )}>
                                       {formatValue(item.currentValue, item.currentDataType)}
                                     </span>
                                   </td>
                                   <td className="px-4 py-3">
-                                    <span className="text-xs text-gray-500 truncate max-w-[150px] block">
+                                    <span className="text-xs text-muted-foreground truncate max-w-[150px] block">
                                       {item.currentSourceDocumentName}
                                     </span>
                                   </td>

@@ -134,19 +134,19 @@ export default function ClientProjectsTab({
             
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-semibold text-gray-900 truncate">{project.name}</h3>
+                <h3 className="font-semibold text-foreground truncate">{project.name}</h3>
                 {getStatusBadge(project.status)}
               </div>
               
               {project.projectShortcode && (
-                <p className="text-sm text-gray-500 font-mono mt-0.5">{project.projectShortcode}</p>
+                <p className="text-sm text-muted-foreground font-mono mt-0.5">{project.projectShortcode}</p>
               )}
               
               {project.description && (
-                <p className="text-sm text-gray-600 mt-1 line-clamp-2">{project.description}</p>
+                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{project.description}</p>
               )}
               
-              <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
+              <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <FileText className="w-4 h-4" />
                   {documents.length} documents
@@ -158,7 +158,7 @@ export default function ClientProjectsTab({
               </div>
             </div>
 
-            <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+            <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
           </div>
         </CardContent>
       </Card>
@@ -170,7 +170,7 @@ export default function ClientProjectsTab({
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search projects..."
             value={searchQuery}
@@ -188,7 +188,7 @@ export default function ClientProjectsTab({
       {showDeleted ? (
         <div className="space-y-6">
           <div>
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
               Deleted Projects ({deletedProjects?.length ?? 0})
             </h3>
             {deletedProjects && deletedProjects.length > 0 ? (
@@ -198,20 +198,20 @@ export default function ClientProjectsTab({
                 ))}
               </div>
             ) : (
-              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+              <div className="bg-card rounded-lg border border-border p-12 text-center">
                 <Trash2 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No deleted projects</h3>
+                <h3 className="text-lg font-medium text-foreground mb-2">No deleted projects</h3>
               </div>
             )}
           </div>
         </div>
       ) : filteredProjects.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
           <FolderKanban className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
+          <h3 className="text-lg font-medium text-foreground mb-2">
             {searchQuery ? 'No projects found' : 'No projects yet'}
           </h3>
-          <p className="text-gray-500 mb-6 max-w-md mx-auto">
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
             {searchQuery
               ? 'Try adjusting your search terms'
               : `Create your first project for ${clientName} to get started.`}
@@ -228,7 +228,7 @@ export default function ClientProjectsTab({
           {/* Active Projects */}
           {activeProjects.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Active Projects ({activeProjects.length})
               </h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -242,7 +242,7 @@ export default function ClientProjectsTab({
           {/* Other Projects */}
           {otherProjects.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Other Projects ({otherProjects.length})
               </h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -260,7 +260,7 @@ export default function ClientProjectsTab({
         <div className="mt-4">
           <button
             onClick={() => setShowDeleted(!showDeleted)}
-            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             {showDeleted ? (
               <>
@@ -291,7 +291,7 @@ export default function ClientProjectsTab({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
                 Project Name <span className="text-red-500">*</span>
               </label>
               <Input
@@ -302,7 +302,7 @@ export default function ClientProjectsTab({
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+              <label className="text-sm font-medium text-foreground mb-1.5 block">
                 Project Shortcode
               </label>
               <Input
@@ -311,7 +311,7 @@ export default function ClientProjectsTab({
                 placeholder="e.g., WIMBDEV2"
                 maxLength={10}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Max 10 characters. Used for document naming.
               </p>
             </div>

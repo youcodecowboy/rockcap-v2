@@ -170,7 +170,7 @@ export default function ProjectDataTab({
   if (!dataLibrary) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
       </div>
     );
   }
@@ -221,15 +221,15 @@ export default function ProjectDataTab({
     return (
       <div className="space-y-4">
         <PendingExtractionsBanner />
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
           <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Data Library</h3>
-          <p className="text-gray-500 max-w-md mx-auto">
-            Financial data extracted from project documents will appear here. 
+          <h3 className="text-lg font-medium text-foreground mb-2">Data Library</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Financial data extracted from project documents will appear here.
             Upload spreadsheets, financial statements, and appraisals to see extracted data points.
           </p>
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg inline-block">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="mt-6 p-4 bg-muted rounded-lg inline-block">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <FileSpreadsheet className="w-5 h-5 text-green-600" />
               <span>Upload documents in the Documents tab to extract data</span>
             </div>
@@ -245,32 +245,32 @@ export default function ProjectDataTab({
       <PendingExtractionsBanner />
       
       {/* Header Stats */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="bg-card rounded-lg border border-border p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Database className="w-5 h-5 text-purple-600" />
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <Database className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Data Library</h2>
-              <p className="text-sm text-gray-500">
+              <h2 className="text-lg font-semibold text-foreground">Data Library</h2>
+              <p className="text-sm text-muted-foreground">
                 Extracted from {stats?.totalDocuments || 0} document{(stats?.totalDocuments || 0) !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <div className="text-center">
-              <div className="text-2xl font-bold text-purple-600">{stats?.totalItems || 0}</div>
-              <div className="text-gray-500">Data Points</div>
+              <div className="text-2xl font-bold text-indigo-600">{stats?.totalItems || 0}</div>
+              <div className="text-muted-foreground">Data Points</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-600">{Object.keys(stats?.byCategory || {}).length}</div>
-              <div className="text-gray-500">Categories</div>
+              <div className="text-muted-foreground">Categories</div>
             </div>
             {stats?.manualOverrides && stats.manualOverrides > 0 && (
               <div className="text-center">
                 <div className="text-2xl font-bold text-amber-600">{stats.manualOverrides}</div>
-                <div className="text-gray-500">Overrides</div>
+                <div className="text-muted-foreground">Overrides</div>
               </div>
             )}
           </div>
@@ -278,11 +278,11 @@ export default function ProjectDataTab({
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="bg-card rounded-lg border border-border p-4">
         <div className="flex flex-wrap items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               type="text"
               placeholder="Search data items..."
@@ -295,7 +295,7 @@ export default function ProjectDataTab({
           {/* Category Filter */}
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
             <SelectTrigger className="w-[180px]">
-              <Filter className="w-4 h-4 mr-2 text-gray-400" />
+              <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
               <SelectValue placeholder="All Categories" />
             </SelectTrigger>
             <SelectContent>
@@ -335,68 +335,68 @@ export default function ProjectDataTab({
               .reduce((sum: number, item: any) => sum + (item.currentValueNormalized || 0), 0);
 
             return (
-              <div key={category} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div key={category} className="bg-card rounded-lg border border-border overflow-hidden">
                 {/* Category Header */}
                 <button
                   onClick={() => toggleCategory(category)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                  className="w-full flex items-center justify-between p-4 hover:bg-muted transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     {isExpanded ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
                     ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
+                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
                     )}
-                    <FolderOpen className={`w-5 h-5 ${isExpanded ? 'text-purple-600' : 'text-gray-400'}`} />
-                    <span className="font-medium text-gray-900">{category}</span>
+                    <FolderOpen className={`w-5 h-5 ${isExpanded ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                    <span className="font-medium text-foreground">{category}</span>
                     <Badge variant="secondary" className="text-xs">
                       {items.length} item{items.length !== 1 ? 's' : ''}
                     </Badge>
                   </div>
                   {categoryTotal > 0 && (
                     <div className="text-right">
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-sm font-medium text-foreground">
                         {formatCurrency(categoryTotal)}
                       </span>
-                      <span className="text-xs text-gray-500 ml-1">total</span>
+                      <span className="text-xs text-muted-foreground ml-1">total</span>
                     </div>
                   )}
                 </button>
 
                 {/* Category Items */}
                 {isExpanded && (
-                  <div className="border-t border-gray-100">
+                  <div className="border-t border-border">
                     <table className="w-full">
-                      <thead className="bg-gray-50">
+                      <thead className="bg-muted">
                         <tr>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Item
                           </th>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Code
                           </th>
-                          <th className="text-right px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Value
                           </th>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Source
                           </th>
-                          <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Updated
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-border">
                         {items.map((item: any) => (
-                          <tr key={item._id} className={`hover:bg-gray-50 ${item.isSubtotal ? 'bg-gray-50/50' : ''}`}>
+                          <tr key={item._id} className={`hover:bg-muted ${item.isSubtotal ? 'bg-muted/50' : ''}`}>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <span className="text-gray-400">
+                                <span className="text-muted-foreground">
                                   {getDataTypeIcon(item.currentDataType)}
                                 </span>
-                                <span className={`text-sm ${item.isSubtotal ? 'text-gray-500 italic' : 'text-gray-900'}`}>{item.originalName}</span>
+                                <span className={`text-sm ${item.isSubtotal ? 'text-muted-foreground italic' : 'text-foreground'}`}>{item.originalName}</span>
                                 {item.isSubtotal && (
-                                  <Badge variant="outline" className="text-[10px] h-4 text-gray-500">
+                                  <Badge variant="outline" className="text-[10px] h-4 text-muted-foreground">
                                     subtotal
                                   </Badge>
                                 )}
@@ -409,22 +409,22 @@ export default function ProjectDataTab({
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
+                              <code className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
                                 {item.itemCode}
                               </code>
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <span className="text-sm font-medium text-gray-900">
+                              <span className="text-sm font-medium text-foreground">
                                 {formatValue(item.currentValue, item.currentDataType)}
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="text-xs text-gray-500 truncate max-w-[150px] block">
+                              <span className="text-xs text-muted-foreground truncate max-w-[150px] block">
                                 {item.currentSourceDocumentName}
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="w-3 h-3" />
                                 {item.lastUpdatedAt ? new Date(item.lastUpdatedAt).toLocaleDateString() : '-'}
                               </div>
@@ -442,9 +442,9 @@ export default function ProjectDataTab({
 
       {/* No Results */}
       {filteredItems.length === 0 && (searchQuery || selectedCategory !== 'all') && (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+        <div className="bg-card rounded-lg border border-border p-8 text-center">
           <Search className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">No data items match your filters</p>
+          <p className="text-muted-foreground">No data items match your filters</p>
           <Button
             variant="link"
             onClick={() => {

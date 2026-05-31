@@ -194,18 +194,18 @@ export default function ClientKnowledgeTab({
   if (hasChecklist === undefined || clientChecklist === undefined) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full bg-gray-50 overflow-hidden">
+    <div className="flex h-full bg-muted overflow-hidden">
       {/* Column 1: Client/Projects Navigation */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-100 flex-shrink-0">
-          <h3 className="font-medium text-gray-900 text-sm">Knowledge Library</h3>
-          <p className="text-xs text-gray-500 mt-1">Document requirements checklist</p>
+      <div className="w-64 bg-card border-r border-border flex flex-col">
+        <div className="p-4 border-b border-border flex-shrink-0">
+          <h3 className="font-medium text-foreground text-sm">Knowledge Library</h3>
+          <p className="text-xs text-muted-foreground mt-1">Document requirements checklist</p>
         </div>
 
         {/* Client Section */}
@@ -219,26 +219,26 @@ export default function ClientKnowledgeTab({
               "w-full px-4 py-3 flex items-center gap-3 text-left transition-colors",
               viewScope === 'client'
                 ? "bg-blue-50 border-l-2 border-blue-600"
-                : "hover:bg-gray-50 border-l-2 border-transparent"
+                : "hover:bg-muted border-l-2 border-transparent"
             )}
           >
-            <Building2 className="w-5 h-5 text-gray-500" />
+            <Building2 className="w-5 h-5 text-muted-foreground" />
             <div className="flex-1 min-w-0">
               <p className={cn(
                 "text-sm font-medium truncate",
-                viewScope === 'client' ? "text-blue-700" : "text-gray-900"
+                viewScope === 'client' ? "text-blue-700" : "text-foreground"
               )}>
                 {clientName}
               </p>
-              <p className="text-xs text-gray-500">Client Documents (KYC)</p>
+              <p className="text-xs text-muted-foreground">Client Documents (KYC)</p>
             </div>
             {checklistSummary?.client && (
               <div className="flex items-center gap-1">
                 <span className="text-xs font-medium text-green-600">
                   {checklistSummary.client.fulfilled}
                 </span>
-                <span className="text-xs text-gray-400">/</span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">/</span>
+                <span className="text-xs text-muted-foreground">
                   {checklistSummary.client.total}
                 </span>
               </div>
@@ -247,9 +247,9 @@ export default function ClientKnowledgeTab({
 
           {/* Projects Section */}
           {projects.length > 0 && (
-            <div className="border-t border-gray-100 mt-2 pt-2">
+            <div className="border-t border-border mt-2 pt-2">
               <div className="px-4 py-2 flex items-center justify-between">
-                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projects</h4>
+                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Projects</h4>
               </div>
               {projects.map(project => {
                 const isSelected = viewScope !== 'client' && viewScope.projectId === project._id;
@@ -261,14 +261,14 @@ export default function ClientKnowledgeTab({
                         "w-full px-4 py-3 flex items-center gap-3 text-left transition-colors",
                         isSelected
                           ? "bg-purple-50 border-l-2 border-purple-600"
-                          : "hover:bg-gray-50 border-l-2 border-transparent"
+                          : "hover:bg-muted border-l-2 border-transparent"
                       )}
                     >
-                      <FolderKanban className="w-5 h-5 text-gray-500" />
+                      <FolderKanban className="w-5 h-5 text-muted-foreground" />
                       <div className="flex-1 min-w-0">
                         <p className={cn(
                           "text-sm font-medium truncate",
-                          isSelected ? "text-purple-700" : "text-gray-900"
+                          isSelected ? "text-purple-700" : "text-foreground"
                         )}>
                           {project.name}
                         </p>
@@ -281,7 +281,7 @@ export default function ClientKnowledgeTab({
                           <ProjectIntelligenceCount projectId={project._id} />
                         </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
                     </button>
                     {/* Quick link to project intelligence */}
                     <div className="px-4 pb-2 -mt-1">
@@ -290,7 +290,7 @@ export default function ClientKnowledgeTab({
                           e.stopPropagation();
                           router.push(`/clients/${clientId}/projects/${project._id}?tab=knowledge`);
                         }}
-                        className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-purple-600 transition-colors"
+                        className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-purple-600 transition-colors"
                       >
                         <Brain className="w-3 h-3" />
                         <span>View extracted intelligence</span>
@@ -305,7 +305,7 @@ export default function ClientKnowledgeTab({
         </div>
 
         {/* Bottom Actions */}
-        <div className="p-3 border-t border-gray-100 space-y-2 flex-shrink-0">
+        <div className="p-3 border-t border-border space-y-2 flex-shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -316,7 +316,7 @@ export default function ClientKnowledgeTab({
             Request Missing Docs
           </Button>
           {lastEmailGeneration && (
-            <p className="text-[10px] text-gray-400 px-2">
+            <p className="text-[10px] text-muted-foreground px-2">
               Last sent: {new Date(lastEmailGeneration).toLocaleDateString()}
             </p>
           )}
@@ -324,10 +324,10 @@ export default function ClientKnowledgeTab({
       </div>
 
       {/* Column 2: Categories */}
-      <div className="w-56 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-100 flex-shrink-0">
-          <h4 className="font-medium text-gray-900 text-sm">Categories</h4>
-          <p className="text-xs text-gray-500 mt-1">
+      <div className="w-56 bg-card border-r border-border flex flex-col">
+        <div className="p-4 border-b border-border flex-shrink-0">
+          <h4 className="font-medium text-foreground text-sm">Categories</h4>
+          <p className="text-xs text-muted-foreground mt-1">
             {viewScope === 'client' ? 'Client-level' : viewScope.projectName}
           </p>
         </div>
@@ -339,11 +339,11 @@ export default function ClientKnowledgeTab({
             className={cn(
               "w-full px-4 py-3 flex items-center justify-between text-left transition-colors",
               selectedCategory === null
-                ? "bg-gray-100 font-medium"
-                : "hover:bg-gray-50"
+                ? "bg-muted font-medium"
+                : "hover:bg-muted"
             )}
           >
-            <span className="text-sm text-gray-700">All Items</span>
+            <span className="text-sm text-foreground">All Items</span>
             <Badge variant="secondary" className="text-xs">
               {currentChecklist.length}
             </Badge>
@@ -355,20 +355,20 @@ export default function ClientKnowledgeTab({
               key={category.name}
               onClick={() => setSelectedCategory(category.name)}
               className={cn(
-                "w-full px-4 py-3 text-left transition-colors border-b border-gray-50",
+                "w-full px-4 py-3 text-left transition-colors border-b border-border",
                 selectedCategory === category.name
-                  ? "bg-gray-100"
-                  : "hover:bg-gray-50"
+                  ? "bg-muted"
+                  : "hover:bg-muted"
               )}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className={cn(
                   "text-sm truncate",
-                  selectedCategory === category.name ? "font-medium text-gray-900" : "text-gray-700"
+                  selectedCategory === category.name ? "font-medium text-foreground" : "text-foreground"
                 )}>
                   {category.name}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {category.fulfilled}/{category.total}
                 </span>
               </div>
@@ -389,7 +389,7 @@ export default function ClientKnowledgeTab({
         </div>
 
         {/* Add Dynamic Requirement */}
-        <div className="p-3 border-t border-gray-100 flex-shrink-0">
+        <div className="p-3 border-t border-border flex-shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -403,7 +403,7 @@ export default function ClientKnowledgeTab({
       </div>
 
       {/* Column 3: Checklist Items */}
-      <div className="flex-1 bg-white flex flex-col overflow-hidden">
+      <div className="flex-1 bg-card flex flex-col overflow-hidden">
         <KnowledgeChecklistPanel
           items={filteredItems}
           clientId={clientId}

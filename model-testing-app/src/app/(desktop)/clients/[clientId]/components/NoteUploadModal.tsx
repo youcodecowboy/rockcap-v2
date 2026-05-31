@@ -288,13 +288,13 @@ export default function NoteUploadModal({
   };
 
   const getFileIcon = () => {
-    if (!file) return <Upload className="w-8 h-8 text-gray-400" />;
-    
+    if (!file) return <Upload className="w-8 h-8 text-muted-foreground" />;
+
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (['txt', 'md'].includes(ext || '')) return <FileText className="w-8 h-8 text-blue-500" />;
     if (ext === 'pdf') return <File className="w-8 h-8 text-red-500" />;
     if (['doc', 'docx'].includes(ext || '')) return <FileText className="w-8 h-8 text-blue-600" />;
-    return <File className="w-8 h-8 text-gray-500" />;
+    return <File className="w-8 h-8 text-muted-foreground" />;
   };
 
   return (
@@ -322,7 +322,7 @@ export default function NoteUploadModal({
                 ? 'border-blue-500 bg-blue-50'
                 : file
                 ? 'border-green-500 bg-green-50'
-                : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                : 'border-border hover:border-gray-400 hover:bg-muted'
             }`}
           >
             <input
@@ -343,23 +343,23 @@ export default function NoteUploadModal({
                         e.stopPropagation();
                         setFile(null);
                       }}
-                      className="absolute -top-2 -right-2 p-1 bg-white rounded-full shadow border border-gray-200 hover:bg-red-50"
+                      className="absolute -top-2 -right-2 p-1 bg-card rounded-full shadow border border-border hover:bg-red-50"
                     >
-                      <X className="w-3 h-3 text-gray-500 hover:text-red-500" />
+                      <X className="w-3 h-3 text-muted-foreground hover:text-red-500" />
                     </button>
                   </div>
-                  <p className="mt-2 text-sm font-medium text-gray-900">{file.name}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="mt-2 text-sm font-medium text-foreground">{file.name}</p>
+                  <p className="text-xs text-muted-foreground">
                     {(file.size / 1024).toFixed(1)} KB
                   </p>
                 </>
               ) : (
                 <>
                   {getFileIcon()}
-                  <p className="mt-2 text-sm font-medium text-gray-900">
+                  <p className="mt-2 text-sm font-medium text-foreground">
                     Drop your file here, or click to browse
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Supports .txt, .md, .pdf, .doc, .docx (max 10MB)
                   </p>
                 </>
@@ -379,7 +379,7 @@ export default function NoteUploadModal({
                   <SelectItem key={option.value} value={option.value}>
                     <div>
                       <div className="font-medium">{option.label}</div>
-                      <div className="text-xs text-gray-500">{option.description}</div>
+                      <div className="text-xs text-muted-foreground">{option.description}</div>
                     </div>
                   </SelectItem>
                 ))}
