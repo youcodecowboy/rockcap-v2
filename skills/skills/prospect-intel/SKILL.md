@@ -101,7 +101,10 @@ What it does not do:
 
 9. **Cross-reference checks**. Follow `references/web-research-playbook.md` Phase C — Convex intelligence lookups for prior connections, address cross-check, sister entity check. Output enriches sections 3 and 4.
 
-10. **Persist intelligence**. Write the findings to `clientIntelligence` and any specific data points to `knowledgeItems`. Cite sources (Companies House filing numbers, charge IDs, URLs scraped with timestamps, web search queries used). Build the full markdown report following `references/intel-report-template.md` — all 9 sections, in order, with confidence levels.
+10. **Persist intelligence**. Persist across the structured stores, then build the report:
+    - **Structured `clientIntelligence` doc (Output #2)** — call `intelligence.updateClientIntelligence({ clientId, identity, keyPeople, borrowerProfile, aiSummary, updatedBy: "prospect-intel" })` (partial merge; safe to pass only what you have). Pass `identity` (legal name, trading name, CH number, incorporation date), `keyPeople` (one entry per key person from step 8, `isDecisionMaker: true` on the chosen primary), `borrowerProfile` where derivable, and `aiSummary` (`executiveSummary` = the brief; `keyFacts` = a short bullet list that includes the one-line lender-DNA summary + the classification). This is the canonical structured layer the deep-context tools read — populate it, do not rely on the report markdown alone. (The doc's `lenderProfile` is for clients that ARE lenders; leave it unset for a borrower prospect.)
+    - **Discrete facts (`knowledgeItems`)** — write specific data points via `intelligence.addKnowledgeItem` (the lender-DNA summary, the classification, related entities, and any extracted figures). These are now read back by `intelligence.getKnowledgeItemsByClient` and surface on `prospect.getDeepContext.knowledgeItems`.
+    - **Report** — build the full markdown report following `references/intel-report-template.md` — all 9 sections, in order, with confidence levels. Cite sources (Companies House filing numbers, charge IDs, URLs scraped with timestamps, web search queries used).
 
     **Also call `clients.setProspectFacts({clientId, companiesHouseNumber, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange})` (v1.2.4; dealType + dealSizeRange added Phase 2)** to populate the structured fields on the clients row. These are the canonical source for the CRM aside / PeopleTab / OverviewTab / prospects table — promoted out of intelMarkdown regex extraction so the UI doesn't depend on the report's template shape. Pass:
     - `companiesHouseNumber`: the resolved CH number (always pass if known)
@@ -123,6 +126,7 @@ What it does not do:
     - CH synced + group walked: DONE / SKIPPED — reason
     - Structure graph + chart embedded: DONE / SKIPPED — reason
     - Contact per key person (+ Apollo status each): DONE / SKIPPED — reason
+    - clientIntelligence doc enriched (identity + key people + summary): DONE / SKIPPED — reason
     - 9 report sections present: DONE / SKIPPED — reason
     - Per-scheme Track Record rows: DONE / SKIPPED — reason
     - Lender DNA from the group book: DONE / SKIPPED — reason

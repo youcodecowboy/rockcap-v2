@@ -163,12 +163,13 @@ export function formatContextForLLM(
     if (context.clientSummary.summary) {
       contextString += `${context.clientSummary.summary}\n\n`;
     }
-    if (context.clientSummary.recentUpdates && context.clientSummary.recentUpdates.length > 0) {
-      contextString += `Recent Updates:\n`;
-      context.clientSummary.recentUpdates.forEach((update: string) => {
-        contextString += `- ${update}\n`;
-      });
-      contextString += `\n`;
+    // Operator context — the running operator-knowledge log (contextMarkdown).
+    // Replaces the retired aiSummary.recentUpdates read (which targeted a field
+    // this summary never carried). Gives the notes-AI the operator's primary
+    // first-hand knowledge (meetings, calls) verbatim.
+    if (context.clientSummary.operatorContext) {
+      contextString += `### Operator context (what the operator has captured)\n`;
+      contextString += `${context.clientSummary.operatorContext}\n\n`;
     }
   }
   

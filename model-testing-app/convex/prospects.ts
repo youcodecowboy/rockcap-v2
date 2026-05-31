@@ -463,6 +463,25 @@ export const getDeepContext = query({
     }
     summary.entityFocus = isActiveClient ? "active_client" : "prospect";
 
+    // Knowledge items (structured facts) for this client — active only.
+    // These previously lived only in the knowledgeItems table, invisible to this
+    // read path; surfacing them here lets downstream skills + the Knowledge tab
+    // read the AI-/operator-captured facts (lender DNA, classification, related
+    // entities, manual facts) without re-parsing intelMarkdown.
+    const knowledgeItems = (
+      await ctx.db
+        .query("knowledgeItems")
+        .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+        .collect()
+    )
+      .filter((k: any) => k.status === "active")
+      .sort((a: any, b: any) =>
+        a.category !== b.category
+          ? a.category.localeCompare(b.category)
+          : a.fieldPath.localeCompare(b.fieldPath),
+      );
+    summary.knowledgeItemCount = knowledgeItems.length;
+
     return {
       summary,
       prospect,
@@ -479,6 +498,7 @@ export const getDeepContext = query({
       meetings: { upcoming: meetingsUpcoming, past: meetingsPast },
       chProfile,
       clientIntelligence,
+      knowledgeItems,
       touchpoints,
       // v1.3 — active-client sections (returned for any clients row; empty arrays for prospects)
       deals: { all: deals, active: dealsActive },

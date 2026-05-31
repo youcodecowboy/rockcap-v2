@@ -15,6 +15,8 @@ import { OutreachTab } from "@/components/prospects/tabs/OutreachTab";
 import { RepliesTab } from "@/components/prospects/tabs/RepliesTab";
 import { MeetingsTab } from "@/components/prospects/tabs/MeetingsTab";
 import { ActivityTab } from "@/components/prospects/tabs/ActivityTab";
+import { ThreadsTab } from "@/components/prospects/tabs/ThreadsTab";
+import { KnowledgeTab } from "@/components/prospects/tabs/KnowledgeTab";
 import { TrackRecordTab } from "@/components/prospects/tabs/TrackRecordTab";
 import { StickyApprovalFooter } from "@/components/prospects/StickyApprovalFooter";
 import { RevisionRequestModal } from "@/components/prospects/RevisionRequestModal";
@@ -26,7 +28,7 @@ export default function ProspectDetailPage() {
   const params = useParams();
   const prospectId = params.prospectId as Id<"clients">;
 
-  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "threads" | "knowledge" | "activity">("overview");
   const [showRevisionModal, setShowRevisionModal] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
@@ -99,6 +101,21 @@ export default function ProspectDetailPage() {
   // match report "key people" to on-file contacts and avoid duplicates.
   const contacts = useQuery(api.contacts.getByClient, prospect ? { clientId: prospectId } : "skip");
 
+  // Threads tab: collaborative conversations filed to this prospect (reuses the
+  // conversations/directMessages messaging system). Fetched here for the nav
+  // count; the tab itself re-reads (deduped) plus per-thread message queries.
+  const threads = useQuery(
+    api.conversations.getMyConversations,
+    prospect ? { clientId: prospectId } : "skip",
+  );
+
+  // Knowledge tab: structured facts captured against this prospect (for the
+  // nav count). The tab itself reads contextMarkdown + the facts list directly.
+  const knowledgeFacts = useQuery(
+    api.knowledgeLibrary.getKnowledgeItemsByClient,
+    prospect ? { clientId: prospectId } : "skip",
+  );
+
   const approvePackage = useMutation(api.cadences.approvePackage);
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
@@ -135,6 +152,8 @@ export default function ProspectDetailPage() {
         repliesCount={replies?.length ?? 0}
         meetingsCount={meetings?.length ?? 0}
         schemesCount={((schemes as any)?.live?.length ?? 0) + ((schemes as any)?.past?.length ?? 0)}
+        threadsCount={(threads as any[])?.length ?? 0}
+        knowledgeCount={(knowledgeFacts as any[])?.length ?? 0}
         lenderTierConflict={lenderTierConflict as any}
       />
 
@@ -168,6 +187,8 @@ export default function ProspectDetailPage() {
           {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}
           {activeTab === "meetings" && <MeetingsTab prospect={prospect} />}
+          {activeTab === "threads" && <ThreadsTab prospect={prospect} />}
+          {activeTab === "knowledge" && <KnowledgeTab prospect={prospect} />}
           {activeTab === "activity" && (
             <ActivityTab prospect={prospect} intelRun={intelRun} cadences={cadences} />
           )}
