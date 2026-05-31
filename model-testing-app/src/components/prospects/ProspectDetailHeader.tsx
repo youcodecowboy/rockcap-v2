@@ -12,17 +12,18 @@ interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "threads" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "threads" | "activity") => void;
   peopleCount?: number;
   chargesCount?: number;
   repliesCount?: number;
   meetingsCount?: number;
   schemesCount?: number;
+  threadsCount?: number;
   lenderTierConflict?: { action: "park" | "soften" | "none"; tier1: string[]; tier2: string[] };
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, lenderTierConflict }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, threadsCount, lenderTierConflict }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
@@ -127,7 +128,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "activity"] as const).map((tab) => {
+          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "threads", "activity"] as const).map((tab) => {
             const labelMap: Record<typeof tab, string> = {
               overview: "Overview",
               intel: "Intel",
@@ -137,6 +138,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               outreach: "Outreach",
               replies: "Replies",
               meetings: "Meetings",
+              threads: "Threads",
               activity: "Activity",
             };
             return (
@@ -168,6 +170,9 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               )}
               {tab === "meetings" && meetingsCount !== undefined && meetingsCount > 0 && (
                 <span style={{ color: colors.text.dim, marginLeft: 4 }}>{meetingsCount}</span>
+              )}
+              {tab === "threads" && threadsCount !== undefined && threadsCount > 0 && (
+                <span style={{ color: colors.text.dim, marginLeft: 4 }}>{threadsCount}</span>
               )}
             </div>
             );
