@@ -454,14 +454,6 @@ export const updateClientIntelligence = mutation({
       v.object({
         executiveSummary: v.optional(v.string()),
         keyFacts: v.optional(v.array(v.string())),
-        recentUpdates: v.optional(
-          v.array(
-            v.object({
-              date: v.string(),
-              update: v.string(),
-            })
-          )
-        ),
       })
     ),
     customFields: v.optional(v.any()),
@@ -653,14 +645,6 @@ export const updateProjectIntelligence = mutation({
         executiveSummary: v.optional(v.string()),
         keyFacts: v.optional(v.array(v.string())),
         risks: v.optional(v.array(v.string())),
-        recentUpdates: v.optional(
-          v.array(
-            v.object({
-              date: v.string(),
-              update: v.string(),
-            })
-          )
-        ),
       })
     ),
     customFields: v.optional(v.any()),
@@ -1015,78 +999,40 @@ export const internalSyncDataLibrary = internalMutation({
 /**
  * Add a recent update to client intelligence
  */
+// Record a free-text update against a client. As of 2026-05-31 this appends a
+// dated block to the running `contextMarkdown` log (the former
+// aiSummary.recentUpdates field was retired). Delegates to appendContextImpl so
+// the chat-assistant "addClientUpdate" tool and the client-context-capture skill
+// write to the same place.
 export const addClientUpdate = mutation({
   args: {
     clientId: v.id("clients"),
     update: v.string(),
   },
   handler: async (ctx, args) => {
-    const now = new Date().toISOString();
-
-    const existing = await ctx.db
-      .query("clientIntelligence")
-      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
-      .first();
-
-    if (!existing) {
-      return null;
-    }
-
-    const currentUpdates = existing.aiSummary?.recentUpdates || [];
-    const newUpdates = [
-      { date: now, update: args.update },
-      ...currentUpdates.slice(0, 9), // Keep last 10 updates
-    ];
-
-    await ctx.db.patch(existing._id, {
-      aiSummary: {
-        ...(existing.aiSummary || {}),
-        recentUpdates: newUpdates,
-      },
-      lastUpdated: now,
-      version: existing.version + 1,
+    const block = `## ${new Date().toISOString().slice(0, 10)} — update\n${args.update.trim()}`;
+    return appendContextImpl(ctx, {
+      clientId: args.clientId,
+      markdownBlock: block,
+      addedBy: "chat-update",
     });
-
-    return existing._id;
   },
 });
 
-/**
- * Add a recent update to project intelligence
- */
+// Record a free-text update against a project/deal. Appends to the deal's
+// running `contextMarkdown` log (see addClientUpdate).
 export const addProjectUpdate = mutation({
   args: {
     projectId: v.id("projects"),
     update: v.string(),
   },
   handler: async (ctx, args) => {
-    const now = new Date().toISOString();
-
-    const existing = await ctx.db
-      .query("projectIntelligence")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .first();
-
-    if (!existing) {
-      return null;
-    }
-
-    const currentUpdates = existing.aiSummary?.recentUpdates || [];
-    const newUpdates = [
-      { date: now, update: args.update },
-      ...currentUpdates.slice(0, 9),
-    ];
-
-    await ctx.db.patch(existing._id, {
-      aiSummary: {
-        ...(existing.aiSummary || {}),
-        recentUpdates: newUpdates,
-      },
-      lastUpdated: now,
-      version: existing.version + 1,
+    const block = `## ${new Date().toISOString().slice(0, 10)} — update\n${args.update.trim()}`;
+    return appendContextImpl(ctx, {
+      projectId: args.projectId,
+      markdownBlock: block,
+      addedBy: "chat-update",
     });
-
-    return existing._id;
   },
 });
 
@@ -2013,9 +1959,6 @@ export const addDocumentToIntelligence = mutation({
       });
     }
 
-    // Build the update message
-    const updateMessage = `New document analyzed: "${document.fileName}" - ${analysis.documentDescription}. ${analysis.executiveSummary}`;
-
     // Determine if we're updating project or client intelligence
     if (projectId) {
       // Update project intelligence
@@ -2032,7 +1975,6 @@ export const addDocumentToIntelligence = mutation({
           extractedAttributes: [],
           aiSummary: {
             executiveSummary: analysis.executiveSummary,
-            recentUpdates: [{ date: now, update: updateMessage }],
           },
           lastUpdated: now,
           lastUpdatedBy: "document-analysis",
@@ -2065,19 +2007,8 @@ export const addDocumentToIntelligence = mutation({
           }
         }
 
-        // Update aiSummary with recent update
-        const existingUpdates = projectIntel.aiSummary?.recentUpdates || [];
-        const newUpdates = [
-          { date: now, update: updateMessage },
-          ...existingUpdates.slice(0, 9), // Keep last 10
-        ];
-
         await ctx.db.patch(projectIntel._id, {
           extractedAttributes: newAttributes,
-          aiSummary: {
-            ...(projectIntel.aiSummary || {}),
-            recentUpdates: newUpdates,
-          },
           lastUpdated: now,
           lastUpdatedBy: "document-analysis",
           version: projectIntel.version + 1,
@@ -2104,7 +2035,6 @@ export const addDocumentToIntelligence = mutation({
           extractedAttributes: [],
           aiSummary: {
             executiveSummary: analysis.executiveSummary,
-            recentUpdates: [{ date: now, update: updateMessage }],
           },
           lastUpdated: now,
           lastUpdatedBy: "document-analysis",
@@ -2137,19 +2067,8 @@ export const addDocumentToIntelligence = mutation({
           }
         }
 
-        // Update aiSummary with recent update
-        const existingUpdates = clientIntel.aiSummary?.recentUpdates || [];
-        const newUpdates = [
-          { date: now, update: updateMessage },
-          ...existingUpdates.slice(0, 9), // Keep last 10
-        ];
-
         await ctx.db.patch(clientIntel._id, {
           extractedAttributes: newAttributes,
-          aiSummary: {
-            ...(clientIntel.aiSummary || {}),
-            recentUpdates: newUpdates,
-          },
           lastUpdated: now,
           lastUpdatedBy: "document-analysis",
           version: clientIntel.version + 1,
