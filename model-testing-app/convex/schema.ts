@@ -2666,19 +2666,13 @@ export default defineSchema({
     })),
 
     // === AI CONTEXT (for chat/templates) ===
+    // The former `recentUpdates` field was retired 2026-05-31: the running
+    // operator-knowledge log lives in `contextMarkdown`, the event feed is the
+    // `activities` table. Field dropped here after the data was cleaned by
+    // intelligence.stripRetiredRecentUpdates.
     aiSummary: v.optional(v.object({
       executiveSummary: v.optional(v.string()),
       keyFacts: v.optional(v.array(v.string())),
-      // DEPRECATED 2026-05-31 — being retired. No code writes or reads this any
-      // more (the running operator log moved to `contextMarkdown`; the event feed
-      // is the `activities` table). The field stays in the schema only so the
-      // strict-object validator still accepts existing documents that carry it;
-      // run intelligence.stripRetiredRecentUpdates to clean the data, then a
-      // follow-up drops this field. Do NOT write it.
-      recentUpdates: v.optional(v.array(v.object({
-        date: v.string(),
-        update: v.string(),
-      }))),
     })),
 
     // === PROJECT SUMMARIES (embedded for quick access) ===
@@ -2901,16 +2895,11 @@ export default defineSchema({
     })),
 
     // === AI CONTEXT ===
+    // `recentUpdates` retired 2026-05-31 — see clientIntelligence.aiSummary.
     aiSummary: v.optional(v.object({
       executiveSummary: v.optional(v.string()),
       keyFacts: v.optional(v.array(v.string())),
       risks: v.optional(v.array(v.string())),
-      // DEPRECATED 2026-05-31 — see clientIntelligence.aiSummary.recentUpdates.
-      // Retained for schema validation of existing docs; do NOT write it.
-      recentUpdates: v.optional(v.array(v.object({
-        date: v.string(),
-        update: v.string(),
-      }))),
     })),
 
     // === CUSTOM FIELDS ===
