@@ -1027,6 +1027,10 @@ export const getDeepContext = query({
       pendingApprovals: pendingApprovals.length,
       touchpointsCount: touchpoints.length,
       hasProjectIntelligence: !!projectIntelligence,
+      // Operator context (2026-05-31): deal-scoped running operator-knowledge
+      // reference. Full md rides along on `projectIntelligence`.
+      hasOperatorContext: Boolean((projectIntelligence as any)?.contextMarkdown),
+      contextUpdatedAt: (projectIntelligence as any)?.contextMarkdownUpdatedAt,
     };
 
     return {

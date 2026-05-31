@@ -94,6 +94,7 @@ import type * as leads from "../leads.js";
 import type * as lib_buildGeneratedDocRow from "../lib/buildGeneratedDocRow.js";
 import type * as lib_cadenceGating from "../lib/cadenceGating.js";
 import type * as lib_lenderTiers from "../lib/lenderTiers.js";
+import type * as lib_markdownToTipTap from "../lib/markdownToTipTap.js";
 import type * as lib_schemeGrouping from "../lib/schemeGrouping.js";
 import type * as mcp from "../mcp.js";
 import type * as mcpTokens from "../mcpTokens.js";
@@ -243,6 +244,7 @@ declare const fullApi: ApiFromModules<{
   "lib/buildGeneratedDocRow": typeof lib_buildGeneratedDocRow;
   "lib/cadenceGating": typeof lib_cadenceGating;
   "lib/lenderTiers": typeof lib_lenderTiers;
+  "lib/markdownToTipTap": typeof lib_markdownToTipTap;
   "lib/schemeGrouping": typeof lib_schemeGrouping;
   mcp: typeof mcp;
   mcpTokens: typeof mcpTokens;

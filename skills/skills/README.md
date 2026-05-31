@@ -14,6 +14,7 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 |---|---|---|
 | `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement; v3.1 People-tab contract 2026-05-30; **v3.2 intel-only + Definition-of-Done manifest** (outreach split out behind the accept gate) 2026-05-30 |
 | `outreach-draft/` | **v2 hardened** | **NEW 2026-05-30** — composes the cold-outreach cadence package for prospects the operator has marked ready (lifecycle step 1.5; the old prospect-intel step 11) |
+| `client-context-capture/` | **v2 hardened** | **NEW 2026-05-31** — operator-input lane: turns a freeform brain-dump (meetings, calls, personal knowledge) into structured intel + a running `contextMarkdown` reference. Parallel system, not a lifecycle step |
 | `qualify-and-draft/` | **v2 hardened** | v1.3 Sprint B |
 | `meeting-prep/` | **v2 hardened** | v1.3 Sprint C |
 | `meeting-capture/` | **v2 hardened** | v1.3 Sprint E |
@@ -64,6 +65,7 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 - [`classification-critic/`](./classification-critic/) — skeleton. V4 document-pipeline critic.
 - [`document-author/`](./document-author/) — **v1**. Document-generation substrate: composes a document under prose guardrails and stages a `document_publish` approval (renders via `/api/documents/generate`, files to the client on approval). The deal-doc skills (terms-package-build, ic-paper-drafter, case-study-author) will build on it.
 - [`corporate-structure/`](./corporate-structure/) — skeleton (spec + libs landed). Discover, stress-test, and chart a prospect/borrower's corporate structure; produces a StructureGraph + SVG for the Intel tab and lender briefs. Invoked by prospect-intel step 8b and directly by operator.
+- [`client-context-capture/`](./client-context-capture/) — **v2 hardened**. The operator-input lane for primary knowledge (meetings, calls, personal knowledge). Decomposes a freeform dump into manual `knowledgeItems` + conservative profile patches + a running `contextMarkdown` reference on clientIntelligence/projectIntelligence; can also drop a note. Confirms client-vs-deal scope before writing. Writes directly (operator input is primary truth — no approval gate). Standalone-invokable.
 
 ## How operator-agent should select a skill
 
@@ -71,6 +73,7 @@ The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 5 v2-
 
 - **prospect-intel**: operator says "run prospect-intel on {company name / CH number}" OR Claude Code surfaces a candidate via `companies.listUnprocessed`. Intel-only — it never drafts outreach.
 - **outreach-draft**: operator says "draft outreach for {prospect}" (single) OR "draft all outreach for ready companies" (batch). Only drafts for prospects the operator has marked ready (`outreachReadyAt` set); enumerates the batch pool via `client.listOutreachReady`. See [`prospect-pipeline-gates.md`](./prospect-pipeline-gates.md).
+- **client-context-capture**: operator says "I met with {client}, here's context …" / "add context to {client/deal}: …" / "remember this about {client} …". Decomposes the dump into structured intel + a running `contextMarkdown` reference; confirms client-vs-deal scope first. Use when the operator is feeding in primary knowledge, not asking a question.
 - **qualify-and-draft**: classifier-routed (reply intent = `info_question`) OR operator says "draft a response to {prospect}'s reply" OR operator says "draft a follow-up for {client} mentioning X"
 - **meeting-prep**: classifier-routed (reply intent = `book_meeting` → `/api/meeting-prep-respond` route) OR operator says "prep me for the {meeting}"
 - **meeting-capture**: operator says "capture the {meeting}: {pasted notes}" OR Fireflies auto-sync (when Pub/Sub provisioned)

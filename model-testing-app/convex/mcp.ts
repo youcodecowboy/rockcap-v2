@@ -2409,6 +2409,114 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Operator context capture (2026-05-31) ──
+  // The agent-side surface for the `client-context-capture` skill: a running
+  // operator-knowledge reference (intelligence.appendContext) + a note lane
+  // (note.*). See skills/skills/client-context-capture/SKILL.md.
+  {
+    name: "intelligence.appendContext",
+    description:
+      "Append a dated, operator-attributed markdown block to a client's OR a deal's running context reference (clientIntelligence.contextMarkdown / projectIntelligence.contextMarkdown). This is the home for OPERATOR-STATED primary knowledge — what the operator learned in a meeting/call or just knows — as opposed to document- or web-derived intel. The block is prepended (reverse-chronological) and the row is created if absent. Supply EXACTLY ONE of clientId / projectId (client-wide facts → clientId; deal-specific facts → projectId). Single responsibility: it writes only contextMarkdown; it does NOT touch the activity feed or the legacy recentUpdates field. Compose the block with a dated header line (e.g. '## 2026-05-31 — operator capture (Name)'), a '**Source:**' line, then the prose/bullets; mark unconfirmed items '(unconfirmed)'. For discrete supersedable facts, ALSO call intelligence.addKnowledgeItem with sourceType='manual'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client (mutually exclusive with projectId)" },
+        projectId: { type: "string", description: "Convex id of the project/deal (mutually exclusive with clientId)" },
+        markdownBlock: { type: "string", description: "The full dated markdown block to prepend (header line + Source line + body)" },
+        addedBy: { type: "string", description: "Optional provenance label (defaults to 'client-context-capture')" },
+      },
+      required: ["markdownBlock"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.intelligence.appendContextInternal, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        markdownBlock: args.markdownBlock,
+        addedBy: args.addedBy,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "note.create",
+    description:
+      "Create a freeform NOTE on a client or project (a separate lane from intelligence — use for a reminder, a to-do, a draft-this prompt, an unstructured jotting; use intelligence.appendContext / addKnowledgeItem for actual entity knowledge). Author in markdown (headings/bullets/quotes supported); it is converted to the notes editor's format. Pass clientId OR projectId to file it (filed notes are shared); pass neither to leave it unfiled under the calling operator. Returns the noteId.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short note title" },
+        markdown: { type: "string", description: "Note body as markdown" },
+        clientId: { type: "string", description: "Optional client to file the note under" },
+        projectId: { type: "string", description: "Optional project to file the note under" },
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+        emoji: { type: "string", description: "Optional emoji icon" },
+      },
+      required: ["title", "markdown"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.notes.createFromMarkdownInternal, {
+        userId,
+        title: args.title,
+        markdown: args.markdown,
+        emoji: args.emoji,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        tags: args.tags,
+      });
+      return asText({ noteId: result });
+    },
+  },
+  {
+    name: "note.update",
+    description:
+      "Update an existing note's title, body (markdown), and/or tags. Pass only the fields you want to change; markdown replaces the whole body.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        noteId: { type: "string" },
+        title: { type: "string" },
+        markdown: { type: "string", description: "Replacement body as markdown" },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["noteId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.notes.updateFromMarkdownInternal, {
+        noteId: args.noteId,
+        title: args.title,
+        markdown: args.markdown,
+        tags: args.tags,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "note.listByClient",
+    description: "List the notes filed under a client. Use to read existing notes before adding (avoid duplicates).",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.notes.getByClient, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+  {
+    name: "note.listByProject",
+    description: "List the notes filed under a project/deal.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.notes.getByProject, { projectId: args.projectId });
+      return asText(result);
+    },
+  },
+
   {
     name: "task.create",
     description:

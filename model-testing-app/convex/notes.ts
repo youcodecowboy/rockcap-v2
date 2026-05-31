@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import { api } from "./_generated/api";
+import { markdownToTipTapDoc, wordCount as countWords } from "./lib/markdownToTipTap";
 
 // Mutation: Create new note
 export const create = mutation({
@@ -77,6 +78,100 @@ export const create = mutation({
     }
 
     return noteId;
+  },
+});
+
+// ── Agent-facing note writes (markdown in; explicit userId) ─────
+//
+// The public `create`/`update` resolve the author from the Clerk identity on
+// ctx.auth — absent in the MCP runMutation context. These internal mirrors take
+// the MCP-resolved userId explicitly and accept `markdown` (converted to the
+// editor's TipTap doc JSON here) so an agent never has to author ProseMirror.
+// Notes are a separate lane from intelligence; these tools exist so the agent
+// can drop a note when a note is the right home (a to-do, a reminder), not to
+// route intelligence here.
+export const createFromMarkdownInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    title: v.string(),
+    markdown: v.string(),
+    emoji: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    const content = markdownToTipTapDoc(args.markdown);
+    // Filed notes (client/project) are shared (userId undefined); unfiled notes
+    // belong to the author — mirrors the public `create` rule.
+    const userId = !args.clientId && !args.projectId ? args.userId : undefined;
+
+    const noteId = await ctx.db.insert("notes", {
+      title: args.title,
+      content,
+      emoji: args.emoji,
+      userId,
+      clientId: args.clientId,
+      projectId: args.projectId,
+      knowledgeBankEntryIds: [],
+      tags: args.tags || [],
+      mentionedUserIds: [],
+      wordCount: countWords(args.markdown),
+      isDraft: false,
+      createdAt: now,
+      updatedAt: now,
+      lastSavedAt: now,
+    });
+
+    if (args.clientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: args.clientId,
+      });
+    }
+    if (args.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: args.projectId,
+      });
+    }
+    return noteId;
+  },
+});
+
+export const updateFromMarkdownInternal = internalMutation({
+  args: {
+    noteId: v.id("notes"),
+    title: v.optional(v.string()),
+    markdown: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.noteId);
+    if (!existing) throw new Error("note_not_found");
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = { updatedAt: now, lastSavedAt: now };
+    if (args.title !== undefined) patch.title = args.title;
+    if (args.tags !== undefined) patch.tags = args.tags;
+    if (args.markdown !== undefined) {
+      patch.content = markdownToTipTapDoc(args.markdown);
+      patch.wordCount = countWords(args.markdown);
+    }
+    await ctx.db.patch(args.noteId, patch);
+    if (existing.clientId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: existing.clientId,
+      });
+    }
+    if (existing.projectId) {
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "project",
+        contextId: existing.projectId,
+      });
+    }
+    return { ok: true, noteId: args.noteId };
   },
 });
 
