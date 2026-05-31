@@ -2436,6 +2436,88 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  {
+    name: "intelligence.updateClientIntelligence",
+    description:
+      "Enrich the structured clientIntelligence DOC for a client (partial merge — pass only the fields you have; objects merge, arrays/primitives replace; the row is created if absent). This is the canonical structured intelligence layer the deep-context tools read. prospect-intel calls this (Output #2) to promote identity + key people + a summary off the report into queryable fields: pass `identity` (legalName/tradingName/companyNumber/incorporationDate), `keyPeople` (one entry per key person, isDecisionMaker for the primary), `borrowerProfile` (experienceLevel/completedProjects/totalDevelopmentValue where derivable), and `aiSummary` (executiveSummary = the brief, keyFacts = bullet list incl. the lender-DNA one-liner). For discrete supersedable facts (e.g. a single GDV figure) prefer intelligence.addKnowledgeItem. `lenderProfile` here describes a client that IS a lender, not a borrower's lender DNA — leave it unset for borrowers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client" },
+        identity: {
+          type: "object",
+          properties: {
+            legalName: { type: "string" },
+            tradingName: { type: "string" },
+            companyNumber: { type: "string" },
+            vatNumber: { type: "string" },
+            incorporationDate: { type: "string", description: "ISO date" },
+          },
+        },
+        primaryContact: {
+          type: "object",
+          properties: {
+            name: { type: "string" }, email: { type: "string" }, phone: { type: "string" }, role: { type: "string" },
+          },
+        },
+        addresses: {
+          type: "object",
+          properties: {
+            registered: { type: "string" }, trading: { type: "string" }, correspondence: { type: "string" },
+          },
+        },
+        keyPeople: {
+          type: "array",
+          description: "One entry per key person (PSCs + key directors). Mark the outreach/decision lead isDecisionMaker.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              role: { type: "string" },
+              email: { type: "string" },
+              phone: { type: "string" },
+              isDecisionMaker: { type: "boolean" },
+              notes: { type: "string" },
+            },
+            required: ["name"],
+          },
+        },
+        borrowerProfile: {
+          type: "object",
+          properties: {
+            experienceLevel: { type: "string" },
+            completedProjects: { type: "number" },
+            totalDevelopmentValue: { type: "number" },
+            preferredPropertyTypes: { type: "array", items: { type: "string" } },
+            preferredRegions: { type: "array", items: { type: "string" } },
+          },
+        },
+        aiSummary: {
+          type: "object",
+          properties: {
+            executiveSummary: { type: "string" },
+            keyFacts: { type: "array", items: { type: "string" } },
+          },
+        },
+        updatedBy: { type: "string", description: "Optional provenance label (e.g. 'prospect-intel')" },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.intelligence.updateClientIntelligence, {
+        clientId: args.clientId,
+        identity: args.identity,
+        primaryContact: args.primaryContact,
+        addresses: args.addresses,
+        keyPeople: args.keyPeople,
+        borrowerProfile: args.borrowerProfile,
+        aiSummary: args.aiSummary,
+        updatedBy: args.updatedBy ?? "mcp",
+      });
+      return asText(result);
+    },
+  },
+
   // ── Operator context capture (2026-05-31) ──
   // The agent-side surface for the `client-context-capture` skill: a running
   // operator-knowledge reference (intelligence.appendContext) + a note lane
