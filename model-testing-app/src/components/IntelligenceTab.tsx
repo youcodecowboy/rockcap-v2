@@ -4,17 +4,18 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id, Doc } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
+import { useColors } from '@/lib/useColors';
 import {
+  StatusPill,
+  FlagChip,
+  EmptyState,
+  Button,
+  Field,
+  Input,
+  Textarea,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Modal,
+} from '@/components/layouts';
 import {
   Brain,
   Plus,
@@ -507,8 +508,6 @@ function AddItemModal({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   const modalTitle = editItem
     ? 'Edit Item'
     : isFillingCanonical
@@ -516,108 +515,149 @@ function AddItemModal({
     : 'Add Custom Field';
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-        <h3 className="text-lg font-semibold mb-1">{modalTitle}</h3>
-        {isFillingCanonical && fillingCanonicalField.description && (
-          <p className="text-sm text-gray-500 mb-4">{fillingCanonicalField.description}</p>
-        )}
-        {!isFillingCanonical && !editItem && (
-          <p className="text-sm text-gray-500 mb-4">Add a custom field to track additional information</p>
-        )}
+    <AddItemModalChrome
+      open={isOpen}
+      onClose={onClose}
+      title={modalTitle}
+      onSave={handleSave}
+      saveLabel={editItem ? 'Save Changes' : isFillingCanonical ? 'Save' : 'Add Item'}
+      saveDisabled={(!isFillingCanonical && !label.trim()) || !value.trim()}
+    >
+      {isFillingCanonical && fillingCanonicalField.description && (
+        <ModalHint>{fillingCanonicalField.description}</ModalHint>
+      )}
+      {!isFillingCanonical && !editItem && (
+        <ModalHint>Add a custom field to track additional information</ModalHint>
+      )}
 
-        <div className="space-y-4">
-          {/* Only show category/label for custom fields, not for canonical field filling */}
-          {!isFillingCanonical && (
-            <>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">Category</label>
-                <Select value={category} onValueChange={setCategory} disabled={!!editItem}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.key} value={cat.key}>
-                        {cat.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">Label</label>
-                <Input
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  placeholder="e.g., Net Worth, Primary Contact, Key Risk..."
-                  disabled={!!editItem}
-                />
-              </div>
-            </>
-          )}
-
-          {/* Show canonical field info badge when filling */}
-          {isFillingCanonical && (
-            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
-              <Star className="w-4 h-4 text-blue-500" />
-              <span className="text-sm text-blue-700">Core field: {fillingCanonicalField.label}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Value Type</label>
+      {/* Only show category/label for custom fields, not for canonical field filling */}
+      {!isFillingCanonical && (
+        <>
+          <Field label="Category">
             <Select
-              value={valueType}
-              onValueChange={(v) => setValueType(v as AddItemData['valueType'])}
-              disabled={isFillingCanonical}
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={!!editItem}
             >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="string">Text</SelectItem>
-                <SelectItem value="text">Long Text</SelectItem>
-                <SelectItem value="number">Number</SelectItem>
-                <SelectItem value="currency">Currency (GBP)</SelectItem>
-                <SelectItem value="percentage">Percentage</SelectItem>
-                <SelectItem value="date">Date</SelectItem>
-                <SelectItem value="boolean">Yes/No</SelectItem>
-                <SelectItem value="array">List (comma separated)</SelectItem>
-              </SelectContent>
+              {categories.map((cat) => (
+                <option key={cat.key} value={cat.key}>
+                  {cat.label}
+                </option>
+              ))}
             </Select>
-          </div>
+          </Field>
 
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Value</label>
-            <Textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={
-                valueType === 'currency' ? 'e.g., 1500000'
-                : valueType === 'percentage' ? 'e.g., 65'
-                : valueType === 'date' ? 'e.g., 2024-01-15'
-                : valueType === 'array' ? 'Item 1, Item 2, Item 3'
-                : valueType === 'boolean' ? 'yes or no'
-                : 'The information...'
-              }
-              rows={valueType === 'text' ? 5 : 3}
+          <Field label="Label">
+            <Input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g., Net Worth, Primary Contact, Key Risk..."
+              disabled={!!editItem}
             />
-          </div>
-        </div>
+          </Field>
+        </>
+      )}
 
-        <div className="flex justify-end gap-2 mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={handleSave}
-            disabled={(!isFillingCanonical && !label.trim()) || !value.trim()}
-          >
-            {editItem ? 'Save Changes' : isFillingCanonical ? 'Save' : 'Add Item'}
-          </Button>
-        </div>
-      </div>
+      {/* Show canonical field info chip when filling */}
+      {isFillingCanonical && <CoreFieldChip label={fillingCanonicalField.label} />}
+
+      <Field label="Value Type">
+        <Select
+          value={valueType}
+          onChange={(e) => setValueType(e.target.value as AddItemData['valueType'])}
+          disabled={isFillingCanonical}
+        >
+          <option value="string">Text</option>
+          <option value="text">Long Text</option>
+          <option value="number">Number</option>
+          <option value="currency">Currency (GBP)</option>
+          <option value="percentage">Percentage</option>
+          <option value="date">Date</option>
+          <option value="boolean">Yes/No</option>
+          <option value="array">List (comma separated)</option>
+        </Select>
+      </Field>
+
+      <Field label="Value">
+        <Textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={
+            valueType === 'currency' ? 'e.g., 1500000'
+            : valueType === 'percentage' ? 'e.g., 65'
+            : valueType === 'date' ? 'e.g., 2024-01-15'
+            : valueType === 'array' ? 'Item 1, Item 2, Item 3'
+            : valueType === 'boolean' ? 'yes or no'
+            : 'The information...'
+          }
+          rows={valueType === 'text' ? 5 : 3}
+        />
+      </Field>
+    </AddItemModalChrome>
+  );
+}
+
+// Small canon-styled helpers shared by AddItemModal.
+function ModalHint({ children }: { children: React.ReactNode }) {
+  const colors = useColors();
+  return <p style={{ fontSize: 12, color: colors.text.muted, margin: 0 }}>{children}</p>;
+}
+
+function CoreFieldChip({ label }: { label: string }) {
+  const colors = useColors();
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: 8,
+        borderRadius: 4,
+        background: `${colors.accent.blue}15`,
+        border: `1px solid ${colors.accent.blue}40`,
+      }}
+    >
+      <Star style={{ width: 14, height: 14, color: colors.accent.blue }} />
+      <span style={{ fontSize: 12, color: colors.accent.blue }}>Core field: {label}</span>
     </div>
+  );
+}
+
+function AddItemModalChrome({
+  open,
+  onClose,
+  title,
+  onSave,
+  saveLabel,
+  saveDisabled,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  onSave: () => void;
+  saveLabel: string;
+  saveDisabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={onSave} disabled={saveDisabled}>
+            {saveLabel}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>{children}</div>
+    </Modal>
   );
 }
 
@@ -667,9 +707,19 @@ interface DocumentWithAnalysis {
   summary?: string;
 }
 
+const MONO_LABEL: React.CSSProperties = {
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  fontSize: 9,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+};
+
 function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnalysis; onOpen: (doc: DocumentWithAnalysis) => void }) {
+  const colors = useColors();
   const [isExpanded, setIsExpanded] = useState(false);
   const analysis = document.documentAnalysis;
+
+  const labelStyle: React.CSSProperties = { ...MONO_LABEL, color: colors.text.muted };
 
   const hasAnalysis = !!analysis;
   const hasEntities = analysis && (
@@ -691,57 +741,59 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
 
   return (
     <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div style={{ background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.default}`, overflow: 'hidden' }}>
         <CollapsibleTrigger asChild>
-          <div className="w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left cursor-pointer" role="button" tabIndex={0}>
-            <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+          <div
+            className="w-full p-4 flex items-center gap-3 text-left cursor-pointer"
+            role="button"
+            tabIndex={0}
+          >
+            <FileText className="w-5 h-5 flex-shrink-0" style={{ color: colors.text.dim }} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-gray-900 truncate">
+                <span className="font-medium truncate" style={{ color: colors.text.primary }}>
                   {document.documentCode || document.fileName}
                 </span>
-                <Badge variant="outline" className="text-xs flex-shrink-0">
-                  {document.category}
-                </Badge>
+                <span className="flex-shrink-0">
+                  <StatusPill label={document.category} tone={colors.text.muted} />
+                </span>
               </div>
               {hasAnalysis && (
-                <p className="text-sm text-gray-500 line-clamp-1 mt-0.5">
+                <p className="line-clamp-1 mt-0.5" style={{ fontSize: 13, color: colors.text.muted }}>
                   {analysis.executiveSummary}
                 </p>
               )}
               {!hasAnalysis && document.summary && (
-                <p className="text-sm text-gray-500 line-clamp-1 mt-0.5">
+                <p className="line-clamp-1 mt-0.5" style={{ fontSize: 13, color: colors.text.muted }}>
                   {document.summary}
                 </p>
               )}
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                onClick={handleOpenClick}
-              >
-                <ExternalLink className="w-3.5 h-3.5 mr-1" />
+              <Button variant="ghost" size="sm" accent={colors.accent.blue} onClick={handleOpenClick} style={{ color: colors.accent.blue }}>
+                <ExternalLink className="w-3.5 h-3.5" />
                 Open
               </Button>
-              <span className="text-xs text-gray-400">
+              <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10, color: colors.text.dim }}>
                 {new Date(document.uploadedAt).toLocaleDateString('en-GB')}
               </span>
               {isExpanded ? (
-                <ChevronUp className="w-4 h-4 text-gray-400" />
+                <ChevronUp className="w-4 h-4" style={{ color: colors.text.dim }} />
               ) : (
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+                <ChevronDown className="w-4 h-4" style={{ color: colors.text.dim }} />
               )}
             </div>
           </div>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div className="border-t border-gray-100">
+          <div style={{ borderTop: `1px solid ${colors.border.light}` }}>
             {hasAnalysis ? (
               <Tabs defaultValue="summary" className="w-full">
-                <TabsList className="w-full justify-start h-10 bg-gray-50 rounded-none border-b px-4">
+                <TabsList
+                  className="w-full justify-start h-10 rounded-none px-4"
+                  style={{ background: colors.bg.cardAlt, borderBottom: `1px solid ${colors.border.default}` }}
+                >
                   <TabsTrigger value="summary" className="text-xs">
                     <FileText className="w-3 h-3 mr-1" />
                     Summary
@@ -766,17 +818,17 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
 
                 <TabsContent value="summary" className="p-4 space-y-4 mt-0">
                   <div>
-                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Executive Summary</div>
-                    <p className="text-sm text-gray-900">{analysis.executiveSummary}</p>
+                    <div style={{ ...labelStyle, marginBottom: 4 }}>Executive Summary</div>
+                    <p style={{ fontSize: 13, color: colors.text.primary }}>{analysis.executiveSummary}</p>
                   </div>
                   <div>
-                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Detailed Summary</div>
-                    <p className="text-sm text-gray-700">{analysis.detailedSummary}</p>
+                    <div style={{ ...labelStyle, marginBottom: 4 }}>Detailed Summary</div>
+                    <p style={{ fontSize: 13, color: colors.text.secondary }}>{analysis.detailedSummary}</p>
                   </div>
                   {analysis.sectionBreakdown && analysis.sectionBreakdown.length > 0 && (
                     <div>
-                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Section Breakdown</div>
-                      <ul className="text-sm text-gray-600 list-disc list-inside space-y-0.5">
+                      <div style={{ ...labelStyle, marginBottom: 4 }}>Section Breakdown</div>
+                      <ul className="list-disc list-inside space-y-0.5" style={{ fontSize: 13, color: colors.text.secondary }}>
                         {analysis.sectionBreakdown.map((section, i) => (
                           <li key={i}>{section}</li>
                         ))}
@@ -791,12 +843,12 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                       {analysis.entities.people.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <User className="w-3.5 h-3.5 text-blue-600" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">People</span>
+                            <User className="w-3.5 h-3.5" style={{ color: colors.accent.blue }} />
+                            <span style={labelStyle}>People</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {analysis.entities.people.map((person, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs">{person}</Badge>
+                              <FlagChip key={i} label={person} severity="info" />
                             ))}
                           </div>
                         </div>
@@ -804,12 +856,12 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                       {analysis.entities.companies.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <Building2 className="w-3.5 h-3.5 text-purple-600" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Companies</span>
+                            <Building2 className="w-3.5 h-3.5" style={{ color: colors.accent.purple }} />
+                            <span style={labelStyle}>Companies</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {analysis.entities.companies.map((company, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs bg-purple-50">{company}</Badge>
+                              <FlagChip key={i} label={company} severity="info" />
                             ))}
                           </div>
                         </div>
@@ -817,12 +869,12 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                       {analysis.entities.locations.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <MapPin className="w-3.5 h-3.5 text-green-600" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Locations</span>
+                            <MapPin className="w-3.5 h-3.5" style={{ color: colors.accent.green }} />
+                            <span style={labelStyle}>Locations</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {analysis.entities.locations.map((location, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs bg-green-50">{location}</Badge>
+                              <FlagChip key={i} label={location} severity="ok" />
                             ))}
                           </div>
                         </div>
@@ -830,12 +882,12 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                       {analysis.entities.projects.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <FolderKanban className="w-3.5 h-3.5 text-amber-600" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projects</span>
+                            <FolderKanban className="w-3.5 h-3.5" style={{ color: colors.accent.orange }} />
+                            <span style={labelStyle}>Projects</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {analysis.entities.projects.map((project, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs bg-amber-50">{project}</Badge>
+                              <FlagChip key={i} label={project} severity="warn" />
                             ))}
                           </div>
                         </div>
@@ -850,12 +902,12 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                       {analysis.keyTerms.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <Tag className="w-3.5 h-3.5 text-blue-600" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Key Terms</span>
+                            <Tag className="w-3.5 h-3.5" style={{ color: colors.accent.blue }} />
+                            <span style={labelStyle}>Key Terms</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {analysis.keyTerms.map((term, i) => (
-                              <Badge key={i} variant="outline" className="text-xs">{term}</Badge>
+                              <FlagChip key={i} label={term} severity="info" />
                             ))}
                           </div>
                         </div>
@@ -863,12 +915,12 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                       {analysis.keyDates.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <Calendar className="w-3.5 h-3.5 text-green-600" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Key Dates</span>
+                            <Calendar className="w-3.5 h-3.5" style={{ color: colors.accent.green }} />
+                            <span style={labelStyle}>Key Dates</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {analysis.keyDates.map((date, i) => (
-                              <Badge key={i} variant="outline" className="text-xs bg-green-50">{date}</Badge>
+                              <FlagChip key={i} label={date} severity="ok" />
                             ))}
                           </div>
                         </div>
@@ -876,12 +928,12 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                       {analysis.keyAmounts.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1.5 mb-2">
-                            <DollarSign className="w-3.5 h-3.5 text-amber-600" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Key Amounts</span>
+                            <DollarSign className="w-3.5 h-3.5" style={{ color: colors.accent.orange }} />
+                            <span style={labelStyle}>Key Amounts</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {analysis.keyAmounts.map((amount, i) => (
-                              <Badge key={i} variant="outline" className="text-xs bg-amber-50 font-mono">{amount}</Badge>
+                              <FlagChip key={i} label={amount} severity="warn" />
                             ))}
                           </div>
                         </div>
@@ -893,52 +945,36 @@ function DocumentSummaryCard({ document, onOpen }: { document: DocumentWithAnaly
                 <TabsContent value="characteristics" className="p-4 mt-0">
                   <div className="space-y-3">
                     <div>
-                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Document Type</div>
+                      <div style={{ ...labelStyle, marginBottom: 8 }}>Document Type</div>
                       <div className="flex flex-wrap gap-1.5">
-                        {analysis.documentCharacteristics.isFinancial && (
-                          <Badge variant="outline" className="text-xs bg-green-50 text-green-700">Financial</Badge>
-                        )}
-                        {analysis.documentCharacteristics.isLegal && (
-                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">Legal</Badge>
-                        )}
-                        {analysis.documentCharacteristics.isIdentity && (
-                          <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700">Identity</Badge>
-                        )}
-                        {analysis.documentCharacteristics.isReport && (
-                          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700">Report</Badge>
-                        )}
-                        {analysis.documentCharacteristics.isDesign && (
-                          <Badge variant="outline" className="text-xs bg-pink-50 text-pink-700">Design</Badge>
-                        )}
-                        {analysis.documentCharacteristics.isCorrespondence && (
-                          <Badge variant="outline" className="text-xs bg-cyan-50 text-cyan-700">Correspondence</Badge>
-                        )}
-                        {analysis.documentCharacteristics.hasMultipleProjects && (
-                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">Multi-Project</Badge>
-                        )}
-                        {analysis.documentCharacteristics.isInternal && (
-                          <Badge variant="outline" className="text-xs bg-gray-100 text-gray-700">Internal</Badge>
-                        )}
+                        {analysis.documentCharacteristics.isFinancial && <FlagChip label="Financial" severity="ok" />}
+                        {analysis.documentCharacteristics.isLegal && <FlagChip label="Legal" severity="info" />}
+                        {analysis.documentCharacteristics.isIdentity && <FlagChip label="Identity" severity="info" />}
+                        {analysis.documentCharacteristics.isReport && <FlagChip label="Report" severity="warn" />}
+                        {analysis.documentCharacteristics.isDesign && <FlagChip label="Design" severity="info" />}
+                        {analysis.documentCharacteristics.isCorrespondence && <FlagChip label="Correspondence" severity="info" />}
+                        {analysis.documentCharacteristics.hasMultipleProjects && <FlagChip label="Multi-Project" severity="warn" />}
+                        {analysis.documentCharacteristics.isInternal && <FlagChip label="Internal" severity="info" />}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <span className="text-xs text-gray-500">Content Type</span>
-                        <p className="font-medium">{analysis.rawContentType}</p>
+                        <span style={labelStyle}>Content Type</span>
+                        <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{analysis.rawContentType}</p>
                       </div>
                       <div>
-                        <span className="text-xs text-gray-500">Analysis Confidence</span>
-                        <p className="font-medium">{(analysis.confidenceInAnalysis * 100).toFixed(0)}%</p>
+                        <span style={labelStyle}>Analysis Confidence</span>
+                        <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{(analysis.confidenceInAnalysis * 100).toFixed(0)}%</p>
                       </div>
                     </div>
                   </div>
                 </TabsContent>
               </Tabs>
             ) : (
-              <div className="p-4 text-center text-sm text-gray-500">
+              <div className="p-4 text-center" style={{ fontSize: 13, color: colors.text.muted }}>
                 <p>This document has not been analyzed yet.</p>
                 {document.summary && (
-                  <p className="mt-2 text-gray-600">{document.summary}</p>
+                  <p className="mt-2" style={{ color: colors.text.secondary }}>{document.summary}</p>
                 )}
               </div>
             )}
@@ -958,6 +994,7 @@ interface DocumentsSummaryViewProps {
 }
 
 function DocumentsSummaryView({ documents, searchQuery, onSearchChange, onOpenDocument, title }: DocumentsSummaryViewProps) {
+  const colors = useColors();
   const filteredDocs = useMemo(() => {
     let docs = [...documents];
     // Sort most recent first
@@ -976,27 +1013,28 @@ function DocumentsSummaryView({ documents, searchQuery, onSearchChange, onOpenDo
   const analyzedCount = documents.filter(d => d.documentAnalysis).length;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex-1 flex flex-col min-w-0" style={{ background: colors.bg.base }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
+      <div
+        className="flex items-center justify-between p-4"
+        style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.card }}
+      >
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <FileStack className="w-5 h-5" />
+          <h2 className="flex items-center gap-2" style={{ fontSize: 16, fontWeight: 500, color: colors.text.primary }}>
+            <FileStack className="w-5 h-5" style={{ color: colors.text.muted }} />
             {title}
-            <Badge variant="outline" className="text-xs font-normal">
-              {analyzedCount}/{documents.length} analyzed
-            </Badge>
+            <StatusPill label={`${analyzedCount}/${documents.length} analyzed`} tone={colors.text.muted} />
           </h2>
-          <p className="text-sm text-gray-500">Browse document summaries, entities, and key data</p>
+          <p style={{ fontSize: 13, color: colors.text.muted }}>Browse document summaries, entities, and key data</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.text.dim }} />
             <Input
               placeholder="Search documents..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-9 w-64"
+              style={{ paddingLeft: 32, width: 256 }}
             />
           </div>
         </div>
@@ -1005,17 +1043,15 @@ function DocumentsSummaryView({ documents, searchQuery, onSearchChange, onOpenDo
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {filteredDocs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <FileStack className="w-12 h-12 text-gray-300 mb-4" />
-            <p className="text-gray-500 mb-2">
-              {documents.length === 0 ? 'No documents found' : 'No matching documents'}
-            </p>
-            <p className="text-sm text-gray-400">
-              {documents.length === 0
+          <EmptyState
+            icon={<FileStack className="w-12 h-12" />}
+            title={documents.length === 0 ? 'No documents found' : 'No matching documents'}
+            body={
+              documents.length === 0
                 ? 'Upload documents to see their summaries here'
-                : 'Try adjusting your search terms'}
-            </p>
-          </div>
+                : 'Try adjusting your search terms'
+            }
+          />
         ) : (
           <div className="space-y-3">
             {filteredDocs.map((doc) => (
@@ -2094,5 +2130,10 @@ export default function IntelligenceTab({
   if (clientId) {
     return <ClientIntelligenceTab clientId={clientId} clientType={clientType} />;
   }
-  return <div className="p-4 text-gray-500">No client or project selected</div>;
+  return <NoSelection />;
+}
+
+function NoSelection() {
+  const colors = useColors();
+  return <div className="p-4" style={{ fontSize: 13, color: colors.text.muted }}>No client or project selected</div>;
 }

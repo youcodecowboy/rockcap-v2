@@ -4,26 +4,23 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
+import { Button, StatusPill, Skeleton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   FolderKanban,
   CheckCircle2,
   Circle,
   Clock,
-  FileText,
   Plus,
   Mail,
-  ChevronRight,
-  AlertCircle,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 // Import shared components
 import KnowledgeChecklistPanel from '../../../components/KnowledgeChecklistPanel';
 import EmailRequestModal from '../../../components/EmailRequestModal';
 import DynamicChecklistInput from '../../../components/DynamicChecklistInput';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface ProjectKnowledgeTabProps {
   projectId: Id<"projects">;
@@ -42,6 +39,7 @@ export default function ProjectKnowledgeTab({
   clientType = 'borrower',
   dealPhase,
 }: ProjectKnowledgeTabProps) {
+  const colors = useColors();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showDynamicInput, setShowDynamicInput] = useState(false);
@@ -70,9 +68,9 @@ export default function ProjectKnowledgeTab({
   // Get categories from checklist
   const categories = useMemo(() => {
     if (!projectChecklist) return [];
-    
+
     const categoryMap = new Map<string, { total: number; fulfilled: number; missing: number; pendingReview: number }>();
-    
+
     for (const item of projectChecklist) {
       const existing = categoryMap.get(item.category) || { total: 0, fulfilled: 0, missing: 0, pendingReview: 0 };
       existing.total++;
@@ -99,12 +97,12 @@ export default function ProjectKnowledgeTab({
   // Calculate overall stats
   const stats = useMemo(() => {
     if (!projectChecklist) return { total: 0, fulfilled: 0, missing: 0, pendingReview: 0, percentage: 0 };
-    
+
     const total = projectChecklist.length;
     const fulfilled = projectChecklist.filter((i: { status: string }) => i.status === 'fulfilled').length;
     const missing = projectChecklist.filter((i: { status: string }) => i.status === 'missing').length;
     const pendingReview = projectChecklist.filter((i: { status: string }) => i.status === 'pending_review').length;
-    
+
     return {
       total,
       fulfilled,
@@ -114,94 +112,144 @@ export default function ProjectKnowledgeTab({
     };
   }, [projectChecklist]);
 
+  const accent = colors.entityTypes.project;
+
+  // Token-styled progress bar (replaces shadcn <Progress>).
+  const ProgressBar = ({ value, height = 6, tone }: { value: number; height?: number; tone?: string }) => (
+    <div
+      style={{
+        width: '100%',
+        height,
+        background: colors.bg.cardAlt,
+        border: `1px solid ${colors.border.light}`,
+        borderRadius: 2,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          width: `${Math.max(0, Math.min(100, value))}%`,
+          height: '100%',
+          background: tone ?? accent,
+          transition: 'width 150ms linear',
+        }}
+      />
+    </div>
+  );
+
+  const sectionLabel: React.CSSProperties = {
+    fontFamily: MONO,
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: colors.text.muted,
+    fontWeight: 500,
+  };
+
   // Loading state
   if (projectChecklist === undefined) {
     return (
-      <div className="flex items-center justify-center h-full bg-muted">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
+      <div className="flex items-center justify-center h-full" style={{ background: colors.bg.base, padding: 24 }}>
+        <div style={{ width: 280, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Skeleton height={16} />
+          <Skeleton height={10} width="60%" />
+          <Skeleton height={48} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full bg-muted overflow-hidden">
+    <div className="flex h-full overflow-hidden" style={{ background: colors.bg.base }}>
       {/* Column 1: Project Info & Stats */}
-      <div className="w-64 bg-card border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border flex-shrink-0">
-          <h3 className="font-medium text-foreground text-sm">Project Checklist</h3>
-          <p className="text-xs text-muted-foreground mt-1">Document requirements</p>
+      <div
+        className="w-64 flex flex-col"
+        style={{ background: colors.bg.card, borderRight: `1px solid ${colors.border.default}` }}
+      >
+        <div className="flex-shrink-0" style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}` }}>
+          <h3 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>Project Checklist</h3>
+          <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>Document requirements</p>
         </div>
 
         {/* Project Section */}
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-              <FolderKanban className="w-5 h-5 text-indigo-600" />
+        <div style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}` }}>
+          <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
+            <div
+              className="flex items-center justify-center"
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 4,
+                background: `${accent}15`,
+                border: `1px solid ${accent}40`,
+              }}
+            >
+              <FolderKanban size={20} style={{ color: accent }} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{projectName}</p>
+              <p className="truncate" style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{projectName}</p>
               {dealPhase && (
-                <Badge variant="outline" className="text-[10px] mt-0.5">
-                  {dealPhase.replace('_', ' ')}
-                </Badge>
+                <div style={{ marginTop: 4 }}>
+                  <StatusPill label={dealPhase.replace('_', ' ')} tone={accent} />
+                </div>
               )}
             </div>
           </div>
 
           {/* Overall Progress */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Completion</span>
-              <span className="font-medium text-foreground">{stats.percentage}%</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="flex items-center justify-between">
+              <span style={{ fontSize: 12, color: colors.text.muted }}>Completion</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary, fontFamily: MONO }}>{stats.percentage}%</span>
             </div>
-            <Progress value={stats.percentage} className="h-2" />
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <ProgressBar value={stats.percentage} height={8} />
+            <div className="flex items-center justify-between" style={{ fontSize: 10, color: colors.text.muted, fontFamily: MONO }}>
               <span>{stats.fulfilled} of {stats.total}</span>
               {stats.pendingReview > 0 && (
-                <span className="text-amber-600">{stats.pendingReview} pending</span>
+                <span style={{ color: colors.accent.yellow }}>{stats.pendingReview} pending</span>
               )}
             </div>
           </div>
         </div>
 
         {/* Status Summary */}
-        <div className="p-4 border-b border-border space-y-2">
+        <div style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span className="text-sm text-muted-foreground">Fulfilled</span>
+              <CheckCircle2 size={16} style={{ color: colors.entityTypes.client }} />
+              <span style={{ fontSize: 12, color: colors.text.muted }}>Fulfilled</span>
             </div>
-            <span className="text-sm font-medium text-green-700">{stats.fulfilled}</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: colors.entityTypes.client, fontFamily: MONO }}>{stats.fulfilled}</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-500" />
-              <span className="text-sm text-muted-foreground">Pending Review</span>
+              <Clock size={16} style={{ color: colors.accent.yellow }} />
+              <span style={{ fontSize: 12, color: colors.text.muted }}>Pending Review</span>
             </div>
-            <span className="text-sm font-medium text-amber-700">{stats.pendingReview}</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: colors.accent.yellow, fontFamily: MONO }}>{stats.pendingReview}</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Circle className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Missing</span>
+              <Circle size={16} style={{ color: colors.text.muted }} />
+              <span style={{ fontSize: 12, color: colors.text.muted }}>Missing</span>
             </div>
-            <span className="text-sm font-medium text-foreground">{stats.missing}</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary, fontFamily: MONO }}>{stats.missing}</span>
           </div>
         </div>
 
         {/* Bottom Actions */}
-        <div className="mt-auto p-3 border-t border-border space-y-2 flex-shrink-0">
+        <div className="mt-auto flex-shrink-0" style={{ padding: 12, borderTop: `1px solid ${colors.border.default}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
-            className="w-full justify-start text-xs"
+            style={{ width: '100%', justifyContent: 'flex-start' }}
             onClick={() => setShowEmailModal(true)}
           >
-            <Mail className="w-3 h-3 mr-2" />
+            <Mail size={12} />
             Request Missing Docs
           </Button>
           {lastEmailGeneration && (
-            <p className="text-[10px] text-muted-foreground px-2">
+            <p style={{ fontSize: 10, color: colors.text.muted, padding: '0 8px', fontFamily: MONO }}>
               Last sent: {new Date(lastEmailGeneration).toLocaleDateString()}
             </p>
           )}
@@ -209,27 +257,31 @@ export default function ProjectKnowledgeTab({
       </div>
 
       {/* Column 2: Categories */}
-      <div className="w-56 bg-card border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border flex-shrink-0">
-          <h4 className="font-medium text-foreground text-sm">Categories</h4>
-          <p className="text-xs text-muted-foreground mt-1">Filter by type</p>
+      <div
+        className="w-56 flex flex-col"
+        style={{ background: colors.bg.card, borderRight: `1px solid ${colors.border.default}` }}
+      >
+        <div className="flex-shrink-0" style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}` }}>
+          <h4 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>Categories</h4>
+          <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>Filter by type</p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {/* All Items Option */}
           <button
             onClick={() => setSelectedCategory(null)}
-            className={cn(
-              "w-full px-4 py-3 flex items-center justify-between text-left transition-colors",
-              selectedCategory === null
-                ? "bg-muted font-medium"
-                : "hover:bg-muted"
-            )}
+            className="w-full flex items-center justify-between text-left"
+            style={{
+              padding: '12px 16px',
+              background: selectedCategory === null ? colors.bg.cardAlt : 'transparent',
+              border: 'none',
+              borderBottom: `1px solid ${colors.border.light}`,
+              cursor: 'pointer',
+              transition: 'background 100ms linear',
+            }}
           >
-            <span className="text-sm text-foreground">All Items</span>
-            <Badge variant="secondary" className="text-xs">
-              {projectChecklist?.length || 0}
-            </Badge>
+            <span style={{ fontSize: 12, fontWeight: selectedCategory === null ? 500 : 400, color: colors.text.primary }}>All Items</span>
+            <StatusPill label={String(projectChecklist?.length || 0)} tone={colors.text.muted} />
           </button>
 
           {/* Category List */}
@@ -237,32 +289,36 @@ export default function ProjectKnowledgeTab({
             <button
               key={category.name}
               onClick={() => setSelectedCategory(category.name)}
-              className={cn(
-                "w-full px-4 py-3 text-left transition-colors border-b border-gray-50",
-                selectedCategory === category.name
-                  ? "bg-muted"
-                  : "hover:bg-muted"
-              )}
+              className="w-full text-left"
+              style={{
+                padding: '12px 16px',
+                background: selectedCategory === category.name ? colors.bg.cardAlt : 'transparent',
+                border: 'none',
+                borderBottom: `1px solid ${colors.border.light}`,
+                cursor: 'pointer',
+                transition: 'background 100ms linear',
+              }}
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className={cn(
-                  "text-sm truncate",
-                  selectedCategory === category.name ? "font-medium text-foreground" : "text-foreground"
-                )}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                <span
+                  className="truncate"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: selectedCategory === category.name ? 500 : 400,
+                    color: colors.text.primary,
+                  }}
+                >
                   {category.name}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span style={{ fontSize: 11, color: colors.text.muted, fontFamily: MONO }}>
                   {category.fulfilled}/{category.total}
                 </span>
               </div>
-              <Progress 
-                value={category.percentage} 
-                className="h-1"
-              />
+              <ProgressBar value={category.percentage} height={4} />
               {category.pendingReview > 0 && (
-                <div className="flex items-center gap-1 mt-1">
-                  <Clock className="w-3 h-3 text-amber-500" />
-                  <span className="text-[10px] text-amber-600">
+                <div className="flex items-center gap-1" style={{ marginTop: 6 }}>
+                  <Clock size={12} style={{ color: colors.accent.yellow }} />
+                  <span style={{ fontSize: 10, color: colors.accent.yellow }}>
                     {category.pendingReview} pending review
                   </span>
                 </div>
@@ -272,21 +328,21 @@ export default function ProjectKnowledgeTab({
         </div>
 
         {/* Add Dynamic Requirement */}
-        <div className="p-3 border-t border-border flex-shrink-0">
+        <div className="flex-shrink-0" style={{ padding: 12, borderTop: `1px solid ${colors.border.default}` }}>
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
-            className="w-full justify-start text-xs"
+            style={{ width: '100%', justifyContent: 'flex-start' }}
             onClick={() => setShowDynamicInput(true)}
           >
-            <Plus className="w-3 h-3 mr-2" />
+            <Plus size={12} />
             Add Requirement
           </Button>
         </div>
       </div>
 
       {/* Column 3: Checklist Items */}
-      <div className="flex-1 bg-card flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: colors.bg.card }}>
         <KnowledgeChecklistPanel
           items={filteredItems}
           clientId={clientId}

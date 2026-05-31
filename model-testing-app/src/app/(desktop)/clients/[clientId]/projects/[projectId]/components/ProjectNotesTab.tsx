@@ -4,9 +4,8 @@ import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Button, IconButton, StatusPill, EmptyState, Skeleton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import NotesEditor from '@/components/NotesEditor';
 import NoteUploadModal from '../../../components/NoteUploadModal';
 import {
@@ -25,6 +24,8 @@ import {
   X,
 } from 'lucide-react';
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 interface ProjectNotesTabProps {
   projectId: Id<"projects">;
   projectName: string;
@@ -36,6 +37,7 @@ export default function ProjectNotesTab({
   projectName,
   clientId,
 }: ProjectNotesTabProps) {
+  const colors = useColors();
   const [selectedNoteId, setSelectedNoteId] = useState<Id<"notes"> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
@@ -80,16 +82,16 @@ export default function ProjectNotesTab({
         );
         if (!matchesSearch) return false;
       }
-      
+
       // Type filter
       if (filterType === 'draft' && !note.isDraft) return false;
-      
+
       // Tag filter
       if (filterTags.length > 0) {
         const hasMatchingTag = filterTags.some(tag => note.tags?.includes(tag));
         if (!hasMatchingTag) return false;
       }
-      
+
       return true;
     });
   }, [notes, searchQuery, filterType, filterTags]);
@@ -136,159 +138,245 @@ export default function ProjectNotesTab({
   };
 
   return (
-    <div className="flex h-full bg-muted overflow-hidden">
+    <div style={{ display: 'flex', height: '100%', background: colors.bg.base, overflow: 'hidden' }}>
       {/* Left Sidebar - Notes List */}
-      <div className={`${isSidebarMinimized ? 'w-16' : 'w-80'} bg-card border-r border-border flex flex-col transition-all duration-300 ease-in-out relative overflow-visible`}>
+      <div
+        style={{
+          width: isSidebarMinimized ? 64 : 320,
+          background: colors.bg.card,
+          borderRight: `1px solid ${colors.border.default}`,
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'width 300ms ease-in-out',
+          position: 'relative',
+          overflow: 'visible',
+        }}
+      >
         {/* Minimize Toggle Button */}
         <button
           onClick={() => setIsSidebarMinimized(!isSidebarMinimized)}
-          className="absolute -right-3 top-4 z-10 p-1 bg-card border border-border rounded-full shadow-sm hover:bg-muted transition-colors"
           title={isSidebarMinimized ? 'Expand sidebar' : 'Minimize sidebar'}
+          style={{
+            position: 'absolute',
+            right: -12,
+            top: 16,
+            zIndex: 10,
+            padding: 4,
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 999,
+            cursor: 'pointer',
+            display: 'inline-flex',
+          }}
         >
           {isSidebarMinimized ? (
-            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            <ChevronRight size={16} color={colors.text.muted} />
           ) : (
-            <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+            <ChevronLeft size={16} color={colors.text.muted} />
           )}
         </button>
 
         {!isSidebarMinimized ? (
           <>
             {/* Header with buttons */}
-            <div className="p-4 border-b border-border">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-foreground">Notes</h2>
+            <div style={{ padding: 16, borderBottom: `1px solid ${colors.border.default}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 11,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: colors.text.primary,
+                      fontWeight: 500,
+                    }}
+                  >
+                    Notes
+                  </span>
                   {hasActiveFilters && (
-                    <Badge variant="secondary" className="text-xs">
-                      <Filter className="w-3 h-3 mr-1" />
-                      {filteredNotes.length}
-                    </Badge>
+                    <StatusPill label={`${filteredNotes.length}`} tone={colors.entityTypes.project} />
                   )}
                 </div>
               </div>
-              
+
               {/* Action Buttons */}
-              <div className="flex gap-2 mb-3">
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                 <Button
-                  onClick={handleCreateNote}
+                  variant="primary"
+                  accent={colors.entityTypes.project}
                   size="sm"
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                  onClick={handleCreateNote}
+                  style={{ flex: 1 }}
                 >
-                  <Plus className="w-4 h-4 mr-1" />
+                  <Plus size={14} />
                   New Note
                 </Button>
                 <Button
-                  onClick={() => setShowUploadModal(true)}
+                  variant="secondary"
                   size="sm"
-                  variant="outline"
-                  className="flex-1"
+                  onClick={() => setShowUploadModal(true)}
+                  style={{ flex: 1 }}
                 >
-                  <Upload className="w-4 h-4 mr-1" />
+                  <Upload size={14} />
                   Upload
                 </Button>
               </div>
 
               {/* Search */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '0 10px',
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                }}
+              >
+                <Search size={14} color={colors.text.muted} style={{ flexShrink: 0 }} />
+                <input
                   type="text"
                   placeholder="Search notes..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9"
+                  style={{
+                    flex: 1,
+                    padding: '7px 0',
+                    fontSize: 12,
+                    color: colors.text.primary,
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                  }}
                 />
               </div>
 
               {/* Collapsible Filters */}
-              <div className="mt-3">
+              <div style={{ marginTop: 12 }}>
                 <button
                   onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
-                  className="flex items-center justify-between w-full px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted rounded transition-colors"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    padding: '6px 8px',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: colors.text.muted,
+                    background: 'transparent',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                  }}
                 >
-                  <div className="flex items-center gap-1">
-                    <Filter className="w-3 h-3" />
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Filter size={12} />
                     <span>Filters</span>
                     {hasActiveFilters && (
-                      <Badge variant="secondary" className="text-[10px] px-1">
-                        {filterTags.length + (filterType !== 'all' ? 1 : 0)}
-                      </Badge>
+                      <StatusPill
+                        label={`${filterTags.length + (filterType !== 'all' ? 1 : 0)}`}
+                        tone={colors.entityTypes.project}
+                      />
                     )}
-                  </div>
-                  {isFiltersExpanded ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
+                  </span>
+                  {isFiltersExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                 </button>
 
                 {isFiltersExpanded && (
-                  <div className="mt-2 space-y-2 border-t border-border pt-2">
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${colors.border.default}`, paddingTop: 8 }}>
                     {/* Clear Filters */}
                     {hasActiveFilters && (
-                      <Button
-                        onClick={clearAllFilters}
-                        variant="ghost"
-                        size="sm"
-                        className="w-full text-xs h-7"
-                      >
-                        <X className="w-3 h-3 mr-1" />
+                      <Button variant="ghost" size="sm" onClick={clearAllFilters}>
+                        <X size={12} />
                         Clear Filters
                       </Button>
                     )}
 
                     {/* Type Filter */}
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => setFilterType('all')}
-                          className={`px-2 py-1 text-xs rounded ${
-                            filterType === 'all'
-                              ? 'bg-indigo-100 text-indigo-700'
-                              : 'bg-muted text-muted-foreground hover:bg-muted'
-                          }`}
-                        >
-                          All
-                        </button>
-                        <button
-                          onClick={() => setFilterType('draft')}
-                          className={`px-2 py-1 text-xs rounded ${
-                            filterType === 'draft'
-                              ? 'bg-indigo-100 text-indigo-700'
-                              : 'bg-muted text-muted-foreground hover:bg-muted'
-                          }`}
-                        >
-                          Drafts
-                        </button>
+                      <div
+                        style={{
+                          fontFamily: MONO,
+                          fontSize: 9,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: colors.text.muted,
+                          fontWeight: 500,
+                          marginBottom: 4,
+                        }}
+                      >
+                        Type
+                      </div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {(['all', 'draft'] as const).map((type) => {
+                          const active = filterType === type;
+                          return (
+                            <button
+                              key={type}
+                              onClick={() => setFilterType(type)}
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: 11,
+                                borderRadius: 3,
+                                cursor: 'pointer',
+                                border: `1px solid ${active ? colors.entityTypes.project : colors.border.default}`,
+                                background: active ? `${colors.entityTypes.project}20` : colors.bg.card,
+                                color: active ? colors.entityTypes.project : colors.text.secondary,
+                              }}
+                            >
+                              {type === 'all' ? 'All' : 'Drafts'}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
                     {/* Tags Filter */}
                     {allTags.length > 0 && (
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Tags</label>
-                        <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-                          {allTags.map(tag => (
-                            <button
-                              key={tag}
-                              onClick={() => {
-                                if (filterTags.includes(tag)) {
-                                  setFilterTags(filterTags.filter(t => t !== tag));
-                                } else {
-                                  setFilterTags([...filterTags, tag]);
-                                }
-                              }}
-                              className={`px-2 py-0.5 text-xs rounded ${
-                                filterTags.includes(tag)
-                                  ? 'bg-indigo-100 text-indigo-700'
-                                  : 'bg-muted text-muted-foreground hover:bg-muted'
-                              }`}
-                            >
-                              {tag}
-                            </button>
-                          ))}
+                        <div
+                          style={{
+                            fontFamily: MONO,
+                            fontSize: 9,
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: colors.text.muted,
+                            fontWeight: 500,
+                            marginBottom: 4,
+                          }}
+                        >
+                          Tags
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 80, overflowY: 'auto' }}>
+                          {allTags.map(tag => {
+                            const active = filterTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                onClick={() => {
+                                  if (filterTags.includes(tag)) {
+                                    setFilterTags(filterTags.filter(t => t !== tag));
+                                  } else {
+                                    setFilterTags([...filterTags, tag]);
+                                  }
+                                }}
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: 11,
+                                  borderRadius: 3,
+                                  cursor: 'pointer',
+                                  border: `1px solid ${active ? colors.entityTypes.project : colors.border.default}`,
+                                  background: active ? `${colors.entityTypes.project}20` : colors.bg.card,
+                                  color: active ? colors.entityTypes.project : colors.text.secondary,
+                                }}
+                              >
+                                {tag}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -298,75 +386,124 @@ export default function ProjectNotesTab({
             </div>
 
             {/* Notes List */}
-            <div className="flex-1 overflow-y-auto">
+            <div style={{ flex: 1, overflowY: 'auto' }}>
               {notes === undefined ? (
-                <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} height={40} />
+                  ))}
+                </div>
               ) : filteredNotes.length === 0 ? (
-                <div className="p-4 text-center">
-                  <StickyNote className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    {hasActiveFilters || searchQuery
-                      ? 'No notes match your filters.'
-                      : 'No notes yet. Create your first note!'}
-                  </p>
+                <div style={{ padding: 16 }}>
+                  <EmptyState
+                    icon={<StickyNote size={28} />}
+                    title={hasActiveFilters || searchQuery ? 'No notes match your filters' : 'No notes yet'}
+                    body={hasActiveFilters || searchQuery ? undefined : 'Create your first note.'}
+                  />
                 </div>
               ) : (
-                <div className="divide-y divide-border">
-                  {filteredNotes.map((note: any) => (
-                    <div key={note._id} className="group relative">
-                      <button
-                        onClick={() => setSelectedNoteId(note._id)}
-                        className={`w-full text-left p-3 hover:bg-muted transition-colors ${
-                          selectedNoteId === note._id ? 'bg-indigo-50 border-l-4 border-indigo-600' : ''
-                        }`}
+                <div>
+                  {filteredNotes.map((note: any, i: number) => {
+                    const selected = selectedNoteId === note._id;
+                    return (
+                      <div
+                        key={note._id}
+                        style={{
+                          position: 'relative',
+                          borderTop: i === 0 ? 'none' : `1px solid ${colors.border.light}`,
+                        }}
                       >
-                        <div className="flex items-start justify-between mb-1">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            {note.emoji && <span className="text-base">{note.emoji}</span>}
-                            <div className="font-medium text-foreground truncate text-sm">
-                              {note.title || 'Untitled Note'}
-                            </div>
-                          </div>
-                          {note.isDraft && (
-                            <Badge variant="secondary" className="text-[10px] ml-1 shrink-0">
-                              Draft
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(note.updatedAt).toLocaleDateString()}
-                        </div>
-                        {note.tags && note.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {note.tags.slice(0, 2).map((tag: string, idx: number) => (
-                              <span
-                                key={idx}
-                                className="px-1.5 py-0.5 text-[10px] bg-muted text-muted-foreground rounded"
+                        <button
+                          onClick={() => setSelectedNoteId(note._id)}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: 12,
+                            cursor: 'pointer',
+                            background: selected ? `${colors.entityTypes.project}15` : 'transparent',
+                            border: 'none',
+                            borderLeft: selected ? `3px solid ${colors.entityTypes.project}` : '3px solid transparent',
+                            transition: 'background 100ms linear',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                              {note.emoji && <span style={{ fontSize: 14 }}>{note.emoji}</span>}
+                              <div
+                                style={{
+                                  fontWeight: 500,
+                                  fontSize: 12,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  color: colors.text.primary,
+                                }}
                               >
-                                {tag}
-                              </span>
-                            ))}
-                            {note.tags.length > 2 && (
-                              <span className="text-[10px] text-muted-foreground">
-                                +{note.tags.length - 2}
+                                {note.title || 'Untitled Note'}
+                              </div>
+                            </div>
+                            {note.isDraft && (
+                              <span style={{ marginLeft: 4, flexShrink: 0 }}>
+                                <StatusPill label="Draft" tone={colors.text.muted} />
                               </span>
                             )}
                           </div>
-                        )}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteNote(note._id);
-                        }}
-                        className="absolute right-2 top-2 z-10 p-1 opacity-0 group-hover:opacity-100 bg-card rounded shadow hover:bg-red-50 transition-all border border-border"
-                        title="Delete note"
-                      >
-                        <Trash2 className="w-3 h-3 text-red-600" />
-                      </button>
-                    </div>
-                  ))}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontFamily: MONO,
+                              fontSize: 9,
+                              color: colors.text.muted,
+                            }}
+                          >
+                            <Calendar size={10} />
+                            {new Date(note.updatedAt).toLocaleDateString()}
+                          </div>
+                          {note.tags && note.tags.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                              {note.tags.slice(0, 2).map((tag: string, idx: number) => (
+                                <span
+                                  key={idx}
+                                  style={{
+                                    padding: '1px 6px',
+                                    fontSize: 9,
+                                    borderRadius: 3,
+                                    background: colors.bg.light,
+                                    color: colors.text.muted,
+                                  }}
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                              {note.tags.length > 2 && (
+                                <span style={{ fontSize: 9, color: colors.text.muted }}>
+                                  +{note.tags.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                        <div
+                          style={{
+                            position: 'absolute',
+                            right: 8,
+                            top: 8,
+                            zIndex: 10,
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNote(note._id);
+                          }}
+                        >
+                          <IconButton label="Delete note">
+                            <Trash2 size={12} color={colors.accent.red} />
+                          </IconButton>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -374,47 +511,71 @@ export default function ProjectNotesTab({
         ) : (
           /* Minimized sidebar view */
           <>
-            <div className="p-2 border-b border-border flex flex-col items-center gap-2">
+            <div style={{ padding: 8, borderBottom: `1px solid ${colors.border.default}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <button
                 onClick={handleCreateNote}
-                className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
                 title="New Note"
+                style={{
+                  padding: 8,
+                  background: colors.entityTypes.project,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                }}
               >
-                <Plus className="w-4 h-4" />
+                <Plus size={16} />
               </button>
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="p-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted"
                 title="Upload Notes"
+                style={{
+                  padding: 8,
+                  background: colors.bg.light,
+                  color: colors.text.muted,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                }}
               >
-                <Upload className="w-4 h-4" />
+                <Upload size={16} />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto py-2">
-              {filteredNotes.map((note: any) => (
-                <button
-                  key={note._id}
-                  onClick={() => {
-                    setSelectedNoteId(note._id);
-                    setIsSidebarMinimized(false);
-                  }}
-                  className={`w-full p-2 flex justify-center ${
-                    selectedNoteId === note._id
-                      ? 'bg-indigo-100 text-indigo-600'
-                      : 'hover:bg-muted text-muted-foreground'
-                  }`}
-                  title={note.title || 'Untitled Note'}
-                >
-                  <FileText className="w-4 h-4" />
-                </button>
-              ))}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {filteredNotes.map((note: any) => {
+                const selected = selectedNoteId === note._id;
+                return (
+                  <button
+                    key={note._id}
+                    onClick={() => {
+                      setSelectedNoteId(note._id);
+                      setIsSidebarMinimized(false);
+                    }}
+                    title={note.title || 'Untitled Note'}
+                    style={{
+                      width: '100%',
+                      padding: 8,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      background: selected ? `${colors.entityTypes.project}20` : 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: selected ? colors.entityTypes.project : colors.text.muted,
+                    }}
+                  >
+                    <FileText size={16} />
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
       </div>
 
       {/* Main Editor Area */}
-      <div className="flex-1 flex flex-col bg-card overflow-hidden">
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: colors.bg.card, overflow: 'hidden' }}>
         {selectedNoteId && selectedNote ? (
           <NotesEditor
             noteId={selectedNoteId}
@@ -423,32 +584,28 @@ export default function ProjectNotesTab({
             clientId={clientId}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center max-w-md">
-              <StickyNote className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                {notes.length === 0 ? 'No notes yet' : 'Select a note'}
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {notes.length === 0
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <EmptyState
+              icon={<StickyNote size={40} />}
+              title={notes.length === 0 ? 'No notes yet' : 'Select a note'}
+              body={
+                notes.length === 0
                   ? `Create notes to keep track of important information about ${projectName}. You can also upload meeting transcripts and call notes.`
-                  : 'Select a note from the sidebar to view and edit it, or create a new note.'}
-              </p>
-              <div className="flex gap-3 justify-center">
-                <Button onClick={handleCreateNote} className="gap-2 bg-indigo-600 hover:bg-indigo-700">
-                  <Plus className="w-4 h-4" />
-                  New Note
-                </Button>
-                <Button 
-                  onClick={() => setShowUploadModal(true)} 
-                  variant="outline"
-                  className="gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload Notes
-                </Button>
-              </div>
-            </div>
+                  : 'Select a note from the sidebar to view and edit it, or create a new note.'
+              }
+              action={
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                  <Button variant="primary" accent={colors.entityTypes.project} onClick={handleCreateNote}>
+                    <Plus size={14} />
+                    New Note
+                  </Button>
+                  <Button variant="secondary" onClick={() => setShowUploadModal(true)}>
+                    <Upload size={14} />
+                    Upload Notes
+                  </Button>
+                </div>
+              }
+            />
           </div>
         )}
       </div>

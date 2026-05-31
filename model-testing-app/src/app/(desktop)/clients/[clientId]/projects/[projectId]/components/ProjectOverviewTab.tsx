@@ -5,10 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../../convex/_generated/dataModel';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { useColors } from '@/lib/useColors';
+import {
+  Panel,
+  StatTile,
+  DataTable,
+  EmptyState,
+  StatusPill,
+  Button,
+  IconButton,
+  Row,
+} from '@/components/layouts';
 import {
   Building2,
   FileText,
@@ -46,13 +53,15 @@ export default function ProjectOverviewTab({
   onTabChange,
 }: ProjectOverviewTabProps) {
   const router = useRouter();
+  const colors = useColors();
+  const accent = colors.entityTypes.project;
 
   // Get all clients associated with this project
   const allClients = useQuery(api.clients.list, {}) || [];
-  
+
   // Get project checklist
   const projectChecklist = useQuery(api.knowledgeLibrary.getChecklistByProject, { projectId }) || [];
-  
+
   // Calculate checklist stats
   const checklistStats = useMemo(() => {
     const total = projectChecklist.length;
@@ -60,7 +69,7 @@ export default function ProjectOverviewTab({
     const pendingReview = projectChecklist.filter((i: any) => i.status === 'pending_review').length;
     const missing = projectChecklist.filter((i: any) => i.status === 'missing').length;
     const percentage = total > 0 ? Math.round((fulfilled / total) * 100) : 0;
-    
+
     // Group by category
     const byCategory: Record<string, { fulfilled: number; total: number }> = {};
     projectChecklist.forEach((item: any) => {
@@ -72,10 +81,10 @@ export default function ProjectOverviewTab({
         byCategory[item.category].fulfilled++;
       }
     });
-    
+
     return { total, fulfilled, pendingReview, missing, percentage, byCategory };
   }, [projectChecklist]);
-  
+
   // Map client roles to full client data
   const clientsWithRoles = useMemo(() => {
     return clientRoles.map((role: any) => {
@@ -118,287 +127,356 @@ export default function ProjectOverviewTab({
     }).format(amount);
   };
 
+  const addressLine = [project.address, project.city, project.state, project.zip].filter(Boolean).join(', ');
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Project Information */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between py-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Briefcase className="w-4 h-4" />
-            Project Information
-          </CardTitle>
-          {onOpenSettings && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs"
-              onClick={onOpenSettings}
-            >
-              <Pencil className="w-3 h-3 mr-1" />
-              Edit
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <p className="text-xs text-muted-foreground">Project Name</p>
-            <p className="text-sm font-medium">{project.name}</p>
-          </div>
-
+      <Panel
+        title="Project Information"
+        accent={accent}
+        actions={
+          onOpenSettings && (
+            <IconButton label="Edit" onClick={onOpenSettings}>
+              <Pencil size={14} />
+            </IconButton>
+          )
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <Row label="Project Name" value={project.name} />
           {project.projectShortcode && (
-            <div>
-              <p className="text-xs text-muted-foreground">Shortcode</p>
-              <Badge variant="outline" className="font-mono text-xs">{project.projectShortcode}</Badge>
-            </div>
+            <Row label="Shortcode" value={project.projectShortcode} mono />
           )}
-
           {project.description && (
-            <div>
-              <p className="text-xs text-muted-foreground">Description</p>
-              <p className="text-sm text-foreground">{project.description}</p>
-            </div>
+            <Row label="Description" value={project.description} />
           )}
-
-          {project.address && (
-            <div>
-              <p className="text-xs text-muted-foreground">Address</p>
-              <p className="text-sm font-medium flex items-start gap-1.5">
-                <MapPin className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-                {[project.address, project.city, project.state, project.zip]
-                  .filter(Boolean)
-                  .join(', ')}
-              </p>
-            </div>
+          {addressLine && (
+            <Row
+              label="Address"
+              value={
+                <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6 }}>
+                  <MapPin size={12} color={colors.text.muted} style={{ marginTop: 2, flexShrink: 0 }} />
+                  {addressLine}
+                </span>
+              }
+            />
           )}
-
           {project.startDate && (
-            <div>
-              <p className="text-xs text-muted-foreground">Start Date</p>
-              <p className="text-sm font-medium flex items-center gap-1.5">
-                <Calendar className="w-3 h-3 text-muted-foreground" />
-                {new Date(project.startDate).toLocaleDateString()}
-              </p>
-            </div>
+            <Row
+              label="Start Date"
+              value={
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Calendar size={12} color={colors.text.muted} />
+                  {new Date(project.startDate).toLocaleDateString()}
+                </span>
+              }
+            />
           )}
-
           {project.expectedCompletionDate && (
-            <div>
-              <p className="text-xs text-muted-foreground">Expected Completion</p>
-              <p className="text-sm font-medium flex items-center gap-1.5">
-                <Calendar className="w-3 h-3 text-muted-foreground" />
-                {new Date(project.expectedCompletionDate).toLocaleDateString()}
-              </p>
-            </div>
+            <Row
+              label="Expected Completion"
+              value={
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Calendar size={12} color={colors.text.muted} />
+                  {new Date(project.expectedCompletionDate).toLocaleDateString()}
+                </span>
+              }
+            />
           )}
-
           {project.loanAmount && (
-            <div>
-              <p className="text-xs text-muted-foreground">Loan Amount</p>
-              <p className="text-sm font-medium">{formatCurrency(project.loanAmount)}</p>
-            </div>
+            <Row label="Loan Amount" value={formatCurrency(project.loanAmount)} mono />
           )}
-
           {project.interestRate && (
-            <div>
-              <p className="text-xs text-muted-foreground">Interest Rate</p>
-              <p className="text-sm font-medium">{project.interestRate}%</p>
-            </div>
+            <Row label="Interest Rate" value={`${project.interestRate}%`} mono />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {/* Checklist Progress */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between py-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CheckSquare className="w-4 h-4" />
-            Document Checklist
-          </CardTitle>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            className="text-xs"
-            onClick={() => onTabChange?.('checklist')}
-          >
+      <Panel
+        title="Document Checklist"
+        accent={accent}
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => onTabChange?.('checklist')}>
             View All
           </Button>
-        </CardHeader>
-        <CardContent>
-          {checklistStats.total === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-4">No checklist items yet</p>
-          ) : (
-            <div className="space-y-4">
-              {/* Overall Progress */}
-              <div>
-                <div className="flex items-center justify-between text-sm mb-2">
-                  <span className="text-muted-foreground">Overall Completion</span>
-                  <span className="font-medium">{checklistStats.percentage}%</span>
+        }
+      >
+        {checklistStats.total === 0 ? (
+          <EmptyState icon={<CheckSquare size={28} />} title="No checklist items yet" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Overall Progress */}
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: 12,
+                  marginBottom: 8,
+                }}
+              >
+                <span style={{ color: colors.text.muted }}>Overall Completion</span>
+                <span style={{ color: colors.text.primary, fontWeight: 500 }}>{checklistStats.percentage}%</span>
+              </div>
+              <div
+                style={{
+                  height: 8,
+                  borderRadius: 2,
+                  background: colors.bg.cardAlt,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${checklistStats.percentage}%`,
+                    background: accent,
+                    transition: 'width 200ms linear',
+                  }}
+                />
+              </div>
+              <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>
+                {checklistStats.fulfilled} of {checklistStats.total} documents
+              </p>
+            </div>
+
+            {/* Status Breakdown */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 12,
+                paddingTop: 8,
+                borderTop: `1px solid ${colors.border.light}`,
+              }}
+            >
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
+                  <CheckCircle2 size={16} color={colors.accent.green} />
+                  <span style={{ fontSize: 18, fontWeight: 300, color: colors.accent.green }}>{checklistStats.fulfilled}</span>
                 </div>
-                <Progress value={checklistStats.percentage} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {checklistStats.fulfilled} of {checklistStats.total} documents
+                <p style={{ fontSize: 10, color: colors.text.muted }}>Fulfilled</p>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
+                  <Clock size={16} color={colors.accent.yellow} />
+                  <span style={{ fontSize: 18, fontWeight: 300, color: colors.accent.yellow }}>{checklistStats.pendingReview}</span>
+                </div>
+                <p style={{ fontSize: 10, color: colors.text.muted }}>Pending</p>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
+                  <Circle size={16} color={colors.text.muted} />
+                  <span style={{ fontSize: 18, fontWeight: 300, color: colors.text.primary }}>{checklistStats.missing}</span>
+                </div>
+                <p style={{ fontSize: 10, color: colors.text.muted }}>Missing</p>
+              </div>
+            </div>
+
+            {/* Top Categories */}
+            {Object.keys(checklistStats.byCategory).length > 0 && (
+              <div style={{ paddingTop: 8, borderTop: `1px solid ${colors.border.light}` }}>
+                <p
+                  style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 9,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color: colors.text.muted,
+                    fontWeight: 500,
+                    marginBottom: 8,
+                  }}
+                >
+                  By Category
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {Object.entries(checklistStats.byCategory).slice(0, 4).map(([category, stats]) => (
+                    <div
+                      key={category}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}
+                    >
+                      <span style={{ color: colors.text.secondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {category}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: 11,
+                          color: colors.text.muted,
+                          marginLeft: 8,
+                        }}
+                      >
+                        {stats.fulfilled}/{stats.total}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Alert if many missing */}
+            {checklistStats.missing > 3 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  padding: 8,
+                  borderRadius: 4,
+                  background: `${colors.accent.orange}12`,
+                  border: `1px solid ${colors.accent.orange}40`,
+                }}
+              >
+                <AlertCircle size={16} color={colors.accent.orange} style={{ flexShrink: 0, marginTop: 2 }} />
+                <p style={{ fontSize: 11, color: colors.accent.orange }}>
+                  {checklistStats.missing} documents still missing. Use the checklist tab to request them.
                 </p>
               </div>
-
-              {/* Status Breakdown */}
-              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 mb-1">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span className="text-lg font-semibold text-green-700">{checklistStats.fulfilled}</span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Fulfilled</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 mb-1">
-                    <Clock className="w-4 h-4 text-amber-500" />
-                    <span className="text-lg font-semibold text-amber-700">{checklistStats.pendingReview}</span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Pending</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 mb-1">
-                    <Circle className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-lg font-semibold text-foreground">{checklistStats.missing}</span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Missing</p>
-                </div>
-              </div>
-
-              {/* Top Categories */}
-              {Object.keys(checklistStats.byCategory).length > 0 && (
-                <div className="pt-2 border-t border-border">
-                  <p className="text-xs font-medium text-muted-foreground mb-2">By Category</p>
-                  <div className="space-y-1.5">
-                    {Object.entries(checklistStats.byCategory).slice(0, 4).map(([category, stats]) => (
-                      <div key={category} className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground truncate flex-1">{category}</span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          {stats.fulfilled}/{stats.total}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Alert if many missing */}
-              {checklistStats.missing > 3 && (
-                <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-50 border border-amber-100">
-                  <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700">
-                    {checklistStats.missing} documents still missing. Use the checklist tab to request them.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </div>
+        )}
+      </Panel>
 
       {/* Associated Clients */}
-      <Card>
-        <CardHeader className="py-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Building2 className="w-4 h-4" />
-            Associated Clients
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {clientsWithRoles.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-4">No clients associated</p>
-          ) : (
-            <div className="space-y-2">
-              {clientsWithRoles.map((roleData: any, index: number) => (
+      <Panel title="Associated Clients" accent={accent}>
+        {clientsWithRoles.length === 0 ? (
+          <EmptyState icon={<Building2 size={28} />} title="No clients associated" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {clientsWithRoles.map((roleData: any, index: number) => {
+              const isLender = roleData.role === 'lender' || roleData.client.type?.toLowerCase() === 'lender';
+              const tone = isLender ? colors.entityTypes.lender : colors.entityTypes.client;
+              return (
                 <div
                   key={index}
-                  className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
                   onClick={() => router.push(`/clients/${roleData.client._id}`)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    padding: 8,
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    transition: 'background 100ms linear',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = colors.bg.cardAlt)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                    roleData.client.type?.toLowerCase() === 'lender' 
-                      ? 'bg-blue-100' 
-                      : 'bg-green-100'
-                  }`}>
-                    <Building2 className={`w-4 h-4 ${
-                      roleData.client.type?.toLowerCase() === 'lender'
-                        ? 'text-blue-600'
-                        : 'text-green-600'
-                    }`} />
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 4,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      background: `${tone}15`,
+                      border: `1px solid ${tone}40`,
+                    }}
+                  >
+                    <Building2 size={16} color={tone} />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{roleData.client.name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <Badge 
-                        variant="outline" 
-                        className={`text-[10px] px-1.5 py-0 ${
-                          roleData.role === 'lender' || roleData.client.type?.toLowerCase() === 'lender'
-                            ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                            : 'bg-green-50 text-green-700 border-green-200'
-                        }`}
-                      >
-                        {roleData.role || roleData.client.type || 'Client'}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: colors.text.primary,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {roleData.client.name}
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <StatusPill label={roleData.role || roleData.client.type || 'Client'} tone={tone} />
+                      <span style={{ fontSize: 10, color: colors.text.muted }}>
                         {docsByClient[roleData.client._id] || 0} docs
                       </span>
                     </div>
                   </div>
-                  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                  <ExternalLink size={14} color={colors.text.muted} />
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
 
       {/* Recent Documents */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between py-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <FileText className="w-4 h-4" />
-            Recent Documents
-          </CardTitle>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            className="text-xs"
-            onClick={() => onTabChange?.('documents')}
-          >
+      <Panel
+        title="Recent Documents"
+        accent={accent}
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => onTabChange?.('documents')}>
             View All
           </Button>
-        </CardHeader>
-        <CardContent>
-          {recentDocuments.length === 0 ? (
-            <p className="text-muted-foreground text-sm text-center py-4">No documents yet</p>
-          ) : (
-            <div className="space-y-2">
-              {recentDocuments.map((doc: any) => (
-                <div
-                  key={doc._id}
-                  className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted transition-colors"
-                >
-                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {doc.displayName || doc.documentCode || doc.fileName}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">{doc.summary}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        {doc.category}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(doc.uploadedAt).toLocaleDateString()}
-                      </span>
+        }
+      >
+        <DataTable
+          rows={recentDocuments}
+          getRowKey={(d: any) => d._id}
+          empty={<EmptyState icon={<FileText size={28} />} title="No documents yet" />}
+          columns={[
+            {
+              key: 'name',
+              header: 'Document',
+              render: (d: any) => (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+                  <FileText size={14} color={colors.text.muted} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: colors.text.primary,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {d.displayName || d.documentCode || d.fileName}
                     </div>
+                    {d.summary && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: colors.text.muted,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {d.summary}
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              ),
+            },
+            {
+              key: 'category',
+              header: 'Category',
+              width: 140,
+              render: (d: any) =>
+                d.category ? <StatusPill label={d.category} tone={colors.text.muted} /> : null,
+            },
+            {
+              key: 'uploaded',
+              header: 'Uploaded',
+              mono: true,
+              align: 'right',
+              width: 110,
+              render: (d: any) => new Date(d.uploadedAt).toLocaleDateString(),
+            },
+          ]}
+        />
+      </Panel>
     </div>
   );
 }

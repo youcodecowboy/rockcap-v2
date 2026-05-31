@@ -16,10 +16,8 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { useColors } from '@/lib/useColors';
+import { Panel, Field, Input, Textarea, Button } from '@/components/layouts';
 import DocumentNamingSettings from '@/components/settings/DocumentNamingSettings';
 import CanonicalFieldPreferences from '@/components/settings/CanonicalFieldPreferences';
 import FolderManagement from '@/components/settings/FolderManagement';
@@ -44,6 +42,7 @@ export default function ClientSettingsPanel({
   const projects = useProjectsByClient(clientId) || [];
   const deleteClientMutation = useMutation(api.clients.remove);
   const restoreClientMutation = useMutation(api.clients.restore);
+  const colors = useColors();
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -134,11 +133,11 @@ export default function ClientSettingsPanel({
         className="w-full sm:max-w-2xl overflow-y-auto"
       >
         <SheetHeader className="mb-6">
-          <SheetTitle className="flex items-center gap-2">
-            <Settings className="w-5 h-5" />
+          <SheetTitle className="flex items-center gap-2" style={{ color: colors.text.primary }}>
+            <Settings className="w-5 h-5" style={{ color: colors.text.muted }} />
             Client Settings
           </SheetTitle>
-          <SheetDescription>
+          <SheetDescription style={{ color: colors.text.muted }}>
             Configure settings for {client.name}
           </SheetDescription>
         </SheetHeader>
@@ -164,49 +163,39 @@ export default function ClientSettingsPanel({
           </TabsList>
 
           {/* General Settings Tab */}
-          <TabsContent value="general" className="space-y-6">
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Basic Information</h3>
-
+          <TabsContent value="general" className="space-y-4">
+            <Panel title="Basic Information">
               <div className="grid gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Client Name *</Label>
+                <Field label="Client Name *">
                   <Input
                     id="name"
                     value={formData.name}
                     onChange={(e) => handleInputChange('name', e.target.value)}
                     placeholder="Enter client name"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="companyName">Company Name</Label>
+                </Field>
+                <Field label="Company Name">
                   <Input
                     id="companyName"
                     value={formData.companyName}
                     onChange={(e) => handleInputChange('companyName', e.target.value)}
                     placeholder="Enter company name"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="industry">Industry</Label>
+                </Field>
+                <Field label="Industry">
                   <Input
                     id="industry"
                     value={formData.industry}
                     onChange={(e) => handleInputChange('industry', e.target.value)}
                     placeholder="e.g., Real Estate, Finance"
                   />
-                </div>
+                </Field>
               </div>
-            </div>
+            </Panel>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Contact Information</h3>
-
+            <Panel title="Contact Information">
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                <Field label="Email">
                   <Input
                     id="email"
                     type="email"
@@ -214,107 +203,90 @@ export default function ClientSettingsPanel({
                     onChange={(e) => handleInputChange('email', e.target.value)}
                     placeholder="email@example.com"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
+                </Field>
+                <Field label="Phone">
                   <Input
                     id="phone"
                     value={formData.phone}
                     onChange={(e) => handleInputChange('phone', e.target.value)}
                     placeholder="+44 20 1234 5678"
                   />
-                </div>
-
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="website">Website</Label>
-                  <Input
-                    id="website"
-                    value={formData.website}
-                    onChange={(e) => handleInputChange('website', e.target.value)}
-                    placeholder="https://example.com"
-                  />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Website">
+                    <Input
+                      id="website"
+                      value={formData.website}
+                      onChange={(e) => handleInputChange('website', e.target.value)}
+                      placeholder="https://example.com"
+                    />
+                  </Field>
                 </div>
               </div>
-            </div>
+            </Panel>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Address</h3>
-
+            <Panel title="Address">
               <div className="grid gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="address">Street Address</Label>
+                <Field label="Street Address">
                   <Input
                     id="address"
                     value={formData.address}
                     onChange={(e) => handleInputChange('address', e.target.value)}
                     placeholder="123 Main Street"
                   />
-                </div>
-
+                </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
+                  <Field label="City">
                     <Input
                       id="city"
                       value={formData.city}
                       onChange={(e) => handleInputChange('city', e.target.value)}
                       placeholder="London"
                     />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="state">State/Region</Label>
+                  </Field>
+                  <Field label="State/Region">
                     <Input
                       id="state"
                       value={formData.state}
                       onChange={(e) => handleInputChange('state', e.target.value)}
                       placeholder="Greater London"
                     />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="zip">Postal Code</Label>
+                  </Field>
+                  <Field label="Postal Code">
                     <Input
                       id="zip"
                       value={formData.zip}
                       onChange={(e) => handleInputChange('zip', e.target.value)}
                       placeholder="SW1A 1AA"
                     />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="country">Country</Label>
+                  </Field>
+                  <Field label="Country">
                     <Input
                       id="country"
                       value={formData.country}
                       onChange={(e) => handleInputChange('country', e.target.value)}
                       placeholder="United Kingdom"
                     />
-                  </div>
+                  </Field>
                 </div>
               </div>
-            </div>
+            </Panel>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Notes</h3>
-              <div className="space-y-2">
+            <Panel title="Notes">
+              <Field>
                 <Textarea
                   id="notes"
                   value={formData.notes}
                   onChange={(e) => handleInputChange('notes', e.target.value)}
                   placeholder="Add any additional notes about this client..."
-                  className="min-h-[100px]"
+                  style={{ minHeight: 100 }}
                 />
-              </div>
-            </div>
+              </Field>
+            </Panel>
 
-            <div className="flex justify-end pt-4 border-t">
-              <Button
-                onClick={handleSaveGeneral}
-                disabled={isSaving || !formData.name}
-              >
-                {isSaving ? 'Saving...' : 'Save Changes'}
+            <div className="flex justify-end pt-4" style={{ borderTop: `1px solid ${colors.border.default}` }}>
+              <Button variant="primary" onClick={handleSaveGeneral} disabled={isSaving || !formData.name}>
+                {isSaving ? 'Saving…' : 'Save Changes'}
               </Button>
             </div>
 

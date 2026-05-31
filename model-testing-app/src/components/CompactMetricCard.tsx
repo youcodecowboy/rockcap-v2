@@ -1,8 +1,8 @@
 'use client';
 
 import { LucideIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
+import { useColors } from '@/lib/useColors';
+import { FlagChip } from '@/components/layouts';
 
 interface CompactMetricCardProps {
   label: string;
@@ -15,19 +15,15 @@ interface CompactMetricCardProps {
   };
   className?: string;
   onClick?: () => void;
-  stacked?: boolean; // New prop for stacked layout (badge below value)
+  stacked?: boolean; // Stacked layout (badge below value)
 }
 
-const iconColorClasses = {
-  blue: 'text-blue-600',
-  green: 'text-green-600',
-  purple: 'text-purple-600',
-  orange: 'text-orange-600',
-  yellow: 'text-yellow-600',
-  gray: 'text-gray-600',
-  red: 'text-red-600',
-};
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
+// Canon replacement: renders like <StatTile> (mono-uppercase label, weight-300
+// value, 2px top accent) while preserving the existing prop signature so all
+// current callers keep working. `iconColor` maps onto colors.accent.* (gray
+// falls back to the neutral mid border).
 export default function CompactMetricCard({
   label,
   value,
@@ -38,62 +34,75 @@ export default function CompactMetricCard({
   onClick,
   stacked = false,
 }: CompactMetricCardProps) {
-  if (stacked) {
-    // Stacked layout: icon on left, label/value/badge stacked vertically
-    return (
-      <div
-        className={cn(
-          'bg-white rounded-lg border border-gray-200 shadow-sm px-4 py-3 transition-shadow hover:shadow-md flex items-start gap-3',
-          onClick && 'cursor-pointer hover:border-gray-300',
-          className
-        )}
-        onClick={onClick}
-      >
-        {Icon && (
-          <Icon className={cn('w-5 h-5 flex-shrink-0 mt-0.5', iconColorClasses[iconColor])} />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">{label}:</span>
-            <span className="text-lg font-bold text-gray-900 truncate">{value}</span>
-          </div>
-          {badge && (
-            <div className="mt-1">
-              <Badge variant={badge.variant || 'outline'} className="text-xs max-w-full truncate">
-                {badge.text}
-              </Badge>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const colors = useColors();
 
-  // Default horizontal layout
-  const isBlack = className?.includes('bg-black');
+  const accentMap: Record<NonNullable<CompactMetricCardProps['iconColor']>, string> = {
+    blue: colors.accent.blue,
+    green: colors.accent.green,
+    purple: colors.accent.purple,
+    orange: colors.accent.orange,
+    yellow: colors.accent.yellow,
+    red: colors.accent.red,
+    gray: colors.border.mid,
+  };
+  const accent = accentMap[iconColor] ?? colors.accent.blue;
+
+  // Map the old shadcn badge variant onto a canon FlagChip severity.
+  const badgeSeverity =
+    badge?.variant === 'destructive' ? 'warn' : badge?.variant === 'secondary' ? 'info' : 'ok';
+
   return (
     <div
-      className={cn(
-        'rounded-lg border border-gray-200 shadow-sm transition-shadow hover:shadow-md flex items-center gap-3',
-        isBlack ? 'px-3 py-2 bg-black border-gray-800' : 'px-4 py-2.5 bg-white',
-        onClick && 'cursor-pointer hover:border-gray-300',
-        className
-      )}
+      className={className}
       onClick={onClick}
+      style={{
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.default}`,
+        borderTop: `2px solid ${accent}`,
+        borderRadius: 4,
+        padding: '12px 14px',
+        cursor: onClick ? 'pointer' : 'default',
+        display: 'flex',
+        alignItems: stacked ? 'flex-start' : 'center',
+        gap: 10,
+      }}
     >
       {Icon && (
-        <Icon className={cn('flex-shrink-0', isBlack ? 'w-4 h-4' : 'w-5 h-5', iconColorClasses[iconColor])} />
+        <Icon
+          style={{ width: 16, height: 16, flexShrink: 0, color: accent, marginTop: stacked ? 2 : 0 }}
+        />
       )}
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <span className={cn('font-medium whitespace-nowrap shrink-0', isBlack ? 'text-xs text-gray-300' : 'text-sm text-gray-600')}>{label}:</span>
-        <span className={cn('font-bold truncate min-w-0', isBlack ? 'text-base text-white' : 'text-lg text-gray-900')}>{value}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 9,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: colors.text.muted,
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: 20,
+            fontWeight: 300,
+            color: colors.text.primary,
+            marginTop: 4,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {value}
+        </div>
         {badge && (
-          <Badge variant={badge.variant || 'outline'} className="ml-1 shrink-0 max-w-[200px] truncate text-xs">
-            {badge.text}
-          </Badge>
+          <div style={{ marginTop: 6 }}>
+            <FlagChip label={badge.text} severity={badgeSeverity} />
+          </div>
         )}
       </div>
     </div>
   );
 }
-
