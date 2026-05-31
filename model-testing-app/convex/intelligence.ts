@@ -1090,6 +1090,108 @@ export const addProjectUpdate = mutation({
   },
 });
 
+// ── Operator context — running reference (2026-05-31) ───────────
+//
+// Append a dated, operator-attributed markdown block to the running
+// `contextMarkdown` reference on clientIntelligence OR projectIntelligence.
+// This is the persistence primitive behind the `client-context-capture` skill.
+//
+// SINGLE RESPONSIBILITY: it writes ONLY contextMarkdown (+ its updatedAt and
+// the row's version/lastUpdated). It deliberately does NOT touch
+// aiSummary.recentUpdates — that field is being retired separately, and the
+// dated md block is itself the timeline. Keeping these decoupled is the whole
+// point (see docs/superpowers/specs/2026-05-31-client-context-capture-design.md).
+//
+// Create-if-absent: a brand-new client/deal with no intelligence row yet gets a
+// minimal row so the first capture never fails. Exactly one of clientId /
+// projectId must be supplied.
+async function appendContextImpl(
+  ctx: any,
+  args: { clientId?: Id<"clients">; projectId?: Id<"projects">; markdownBlock: string; addedBy?: string },
+) {
+  if ((!args.clientId && !args.projectId) || (args.clientId && args.projectId)) {
+    throw new Error("appendContext: supply exactly one of clientId or projectId");
+  }
+  const block = (args.markdownBlock ?? "").trim();
+  if (!block) throw new Error("appendContext: markdownBlock is empty");
+  const now = new Date().toISOString();
+  const addedBy = args.addedBy ?? "client-context-capture";
+
+  if (args.clientId) {
+    let row = await ctx.db
+      .query("clientIntelligence")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .first();
+    if (!row) {
+      const client = await ctx.db.get(args.clientId);
+      const id = await ctx.db.insert("clientIntelligence", {
+        clientId: args.clientId,
+        clientType: (client as any)?.type || "borrower",
+        identity: client ? { legalName: (client as any).name, tradingName: (client as any).companyName } : undefined,
+        lastUpdated: now,
+        lastUpdatedBy: addedBy,
+        version: 1,
+      });
+      row = await ctx.db.get(id);
+    }
+    const next = row.contextMarkdown ? `${block}\n\n${row.contextMarkdown}` : block;
+    await ctx.db.patch(row._id, {
+      contextMarkdown: next,
+      contextMarkdownUpdatedAt: now,
+      lastUpdated: now,
+      lastUpdatedBy: addedBy,
+      version: (row.version ?? 0) + 1,
+    });
+    return { ok: true, target: "client", intelligenceId: row._id, contextMarkdownUpdatedAt: now };
+  }
+
+  // project branch
+  let row = await ctx.db
+    .query("projectIntelligence")
+    .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+    .first();
+  if (!row) {
+    const id = await ctx.db.insert("projectIntelligence", {
+      projectId: args.projectId,
+      lastUpdated: now,
+      lastUpdatedBy: addedBy,
+      version: 1,
+    });
+    row = await ctx.db.get(id);
+  }
+  const next = row.contextMarkdown ? `${block}\n\n${row.contextMarkdown}` : block;
+  await ctx.db.patch(row._id, {
+    contextMarkdown: next,
+    contextMarkdownUpdatedAt: now,
+    lastUpdated: now,
+    lastUpdatedBy: addedBy,
+    version: (row.version ?? 0) + 1,
+  });
+  return { ok: true, target: "project", intelligenceId: row._id, contextMarkdownUpdatedAt: now };
+}
+
+// Newest block is prepended so the running reference reads reverse-chronological
+// (latest capture first), matching the format in the design spec.
+export const appendContext = mutation({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    markdownBlock: v.string(),
+    addedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => appendContextImpl(ctx, args),
+});
+
+export const appendContextInternal = internalMutation({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    markdownBlock: v.string(),
+    addedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => appendContextImpl(ctx, args),
+});
+
 /**
  * Update project summaries and aggregate data on client intelligence when projects change
  * Pulls data from all projects associated with this client

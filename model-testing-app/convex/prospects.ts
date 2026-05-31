@@ -454,6 +454,13 @@ export const getDeepContext = query({
       summary.outreachReadyAt = (prospect as any).outreachReadyAt;
       summary.outreachReadyBy = (prospect as any).outreachReadyBy;
     }
+    // Operator context (2026-05-31): flag whether the running operator-knowledge
+    // reference (clientIntelligence.contextMarkdown) has been populated, so the
+    // agent knows to read it. The full md rides along on `clientIntelligence`.
+    summary.hasOperatorContext = Boolean((clientIntelligence as any)?.contextMarkdown);
+    if ((clientIntelligence as any)?.contextMarkdownUpdatedAt) {
+      summary.contextUpdatedAt = (clientIntelligence as any).contextMarkdownUpdatedAt;
+    }
     summary.entityFocus = isActiveClient ? "active_client" : "prospect";
 
     return {

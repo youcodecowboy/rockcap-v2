@@ -2749,6 +2749,16 @@ export default defineSchema({
     lastUpdated: v.string(),
     lastUpdatedBy: v.optional(v.string()), // Stores user IDs or system identifiers (e.g., "system", "intelligence-extraction")
     version: v.number(),
+
+    // === OPERATOR CONTEXT (running reference, 2026-05-31) ===
+    // Append-style markdown log of operator-stated primary knowledge (meetings,
+    // calls, personal knowledge). Written ONLY by the client-context-capture
+    // skill via intelligence.appendContext. Self-timestamping: each block is a
+    // dated, operator-attributed entry. Distinct from aiSummary.recentUpdates
+    // (which is being retired) and from the activities event feed. This is the
+    // canonical human+agent running reference, surfaced on *.getDeepContext.
+    contextMarkdown: v.optional(v.string()),
+    contextMarkdownUpdatedAt: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_client_type", ["clientType"]),
@@ -2939,6 +2949,13 @@ export default defineSchema({
     lastUpdated: v.string(),
     lastUpdatedBy: v.optional(v.string()), // Stores user IDs or system identifiers (e.g., "system", "intelligence-extraction")
     version: v.number(),
+
+    // === OPERATOR CONTEXT (running reference, 2026-05-31) ===
+    // Deal-scoped twin of clientIntelligence.contextMarkdown. Append-style
+    // markdown log of operator-stated primary knowledge about THIS deal/scheme.
+    // Written ONLY by client-context-capture via intelligence.appendContext.
+    contextMarkdown: v.optional(v.string()),
+    contextMarkdownUpdatedAt: v.optional(v.string()),
   })
     .index("by_project", ["projectId"]),
 
