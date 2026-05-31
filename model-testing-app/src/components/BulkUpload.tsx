@@ -24,29 +24,20 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Panel,
+  Button,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  Modal,
+  FlagChip,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { getUserInitials } from '@/lib/documentNaming';
 import { BulkQueueProcessor, createBulkQueueProcessor, BatchInfo } from '@/lib/bulkQueueProcessor';
 import BulkUploadHistory from './BulkUploadHistory';
@@ -204,7 +195,10 @@ interface BulkUploadProps {
   onComplete?: (batchId: Id<"bulkUploadBatches">) => void;
 }
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadProps) {
+  const colors = useColors();
   const router = useRouter();
   const { user } = useUser();
   
@@ -899,9 +893,24 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           <TabsTrigger value="history" className="flex items-center gap-1.5">
             History
             {activeBatchCount > 0 && (
-              <Badge variant="secondary" className="h-4 px-1.5 text-xs font-medium">
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: 16,
+                  height: 16,
+                  padding: '0 5px',
+                  fontSize: 10,
+                  fontWeight: 500,
+                  borderRadius: 4,
+                  background: colors.bg.cardAlt,
+                  color: colors.text.secondary,
+                  border: `1px solid ${colors.border.default}`,
+                }}
+              >
                 {activeBatchCount}
-              </Badge>
+              </span>
             )}
           </TabsTrigger>
         </TabsList>
@@ -909,24 +918,21 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
         <TabsContent value="upload">
           <div className="space-y-6">
       {/* Step 1: Document Scope Selection */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <FileText className="w-5 h-5" />
-            Step 1: Document Type
-          </CardTitle>
-          <CardDescription>
+      <Panel title="Step 1: Document Type">
+        <div className="space-y-4">
+          <p style={{ fontSize: 12, color: colors.text.secondary }}>
             Choose where these documents should be stored
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
           {/* Use Previous Selection banner */}
           {previousSelection && !previousSelectionDismissed && !isUploading && (
-            <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center gap-2 text-sm text-blue-800">
-                <RotateCcw className="w-4 h-4 flex-shrink-0" />
+            <div
+              className="flex items-center justify-between p-3 rounded"
+              style={{ background: `${colors.accent.blue}15`, border: `1px solid ${colors.accent.blue}40` }}
+            >
+              <div className="flex items-center gap-2" style={{ fontSize: 12, color: colors.text.secondary }}>
+                <RotateCcw className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.blue }} />
                 <span>
-                  Use previous: <span className="font-medium">
+                  Use previous: <span style={{ fontWeight: 500, color: colors.text.primary }}>
                     {previousSelection.scope === 'client' ? 'Client' : previousSelection.scope === 'internal' ? 'Internal' : 'Personal'}
                     {previousSelection.clientName && ` → ${previousSelection.clientName}`}
                     {previousSelection.projectName && ` → ${previousSelection.projectName}`}
@@ -934,17 +940,12 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs bg-white"
-                  onClick={applyPreviousSelection}
-                >
+                <Button variant="secondary" size="sm" onClick={applyPreviousSelection}>
                   Apply
                 </Button>
                 <button
                   onClick={() => setPreviousSelectionDismissed(true)}
-                  className="text-blue-400 hover:text-blue-600"
+                  style={{ color: colors.text.muted, background: 'transparent', border: 'none', cursor: 'pointer' }}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -953,97 +954,57 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
           )}
 
           <div className="grid grid-cols-3 gap-3">
-            <button
-              onClick={() => {
-                setUploadScope('client');
-                setSelectedInternalFolderId('');
-                setSelectedPersonalFolderId('');
-              }}
-              disabled={isUploading}
-              className={`
-                flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all
-                ${uploadScope === 'client'
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-border hover:border-blue-300 hover:bg-blue-50/50'}
-                ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-              `}
-            >
-              <Building2 className="w-6 h-6" />
-              <span className="font-medium text-sm">Client Documents</span>
-              <span className="text-xs text-muted-foreground text-center">
-                For client/project files
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setUploadScope('internal');
-                setSelectedClientId('');
-                setSelectedProjectId('');
-                setSelectedPersonalFolderId('');
-              }}
-              disabled={isUploading}
-              className={`
-                flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all
-                ${uploadScope === 'internal'
-                  ? 'border-amber-500 bg-amber-50 text-amber-700'
-                  : 'border-border hover:border-amber-300 hover:bg-amber-50/50'}
-                ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-              `}
-            >
-              <Building className="w-6 h-6" />
-              <span className="font-medium text-sm">RockCap Internal</span>
-              <span className="text-xs text-muted-foreground text-center">
-                Company-wide documents
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setUploadScope('personal');
-                setSelectedClientId('');
-                setSelectedProjectId('');
-                setSelectedInternalFolderId('');
-              }}
-              disabled={isUploading}
-              className={`
-                flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all
-                ${uploadScope === 'personal'
-                  ? 'border-purple-500 bg-purple-50 text-purple-700'
-                  : 'border-border hover:border-purple-300 hover:bg-purple-50/50'}
-                ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-              `}
-            >
-              <User className="w-6 h-6" />
-              <span className="font-medium text-sm">Personal</span>
-              <span className="text-xs text-muted-foreground text-center">
-                Private to you only
-              </span>
-            </button>
+            {([
+              { scope: 'client' as const, icon: Building2, title: 'Client Documents', sub: 'For client/project files', tone: colors.accent.blue, onClick: () => { setUploadScope('client'); setSelectedInternalFolderId(''); setSelectedPersonalFolderId(''); } },
+              { scope: 'internal' as const, icon: Building, title: 'RockCap Internal', sub: 'Company-wide documents', tone: colors.accent.yellow, onClick: () => { setUploadScope('internal'); setSelectedClientId(''); setSelectedProjectId(''); setSelectedPersonalFolderId(''); } },
+              { scope: 'personal' as const, icon: User, title: 'Personal', sub: 'Private to you only', tone: colors.accent.purple, onClick: () => { setUploadScope('personal'); setSelectedClientId(''); setSelectedProjectId(''); setSelectedInternalFolderId(''); } },
+            ]).map(({ scope, icon: Icon, title, sub, tone, onClick }) => {
+              const active = uploadScope === scope;
+              return (
+                <button
+                  key={scope}
+                  onClick={onClick}
+                  disabled={isUploading}
+                  className="flex flex-col items-center gap-2 p-4"
+                  style={{
+                    borderRadius: 4,
+                    border: `1px solid ${active ? tone : colors.border.default}`,
+                    background: active ? `${tone}15` : colors.bg.card,
+                    color: active ? tone : colors.text.secondary,
+                    opacity: isUploading ? 0.5 : 1,
+                    cursor: isUploading ? 'not-allowed' : 'pointer',
+                    transition: 'background 100ms linear, border-color 100ms linear',
+                  }}
+                >
+                  <Icon className="w-6 h-6" />
+                  <span style={{ fontWeight: 500, fontSize: 13 }}>{title}</span>
+                  <span style={{ fontSize: 10, color: active ? tone : colors.text.muted, textAlign: 'center' }}>
+                    {sub}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {uploadScope === 'personal' && (
-            <div className="flex items-center gap-2 p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-800">
-              <Lock className="w-4 h-4 flex-shrink-0" />
+            <div
+              className="flex items-center gap-2 p-3 rounded"
+              style={{ background: `${colors.accent.purple}15`, border: `1px solid ${colors.accent.purple}40`, fontSize: 12, color: colors.text.secondary }}
+            >
+              <Lock className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.purple }} />
               <span>Personal documents are only visible to you.</span>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {/* Step 2: Client Selection (Client scope only) */}
       {uploadScope === 'client' && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Building2 className="w-5 h-5" />
-              Step 2: Select Client
-            </CardTitle>
-            <CardDescription>
+        <Panel title="Step 2: Select Client">
+          <div className="space-y-4">
+            <p style={{ fontSize: 12, color: colors.text.secondary }}>
               All files in this batch will be associated with this client
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
             <SearchableSelect
               options={(clients || []).map((c) => ({
                 value: c._id,
@@ -1060,11 +1021,11 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 const client = clients?.find((c) => c._id === option.value);
                 return (
                   <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.muted }} />
                     <div>
-                      <div className="text-sm font-medium">{option.label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{option.label}</div>
                       {client?.companyName && (
-                        <div className="text-xs text-muted-foreground">{client.companyName}</div>
+                        <div style={{ fontSize: 10, color: colors.text.muted }}>{client.companyName}</div>
                       )}
                     </div>
                   </div>
@@ -1073,108 +1034,80 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             />
 
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => setShowNewClientDialog(true)}
               disabled={isUploading}
             >
               + Create New Client
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
       )}
 
       {/* Step 2: Internal Folder Selection (Internal scope only) */}
       {uploadScope === 'internal' && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FolderOpen className="w-5 h-5" />
-              Step 2: Select Folder (Optional)
-            </CardTitle>
-            <CardDescription>
+        <Panel title="Step 2: Select Folder (Optional)">
+          <div className="space-y-4">
+            <p style={{ fontSize: 12, color: colors.text.secondary }}>
               Choose where to store these internal documents
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
             <Select
               value={selectedInternalFolderId || 'miscellaneous'}
-              onValueChange={setSelectedInternalFolderId}
+              onChange={(e) => setSelectedInternalFolderId(e.target.value)}
               disabled={isUploading}
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a folder..." />
-              </SelectTrigger>
-              <SelectContent>
-                {internalFolders?.map((folder) => (
-                  <SelectItem key={folder.folderType} value={folder.folderType}>
-                    {folder.name}
-                  </SelectItem>
-                ))}
-                {(!internalFolders || internalFolders.length === 0) && (
-                  <SelectItem value="miscellaneous">Miscellaneous</SelectItem>
-                )}
-              </SelectContent>
+              {internalFolders?.map((folder) => (
+                <option key={folder.folderType} value={folder.folderType}>
+                  {folder.name}
+                </option>
+              ))}
+              {(!internalFolders || internalFolders.length === 0) && (
+                <option value="miscellaneous">Miscellaneous</option>
+              )}
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p style={{ fontSize: 10, color: colors.text.muted }}>
               If no folder is selected, documents will be placed in Miscellaneous.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
       )}
 
       {/* Step 2: Personal Folder Selection (Personal scope only) */}
       {uploadScope === 'personal' && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FolderOpen className="w-5 h-5" />
-              Step 2: Select Folder (Optional)
-            </CardTitle>
-            <CardDescription>
+        <Panel title="Step 2: Select Folder (Optional)">
+          <div className="space-y-4">
+            <p style={{ fontSize: 12, color: colors.text.secondary }}>
               Choose where to store your personal documents
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
             <Select
               value={selectedPersonalFolderId || 'my_documents'}
-              onValueChange={setSelectedPersonalFolderId}
+              onChange={(e) => setSelectedPersonalFolderId(e.target.value)}
               disabled={isUploading}
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a folder..." />
-              </SelectTrigger>
-              <SelectContent>
-                {personalFolders?.map((folder) => (
-                  <SelectItem key={folder.folderType} value={folder.folderType}>
-                    {folder.name}
-                  </SelectItem>
-                ))}
-                {(!personalFolders || personalFolders.length === 0) && (
-                  <SelectItem value="my_documents">My Documents</SelectItem>
-                )}
-              </SelectContent>
+              {personalFolders?.map((folder) => (
+                <option key={folder.folderType} value={folder.folderType}>
+                  {folder.name}
+                </option>
+              ))}
+              {(!personalFolders || personalFolders.length === 0) && (
+                <option value="my_documents">My Documents</option>
+              )}
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p style={{ fontSize: 10, color: colors.text.muted }}>
               If no folder is selected, documents will be placed in My Documents.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
       )}
 
       {/* Step 3: Project Selection (Optional) - Client scope only */}
       {uploadScope === 'client' && selectedClientId && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FolderOpen className="w-5 h-5" />
-              Step 3: Select Project (Optional)
-            </CardTitle>
-            <CardDescription>
+        <Panel title="Step 3: Select Project (Optional)">
+          <div className="space-y-4">
+            <p style={{ fontSize: 12, color: colors.text.secondary }}>
               Optionally associate files with a specific project
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
             <SearchableSelect
               options={(projects || []).map((p) => ({
                 value: p._id,
@@ -1190,11 +1123,11 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 const project = projects?.find((p) => p._id === option.value);
                 return (
                   <div className="flex items-center gap-2">
-                    <FolderOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.muted }} />
                     <div>
-                      <div className="text-sm font-medium">{option.label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{option.label}</div>
                       {project?.projectShortcode && (
-                        <div className="text-xs text-muted-foreground">{project.projectShortcode}</div>
+                        <div style={{ fontSize: 10, color: colors.text.muted }}>{project.projectShortcode}</div>
                       )}
                     </div>
                   </div>
@@ -1203,7 +1136,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             />
 
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => setShowNewProjectDialog(true)}
               disabled={isUploading}
@@ -1213,45 +1146,55 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
 
             {selectedProject && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <Info className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Project shortcode:</span>
-                  
+                <div className="flex items-center gap-2" style={{ fontSize: 12 }}>
+                  <Info className="w-4 h-4" style={{ color: colors.text.muted }} />
+                  <span style={{ color: colors.text.muted }}>Project shortcode:</span>
+
                   {editingShortcode ? (
                     <div className="flex items-center gap-2">
                       <Input
                         value={editShortcodeValue}
                         onChange={(e) => setEditShortcodeValue(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
                         placeholder="SHORTCODE"
-                        className="h-7 w-28 text-xs font-mono"
+                        className="w-28"
+                        style={{ fontFamily: MONO, padding: '4px 8px', fontSize: 11 }}
                         maxLength={10}
                         autoFocus
                       />
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0"
                         onClick={handleUpdateShortcode}
                         disabled={!editShortcodeValue || (editShortcodeValue !== selectedProject.projectShortcode && editShortcodeAvailable === false)}
                       >
-                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        <CheckCircle2 className="w-4 h-4" style={{ color: colors.accent.green }} />
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0"
                         onClick={() => setEditingShortcode(false)}
                       >
-                        <AlertCircle className="w-4 h-4 text-red-600" />
+                        <AlertCircle className="w-4 h-4" style={{ color: colors.accent.red }} />
                       </Button>
                     </div>
                   ) : selectedProject.projectShortcode ? (
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="font-mono">{selectedProject.projectShortcode}</Badge>
+                      <span
+                        style={{
+                          fontFamily: MONO,
+                          fontSize: 11,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          background: colors.bg.cardAlt,
+                          color: colors.text.secondary,
+                          border: `1px solid ${colors.border.default}`,
+                        }}
+                      >
+                        {selectedProject.projectShortcode}
+                      </span>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 w-6 p-0"
                         onClick={() => {
                           setEditShortcodeValue(selectedProject.projectShortcode || '');
                           setEditingShortcode(true);
@@ -1263,13 +1206,10 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">
-                        Required
-                      </Badge>
+                      <FlagChip label="Required" severity="warn" />
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="h-6 text-xs"
+                        variant="secondary"
                         onClick={() => {
                           setEditShortcodeValue('');
                           setEditingShortcode(true);
@@ -1281,103 +1221,92 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                     </div>
                   )}
                 </div>
-                
+
                 {editingShortcode && editShortcodeValue && editShortcodeValue !== selectedProject.projectShortcode && (
-                  <p className="text-xs pl-6">
+                  <p className="pl-6" style={{ fontSize: 10 }}>
                     {editShortcodeAvailable === undefined ? (
-                      <span className="text-muted-foreground">Checking availability...</span>
+                      <span style={{ color: colors.text.muted }}>Checking availability...</span>
                     ) : editShortcodeAvailable ? (
-                      <span className="text-green-600">✓ Available</span>
+                      <span style={{ color: colors.accent.green }}>Available</span>
                     ) : (
-                      <span className="text-red-600">✗ Already in use</span>
+                      <span style={{ color: colors.accent.red }}>Already in use</span>
                     )}
                   </p>
                 )}
-                
+
                 {!selectedProject.projectShortcode && !editingShortcode && (
-                  <p className="text-xs text-amber-600 pl-6">
+                  <p className="pl-6" style={{ fontSize: 10, color: colors.accent.yellow }}>
                     A shortcode is required to generate standardized document names
                   </p>
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
       )}
 
       {/* Step 3/4: Options - Show for all scopes once destination is selected */}
       {(uploadScope === 'client' ? selectedClientId : true) && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FileText className="w-5 h-5" />
-              Step {uploadScope === 'client' ? '4' : '3'}: Options
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <Panel title={`Step ${uploadScope === 'client' ? '4' : '3'}: Options`}>
+          <div className="space-y-4">
             {/* Internal/External Toggle - Only show for client scope */}
             {uploadScope === 'client' && (
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="internal-toggle" className="text-sm font-medium">
+                  <Label htmlFor="internal-toggle" style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
                     Internal Documents
                   </Label>
-                  <p className="text-xs text-muted-foreground">
+                  <p style={{ fontSize: 10, color: colors.text.muted }}>
                     Toggle on if these are internal RockCap documents
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">External</span>
+                  <span style={{ fontSize: 12, color: colors.text.muted }}>External</span>
                   <Switch
                     id="internal-toggle"
                     checked={isInternal}
                     onCheckedChange={setIsInternal}
                     disabled={isUploading}
                   />
-                  <span className="text-sm text-muted-foreground">Internal</span>
+                  <span style={{ fontSize: 12, color: colors.text.muted }}>Internal</span>
                 </div>
               </div>
             )}
 
             {/* Instructions */}
-            <div className="space-y-2">
-              <Label htmlFor="instructions" className="text-sm font-medium">
-                Additional Instructions (Optional)
-              </Label>
+            <Field label="Additional Instructions (Optional)">
               <Textarea
                 id="instructions"
                 placeholder="Any additional context for the AI to consider when analyzing these documents..."
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
                 disabled={isUploading}
-                className="h-20"
+                style={{ minHeight: 80 }}
               />
-            </div>
-          </CardContent>
-        </Card>
+            </Field>
+          </div>
+        </Panel>
       )}
 
       {/* Step 4/5: File Upload - Show for all scopes once destination is selected */}
       {(uploadScope === 'client' ? selectedClientId : true) && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Upload className="w-5 h-5" />
-              Step {uploadScope === 'client' ? '5' : '4'}: Upload Files
-            </CardTitle>
-            <CardDescription>
+        <Panel title={`Step ${uploadScope === 'client' ? '5' : '4'}: Upload Files`}>
+          <div className="space-y-4">
+            <p style={{ fontSize: 12, color: colors.text.secondary }}>
               Drop up to {MAX_FILES} files or click to browse
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
             {/* Drop Zone */}
             <div
-              className={`
-                relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-                transition-colors duration-200
-                ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}
-                ${isUploading ? 'pointer-events-none opacity-50' : ''}
-              `}
+              className="relative p-8 text-center"
+              style={{
+                border: `1px dashed ${isDragging ? colors.accent.blue : colors.border.mid}`,
+                background: isDragging ? `${colors.accent.blue}15` : colors.bg.cardAlt,
+                borderRadius: 4,
+                cursor: 'pointer',
+                pointerEvents: isUploading ? 'none' : 'auto',
+                opacity: isUploading ? 0.5 : 1,
+                transition: 'border-color 200ms linear, background 200ms linear',
+              }}
               onDrop={handleDrop}
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
@@ -1393,49 +1322,63 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                 disabled={isUploading}
               />
               {/* Folder input created dynamically on click — see openFolderPicker */}
-              <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-lg font-medium">
+              <Upload className="w-12 h-12 mx-auto mb-4" style={{ color: colors.text.muted }} />
+              <p style={{ fontSize: 15, fontWeight: 500, color: colors.text.primary }}>
                 {isDragging ? 'Drop files here' : 'Drag & drop files here'}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p style={{ fontSize: 12, color: colors.text.muted, marginTop: 4 }}>
                 or click to browse
               </p>
-              <p className="text-xs text-muted-foreground mt-2">
+              <p style={{ fontSize: 10, color: colors.text.dim, marginTop: 8 }}>
                 PDF, Word, Excel, CSV, TXT • Max 100MB per file
               </p>
             </div>
 
             {/* Browse / Upload Folder buttons */}
             <div className="flex items-center gap-2 justify-center">
-              <Button variant="outline" onClick={() => document.getElementById('bulk-file-input')?.click()} disabled={isUploading}>
-                <FileText className="w-4 h-4 mr-2" /> Browse Files
+              <Button variant="secondary" onClick={() => document.getElementById('bulk-file-input')?.click()} disabled={isUploading}>
+                <FileText className="w-4 h-4" /> Browse Files
               </Button>
-              <Button variant="outline" onClick={openFolderPicker} disabled={isUploading}>
-                <FolderOpen className="w-4 h-4 mr-2" /> Upload Folder
+              <Button variant="secondary" onClick={openFolderPicker} disabled={isUploading}>
+                <FolderOpen className="w-4 h-4" /> Upload Folder
               </Button>
             </div>
 
             {/* Detected projects from folder structure */}
             {detectedProjects.length > 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
-                <p className="font-medium text-blue-800 mb-1">
+              <div
+                className="rounded p-3"
+                style={{ background: `${colors.accent.blue}15`, border: `1px solid ${colors.accent.blue}40`, fontSize: 12 }}
+              >
+                <p style={{ fontWeight: 500, color: colors.text.primary, marginBottom: 4 }}>
                   Detected {detectedProjects.length} project folder{detectedProjects.length !== 1 ? 's' : ''}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {detectedProjects.map(name => (
-                    <Badge key={name} variant="outline" className="bg-white flex items-center gap-1 pr-1">
+                    <span
+                      key={name}
+                      className="flex items-center gap-1"
+                      style={{
+                        fontSize: 11,
+                        padding: '2px 4px 2px 8px',
+                        borderRadius: 4,
+                        background: colors.bg.card,
+                        color: colors.text.secondary,
+                        border: `1px solid ${colors.border.default}`,
+                      }}
+                    >
                       {name}
                       <button
                         onClick={() => dismissDetectedProject(name)}
-                        className="rounded-full hover:bg-gray-200 p-0.5 ml-0.5"
+                        style={{ borderRadius: 9999, padding: 2, marginLeft: 2, background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.muted }}
                         title="Remove project detection — files will go to the selected project"
                       >
                         <X className="w-3 h-3" />
                       </button>
-                    </Badge>
+                    </span>
                   ))}
                 </div>
-                <p className="text-blue-600 mt-1.5 text-xs">
+                <p style={{ color: colors.text.muted, marginTop: 6, fontSize: 10 }}>
                   Projects will be created or matched during analysis. You can adjust in the review step.
                 </p>
               </div>
@@ -1445,7 +1388,7 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             {files.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">
+                  <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
                     {files.length} file{files.length !== 1 ? 's' : ''} selected
                   </span>
                   <Button
@@ -1461,12 +1404,13 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                   {files.map((file, index) => (
                     <div
                       key={`${file.name}-${index}`}
-                      className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md"
+                      className="flex items-center justify-between px-3 py-2"
+                      style={{ background: colors.bg.cardAlt, borderRadius: 4 }}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-                        <span className="text-sm truncate">{file.name}</span>
-                        <span className="text-xs text-muted-foreground">
+                        <FileText className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.muted }} />
+                        <span className="truncate" style={{ fontSize: 12, color: colors.text.primary }}>{file.name}</span>
+                        <span style={{ fontSize: 10, color: colors.text.muted }}>
                           {formatFileSize(file.size)}
                         </span>
                       </div>
@@ -1474,7 +1418,6 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 w-6 p-0"
                           onClick={() => removeFile(index)}
                         >
                           <X className="w-4 h-4" />
@@ -1489,16 +1432,19 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
             {/* Upload Progress */}
             {isUploading && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center justify-between" style={{ fontSize: 12, color: colors.text.secondary }}>
                   <span>Processing: {uploadProgress.currentFile}</span>
                   <span>{uploadProgress.processed} / {uploadProgress.total}</span>
                 </div>
                 <Progress
                   value={(uploadProgress.processed / uploadProgress.total) * 100}
                 />
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-800 font-medium">You can safely navigate away</p>
-                  <p className="text-xs text-blue-600 mt-1">
+                <div
+                  className="p-3 rounded"
+                  style={{ background: `${colors.accent.blue}15`, border: `1px solid ${colors.accent.blue}40` }}
+                >
+                  <p style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>You can safely navigate away</p>
+                  <p style={{ fontSize: 10, color: colors.text.muted, marginTop: 4 }}>
                     Files are being analyzed in the background. You can start another upload, browse other pages, or come back later — you'll get a notification when it's done.
                   </p>
                 </div>
@@ -1507,194 +1453,167 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
 
             {/* Shortcode warning */}
             {needsShortcode && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-                <span className="font-medium">⚠️ Shortcode Required:</span> Please set a project shortcode above before uploading. This is required to generate standardized document names.
+              <div
+                className="p-3 rounded"
+                style={{ background: `${colors.accent.yellow}15`, border: `1px solid ${colors.accent.yellow}40`, fontSize: 12, color: colors.text.secondary }}
+              >
+                <span style={{ fontWeight: 500, color: colors.text.primary }}>Shortcode required:</span> Please set a project shortcode above before uploading. This is required to generate standardized document names.
               </div>
             )}
 
             {/* Start Button */}
             <Button
-              className="w-full"
-              size="lg"
+              variant="primary"
               onClick={handleStartUpload}
               disabled={!canStartUpload}
+              style={{ width: '100%', justifyContent: 'center' }}
             >
               {isUploading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Processing...
                 </>
               ) : (
                 <>
                   Start Bulk Upload
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                  <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
       )}
 
       {/* New Project Dialog */}
-      <Dialog open={showNewProjectDialog} onOpenChange={setShowNewProjectDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Project</DialogTitle>
-            <DialogDescription>
-              Create a new project for {selectedClient?.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="project-name">Project Name</Label>
-              <Input
-                id="project-name"
-                placeholder="e.g., Wimbledon Park 28, SW8 1PQ"
-                value={newProjectName}
-                onChange={(e) => {
-                  setNewProjectName(e.target.value);
-                  setNewProjectShortcode(''); // Reset to trigger new suggestion
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="project-shortcode">
-                Project Shortcode (max 10 characters)
-              </Label>
-              <Input
-                id="project-shortcode"
-                placeholder="e.g., WIMBPARK28"
-                value={newProjectShortcode}
-                onChange={(e) => setNewProjectShortcode(e.target.value.toUpperCase().slice(0, 10))}
-                maxLength={10}
-              />
-              {newProjectShortcode && (
-                <p className="text-xs">
-                  {shortcodeAvailable ? (
-                    <span className="text-green-600 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Shortcode available
-                    </span>
-                  ) : (
-                    <span className="text-red-600 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      Shortcode already in use
-                    </span>
-                  )}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Used in document naming: {newProjectShortcode || 'SHORTCODE'}-TYPE-INT-JS-V1.0-2026-01-12
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewProjectDialog(false)}>
+      <Modal
+        open={showNewProjectDialog}
+        onClose={() => setShowNewProjectDialog(false)}
+        title="Create New Project"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowNewProjectDialog(false)}>
               Cancel
             </Button>
-            <Button 
+            <Button
+              variant="primary"
               onClick={handleCreateProject}
               disabled={!newProjectName || !newProjectShortcode || !shortcodeAvailable}
             >
               Create Project
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 12, color: colors.text.secondary }}>
+            Create a new project for {selectedClient?.name}
+          </p>
+          <Field label="Project Name">
+            <Input
+              id="project-name"
+              placeholder="e.g., Wimbledon Park 28, SW8 1PQ"
+              value={newProjectName}
+              onChange={(e) => {
+                setNewProjectName(e.target.value);
+                setNewProjectShortcode(''); // Reset to trigger new suggestion
+              }}
+            />
+          </Field>
+          <Field
+            label="Project Shortcode (max 10 characters)"
+            hint={`Used in document naming: ${newProjectShortcode || 'SHORTCODE'}-TYPE-INT-JS-V1.0-2026-01-12`}
+          >
+            <Input
+              id="project-shortcode"
+              placeholder="e.g., WIMBPARK28"
+              value={newProjectShortcode}
+              onChange={(e) => setNewProjectShortcode(e.target.value.toUpperCase().slice(0, 10))}
+              maxLength={10}
+              style={{ fontFamily: MONO }}
+            />
+            {newProjectShortcode && (
+              <p style={{ fontSize: 10 }}>
+                {shortcodeAvailable ? (
+                  <span className="flex items-center gap-1" style={{ color: colors.accent.green }}>
+                    <CheckCircle2 className="w-3 h-3" />
+                    Shortcode available
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1" style={{ color: colors.accent.red }}>
+                    <AlertCircle className="w-3 h-3" />
+                    Shortcode already in use
+                  </span>
+                )}
+              </p>
+            )}
+          </Field>
+        </div>
+      </Modal>
 
       {/* New Client Dialog */}
-      <Dialog open={showNewClientDialog} onOpenChange={setShowNewClientDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Client</DialogTitle>
-            <DialogDescription>
-              Add a new client to associate with this bulk upload
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="client-name">Client Name *</Label>
-              <Input
-                id="client-name"
-                placeholder="e.g., Acme Property Holdings"
-                value={newClientName}
-                onChange={(e) => setNewClientName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="client-type">Client Type (Optional)</Label>
-              <Select
-                value={newClientType}
-                onValueChange={setNewClientType}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="borrower">Borrower</SelectItem>
-                  <SelectItem value="lender">Lender</SelectItem>
-                  <SelectItem value="developer">Developer</SelectItem>
-                  <SelectItem value="investor">Investor</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewClientDialog(false)}>
+      <Modal
+        open={showNewClientDialog}
+        onClose={() => setShowNewClientDialog(false)}
+        title="Create New Client"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowNewClientDialog(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleCreateClient}
-              disabled={!newClientName}
-            >
+            <Button variant="primary" onClick={handleCreateClient} disabled={!newClientName}>
               Create Client
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 12, color: colors.text.secondary }}>
+            Add a new client to associate with this bulk upload
+          </p>
+          <Field label="Client Name *">
+            <Input
+              id="client-name"
+              placeholder="e.g., Acme Property Holdings"
+              value={newClientName}
+              onChange={(e) => setNewClientName(e.target.value)}
+            />
+          </Field>
+          <Field label="Client Type (Optional)">
+            <Select
+              value={newClientType}
+              onChange={(e) => setNewClientType(e.target.value)}
+            >
+              <option value="">Select type...</option>
+              <option value="borrower">Borrower</option>
+              <option value="lender">Lender</option>
+              <option value="developer">Developer</option>
+              <option value="investor">Investor</option>
+              <option value="other">Other</option>
+            </Select>
+          </Field>
+        </div>
+      </Modal>
 
       {/* Background Processing Dialog */}
-      <Dialog open={showBackgroundDialog} onOpenChange={setShowBackgroundDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-green-600" />
-              Files Uploaded Successfully
-            </DialogTitle>
-            <DialogDescription>
-              Your {files.length} files are now being processed in the background.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Estimated processing time</span>
-                <span className="font-medium">~{estimatedMinutes} minute{estimatedMinutes !== 1 ? 's' : ''}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Files</span>
-                <span className="font-medium">{files.length} documents</span>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              You can navigate away and continue working. We&apos;ll send you a notification when processing is complete and your files are ready for review.
-            </p>
-          </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
+      <Modal
+        open={showBackgroundDialog}
+        onClose={() => setShowBackgroundDialog(false)}
+        title="Files Uploaded Successfully"
+        footer={
+          <>
             <Button
-              variant="outline"
+              variant="secondary"
               onClick={() => {
                 setShowBackgroundDialog(false);
                 setFiles([]);
                 router.push('/docs');
               }}
-              className="w-full sm:w-auto"
             >
-              <FileText className="w-4 h-4 mr-2" />
+              <FileText className="w-4 h-4" />
               Go to Documents
             </Button>
             <Button
+              variant="primary"
               onClick={() => {
                 setShowBackgroundDialog(false);
                 setFiles([]);
@@ -1702,14 +1621,38 @@ export default function BulkUpload({ onBatchCreated, onComplete }: BulkUploadPro
                   router.push(`/docs/bulk/${activeBatchId}`);
                 }
               }}
-              className="w-full sm:w-auto"
             >
-              <Loader2 className="w-4 h-4 mr-2" />
+              <Loader2 className="w-4 h-4" />
               Watch Progress
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" style={{ color: colors.accent.green }} />
+            <span style={{ fontSize: 13, color: colors.text.secondary }}>
+              Your {files.length} files are now being processed in the background.
+            </span>
+          </div>
+          <div
+            className="p-4 space-y-2"
+            style={{ background: colors.bg.cardAlt, border: `1px solid ${colors.border.default}`, borderRadius: 4 }}
+          >
+            <div className="flex items-center justify-between" style={{ fontSize: 12 }}>
+              <span style={{ color: colors.text.muted }}>Estimated processing time</span>
+              <span style={{ fontWeight: 500, color: colors.text.primary }}>~{estimatedMinutes} minute{estimatedMinutes !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="flex items-center justify-between" style={{ fontSize: 12 }}>
+              <span style={{ color: colors.text.muted }}>Files</span>
+              <span style={{ fontWeight: 500, color: colors.text.primary }}>{files.length} documents</span>
+            </div>
+          </div>
+          <p style={{ fontSize: 12, color: colors.text.muted }}>
+            You can navigate away and continue working. We&apos;ll send you a notification when processing is complete and your files are ready for review.
+          </p>
+        </div>
+      </Modal>
           </div>
         </TabsContent>
 

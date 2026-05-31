@@ -5,6 +5,8 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { ArrowLeft, ArrowUp, Calendar, Loader2, Sparkles } from 'lucide-react';
+import { IconButton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import CreationModeToggle from './CreationModeToggle';
 import EditableConfirmationCard, { type ParsedEvent } from './EditableConfirmationCard';
 
@@ -32,6 +34,8 @@ interface ParsedTask {
   projectId?: string;
 }
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 export default function TaskCreationFlow({
   onTaskCreated,
   onClose,
@@ -40,6 +44,7 @@ export default function TaskCreationFlow({
   initialProjectId,
   initialProjectName,
 }: TaskCreationFlowProps) {
+  const colors = useColors();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -275,47 +280,62 @@ export default function TaskCreationFlow({
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="flex flex-col h-full bg-[var(--m-bg)]">
+    <div className="flex flex-col h-full" style={{ background: colors.bg.base }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--m-border)]">
-        <button onClick={onClose} className="text-sm text-[var(--m-text-tertiary)]">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <span className="text-[15px] font-bold text-[var(--m-text-primary)]">{mode === 'meeting' ? 'New Meeting' : 'New Task'}</span>
-        <div className="w-5" />
+      <div className="flex items-center justify-between" style={{ padding: '12px 16px', borderBottom: `1px solid ${colors.border.default}` }}>
+        <IconButton label="Back" onClick={onClose}>
+          <ArrowLeft size={18} />
+        </IconButton>
+        <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500, color: colors.text.primary }}>
+          {mode === 'meeting' ? 'New Meeting' : 'New Task'}
+        </span>
+        <div style={{ width: 28 }} />
       </div>
 
       {/* Scrollable content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {!hasMessages && (
-          <div className="px-5 pt-12 pb-6 text-center">
-            <div className="w-12 h-12 bg-[var(--m-accent-subtle)] rounded-full flex items-center justify-center mx-auto mb-3">
-              <Sparkles className="w-6 h-6 text-[var(--m-accent)]" />
+          <div className="text-center" style={{ padding: '48px 20px 24px' }}>
+            <div
+              className="flex items-center justify-center mx-auto"
+              style={{ width: 48, height: 48, borderRadius: 999, background: `${colors.accent.orange}15`, marginBottom: 12 }}
+            >
+              <Sparkles size={24} color={colors.accent.orange} />
             </div>
-            <div className="text-[15px] font-semibold text-[var(--m-text-primary)] mb-1.5">What do you need to do?</div>
-            <p className="text-[13px] text-[var(--m-text-tertiary)] leading-relaxed max-w-[280px] mx-auto">
+            <div style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary, marginBottom: 6 }}>What do you need to do?</div>
+            <p style={{ fontSize: 13, color: colors.text.muted, lineHeight: 1.5, maxWidth: 280, margin: '0 auto' }}>
               Tell me what you need to do, when you need to do it, and who you need to do it with.
             </p>
           </div>
         )}
 
         {hasMessages && (
-          <div className="px-4 py-4 space-y-2.5">
+          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] px-3.5 py-2.5 text-[13px] leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-[var(--m-accent)] text-white rounded-2xl rounded-br-sm'
-                    : 'bg-white border border-[var(--m-border)] text-[var(--m-text-primary)] rounded-2xl rounded-bl-sm'
-                }`}>
+                <div
+                  style={{
+                    maxWidth: '80%',
+                    padding: '10px 14px',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    borderRadius: 4,
+                    background: msg.role === 'user' ? colors.accent.orange : colors.bg.card,
+                    color: msg.role === 'user' ? '#ffffff' : colors.text.primary,
+                    border: msg.role === 'user' ? 'none' : `1px solid ${colors.border.default}`,
+                  }}
+                >
                   {msg.content}
                 </div>
               </div>
             ))}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-white border border-[var(--m-border)] px-3.5 py-2.5 rounded-2xl rounded-bl-sm text-[13px] text-[var(--m-text-tertiary)]">
-                  <Loader2 className="w-4 h-4 animate-spin inline mr-1.5" />
+                <div
+                  className="flex items-center"
+                  style={{ padding: '10px 14px', fontSize: 13, borderRadius: 4, background: colors.bg.card, border: `1px solid ${colors.border.default}`, color: colors.text.muted, gap: 6 }}
+                >
+                  <Loader2 size={16} className="animate-spin" />
                   Creating your task...
                 </div>
               </div>
@@ -326,15 +346,16 @@ export default function TaskCreationFlow({
 
       {/* Google Calendar toggle */}
       {(parsedTask || parsedEvent) && isGoogleConnected && (parsedTask?.dueDate || parsedEvent?.startTime) && (
-        <div className="px-4 pb-2">
+        <div style={{ padding: '0 16px 8px' }}>
           <button
             onClick={() => setAddToCalendar(!addToCalendar)}
-            className="flex items-center gap-2 w-full px-3 py-2 mb-2 rounded-lg border border-[var(--m-border)] text-[13px]"
+            className="flex items-center gap-2 w-full"
+            style={{ padding: '8px 12px', marginBottom: 8, borderRadius: 4, border: `1px solid ${colors.border.default}`, fontSize: 13, background: colors.bg.card, cursor: 'pointer' }}
           >
-            <Calendar className="w-3.5 h-3.5 text-[var(--m-text-tertiary)]" />
-            <span className="flex-1 text-left text-[var(--m-text-secondary)]">Add to Google Calendar</span>
-            <div className={`w-8 h-5 rounded-full transition-colors ${addToCalendar ? 'bg-[var(--m-bg-brand)]' : 'bg-[var(--m-border)]'}`}>
-              <div className={`w-4 h-4 rounded-full bg-white shadow mt-0.5 transition-transform ${addToCalendar ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+            <Calendar size={14} color={colors.text.muted} />
+            <span className="flex-1 text-left" style={{ color: colors.text.secondary }}>Add to Google Calendar</span>
+            <div style={{ width: 32, height: 20, borderRadius: 999, transition: 'background 100ms linear', background: addToCalendar ? colors.accent.green : colors.border.mid }}>
+              <div style={{ width: 16, height: 16, borderRadius: 999, background: '#ffffff', marginTop: 2, transition: 'transform 100ms linear', transform: addToCalendar ? 'translateX(14px)' : 'translateX(2px)' }} />
             </div>
           </button>
         </div>
@@ -365,13 +386,20 @@ export default function TaskCreationFlow({
 
       {/* Input area */}
       {!parsedTask && !parsedEvent && (
-        <div className="px-4 pb-4 pt-2">
-          <div className="mb-3">
+        <div style={{ padding: '8px 16px 16px' }}>
+          <div style={{ marginBottom: 12 }}>
             <CreationModeToggle mode={mode} onModeChange={setMode} />
           </div>
-          <div className={`flex items-end gap-2 bg-white border rounded-xl px-3 py-2 ${
-            input ? 'border-[var(--m-accent)]' : 'border-[var(--m-border)]'
-          }`}>
+          <div
+            className="flex items-end gap-2"
+            style={{
+              background: colors.bg.card,
+              border: `1px solid ${input ? colors.accent.blue : colors.border.default}`,
+              borderRadius: 4,
+              padding: '8px 12px',
+              transition: 'border-color 100ms linear',
+            }}
+          >
             <textarea
               ref={inputRef}
               value={input}
@@ -382,22 +410,31 @@ export default function TaskCreationFlow({
                 : (initialClientName ? `Describe your task for ${initialClientName}...` : 'Describe your task...')
               }
               rows={1}
-              className="flex-1 text-[16px] text-[var(--m-text-primary)] placeholder:text-[var(--m-text-placeholder)] resize-none bg-transparent outline-none max-h-[120px]"
-              style={{ fieldSizing: 'content' } as any}
+              className="flex-1 resize-none"
+              style={{ fontSize: 16, color: colors.text.primary, background: 'transparent', border: 'none', outline: 'none', maxHeight: 120, fieldSizing: 'content' } as any}
             />
             <button
               onClick={sendMessage}
               disabled={!input.trim() || isLoading}
-              className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
-                input.trim() ? 'bg-[var(--m-accent)] text-white' : 'bg-[var(--m-border)] text-[var(--m-text-tertiary)]'
-              }`}
+              className="flex items-center justify-center flex-shrink-0"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 999,
+                border: 'none',
+                cursor: input.trim() ? 'pointer' : 'default',
+                transition: 'background 100ms linear',
+                background: input.trim() ? colors.accent.orange : colors.bg.cardAlt,
+                color: input.trim() ? '#ffffff' : colors.text.dim,
+              }}
             >
-              <ArrowUp className="w-4 h-4" />
+              <ArrowUp size={16} />
             </button>
           </div>
           <button
             onClick={handleManualCreate}
-            className="w-full mt-2 text-[12px] text-[var(--m-text-tertiary)] text-center py-1"
+            className="w-full text-center"
+            style={{ marginTop: 8, fontSize: 12, color: colors.text.muted, padding: '4px 0', background: 'transparent', border: 'none', cursor: 'pointer' }}
           >
             Skip AI, create manually
           </button>
@@ -405,7 +442,10 @@ export default function TaskCreationFlow({
       )}
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-[var(--m-bg-brand)] text-[var(--m-text-on-brand)] text-[13px] font-medium rounded-lg shadow-lg">
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-50"
+          style={{ bottom: 96, padding: '8px 16px', background: colors.text.primary, color: colors.bg.card, fontSize: 13, fontWeight: 500, borderRadius: 4 }}
+        >
           {toast}
         </div>
       )}

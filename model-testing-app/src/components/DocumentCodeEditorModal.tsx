@@ -1,21 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Modal, Field, Input, Button } from '@/components/layouts';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { parseDocumentCode, abbreviateCategory, abbreviateText, formatDateDDMMYY } from '@/lib/documentCodeUtils';
+import { useColors } from '@/lib/useColors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface DocumentCodeEditorModalProps {
   isOpen: boolean;
@@ -46,6 +39,7 @@ export default function DocumentCodeEditorModal({
   projectId,
   onUpdate,
 }: DocumentCodeEditorModalProps) {
+  const colors = useColors();
   const [clientCode, setClientCode] = useState('');
   const [projectCode, setProjectCode] = useState('');
   const [typeCode, setTypeCode] = useState('');
@@ -82,7 +76,7 @@ export default function DocumentCodeEditorModal({
 
   const previewCode = useMemo(() => {
     if (!clientCode.trim() || !typeCode.trim() || !dateCode.trim()) return '';
-    
+
     if (projectCode.trim()) {
       return `${clientCode.toUpperCase()}-${typeCode.toUpperCase()}-${projectCode.toUpperCase()}-${dateCode}`;
     } else {
@@ -129,7 +123,7 @@ export default function DocumentCodeEditorModal({
           excludeDocumentId: documentId,
         });
       }
-      
+
       onClose();
       if (onUpdate) {
         onUpdate();
@@ -142,135 +136,129 @@ export default function DocumentCodeEditorModal({
     }
   };
 
+  const radioRow = (
+    mode: 'single' | 'client' | 'project',
+    labelText: string,
+  ) => (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+      <input
+        type="radio"
+        name="updateMode"
+        value={mode}
+        checked={updateMode === mode}
+        onChange={(e) => setUpdateMode(e.target.value as typeof mode)}
+        style={{ width: 14, height: 14, accentColor: colors.accent.blue }}
+      />
+      <span style={{ fontSize: 12, color: colors.text.primary }}>{labelText}</span>
+    </label>
+  );
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Edit Document Code</DialogTitle>
-          <DialogDescription>
-            Configure the document code components
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="space-y-4 py-4">
-          <div>
-            <Label htmlFor="clientCode">Client Code</Label>
-            <Input
-              id="clientCode"
-              value={clientCode}
-              onChange={(e) => setClientCode(e.target.value.toUpperCase())}
-              placeholder="CLIENT"
-              maxLength={8}
-            />
-          </div>
-          
-          <div>
-            <Label htmlFor="typeCode">Type Code</Label>
-            <Input
-              id="typeCode"
-              value={typeCode}
-              onChange={(e) => setTypeCode(e.target.value.toUpperCase())}
-              placeholder="VAL"
-              maxLength={3}
-            />
-          </div>
-          
-          {projectName && (
-            <div>
-              <Label htmlFor="projectCode">Project Code</Label>
-              <Input
-                id="projectCode"
-                value={projectCode}
-                onChange={(e) => setProjectCode(e.target.value.toUpperCase())}
-                placeholder="PROJECT"
-                maxLength={10}
-              />
-            </div>
-          )}
-          
-          <div>
-            <Label htmlFor="dateCode">Date Code (DDMMYY)</Label>
-            <Input
-              id="dateCode"
-              value={dateCode}
-              onChange={(e) => setDateCode(e.target.value)}
-              placeholder="251120"
-              maxLength={6}
-            />
-          </div>
-          
-          {previewCode && (
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <Label className="text-xs text-gray-600 mb-1 block">Preview</Label>
-              <div className="font-mono text-sm text-gray-900">{previewCode}</div>
-            </div>
-          )}
-          
-          {clientId && (
-            <div className="space-y-2">
-              <Label>Apply to:</Label>
-              <div className="space-y-2">
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    name="updateMode"
-                    value="single"
-                    checked={updateMode === 'single'}
-                    onChange={(e) => setUpdateMode(e.target.value as 'single')}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm">This document only</span>
-                </label>
-                {clientId && (
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="updateMode"
-                      value="client"
-                      checked={updateMode === 'client'}
-                      onChange={(e) => setUpdateMode(e.target.value as 'client')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">All {clientName} documents</span>
-                  </label>
-                )}
-                {projectId && (
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="updateMode"
-                      value="project"
-                      checked={updateMode === 'project'}
-                      onChange={(e) => setUpdateMode(e.target.value as 'project')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">All {projectName} documents</span>
-                  </label>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-        
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isUpdating}>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="Edit Document Code"
+      width={448}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isUpdating}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isUpdating || !previewCode}>
+          <Button variant="primary" onClick={handleSave} disabled={isUpdating || !previewCode}>
             {isUpdating ? 'Saving...' : 'Save'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <p style={{ fontSize: 12, color: colors.text.secondary }}>
+          Configure the document code components
+        </p>
+
+        <Field label="Client Code">
+          <Input
+            id="clientCode"
+            value={clientCode}
+            onChange={(e) => setClientCode(e.target.value.toUpperCase())}
+            placeholder="CLIENT"
+            maxLength={8}
+            style={{ fontFamily: MONO }}
+          />
+        </Field>
+
+        <Field label="Type Code">
+          <Input
+            id="typeCode"
+            value={typeCode}
+            onChange={(e) => setTypeCode(e.target.value.toUpperCase())}
+            placeholder="VAL"
+            maxLength={3}
+            style={{ fontFamily: MONO }}
+          />
+        </Field>
+
+        {projectName && (
+          <Field label="Project Code">
+            <Input
+              id="projectCode"
+              value={projectCode}
+              onChange={(e) => setProjectCode(e.target.value.toUpperCase())}
+              placeholder="PROJECT"
+              maxLength={10}
+              style={{ fontFamily: MONO }}
+            />
+          </Field>
+        )}
+
+        <Field label="Date Code (DDMMYY)">
+          <Input
+            id="dateCode"
+            value={dateCode}
+            onChange={(e) => setDateCode(e.target.value)}
+            placeholder="251120"
+            maxLength={6}
+            style={{ fontFamily: MONO }}
+          />
+        </Field>
+
+        {previewCode && (
+          <div
+            style={{
+              padding: 12,
+              background: colors.bg.cardAlt,
+              border: `1px solid ${colors.border.default}`,
+              borderRadius: 4,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: MONO,
+                fontSize: 9,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: colors.text.muted,
+                fontWeight: 500,
+                marginBottom: 4,
+              }}
+            >
+              Preview
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 13, color: colors.text.primary }}>
+              {previewCode}
+            </div>
+          </div>
+        )}
+
+        {clientId && (
+          <Field label="Apply to">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {radioRow('single', 'This document only')}
+              {clientId && radioRow('client', `All ${clientName} documents`)}
+              {projectId && radioRow('project', `All ${projectName} documents`)}
+            </div>
+          </Field>
+        )}
+      </div>
+    </Modal>
   );
 }
-
-
-
-
-
-
-
-
-
-

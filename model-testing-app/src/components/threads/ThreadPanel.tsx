@@ -4,10 +4,13 @@ import { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
-import { Loader2, Plus, Flag } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Plus, Flag } from 'lucide-react';
+import { Button, SkeletonText } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import ThreadListView from './ThreadListView';
 import ThreadDetailView from './ThreadDetailView';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -41,6 +44,7 @@ export default function ThreadPanel({
   compact = false,
   onCreateFlag,
 }: ThreadPanelProps) {
+  const colors = useColors();
   const [selectedFlagId, setSelectedFlagId] = useState<string | null>(null);
 
   // Determine which query to use based on provided props
@@ -79,18 +83,57 @@ export default function ThreadPanel({
     );
   }
 
+  const Header = ({ count, open }: { count: number; open: number }) => (
+    <div
+      className="flex items-center justify-between px-4 py-3"
+      style={{ borderBottom: `1px solid ${colors.border.default}` }}
+    >
+      <div className="flex items-center gap-2">
+        <Flag className="h-4 w-4" style={{ color: colors.text.dim }} />
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: 9,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: colors.text.muted,
+            fontWeight: 500,
+          }}
+        >
+          Threads
+        </span>
+        {count > 0 && (
+          <span
+            className="inline-flex items-center justify-center px-1.5 min-w-[20px] h-5"
+            style={{
+              fontFamily: MONO,
+              fontSize: 10,
+              borderRadius: 2,
+              background: colors.bg.cardAlt,
+              border: `1px solid ${colors.border.default}`,
+              color: colors.text.muted,
+            }}
+          >
+            {open > 0 ? open : count}
+          </span>
+        )}
+      </div>
+      {showCreateButton && onCreateFlag && (
+        <Button variant="ghost" size="sm" onClick={onCreateFlag}>
+          <Plus className="h-3.5 w-3.5" />
+          New Flag
+        </Button>
+      )}
+    </div>
+  );
+
   // Loading state
   if (isLoading) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <Flag className="h-4 w-4 text-gray-400" />
-            <span className="text-sm font-semibold text-gray-900">Threads</span>
-          </div>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Header count={0} open={0} />
+        <div className="flex-1 px-4 py-4">
+          <SkeletonText lines={5} />
         </div>
       </div>
     );
@@ -102,28 +145,7 @@ export default function ThreadPanel({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <Flag className="h-4 w-4 text-gray-400" />
-          <span className="text-sm font-semibold text-gray-900">Threads</span>
-          {flagCount > 0 && (
-            <span className="inline-flex items-center justify-center px-1.5 py-0 min-w-[20px] h-5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
-              {openCount > 0 ? openCount : flagCount}
-            </span>
-          )}
-        </div>
-        {showCreateButton && onCreateFlag && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCreateFlag}
-            className="text-xs text-gray-500 hover:text-gray-900"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            New Flag
-          </Button>
-        )}
-      </div>
+      <Header count={flagCount} open={openCount} />
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">

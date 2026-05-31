@@ -5,19 +5,34 @@ import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { ChevronRight, MessageSquare } from 'lucide-react';
+import { StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
 import { relativeTime, getInitial, ENTITY_TYPE_SHORT } from './utils';
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 // ---------------------------------------------------------------------------
-// Entity type chip color config
+// Entity type → canon accent token
 // ---------------------------------------------------------------------------
-const ENTITY_CHIP_COLORS: Record<string, { bg: string; text: string }> = {
-  document: { bg: 'bg-blue-50', text: 'text-blue-700' },
-  project: { bg: 'bg-purple-50', text: 'text-purple-700' },
-  client: { bg: 'bg-green-50', text: 'text-green-700' },
-  task: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  meeting: { bg: 'bg-cyan-50', text: 'text-cyan-700' },
-  checklist_item: { bg: 'bg-orange-50', text: 'text-orange-700' },
-};
+function entityTone(entityType: string, colors: ColorPalette): string {
+  switch (entityType) {
+    case 'document':
+      return colors.accent.blue;
+    case 'project':
+      return colors.accent.purple;
+    case 'client':
+      return colors.accent.green;
+    case 'task':
+      return colors.accent.yellow;
+    case 'meeting':
+      return colors.accent.cyan;
+    case 'checklist_item':
+      return colors.accent.orange;
+    default:
+      return colors.accent.blue;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -42,6 +57,8 @@ function ThreadListItem({
   onSelect: (flagId: string) => void;
   showEntityBadge?: boolean;
 }) {
+  const colors = useColors();
+  const [hover, setHover] = useState(false);
   const typedFlagId = flag._id as Id<'flags'>;
 
   // Entity context for badge
@@ -75,41 +92,45 @@ function ThreadListItem({
   const firstLine = flag.note?.split('\n')[0] || '';
   const title = firstLine.length > 80 ? firstLine.slice(0, 80) + '...' : firstLine;
   const preview = flag.note?.length > 60 ? flag.note.slice(0, 60) + '...' : flag.note;
-  const chipColors = ENTITY_CHIP_COLORS[flag.entityType] || ENTITY_CHIP_COLORS.document;
+  const tone = entityTone(flag.entityType, colors);
+  const statusDot = isOpen ? colors.accent.orange : colors.accent.green;
 
   return (
     <button
       onClick={() => onSelect(flag._id)}
-      className="w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors group"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="w-full text-left flex items-center gap-3 px-4 py-3 group"
+      style={{
+        background: hover ? colors.bg.cardAlt : 'transparent',
+        transition: 'background 100ms linear',
+      }}
     >
       {/* Left accent border */}
       <div
-        className={`flex-shrink-0 w-0.5 self-stretch rounded-full ${
-          isOpen ? 'bg-orange-400' : 'bg-transparent'
-        }`}
+        className="flex-shrink-0 w-0.5 self-stretch"
+        style={{ background: isOpen ? colors.accent.orange : 'transparent', borderRadius: 2 }}
       />
 
       {/* Status dot */}
       <div className="flex-shrink-0">
-        <div
-          className={`w-2.5 h-2.5 rounded-full ${
-            isOpen ? 'bg-orange-400' : 'bg-green-400'
-          }`}
-        />
+        <div className="w-2.5 h-2.5 rounded-full" style={{ background: statusDot }} />
       </div>
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
         {/* Entity badge row */}
         {showEntityBadge && (
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <span
-              className={`inline-flex items-center px-1.5 py-0 rounded text-[10px] font-semibold uppercase tracking-wide ${chipColors.bg} ${chipColors.text}`}
-            >
-              {ENTITY_TYPE_SHORT[flag.entityType] || flag.entityType}
-            </span>
+          <div className="flex items-center gap-1.5 mb-1">
+            <StatusPill
+              label={ENTITY_TYPE_SHORT[flag.entityType] || flag.entityType}
+              tone={tone}
+            />
             {entityContext?.name && (
-              <span className="text-[11px] text-gray-500 truncate">
+              <span
+                className="truncate"
+                style={{ fontSize: 11, color: colors.text.muted }}
+              >
                 {entityContext.name}
               </span>
             )}
@@ -119,20 +140,27 @@ function ThreadListItem({
         {/* Title + timestamp row */}
         <div className="flex items-center justify-between gap-2">
           <span
-            className={`text-sm truncate ${
-              isOpen ? 'font-semibold text-gray-900' : 'font-medium text-gray-400'
-            }`}
+            className="text-sm truncate"
+            style={{
+              fontWeight: isOpen ? 600 : 500,
+              color: isOpen ? colors.text.primary : colors.text.dim,
+            }}
           >
             {title}
           </span>
-          <span className="text-[11px] text-gray-400 whitespace-nowrap flex-shrink-0">
+          <span
+            className="whitespace-nowrap flex-shrink-0"
+            style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}
+          >
             {relativeTime(flag.createdAt)}
           </span>
         </div>
 
         {/* Preview + metadata row */}
         <div className="flex items-center justify-between gap-2 mt-0.5">
-          <span className="text-xs text-gray-400 truncate">{preview}</span>
+          <span className="text-xs truncate" style={{ color: colors.text.muted }}>
+            {preview}
+          </span>
           <div className="flex items-center gap-2 flex-shrink-0">
             {/* Participant avatars */}
             {users && users.length > 0 && (
@@ -140,7 +168,14 @@ function ThreadListItem({
                 {users.slice(0, 3).map((u) => (
                   <div
                     key={u._id}
-                    className="w-4 h-4 rounded-full bg-gray-700 text-white flex items-center justify-center text-[8px] font-medium ring-1 ring-white"
+                    className="w-4 h-4 rounded-full flex items-center justify-center"
+                    style={{
+                      fontSize: 8,
+                      fontWeight: 500,
+                      background: colors.text.secondary,
+                      color: colors.bg.card,
+                      boxShadow: `0 0 0 1px ${colors.bg.card}`,
+                    }}
                     title={u.name || u.email || undefined}
                   >
                     {getInitial(u.name || u.email)}
@@ -151,33 +186,29 @@ function ThreadListItem({
 
             {/* Reply count */}
             {replyCount > 0 && (
-              <span className="text-[10px] text-gray-400">
+              <span style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}>
                 {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
               </span>
             )}
 
             {/* Status / priority badge */}
             {isUrgent ? (
-              <span className="inline-flex items-center px-1.5 py-0 rounded-full text-[9px] font-semibold uppercase tracking-wide bg-red-50 text-red-600">
-                Urgent
-              </span>
+              <StatusPill label="Urgent" tone={colors.accent.red} />
             ) : (
-              <span
-                className={`inline-flex items-center px-1.5 py-0 rounded-full text-[9px] font-semibold uppercase tracking-wide ${
-                  isOpen
-                    ? 'bg-orange-50 text-orange-600'
-                    : 'bg-green-50 text-green-600'
-                }`}
-              >
-                {isOpen ? 'Open' : 'Resolved'}
-              </span>
+              <StatusPill
+                label={isOpen ? 'Open' : 'Resolved'}
+                tone={isOpen ? colors.accent.orange : colors.accent.green}
+              />
             )}
           </div>
         </div>
       </div>
 
       {/* Chevron */}
-      <ChevronRight className="flex-shrink-0 h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
+      <ChevronRight
+        className="flex-shrink-0 h-4 w-4"
+        style={{ color: hover ? colors.text.muted : colors.text.dim, transition: 'color 100ms linear' }}
+      />
     </button>
   );
 }
@@ -191,7 +222,9 @@ export default function ThreadListView({
   showEntityBadge = false,
   compact = false,
 }: ThreadListViewProps) {
+  const colors = useColors();
   const [showResolved, setShowResolved] = useState(false);
+  const [toggleHover, setToggleHover] = useState(false);
 
   // Split into open and resolved
   const openFlags = useMemo(() => flags.filter((f) => f.status === 'open'), [flags]);
@@ -202,9 +235,8 @@ export default function ThreadListView({
   // Empty state
   if (flags.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <MessageSquare className="h-8 w-8 text-gray-300 mb-2" />
-        <p className="text-sm text-gray-400">No threads yet</p>
+      <div className="px-4 py-6">
+        <EmptyState icon={<MessageSquare className="h-8 w-8" />} title="No threads yet" />
       </div>
     );
   }
@@ -212,14 +244,14 @@ export default function ThreadListView({
   return (
     <div className="flex flex-col">
       {/* Thread list */}
-      <div className={`divide-y divide-gray-50 ${compact ? 'text-xs' : ''}`}>
-        {visibleFlags.map((flag) => (
-          <ThreadListItem
+      <div className={compact ? 'text-xs' : ''}>
+        {visibleFlags.map((flag, i) => (
+          <div
             key={flag._id}
-            flag={flag}
-            onSelect={onSelect}
-            showEntityBadge={showEntityBadge}
-          />
+            style={i > 0 ? { borderTop: `1px solid ${colors.border.light}` } : undefined}
+          >
+            <ThreadListItem flag={flag} onSelect={onSelect} showEntityBadge={showEntityBadge} />
+          </div>
         ))}
       </div>
 
@@ -227,11 +259,17 @@ export default function ThreadListView({
       {resolvedFlags.length > 0 && (
         <button
           onClick={() => setShowResolved((v) => !v)}
-          className="w-full py-2.5 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-gray-100"
+          onMouseEnter={() => setToggleHover(true)}
+          onMouseLeave={() => setToggleHover(false)}
+          className="w-full py-2.5 text-xs"
+          style={{
+            color: toggleHover ? colors.text.secondary : colors.text.dim,
+            background: toggleHover ? colors.bg.cardAlt : 'transparent',
+            borderTop: `1px solid ${colors.border.default}`,
+            transition: 'background 100ms linear, color 100ms linear',
+          }}
         >
-          {showResolved
-            ? 'Hide resolved'
-            : `Show ${resolvedFlags.length} resolved`}
+          {showResolved ? 'Hide resolved' : `Show ${resolvedFlags.length} resolved`}
         </button>
       )}
     </div>

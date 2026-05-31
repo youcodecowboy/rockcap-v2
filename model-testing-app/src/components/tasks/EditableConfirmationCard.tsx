@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { Calendar, Clock, MapPin, Users, Building2, FolderKanban, AlertCircle, Repeat, Bell, ChevronDown, Plus, X } from 'lucide-react';
+import { Button, Input, Textarea, Select } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
 
 interface ParsedTask {
   title: string;
@@ -62,6 +65,17 @@ interface EditableConfirmationCardProps {
   people?: PersonOption[];
 }
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+function priorityTone(priority: string, colors: ColorPalette): string {
+  switch (priority) {
+    case 'high': return colors.accent.red;
+    case 'medium': return colors.accent.yellow;
+    case 'low': return colors.accent.blue;
+    default: return colors.accent.yellow;
+  }
+}
+
 function formatDate(dateStr?: string): string {
   if (!dateStr) return 'Not set';
   const d = new Date(dateStr);
@@ -114,15 +128,10 @@ export default function EditableConfirmationCard({
   projects,
   people,
 }: EditableConfirmationCardProps) {
+  const colors = useColors();
   const [editing, setEditing] = useState<EditingField>(null);
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeSearch, setAttendeeSearch] = useState('');
-
-  const priorityColors: Record<string, string> = {
-    high: 'text-red-700 bg-red-50',
-    medium: 'text-amber-700 bg-amber-50',
-    low: 'text-blue-700 bg-blue-50',
-  };
 
   const cyclePriority = () => {
     if (mode !== 'task' || !task || !onTaskChange) return;
@@ -242,91 +251,102 @@ export default function EditableConfirmationCard({
 
   const hasTaskTime = task?.dueDate ? new Date(task.dueDate).getHours() !== 23 : false;
 
+  // ── Render helpers ─────────────────────────────────────────
+
+  const rowButtonStyle: React.CSSProperties = {
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '8px 0',
+  };
+  const rowTextStyle: React.CSSProperties = { fontSize: 13, color: colors.text.secondary, flex: 1, textAlign: 'left' };
+
   return (
-    <div className="mx-4 mb-4">
-      <div className="bg-[var(--m-bg-card)] border border-[var(--m-border)] rounded-[var(--m-card-radius)] overflow-hidden">
+    <div style={{ margin: '0 16px 16px' }}>
+      <div
+        style={{
+          background: colors.bg.card,
+          border: `1px solid ${colors.border.default}`,
+          borderRadius: 4,
+          overflow: 'hidden',
+        }}
+      >
         {/* Header + Title */}
-        <div className="px-4 pt-4 pb-2">
-          <div className="text-[11px] font-semibold text-[var(--m-text-tertiary)] uppercase tracking-[0.05em]">
+        <div style={{ padding: '14px 16px 8px' }}>
+          <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
             {mode === 'task' ? 'New Task' : 'New Meeting'}
           </div>
           {editing === 'title' ? (
-            <input
-              autoFocus
-              defaultValue={mode === 'task' ? task?.title : event?.title}
-              onBlur={e => {
-                const val = e.target.value;
-                if (mode === 'task' && task && onTaskChange) onTaskChange({ ...task, title: val });
-                else if (mode === 'meeting' && event && onEventChange) onEventChange({ ...event, title: val });
-                setEditing(null);
-              }}
-              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-              className="w-full text-[16px] font-semibold text-[var(--m-text-primary)] bg-transparent border-b border-[var(--m-accent)] outline-none mt-1 pb-1"
-            />
+            <div style={{ marginTop: 6 }}>
+              <Input
+                autoFocus
+                defaultValue={mode === 'task' ? task?.title : event?.title}
+                onBlur={e => {
+                  const val = e.target.value;
+                  if (mode === 'task' && task && onTaskChange) onTaskChange({ ...task, title: val });
+                  else if (mode === 'meeting' && event && onEventChange) onEventChange({ ...event, title: val });
+                  setEditing(null);
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              />
+            </div>
           ) : (
             <h3
               onClick={() => setEditing('title')}
-              className="text-[16px] font-semibold text-[var(--m-text-primary)] mt-1"
+              style={{ fontSize: 16, fontWeight: 600, color: colors.text.primary, marginTop: 4, cursor: 'pointer' }}
             >
               {(mode === 'task' ? task?.title : event?.title) || 'Tap to set title'}
             </h3>
           )}
         </div>
 
-        <div className="px-4 pb-3 space-y-0.5">
+        <div style={{ padding: '0 16px 12px' }}>
           {/* ── Date ── */}
           {editing === 'date' ? (
-            <div className="py-2">
-              <input
+            <div style={{ padding: '8px 0' }}>
+              <Input
                 type="date"
                 autoFocus
                 defaultValue={toDateInputValue(mode === 'task' ? task?.dueDate : event?.startTime)}
                 onChange={e => mode === 'task' ? updateTaskDate(e.target.value) : updateEventDate(e.target.value)}
                 onBlur={() => setEditing(null)}
-                className="w-full text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none"
               />
             </div>
           ) : (
-            <button onClick={() => setEditing('date')} className="flex items-center gap-3 py-2 w-full text-left">
-              <Calendar className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-              <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
+            <button onClick={() => setEditing('date')} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+              <Calendar size={16} color={colors.text.muted} />
+              <span style={rowTextStyle}>
                 {mode === 'task'
                   ? (task?.dueDate ? formatDate(task.dueDate) : 'Set date')
                   : (event?.startTime ? formatDate(event.startTime) : 'Set date')
                 }
               </span>
-              <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+              <ChevronDown size={12} color={colors.text.dim} />
             </button>
           )}
 
           {/* ── Task Time (optional) ── */}
           {mode === 'task' && task?.dueDate && (
             editing === 'taskTime' ? (
-              <div className="py-2 flex gap-2">
-                <input
-                  type="time"
-                  autoFocus
-                  defaultValue={hasTaskTime ? toTimeInputValue(task.dueDate) : ''}
-                  onChange={e => updateTaskTime(e.target.value)}
-                  onBlur={() => setEditing(null)}
-                  className="flex-1 text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none"
-                />
+              <div className="flex gap-2" style={{ padding: '8px 0' }}>
+                <div className="flex-1">
+                  <Input
+                    type="time"
+                    autoFocus
+                    defaultValue={hasTaskTime ? toTimeInputValue(task.dueDate) : ''}
+                    onChange={e => updateTaskTime(e.target.value)}
+                    onBlur={() => setEditing(null)}
+                  />
+                </div>
                 {hasTaskTime && (
-                  <button
-                    onClick={() => updateTaskTime('')}
-                    className="px-3 py-2 text-[12px] text-[var(--m-text-tertiary)] border border-[var(--m-border)] rounded-lg"
-                  >
-                    Clear
-                  </button>
+                  <Button variant="secondary" size="sm" onClick={() => updateTaskTime('')}>Clear</Button>
                 )}
               </div>
             ) : (
-              <button onClick={() => setEditing('taskTime')} className="flex items-center gap-3 py-2 w-full text-left">
-                <Clock className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-                <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
-                  {hasTaskTime ? formatTime(task.dueDate) : 'Add time (optional)'}
-                </span>
-                <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+              <button onClick={() => setEditing('taskTime')} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+                <Clock size={16} color={colors.text.muted} />
+                <span style={rowTextStyle}>{hasTaskTime ? formatTime(task.dueDate) : 'Add time (optional)'}</span>
+                <ChevronDown size={12} color={colors.text.dim} />
               </button>
             )
           )}
@@ -334,26 +354,25 @@ export default function EditableConfirmationCard({
           {/* ── Meeting Time ── */}
           {mode === 'meeting' && (
             editing === 'time' ? (
-              <div className="py-2">
-                <input
+              <div style={{ padding: '8px 0' }}>
+                <Input
                   type="time"
                   autoFocus
                   defaultValue={toTimeInputValue(event?.startTime)}
                   onChange={e => updateEventTime(e.target.value)}
                   onBlur={() => setEditing(null)}
-                  className="w-full text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none"
                 />
               </div>
             ) : (
-              <button onClick={() => setEditing('time')} className="flex items-center gap-3 py-2 w-full text-left">
-                <Clock className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-                <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
+              <button onClick={() => setEditing('time')} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+                <Clock size={16} color={colors.text.muted} />
+                <span style={rowTextStyle}>
                   {event?.startTime && event?.endTime
                     ? `${formatTime(event.startTime)} – ${formatTime(event.endTime)}`
                     : 'Set time'
                   }
                 </span>
-                <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+                <ChevronDown size={12} color={colors.text.dim} />
               </button>
             )
           )}
@@ -361,33 +380,43 @@ export default function EditableConfirmationCard({
           {/* ── Location (meetings) ── */}
           {mode === 'meeting' && (
             editing === 'location' ? (
-              <div className="py-2">
-                <input
+              <div style={{ padding: '8px 0' }}>
+                <Input
                   type="text"
                   autoFocus
                   defaultValue={event?.location || ''}
                   placeholder="Enter location..."
                   onBlur={e => updateLocation(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                  className="w-full text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none"
                 />
               </div>
             ) : (
-              <button onClick={() => setEditing('location')} className="flex items-center gap-3 py-2 w-full text-left">
-                <MapPin className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-                <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
-                  {event?.location || 'Add location'}
-                </span>
-                <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+              <button onClick={() => setEditing('location')} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+                <MapPin size={16} color={colors.text.muted} />
+                <span style={rowTextStyle}>{event?.location || 'Add location'}</span>
+                <ChevronDown size={12} color={colors.text.dim} />
               </button>
             )
           )}
 
           {/* ── Priority (tasks) ── */}
           {mode === 'task' && task && (
-            <button onClick={cyclePriority} className="flex items-center gap-3 py-2 w-full text-left">
-              <AlertCircle className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-              <span className={`text-[13px] font-medium px-2 py-0.5 rounded ${priorityColors[task.priority]}`}>
+            <button onClick={cyclePriority} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+              <AlertCircle size={16} color={colors.text.muted} />
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 9,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  fontWeight: 500,
+                  padding: '2px 6px',
+                  borderRadius: 2,
+                  background: `${priorityTone(task.priority, colors)}20`,
+                  color: priorityTone(task.priority, colors),
+                  border: `1px solid ${priorityTone(task.priority, colors)}40`,
+                }}
+              >
                 {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
               </span>
             </button>
@@ -395,77 +424,75 @@ export default function EditableConfirmationCard({
 
           {/* ── Client ── */}
           {editing === 'client' ? (
-            <div className="py-2">
-              <select
+            <div style={{ padding: '8px 0' }}>
+              <Select
                 autoFocus
                 value={activeClientId || ''}
                 onChange={e => updateClient(e.target.value)}
                 onBlur={() => setEditing(null)}
-                className="w-full text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-[var(--m-bg-card)] outline-none"
               >
                 <option value="">Personal (no client)</option>
                 {clients?.map(c => (
                   <option key={c._id} value={c._id}>{c.name}</option>
                 ))}
-              </select>
+              </Select>
             </div>
           ) : (
-            <button onClick={() => setEditing('client')} className="flex items-center gap-3 py-2 w-full text-left">
-              <Building2 className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-              <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">{resolvedClientName || 'Personal'}</span>
-              <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+            <button onClick={() => setEditing('client')} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+              <Building2 size={16} color={colors.text.muted} />
+              <span style={rowTextStyle}>{resolvedClientName || 'Personal'}</span>
+              <ChevronDown size={12} color={colors.text.dim} />
             </button>
           )}
 
           {/* ── Project ── */}
           {editing === 'project' ? (
-            <div className="py-2">
-              <select
+            <div style={{ padding: '8px 0' }}>
+              <Select
                 autoFocus
                 value={activeProjectId || ''}
                 onChange={e => updateProject(e.target.value)}
                 onBlur={() => setEditing(null)}
-                className="w-full text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-[var(--m-bg-card)] outline-none"
               >
                 <option value="">No project</option>
                 {filteredProjects?.map(p => (
                   <option key={p._id} value={p._id}>{p.name}</option>
                 ))}
-              </select>
+              </Select>
             </div>
           ) : (
-            <button onClick={() => setEditing('project')} className="flex items-center gap-3 py-2 w-full text-left">
-              <FolderKanban className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-              <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">{resolvedProjectName || '—'}</span>
-              <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+            <button onClick={() => setEditing('project')} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+              <FolderKanban size={16} color={colors.text.muted} />
+              <span style={rowTextStyle}>{resolvedProjectName || '—'}</span>
+              <ChevronDown size={12} color={colors.text.dim} />
             </button>
           )}
 
           {/* ── Attendees (meetings) ── */}
           {mode === 'meeting' && (
             <>
-              <button onClick={() => { setEditing(editing === 'attendees' ? null : 'attendees'); setAttendeeSearch(''); }} className="flex items-center gap-3 py-2 w-full text-left">
-                <Users className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-                <span className="text-[13px] text-[var(--m-text-secondary)] flex-1">
+              <button onClick={() => { setEditing(editing === 'attendees' ? null : 'attendees'); setAttendeeSearch(''); }} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+                <Users size={16} color={colors.text.muted} />
+                <span style={rowTextStyle}>
                   {currentAttendees.length > 0 ? `${currentAttendees.length} attendee${currentAttendees.length !== 1 ? 's' : ''}` : 'Add attendees'}
                 </span>
-                <ChevronDown className="w-3 h-3 text-[var(--m-text-placeholder)]" />
+                <ChevronDown size={12} color={colors.text.dim} />
               </button>
 
               {editing === 'attendees' && (
-                <div className="pb-2 pl-7 space-y-2">
+                <div style={{ paddingBottom: 8, paddingLeft: 28, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {/* Current attendees */}
                   {currentAttendees.map((a, i) => (
-                    <div key={i} className="flex items-center gap-2 py-0.5">
-                      <span className="flex-1 text-[13px] text-[var(--m-text-secondary)] truncate">{a}</span>
-                      <button onClick={() => removeAttendee(i)} className="p-0.5 text-[var(--m-text-tertiary)]">
-                        <X className="w-3 h-3" />
+                    <div key={i} className="flex items-center gap-2" style={{ padding: '2px 0' }}>
+                      <span style={{ flex: 1, fontSize: 13, color: colors.text.secondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a}</span>
+                      <button onClick={() => removeAttendee(i)} style={{ background: 'transparent', border: 'none', color: colors.text.muted, cursor: 'pointer', padding: 2, display: 'inline-flex' }}>
+                        <X size={12} />
                       </button>
                     </div>
                   ))}
 
                   {/* Search/add input */}
-                  <input
+                  <Input
                     type="text"
                     value={attendeeSearch}
                     onChange={e => setAttendeeSearch(e.target.value)}
@@ -477,12 +504,11 @@ export default function EditableConfirmationCard({
                       }
                     }}
                     placeholder="Search people or type email..."
-                    className="w-full text-[13px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none"
                   />
 
                   {/* People suggestions */}
                   {attendeeSearch.trim().length > 0 && (
-                    <div className="border border-[var(--m-border)] rounded-lg overflow-hidden max-h-[150px] overflow-y-auto">
+                    <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, overflow: 'hidden', maxHeight: 150, overflowY: 'auto' }}>
                       {(people || [])
                         .filter(p => {
                           const q = attendeeSearch.toLowerCase();
@@ -494,13 +520,14 @@ export default function EditableConfirmationCard({
                           <button
                             key={`${p.email}-${i}`}
                             onClick={() => { addAttendee(p.email); setAttendeeSearch(''); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-left border-b border-[var(--m-border-subtle)] last:border-b-0 active:bg-[var(--m-bg-subtle)]"
+                            className="flex items-center gap-2 w-full text-left"
+                            style={{ padding: '8px 12px', borderBottom: `1px solid ${colors.border.light}`, background: 'transparent', cursor: 'pointer' }}
                           >
                             <div className="flex-1 min-w-0">
-                              <div className="text-[13px] text-[var(--m-text-primary)] truncate">{p.name}</div>
-                              <div className="text-[11px] text-[var(--m-text-tertiary)] truncate">{p.email}</div>
+                              <div style={{ fontSize: 13, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                              <div style={{ fontSize: 11, color: colors.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
                             </div>
-                            <span className="text-[10px] text-[var(--m-text-tertiary)] bg-[var(--m-bg-subtle)] px-1.5 py-0.5 rounded flex-shrink-0">
+                            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase', color: colors.text.muted, background: colors.bg.cardAlt, padding: '2px 6px', borderRadius: 2, flexShrink: 0 }}>
                               {p.source === 'user' ? 'Team' : 'Contact'}
                             </span>
                           </button>
@@ -510,10 +537,11 @@ export default function EditableConfirmationCard({
                       {attendeeSearch.includes('@') && (
                         <button
                           onClick={() => { addAttendee(attendeeSearch); setAttendeeSearch(''); }}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-left active:bg-[var(--m-bg-subtle)]"
+                          className="flex items-center gap-2 w-full text-left"
+                          style={{ padding: '8px 12px', background: 'transparent', cursor: 'pointer' }}
                         >
-                          <Plus className="w-3 h-3 text-[var(--m-text-tertiary)]" />
-                          <span className="text-[13px] text-[var(--m-text-secondary)]">Add "{attendeeSearch}"</span>
+                          <Plus size={12} color={colors.text.muted} />
+                          <span style={{ fontSize: 13, color: colors.text.secondary }}>Add "{attendeeSearch}"</span>
                         </button>
                       )}
                     </div>
@@ -525,9 +553,9 @@ export default function EditableConfirmationCard({
 
           {/* ── Assignees (tasks — display only for now) ── */}
           {mode === 'task' && (
-            <div className="flex items-center gap-3 py-2">
-              <Users className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-              <span className="text-[13px] text-[var(--m-text-secondary)]">
+            <div className="flex items-center gap-3" style={{ padding: '8px 0' }}>
+              <Users size={16} color={colors.text.muted} />
+              <span style={{ fontSize: 13, color: colors.text.secondary }}>
                 {assigneeNames.length > 0 ? assigneeNames.join(', ') : 'You'}
               </span>
             </div>
@@ -535,8 +563,8 @@ export default function EditableConfirmationCard({
 
           {/* ── Description ── */}
           {editing === 'description' ? (
-            <div className="py-2">
-              <textarea
+            <div style={{ padding: '8px 0' }}>
+              <Textarea
                 autoFocus
                 defaultValue={mode === 'task' ? task?.description : event?.description}
                 placeholder="Add description..."
@@ -547,12 +575,11 @@ export default function EditableConfirmationCard({
                   else if (mode === 'meeting' && event && onEventChange) onEventChange({ ...event, description: val || undefined });
                   setEditing(null);
                 }}
-                className="w-full text-[14px] text-[var(--m-text-primary)] border border-[var(--m-border)] rounded-lg px-3 py-2 bg-transparent outline-none resize-none"
               />
             </div>
           ) : (
-            <button onClick={() => setEditing('description')} className="flex items-center gap-3 py-2 w-full text-left">
-              <span className="text-[13px] text-[var(--m-text-tertiary)] ml-7">
+            <button onClick={() => setEditing('description')} className="flex items-center gap-3 w-full" style={rowButtonStyle}>
+              <span style={{ fontSize: 13, color: colors.text.muted, marginLeft: 28 }}>
                 {(mode === 'task' ? task?.description : event?.description) || '+ Add description'}
               </span>
             </button>
@@ -560,17 +587,17 @@ export default function EditableConfirmationCard({
 
           {/* ── Recurrence (display only) ── */}
           {mode === 'meeting' && event?.recurrence && (
-            <div className="flex items-center gap-3 py-2">
-              <Repeat className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-              <span className="text-[13px] text-[var(--m-text-secondary)]">{event.recurrence}</span>
+            <div className="flex items-center gap-3" style={{ padding: '8px 0' }}>
+              <Repeat size={16} color={colors.text.muted} />
+              <span style={{ fontSize: 13, color: colors.text.secondary }}>{event.recurrence}</span>
             </div>
           )}
 
           {/* ── Reminders (display only) ── */}
           {mode === 'meeting' && event?.reminders && event.reminders.length > 0 && (
-            <div className="flex items-center gap-3 py-2">
-              <Bell className="w-4 h-4 text-[var(--m-text-tertiary)]" />
-              <span className="text-[13px] text-[var(--m-text-secondary)]">
+            <div className="flex items-center gap-3" style={{ padding: '8px 0' }}>
+              <Bell size={16} color={colors.text.muted} />
+              <span style={{ fontSize: 13, color: colors.text.secondary }}>
                 {event.reminders.map(r => `${r.minutes}min ${r.method}`).join(', ')}
               </span>
             </div>
@@ -578,21 +605,13 @@ export default function EditableConfirmationCard({
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 px-4 pb-4">
-          <button
-            onClick={onEdit}
-            disabled={isCreating}
-            className="flex-1 py-2.5 text-[13px] font-medium text-[var(--m-text-secondary)] border border-[var(--m-border)] rounded-lg active:bg-[var(--m-bg-subtle)] disabled:opacity-50"
-          >
+        <div className="flex gap-2" style={{ padding: '0 16px 16px' }}>
+          <Button variant="secondary" onClick={onEdit} disabled={isCreating} style={{ flex: 1, justifyContent: 'center' }}>
             Edit with AI
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isCreating}
-            className="flex-[2] py-2.5 text-[13px] font-medium text-[var(--m-text-on-brand)] bg-[var(--m-bg-brand)] rounded-lg active:opacity-80 disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="primary" onClick={onConfirm} disabled={isCreating} style={{ flex: 2, justifyContent: 'center' }}>
             {isCreating ? 'Creating...' : mode === 'task' ? 'Create Task' : 'Create Meeting'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

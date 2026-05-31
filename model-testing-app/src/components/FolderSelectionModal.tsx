@@ -1,17 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { FolderKanban, FileText, Building2 } from 'lucide-react';
+import { Modal, Button } from '@/components/layouts';
+import { FolderKanban, Building2 } from 'lucide-react';
 import { Id } from '../../convex/_generated/dataModel';
+import { useColors } from '@/lib/useColors';
 
 interface FolderSelectionModalProps {
   isOpen: boolean;
@@ -32,6 +25,7 @@ export default function FolderSelectionModal({
   currentIsBaseDocument,
   onSelect,
 }: FolderSelectionModalProps) {
+  const colors = useColors();
   const [selectedDestination, setSelectedDestination] = useState<string | null>(null);
 
   const handleConfirm = () => {
@@ -50,72 +44,79 @@ export default function FolderSelectionModal({
   ];
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>File Elsewhere</DialogTitle>
-          <DialogDescription>
-            Choose where to file this document
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="space-y-2 py-4">
-          {destinations.map((dest) => {
-            const Icon = dest.icon;
-            const isCurrentLocation = 
-              (dest.id === 'base-documents' && currentIsBaseDocument) ||
-              (dest.id === currentProjectId && !currentIsBaseDocument);
-            
-            return (
-              <button
-                key={dest.id}
-                onClick={() => !isCurrentLocation && setSelectedDestination(dest.id)}
-                disabled={isCurrentLocation}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedDestination === dest.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : isCurrentLocation
-                    ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-5 h-5 text-gray-600" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 truncate">{dest.name}</div>
-                    {isCurrentLocation && (
-                      <div className="text-xs text-gray-500 mt-1">Current location</div>
-                    )}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="File Elsewhere"
+      width={448}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleConfirm} 
-            disabled={!selectedDestination}
-            className="bg-black text-white hover:bg-gray-800"
-          >
+          <Button variant="primary" onClick={handleConfirm} disabled={!selectedDestination}>
             Confirm
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 12 }}>
+        Choose where to file this document
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {destinations.map((dest) => {
+          const Icon = dest.icon;
+          const isCurrentLocation =
+            (dest.id === 'base-documents' && currentIsBaseDocument) ||
+            (dest.id === currentProjectId && !currentIsBaseDocument);
+          const isSelected = selectedDestination === dest.id;
+
+          return (
+            <button
+              key={dest.id}
+              onClick={() => !isCurrentLocation && setSelectedDestination(dest.id)}
+              disabled={isCurrentLocation}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: 12,
+                borderRadius: 4,
+                background: isSelected ? `${colors.accent.blue}15` : colors.bg.card,
+                border: `1px solid ${
+                  isSelected ? colors.accent.blue : colors.border.default
+                }`,
+                opacity: isCurrentLocation ? 0.5 : 1,
+                cursor: isCurrentLocation ? 'not-allowed' : 'pointer',
+                transition: 'background 100ms linear, border-color 100ms linear',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Icon size={18} style={{ color: colors.text.muted, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: colors.text.primary,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {dest.name}
+                  </div>
+                  {isCurrentLocation && (
+                    <div style={{ fontSize: 10, color: colors.text.muted, marginTop: 2 }}>
+                      Current location
+                    </div>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
-
-
-
-
-
-
-
-
-
-

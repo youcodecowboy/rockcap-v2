@@ -1,6 +1,9 @@
 'use client';
 
 import { Id } from '../../../convex/_generated/dataModel';
+import { StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
 
 interface Task {
   _id: Id<'tasks'>;
@@ -19,71 +22,101 @@ interface TaskListItemProps {
   onToggleComplete: () => void;
 }
 
-function getDueLabel(dueDate?: string): { text: string; color: string } | null {
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+function getDueLabel(dueDate: string | undefined, colors: ColorPalette): { text: string; color: string } | null {
   if (!dueDate) return null;
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dueDay = new Date(new Date(dueDate).getFullYear(), new Date(dueDate).getMonth(), new Date(dueDate).getDate());
   const diffDays = Math.round((dueDay.getTime() - todayStart.getTime()) / 86400000);
 
-  if (diffDays < 0) return { text: `Overdue ${Math.abs(diffDays)}d`, color: 'text-red-600' };
-  if (diffDays === 0) return { text: 'Due today', color: 'text-amber-600' };
-  if (diffDays === 1) return { text: 'Tomorrow', color: 'text-[var(--m-text-tertiary)]' };
+  if (diffDays < 0) return { text: `Overdue ${Math.abs(diffDays)}d`, color: colors.accent.red };
+  if (diffDays === 0) return { text: 'Due today', color: colors.accent.yellow };
+  if (diffDays === 1) return { text: 'Tomorrow', color: colors.text.muted };
   if (diffDays < 7) {
     const due = new Date(dueDate);
-    return { text: due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }), color: 'text-[var(--m-text-tertiary)]' };
+    return { text: due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }), color: colors.text.muted };
   }
   const due = new Date(dueDate);
-  return { text: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), color: 'text-[var(--m-text-tertiary)]' };
+  return { text: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), color: colors.text.muted };
 }
 
-const priorityColors: Record<string, string> = {
-  high: 'border-red-500',
-  medium: 'border-amber-500',
-  low: 'border-blue-500',
-};
+function priorityTone(priority: string | undefined, colors: ColorPalette): string {
+  switch (priority) {
+    case 'high': return colors.accent.red;
+    case 'medium': return colors.accent.yellow;
+    case 'low': return colors.accent.blue;
+    default: return colors.accent.yellow;
+  }
+}
 
-const priorityBadge: Record<string, { bg: string; text: string; label: string }> = {
-  high: { bg: 'bg-red-50', text: 'text-red-700', label: 'High' },
-  medium: { bg: 'bg-amber-50', text: 'text-amber-700', label: 'Med' },
-  low: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Low' },
-};
+function statusTone(status: string, colors: ColorPalette): string {
+  switch (status) {
+    case 'in_progress': return colors.accent.blue;
+    case 'paused': return colors.accent.yellow;
+    case 'completed': return colors.accent.green;
+    case 'cancelled': return colors.text.dim;
+    default: return colors.text.muted;
+  }
+}
 
-const statusBadge: Record<string, { bg: string; text: string; label: string } | null> = {
-  todo: null, // default, no badge needed
-  in_progress: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'In Progress' },
-  paused: { bg: 'bg-amber-50', text: 'text-amber-700', label: 'Paused' },
-  completed: { bg: 'bg-green-50', text: 'text-green-700', label: 'Done' },
-  cancelled: { bg: 'bg-slate-100', text: 'text-slate-500', label: 'Cancelled' },
+const priorityLabel: Record<string, string> = { high: 'High', medium: 'Med', low: 'Low' };
+const statusLabel: Record<string, string | null> = {
+  todo: null,
+  in_progress: 'In Progress',
+  paused: 'Paused',
+  completed: 'Done',
+  cancelled: 'Cancelled',
 };
 
 export default function TaskListItem({ task, onTap, onToggleComplete }: TaskListItemProps) {
-  const dueLabel = getDueLabel(task.dueDate);
+  const colors = useColors();
+  const dueLabel = getDueLabel(task.dueDate, colors);
   const isOverdue = dueLabel?.text.startsWith('Overdue');
-  const checkBorder = isOverdue ? 'border-red-500' : (priorityColors[task.priority || 'medium']);
-  const badge = priorityBadge[task.priority || 'medium'];
-  const status = statusBadge[task.status];
+  const priority = task.priority || 'medium';
+  const checkAccent = isOverdue ? colors.accent.red : priorityTone(priority, colors);
+  const status = statusLabel[task.status];
+  const isCompleted = task.status === 'completed';
 
   // Left accent color based on status
-  const accentBorder = task.status === 'in_progress' ? 'border-l-blue-500'
-    : task.status === 'paused' ? 'border-l-amber-500'
-    : isOverdue ? 'border-l-red-500'
-    : 'border-l-transparent';
+  const accentBorder = task.status === 'in_progress' ? colors.accent.blue
+    : task.status === 'paused' ? colors.accent.yellow
+    : isOverdue ? colors.accent.red
+    : 'transparent';
 
   return (
     <div
-      className={`bg-white border border-[var(--m-border)] border-l-[3px] ${accentBorder} rounded-lg px-3 py-2.5 flex items-center gap-2.5 active:bg-[var(--m-bg-subtle)] transition-colors cursor-pointer`}
+      className="flex items-center gap-2.5 cursor-pointer"
+      style={{
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.default}`,
+        borderLeft: `3px solid ${accentBorder}`,
+        borderRadius: 4,
+        padding: '10px 12px',
+        transition: 'background 100ms linear',
+      }}
       onClick={onTap}
     >
       <button
+        role="checkbox"
+        aria-checked={isCompleted}
         onClick={(e) => { e.stopPropagation(); onToggleComplete(); }}
-        className={`w-[18px] h-[18px] rounded border-2 flex-shrink-0 ${checkBorder} ${
-          task.status === 'completed' ? 'bg-green-500 border-green-500' : ''
-        }`}
-        aria-label={task.status === 'completed' ? 'Mark incomplete' : 'Mark complete'}
+        className="flex-shrink-0"
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 3,
+          border: `2px solid ${isCompleted ? colors.accent.green : checkAccent}`,
+          background: isCompleted ? colors.accent.green : 'transparent',
+          cursor: 'pointer',
+          padding: 0,
+          display: 'inline-flex',
+        }}
+        aria-label={isCompleted ? 'Mark incomplete' : 'Mark complete'}
       >
-        {task.status === 'completed' && (
-          <svg className="w-full h-full text-white" viewBox="0 0 16 16" fill="none">
+        {isCompleted && (
+          <svg width="100%" height="100%" viewBox="0 0 16 16" fill="none" style={{ color: '#ffffff' }}>
             <path d="M4 8l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
@@ -91,31 +124,37 @@ export default function TaskListItem({ task, onTap, onToggleComplete }: TaskList
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className={`text-[13px] font-semibold truncate ${
-            task.status === 'completed' ? 'line-through text-[var(--m-text-tertiary)]' : 'text-[var(--m-text-primary)]'
-          }`}>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              textDecoration: isCompleted ? 'line-through' : 'none',
+              color: isCompleted ? colors.text.muted : colors.text.primary,
+            }}
+          >
             {task.title}
           </span>
           {status && (
-            <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ${status.bg} ${status.text}`}>
-              {status.label}
+            <span style={{ flexShrink: 0 }}>
+              <StatusPill label={status} tone={statusTone(task.status, colors)} />
             </span>
           )}
         </div>
-        <div className="text-[11px] mt-0.5 flex items-center gap-1">
+        <div className="flex items-center gap-1" style={{ marginTop: 2 }}>
           {task.clientName && (
-            <span className="text-[var(--m-text-tertiary)]">{task.clientName}</span>
+            <span style={{ fontFamily: MONO, fontSize: 11, color: colors.text.muted }}>{task.clientName}</span>
           )}
-          {task.clientName && dueLabel && <span className="text-[var(--m-text-tertiary)]">·</span>}
-          {dueLabel && <span className={dueLabel.color}>{dueLabel.text}</span>}
+          {task.clientName && dueLabel && <span style={{ fontSize: 11, color: colors.text.muted }}>·</span>}
+          {dueLabel && <span style={{ fontFamily: MONO, fontSize: 11, color: dueLabel.color }}>{dueLabel.text}</span>}
         </div>
       </div>
 
-      {badge && (
-        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${badge.bg} ${badge.text}`}>
-          {badge.label}
-        </span>
-      )}
+      <span style={{ flexShrink: 0 }}>
+        <StatusPill label={priorityLabel[priority]} tone={priorityTone(priority, colors)} />
+      </span>
     </div>
   );
 }
