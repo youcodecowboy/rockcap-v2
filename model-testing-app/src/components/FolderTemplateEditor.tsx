@@ -4,36 +4,20 @@ import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Modal, Button, IconButton, Field, Input, Select, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Folder,
   FolderPlus,
   Trash2,
   ChevronRight,
   ChevronDown,
-  GripVertical,
   Edit2,
   Save,
   X,
 } from 'lucide-react';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface FolderItem {
   name: string;
@@ -56,6 +40,7 @@ export default function FolderTemplateEditor({
   level,
   clientType,
 }: FolderTemplateEditorProps) {
+  const colors = useColors();
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -75,7 +60,7 @@ export default function FolderTemplateEditor({
   const buildFolderTree = () => {
     const sortedFolders = [...folders].sort((a, b) => a.order - b.order);
     const rootFolders = sortedFolders.filter(f => !f.parentKey);
-    
+
     const getChildren = (parentKey: string): FolderItem[] => {
       return sortedFolders.filter(f => f.parentKey === parentKey);
     };
@@ -127,7 +112,7 @@ export default function FolderTemplateEditor({
     if (!confirm(`Are you sure you want to delete the folder "${folderKey}"?`)) {
       return;
     }
-    
+
     try {
       await removeFolder({ templateId, folderKey });
     } catch (error) {
@@ -152,7 +137,7 @@ export default function FolderTemplateEditor({
           order: folders.length + 1,
         },
       });
-      
+
       setShowAddDialog(false);
       setNewFolderName('');
       setNewFolderKey('');
@@ -175,90 +160,75 @@ export default function FolderTemplateEditor({
 
     return (
       <div key={folder.folderKey}>
-        <div 
-          className={`
-            flex items-center gap-2 py-2 px-3 rounded-md 
-            hover:bg-muted/50 group
-            ${depth > 0 ? 'ml-6 border-l border-dashed border-muted-foreground/30 pl-4' : ''}
-          `}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 12px',
+            borderRadius: 4,
+            marginLeft: depth > 0 ? 24 : 0,
+            borderLeft: depth > 0 ? `1px dashed ${colors.border.mid}` : undefined,
+            paddingLeft: depth > 0 ? 16 : 12,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = colors.bg.cardAlt)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         >
           {/* Expand/Collapse */}
           <button
-            className="w-5 h-5 flex items-center justify-center text-muted-foreground"
+            style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.text.muted, background: 'none', border: 'none', cursor: hasChildren ? 'pointer' : 'default', padding: 0 }}
             onClick={() => hasChildren && toggleExpand(folder.folderKey)}
           >
             {hasChildren ? (
-              isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />
+              isExpanded ? <ChevronDown style={{ width: 16, height: 16 }} /> : <ChevronRight style={{ width: 16, height: 16 }} />
             ) : (
-              <span className="w-4" />
+              <span style={{ width: 16 }} />
             )}
           </button>
 
           {/* Folder Icon */}
-          <Folder className="w-4 h-4 text-amber-500" />
+          <Folder style={{ width: 16, height: 16, color: colors.accent.yellow }} />
 
           {/* Folder Content */}
           {isEditing ? (
-            <div className="flex-1 flex items-center gap-2">
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="h-7 text-sm w-40"
                 placeholder="Folder name"
+                style={{ width: 160 }}
               />
               <Input
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                className="h-7 text-sm w-48"
                 placeholder="Description (optional)"
+                style={{ width: 192 }}
               />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0"
-                onClick={() => handleSaveEdit(folder.folderKey)}
-              >
-                <Save className="w-3 h-3 text-green-600" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0"
-                onClick={cancelEditing}
-              >
-                <X className="w-3 h-3 text-red-600" />
-              </Button>
+              <IconButton label="Save" onClick={() => handleSaveEdit(folder.folderKey)}>
+                <Save style={{ width: 12, height: 12, color: colors.accent.green }} />
+              </IconButton>
+              <IconButton label="Cancel" onClick={cancelEditing}>
+                <X style={{ width: 12, height: 12, color: colors.accent.red }} />
+              </IconButton>
             </div>
           ) : (
             <>
-              <span className="text-sm font-medium">{folder.name}</span>
-              <Badge variant="outline" className="text-xs font-mono">
-                {folder.folderKey}
-              </Badge>
+              <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{folder.name}</span>
+              <StatusPill label={folder.folderKey} tone={colors.text.muted} />
               {folder.description && (
-                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                <span style={{ fontSize: 11, color: colors.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
                   {folder.description}
                 </span>
               )}
-              
+
               {/* Actions */}
-              <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0"
-                  onClick={() => startEditing(folder)}
-                >
-                  <Edit2 className="w-3 h-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0 text-red-600"
-                  onClick={() => handleDeleteFolder(folder.folderKey)}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </Button>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <IconButton label="Edit folder" onClick={() => startEditing(folder)}>
+                  <Edit2 style={{ width: 12, height: 12 }} />
+                </IconButton>
+                <IconButton label="Delete folder" onClick={() => handleDeleteFolder(folder.folderKey)}>
+                  <Trash2 style={{ width: 12, height: 12, color: colors.accent.red }} />
+                </IconButton>
               </div>
             </>
           )}
@@ -275,112 +245,92 @@ export default function FolderTemplateEditor({
   };
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Folder Tree */}
-      <div className="border rounded-lg p-2 min-h-[200px]">
+      <div style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, padding: 8, minHeight: 200 }}>
         {rootFolders.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Folder className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p>No folders defined</p>
-            <p className="text-xs">Click "Add Folder" to create one</p>
-          </div>
+          <EmptyState
+            icon={<Folder style={{ width: 24, height: 24 }} />}
+            title="No folders defined"
+            body='Click "Add Folder" to create one'
+          />
         ) : (
           rootFolders.map(folder => renderFolder(folder))
         )}
       </div>
 
       {/* Add Button */}
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        onClick={() => setShowAddDialog(true)}
-      >
-        <FolderPlus className="w-4 h-4" />
-        Add Folder
-      </Button>
+      <div>
+        <Button variant="secondary" size="sm" onClick={() => setShowAddDialog(true)}>
+          <FolderPlus style={{ width: 14, height: 14 }} />
+          Add Folder
+        </Button>
+      </div>
 
       {/* Add Folder Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Folder</DialogTitle>
-            <DialogDescription>
-              Add a new folder to the {level}-level template for {clientType} clients
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="folder-name">Folder Name *</Label>
-              <Input
-                id="folder-name"
-                placeholder="e.g., Contracts"
-                value={newFolderName}
-                onChange={(e) => {
-                  setNewFolderName(e.target.value);
-                  if (!newFolderKey || newFolderKey === generateFolderKey(newFolderName.slice(0, -1))) {
-                    setNewFolderKey(generateFolderKey(e.target.value));
-                  }
-                }}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="folder-key">Folder Key *</Label>
-              <Input
-                id="folder-key"
-                placeholder="e.g., contracts"
-                value={newFolderKey}
-                onChange={(e) => setNewFolderKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Unique identifier used internally (lowercase, underscores only)
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="folder-parent">Parent Folder</Label>
-              <Select
-                value={newFolderParent}
-                onValueChange={setNewFolderParent}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select parent folder..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No parent (root level)</SelectItem>
-                  {folders.filter(f => !f.parentKey).map(f => (
-                    <SelectItem key={f.folderKey} value={f.folderKey}>
-                      {f.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="folder-description">Description (Optional)</Label>
-              <Input
-                id="folder-description"
-                placeholder="e.g., Legal contracts and agreements"
-                value={newFolderDescription}
-                onChange={(e) => setNewFolderDescription(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+      <Modal
+        open={showAddDialog}
+        onClose={() => setShowAddDialog(false)}
+        title="Add New Folder"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowAddDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddFolder} disabled={!newFolderName || !newFolderKey}>
+            <Button variant="primary" onClick={handleAddFolder} disabled={!newFolderName || !newFolderKey}>
               Add Folder
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <p style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 16 }}>
+          Add a new folder to the {level}-level template for {clientType} clients
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Field label="Folder Name *">
+            <Input
+              id="folder-name"
+              placeholder="e.g., Contracts"
+              value={newFolderName}
+              onChange={(e) => {
+                setNewFolderName(e.target.value);
+                if (!newFolderKey || newFolderKey === generateFolderKey(newFolderName.slice(0, -1))) {
+                  setNewFolderKey(generateFolderKey(e.target.value));
+                }
+              }}
+            />
+          </Field>
+
+          <Field label="Folder Key *" hint="Unique identifier used internally (lowercase, underscores only)">
+            <Input
+              id="folder-key"
+              placeholder="e.g., contracts"
+              value={newFolderKey}
+              onChange={(e) => setNewFolderKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+              style={{ fontFamily: MONO }}
+            />
+          </Field>
+
+          <Field label="Parent Folder">
+            <Select value={newFolderParent} onChange={(e) => setNewFolderParent(e.target.value)}>
+              <option value="none">No parent (root level)</option>
+              {folders.filter(f => !f.parentKey).map(f => (
+                <option key={f.folderKey} value={f.folderKey}>{f.name}</option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="Description (Optional)">
+            <Input
+              id="folder-description"
+              placeholder="e.g., Legal contracts and agreements"
+              value={newFolderDescription}
+              onChange={(e) => setNewFolderDescription(e.target.value)}
+            />
+          </Field>
+        </div>
+      </Modal>
     </div>
   );
 }

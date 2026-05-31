@@ -1,7 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface MissingFieldItem {
   key: string;
@@ -21,15 +25,15 @@ const PRIORITY_ORDER: Record<MissingFieldItem['priority'], number> = {
   optional: 2,
 };
 
-function getPriorityStyles(priority: MissingFieldItem['priority']): string {
+function priorityTone(priority: MissingFieldItem['priority'], colors: ColorPalette): string {
   switch (priority) {
     case 'critical':
-      return 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100';
+      return colors.accent.red;
     case 'important':
-      return 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100';
+      return colors.accent.orange;
     case 'optional':
     default:
-      return 'border-gray-200 bg-gray-100 text-gray-600 hover:bg-gray-200';
+      return colors.text.muted;
   }
 }
 
@@ -44,11 +48,57 @@ function getPriorityLabel(priority: MissingFieldItem['priority']): string | null
   }
 }
 
+function Chip({
+  tone,
+  clickable,
+  onClick,
+  children,
+}: {
+  tone: string;
+  clickable: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  const [hover, setHover] = useState(false);
+  const style: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 8px',
+    borderRadius: 2,
+    fontFamily: MONO,
+    fontSize: 9,
+    letterSpacing: '0.04em',
+    fontWeight: 500,
+    border: `1px solid ${tone}40`,
+    color: tone,
+    background: clickable && hover ? `${tone}20` : `${tone}12`,
+    transition: 'background 100ms linear',
+    textAlign: 'left',
+  };
+  if (clickable) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={style}
+      >
+        {children}
+      </button>
+    );
+  }
+  return <span style={style}>{children}</span>;
+}
+
 export function IntelligenceMissingFields({
   missingFields,
   onAddField,
   className,
 }: IntelligenceMissingFieldsProps) {
+  const colors = useColors();
+
   if (!missingFields || missingFields.length === 0) {
     return null;
   }
@@ -59,49 +109,34 @@ export function IntelligenceMissingFields({
 
   return (
     <div className={cn('space-y-2', className)}>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+      <p
+        style={{
+          fontFamily: MONO,
+          fontSize: 9,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          fontWeight: 500,
+          color: colors.text.muted,
+        }}
+      >
         Missing Fields ({missingFields.length})
       </p>
       <div className="flex flex-wrap gap-1.5">
         {sorted.map((field) => {
           const priorityLabel = getPriorityLabel(field.priority);
-          const chipStyles = getPriorityStyles(field.priority);
+          const tone = priorityTone(field.priority, colors);
           const isClickable = !!onAddField;
 
-          const chipContent = (
-            <>
-              <span className="text-xs font-medium">{field.label}</span>
-              {priorityLabel && (
-                <span className="text-[10px] opacity-70 ml-0.5">· {priorityLabel}</span>
-              )}
-            </>
-          );
-
-          if (isClickable) {
-            return (
-              <button
-                key={field.key}
-                onClick={() => onAddField(field.key)}
-                className={cn(
-                  'inline-flex items-center px-2 py-1 rounded-full border text-left transition-colors',
-                  chipStyles
-                )}
-              >
-                {chipContent}
-              </button>
-            );
-          }
-
           return (
-            <span
+            <Chip
               key={field.key}
-              className={cn(
-                'inline-flex items-center px-2 py-1 rounded-full border',
-                chipStyles
-              )}
+              tone={tone}
+              clickable={isClickable}
+              onClick={isClickable ? () => onAddField!(field.key) : undefined}
             >
-              {chipContent}
-            </span>
+              <span>{field.label}</span>
+              {priorityLabel && <span style={{ opacity: 0.7 }}>· {priorityLabel}</span>}
+            </Chip>
           );
         })}
       </div>

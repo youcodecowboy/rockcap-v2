@@ -4,9 +4,8 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button, IconButton, Field, Input, Textarea, Select, TabStrip } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   Drawer,
   DrawerContent,
@@ -14,13 +13,7 @@ import {
   DrawerTitle,
   DrawerClose,
 } from '@/components/ui/drawer';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import { Building2, User, X, Search, Plus } from 'lucide-react';
+import { Building2, X, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface CreateClientDrawerProps {
@@ -29,12 +22,21 @@ interface CreateClientDrawerProps {
   onSuccess?: () => void;
 }
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+const TABS = [
+  { id: 'search', label: 'Search & Promote' },
+  { id: 'client', label: 'New Client' },
+  { id: 'company', label: 'New Company' },
+];
+
 export default function CreateClientDrawer({
   isOpen,
   onClose,
   onSuccess,
 }: CreateClientDrawerProps) {
   const router = useRouter();
+  const colors = useColors();
   const [activeTab, setActiveTab] = useState<'search' | 'client' | 'company'>('search');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [promotingCompanyId, setPromotingCompanyId] = useState<Id<'companies'> | null>(null);
@@ -102,9 +104,9 @@ export default function CreateClientDrawer({
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return { companies: [], contacts: [] };
     const query = searchQuery.toLowerCase();
-    
+
     const filteredCompanies = companies
-      .filter((company) => 
+      .filter((company) =>
         !company.promotedToClientId && // Only show companies not already promoted
         (company.name?.toLowerCase().includes(query) ||
          company.domain?.toLowerCase().includes(query) ||
@@ -112,7 +114,7 @@ export default function CreateClientDrawer({
          company.city?.toLowerCase().includes(query))
       )
       .slice(0, 10);
-    
+
     const filteredContacts = contacts
       .filter((contact) =>
         (contact.name?.toLowerCase().includes(query) ||
@@ -121,7 +123,7 @@ export default function CreateClientDrawer({
          contact.role?.toLowerCase().includes(query))
       )
       .slice(0, 10);
-    
+
     return { companies: filteredCompanies, contacts: filteredContacts };
   }, [searchQuery, companies, contacts]);
 
@@ -193,7 +195,7 @@ export default function CreateClientDrawer({
 
   const handlePromoteCompany = async (companyId: Id<'companies'>) => {
     if (promotingCompanyId) return;
-    
+
     setPromotingCompanyId(companyId);
     try {
       const clientId = await promoteToClient({ id: companyId });
@@ -300,180 +302,176 @@ export default function CreateClientDrawer({
     }
   };
 
+  const dropdownLabelStyle = {
+    fontFamily: MONO,
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    fontWeight: 500,
+    color: colors.text.muted,
+  };
+
   return (
     <Drawer open={isOpen} onOpenChange={(open) => !open && handleClose()} direction="right">
-      <DrawerContent className="w-full sm:w-[600px] lg:w-[700px] h-full overflow-hidden flex flex-col">
-        <DrawerHeader className="border-b flex-shrink-0">
+      <DrawerContent
+        className="w-full sm:w-[600px] lg:w-[700px] h-full overflow-hidden flex flex-col"
+        style={{ background: colors.bg.base }}
+      >
+        <DrawerHeader className="flex-shrink-0" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
           <div className="flex items-center justify-between">
-            <DrawerTitle className="text-xl font-semibold">Create New Client</DrawerTitle>
+            <DrawerTitle style={{ fontSize: 18, fontWeight: 600, color: colors.text.primary }}>
+              Create New Client
+            </DrawerTitle>
             <DrawerClose asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <X className="h-4 w-4" />
-              </Button>
+              <IconButton label="Close">
+                <X size={16} />
+              </IconButton>
             </DrawerClose>
           </div>
         </DrawerHeader>
 
-        <div className="flex-1 overflow-y-auto p-6">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'search' | 'client' | 'company')} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
-              <TabsTrigger value="search" className="flex items-center gap-2">
-                <Search className="w-4 h-4" />
-                Search & Promote
-              </TabsTrigger>
-              <TabsTrigger value="client" className="flex items-center gap-2">
-                <Building2 className="w-4 h-4" />
-                New Client
-              </TabsTrigger>
-              <TabsTrigger value="company" className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                New Company
-              </TabsTrigger>
-            </TabsList>
+        <div className="flex-1 overflow-y-auto">
+          <TabStrip
+            tabs={TABS}
+            activeTab={activeTab}
+            onChange={(id) => setActiveTab(id as 'search' | 'client' | 'company')}
+            entityType="client"
+          />
 
+          <div style={{ padding: 24 }}>
             {/* Search & Promote Tab */}
-            <TabsContent value="search" className="space-y-4 mt-0">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="search">Search Contacts & Companies</Label>
-                  <div className="relative" ref={searchRef}>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <Input
-                        id="search"
-                        placeholder="Search by name, email, phone, or industry..."
-                        value={searchQuery}
-                        onChange={(e) => {
-                          setSearchQuery(e.target.value);
-                          setShowSearchResults(e.target.value.length > 0);
+            {activeTab === 'search' && (
+              <Field label="Search Contacts & Companies">
+                <div style={{ position: 'relative' }} ref={searchRef}>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: colors.text.dim, pointerEvents: 'none' }} />
+                    <Input
+                      placeholder="Search by name, email, phone, or industry..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setShowSearchResults(e.target.value.length > 0);
+                      }}
+                      onFocus={() => {
+                        if (searchQuery.length > 0) {
+                          setShowSearchResults(true);
+                        }
+                      }}
+                      style={{ paddingLeft: 32 }}
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setShowSearchResults(false);
                         }}
-                        onFocus={() => {
-                          if (searchQuery.length > 0) {
-                            setShowSearchResults(true);
-                          }
-                        }}
-                        className="pl-10"
-                      />
-                      {searchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSearchQuery('');
-                            setShowSearchResults(false);
-                          }}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                    {showSearchResults && (searchResults.companies.length > 0 || searchResults.contacts.length > 0) && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-96 overflow-y-auto">
-                        {searchResults.companies.length > 0 && (
-                          <div className="p-2 border-b border-gray-200">
-                            <div className="text-xs font-semibold text-gray-500 uppercase mb-2 px-2">Companies</div>
-                            {searchResults.companies.map((company) => (
-                              <button
-                                key={company._id}
-                                type="button"
-                                onClick={() => handlePromoteCompany(company._id)}
-                                disabled={promotingCompanyId === company._id}
-                                className="w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors text-sm border-b border-gray-100 last:border-b-0 rounded-md mb-1"
-                              >
-                                <div className="font-medium flex items-center justify-between">
-                                  <span>{company.name}</span>
-                                  {promotingCompanyId === company._id ? (
-                                    <span className="text-xs text-gray-500">Promoting...</span>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-xs"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handlePromoteCompany(company._id);
-                                      }}
-                                    >
-                                      Promote to Client
-                                    </Button>
-                                  )}
-                                </div>
-                                {company.domain && (
-                                  <div className="text-xs text-gray-500 mt-1">{company.domain}</div>
-                                )}
-                                {company.industry && (
-                                  <div className="text-xs text-gray-500">{company.industry}</div>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {searchResults.contacts.length > 0 && (
-                          <div className="p-2">
-                            <div className="text-xs font-semibold text-gray-500 uppercase mb-2 px-2">Contacts</div>
-                            {searchResults.contacts.map((contact) => (
-                              <div
-                                key={contact._id}
-                                className="w-full text-left px-4 py-3 text-sm border-b border-gray-100 last:border-b-0 rounded-md mb-1"
-                              >
-                                <div className="font-medium">{contact.name}</div>
-                                {contact.email && (
-                                  <div className="text-xs text-gray-500 mt-1">{contact.email}</div>
-                                )}
-                                {contact.phone && (
-                                  <div className="text-xs text-gray-500">{contact.phone}</div>
-                                )}
-                                {contact.role && (
-                                  <div className="text-xs text-gray-500">{contact.role}</div>
-                                )}
-                                <p className="text-xs text-gray-400 mt-2">
-                                  Create a company for this contact first, then promote to client
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {showSearchResults && searchQuery.length > 0 && searchResults.companies.length === 0 && searchResults.contacts.length === 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg p-4 text-sm text-gray-500 text-center">
-                        No results found matching "{searchQuery}"
-                      </div>
+                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: colors.text.dim, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                      >
+                        <X size={16} />
+                      </button>
                     )}
                   </div>
+                  {showSearchResults && (searchResults.companies.length > 0 || searchResults.contacts.length > 0) && (
+                    <div style={{ position: 'absolute', zIndex: 50, width: '100%', marginTop: 4, background: colors.bg.card, border: `1px solid ${colors.border.default}`, borderRadius: 4, maxHeight: 384, overflowY: 'auto' }}>
+                      {searchResults.companies.length > 0 && (
+                        <div style={{ padding: 8, borderBottom: `1px solid ${colors.border.default}` }}>
+                          <div style={{ ...dropdownLabelStyle, marginBottom: 8, padding: '0 8px' }}>Companies</div>
+                          {searchResults.companies.map((company) => (
+                            <button
+                              key={company._id}
+                              type="button"
+                              onClick={() => handlePromoteCompany(company._id)}
+                              disabled={promotingCompanyId === company._id}
+                              style={{ width: '100%', textAlign: 'left', padding: '10px 12px', fontSize: 13, borderRadius: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.primary }}
+                            >
+                              <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span>{company.name}</span>
+                                {promotingCompanyId === company._id ? (
+                                  <span style={{ fontSize: 11, color: colors.text.muted }}>Promoting...</span>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePromoteCompany(company._id);
+                                    }}
+                                  >
+                                    Promote to Client
+                                  </Button>
+                                )}
+                              </div>
+                              {company.domain && (
+                                <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>{company.domain}</div>
+                              )}
+                              {company.industry && (
+                                <div style={{ fontSize: 11, color: colors.text.muted }}>{company.industry}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {searchResults.contacts.length > 0 && (
+                        <div style={{ padding: 8 }}>
+                          <div style={{ ...dropdownLabelStyle, marginBottom: 8, padding: '0 8px' }}>Contacts</div>
+                          {searchResults.contacts.map((contact) => (
+                            <div
+                              key={contact._id}
+                              style={{ width: '100%', textAlign: 'left', padding: '10px 12px', fontSize: 13, color: colors.text.primary }}
+                            >
+                              <div style={{ fontWeight: 500 }}>{contact.name}</div>
+                              {contact.email && (
+                                <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>{contact.email}</div>
+                              )}
+                              {contact.phone && (
+                                <div style={{ fontSize: 11, color: colors.text.muted }}>{contact.phone}</div>
+                              )}
+                              {contact.role && (
+                                <div style={{ fontSize: 11, color: colors.text.muted }}>{contact.role}</div>
+                              )}
+                              <p style={{ fontSize: 11, color: colors.text.dim, marginTop: 8 }}>
+                                Create a company for this contact first, then promote to client
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {showSearchResults && searchQuery.length > 0 && searchResults.companies.length === 0 && searchResults.contacts.length === 0 && (
+                    <div style={{ position: 'absolute', zIndex: 50, width: '100%', marginTop: 4, background: colors.bg.card, border: `1px solid ${colors.border.default}`, borderRadius: 4, padding: 16, fontSize: 13, color: colors.text.muted, textAlign: 'center' }}>
+                      No results found matching &quot;{searchQuery}&quot;
+                    </div>
+                  )}
                 </div>
-              </div>
-            </TabsContent>
+              </Field>
+            )}
 
             {/* Create Client Tab */}
-            <TabsContent value="client" className="space-y-4 mt-0">
-              <div className="space-y-4">
+            {activeTab === 'client' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2 relative">
-                    <Label htmlFor="client-name">
-                      Client Name *
-                      {promoteFromCompanyId ? (
-                        <span className="ml-2 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                          Linked to HubSpot
-                        </span>
-                      ) : null}
-                    </Label>
-                    <Input
-                      id="client-name"
-                      placeholder="Acme Corp"
-                      value={clientForm.name}
-                      onChange={(e) => {
-                        setClientForm({ ...clientForm, name: e.target.value });
-                        // If the user edits the name after selecting a match,
-                        // unlink — they're starting over.
-                        if (promoteFromCompanyId) setPromoteFromCompanyId(null);
-                      }}
-                      onFocus={() => setNameFocused(true)}
-                      onBlur={() => {
-                        // Delay so clicks on the dropdown items can fire first.
-                        setTimeout(() => setNameFocused(false), 150);
-                      }}
-                    />
+                  <div style={{ position: 'relative' }}>
+                    <Field
+                      label={promoteFromCompanyId ? 'Client Name * — Linked to HubSpot' : 'Client Name *'}
+                    >
+                      <Input
+                        placeholder="Acme Corp"
+                        value={clientForm.name}
+                        onChange={(e) => {
+                          setClientForm({ ...clientForm, name: e.target.value });
+                          // If the user edits the name after selecting a match,
+                          // unlink — they're starting over.
+                          if (promoteFromCompanyId) setPromoteFromCompanyId(null);
+                        }}
+                        onFocus={() => setNameFocused(true)}
+                        onBlur={() => {
+                          // Delay so clicks on the dropdown items can fire first.
+                          setTimeout(() => setNameFocused(false), 150);
+                        }}
+                      />
+                    </Field>
                     {/* HubSpot autocomplete dropdown — shows matching
                         synced companies when the user is typing a new
                         client name. Selecting one pre-fills the form +
@@ -483,9 +481,9 @@ export default function CreateClientDrawer({
                     hubspotMatches &&
                     hubspotMatches.length > 0 &&
                     !promoteFromCompanyId ? (
-                      <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                        <div className="px-3 py-1.5 bg-gray-50 border-b">
-                          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                      <div style={{ position: 'absolute', zIndex: 10, left: 0, right: 0, marginTop: 4, background: colors.bg.card, border: `1px solid ${colors.border.default}`, borderRadius: 4, maxHeight: 256, overflowY: 'auto' }}>
+                        <div style={{ padding: '6px 12px', background: colors.bg.light, borderBottom: `1px solid ${colors.border.default}` }}>
+                          <p style={dropdownLabelStyle}>
                             From HubSpot ({hubspotMatches.length})
                           </p>
                         </div>
@@ -518,16 +516,16 @@ export default function CreateClientDrawer({
                                 setPromoteFromCompanyId(c._id);
                                 setNameFocused(false);
                               }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-0"
+                              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: `1px solid ${colors.border.light}`, cursor: 'pointer' }}
                             >
-                              <div className="w-8 h-8 rounded bg-blue-50 flex items-center justify-center shrink-0">
-                                <Building2 className="w-4 h-4 text-blue-600" />
+                              <div style={{ width: 32, height: 32, borderRadius: 4, background: `${colors.accent.blue}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Building2 size={16} style={{ color: colors.accent.blue }} />
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {c.name}
                                 </p>
-                                <p className="text-[11px] text-gray-500 truncate">
+                                <p style={{ fontSize: 11, color: colors.text.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {[
                                     c.domain,
                                     c.hubspotLifecycleStageName ?? c.hubspotLifecycleStage,
@@ -538,7 +536,7 @@ export default function CreateClientDrawer({
                                 </p>
                               </div>
                               {isExact ? (
-                                <span className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: colors.accent.green, background: `${colors.accent.green}20`, padding: '2px 6px', borderRadius: 2 }}>
                                   Match
                                 </span>
                               ) : null}
@@ -548,277 +546,228 @@ export default function CreateClientDrawer({
                       </div>
                     ) : null}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-type">Type</Label>
+                  <Field label="Type">
                     <Input
-                      id="client-type"
                       placeholder="e.g., Lender, Broker, Developer"
                       value={clientForm.type}
                       onChange={(e) => setClientForm({ ...clientForm, type: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="client-status">Status</Label>
-                  <select
-                    id="client-status"
+                <Field label="Status">
+                  <Select
                     value={clientForm.status}
                     onChange={(e) => setClientForm({ ...clientForm, status: e.target.value as any })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
                   >
                     <option value="prospect">Prospect</option>
                     <option value="active">Active</option>
                     <option value="archived">Archived</option>
                     <option value="past">Past</option>
-                  </select>
-                </div>
+                  </Select>
+                </Field>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="client-email">Email</Label>
+                  <Field label="Email">
                     <Input
-                      id="client-email"
                       type="email"
                       placeholder="contact@example.com"
                       value={clientForm.email}
                       onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-phone">Phone</Label>
+                  </Field>
+                  <Field label="Phone">
                     <Input
-                      id="client-phone"
                       placeholder="+1 (555) 123-4567"
                       value={clientForm.phone}
                       onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="client-website">Website</Label>
+                <Field label="Website">
                   <Input
-                    id="client-website"
                     placeholder="https://example.com"
                     value={clientForm.website}
                     onChange={(e) => setClientForm({ ...clientForm, website: e.target.value })}
                   />
-                </div>
+                </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="client-address">Address</Label>
+                <Field label="Address">
                   <Input
-                    id="client-address"
                     placeholder="123 Main St"
                     value={clientForm.address}
                     onChange={(e) => setClientForm({ ...clientForm, address: e.target.value })}
                   />
-                </div>
+                </Field>
 
                 <div className="grid grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="client-city">City</Label>
+                  <Field label="City">
                     <Input
-                      id="client-city"
                       placeholder="New York"
                       value={clientForm.city}
                       onChange={(e) => setClientForm({ ...clientForm, city: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-state">State</Label>
+                  </Field>
+                  <Field label="State">
                     <Input
-                      id="client-state"
                       placeholder="NY"
                       value={clientForm.state}
                       onChange={(e) => setClientForm({ ...clientForm, state: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-zip">ZIP</Label>
+                  </Field>
+                  <Field label="ZIP">
                     <Input
-                      id="client-zip"
                       placeholder="10001"
                       value={clientForm.zip}
                       onChange={(e) => setClientForm({ ...clientForm, zip: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="client-country">Country</Label>
+                  </Field>
+                  <Field label="Country">
                     <Input
-                      id="client-country"
                       placeholder="USA"
                       value={clientForm.country}
                       onChange={(e) => setClientForm({ ...clientForm, country: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="client-industry">Industry</Label>
+                <Field label="Industry">
                   <Input
-                    id="client-industry"
                     placeholder="Real Estate, Technology, etc."
                     value={clientForm.industry}
                     onChange={(e) => setClientForm({ ...clientForm, industry: e.target.value })}
                   />
-                </div>
+                </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="client-notes">Notes</Label>
-                  <textarea
-                    id="client-notes"
-                    className="w-full min-h-[80px] px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                <Field label="Notes">
+                  <Textarea
                     placeholder="Additional notes about this client..."
                     value={clientForm.notes}
                     onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })}
                   />
-                </div>
+                </Field>
               </div>
-            </TabsContent>
+            )}
 
             {/* Create Company Tab */}
-            <TabsContent value="company" className="space-y-4 mt-0">
-              <div className="space-y-4">
+            {activeTab === 'company' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="company-name">Company Name *</Label>
+                  <Field label="Company Name *">
                     <Input
-                      id="company-name"
                       placeholder="Acme Corp"
                       value={companyForm.name}
                       onChange={(e) => setCompanyForm({ ...companyForm, name: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="company-type">Type</Label>
+                  </Field>
+                  <Field label="Type">
                     <Input
-                      id="company-type"
                       placeholder="e.g., Developer, Lender"
                       value={companyForm.type}
                       onChange={(e) => setCompanyForm({ ...companyForm, type: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="company-website">Website</Label>
+                  <Field label="Website">
                     <Input
-                      id="company-website"
                       placeholder="https://example.com"
                       value={companyForm.website}
                       onChange={(e) => setCompanyForm({ ...companyForm, website: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="company-domain">Domain</Label>
+                  </Field>
+                  <Field label="Domain">
                     <Input
-                      id="company-domain"
                       placeholder="example.com"
                       value={companyForm.domain}
                       onChange={(e) => setCompanyForm({ ...companyForm, domain: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="company-phone">Phone</Label>
+                  <Field label="Phone">
                     <Input
-                      id="company-phone"
                       placeholder="+1 (555) 123-4567"
                       value={companyForm.phone}
                       onChange={(e) => setCompanyForm({ ...companyForm, phone: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="company-industry">Industry</Label>
+                  </Field>
+                  <Field label="Industry">
                     <Input
-                      id="company-industry"
                       placeholder="Real Estate, Technology, etc."
                       value={companyForm.industry}
                       onChange={(e) => setCompanyForm({ ...companyForm, industry: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="company-address">Address</Label>
+                <Field label="Address">
                   <Input
-                    id="company-address"
                     placeholder="123 Main St"
                     value={companyForm.address}
                     onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })}
                   />
-                </div>
+                </Field>
 
                 <div className="grid grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="company-city">City</Label>
+                  <Field label="City">
                     <Input
-                      id="company-city"
                       placeholder="New York"
                       value={companyForm.city}
                       onChange={(e) => setCompanyForm({ ...companyForm, city: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="company-state">State</Label>
+                  </Field>
+                  <Field label="State">
                     <Input
-                      id="company-state"
                       placeholder="NY"
                       value={companyForm.state}
                       onChange={(e) => setCompanyForm({ ...companyForm, state: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="company-zip">ZIP</Label>
+                  </Field>
+                  <Field label="ZIP">
                     <Input
-                      id="company-zip"
                       placeholder="10001"
                       value={companyForm.zip}
                       onChange={(e) => setCompanyForm({ ...companyForm, zip: e.target.value })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="company-country">Country</Label>
+                  </Field>
+                  <Field label="Country">
                     <Input
-                      id="company-country"
                       placeholder="USA"
                       value={companyForm.country}
                       onChange={(e) => setCompanyForm({ ...companyForm, country: e.target.value })}
                     />
-                  </div>
+                  </Field>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="company-notes">Notes</Label>
-                  <textarea
-                    id="company-notes"
-                    className="w-full min-h-[80px] px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                <Field label="Notes">
+                  <Textarea
                     placeholder="Additional notes about this company..."
                     value={companyForm.notes}
                     onChange={(e) => setCompanyForm({ ...companyForm, notes: e.target.value })}
                   />
-                </div>
+                </Field>
               </div>
-            </TabsContent>
-          </Tabs>
+            )}
+          </div>
         </div>
 
-        <div className="border-t p-4 flex-shrink-0 flex items-center justify-end gap-2">
-          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
+        <div className="flex-shrink-0 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${colors.border.default}`, padding: 16 }}>
+          <Button variant="secondary" onClick={handleClose} disabled={isSubmitting}>
             Cancel
           </Button>
           {activeTab === 'search' && (
-            <p className="text-sm text-gray-500 mr-auto">
+            <p style={{ fontSize: 12, color: colors.text.muted, marginRight: 'auto' }}>
               Search for companies to promote to clients
             </p>
           )}
           {activeTab === 'client' && (
             <Button
+              variant="primary"
+              accent={colors.entityTypes.client}
               onClick={handleCreateClient}
               disabled={isSubmitting || !clientForm.name.trim()}
             >
@@ -827,6 +776,8 @@ export default function CreateClientDrawer({
           )}
           {activeTab === 'company' && (
             <Button
+              variant="primary"
+              accent={colors.entityTypes.client}
               onClick={handleCreateCompany}
               disabled={isSubmitting || !companyForm.name.trim()}
             >
@@ -838,4 +789,3 @@ export default function CreateClientDrawer({
     </Drawer>
   );
 }
-

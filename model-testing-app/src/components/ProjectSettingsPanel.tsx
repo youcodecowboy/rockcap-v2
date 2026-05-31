@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings, User, FileText, Database, FolderOpen } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
@@ -12,18 +12,8 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Button, Field, Input, Textarea, Select, TabStrip } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import DocumentNamingSettings from '@/components/settings/DocumentNamingSettings';
 import CanonicalFieldPreferences from '@/components/settings/CanonicalFieldPreferences';
 import FolderManagement from '@/components/settings/FolderManagement';
@@ -39,6 +29,13 @@ interface ProjectSettingsPanelProps {
   onTrash?: () => void;
 }
 
+const TABS = [
+  { id: 'general', label: 'General' },
+  { id: 'naming', label: 'Naming' },
+  { id: 'fields', label: 'Fields' },
+  { id: 'folders', label: 'Folders' },
+];
+
 export default function ProjectSettingsPanel({
   isOpen,
   onClose,
@@ -47,11 +44,12 @@ export default function ProjectSettingsPanel({
   defaultTab = 'general',
   onTrash,
 }: ProjectSettingsPanelProps) {
+  const colors = useColors();
   const project = useQuery(api.projects.get, { id: projectId });
   const updateProject = useMutation(api.projects.update);
   const deleteProjectMutation = useMutation(api.projects.remove);
   const restoreProjectMutation = useMutation(api.projects.restore);
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
   const [isSaving, setIsSaving] = useState(false);
 
   // General settings form state
@@ -146,272 +144,218 @@ export default function ProjectSettingsPanel({
     return null;
   }
 
+  const sectionTitleStyle = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    fontWeight: 500,
+    color: colors.text.muted,
+  };
+
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent
-        side="right"
-        className="w-full sm:max-w-2xl overflow-y-auto"
-      >
+      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
         <SheetHeader className="mb-6">
-          <SheetTitle className="flex items-center gap-2">
-            <Settings className="w-5 h-5" />
+          <SheetTitle className="flex items-center gap-2" style={{ color: colors.text.primary }}>
+            <Settings size={18} />
             Project Settings
           </SheetTitle>
-          <SheetDescription>
+          <SheetDescription style={{ color: colors.text.muted }}>
             Configure settings for {project.name}
           </SheetDescription>
         </SheetHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-          <TabsList className="grid w-full grid-cols-4 mb-6">
-            <TabsTrigger value="general" className="flex items-center gap-1.5">
-              <User className="w-4 h-4" />
-              <span className="hidden sm:inline">General</span>
-            </TabsTrigger>
-            <TabsTrigger value="naming" className="flex items-center gap-1.5">
-              <FileText className="w-4 h-4" />
-              <span className="hidden sm:inline">Naming</span>
-            </TabsTrigger>
-            <TabsTrigger value="fields" className="flex items-center gap-1.5">
-              <Database className="w-4 h-4" />
-              <span className="hidden sm:inline">Fields</span>
-            </TabsTrigger>
-            <TabsTrigger value="folders" className="flex items-center gap-1.5">
-              <FolderOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">Folders</span>
-            </TabsTrigger>
-          </TabsList>
+        <div style={{ marginBottom: 24, marginLeft: -24, marginRight: -24 }}>
+          <TabStrip tabs={TABS} activeTab={activeTab} onChange={setActiveTab} entityType="project" />
+        </div>
 
-          {/* General Settings Tab */}
-          <TabsContent value="general" className="space-y-6">
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Basic Information</h3>
+        {/* General Settings Tab */}
+        {activeTab === 'general' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h3 style={sectionTitleStyle}>Basic Information</h3>
 
-              <div className="grid gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Project Name *</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => handleInputChange('name', e.target.value)}
-                    placeholder="Enter project name"
-                  />
-                </div>
+              <Field label="Project Name *">
+                <Input
+                  value={formData.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  placeholder="Enter project name"
+                />
+              </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="projectShortcode">Project Shortcode</Label>
-                  <Input
-                    id="projectShortcode"
-                    value={formData.projectShortcode}
-                    onChange={(e) => handleInputChange('projectShortcode', e.target.value.toUpperCase().slice(0, 10))}
-                    placeholder="e.g., WIMBPARK28"
-                    maxLength={10}
-                  />
-                  <p className="text-xs text-gray-500">
-                    Max 10 characters. Used for document naming.
-                  </p>
-                </div>
+              <Field label="Project Shortcode" hint="Max 10 characters. Used for document naming.">
+                <Input
+                  value={formData.projectShortcode}
+                  onChange={(e) => handleInputChange('projectShortcode', e.target.value.toUpperCase().slice(0, 10))}
+                  placeholder="e.g., WIMBPARK28"
+                  maxLength={10}
+                />
+              </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => handleInputChange('description', e.target.value)}
-                    placeholder="Brief description of the project"
-                    className="min-h-[80px]"
-                  />
-                </div>
+              <Field label="Description">
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => handleInputChange('description', e.target.value)}
+                  placeholder="Brief description of the project"
+                />
+              </Field>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(value) => handleInputChange('status', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="on-hold">On Hold</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                        <SelectItem value="inactive">Archived</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Status">
+                  <Select
+                    value={formData.status}
+                    onChange={(e) => handleInputChange('status', e.target.value)}
+                  >
+                    <option value="">Select status</option>
+                    <option value="active">Active</option>
+                    <option value="on-hold">On Hold</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="inactive">Archived</option>
+                  </Select>
+                </Field>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="dealPhase">Deal Phase</Label>
-                    <Select
-                      value={formData.dealPhase}
-                      onValueChange={(value) => handleInputChange('dealPhase', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select phase" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="indicative_terms">Indicative Terms</SelectItem>
-                        <SelectItem value="credit_submission">Credit Submission</SelectItem>
-                        <SelectItem value="post_credit">Post Credit</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                <Field label="Deal Phase">
+                  <Select
+                    value={formData.dealPhase}
+                    onChange={(e) => handleInputChange('dealPhase', e.target.value)}
+                  >
+                    <option value="">Select phase</option>
+                    <option value="indicative_terms">Indicative Terms</option>
+                    <option value="credit_submission">Credit Submission</option>
+                    <option value="post_credit">Post Credit</option>
+                    <option value="completed">Completed</option>
+                  </Select>
+                </Field>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Location</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h3 style={sectionTitleStyle}>Location</h3>
 
-              <div className="grid gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="address">Street Address</Label>
+              <Field label="Street Address">
+                <Input
+                  value={formData.address}
+                  onChange={(e) => handleInputChange('address', e.target.value)}
+                  placeholder="123 Main Street"
+                />
+              </Field>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="City">
                   <Input
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => handleInputChange('address', e.target.value)}
-                    placeholder="123 Main Street"
+                    value={formData.city}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    placeholder="London"
                   />
-                </div>
+                </Field>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
-                    <Input
-                      id="city"
-                      value={formData.city}
-                      onChange={(e) => handleInputChange('city', e.target.value)}
-                      placeholder="London"
-                    />
-                  </div>
+                <Field label="State/Region">
+                  <Input
+                    value={formData.state}
+                    onChange={(e) => handleInputChange('state', e.target.value)}
+                    placeholder="Greater London"
+                  />
+                </Field>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="state">State/Region</Label>
-                    <Input
-                      id="state"
-                      value={formData.state}
-                      onChange={(e) => handleInputChange('state', e.target.value)}
-                      placeholder="Greater London"
-                    />
-                  </div>
+                <Field label="Postal Code">
+                  <Input
+                    value={formData.zip}
+                    onChange={(e) => handleInputChange('zip', e.target.value)}
+                    placeholder="SW1A 1AA"
+                  />
+                </Field>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="zip">Postal Code</Label>
-                    <Input
-                      id="zip"
-                      value={formData.zip}
-                      onChange={(e) => handleInputChange('zip', e.target.value)}
-                      placeholder="SW1A 1AA"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="country">Country</Label>
-                    <Input
-                      id="country"
-                      value={formData.country}
-                      onChange={(e) => handleInputChange('country', e.target.value)}
-                      placeholder="United Kingdom"
-                    />
-                  </div>
-                </div>
+                <Field label="Country">
+                  <Input
+                    value={formData.country}
+                    onChange={(e) => handleInputChange('country', e.target.value)}
+                    placeholder="United Kingdom"
+                  />
+                </Field>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Timeline</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h3 style={sectionTitleStyle}>Timeline</h3>
 
               <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Start Date</Label>
+                <Field label="Start Date">
                   <Input
-                    id="startDate"
                     type="date"
                     value={formData.startDate}
                     onChange={(e) => handleInputChange('startDate', e.target.value)}
                   />
-                </div>
+                </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="expectedCompletionDate">Expected Completion</Label>
+                <Field label="Expected Completion">
                   <Input
-                    id="expectedCompletionDate"
                     type="date"
                     value={formData.expectedCompletionDate}
                     onChange={(e) => handleInputChange('expectedCompletionDate', e.target.value)}
                   />
-                </div>
+                </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="endDate">End Date</Label>
+                <Field label="End Date">
                   <Input
-                    id="endDate"
                     type="date"
                     value={formData.endDate}
                     onChange={(e) => handleInputChange('endDate', e.target.value)}
                   />
-                </div>
+                </Field>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Loan Details</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h3 style={sectionTitleStyle}>Loan Details</h3>
 
               <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="loanNumber">Loan Number</Label>
+                <Field label="Loan Number">
                   <Input
-                    id="loanNumber"
                     value={formData.loanNumber}
                     onChange={(e) => handleInputChange('loanNumber', e.target.value)}
                     placeholder="e.g., LN-2024-001"
                   />
-                </div>
+                </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="loanAmount">Loan Amount</Label>
+                <Field label="Loan Amount">
                   <Input
-                    id="loanAmount"
                     type="number"
                     value={formData.loanAmount}
                     onChange={(e) => handleInputChange('loanAmount', e.target.value)}
                     placeholder="0.00"
                   />
-                </div>
+                </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="interestRate">Interest Rate (%)</Label>
+                <Field label="Interest Rate (%)">
                   <Input
-                    id="interestRate"
                     type="number"
                     step="0.01"
                     value={formData.interestRate}
                     onChange={(e) => handleInputChange('interestRate', e.target.value)}
                     placeholder="0.00"
                   />
-                </div>
+                </Field>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-900">Notes</h3>
-              <div className="space-y-2">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h3 style={sectionTitleStyle}>Notes</h3>
+              <Field>
                 <Textarea
-                  id="notes"
                   value={formData.notes}
                   onChange={(e) => handleInputChange('notes', e.target.value)}
                   placeholder="Add any additional notes about this project..."
-                  className="min-h-[100px]"
+                  style={{ minHeight: 100 }}
                 />
-              </div>
+              </Field>
             </div>
 
-            <div className="flex justify-end pt-4 border-t">
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: `1px solid ${colors.border.default}` }}>
               <Button
+                variant="primary"
+                accent={colors.entityTypes.project}
                 onClick={handleSaveGeneral}
                 disabled={isSaving || !formData.name}
               >
@@ -438,10 +382,12 @@ export default function ProjectSettingsPanel({
                 onTrash?.();
               }}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          {/* Document Naming Tab */}
-          <TabsContent value="naming" className="space-y-6">
+        {/* Document Naming Tab */}
+        {activeTab === 'naming' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <DocumentNamingSettings
               entityType="project"
               clientId={clientId}
@@ -473,10 +419,12 @@ export default function ProjectSettingsPanel({
                 }
               }}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          {/* Field Preferences Tab */}
-          <TabsContent value="fields" className="space-y-6">
+        {/* Field Preferences Tab */}
+        {activeTab === 'fields' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <CanonicalFieldPreferences
               entityType="project"
               preferences={project.metadata?.fieldPreferences}
@@ -494,16 +442,18 @@ export default function ProjectSettingsPanel({
                 }
               }}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          {/* Folders Tab */}
-          <TabsContent value="folders" className="space-y-6">
+        {/* Folders Tab */}
+        {activeTab === 'folders' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <FolderManagement
               entityType="project"
               projectId={projectId}
             />
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );

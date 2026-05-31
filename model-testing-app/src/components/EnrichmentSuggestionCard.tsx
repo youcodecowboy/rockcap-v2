@@ -1,8 +1,9 @@
 'use client';
 
 import { EnrichmentSuggestion } from '@/types';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Panel, Button, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
 import { CheckCircle2, XCircle, Mail, Phone, MapPin, Building2, User, Calendar, Info } from 'lucide-react';
 
 interface EnrichmentSuggestionCardProps {
@@ -22,15 +23,17 @@ const typeIcons = {
   other: Info,
 };
 
-const typeColors = {
-  email: 'bg-blue-100 text-blue-800',
-  phone: 'bg-green-100 text-green-800',
-  address: 'bg-purple-100 text-purple-800',
-  company: 'bg-orange-100 text-orange-800',
-  contact: 'bg-pink-100 text-pink-800',
-  date: 'bg-yellow-100 text-yellow-800',
-  other: 'bg-gray-100 text-gray-800',
-};
+function typeTone(type: string, colors: ColorPalette): string {
+  switch (type) {
+    case 'email': return colors.accent.blue;
+    case 'phone': return colors.accent.green;
+    case 'address': return colors.accent.purple;
+    case 'company': return colors.accent.orange;
+    case 'contact': return colors.accent.purple;
+    case 'date': return colors.accent.yellow;
+    default: return colors.text.muted;
+  }
+}
 
 export default function EnrichmentSuggestionCard({
   suggestion,
@@ -38,9 +41,10 @@ export default function EnrichmentSuggestionCard({
   onReject,
   documentName,
 }: EnrichmentSuggestionCardProps) {
+  const colors = useColors();
   const Icon = typeIcons[suggestion.type] || Info;
-  const colorClass = typeColors[suggestion.type] || typeColors.other;
-  
+  const tone = typeTone(suggestion.type, colors);
+
   const formatValue = (value: string | number | object): string => {
     if (typeof value === 'string') return value;
     if (typeof value === 'number') return value.toLocaleString();
@@ -72,35 +76,36 @@ export default function EnrichmentSuggestionCard({
   const confidencePercentage = Math.round(suggestion.confidence * 100);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+    <Panel accent={tone}>
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className={`p-2 rounded-lg ${colorClass}`}>
-            <Icon className="w-4 h-4" />
+          <div
+            className="flex items-center justify-center"
+            style={{ width: 32, height: 32, borderRadius: 4, background: `${tone}15`, color: tone, flexShrink: 0 }}
+          >
+            <Icon size={16} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-900">
+              <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
                 {getFieldLabel(suggestion.field)}
               </span>
-              <Badge variant="outline" className="text-xs">
-                {confidencePercentage}% confidence
-              </Badge>
+              <StatusPill label={`${confidencePercentage}% confidence`} tone={tone} />
             </div>
-            <p className="text-sm text-gray-600 mt-0.5">
+            <p className="mt-0.5" style={{ fontSize: 13, color: colors.text.secondary }}>
               Found in {documentName || suggestion.source}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="bg-gray-50 rounded-md p-3 mb-3">
-        <p className="text-sm text-gray-700 font-medium mb-1">Suggested Value:</p>
-        <p className="text-sm text-gray-900 break-words">{formatValue(suggestion.value)}</p>
+      <div className="p-3 mb-3" style={{ background: colors.bg.light, borderRadius: 4 }}>
+        <p className="mb-1" style={{ fontSize: 13, fontWeight: 500, color: colors.text.secondary }}>Suggested Value:</p>
+        <p className="break-words" style={{ fontSize: 13, color: colors.text.primary }}>{formatValue(suggestion.value)}</p>
       </div>
 
       {suggestion.source && suggestion.source !== documentName && (
-        <p className="text-xs text-gray-500 mb-3 italic">{suggestion.source}</p>
+        <p className="mb-3" style={{ fontSize: 11, fontStyle: 'italic', color: colors.text.muted }}>{suggestion.source}</p>
       )}
 
       <div className="flex gap-2">
@@ -111,11 +116,13 @@ export default function EnrichmentSuggestionCard({
             console.log('Accept button clicked for suggestion:', suggestion);
             onAccept();
           }}
+          variant="primary"
+          accent={colors.accent.green}
           size="sm"
-          className="flex-1 bg-green-600 hover:bg-green-700"
+          style={{ flex: 1, justifyContent: 'center' }}
           disabled={suggestion.status !== 'pending'}
         >
-          <CheckCircle2 className="w-4 h-4 mr-2" />
+          <CheckCircle2 size={16} />
           {suggestion.status === 'pending' ? 'Accept' : suggestion.status === 'accepted' ? 'Accepted' : 'Processed'}
         </Button>
         <Button
@@ -125,16 +132,15 @@ export default function EnrichmentSuggestionCard({
             console.log('Reject button clicked for suggestion:', suggestion);
             onReject();
           }}
-          variant="outline"
+          variant="secondary"
           size="sm"
-          className="flex-1"
+          style={{ flex: 1, justifyContent: 'center' }}
           disabled={suggestion.status !== 'pending'}
         >
-          <XCircle className="w-4 h-4 mr-2" />
+          <XCircle size={16} />
           {suggestion.status === 'pending' ? 'Reject' : suggestion.status === 'rejected' ? 'Rejected' : 'Processed'}
         </Button>
       </div>
-    </div>
+    </Panel>
   );
 }
-

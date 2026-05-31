@@ -1,16 +1,12 @@
 'use client';
 
-import { cn } from '@/lib/utils';
-import { Progress } from '@/components/ui/progress';
+import { useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { getCategoryLucideIcon } from '@/components/intelligence/intelligenceUtils';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 export interface CategorySummary {
   name: string;
@@ -36,31 +32,40 @@ interface IntelligenceSidebarProps {
   onSelectProject?: (id: string) => void;
 }
 
+function MonoLabel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <span
+      style={{
+        fontFamily: MONO,
+        fontSize: 9,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        fontWeight: 500,
+        ...style,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 function AttentionDots({
   hasCriticalMissing,
   hasConflicts,
   recentlyUpdated,
 }: Pick<CategorySummary, 'hasCriticalMissing' | 'hasConflicts' | 'recentlyUpdated'>) {
+  const colors = useColors();
+  const dot = (color: string, label: string) => (
+    <span
+      style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }}
+      aria-label={label}
+    />
+  );
   return (
     <span className="flex items-center gap-0.5 flex-shrink-0">
-      {hasCriticalMissing && (
-        <span
-          className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"
-          aria-label="Critical missing fields"
-        />
-      )}
-      {hasConflicts && (
-        <span
-          className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"
-          aria-label="Conflicts detected"
-        />
-      )}
-      {recentlyUpdated && (
-        <span
-          className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"
-          aria-label="Recently updated"
-        />
-      )}
+      {hasCriticalMissing && dot(colors.accent.red, 'Critical missing fields')}
+      {hasConflicts && dot(colors.accent.orange, 'Conflicts detected')}
+      {recentlyUpdated && dot(colors.accent.green, 'Recently updated')}
     </span>
   );
 }
@@ -76,24 +81,37 @@ function CategoryRow({
   onSelect: () => void;
   indented?: boolean;
 }) {
+  const colors = useColors();
+  const [hover, setHover] = useState(false);
   const IconComponent = getCategoryLucideIcon(category.name);
   const isOther = category.name === 'Other';
+
+  const textColor = isActive
+    ? colors.accent.blue
+    : isOther
+    ? colors.text.dim
+    : colors.text.secondary;
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={cn(
-        'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors rounded-sm',
-        indented && 'pl-5',
-        isActive
-          ? 'bg-blue-50 border-l-2 border-l-blue-500 text-blue-900'
-          : 'hover:bg-gray-50 text-gray-700 border-l-2 border-l-transparent',
-        isOther && 'text-gray-500'
-      )}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="w-full flex items-center gap-2 px-3 py-2 text-left"
+      style={{
+        borderRadius: 2,
+        paddingLeft: indented ? 20 : undefined,
+        borderLeft: `2px solid ${isActive ? colors.accent.blue : 'transparent'}`,
+        background: isActive ? `${colors.accent.blue}15` : hover ? colors.bg.cardAlt : 'transparent',
+        transition: 'background 100ms linear',
+      }}
     >
-      <IconComponent className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-      <span className="flex-1 min-w-0 text-sm font-medium truncate">
+      <IconComponent size={16} style={{ flexShrink: 0, color: textColor }} aria-hidden="true" />
+      <span
+        className="flex-1 min-w-0 truncate"
+        style={{ fontSize: 13, fontWeight: 500, color: textColor }}
+      >
         {category.name}
       </span>
       <AttentionDots
@@ -101,7 +119,10 @@ function CategoryRow({
         hasConflicts={category.hasConflicts}
         recentlyUpdated={category.recentlyUpdated}
       />
-      <span className="text-xs text-gray-400 flex-shrink-0 tabular-nums">
+      <span
+        className="flex-shrink-0 tabular-nums"
+        style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}
+      >
         {category.filled}/{category.total}
       </span>
     </button>
@@ -121,6 +142,8 @@ export function IntelligenceSidebar({
   activeProjectId,
   onSelectProject,
 }: IntelligenceSidebarProps) {
+  const colors = useColors();
+
   // Separate "Other" from the rest to pin it at the bottom
   const mainCategories = categories.filter((c) => c.name !== 'Other');
   const otherCategory = categories.find((c) => c.name === 'Other');
@@ -128,22 +151,26 @@ export function IntelligenceSidebar({
   const projectOtherCategory = projectCategories.find((c) => c.name === 'Other');
 
   return (
-    <aside className="w-64 flex-shrink-0 border-r border-gray-200 bg-white flex flex-col h-full">
+    <aside
+      className="w-64 flex-shrink-0 flex flex-col h-full"
+      style={{ borderRight: `1px solid ${colors.border.default}`, background: colors.bg.card }}
+    >
       {/* Client Header */}
-      <div className="px-3 pt-4 pb-3 border-b border-gray-100 flex-shrink-0">
-        <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Client</p>
+      <div className="px-3 pt-4 pb-3 flex-shrink-0" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
+        <MonoLabel style={{ color: colors.text.muted }}>Client</MonoLabel>
         <h2
-          className="text-sm font-semibold text-gray-900 truncate"
+          className="truncate mt-0.5"
+          style={{ fontSize: 13, fontWeight: 600, color: colors.text.primary }}
           title={clientName}
         >
           {clientName}
         </h2>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-xs text-gray-500">{clientType}</span>
+          <span style={{ fontSize: 11, color: colors.text.muted }}>{clientType}</span>
           {projectCount > 0 && (
             <>
-              <span className="text-gray-300">·</span>
-              <span className="text-xs text-gray-500">
+              <span style={{ color: colors.border.mid }}>·</span>
+              <span style={{ fontSize: 11, color: colors.text.muted }}>
                 {projectCount} {projectCount === 1 ? 'project' : 'projects'}
               </span>
             </>
@@ -153,12 +180,24 @@ export function IntelligenceSidebar({
         {/* Completeness bar */}
         <div className="mt-2">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-gray-500">Overall completeness</span>
-            <span className="text-xs font-medium text-gray-700">
+            <span style={{ fontSize: 11, color: colors.text.muted }}>Overall completeness</span>
+            <span
+              className="tabular-nums"
+              style={{ fontFamily: MONO, fontSize: 11, fontWeight: 500, color: colors.text.secondary }}
+            >
               {Math.round(overallCompleteness)}%
             </span>
           </div>
-          <Progress value={overallCompleteness} className="h-1.5" />
+          <div style={{ height: 6, borderRadius: 2, background: colors.bg.cardAlt, overflow: 'hidden' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${Math.max(0, Math.min(100, overallCompleteness))}%`,
+                background: colors.accent.blue,
+                transition: 'width 200ms linear',
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -166,9 +205,9 @@ export function IntelligenceSidebar({
       <ScrollArea className="flex-1">
         <div className="py-2">
           {/* Client categories */}
-          <p className="px-3 py-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
-            Client
-          </p>
+          <div className="px-3 py-1">
+            <MonoLabel style={{ color: colors.text.dim }}>Client</MonoLabel>
+          </div>
           <div className="space-y-0.5 px-1">
             {mainCategories.map((cat) => (
               <CategoryRow
@@ -181,29 +220,25 @@ export function IntelligenceSidebar({
           </div>
 
           {/* Project Intelligence section */}
-          <div className="mt-3 border-t border-gray-100 pt-3">
+          <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${colors.border.light}` }}>
             <div className="px-3 mb-2">
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">
-                Project Intelligence
-              </p>
+              <div className="mb-1.5">
+                <MonoLabel style={{ color: colors.text.dim }}>Project Intelligence</MonoLabel>
+              </div>
               {projects && projects.length > 0 && onSelectProject && (
                 <Select
                   value={activeProjectId ?? ''}
-                  onValueChange={onSelectProject}
+                  onChange={(e) => onSelectProject(e.target.value)}
+                  style={{ padding: '5px 8px', fontSize: 11 }}
                 >
-                  <SelectTrigger
-                    size="sm"
-                    className="w-full text-xs h-7"
-                  >
-                    <SelectValue placeholder="Select project…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="text-xs">
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <option value="" disabled>
+                    Select project…
+                  </option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
                 </Select>
               )}
             </div>
@@ -223,7 +258,7 @@ export function IntelligenceSidebar({
             )}
 
             {projectCategories.length === 0 && (
-              <p className="px-3 text-xs text-gray-400 italic">
+              <p className="px-3" style={{ fontSize: 11, fontStyle: 'italic', color: colors.text.dim }}>
                 No project selected
               </p>
             )}
@@ -231,7 +266,7 @@ export function IntelligenceSidebar({
 
           {/* "Other" pinned at bottom */}
           {(otherCategory || projectOtherCategory) && (
-            <div className="mt-3 border-t border-gray-100 pt-2 px-1">
+            <div className="mt-3 pt-2 px-1" style={{ borderTop: `1px solid ${colors.border.light}` }}>
               {otherCategory && (
                 <CategoryRow
                   category={otherCategory}
@@ -253,20 +288,25 @@ export function IntelligenceSidebar({
       </ScrollArea>
 
       {/* Legend */}
-      <div className="flex-shrink-0 border-t border-gray-100 px-3 py-2 bg-gray-50">
-        <p className="text-xs text-gray-400 mb-1.5 font-medium">Legend</p>
+      <div
+        className="flex-shrink-0 px-3 py-2"
+        style={{ borderTop: `1px solid ${colors.border.light}`, background: colors.bg.light }}
+      >
+        <div className="mb-1.5">
+          <MonoLabel style={{ color: colors.text.dim }}>Legend</MonoLabel>
+        </div>
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-            <span className="text-xs text-gray-500">Critical missing</span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent.red, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: colors.text.muted }}>Critical missing</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
-            <span className="text-xs text-gray-500">Conflicts</span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent.orange, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: colors.text.muted }}>Conflicts</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-            <span className="text-xs text-gray-500">Recently updated</span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent.green, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: colors.text.muted }}>Recently updated</span>
           </div>
         </div>
       </div>

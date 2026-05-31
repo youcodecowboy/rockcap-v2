@@ -2,8 +2,11 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { FileText, FolderOpen, ChevronDown, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import type { ContributingDocument } from './intelligenceUtils';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface DocumentWithFolder extends ContributingDocument {
   folderName?: string;
@@ -15,8 +18,10 @@ interface DocumentFilterDropdownProps {
 }
 
 export function DocumentFilterDropdown({ documents, onSelect }: DocumentFilterDropdownProps) {
+  const colors = useColors();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click or Escape key
@@ -67,29 +72,53 @@ export function DocumentFilterDropdown({ documents, onSelect }: DocumentFilterDr
     <div className="relative" ref={dropdownRef}>
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
         size="sm"
-        className="h-7 px-2.5 text-xs text-gray-600 gap-1.5"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <FileText className="w-3 h-3" />
+        <FileText size={12} />
         By Document
-        <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={12}
+          style={{ transition: 'transform 100ms linear', transform: isOpen ? 'rotate(180deg)' : 'none' }}
+        />
       </Button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-80 max-h-[320px] overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+        <div
+          className="absolute top-full left-0 mt-1 z-50 w-80 max-h-[320px] overflow-y-auto"
+          style={{
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 4,
+          }}
+        >
           {/* Search input (show if >10 documents) */}
           {documents.length > 10 && (
-            <div className="sticky top-0 bg-white border-b border-gray-100 p-2">
+            <div
+              className="sticky top-0 p-2"
+              style={{ background: colors.bg.card, borderBottom: `1px solid ${colors.border.light}` }}
+            >
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <Search
+                  size={14}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2"
+                  style={{ color: colors.text.dim }}
+                />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search documents..."
-                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full pl-8 pr-3 py-1.5"
+                  style={{
+                    fontSize: 12,
+                    color: colors.text.primary,
+                    background: colors.bg.card,
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: 4,
+                    outline: 'none',
+                  }}
                   autoFocus
                 />
               </div>
@@ -97,13 +126,27 @@ export function DocumentFilterDropdown({ documents, onSelect }: DocumentFilterDr
           )}
 
           {groupedDocs.length === 0 ? (
-            <div className="p-4 text-center text-xs text-gray-400">No documents found</div>
+            <div className="p-4 text-center" style={{ fontSize: 12, color: colors.text.dim }}>
+              No documents found
+            </div>
           ) : (
             groupedDocs.map(([folderName, docs]) => (
               <div key={folderName}>
                 {/* Folder header */}
-                <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100 flex items-center gap-1.5">
-                  <FolderOpen className="w-3 h-3" />
+                <div
+                  className="px-3 py-1.5 flex items-center gap-1.5"
+                  style={{
+                    fontFamily: MONO,
+                    fontSize: 9,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    fontWeight: 500,
+                    color: colors.text.muted,
+                    background: colors.bg.light,
+                    borderBottom: `1px solid ${colors.border.light}`,
+                  }}
+                >
+                  <FolderOpen size={12} />
                   {folderName}
                 </div>
                 {/* Document rows */}
@@ -111,16 +154,28 @@ export function DocumentFilterDropdown({ documents, onSelect }: DocumentFilterDr
                   <button
                     key={doc.id}
                     type="button"
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 border-b border-gray-50 last:border-b-0 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                    style={{
+                      background: hoveredId === doc.id ? colors.bg.cardAlt : 'transparent',
+                      borderBottom: `1px solid ${colors.border.light}`,
+                      transition: 'background 100ms linear',
+                    }}
+                    onMouseEnter={() => setHoveredId(doc.id)}
+                    onMouseLeave={() => setHoveredId(null)}
                     onClick={() => {
                       onSelect({ documentId: doc.id, documentName: doc.name });
                       setIsOpen(false);
                       setSearchQuery('');
                     }}
                   >
-                    <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                    <span className="flex-1 min-w-0 truncate text-xs">{doc.name}</span>
-                    <span className="text-[11px] text-gray-400 flex-shrink-0 tabular-nums">
+                    <FileText size={14} style={{ color: colors.text.dim, flexShrink: 0 }} />
+                    <span className="flex-1 min-w-0 truncate" style={{ fontSize: 12, color: colors.text.primary }}>
+                      {doc.name}
+                    </span>
+                    <span
+                      className="flex-shrink-0 tabular-nums"
+                      style={{ fontFamily: MONO, fontSize: 10, color: colors.text.dim }}
+                    >
                       {doc.fieldCount} {doc.fieldCount === 1 ? 'field' : 'fields'}
                     </span>
                   </button>

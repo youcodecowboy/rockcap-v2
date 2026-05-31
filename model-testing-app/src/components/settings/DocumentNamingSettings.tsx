@@ -2,11 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Sparkles, Plus, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import { Panel, Button, IconButton, Field, Input, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -21,6 +18,8 @@ import {
   DEFAULT_SEPARATOR,
 } from '@/lib/namingConfig';
 import NamingPatternBuilder from './NamingPatternBuilder';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface DocumentNamingSettingsProps {
   entityType: 'client' | 'project';
@@ -45,6 +44,7 @@ export default function DocumentNamingSettings({
   onSave,
   onShortcodeChange,
 }: DocumentNamingSettingsProps) {
+  const colors = useColors();
   // Query client data for inheritance (project level)
   const client = useQuery(
     api.clients.get,
@@ -262,94 +262,90 @@ export default function DocumentNamingSettings({
 
   const maxLength = entityType === 'client' ? 8 : 10;
 
+  const toggleStyle = (checked: boolean) => ({
+    width: 16,
+    height: 16,
+    cursor: 'pointer',
+    accentColor: checked ? colors.accent.blue : colors.border.mid,
+  });
+
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Stats */}
       {documents.length > 0 && (
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Document Statistics</p>
-              <p className="text-xs text-gray-500 mt-1">
-                {stats.hasCodes} with codes, {stats.missingCodes} without codes
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                {stats.hasCodes} coded
-              </Badge>
+        <Panel title="Document Statistics">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <p style={{ fontSize: 11, color: colors.text.muted }}>
+              {stats.hasCodes} with codes, {stats.missingCodes} without codes
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <StatusPill label={`${stats.hasCodes} coded`} tone={colors.accent.green} />
               {stats.missingCodes > 0 && (
-                <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                  {stats.missingCodes} missing
-                </Badge>
+                <StatusPill label={`${stats.missingCodes} missing`} tone={colors.accent.orange} />
               )}
             </div>
           </div>
-        </div>
+        </Panel>
       )}
 
       {/* Inheritance Banner (project level only) */}
       {entityType === 'project' && (
-        <div className={`rounded-lg border p-4 ${inheriting ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
-          <div className="flex items-center justify-between">
+        <Panel accent={inheriting ? colors.accent.blue : colors.border.mid}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <div>
-              <p className="text-sm font-medium text-gray-900">
+              <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
                 {inheriting
                   ? `Inheriting naming pattern from ${resolvedClientName || 'client'}.`
                   : 'Using project-level naming pattern.'}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
                 {inheriting
                   ? 'Toggle off to override with a project-specific pattern.'
                   : 'Toggle on to inherit from the client settings.'}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="inherit-toggle" className="text-xs text-gray-600">Inherit</Label>
-              <Switch
-                id="inherit-toggle"
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <span style={{ fontSize: 11, color: colors.text.secondary }}>Inherit</span>
+              <input
+                type="checkbox"
                 checked={inheriting}
-                onCheckedChange={handleToggleInheritance}
+                onChange={(e) => handleToggleInheritance(e.target.checked)}
+                style={toggleStyle(inheriting)}
               />
-            </div>
+            </label>
           </div>
-        </div>
+        </Panel>
       )}
 
       {/* Abbreviation / Code Input */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-900">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
             {entityType === 'client' ? 'Client' : 'Project'} Code
           </h3>
           {entityType === 'project' && projectShortcode && (
-            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-              Shortcode configured
-            </Badge>
+            <StatusPill label="Shortcode configured" tone={colors.accent.green} />
           )}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="code">
-            {entityType === 'client' ? 'Client Abbreviation' : 'Project Shortcode'}
-          </Label>
+        <Field
+          label={entityType === 'client' ? 'Client Abbreviation' : 'Project Shortcode'}
+          hint={`Max ${maxLength} characters, alphanumeric only. Used in document naming.`}
+        >
           <Input
             id="code"
             value={config.code}
             onChange={(e) => setConfig((prev) => ({ ...prev, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
             placeholder={entityType === 'client' ? 'e.g., FIRESIDE' : 'e.g., WIMBPARK28'}
-            className="font-mono"
+            style={{ fontFamily: MONO }}
             maxLength={maxLength}
           />
-          <p className="text-xs text-gray-500">
-            Max {maxLength} characters, alphanumeric only. Used in document naming.
-            {entityType === 'project' && projectShortcode && (
-              <span className="block mt-1 text-green-600">
-                Current shortcode: <span className="font-mono font-medium">{projectShortcode}</span>
-              </span>
-            )}
+        </Field>
+        {entityType === 'project' && projectShortcode && (
+          <p style={{ fontSize: 11, color: colors.accent.green }}>
+            Current shortcode: <span style={{ fontFamily: MONO, fontWeight: 500 }}>{projectShortcode}</span>
           </p>
-        </div>
+        )}
       </div>
 
       {/* Naming Pattern Builder */}
@@ -364,17 +360,12 @@ export default function DocumentNamingSettings({
 
       {/* Custom Tokens Section */}
       {!inheriting && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Custom Tokens</Label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>Custom Tokens</span>
             {config.customTokens.length < MAX_CUSTOM_TOKENS && !showTokenForm && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1"
-                onClick={() => setShowTokenForm(true)}
-              >
-                <Plus className="w-3 h-3" />
+              <Button variant="secondary" size="sm" onClick={() => setShowTokenForm(true)}>
+                <Plus style={{ width: 12, height: 12 }} />
                 Add Custom Token
               </Button>
             )}
@@ -382,35 +373,44 @@ export default function DocumentNamingSettings({
 
           {/* New token form */}
           {showTokenForm && (
-            <div className="flex items-end gap-2 p-3 bg-gray-50 rounded-lg border">
-              <div className="flex-1 space-y-1">
-                <Label htmlFor="token-label" className="text-xs">Token Label</Label>
-                <Input
-                  id="token-label"
-                  value={newTokenLabel}
-                  onChange={(e) => setNewTokenLabel(e.target.value)}
-                  placeholder="e.g., Phase, Block"
-                  className="h-8 text-sm"
-                />
-                {newTokenLabel.trim() && (
-                  <p className="text-xs text-gray-400 font-mono">
-                    ID: {labelToTokenId(newTokenLabel)}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    id="token-required"
-                    checked={newTokenRequired}
-                    onCheckedChange={setNewTokenRequired}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: 8,
+                padding: 12,
+                background: colors.bg.cardAlt,
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <Field
+                  label="Token Label"
+                  hint={newTokenLabel.trim() ? `ID: ${labelToTokenId(newTokenLabel)}` : undefined}
+                >
+                  <Input
+                    id="token-label"
+                    value={newTokenLabel}
+                    onChange={(e) => setNewTokenLabel(e.target.value)}
+                    placeholder="e.g., Phase, Block"
                   />
-                  <Label htmlFor="token-required" className="text-xs">Required</Label>
-                </div>
-                <Button size="sm" className="h-8" onClick={handleAddCustomToken} disabled={!newTokenLabel.trim()}>
+                </Field>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={newTokenRequired}
+                    onChange={(e) => setNewTokenRequired(e.target.checked)}
+                    style={toggleStyle(newTokenRequired)}
+                  />
+                  <span style={{ fontSize: 11, color: colors.text.secondary }}>Required</span>
+                </label>
+                <Button variant="primary" size="sm" onClick={handleAddCustomToken} disabled={!newTokenLabel.trim()}>
                   Add
                 </Button>
-                <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowTokenForm(false); setNewTokenLabel(''); setNewTokenRequired(false); }}>
+                <Button variant="ghost" size="sm" onClick={() => { setShowTokenForm(false); setNewTokenLabel(''); setNewTokenRequired(false); }}>
                   Cancel
                 </Button>
               </div>
@@ -419,32 +419,33 @@ export default function DocumentNamingSettings({
 
           {/* Existing custom tokens */}
           {config.customTokens.length > 0 && (
-            <div className="space-y-1.5">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {config.customTokens.map((token) => (
                 <div
                   key={token.id}
-                  className="flex items-center justify-between px-3 py-2 bg-purple-50 rounded-md border border-purple-200"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    background: `${colors.accent.purple}15`,
+                    border: `1px solid ${colors.accent.purple}40`,
+                    borderRadius: 4,
+                  }}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-purple-800">{token.label}</span>
-                    <span className="text-xs font-mono text-purple-500">{token.id}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: colors.accent.purple }}>{token.label}</span>
+                    <span style={{ fontSize: 11, fontFamily: MONO, color: colors.accent.purple }}>{token.id}</span>
                     {token.required && (
-                      <Badge variant="outline" className="text-[10px] h-4 bg-purple-100 text-purple-600 border-purple-300">
-                        required
-                      </Badge>
+                      <StatusPill label="required" tone={colors.accent.purple} />
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 text-purple-400 hover:text-red-600"
-                    onClick={() => handleRemoveCustomToken(token.id)}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                  <IconButton label="Remove token" onClick={() => handleRemoveCustomToken(token.id)}>
+                    <Trash2 style={{ width: 14, height: 14, color: colors.accent.purple }} />
+                  </IconButton>
                 </div>
               ))}
-              <p className="text-xs text-gray-400">
+              <p style={{ fontSize: 11, color: colors.text.dim }}>
                 {config.customTokens.length}/{MAX_CUSTOM_TOKENS} custom tokens used
               </p>
             </div>
@@ -453,15 +454,15 @@ export default function DocumentNamingSettings({
       )}
 
       {/* Actions */}
-      <div className="space-y-3 pt-4 border-t">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 16, borderTop: `1px solid ${colors.border.default}` }}>
         {stats.missingCodes > 0 && (
           <Button
             onClick={handleApplyToDocuments}
             disabled={isApplying || !config.code.trim()}
-            className="w-full gap-2"
-            variant="outline"
+            variant="secondary"
+            style={{ width: '100%', justifyContent: 'center' }}
           >
-            <Sparkles className="w-4 h-4" />
+            <Sparkles style={{ width: 14, height: 14 }} />
             {isApplying ? 'Applying...' : `Apply to ${stats.missingCodes} Documents Without Codes`}
           </Button>
         )}
@@ -469,7 +470,8 @@ export default function DocumentNamingSettings({
         <Button
           onClick={handleSave}
           disabled={isSaving || !config.code.trim()}
-          className="w-full"
+          variant="primary"
+          style={{ width: '100%', justifyContent: 'center' }}
         >
           {isSaving ? 'Saving...' : 'Save Naming Settings'}
         </Button>

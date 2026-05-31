@@ -3,24 +3,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Upload, FileText, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { Button, Modal, StatusPill, DataTable } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { Upload, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CSVClientImportProps {
@@ -41,6 +26,7 @@ export default function CSVClientImport({
   onClose,
   onSuccess,
 }: CSVClientImportProps) {
+  const colors = useColors();
   const [phase, setPhase] = useState<ImportPhase>('upload');
   const [parsedClients, setParsedClients] = useState<ParsedClient[]>([]);
   const [importProgress, setImportProgress] = useState(0);
@@ -172,158 +158,136 @@ export default function CSVClientImport({
   const dupCount = parsedClients.filter((c) => c.isDuplicate).length;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            CSV Client Import
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* Upload Phase */}
-        {phase === 'upload' && (
-          <div className="flex flex-col items-center justify-center py-12 gap-4">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
-              <Upload className="w-8 h-8 text-gray-400" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-gray-600 mb-1">
-                Upload a CSV file with client names (one per row).
-              </p>
-              <p className="text-xs text-gray-400">
-                Header rows containing &quot;name&quot; or &quot;client&quot; will be skipped automatically.
-              </p>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <Button onClick={() => fileInputRef.current?.click()}>
-              <Upload className="w-4 h-4 mr-2" />
-              Select CSV File
-            </Button>
-          </div>
-        )}
-
-        {/* Preview Phase */}
-        {phase === 'preview' && (
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      title="CSV Client Import"
+      width={680}
+      footer={
+        phase === 'preview' ? (
           <>
-            <div className="flex items-center gap-3 mb-3">
-              <Badge variant="secondary">{parsedClients.length} total</Badge>
-              <Badge variant="default" className="bg-green-600">{newCount} new</Badge>
-              {dupCount > 0 && (
-                <Badge variant="destructive">{dupCount} duplicate{dupCount !== 1 ? 's' : ''}</Badge>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-auto border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[50px]">#</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="w-[100px]">Type</TableHead>
-                    <TableHead className="w-[120px]">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {parsedClients.map((client, idx) => (
-                    <TableRow
-                      key={idx}
-                      className={client.isDuplicate ? 'opacity-50' : ''}
-                    >
-                      <TableCell className="text-gray-400 text-xs">
-                        {idx + 1}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {client.name}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">borrower</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {client.isDuplicate ? (
-                          <Badge variant="destructive" className="text-xs">
-                            <AlertCircle className="w-3 h-3 mr-1" />
-                            Duplicate
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs bg-green-50 text-green-700 border-green-200">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Ready
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t">
-              <Button variant="outline" onClick={reset}>
-                <X className="w-4 h-4 mr-2" />
-                Cancel
-              </Button>
-              <Button
-                onClick={handleImport}
-                disabled={newCount === 0}
-              >
-                Import {newCount} Client{newCount !== 1 ? 's' : ''}
-                {dupCount > 0 && ` (skip ${dupCount})`}
-              </Button>
-            </div>
+            <Button variant="secondary" onClick={reset}>
+              <X size={14} />
+              Cancel
+            </Button>
+            <Button variant="primary" accent={colors.entityTypes.client} onClick={handleImport} disabled={newCount === 0}>
+              Import {newCount} Client{newCount !== 1 ? 's' : ''}
+              {dupCount > 0 && ` (skip ${dupCount})`}
+            </Button>
           </>
-        )}
-
-        {/* Importing Phase */}
-        {phase === 'importing' && (
-          <div className="py-12 px-4 space-y-4">
-            <div className="text-center">
-              <p className="text-sm font-medium text-gray-900 mb-1">
-                Importing clients...
-              </p>
-              <p className="text-xs text-gray-500">
-                {importProgress}% complete
-              </p>
-            </div>
-            <Progress value={importProgress} className="w-full" />
+        ) : phase === 'complete' ? (
+          <Button variant="primary" accent={colors.entityTypes.client} onClick={handleClose}>Done</Button>
+        ) : undefined
+      }
+    >
+      {/* Upload Phase */}
+      {phase === 'upload' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', gap: 16 }}>
+          <div style={{ width: 64, height: 64, background: colors.bg.cardAlt, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Upload size={28} style={{ color: colors.text.dim }} />
           </div>
-        )}
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 12, color: colors.text.secondary, marginBottom: 4 }}>
+              Upload a CSV file with client names (one per row).
+            </p>
+            <p style={{ fontSize: 11, color: colors.text.dim }}>
+              Header rows containing &quot;name&quot; or &quot;client&quot; will be skipped automatically.
+            </p>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+          <Button variant="primary" accent={colors.entityTypes.client} onClick={() => fileInputRef.current?.click()}>
+            <Upload size={14} />
+            Select CSV File
+          </Button>
+        </div>
+      )}
 
-        {/* Complete Phase */}
-        {phase === 'complete' && (
-          <div className="py-12 px-4 space-y-4">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-semibold text-gray-900">
-                  Import Complete
-                </p>
-                <div className="flex items-center gap-3 justify-center mt-2">
-                  <Badge variant="default" className="bg-green-600">
-                    {importResults.created} created
-                  </Badge>
-                  {importResults.skipped > 0 && (
-                    <Badge variant="secondary">
-                      {importResults.skipped} skipped
-                    </Badge>
-                  )}
-                </div>
-              </div>
+      {/* Preview Phase */}
+      {phase === 'preview' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <StatusPill label={`${parsedClients.length} total`} tone={colors.text.muted} />
+            <StatusPill label={`${newCount} new`} tone={colors.accent.green} />
+            {dupCount > 0 && (
+              <StatusPill label={`${dupCount} duplicate${dupCount !== 1 ? 's' : ''}`} tone={colors.accent.red} />
+            )}
+          </div>
+
+          <div style={{ maxHeight: '45vh', overflowY: 'auto' }}>
+            <DataTable
+              rows={parsedClients.map((c, idx) => ({ ...c, idx }))}
+              getRowKey={(r) => String(r.idx)}
+              columns={[
+                { key: 'num', header: '#', width: 50, mono: true, render: (r) => <span style={{ color: colors.text.dim }}>{r.idx + 1}</span> },
+                { key: 'name', header: 'Name', render: (r) => <span style={{ fontWeight: 500, opacity: r.isDuplicate ? 0.5 : 1 }}>{r.name}</span> },
+                { key: 'type', header: 'Type', width: 100, render: () => <StatusPill label="borrower" tone={colors.text.muted} /> },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  width: 120,
+                  render: (r) =>
+                    r.isDuplicate ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <AlertCircle size={12} style={{ color: colors.accent.red }} />
+                        <StatusPill label="Duplicate" tone={colors.accent.red} />
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <CheckCircle2 size={12} style={{ color: colors.accent.green }} />
+                        <StatusPill label="Ready" tone={colors.accent.green} />
+                      </span>
+                    ),
+                },
+              ]}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Importing Phase */}
+      {phase === 'importing' && (
+        <div style={{ padding: '48px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary, marginBottom: 4 }}>
+              Importing clients...
+            </p>
+            <p style={{ fontSize: 11, color: colors.text.muted, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+              {importProgress}% complete
+            </p>
+          </div>
+          <div style={{ width: '100%', height: 6, background: colors.bg.cardAlt, borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${importProgress}%`, height: '100%', background: colors.entityTypes.client, transition: 'width 150ms linear' }} />
+          </div>
+        </div>
+      )}
+
+      {/* Complete Phase */}
+      {phase === 'complete' && (
+        <div style={{ padding: '48px 16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 48, height: 48, background: `${colors.accent.green}15`, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle2 size={24} style={{ color: colors.accent.green }} />
             </div>
-            <div className="flex justify-center pt-2">
-              <Button onClick={handleClose}>Done</Button>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary }}>
+                Import Complete
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginTop: 8 }}>
+                <StatusPill label={`${importResults.created} created`} tone={colors.accent.green} />
+                {importResults.skipped > 0 && (
+                  <StatusPill label={`${importResults.skipped} skipped`} tone={colors.text.muted} />
+                )}
+              </div>
             </div>
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      )}
+    </Modal>
   );
 }

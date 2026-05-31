@@ -4,19 +4,12 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Button, IconButton, Field, Input, Textarea, Select, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { X, Plus, Trash2, Upload, FileText, FolderOpen, FileType, Sparkles } from 'lucide-react';
 import { FILE_CATEGORIES } from '@/lib/categories';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface FileTypeDefinitionDrawerProps {
   isOpen: boolean;
@@ -31,6 +24,7 @@ export default function FileTypeDefinitionDrawer({
   mode,
   definitionId,
 }: FileTypeDefinitionDrawerProps) {
+  const colors = useColors();
   const definition = useQuery(
     api.fileTypeDefinitions.getById,
     definitionId ? { id: definitionId } : 'skip'
@@ -233,11 +227,11 @@ export default function FileTypeDefinitionDrawer({
     try {
       // Generate upload URL from Convex
       const uploadUrl = await generateUploadUrl();
-      
+
       if (!uploadUrl || typeof uploadUrl !== 'string') {
         throw new Error('Invalid upload URL received from Convex');
       }
-      
+
       // Upload file to Convex storage
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -276,15 +270,15 @@ export default function FileTypeDefinitionDrawer({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Use new category name if creating new category, otherwise use selected category
-    const finalCategory = isCreatingCategory && newCategoryName.trim() 
-      ? newCategoryName.trim() 
+    const finalCategory = isCreatingCategory && newCategoryName.trim()
+      ? newCategoryName.trim()
       : category.trim();
     const finalParentType = isCreatingParentType && newParentTypeName.trim()
       ? newParentTypeName.trim()
       : parentType.trim();
-    
+
     console.log('Form submission:', {
       fileType: fileType.trim(),
       finalCategory,
@@ -294,7 +288,7 @@ export default function FileTypeDefinitionDrawer({
       isCreatingCategory,
       isCreatingParentType,
     });
-    
+
     if (wordCount < 100) {
       alert(`Description must be at least 100 words. Current: ${wordCount} words.`);
       return;
@@ -370,88 +364,96 @@ export default function FileTypeDefinitionDrawer({
     }
   };
 
+  const sectionDividerStyle = { borderTop: `1px solid ${colors.border.default}`, paddingTop: 16, marginTop: 16 };
+  const inlineLabelStyle = { fontSize: 13, fontWeight: 500, color: colors.text.primary };
+
   return (
     <>
       {/* Overlay */}
       <div
-        className={`fixed inset-0 backdrop-blur-sm bg-black/20 z-40 transition-opacity duration-300 ease-in-out ${
-          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
         onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backdropFilter: 'blur(2px)',
+          background: 'rgba(0,0,0,0.2)',
+          zIndex: 40,
+          transition: 'opacity 300ms ease-in-out',
+          opacity: isOpen ? 1 : 0,
+          pointerEvents: isOpen ? 'auto' : 'none',
+        }}
       />
 
       {/* Drawer */}
       <div
-        className={`fixed top-0 right-0 h-full w-[90vw] sm:w-[600px] lg:w-[700px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className="w-[90vw] sm:w-[600px] lg:w-[700px]"
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          height: '100%',
+          background: colors.bg.card,
+          borderLeft: `1px solid ${colors.border.default}`,
+          zIndex: 50,
+          transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 300ms ease-in-out',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
-        <div className="border-b pb-4 px-6 pt-6 flex-shrink-0">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xl font-semibold">
+        <div style={{ borderBottom: `1px solid ${colors.border.default}`, padding: '24px 24px 16px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: colors.text.primary }}>
               {mode === 'create' ? 'Add New File Type' : 'Edit File Type Definition'}
             </h2>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
+            <IconButton label="Close" onClick={onClose}>
+              <X style={{ width: 18, height: 18 }} />
+            </IconButton>
           </div>
-          <p className="text-sm text-gray-600">
+          <p style={{ fontSize: 13, color: colors.text.secondary }}>
             {mode === 'create'
               ? 'Add a new file type definition with examples to help the filing agent categorize files accurately.'
               : 'Edit the file type definition. System defaults cannot be edited.'}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col">
-          <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+        <form onSubmit={handleSubmit} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20, flex: 1, overflowY: 'auto' }}>
             {/* Basic Information */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="fileType" className="text-sm font-medium">
-                  File Type Name <span className="text-red-500">*</span>
-                </Label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Field label="File Type Name *">
                 <Input
                   id="fileType"
                   value={fileType}
                   onChange={(e) => setFileType(e.target.value)}
                   placeholder="e.g., RedBook Valuation, Initial Monitoring Report"
                   required
-                  className="mt-2"
                 />
-              </div>
+              </Field>
 
-              <div>
-                <Label htmlFor="category" className="text-sm font-medium">
-                  Category or Subcategory <span className="text-red-500">*</span>
-                </Label>
+              <Field label="Category or Subcategory *">
                 {isCreatingCategory ? (
-                  <div className="mt-2 space-y-2">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <Input
                       id="newCategory"
                       value={newCategoryName}
                       onChange={(e) => {
                         const value = e.target.value;
                         setNewCategoryName(value);
-                        // Update category in real-time so it's available for form submission
                         setCategory(value.trim());
                       }}
                       onBlur={() => {
-                        // Ensure category is set when user leaves the field
                         if (newCategoryName.trim() && !category.trim()) {
                           setCategory(newCategoryName.trim());
                         }
                       }}
                       placeholder="Enter new category name"
                       autoFocus
-                      className="mt-2"
                     />
-                    <div className="flex gap-2">
+                    <div style={{ display: 'flex', gap: 8 }}>
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="secondary"
                         size="sm"
                         onClick={() => {
                           setIsCreatingCategory(false);
@@ -463,17 +465,15 @@ export default function FileTypeDefinitionDrawer({
                       </Button>
                       <Button
                         type="button"
+                        variant="primary"
                         size="sm"
                         onClick={() => {
                           if (newCategoryName.trim()) {
-                            // Category is already set via onChange, just confirm
-                            // Optionally switch back to dropdown if category exists in list
-                            const categoryExists = existingCategories.includes(newCategoryName.trim()) || 
+                            const categoryExists = existingCategories.includes(newCategoryName.trim()) ||
                                                    FILE_CATEGORIES.includes(newCategoryName.trim() as any);
                             if (categoryExists) {
                               setIsCreatingCategory(false);
                             }
-                            // Otherwise keep the input visible
                           }
                         }}
                         disabled={!newCategoryName.trim()}
@@ -483,61 +483,42 @@ export default function FileTypeDefinitionDrawer({
                     </div>
                   </div>
                 ) : (
-                  <Select value={category || ''} onValueChange={handleCategorySelect}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue placeholder="Select or create a category..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {existingCategories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                      {FILE_CATEGORIES.filter((cat) => !existingCategories.includes(cat)).map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="new">
-                        <div className="flex items-center gap-2">
-                          <Plus className="w-4 h-4" />
-                          <span>Create New Category</span>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
+                  <Select value={category || ''} onChange={(e) => handleCategorySelect(e.target.value)}>
+                    <option value="" disabled>Select or create a category...</option>
+                    {existingCategories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    {FILE_CATEGORIES.filter((cat) => !existingCategories.includes(cat)).map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    <option value="new">+ Create New Category</option>
                   </Select>
                 )}
-              </div>
+              </Field>
 
-              <div>
-                <Label htmlFor="parentType" className="text-sm font-medium">
-                  Parent Type (if subtype)
-                </Label>
+              <Field label="Parent Type (if subtype)" hint="Optional: If this is a subtype of an existing document type, select the parent type.">
                 {isCreatingParentType ? (
-                  <div className="mt-2 space-y-2">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <Input
                       id="newParentType"
                       value={newParentTypeName}
                       onChange={(e) => {
                         const value = e.target.value;
                         setNewParentTypeName(value);
-                        // Update parentType in real-time so it's available for form submission
                         setParentType(value.trim());
                       }}
                       onBlur={() => {
-                        // Ensure parentType is set when user leaves the field
                         if (newParentTypeName.trim() && !parentType.trim()) {
                           setParentType(newParentTypeName.trim());
                         }
                       }}
                       placeholder="Enter parent file type name"
                       autoFocus
-                      className="mt-2"
                     />
-                    <div className="flex gap-2">
+                    <div style={{ display: 'flex', gap: 8 }}>
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="secondary"
                         size="sm"
                         onClick={() => {
                           setIsCreatingParentType(false);
@@ -549,16 +530,14 @@ export default function FileTypeDefinitionDrawer({
                       </Button>
                       <Button
                         type="button"
+                        variant="primary"
                         size="sm"
                         onClick={() => {
                           if (newParentTypeName.trim()) {
-                            // Parent type is already set via onChange, just confirm
-                            // Optionally switch back to dropdown if type exists in list
                             const typeExists = existingFileTypes.includes(newParentTypeName.trim());
                             if (typeExists) {
                               setIsCreatingParentType(false);
                             }
-                            // Otherwise keep the input visible
                           }
                         }}
                         disabled={!newParentTypeName.trim()}
@@ -568,35 +547,20 @@ export default function FileTypeDefinitionDrawer({
                     </div>
                   </div>
                 ) : (
-                  <Select value={parentType || 'none'} onValueChange={handleParentTypeSelect}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue placeholder="Select parent type (optional)..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None (Top-level type)</SelectItem>
-                      {existingFileTypes.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {type}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="new">
-                        <div className="flex items-center gap-2">
-                          <Plus className="w-4 h-4" />
-                          <span>Create New Parent Type</span>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
+                  <Select value={parentType || 'none'} onChange={(e) => handleParentTypeSelect(e.target.value)}>
+                    <option value="none">None (Top-level type)</option>
+                    {existingFileTypes.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                    <option value="new">+ Create New Parent Type</option>
                   </Select>
                 )}
-                <p className="text-xs text-gray-500 mt-1">
-                  Optional: If this is a subtype of an existing document type, select the parent type.
-                </p>
-              </div>
+              </Field>
 
-              <div>
-                <Label htmlFor="description" className="text-sm font-medium">
-                  Description <span className="text-red-500">*</span> ({wordCount}/100 words minimum)
-                </Label>
+              <Field
+                label={`Description * (${wordCount}/100 words minimum)`}
+                hint={wordCount < 100 ? `Need ${100 - wordCount} more words` : 'Description meets minimum requirement'}
+              >
                 <Textarea
                   id="description"
                   value={description}
@@ -604,188 +568,154 @@ export default function FileTypeDefinitionDrawer({
                   placeholder="Provide a detailed description of what this file type is (minimum 100 words)..."
                   rows={6}
                   required
-                  className={`mt-2 ${wordCount < 100 ? 'border-red-300' : ''}`}
+                  style={wordCount < 100 ? { borderColor: colors.accent.red } : undefined}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  {wordCount < 100
-                    ? `Need ${100 - wordCount} more words`
-                    : 'Description meets minimum requirement'}
-                </p>
-              </div>
+              </Field>
             </div>
 
             {/* Keywords */}
             <div>
-              <Label className="text-sm font-medium">Keywords</Label>
-              <p className="text-xs text-gray-500 mb-3 mt-1">
+              <span style={inlineLabelStyle}>Keywords</span>
+              <p style={{ fontSize: 11, color: colors.text.muted, margin: '4px 0 12px' }}>
                 Keywords that help identify this file type in content and filenames
               </p>
-              <div className="space-y-2">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {keywords.map((keyword, index) => (
-                  <div key={index} className="flex gap-2">
+                  <div key={index} style={{ display: 'flex', gap: 8 }}>
                     <Input
                       value={keyword}
                       onChange={(e) => handleKeywordChange(index, e.target.value)}
                       placeholder="e.g., rics, valuation report, redbook"
                     />
                     {keywords.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveKeyword(index)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <IconButton type="button" label="Remove keyword" onClick={() => handleRemoveKeyword(index)}>
+                        <Trash2 style={{ width: 16, height: 16 }} />
+                      </IconButton>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" size="sm" onClick={handleAddKeyword}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Keyword
-                </Button>
+                <div>
+                  <Button type="button" variant="secondary" size="sm" onClick={handleAddKeyword}>
+                    <Plus style={{ width: 14, height: 14 }} />
+                    Add Keyword
+                  </Button>
+                </div>
               </div>
             </div>
 
             {/* Deterministic Verification Settings */}
-            <div className="border-t pt-4 mt-4">
-              <div className="flex items-center gap-2 mb-3">
-                <FolderOpen className="w-4 h-4 text-blue-500" />
-                <Label className="text-sm font-medium">Filing Settings</Label>
+            <div style={sectionDividerStyle}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <FolderOpen style={{ width: 16, height: 16, color: colors.accent.blue }} />
+                <span style={inlineLabelStyle}>Filing Settings</span>
               </div>
-              <p className="text-xs text-gray-500 mb-4">
+              <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 16 }}>
                 Configure where documents of this type should be filed and how to match them by filename.
               </p>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="targetFolderKey" className="text-sm font-medium">Target Folder Key</Label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <Field label="Target Folder Key" hint="The folder where documents of this type should be filed">
                   <Input
                     id="targetFolderKey"
                     value={targetFolderKey}
                     onChange={(e) => setTargetFolderKey(e.target.value)}
                     placeholder="e.g., kyc, appraisals, background"
-                    className="mt-2"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    The folder where documents of this type should be filed
-                  </p>
-                </div>
+                </Field>
 
-                <div>
-                  <Label htmlFor="targetLevel" className="text-sm font-medium">Target Level</Label>
-                  <Select value={targetLevel} onValueChange={(v) => setTargetLevel(v as 'client' | 'project')}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue placeholder="Select level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="client">Client Level</SelectItem>
-                      <SelectItem value="project">Project Level</SelectItem>
-                    </SelectContent>
+                <Field label="Target Level" hint="Client-level for identity docs, project-level for project-specific">
+                  <Select value={targetLevel} onChange={(e) => setTargetLevel(e.target.value as 'client' | 'project')}>
+                    <option value="client">Client Level</option>
+                    <option value="project">Project Level</option>
                   </Select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Client-level for identity docs, project-level for project-specific
-                  </p>
-                </div>
+                </Field>
               </div>
             </div>
 
             {/* Filename Patterns */}
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <FileType className="w-4 h-4 text-green-500" />
-                <Label className="text-sm font-medium">Filename Patterns</Label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <FileType style={{ width: 16, height: 16, color: colors.accent.green }} />
+                <span style={inlineLabelStyle}>Filename Patterns</span>
               </div>
-              <p className="text-xs text-gray-500 mb-3">
+              <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
                 Patterns to match in filenames for quick identification (case-insensitive)
               </p>
-              <div className="space-y-2">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {filenamePatterns.map((pattern, index) => (
-                  <div key={index} className="flex gap-2">
+                  <div key={index} style={{ display: 'flex', gap: 8 }}>
                     <Input
                       value={pattern}
                       onChange={(e) => handleFilenamePatternChange(index, e.target.value)}
                       placeholder="e.g., valuation, rics, market value"
                     />
                     {filenamePatterns.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveFilenamePattern(index)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <IconButton type="button" label="Remove pattern" onClick={() => handleRemoveFilenamePattern(index)}>
+                        <Trash2 style={{ width: 16, height: 16 }} />
+                      </IconButton>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" size="sm" onClick={handleAddFilenamePattern}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Pattern
-                </Button>
+                <div>
+                  <Button type="button" variant="secondary" size="sm" onClick={handleAddFilenamePattern}>
+                    <Plus style={{ width: 14, height: 14 }} />
+                    Add Pattern
+                  </Button>
+                </div>
               </div>
             </div>
 
             {/* Exclude Patterns */}
             <div>
-              <Label className="text-sm font-medium">Exclude Patterns</Label>
-              <p className="text-xs text-gray-500 mb-3 mt-1">
+              <span style={inlineLabelStyle}>Exclude Patterns</span>
+              <p style={{ fontSize: 11, color: colors.text.muted, margin: '4px 0 12px' }}>
                 Patterns to exclude (prevents false positives, e.g., &quot;template&quot;, &quot;guide&quot;)
               </p>
-              <div className="space-y-2">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {excludePatterns.map((pattern, index) => (
-                  <div key={index} className="flex gap-2">
+                  <div key={index} style={{ display: 'flex', gap: 8 }}>
                     <Input
                       value={pattern}
                       onChange={(e) => handleExcludePatternChange(index, e.target.value)}
                       placeholder="e.g., template, guide, instructions"
                     />
                     {excludePatterns.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveExcludePattern(index)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <IconButton type="button" label="Remove exclusion" onClick={() => handleRemoveExcludePattern(index)}>
+                        <Trash2 style={{ width: 16, height: 16 }} />
+                      </IconButton>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" size="sm" onClick={handleAddExcludePattern}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Exclusion
-                </Button>
+                <div>
+                  <Button type="button" variant="secondary" size="sm" onClick={handleAddExcludePattern}>
+                    <Plus style={{ width: 14, height: 14 }} />
+                    Add Exclusion
+                  </Button>
+                </div>
               </div>
             </div>
 
             {/* Learned Keywords (read-only display) */}
             {mode === 'edit' && definition?.learnedKeywords && definition.learnedKeywords.length > 0 && (
-              <div className="border-t pt-4 mt-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <Label className="text-sm font-medium">Auto-Learned Keywords</Label>
+              <div style={sectionDividerStyle}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Sparkles style={{ width: 16, height: 16, color: colors.accent.yellow }} />
+                  <span style={inlineLabelStyle}>Auto-Learned Keywords</span>
                 </div>
-                <p className="text-xs text-gray-500 mb-3">
+                <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
                   Keywords automatically learned from user corrections
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {definition.learnedKeywords.map((lk, index) => (
-                    <span
+                    <StatusPill
                       key={index}
-                      className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-amber-50 text-amber-700 border border-amber-200"
-                    >
-                      {lk.keyword}
-                      {lk.correctionCount && (
-                        <span className="ml-1 text-xs text-amber-500">
-                          ({lk.correctionCount} corrections)
-                        </span>
-                      )}
-                    </span>
+                      label={lk.correctionCount ? `${lk.keyword} (${lk.correctionCount} corrections)` : lk.keyword}
+                      tone={colors.accent.yellow}
+                    />
                   ))}
                 </div>
                 {definition.lastLearnedAt && (
-                  <p className="text-xs text-gray-400 mt-2">
+                  <p style={{ fontSize: 11, color: colors.text.dim, marginTop: 8 }}>
                     Last learned: {new Date(definition.lastLearnedAt).toLocaleDateString()}
                   </p>
                 )}
@@ -794,82 +724,85 @@ export default function FileTypeDefinitionDrawer({
 
             {/* Identification Rules */}
             <div>
-              <Label className="text-sm font-medium">Identification Rules</Label>
-              <p className="text-xs text-gray-500 mb-3 mt-1">
+              <span style={inlineLabelStyle}>Identification Rules</span>
+              <p style={{ fontSize: 11, color: colors.text.muted, margin: '4px 0 12px' }}>
                 Specific rules for identifying this file type
               </p>
-              <div className="space-y-2">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {identificationRules.map((rule, index) => (
-                  <div key={index} className="flex gap-2">
+                  <div key={index} style={{ display: 'flex', gap: 8 }}>
                     <Textarea
                       value={rule}
                       onChange={(e) => handleRuleChange(index, e.target.value)}
                       placeholder="e.g., Look for 'RICS' branding or logos in the document"
                       rows={2}
-                      className="flex-1"
+                      style={{ flex: 1 }}
                     />
                     {identificationRules.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveRule(index)}
-                        className="self-start"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <IconButton type="button" label="Remove rule" onClick={() => handleRemoveRule(index)} style={{ alignSelf: 'flex-start' }}>
+                        <Trash2 style={{ width: 16, height: 16 }} />
+                      </IconButton>
                     )}
                   </div>
                 ))}
-                <Button type="button" variant="outline" size="sm" onClick={handleAddRule}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Rule
-                </Button>
+                <div>
+                  <Button type="button" variant="secondary" size="sm" onClick={handleAddRule}>
+                    <Plus style={{ width: 14, height: 14 }} />
+                    Add Rule
+                  </Button>
+                </div>
               </div>
             </div>
 
             {/* Category Rules */}
-            <div>
-              <Label htmlFor="categoryRules" className="text-sm font-medium">
-                Category Rules (Optional)
-              </Label>
+            <Field label="Category Rules (Optional)">
               <Textarea
                 id="categoryRules"
                 value={categoryRules}
                 onChange={(e) => setCategoryRules(e.target.value)}
                 placeholder="Explain why this file type belongs to this category..."
                 rows={3}
-                className="mt-2"
               />
-            </div>
+            </Field>
 
             {/* Example File */}
             <div>
-              <Label className="text-sm font-medium">Example File (Optional)</Label>
-              <p className="text-xs text-gray-500 mb-3 mt-1">
+              <span style={inlineLabelStyle}>Example File (Optional)</span>
+              <p style={{ fontSize: 11, color: colors.text.muted, margin: '4px 0 12px' }}>
                 Upload an example file to help the system learn this file type
               </p>
-              <div className="mt-2">
+              <div>
                 <label
                   htmlFor="exampleFile"
-                  className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '100%',
+                    height: 128,
+                    border: `2px dashed ${colors.border.mid}`,
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    background: colors.bg.cardAlt,
+                  }}
                 >
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0' }}>
                     {exampleFile ? (
                       <>
-                        <FileText className="w-10 h-10 text-blue-500 mb-2" />
-                        <p className="text-sm font-medium text-gray-900">{exampleFile.name}</p>
-                        <p className="text-xs text-gray-500">
+                        <FileText style={{ width: 40, height: 40, color: colors.accent.blue, marginBottom: 8 }} />
+                        <p style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{exampleFile.name}</p>
+                        <p style={{ fontSize: 11, color: colors.text.muted }}>
                           {(exampleFile.size / 1024).toFixed(2)} KB
                         </p>
                       </>
                     ) : (
                       <>
-                        <Upload className="w-10 h-10 text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-600 mb-1">
-                          <span className="font-semibold">Click to upload</span> or drag and drop
+                        <Upload style={{ width: 40, height: 40, color: colors.text.dim, marginBottom: 8 }} />
+                        <p style={{ fontSize: 13, color: colors.text.secondary, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 600 }}>Click to upload</span> or drag and drop
                         </p>
-                        <p className="text-xs text-gray-500">PDF, DOC, DOCX, TXT, XLSX, XLS</p>
+                        <p style={{ fontSize: 11, color: colors.text.muted }}>PDF, DOC, DOCX, TXT, XLSX, XLS</p>
                       </>
                     )}
                   </div>
@@ -878,11 +811,11 @@ export default function FileTypeDefinitionDrawer({
                     type="file"
                     onChange={handleFileChange}
                     accept=".pdf,.doc,.docx,.txt,.xlsx,.xls"
-                    className="hidden"
+                    style={{ display: 'none' }}
                   />
                 </label>
                 {exampleFileStorageId && mode === 'edit' && !exampleFile && (
-                  <p className="text-sm text-gray-600 mt-2">
+                  <p style={{ fontSize: 13, color: colors.text.secondary, marginTop: 8 }}>
                     Current example file: {definition?.exampleFileName || 'Uploaded file'}
                   </p>
                 )}
@@ -891,32 +824,33 @@ export default function FileTypeDefinitionDrawer({
           </div>
 
           {/* Footer with buttons */}
-          <div className="border-t pt-4 px-6 pb-6 flex-shrink-0">
-            <div className="flex justify-end gap-3 w-full">
-              <Button type="button" variant="outline" onClick={onClose}>
+          <div style={{ borderTop: `1px solid ${colors.border.default}`, padding: '16px 24px 24px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, width: '100%' }}>
+              <Button type="button" variant="secondary" onClick={onClose}>
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
+                variant="primary"
                 disabled={
-                  isSubmitting || 
-                  wordCount < 100 || 
-                  !fileType.trim() || 
+                  isSubmitting ||
+                  wordCount < 100 ||
+                  !fileType.trim() ||
                   !(isCreatingCategory ? newCategoryName.trim() : category.trim()) ||
                   !description.trim()
                 }
-                className="min-w-[140px]"
+                style={{ minWidth: 140, justifyContent: 'center' }}
               >
                 {isSubmitting ? 'Saving...' : mode === 'create' ? 'Create File Type' : 'Save Changes'}
               </Button>
             </div>
             {/* Debug info */}
-            <div className="mt-2 text-xs text-gray-400 space-y-1">
+            <div style={{ marginTop: 8, fontSize: 11, color: colors.text.dim, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div>Word count: {wordCount}/100 {wordCount >= 100 ? '✓' : '✗'}</div>
               <div>File type: {fileType.trim() ? '✓' : '✗'}</div>
               <div>Category: {isCreatingCategory ? (newCategoryName.trim() ? `✓ "${newCategoryName.trim()}"` : '✗') : (category.trim() ? `✓ "${category}"` : '✗')}</div>
               <div>Description: {description.trim() ? '✓' : '✗'}</div>
-              <div className="text-red-500">
+              <div style={{ color: colors.accent.red }}>
                 Button disabled: {isSubmitting || wordCount < 100 || !fileType.trim() || !(isCreatingCategory ? newCategoryName.trim() : category.trim()) || !description.trim() ? 'YES' : 'NO'}
               </div>
             </div>
@@ -926,4 +860,3 @@ export default function FileTypeDefinitionDrawer({
     </>
   );
 }
-

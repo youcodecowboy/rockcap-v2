@@ -5,8 +5,8 @@ import { format } from "date-fns"
 import { Calendar as CalendarIcon, Clock } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Button, Input } from "@/components/layouts"
+import { useColors } from "@/lib/useColors"
 import { cn } from "@/lib/utils"
 
 interface DateTimePickerProps {
@@ -26,6 +26,7 @@ export function DateTimePicker({
   className,
   disabled = false,
 }: DateTimePickerProps) {
+  const colors = useColors();
   const [isOpen, setIsOpen] = React.useState(false);
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
@@ -33,7 +34,7 @@ export function DateTimePicker({
       if (selectedDate) {
         // Create a new date object to avoid mutating the original
         const newDate = new Date(selectedDate);
-        
+
         // Preserve the time when changing date
         if (time) {
           const [hours, minutes] = time.split(':').map(Number);
@@ -55,7 +56,7 @@ export function DateTimePicker({
   const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTime = e.target.value;
     onTimeChange(newTime);
-    
+
     // Update the date object with the new time
     if (date && newTime) {
       const [hours, minutes] = newTime.split(':').map(Number);
@@ -71,14 +72,16 @@ export function DateTimePicker({
         <Popover open={isOpen} onOpenChange={setIsOpen}>
           <PopoverTrigger asChild>
             <Button
-              variant="outline"
-              className={cn(
-                "w-full justify-start text-left font-normal",
-                !date && "text-gray-500"
-              )}
+              variant="secondary"
               disabled={disabled}
+              style={{
+                width: '100%',
+                justifyContent: 'flex-start',
+                fontWeight: 400,
+                color: date ? colors.text.primary : colors.text.muted,
+              }}
             >
-              <CalendarIcon className="mr-2 h-4 w-4" />
+              <CalendarIcon size={16} />
               {date ? format(date, "PPP") : <span>Pick a date</span>}
             </Button>
           </PopoverTrigger>
@@ -92,14 +95,14 @@ export function DateTimePicker({
             />
           </PopoverContent>
         </Popover>
-        
-        <div className="relative">
-          <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+        <div style={{ position: 'relative' }}>
+          <Clock size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: colors.text.dim, pointerEvents: 'none' }} />
           <Input
             type="time"
             value={time}
             onChange={handleTimeChange}
-            className="pl-10"
+            style={{ paddingLeft: 32 }}
             disabled={disabled}
           />
         </div>
@@ -107,4 +110,3 @@ export function DateTimePicker({
     </div>
   );
 }
-

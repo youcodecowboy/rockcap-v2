@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/layouts';
 import { Upload, Loader2 } from 'lucide-react';
 
 interface DirectUploadButtonProps {
@@ -154,20 +154,19 @@ export default function DirectUploadButton({
         accept=".pdf,.docx,.doc,.xls,.xlsx,.xlsm,.csv,.txt,.md,.eml,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
       />
       <Button
-        variant="outline"
+        variant="secondary"
         size="sm"
         onClick={() => fileInputRef.current?.click()}
         disabled={isUploading}
-        className="gap-2"
       >
         {isUploading ? (
           <>
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 size={14} className="animate-spin" />
             Uploading...
           </>
         ) : (
           <>
-            <Upload className="w-4 h-4" />
+            <Upload size={14} />
             {getUploadLabel()}
           </>
         )}

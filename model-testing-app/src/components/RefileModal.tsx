@@ -5,24 +5,10 @@ import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { useClients, useProjectsByClient, useCreateClient, useCreateProject, useClient, useProject } from '@/lib/clientStorage';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Building2, FolderKanban, Plus, X } from 'lucide-react';
+import { Button, Input, Select, Field, Modal } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { Building2, FolderKanban, Plus } from 'lucide-react';
 import EditableFileTypeBadge from './EditableFileTypeBadge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 
 interface RefileModalProps {
   documentId: Id<"documents">;
@@ -45,6 +31,7 @@ export default function RefileModal({
   onClose,
   onRefiled,
 }: RefileModalProps) {
+  const colors = useColors();
   const updateDocument = useMutation(api.documents.update);
   const clients = useClients() || [];
   const createClient = useCreateClient();
@@ -159,66 +146,113 @@ export default function RefileModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Refile Document</DialogTitle>
-          <DialogDescription>
-            Update the client, project, file type, and category for this document.
-          </DialogDescription>
-        </DialogHeader>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="Refile Document"
+      width={640}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isRefiling}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleRefile} disabled={isRefiling}>
+            {isRefiling ? 'Refiling...' : 'Refile Document'}
+          </Button>
+        </>
+      }
+    >
+      <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>
+        Update the client, project, file type, and category for this document.
+      </p>
 
-        <div className="flex-1 overflow-y-auto space-y-6 py-4 pr-2 -mr-2">
-          {/* File Type Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              File Type
-            </label>
-            <EditableFileTypeBadge
-              fileType={selectedFileType}
-              category={selectedCategory}
-              onFileTypeChange={handleFileTypeChange}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Category: {selectedCategory}
-            </p>
-          </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* File Type Selection */}
+        <Field label="File Type" hint={`Category: ${selectedCategory}`}>
+          <EditableFileTypeBadge
+            fileType={selectedFileType}
+            category={selectedCategory}
+            onFileTypeChange={handleFileTypeChange}
+          />
+        </Field>
 
-          {/* Client Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Client
-            </label>
-            {isCreatingClient ? (
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={newClientName}
-                  onChange={(e) => setNewClientName(e.target.value)}
-                  placeholder="Enter client name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        {/* Client Selection */}
+        <Field label="Client">
+          {isCreatingClient ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Input
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+                placeholder="Enter client name"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCreateClient();
+                  }
+                }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button variant="primary" size="sm" onClick={handleCreateClient} disabled={!newClientName.trim()}>
+                  <Plus size={14} />
+                  Create Client
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setIsCreatingClient(false);
+                    setNewClientName('');
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Select
+              value={selectedClientId === null ? 'internal' : selectedClientId || ''}
+              onChange={(e) => handleClientSelect(e.target.value)}
+            >
+              <option value="internal">Internal Document (No Client)</option>
+              {clients.map((client) => {
+                const clientId = (client as any)._id || (client as any).id;
+                return (
+                  <option key={clientId} value={clientId as string}>
+                    {client.name}
+                  </option>
+                );
+              })}
+              <option value="new">+ Create New Client</option>
+            </Select>
+          )}
+        </Field>
+
+        {/* Project Selection (only if client is selected) */}
+        {selectedClientId && (
+          <Field label="Project (Optional)">
+            {isCreatingProject ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Input
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="Enter project name"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter') {
-                      handleCreateClient();
+                      handleCreateProject();
                     }
                   }}
                 />
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleCreateClient}
-                    size="sm"
-                    disabled={!newClientName.trim()}
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Create Client
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="primary" size="sm" onClick={handleCreateProject} disabled={!newProjectName.trim()}>
+                    <Plus size={14} />
+                    Create Project
                   </Button>
                   <Button
-                    onClick={() => {
-                      setIsCreatingClient(false);
-                      setNewClientName('');
-                    }}
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
+                    onClick={() => {
+                      setIsCreatingProject(false);
+                      setNewProjectName('');
+                    }}
                   >
                     Cancel
                   </Button>
@@ -226,142 +260,46 @@ export default function RefileModal({
               </div>
             ) : (
               <Select
-                value={selectedClientId === null ? 'internal' : selectedClientId || ''}
-                onValueChange={handleClientSelect}
+                value={selectedProjectId || 'none'}
+                onChange={(e) => handleProjectSelect(e.target.value)}
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a client..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="internal">
-                    <div className="flex items-center gap-2">
-                      <span>Internal Document (No Client)</span>
-                    </div>
-                  </SelectItem>
-                  {clients.map((client) => {
-                    const clientId = (client as any)._id || (client as any).id;
-                    return (
-                      <SelectItem key={clientId} value={clientId as string}>
-                        {client.name}
-                      </SelectItem>
-                    );
-                  })}
-                  <SelectItem value="new">
-                    <div className="flex items-center gap-2">
-                      <Plus className="w-4 h-4" />
-                      <span>Create New Client</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
+                <option value="none">No project (client-level document)</option>
+                {projects.map((project) => {
+                  const projectId = (project as any)._id || (project as any).id;
+                  return (
+                    <option key={projectId} value={projectId as string}>
+                      {project.name}
+                    </option>
+                  );
+                })}
+                <option value="new">+ Create New Project</option>
               </Select>
             )}
+          </Field>
+        )}
+
+        {/* Selected Assignment Display */}
+        <div style={{ padding: 12, background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            {selectedClientId ? (
+              <>
+                <Building2 size={16} style={{ color: colors.text.dim }} />
+                <span style={{ fontWeight: 500, color: colors.text.primary }}>{selectedClient?.name || 'Loading...'}</span>
+                {selectedProjectId && (
+                  <>
+                    <span style={{ color: colors.text.dim }}>•</span>
+                    <FolderKanban size={16} style={{ color: colors.text.dim }} />
+                    <span style={{ fontWeight: 500, color: colors.text.primary }}>{selectedProject?.name || 'Loading...'}</span>
+                  </>
+                )}
+              </>
+            ) : (
+              <span style={{ color: colors.accent.green, fontWeight: 500 }}>Internal Document</span>
+            )}
           </div>
-
-          {/* Project Selection (only if client is selected) */}
-          {selectedClientId && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Project (Optional)
-              </label>
-              {isCreatingProject ? (
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="Enter project name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        handleCreateProject();
-                      }
-                    }}
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handleCreateProject}
-                      size="sm"
-                      disabled={!newProjectName.trim()}
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Create Project
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setIsCreatingProject(false);
-                        setNewProjectName('');
-                      }}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Select
-                  value={selectedProjectId || 'none'}
-                  onValueChange={handleProjectSelect}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a project..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No project (client-level document)</SelectItem>
-                    {projects.map((project) => {
-                      const projectId = (project as any)._id || (project as any).id;
-                      return (
-                        <SelectItem key={projectId} value={projectId as string}>
-                          {project.name}
-                        </SelectItem>
-                      );
-                    })}
-                    <SelectItem value="new">
-                      <div className="flex items-center gap-2">
-                        <Plus className="w-4 h-4" />
-                        <span>Create New Project</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          )}
-
-          {/* Selected Assignment Display */}
-          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex items-center gap-2 text-sm">
-              {selectedClientId ? (
-                <>
-                  <Building2 className="w-4 h-4 text-gray-400" />
-                  <span className="font-medium text-gray-900">{selectedClient?.name || 'Loading...'}</span>
-                  {selectedProjectId && (
-                    <>
-                      <span className="text-gray-400">•</span>
-                      <FolderKanban className="w-4 h-4 text-gray-400" />
-                      <span className="font-medium text-gray-900">{selectedProject?.name || 'Loading...'}</span>
-                    </>
-                  )}
-                </>
-              ) : (
-                <span className="text-green-600 font-medium">Internal Document</span>
-              )}
-            </div>
-          </div>
-
         </div>
-
-        {/* Actions - Fixed at bottom */}
-        <div className="flex-shrink-0 flex justify-end gap-3 pt-4 border-t mt-4">
-          <Button variant="outline" onClick={onClose} disabled={isRefiling}>
-            Cancel
-          </Button>
-          <Button onClick={handleRefile} disabled={isRefiling}>
-            {isRefiling ? 'Refiling...' : 'Refile Document'}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </Modal>
   );
 }
 

@@ -2,8 +2,11 @@
 
 import { useState } from 'react';
 import { Edit2, Check, X, FileText, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, IconButton, Input } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { validateDocumentCode } from '@/lib/documentCodeUtils';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface DocumentCodeEditorProps {
   documentCode: string | undefined;
@@ -20,6 +23,7 @@ export default function DocumentCodeEditor({
   isInternal = false,
   className = '',
 }: DocumentCodeEditorProps) {
+  const colors = useColors();
   const [isEditing, setIsEditing] = useState(false);
   const [editedCode, setEditedCode] = useState(documentCode || '');
   const [isSaving, setIsSaving] = useState(false);
@@ -39,7 +43,7 @@ export default function DocumentCodeEditor({
 
   const handleSave = async () => {
     const trimmedCode = editedCode.trim();
-    
+
     // Validate code format
     if (!trimmedCode) {
       setError('Document code cannot be empty');
@@ -74,73 +78,69 @@ export default function DocumentCodeEditor({
 
   if (isEditing) {
     return (
-      <div className={`flex items-center gap-2 ${className}`}>
-        <div className="flex-1">
-          <input
+      <div className={className} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <Input
             type="text"
             value={editedCode}
             onChange={(e) => setEditedCode(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full px-3 py-1.5 text-sm font-mono border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style={{ fontFamily: MONO }}
             placeholder={isInternal ? 'ROCK-INT-TOPIC-DDMMYY' : 'CLIENT-TYPE-PROJECT-DDMMYY'}
             autoFocus
             disabled={isSaving}
           />
           {error && (
-            <div className="flex items-center gap-1 mt-1 text-xs text-red-600">
-              <AlertCircle className="w-3 h-3" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, color: colors.accent.red }}>
+              <AlertCircle style={{ width: 12, height: 12 }} />
               <span>{error}</span>
             </div>
           )}
-          <div className="mt-1 text-xs text-gray-500">
-            Original filename: <span className="font-mono">{fileName}</span>
+          <div style={{ marginTop: 4, fontSize: 11, color: colors.text.muted }}>
+            Original filename: <span style={{ fontFamily: MONO }}>{fileName}</span>
           </div>
         </div>
         <Button
+          variant="primary"
           size="sm"
           onClick={handleSave}
           disabled={isSaving || editedCode.trim() === documentCode}
-          className="flex-shrink-0"
+          style={{ flexShrink: 0 }}
         >
-          <Check className="w-4 h-4" />
+          <Check style={{ width: 16, height: 16 }} />
         </Button>
         <Button
+          variant="secondary"
           size="sm"
-          variant="outline"
           onClick={handleCancel}
           disabled={isSaving}
-          className="flex-shrink-0"
+          style={{ flexShrink: 0 }}
         >
-          <X className="w-4 h-4" />
+          <X style={{ width: 16, height: 16 }} />
         </Button>
       </div>
     );
   }
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <div className="flex-1 min-w-0 max-w-[300px]">
-        <div className="flex items-center gap-2 min-w-0">
-          <span 
-            className="text-sm font-mono text-gray-900 truncate block" 
+    <div className={className} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ flex: 1, minWidth: 0, maxWidth: 300 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span
+            style={{ fontSize: 13, fontFamily: MONO, color: colors.text.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}
             title={documentCode || 'No code assigned'}
           >
-            {documentCode || <span className="text-gray-400 italic">No code assigned</span>}
+            {documentCode || <span style={{ color: colors.text.dim, fontStyle: 'italic' }}>No code assigned</span>}
           </span>
-          <button
-            onClick={handleStartEdit}
-            className="p-1 text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0"
-            title="Edit document code"
-          >
-            <Edit2 className="w-3 h-3" />
-          </button>
+          <IconButton label="Edit document code" onClick={handleStartEdit} style={{ flexShrink: 0, width: 24, height: 24 }}>
+            <Edit2 style={{ width: 12, height: 12 }} />
+          </IconButton>
         </div>
-        <div className="mt-1 text-xs text-gray-500 flex items-center gap-1 min-w-0">
-          <FileText className="w-3 h-3 flex-shrink-0" />
-          <span className="truncate block" title={fileName}>{fileName}</span>
+        <div style={{ marginTop: 4, fontSize: 11, color: colors.text.muted, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+          <FileText style={{ width: 12, height: 12, flexShrink: 0 }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }} title={fileName}>{fileName}</span>
         </div>
       </div>
     </div>
   );
 }
-

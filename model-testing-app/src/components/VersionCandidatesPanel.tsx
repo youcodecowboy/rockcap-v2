@@ -1,32 +1,33 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState } from 'react';
+import { Panel, Button, Input, Modal } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { GitBranch, Merge, Trash2 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import type { VersionCandidateGroup } from '@/lib/versionDetection';
 import type { Id } from '../../convex/_generated/dataModel';
+
+function TokenCheckbox({ checked, onChange, accent }: { checked: boolean; onChange: () => void; accent: string }) {
+  return (
+    <button
+      role="checkbox"
+      aria-checked={checked}
+      onClick={(e) => { e.preventDefault(); onChange(); }}
+      style={{
+        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+        border: `1px solid ${checked ? accent : '#9ca3af'}`,
+        background: checked ? accent : 'transparent',
+        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      {checked && (
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+          <path d="M2.5 6.5L5 9L9.5 3.5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 interface VersionCandidatesPanelProps {
   groups: VersionCandidateGroup[];
@@ -35,6 +36,7 @@ interface VersionCandidatesPanelProps {
 }
 
 export default function VersionCandidatesPanel({ groups, onApplyVersions, onDeleteItems }: VersionCandidatesPanelProps) {
+  const colors = useColors();
   // Track selected items per group: groupIndex -> Set of item _ids
   const [selections, setSelections] = useState<Map<number, Set<string>>>(new Map());
   const [versionModalGroup, setVersionModalGroup] = useState<number | null>(null);
@@ -134,73 +136,59 @@ export default function VersionCandidatesPanel({ groups, onApplyVersions, onDele
 
   if (groups.length === 0) return null;
 
+  const amber = colors.accent.orange;
+  const metaPill = (label: string) => (
+    <span style={{ display: 'inline-block', flexShrink: 0, padding: '1px 6px', borderRadius: 2, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, background: colors.bg.cardAlt, color: colors.text.muted, border: `1px solid ${colors.border.default}` }}>
+      {label}
+    </span>
+  );
+
   return (
     <>
-      <Card className="border-amber-200 bg-amber-50/30">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <GitBranch className="w-5 h-5 text-amber-600" />
-            <CardTitle className="text-base">Version Candidates Detected</CardTitle>
-            <Badge variant="secondary" className="ml-auto">
-              {groups.length} group{groups.length !== 1 ? 's' : ''}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <Panel
+        accent={amber}
+        title="Version Candidates Detected"
+        actions={<span style={{ fontSize: 11, color: colors.text.muted }}>{groups.length} group{groups.length !== 1 ? 's' : ''}</span>}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {groups.map((group, groupIdx) => {
             const selectedCount = getSelectedCount(groupIdx);
             return (
-              <div key={`${group.normalizedName}-${groupIdx}`} className="border rounded-md p-3 bg-white">
-                <div className="text-sm font-medium text-amber-800 mb-2 capitalize">
+              <div key={`${group.normalizedName}-${groupIdx}`} style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4, padding: 12, background: colors.bg.card }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: amber, marginBottom: 8, textTransform: 'capitalize' }}>
                   {group.normalizedName}
-                  <span className="text-xs font-normal text-muted-foreground ml-2">
+                  <span style={{ fontSize: 10, fontWeight: 400, color: colors.text.muted, marginLeft: 8 }}>
                     ({group.items.length} files)
                   </span>
                 </div>
-                <div className="space-y-1">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {group.items.map(item => (
-                    <label
+                    <div
                       key={item._id}
-                      className="flex items-center gap-2 p-1.5 rounded hover:bg-gray-50 cursor-pointer"
+                      onClick={() => toggleItem(groupIdx, item._id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 6, borderRadius: 4, cursor: 'pointer' }}
                     >
-                      <Checkbox
+                      <TokenCheckbox
                         checked={selections.get(groupIdx)?.has(item._id) || false}
-                        onCheckedChange={() => toggleItem(groupIdx, item._id)}
+                        onChange={() => toggleItem(groupIdx, item._id)}
+                        accent={colors.accent.blue}
                       />
-                      <span className="text-xs truncate flex-1" title={item.fileName}>
+                      <span style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, color: colors.text.secondary }} title={item.fileName}>
                         {item.fileName}
                       </span>
-                      {item.extractedDate && (
-                        <Badge variant="outline" className="text-[10px] shrink-0">
-                          {item.extractedDate}
-                        </Badge>
-                      )}
-                      {item.extractedVersion && (
-                        <Badge variant="outline" className="text-[10px] shrink-0">
-                          {item.extractedVersion}
-                        </Badge>
-                      )}
-                    </label>
+                      {item.extractedDate && metaPill(item.extractedDate)}
+                      {item.extractedVersion && metaPill(item.extractedVersion)}
+                    </div>
                   ))}
                 </div>
                 {selectedCount >= 2 && (
-                  <div className="flex gap-2 mt-2 pt-2 border-t">
-                    <Button
-                      size="sm"
-                      variant="default"
-                      className="h-7 text-xs"
-                      onClick={() => openVersionModal(groupIdx)}
-                    >
-                      <GitBranch className="w-3 h-3 mr-1" />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${colors.border.default}` }}>
+                    <Button size="sm" variant="primary" onClick={() => openVersionModal(groupIdx)}>
+                      <GitBranch size={12} />
                       Version
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={() => openMergeModal(groupIdx)}
-                    >
-                      <Merge className="w-3 h-3 mr-1" />
+                    <Button size="sm" variant="danger" onClick={() => openMergeModal(groupIdx)}>
+                      <Merge size={12} />
                       Merge
                     </Button>
                   </div>
@@ -208,94 +196,105 @@ export default function VersionCandidatesPanel({ groups, onApplyVersions, onDele
               </div>
             );
           })}
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {/* Version Assignment Modal */}
-      <Dialog open={versionModalGroup !== null} onOpenChange={() => setVersionModalGroup(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Assign Version Numbers</DialogTitle>
-            <DialogDescription>
-              Set the version for each file. V1.0 is treated as the base version.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 my-4">
-            {versionModalGroup !== null && groups[versionModalGroup] &&
-              groups[versionModalGroup].items
-                .filter(i => selections.get(versionModalGroup!)?.has(i._id))
-                .map(item => (
-                  <div key={item._id} className="flex items-center gap-3">
-                    <span className="text-xs truncate flex-1" title={item.fileName}>
-                      {item.fileName}
-                    </span>
-                    <Input
-                      value={versionInputs.get(item._id) || ''}
-                      onChange={(e) => {
-                        setVersionInputs(prev => {
-                          const next = new Map(prev);
-                          next.set(item._id, e.target.value);
-                          return next;
-                        });
-                      }}
-                      className="w-20 h-7 text-xs font-mono text-center"
-                    />
-                  </div>
-                ))
-            }
-          </div>
-          <DialogFooter>
+      <Modal
+        open={versionModalGroup !== null}
+        onClose={() => setVersionModalGroup(null)}
+        title="Assign Version Numbers"
+        footer={
+          <>
             <Button variant="ghost" onClick={() => setVersionModalGroup(null)}>Cancel</Button>
-            <Button onClick={handleApplyVersions} disabled={isApplying}>
+            <Button variant="primary" onClick={handleApplyVersions} disabled={isApplying}>
               {isApplying ? 'Applying...' : 'Apply Versions'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+          Set the version for each file. V1.0 is treated as the base version.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {versionModalGroup !== null && groups[versionModalGroup] &&
+            groups[versionModalGroup].items
+              .filter(i => selections.get(versionModalGroup!)?.has(i._id))
+              .map(item => (
+                <div key={item._id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, color: colors.text.secondary }} title={item.fileName}>
+                    {item.fileName}
+                  </span>
+                  <Input
+                    value={versionInputs.get(item._id) || ''}
+                    onChange={(e) => {
+                      setVersionInputs(prev => {
+                        const next = new Map(prev);
+                        next.set(item._id, e.target.value);
+                        return next;
+                      });
+                    }}
+                    style={{ width: 80, padding: '4px 6px', fontSize: 11, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', textAlign: 'center' }}
+                  />
+                </div>
+              ))
+          }
+        </div>
+      </Modal>
 
       {/* Merge Confirmation Modal */}
-      <AlertDialog open={mergeModalGroup !== null} onOpenChange={() => setMergeModalGroup(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Merge Files</AlertDialogTitle>
-            <AlertDialogDescription>
-              Choose which file to keep. The others will be deleted permanently.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-1 my-4">
-            {mergeModalGroup !== null && groups[mergeModalGroup] &&
-              groups[mergeModalGroup].items
-                .filter(i => selections.get(mergeModalGroup!)?.has(i._id))
-                .map(item => (
-                  <label key={item._id} className="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="keepItem"
-                      checked={keepItemId === item._id}
-                      onChange={() => setKeepItemId(item._id)}
-                      className="accent-green-600"
-                    />
-                    <span className="text-xs truncate">{item.fileName}</span>
-                    {keepItemId === item._id && (
-                      <Badge className="bg-green-100 text-green-800 text-[10px]">Keep</Badge>
-                    )}
-                  </label>
-                ))
-            }
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
-              onClick={handleMerge}
-              disabled={isApplying}
-            >
-              <Trash2 className="w-3 h-3 mr-1" />
+      <Modal
+        open={mergeModalGroup !== null}
+        onClose={() => setMergeModalGroup(null)}
+        title="Merge Files"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setMergeModalGroup(null)}>Cancel</Button>
+            <Button variant="danger" onClick={handleMerge} disabled={isApplying}>
+              <Trash2 size={12} />
               Merge — Delete {mergeModalGroup !== null ? (getSelectedCount(mergeModalGroup) - 1) : 0} copies
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+          Choose which file to keep. The others will be deleted permanently.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {mergeModalGroup !== null && groups[mergeModalGroup] &&
+            groups[mergeModalGroup].items
+              .filter(i => selections.get(mergeModalGroup!)?.has(i._id))
+              .map(item => {
+                const isKeep = keepItemId === item._id;
+                return (
+                  <div
+                    key={item._id}
+                    onClick={() => setKeepItemId(item._id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderRadius: 4, cursor: 'pointer' }}
+                  >
+                    <span
+                      role="radio"
+                      aria-checked={isKeep}
+                      style={{
+                        width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+                        border: `1px solid ${isKeep ? colors.accent.green : '#9ca3af'}`,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {isKeep && <span style={{ width: 7, height: 7, borderRadius: '50%', background: colors.accent.green }} />}
+                    </span>
+                    <span style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: colors.text.secondary }}>{item.fileName}</span>
+                    {isKeep && (
+                      <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 2, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, textTransform: 'uppercase', background: `${colors.accent.green}20`, color: colors.accent.green, border: `1px solid ${colors.accent.green}40` }}>
+                        Keep
+                      </span>
+                    )}
+                  </div>
+                );
+              })
+          }
+        </div>
+      </Modal>
     </>
   );
 }

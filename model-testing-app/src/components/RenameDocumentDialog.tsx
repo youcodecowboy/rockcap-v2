@@ -5,19 +5,8 @@ import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Pencil } from 'lucide-react';
+import { Button, Input, Modal } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   resolveNamingConfig,
   assembleDocumentCode,
@@ -54,7 +43,10 @@ export default function RenameDocumentDialog({
   clientCode = "",
   projectCode = "",
 }: RenameDocumentDialogProps) {
+  const colors = useColors();
   const renameMutation = useMutation(api.documents.rename);
+
+  const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
   const namingConfig = useMemo(
     () => resolveNamingConfig(projectMetadata, clientMetadata),
@@ -145,104 +137,157 @@ export default function RenameDocumentDialog({
     customTokensInPattern.includes(ct.id.toUpperCase())
   );
 
+  const tokenChip = (label: string, tone: string, required?: boolean) => (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 80,
+        flexShrink: 0,
+        padding: '4px 6px',
+        borderRadius: 2,
+        fontFamily: MONO,
+        fontSize: 11,
+        background: `${tone}15`,
+        color: tone,
+        border: `1px solid ${tone}40`,
+      }}
+    >
+      {label}
+      {required && <span style={{ color: colors.accent.red, marginLeft: 2 }}>*</span>}
+    </span>
+  );
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[480px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Pencil className="w-4 h-4" />
-            Rename Document
-          </DialogTitle>
-        </DialogHeader>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="Rename Document"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Section 1: Custom Display Name (optional) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
+            Custom Display Name <span style={{ color: colors.text.dim }}>(optional)</span>
+          </label>
+          <Input
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Leave empty to use document code"
+          />
+          <p style={{ fontSize: 10, color: colors.text.dim }}>
+            Overrides the document code as the displayed name. Original file: <span style={{ fontFamily: MONO }}>{document.fileName}</span>
+          </p>
+        </div>
 
-        <div className="space-y-5 py-2">
-          {/* Section 1: Custom Display Name (optional) */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Custom Display Name <span className="text-gray-400 font-normal">(optional)</span></Label>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Leave empty to use document code"
-            />
-            <p className="text-xs text-gray-500">Overrides the document code as the displayed name. Original file: <span className="font-mono">{document.fileName}</span></p>
-          </div>
-
-          {/* Section 2: Document Code */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Document Code</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Customize</span>
-                <Switch
-                  checked={customizeCode}
-                  onCheckedChange={setCustomizeCode}
-                  className="scale-75"
+        {/* Section 2: Document Code */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <label style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
+              Document Code
+            </label>
+            <button
+              role="checkbox"
+              aria-checked={customizeCode}
+              onClick={() => setCustomizeCode(!customizeCode)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 10,
+                color: colors.text.muted,
+              }}
+            >
+              Customize
+              <span
+                style={{
+                  width: 28,
+                  height: 16,
+                  borderRadius: 8,
+                  background: customizeCode ? colors.accent.blue : colors.border.mid,
+                  position: 'relative',
+                  transition: 'background 100ms linear',
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: customizeCode ? 14 : 2,
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    background: '#ffffff',
+                    transition: 'left 100ms linear',
+                  }}
                 />
-              </div>
-            </div>
-            {customizeCode ? (
-              <Input
-                value={manualCode}
-                onChange={(e) => setManualCode(e.target.value)}
-                placeholder="Enter custom code"
-                className="font-mono text-sm"
-              />
-            ) : (
-              <div className="bg-gray-50 rounded-md border px-3 py-2">
-                <p className="text-sm font-mono text-gray-700">
-                  {autoCode || <span className="text-gray-400 italic">No code (fill in fields below)</span>}
-                </p>
-              </div>
-            )}
+              </span>
+            </button>
           </div>
-
-          {/* Section 3: Field Values */}
-          {(builtInTokensInPattern.length > 0 || customTokenDefs.length > 0) && (
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">Field Values</Label>
-
-              {/* Built-in tokens (read-only) */}
-              {builtInTokensInPattern.map((token) => (
-                <div key={token} className="flex items-center gap-3">
-                  <Badge variant="secondary" className="bg-blue-50 text-blue-700 text-xs font-mono w-20 justify-center">
-                    {token}
-                  </Badge>
-                  <Input
-                    value={builtInValues[token.toLowerCase()] || ""}
-                    disabled
-                    className="flex-1 text-sm font-mono bg-gray-50"
-                  />
-                </div>
-              ))}
-
-              {/* Custom tokens (editable) */}
-              {customTokenDefs.map((ct) => (
-                <div key={ct.id} className="flex items-center gap-3">
-                  <Badge variant="secondary" className="bg-purple-50 text-purple-700 text-xs font-mono w-20 justify-center">
-                    {ct.label}
-                    {ct.required && <span className="text-red-500 ml-0.5">*</span>}
-                  </Badge>
-                  <Input
-                    value={fieldValues[ct.id] || ""}
-                    onChange={(e) => handleFieldChange(ct.id, e.target.value)}
-                    placeholder={ct.label}
-                    className="flex-1 text-sm"
-                  />
-                </div>
-              ))}
+          {customizeCode ? (
+            <Input
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value)}
+              placeholder="Enter custom code"
+              style={{ fontFamily: MONO }}
+            />
+          ) : (
+            <div style={{ background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.default}`, padding: '8px 12px' }}>
+              <p style={{ fontSize: 12, fontFamily: MONO, color: colors.text.secondary }}>
+                {autoCode || <span style={{ color: colors.text.dim, fontStyle: 'italic' }}>No code (fill in fields below)</span>}
+              </p>
             </div>
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? "Saving..." : "Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {/* Section 3: Field Values */}
+        {(builtInTokensInPattern.length > 0 || customTokenDefs.length > 0) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
+              Field Values
+            </label>
+
+            {/* Built-in tokens (read-only) */}
+            {builtInTokensInPattern.map((token) => (
+              <div key={token} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {tokenChip(token, colors.accent.blue)}
+                <Input
+                  value={builtInValues[token.toLowerCase()] || ''}
+                  disabled
+                  style={{ flex: 1, fontFamily: MONO, background: colors.bg.light }}
+                />
+              </div>
+            ))}
+
+            {/* Custom tokens (editable) */}
+            {customTokenDefs.map((ct) => (
+              <div key={ct.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {tokenChip(ct.label, colors.accent.purple, ct.required)}
+                <Input
+                  value={fieldValues[ct.id] || ''}
+                  onChange={(e) => handleFieldChange(ct.id, e.target.value)}
+                  placeholder={ct.label}
+                  style={{ flex: 1 }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

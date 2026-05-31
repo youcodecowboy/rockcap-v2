@@ -1,8 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import {
   Collapsible,
   CollapsibleContent,
@@ -24,16 +22,26 @@ import {
   History,
   Filter,
 } from 'lucide-react';
+import { StatusPill, FlagChip } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
 import {
   getConfidenceColor,
   getConfidenceLabel,
   getRelativeTimeString,
   formatFieldValue,
-  CONFIDENCE_BORDER_COLORS,
-  CONFIDENCE_BADGE_STYLES,
+  type ConfidenceLevel,
   type EvidenceEntry,
 } from './intelligenceUtils';
 import { IntelligenceCardExpanded } from './IntelligenceCardExpanded';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+function confidenceTone(level: ConfidenceLevel, colors: ColorPalette): string {
+  if (level === 'green') return colors.accent.green;
+  if (level === 'amber') return colors.accent.orange;
+  return colors.accent.red;
+}
 
 interface IntelligenceCardProps {
   fieldLabel: string;
@@ -75,45 +83,52 @@ export function IntelligenceCard({
   projectId,
   onDocumentFilter,
 }: IntelligenceCardProps) {
+  const colors = useColors();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [filterHover, setFilterHover] = useState(false);
 
   const confidenceLevel = getConfidenceColor(confidence);
   const confidenceLabel = getConfidenceLabel(confidence);
+  const tone = confidenceTone(confidenceLevel, colors);
 
   return (
     <TooltipProvider>
       <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
         <div
-          className={cn(
-            'bg-white border rounded-lg border-l-4 transition-all',
-            CONFIDENCE_BORDER_COLORS[confidenceLevel],
-            isRecentlyUpdated && 'bg-green-50/30',
-            isExpanded && 'shadow-sm'
-          )}
+          style={{
+            background: isRecentlyUpdated ? `${colors.accent.green}0d` : colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderLeft: `3px solid ${tone}`,
+            borderRadius: 4,
+            transition: 'background 100ms linear',
+          }}
         >
           {/* Collapsed Card */}
           <CollapsibleTrigger asChild>
             <button
               type="button"
-              className="w-full text-left px-4 py-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-inset rounded-lg"
+              className="w-full text-left px-4 py-3 focus:outline-none"
+              style={{ borderRadius: 4 }}
             >
               <div className="flex items-start justify-between gap-2">
                 {/* Left: label + value */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    <span
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: 9,
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                        fontWeight: 500,
+                        color: colors.text.muted,
+                      }}
+                    >
                       {fieldLabel}
                     </span>
-                    {isCore && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-700 bg-blue-50"
-                      >
-                        Core
-                      </Badge>
-                    )}
+                    {isCore && <StatusPill label="Core" tone={colors.accent.blue} />}
                   </div>
-                  <p className="mt-1 text-sm font-medium text-gray-900 break-words">
+                  <p className="mt-1 break-words" style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
                     {truncateValue(formatFieldValue(fieldValue, fieldKey))}
                   </p>
                 </div>
@@ -124,39 +139,22 @@ export function IntelligenceCard({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            'text-[10px] px-1.5 py-0',
-                            CONFIDENCE_BADGE_STYLES[confidenceLevel]
-                          )}
-                        >
-                          {confidenceLabel}
-                        </Badge>
+                        <StatusPill label={confidenceLabel} tone={tone} />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>
-                      Confidence: {confidenceLabel}
-                    </TooltipContent>
+                    <TooltipContent>Confidence: {confidenceLabel}</TooltipContent>
                   </Tooltip>
 
                   {/* Conflict indicator */}
                   {conflictCount > 0 && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <span>
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-700 bg-amber-50"
-                          >
-                            <AlertTriangle className="w-3 h-3 mr-0.5" />
-                            {conflictCount}
-                          </Badge>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <FlagChip label={`${conflictCount}`} severity="warn" />
                         </span>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {conflictCount} conflicting{' '}
-                        {conflictCount === 1 ? 'value' : 'values'}
+                        {conflictCount} conflicting {conflictCount === 1 ? 'value' : 'values'}
                       </TooltipContent>
                     </Tooltip>
                   )}
@@ -166,37 +164,31 @@ export function IntelligenceCard({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span>
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0 border-gray-300 text-gray-500 bg-gray-50"
-                          >
-                            <History className="w-3 h-3 mr-0.5" />
-                            {priorValueCount}
-                          </Badge>
+                          <StatusPill label={`${priorValueCount}`} tone={colors.text.muted} />
                         </span>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {priorValueCount} prior{' '}
-                        {priorValueCount === 1 ? 'value' : 'values'}
+                        {priorValueCount} prior {priorValueCount === 1 ? 'value' : 'values'}
                       </TooltipContent>
                     </Tooltip>
                   )}
 
                   {/* Expand/collapse chevron */}
                   {isExpanded ? (
-                    <ChevronUp className="w-4 h-4 text-gray-400" />
+                    <ChevronUp size={16} style={{ color: colors.text.dim }} />
                   ) : (
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                    <ChevronDown size={16} style={{ color: colors.text.dim }} />
                   )}
                 </div>
               </div>
 
               {/* Source doc + timestamp footer */}
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
+              <div className="mt-2 flex items-center gap-1.5" style={{ fontSize: 11, color: colors.text.dim }}>
                 {sourceDocumentId ? (
                   <>
                     <span
-                      className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                      className="flex items-center gap-1"
+                      style={{ color: colors.accent.blue }}
                       onClick={(e) => {
                         e.stopPropagation();
                         window.location.href = `/docs/${sourceDocumentId}/`;
@@ -204,16 +196,23 @@ export function IntelligenceCard({
                       role="link"
                       tabIndex={-1}
                     >
-                      <FileText className="w-3 h-3" />
+                      <FileText size={12} />
                       <span className="truncate max-w-[180px]">
                         {sourceDocumentName || 'Source document'}
                       </span>
-                      <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                      <ExternalLink size={10} style={{ opacity: 0.6 }} />
                     </span>
                     {onDocumentFilter && (
                       <button
                         type="button"
-                        className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+                        className="p-0.5"
+                        style={{
+                          borderRadius: 3,
+                          background: filterHover ? colors.bg.cardAlt : 'transparent',
+                          transition: 'background 100ms linear',
+                        }}
+                        onMouseEnter={() => setFilterHover(true)}
+                        onMouseLeave={() => setFilterHover(false)}
                         onClick={(e) => {
                           e.stopPropagation();
                           onDocumentFilter({
@@ -223,25 +222,23 @@ export function IntelligenceCard({
                         }}
                         title="View all intelligence from this document"
                       >
-                        <Filter className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+                        <Filter size={12} style={{ color: colors.text.muted }} />
                       </button>
                     )}
                   </>
                 ) : sourceDocumentName ? (
                   <span className="flex items-center gap-1">
-                    <FileText className="w-3 h-3" />
-                    <span className="truncate max-w-[180px]">
-                      {sourceDocumentName}
-                    </span>
+                    <FileText size={12} />
+                    <span className="truncate max-w-[180px]">{sourceDocumentName}</span>
                   </span>
                 ) : null}
 
                 {extractedAt && (
                   <>
                     {(sourceDocumentName || sourceDocumentId) && (
-                      <span className="text-gray-300">|</span>
+                      <span style={{ color: colors.border.mid }}>|</span>
                     )}
-                    <Clock className="w-3 h-3" />
+                    <Clock size={12} />
                     <span>{getRelativeTimeString(extractedAt)}</span>
                   </>
                 )}

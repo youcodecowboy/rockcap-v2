@@ -4,16 +4,9 @@ import { useState, useEffect } from 'react';
 import { AnalysisResult } from '@/types';
 import { useClients, useProjectsByClient, useCreateClient, useCreateProject, useClient, useProject } from '@/lib/clientStorage';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Building2, FolderKanban, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
+import { Button, Input, Select, Panel, Field } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { Building2, FolderKanban, CheckCircle2, Plus } from 'lucide-react';
 import { useCreateDocument, useCreateInternalDocument } from '@/lib/documentStorage';
 import { useSaveProspectingContext } from '@/lib/prospectingStorage';
 import { useCreateEnrichment } from '@/lib/clientStorage';
@@ -40,6 +33,7 @@ export default function FileAssignmentCard({
   jobId,
   onFiled,
 }: FileAssignmentCardProps) {
+  const colors = useColors();
   // Initialize with analysis result
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     analysisResult.clientId || null
@@ -372,280 +366,231 @@ export default function FileAssignmentCard({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">File Assignment</h2>
-          <p className="text-sm text-gray-600">
-            Assign this file to a client and project, or mark it as an internal document
-          </p>
-        </div>
-        {isFiled && (
-          <Badge className="bg-green-100 text-green-700">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
-            Filed
-          </Badge>
+    <div style={{ marginBottom: 24 }}>
+      <Panel
+        title="File Assignment"
+        actions={
+          isFiled ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 2, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, textTransform: 'uppercase', background: `${colors.accent.green}20`, color: colors.accent.green, border: `1px solid ${colors.accent.green}40` }}>
+              <CheckCircle2 size={11} />
+              Filed
+            </span>
+          ) : undefined
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>
+          Assign this file to a client and project, or mark it as an internal document
+        </p>
+
+        {/* AI Suggestions */}
+        {(analysisResult.suggestedClientName || analysisResult.suggestedProjectName) && (
+          <div style={{ marginBottom: 16, padding: 12, background: `${colors.accent.blue}15`, border: `1px solid ${colors.accent.blue}40`, borderRadius: 4 }}>
+            <p style={{ fontSize: 12, fontWeight: 500, color: colors.accent.blue, marginBottom: 4 }}>AI Suggestions</p>
+            {analysisResult.suggestedClientName && (
+              <p style={{ fontSize: 12, color: colors.text.secondary }}>
+                Suggested Client: <span style={{ fontWeight: 600 }}>{analysisResult.suggestedClientName}</span>
+              </p>
+            )}
+            {analysisResult.suggestedProjectName && (
+              <p style={{ fontSize: 12, color: colors.text.secondary }}>
+                Suggested Project: <span style={{ fontWeight: 600 }}>{analysisResult.suggestedProjectName}</span>
+              </p>
+            )}
+          </div>
         )}
-      </div>
 
-      {/* AI Suggestions */}
-      {(analysisResult.suggestedClientName || analysisResult.suggestedProjectName) && (
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm font-medium text-blue-900 mb-1">AI Suggestions</p>
-          {analysisResult.suggestedClientName && (
-            <p className="text-sm text-blue-800">
-              Suggested Client: <span className="font-semibold">{analysisResult.suggestedClientName}</span>
-            </p>
-          )}
-          {analysisResult.suggestedProjectName && (
-            <p className="text-sm text-blue-800">
-              Suggested Project: <span className="font-semibold">{analysisResult.suggestedProjectName}</span>
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="space-y-4">
-        {/* Mark as Internal Checkbox */}
-        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <input
-            type="checkbox"
-            id="isInternal"
-            checked={isInternal}
-            onChange={(e) => {
-              setIsInternal(e.target.checked);
-              if (!e.target.checked) {
-                // Clear multiple project selection when unchecking internal
-                setSelectedProjectIds([]);
-              }
-            }}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-          />
-          <label htmlFor="isInternal" className="text-sm font-medium text-gray-700 cursor-pointer">
-            Mark as Internal Document
-          </label>
-          <span className="text-xs text-gray-500 ml-auto">
-            {isInternal ? '(Can still link to client/projects)' : ''}
-          </span>
-        </div>
-
-        {/* Client Selection */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Client {!isInternal && !selectedClientId && <span className="text-red-500">*</span>}
-            {isInternal && <span className="text-gray-500 text-xs">(Optional)</span>}
-          </label>
-          {isCreatingClient ? (
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={newClientName}
-                onChange={(e) => setNewClientName(e.target.value)}
-                placeholder="Enter client name"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleCreateClient}
-                  disabled={!newClientName.trim()}
-                  size="sm"
-                >
-                  Create Client
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsCreatingClient(false);
-                    setNewClientName(analysisResult.suggestedClientName || '');
-                  }}
-                  size="sm"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Select 
-              value={selectedClientId || ''} 
-              onValueChange={handleClientSelect}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Mark as Internal Checkbox */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 12, background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+            <button
+              role="checkbox"
+              aria-checked={isInternal}
+              onClick={() => {
+                const next = !isInternal;
+                setIsInternal(next);
+                if (!next) setSelectedProjectIds([]);
+              }}
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: 3,
+                border: `1px solid ${isInternal ? colors.accent.blue : colors.border.mid}`,
+                background: isInternal ? colors.accent.blue : 'transparent',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={isInternal ? "Select a client (optional)..." : "Select a client..."} />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((client) => {
-                  const clientId = (client as any)._id || (client as any).id;
-                  return (
-                    <SelectItem key={clientId} value={clientId as string}>
-                      {client.name}
-                    </SelectItem>
-                  );
-                })}
-                {analysisResult.suggestedClientName && (
-                  <SelectItem value="new">
-                    <div className="flex items-center gap-2">
-                      <Plus className="w-4 h-4" />
-                      <span>Create: {analysisResult.suggestedClientName}</span>
-                    </div>
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+              {isInternal && <CheckCircle2 size={12} style={{ color: '#fff' }} />}
+            </button>
+            <span
+              onClick={() => {
+                const next = !isInternal;
+                setIsInternal(next);
+                if (!next) setSelectedProjectIds([]);
+              }}
+              style={{ fontSize: 12, fontWeight: 500, color: colors.text.secondary, cursor: 'pointer' }}
+            >
+              Mark as Internal Document
+            </span>
+            <span style={{ fontSize: 10, color: colors.text.muted, marginLeft: 'auto' }}>
+              {isInternal ? '(Can still link to client/projects)' : ''}
+            </span>
+          </div>
 
-        {/* Project Selection (if client is selected OR if internal) */}
-        {(selectedClientId || isInternal) && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {isInternal ? 'Projects' : 'Project'} <span className="text-gray-500 text-xs">(Optional{isInternal ? ', can select multiple' : ''})</span>
-            </label>
-            {isCreatingProject ? (
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  placeholder="Enter project name"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleCreateProject}
-                    disabled={!newProjectName.trim()}
-                    size="sm"
-                  >
-                    Create Project
+          {/* Client Selection */}
+          <Field label={`Client${isInternal ? ' (optional)' : ''}`}>
+            {isCreatingClient ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} placeholder="Enter client name" autoFocus />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="primary" size="sm" onClick={handleCreateClient} disabled={!newClientName.trim()}>
+                    Create Client
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setIsCreatingProject(false);
-                      setNewProjectName(analysisResult.suggestedProjectName || '');
-                    }}
-                    size="sm"
-                  >
+                  <Button variant="secondary" size="sm" onClick={() => { setIsCreatingClient(false); setNewClientName(analysisResult.suggestedClientName || ''); }}>
                     Cancel
                   </Button>
                 </div>
               </div>
-            ) : isInternal ? (
-              // Multiple project selection for internal documents
-              <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-2">
-                {projects.length === 0 ? (
-                  <p className="text-sm text-gray-500 p-2">No projects available</p>
-                ) : (
-                  projects.map((project) => {
-                    const projectId = ((project as any)._id || (project as any).id) as string;
-                    const isSelected = selectedProjectIds.includes(projectId);
-                    return (
-                      <div key={projectId} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded">
-                        <input
-                          type="checkbox"
-                          id={`project-${projectId}`}
-                          checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedProjectIds([...selectedProjectIds, projectId]);
-                            } else {
+            ) : (
+              <Select value={selectedClientId || ''} onChange={(e) => handleClientSelect(e.target.value)}>
+                <option value="" disabled>{isInternal ? 'Select a client (optional)...' : 'Select a client...'}</option>
+                {clients.map((client) => {
+                  const clientId = (client as any)._id || (client as any).id;
+                  return (
+                    <option key={clientId} value={clientId as string}>
+                      {client.name}
+                    </option>
+                  );
+                })}
+                {analysisResult.suggestedClientName && (
+                  <option value="new">+ Create: {analysisResult.suggestedClientName}</option>
+                )}
+              </Select>
+            )}
+          </Field>
+
+          {/* Project Selection (if client is selected OR if internal) */}
+          {(selectedClientId || isInternal) && (
+            <Field label={`${isInternal ? 'Projects' : 'Project'} (optional${isInternal ? ', can select multiple' : ''})`}>
+              {isCreatingProject ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Input value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Enter project name" autoFocus />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button variant="primary" size="sm" onClick={handleCreateProject} disabled={!newProjectName.trim()}>
+                      Create Project
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => { setIsCreatingProject(false); setNewProjectName(analysisResult.suggestedProjectName || ''); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : isInternal ? (
+                // Multiple project selection for internal documents
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 192, overflowY: 'auto', border: `1px solid ${colors.border.default}`, borderRadius: 4, padding: 8 }}>
+                  {projects.length === 0 ? (
+                    <p style={{ fontSize: 12, color: colors.text.muted, padding: 8 }}>No projects available</p>
+                  ) : (
+                    projects.map((project) => {
+                      const projectId = ((project as any)._id || (project as any).id) as string;
+                      const isSelected = selectedProjectIds.includes(projectId);
+                      return (
+                        <div
+                          key={projectId}
+                          onClick={() => {
+                            if (isSelected) {
                               setSelectedProjectIds(selectedProjectIds.filter(id => id !== projectId));
+                            } else {
+                              setSelectedProjectIds([...selectedProjectIds, projectId]);
                             }
                           }}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor={`project-${projectId}`} className="text-sm text-gray-700 cursor-pointer flex-1">
-                          {project.name}
-                        </label>
-                      </div>
-                    );
-                  })
-                )}
-                {analysisResult.suggestedProjectName && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsCreatingProject(true)}
-                    className="w-full mt-2"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create: {analysisResult.suggestedProjectName}
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <Select value={selectedProjectId || 'none'} onValueChange={handleProjectSelect}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a project..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No project (client-level document)</SelectItem>
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderRadius: 4, cursor: 'pointer' }}
+                        >
+                          <span
+                            role="checkbox"
+                            aria-checked={isSelected}
+                            style={{
+                              width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                              border: `1px solid ${isSelected ? colors.accent.blue : colors.border.mid}`,
+                              background: isSelected ? colors.accent.blue : 'transparent',
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            {isSelected && <CheckCircle2 size={12} style={{ color: '#fff' }} />}
+                          </span>
+                          <span style={{ fontSize: 12, color: colors.text.secondary, flex: 1 }}>{project.name}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                  {analysisResult.suggestedProjectName && (
+                    <Button variant="secondary" size="sm" onClick={() => setIsCreatingProject(true)} style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}>
+                      <Plus size={14} />
+                      Create: {analysisResult.suggestedProjectName}
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <Select value={selectedProjectId || 'none'} onChange={(e) => handleProjectSelect(e.target.value)}>
+                  <option value="none">No project (client-level document)</option>
                   {projects.map((project) => {
                     const projectId = (project as any)._id || (project as any).id;
                     return (
-                      <SelectItem key={projectId} value={projectId as string}>
+                      <option key={projectId} value={projectId as string}>
                         {project.name}
-                      </SelectItem>
+                      </option>
                     );
                   })}
                   {analysisResult.suggestedProjectName && (
-                    <SelectItem value="new">
-                      <div className="flex items-center gap-2">
-                        <Plus className="w-4 h-4" />
-                        <span>Create: {analysisResult.suggestedProjectName}</span>
-                      </div>
-                    </SelectItem>
+                    <option value="new">+ Create: {analysisResult.suggestedProjectName}</option>
                   )}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        )}
+                </Select>
+              )}
+            </Field>
+          )}
 
-        {/* Selected Assignment Display */}
-        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="flex flex-col gap-2 text-sm">
-            {isInternal && (
-              <div className="flex items-center gap-2">
-                <span className="text-green-600 font-medium">Internal Document</span>
-              </div>
-            )}
-            {selectedClientId && (
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-gray-400" />
-                <span className="font-medium text-gray-900">{selectedClientData?.name || 'Loading...'}</span>
-              </div>
-            )}
-            {!isInternal && selectedProjectId && (
-              <div className="flex items-center gap-2">
-                <FolderKanban className="w-4 h-4 text-gray-400" />
-                <span className="font-medium text-gray-900">{selectedProjectData?.name || 'Loading...'}</span>
-              </div>
-            )}
-            {isInternal && selectedProjectIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <FolderKanban className="w-4 h-4 text-gray-400" />
-                <span className="text-xs text-gray-500">{selectedProjectIds.length} project(s) selected</span>
-              </div>
-            )}
-            {!isInternal && !selectedClientId && (
-              <span className="text-red-500 text-xs">Please select a client</span>
-            )}
+          {/* Selected Assignment Display */}
+          <div style={{ padding: 12, background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+              {isInternal && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: colors.accent.green, fontWeight: 500 }}>Internal Document</span>
+                </div>
+              )}
+              {selectedClientId && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Building2 size={16} style={{ color: colors.text.dim }} />
+                  <span style={{ fontWeight: 500, color: colors.text.primary }}>{selectedClientData?.name || 'Loading...'}</span>
+                </div>
+              )}
+              {!isInternal && selectedProjectId && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FolderKanban size={16} style={{ color: colors.text.dim }} />
+                  <span style={{ fontWeight: 500, color: colors.text.primary }}>{selectedProjectData?.name || 'Loading...'}</span>
+                </div>
+              )}
+              {isInternal && selectedProjectIds.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                  <FolderKanban size={16} style={{ color: colors.text.dim }} />
+                  <span style={{ fontSize: 10, color: colors.text.muted }}>{selectedProjectIds.length} project(s) selected</span>
+                </div>
+              )}
+              {!isInternal && !selectedClientId && (
+                <span style={{ color: colors.accent.red, fontSize: 10 }}>Please select a client</span>
+              )}
+            </div>
           </div>
+
+          {/* File Button */}
+          {!isFiled && (
+            <Button variant="primary" onClick={handleFileDocument} disabled={isFiling} style={{ width: '100%', justifyContent: 'center' }}>
+              {isFiling ? 'Filing...' : 'File Document'}
+            </Button>
+          )}
         </div>
-
-        {/* File Button */}
-        {!isFiled && (
-          <Button
-            onClick={handleFileDocument}
-            disabled={isFiling}
-            className="w-full"
-          >
-            {isFiling ? 'Filing...' : 'File Document'}
-          </Button>
-        )}
-      </div>
+      </Panel>
     </div>
   );
 }

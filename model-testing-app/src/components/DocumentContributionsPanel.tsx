@@ -4,8 +4,11 @@ import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { FileText, Trash2, AlertTriangle, Check, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Button, Modal, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { FileText, Trash2, AlertTriangle, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface DocumentContributionsPanelProps {
   projectId: Id<'projects'>;
@@ -20,9 +23,11 @@ export default function DocumentContributionsPanel({
   documentName,
   onRevertComplete,
 }: DocumentContributionsPanelProps) {
+  const colors = useColors();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [headerHover, setHeaderHover] = useState(false);
 
   // Query items from this document
   const itemsFromDocument = useQuery(
@@ -65,67 +70,74 @@ export default function DocumentContributionsPanel({
   });
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div style={{ background: colors.bg.card, border: `1px solid ${colors.border.default}`, borderRadius: 4, overflow: 'hidden' }}>
       {/* Header */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+      <div
+        className="w-full px-4 py-3 flex items-center justify-between"
+        style={{ background: headerHover ? colors.bg.cardAlt : colors.bg.light, transition: 'background 100ms linear' }}
+        onMouseEnter={() => setHeaderHover(true)}
+        onMouseLeave={() => setHeaderHover(false)}
       >
-        <div className="flex items-center gap-3">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-3 flex-1 text-left"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+        >
           {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+            <ChevronDown size={16} style={{ color: colors.text.muted }} />
           ) : (
-            <ChevronRight className="w-4 h-4 text-gray-500" />
+            <ChevronRight size={16} style={{ color: colors.text.muted }} />
           )}
-          <FileText className="w-4 h-4 text-blue-500" />
-          <span className="font-medium text-gray-900">{documentName}</span>
-          <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
-            {itemsFromDocument.length} items contributed
-          </span>
-        </div>
+          <FileText size={16} style={{ color: colors.accent.blue }} />
+          <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{documentName}</span>
+          <StatusPill label={`${itemsFromDocument.length} items contributed`} tone={colors.text.muted} />
+        </button>
         <Button
-          variant="outline"
+          variant="danger"
           size="sm"
           onClick={(e) => {
             e.stopPropagation();
             setShowConfirm(true);
           }}
-          className="text-red-600 border-red-200 hover:bg-red-50"
         >
-          <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+          <Trash2 size={14} />
           Remove All
         </Button>
-      </button>
+      </div>
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4" style={{ borderTop: `1px solid ${colors.border.default}` }}>
           <div className="space-y-4">
             {Object.entries(itemsByCategory)
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([category, items]) => (
                 <div key={category}>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">{category}</h4>
-                  <div className="bg-gray-50 rounded-lg divide-y divide-gray-200">
-                    {items.map(item => (
-                      <div key={item._id} className="px-3 py-2 flex items-center justify-between">
+                  <h4 className="mb-2" style={{ fontSize: 13, fontWeight: 500, color: colors.text.secondary }}>{category}</h4>
+                  <div style={{ background: colors.bg.light, borderRadius: 4, overflow: 'hidden' }}>
+                    {items.map((item, idx) => (
+                      <div
+                        key={item._id}
+                        className="px-3 py-2 flex items-center justify-between"
+                        style={{ borderTop: idx === 0 ? 'none' : `1px solid ${colors.border.light}` }}
+                      >
                         <div>
-                          <span className="text-xs font-mono text-gray-400 mr-2">
+                          <span style={{ fontFamily: MONO, fontSize: 11, color: colors.text.dim, marginRight: 8 }}>
                             {item.itemCode}
                           </span>
-                          <span className="text-sm text-gray-900">{item.originalName}</span>
+                          <span style={{ fontSize: 13, color: colors.text.primary }}>{item.originalName}</span>
                           {item.hasMultipleSources && (
-                            <span className="ml-2 text-xs text-orange-600">
+                            <span style={{ marginLeft: 8, fontSize: 11, color: colors.accent.orange }}>
                               (has {item.valueHistory.length} versions)
                             </span>
                           )}
                         </div>
-                        <span className="text-sm font-medium text-gray-700">
+                        <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.secondary }}>
                           {item.currentDataType === 'currency' && typeof item.currentValue === 'number'
-                            ? new Intl.NumberFormat('en-GB', { 
-                                style: 'currency', 
+                            ? new Intl.NumberFormat('en-GB', {
+                                style: 'currency',
                                 currency: 'GBP',
-                                maximumFractionDigits: 0 
+                                maximumFractionDigits: 0
                               }).format(item.currentValue)
                             : item.currentValue}
                         </span>
@@ -139,64 +151,58 @@ export default function DocumentContributionsPanel({
       )}
 
       {/* Confirmation Dialog */}
-      {showConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowConfirm(false)} />
-          <div className="relative bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
-            <div className="flex items-center gap-3 text-red-600 mb-4">
-              <AlertTriangle className="w-6 h-6" />
-              <h3 className="text-lg font-semibold">Remove Document Data</h3>
-            </div>
-            
-            <p className="text-gray-600 mb-4">
-              This will remove all <strong>{itemsFromDocument.length} items</strong> that came from{' '}
-              <strong>{documentName}</strong> from the project data library.
-            </p>
-            
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-              <div className="flex items-start gap-2 text-amber-700 text-sm">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium">What will happen:</p>
-                  <ul className="list-disc list-inside mt-1 text-xs">
-                    <li>Items only from this document will be deleted</li>
-                    <li>Items with multiple sources will revert to the previous value</li>
-                    <li>A backup snapshot will be created automatically</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+      <Modal
+        open={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        title="Remove Document Data"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowConfirm(false)} disabled={isReverting}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleRevert} disabled={isReverting}>
+              {isReverting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                <>
+                  <Trash2 size={16} />
+                  Remove Data
+                </>
+              )}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex items-center gap-3 mb-4" style={{ color: colors.accent.red }}>
+          <AlertTriangle size={24} />
+          <h3 style={{ fontSize: 16, fontWeight: 600 }}>Remove Document Data</h3>
+        </div>
 
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowConfirm(false)}
-                disabled={isReverting}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleRevert}
-                className="bg-red-600 hover:bg-red-700"
-                disabled={isReverting}
-              >
-                {isReverting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Removing...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Remove Data
-                  </>
-                )}
-              </Button>
+        <p className="mb-4" style={{ fontSize: 13, color: colors.text.secondary }}>
+          This will remove all <strong>{itemsFromDocument.length} items</strong> that came from{' '}
+          <strong>{documentName}</strong> from the project data library.
+        </p>
+
+        <div
+          className="p-3 mb-1"
+          style={{ background: `${colors.accent.orange}10`, border: `1px solid ${colors.accent.orange}40`, borderRadius: 4 }}
+        >
+          <div className="flex items-start gap-2" style={{ color: colors.accent.orange, fontSize: 13 }}>
+            <AlertTriangle size={16} style={{ marginTop: 2, flexShrink: 0 }} />
+            <div>
+              <p style={{ fontWeight: 500 }}>What will happen:</p>
+              <ul className="list-disc list-inside mt-1" style={{ fontSize: 11 }}>
+                <li>Items only from this document will be deleted</li>
+                <li>Items with multiple sources will revert to the previous value</li>
+                <li>A backup snapshot will be created automatically</li>
+              </ul>
             </div>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
-

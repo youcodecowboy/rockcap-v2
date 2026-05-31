@@ -1,10 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Button, IconButton, Field, Input, Textarea } from "@/components/layouts";
+import { useColors } from "@/lib/useColors";
 import { X } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -27,6 +25,7 @@ export default function CategorySettingsDrawer({
   categoryType,
   categoryId,
 }: CategorySettingsDrawerProps) {
+  const colors = useColors();
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
@@ -120,121 +119,127 @@ export default function CategorySettingsDrawer({
     <>
       {/* Overlay */}
       <div
-        className={`fixed inset-0 backdrop-blur-sm bg-black/20 z-40 transition-opacity duration-300 ease-in-out ${
-          isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
         onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          backdropFilter: "blur(2px)",
+          background: "rgba(0,0,0,0.2)",
+          zIndex: 40,
+          transition: "opacity 300ms ease-in-out",
+          opacity: isOpen ? 1 : 0,
+          pointerEvents: isOpen ? "auto" : "none",
+        }}
       />
 
       {/* Drawer */}
       <div
-        className={`fixed top-0 right-0 h-full w-full md:w-[50%] bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${
-          isOpen ? "translate-x-0" : "translate-x-full"
-        } flex flex-col`}
+        className="w-full md:w-[50%]"
+        style={{
+          position: "fixed",
+          top: 0,
+          right: 0,
+          height: "100%",
+          background: colors.bg.card,
+          borderLeft: `1px solid ${colors.border.default}`,
+          zIndex: 50,
+          transform: isOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 300ms ease-in-out",
+          display: "flex",
+          flexDirection: "column",
+        }}
       >
-        <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
-          <h2 className="text-xl font-semibold">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 16px",
+            borderBottom: `1px solid ${colors.border.default}`,
+            flexShrink: 0,
+          }}
+        >
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: colors.text.primary }}>
             {mode === "create" ? `Add New ${getCategoryTypeLabel()}` : `Edit ${getCategoryTypeLabel()}`}
           </h2>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="w-5 h-5" />
-          </Button>
+          <IconButton label="Close" onClick={onClose}>
+            <X style={{ width: 18, height: 18 }} />
+          </IconButton>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col">
-          <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+        <form onSubmit={handleSubmit} style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20, flex: 1, overflowY: "auto" }}>
             {/* Name */}
-            <div>
-              <Label htmlFor="name" className="text-sm font-medium">
-                Name <span className="text-red-500">*</span>
-              </Label>
+            <Field label="Name *" hint="Internal identifier (lowercase, no spaces recommended)">
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., active, lender, prospect"
-                className="mt-2"
                 required
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Internal identifier (lowercase, no spaces recommended)
-              </p>
-            </div>
+            </Field>
 
             {/* Display Name */}
-            <div>
-              <Label htmlFor="displayName" className="text-sm font-medium">
-                Display Name
-              </Label>
+            <Field label="Display Name" hint="Human-readable name shown in the UI (defaults to Name if empty)">
               <Input
                 id="displayName"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="e.g., Active Client, Lender, Prospect"
-                className="mt-2"
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Human-readable name shown in the UI (defaults to Name if empty)
-              </p>
-            </div>
+            </Field>
 
             {/* Description */}
-            <div>
-              <Label htmlFor="description" className="text-sm font-medium">
-                Description
-              </Label>
+            <Field label="Description">
               <Textarea
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description of this category..."
-                className="mt-2"
                 rows={3}
               />
-            </div>
+            </Field>
 
             {/* Display Order */}
-            <div>
-              <Label htmlFor="displayOrder" className="text-sm font-medium">
-                Display Order
-              </Label>
+            <Field label="Display Order" hint="Lower numbers appear first in dropdowns and lists">
               <Input
                 id="displayOrder"
                 type="number"
                 value={displayOrder}
                 onChange={(e) => setDisplayOrder(parseInt(e.target.value) || 0)}
-                className="mt-2"
                 min={0}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Lower numbers appear first in dropdowns and lists
-              </p>
-            </div>
+            </Field>
 
             {/* HubSpot Mapping (only for prospecting stages) */}
             {categoryType === "prospecting_stage" && (
-              <div>
-                <Label htmlFor="hubspotMapping" className="text-sm font-medium">
-                  HubSpot Stage ID (Optional)
-                </Label>
+              <Field label="HubSpot Stage ID (Optional)">
                 <Input
                   id="hubspotMapping"
                   value={hubspotMapping}
                   onChange={(e) => setHubspotMapping(e.target.value)}
                   placeholder="HubSpot stage ID this maps to"
-                  className="mt-2"
                 />
-                <p className="text-xs text-amber-600 mt-1">
-                  ⚠️ Warning: Changing HubSpot mappings may cause sync issues. Only modify if you know what you're doing.
+                <p style={{ fontSize: 11, color: colors.accent.orange, marginTop: 4 }}>
+                  Warning: Changing HubSpot mappings may cause sync issues. Only modify if you know what you&apos;re doing.
                 </p>
-              </div>
+              </Field>
             )}
 
             {/* System Default Warning */}
             {category && category.isSystemDefault && (
-              <div className="p-4 bg-amber-50 border-l-4 border-amber-400 text-amber-800 rounded-lg">
-                <p className="text-sm font-medium">System Default Category</p>
-                <p className="text-xs mt-1">
+              <div
+                style={{
+                  padding: 16,
+                  background: `${colors.accent.orange}15`,
+                  borderLeft: `4px solid ${colors.accent.orange}`,
+                  borderRadius: 4,
+                  color: colors.accent.orange,
+                }}
+              >
+                <p style={{ fontSize: 13, fontWeight: 500 }}>System Default Category</p>
+                <p style={{ fontSize: 11, marginTop: 4 }}>
                   This is a system default category. Some fields cannot be modified.
                 </p>
               </div>
@@ -242,12 +247,12 @@ export default function CategorySettingsDrawer({
           </div>
 
           {/* Footer with buttons */}
-          <div className="border-t pt-4 px-6 pb-6 flex-shrink-0">
-            <div className="flex justify-end gap-3 w-full">
-              <Button type="button" variant="outline" onClick={onClose}>
+          <div style={{ borderTop: `1px solid ${colors.border.default}`, padding: "16px 24px 24px", flexShrink: 0 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, width: "100%" }}>
+              <Button type="button" variant="secondary" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting || !name.trim()} className="min-w-[140px]">
+              <Button type="submit" variant="primary" disabled={isSubmitting || !name.trim()} style={{ minWidth: 140, justifyContent: "center" }}>
                 {isSubmitting ? "Saving..." : mode === "create" ? "Create" : "Save Changes"}
               </Button>
             </div>
@@ -257,4 +262,3 @@ export default function CategorySettingsDrawer({
     </>
   );
 }
-

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/layouts";
 
 interface NoteCleanupBubbleProps {
   containerRef: React.RefObject<HTMLElement | null>;
@@ -77,14 +77,13 @@ export default function NoteCleanupBubble({ containerRef, onCleanup }: NoteClean
       <Button
         size="sm"
         variant="secondary"
-        className="shadow-lg text-xs gap-1.5 h-7 px-2.5"
         onClick={handleClick}
         disabled={isLoading}
       >
         {isLoading ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
+          <Loader2 size={12} className="animate-spin" />
         ) : (
-          <Sparkles className="w-3 h-3" />
+          <Sparkles size={12} />
         )}
         Clean up
       </Button>

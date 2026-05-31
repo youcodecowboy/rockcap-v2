@@ -4,15 +4,14 @@ import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Button, Modal, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   AlertTriangle,
   CheckCircle2,
   Copy,
   ArrowRight,
   Loader2,
-  X,
   Trash2,
   RefreshCw,
   Tag,
@@ -74,6 +73,8 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -85,6 +86,7 @@ export default function ConsolidationModal({
   projectId,
   onConsolidationApplied,
 }: ConsolidationModalProps) {
+  const colors = useColors();
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<ConsolidationResult | null>(null);
@@ -215,275 +217,261 @@ export default function ConsolidationModal({
   const hasResults = result && (result.duplicates.length > 0 || result.reclassify.length > 0 || result.conflicts.length > 0);
   const isClean = result && result.duplicates.length === 0 && result.reclassify.length === 0 && result.conflicts.length === 0;
 
+  const cardStyle = (selected: boolean, tone: string) => ({
+    padding: 12,
+    border: `1px solid ${selected ? `${tone}40` : colors.border.default}`,
+    background: selected ? `${tone}10` : colors.bg.card,
+    borderRadius: 4,
+    cursor: 'pointer',
+    transition: 'border-color 100ms linear, background 100ms linear',
+  });
+
+  const sectionTitleStyle = {
+    fontSize: 13,
+    fontWeight: 500,
+    color: colors.text.primary,
+    marginBottom: 6,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <RefreshCw className="w-5 h-5 text-blue-600" />
-              Consolidate Intelligence
-            </h2>
-            <p className="text-sm text-gray-500">Detect duplicates, conflicts, and normalization opportunities</p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">
-            <X className="w-4 h-4" />
-          </Button>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="Consolidate Intelligence"
+      width={760}
+      footer={
+        <>
+          {hasSelections && (
+            <span style={{ fontSize: 12, color: colors.text.muted, marginRight: 'auto' }}>
+              {selectedDuplicates.size} duplicates, {selectedReclassify.size} reclassify, {selectedConflicts.size} conflicts selected
+            </span>
+          )}
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          {result && !isClean && (
+            <Button variant="secondary" onClick={handleAnalyze} disabled={loading}>
+              <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} />
+              Re-analyze
+            </Button>
+          )}
+          {hasResults && hasSelections && (
+            <Button variant="primary" accent={colors.accent.blue} onClick={handleApply} disabled={applying}>
+              {applying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              Apply Selected
+            </Button>
+          )}
+        </>
+      }
+    >
+      <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>
+        Detect duplicates, conflicts, and normalization opportunities
+      </p>
+
+      {/* Initial state - show analyze button */}
+      {!loading && !result && (
+        <EmptyState
+          icon={<RefreshCw size={24} />}
+          title="Analyze Knowledge Base"
+          body="Analyze your knowledge base to find duplicates, conflicting values, and custom fields that could be normalized to canonical fields."
+          action={
+            <Button variant="primary" accent={colors.accent.blue} onClick={handleAnalyze}>
+              <RefreshCw size={14} />
+              Analyze Knowledge Base
+            </Button>
+          }
+        />
+      )}
+
+      {/* Loading state */}
+      {loading && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
+          <Loader2 size={32} className="animate-spin" style={{ color: colors.accent.blue, marginBottom: 16 }} />
+          <p style={{ fontSize: 13, color: colors.text.muted }}>Analyzing knowledge base...</p>
         </div>
+      )}
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {/* Initial state - show analyze button */}
-          {!loading && !result && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <RefreshCw className="w-12 h-12 text-gray-300 mb-4" />
-              <p className="text-gray-500 mb-4 text-center max-w-md">
-                Analyze your knowledge base to find duplicates, conflicting values, and custom fields that could be normalized to canonical fields.
+      {/* Error state */}
+      {error && (
+        <div style={{ background: `${colors.accent.red}10`, border: `1px solid ${colors.accent.red}40`, borderRadius: 4, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: colors.accent.red }}>
+            <AlertTriangle size={16} />
+            <span style={{ fontWeight: 500, fontSize: 13 }}>Error</span>
+          </div>
+          <p style={{ fontSize: 12, color: colors.accent.red, marginTop: 4 }}>{error}</p>
+        </div>
+      )}
+
+      {/* Clean state - no issues found */}
+      {isClean && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', textAlign: 'center' }}>
+          <CheckCircle2 size={32} style={{ color: colors.accent.green, marginBottom: 16 }} />
+          <p style={{ fontSize: 15, fontWeight: 500, color: colors.text.primary, marginBottom: 8 }}>All Clean</p>
+          <p style={{ fontSize: 12, color: colors.text.muted, maxWidth: 360 }}>
+            No duplicates, conflicts, or normalization opportunities found. Your knowledge base is well organized.
+          </p>
+          <p style={{ fontSize: 11, color: colors.text.dim, marginTop: 16 }}>
+            Analyzed {result.summary.totalItems} items
+          </p>
+        </div>
+      )}
+
+      {/* Results */}
+      {hasResults && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Summary */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, background: colors.bg.light, border: `1px solid ${colors.border.default}`, borderRadius: 4 }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 24, fontWeight: 300, color: colors.text.primary }}>{result.summary.totalItems}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>Total Items</div>
+            </div>
+            <div style={{ height: 32, width: 1, background: colors.border.mid }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 24, fontWeight: 300, color: colors.accent.orange }}>{result.summary.duplicatesFound}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>Duplicates</div>
+            </div>
+            <div style={{ height: 32, width: 1, background: colors.border.mid }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 24, fontWeight: 300, color: colors.accent.red }}>{result.summary.conflictsFound}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>Conflicts</div>
+            </div>
+            <div style={{ height: 32, width: 1, background: colors.border.mid }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 24, fontWeight: 300, color: colors.accent.blue }}>{result.summary.reclassifySuggestions}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>Reclassify</div>
+            </div>
+          </div>
+
+          {/* Duplicates */}
+          {result.duplicates.length > 0 && (
+            <div>
+              <h3 style={sectionTitleStyle}>
+                <Copy size={16} style={{ color: colors.accent.orange }} />
+                Duplicates ({result.duplicates.length})
+              </h3>
+              <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+                Multiple items for the same field. We&apos;ll keep the best source and archive the rest.
               </p>
-              <Button onClick={handleAnalyze} className="gap-2">
-                <RefreshCw className="w-4 h-4" />
-                Analyze Knowledge Base
-              </Button>
-            </div>
-          )}
-
-          {/* Loading state */}
-          {loading && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
-              <p className="text-gray-500">Analyzing knowledge base...</p>
-            </div>
-          )}
-
-          {/* Error state */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-              <div className="flex items-center gap-2 text-red-700">
-                <AlertTriangle className="w-4 h-4" />
-                <span className="font-medium">Error</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {result.duplicates.map((dup) => (
+                  <div
+                    key={dup.fieldPath}
+                    style={cardStyle(selectedDuplicates.has(dup.fieldPath), colors.accent.orange)}
+                    onClick={() => toggleDuplicate(dup.fieldPath)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontWeight: 500, color: colors.text.primary, fontSize: 13 }}>{dup.fieldPath}</div>
+                        <p style={{ fontSize: 12, color: colors.text.secondary, marginTop: 4 }}>{dup.reason}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                          <StatusPill label="Keep 1" tone={colors.accent.green} />
+                          <StatusPill label={`Remove ${dup.removeIds.length}`} tone={colors.accent.red} />
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={selectedDuplicates.has(dup.fieldPath)}
+                        onChange={() => toggleDuplicate(dup.fieldPath)}
+                        style={{ marginTop: 4 }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <p className="text-sm text-red-600 mt-1">{error}</p>
             </div>
           )}
 
-          {/* Clean state - no issues found */}
-          {isClean && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <CheckCircle2 className="w-12 h-12 text-green-500 mb-4" />
-              <p className="text-lg font-medium text-gray-900 mb-2">All Clean!</p>
-              <p className="text-gray-500 text-center max-w-md">
-                No duplicates, conflicts, or normalization opportunities found. Your knowledge base is well organized.
+          {/* Conflicts */}
+          {result.conflicts.length > 0 && (
+            <div>
+              <h3 style={sectionTitleStyle}>
+                <AlertTriangle size={16} style={{ color: colors.accent.red }} />
+                Conflicts ({result.conflicts.length})
+              </h3>
+              <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+                Same field with different values. These need manual review.
               </p>
-              <p className="text-sm text-gray-400 mt-4">
-                Analyzed {result.summary.totalItems} items
-              </p>
-            </div>
-          )}
-
-          {/* Results */}
-          {hasResults && (
-            <div className="space-y-6">
-              {/* Summary */}
-              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-900">{result.summary.totalItems}</div>
-                  <div className="text-xs text-gray-500">Total Items</div>
-                </div>
-                <div className="h-8 w-px bg-gray-300" />
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">{result.summary.duplicatesFound}</div>
-                  <div className="text-xs text-gray-500">Duplicates</div>
-                </div>
-                <div className="h-8 w-px bg-gray-300" />
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">{result.summary.conflictsFound}</div>
-                  <div className="text-xs text-gray-500">Conflicts</div>
-                </div>
-                <div className="h-8 w-px bg-gray-300" />
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{result.summary.reclassifySuggestions}</div>
-                  <div className="text-xs text-gray-500">Reclassify</div>
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {result.conflicts.map((conflict) => (
+                  <div
+                    key={conflict.fieldPath}
+                    style={cardStyle(selectedConflicts.has(conflict.fieldPath), colors.accent.red)}
+                    onClick={() => toggleConflict(conflict.fieldPath)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontWeight: 500, color: colors.text.primary, fontSize: 13 }}>{conflict.fieldPath}</div>
+                        <p style={{ fontSize: 12, color: colors.text.secondary, marginTop: 4 }}>{conflict.description}</p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                          {conflict.values.map((value, i) => (
+                            <StatusPill
+                              key={i}
+                              label={formatValue(value).substring(0, 30) + (formatValue(value).length > 30 ? '...' : '')}
+                              tone={colors.text.muted}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={selectedConflicts.has(conflict.fieldPath)}
+                        onChange={() => toggleConflict(conflict.fieldPath)}
+                        style={{ marginTop: 4 }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
+            </div>
+          )}
 
-              {/* Duplicates */}
-              {result.duplicates.length > 0 && (
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
-                    <Copy className="w-4 h-4 text-orange-500" />
-                    Duplicates ({result.duplicates.length})
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-3">
-                    Multiple items for the same field. We'll keep the best source and archive the rest.
-                  </p>
-                  <div className="space-y-2">
-                    {result.duplicates.map((dup) => (
-                      <div
-                        key={dup.fieldPath}
-                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                          selectedDuplicates.has(dup.fieldPath)
-                            ? 'border-orange-300 bg-orange-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => toggleDuplicate(dup.fieldPath)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="font-medium text-gray-900">{dup.fieldPath}</div>
-                            <p className="text-sm text-gray-600 mt-1">{dup.reason}</p>
-                            <div className="flex items-center gap-2 mt-2">
-                              <Badge variant="outline" className="text-xs text-green-600 border-green-300">
-                                Keep 1
-                              </Badge>
-                              <Badge variant="outline" className="text-xs text-red-600 border-red-300">
-                                <Trash2 className="w-3 h-3 mr-1" />
-                                Remove {dup.removeIds.length}
-                              </Badge>
-                            </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={selectedDuplicates.has(dup.fieldPath)}
-                            onChange={() => toggleDuplicate(dup.fieldPath)}
-                            className="mt-1"
-                            onClick={(e) => e.stopPropagation()}
-                          />
+          {/* Reclassify */}
+          {result.reclassify.length > 0 && (
+            <div>
+              <h3 style={sectionTitleStyle}>
+                <Tag size={16} style={{ color: colors.accent.blue }} />
+                Normalize to Canonical ({result.reclassify.length})
+              </h3>
+              <p style={{ fontSize: 12, color: colors.text.muted, marginBottom: 12 }}>
+                Custom fields that should be reclassified to canonical fields.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {result.reclassify.map((rec) => (
+                  <div
+                    key={rec.itemId}
+                    style={cardStyle(selectedReclassify.has(rec.itemId), colors.accent.blue)}
+                    onClick={() => toggleReclassify(rec.itemId)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontFamily: MONO, fontSize: 12, color: colors.text.secondary }}>{rec.currentPath}</span>
+                          <ArrowRight size={14} style={{ color: colors.text.dim }} />
+                          <span style={{ fontFamily: MONO, fontSize: 12, color: colors.accent.blue, fontWeight: 500 }}>{rec.suggestedPath}</span>
+                        </div>
+                        <p style={{ fontSize: 12, color: colors.text.secondary, marginTop: 4 }}>{rec.reason}</p>
+                        <div style={{ marginTop: 8 }}>
+                          <StatusPill label={`${Math.round(rec.confidence * 100)}% confident`} tone={colors.text.muted} />
                         </div>
                       </div>
-                    ))}
+                      <input
+                        type="checkbox"
+                        checked={selectedReclassify.has(rec.itemId)}
+                        onChange={() => toggleReclassify(rec.itemId)}
+                        style={{ marginTop: 4 }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
-
-              {/* Conflicts */}
-              {result.conflicts.length > 0 && (
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-500" />
-                    Conflicts ({result.conflicts.length})
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-3">
-                    Same field with different values. These need manual review.
-                  </p>
-                  <div className="space-y-2">
-                    {result.conflicts.map((conflict) => (
-                      <div
-                        key={conflict.fieldPath}
-                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                          selectedConflicts.has(conflict.fieldPath)
-                            ? 'border-red-300 bg-red-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => toggleConflict(conflict.fieldPath)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="font-medium text-gray-900">{conflict.fieldPath}</div>
-                            <p className="text-sm text-gray-600 mt-1">{conflict.description}</p>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {conflict.values.map((value, i) => (
-                                <Badge key={i} variant="outline" className="text-xs">
-                                  {formatValue(value).substring(0, 30)}
-                                  {formatValue(value).length > 30 && '...'}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={selectedConflicts.has(conflict.fieldPath)}
-                            onChange={() => toggleConflict(conflict.fieldPath)}
-                            className="mt-1"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Reclassify */}
-              {result.reclassify.length > 0 && (
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
-                    <Tag className="w-4 h-4 text-blue-500" />
-                    Normalize to Canonical ({result.reclassify.length})
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-3">
-                    Custom fields that should be reclassified to canonical fields.
-                  </p>
-                  <div className="space-y-2">
-                    {result.reclassify.map((rec) => (
-                      <div
-                        key={rec.itemId}
-                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                          selectedReclassify.has(rec.itemId)
-                            ? 'border-blue-300 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => toggleReclassify(rec.itemId)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm text-gray-600">{rec.currentPath}</span>
-                              <ArrowRight className="w-4 h-4 text-gray-400" />
-                              <span className="font-mono text-sm text-blue-600 font-medium">{rec.suggestedPath}</span>
-                            </div>
-                            <p className="text-sm text-gray-600 mt-1">{rec.reason}</p>
-                            <Badge variant="outline" className="text-xs mt-2">
-                              {Math.round(rec.confidence * 100)}% confident
-                            </Badge>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={selectedReclassify.has(rec.itemId)}
-                            onChange={() => toggleReclassify(rec.itemId)}
-                            className="mt-1"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 flex items-center justify-between">
-          <div className="text-sm text-gray-500">
-            {hasSelections && (
-              <span>
-                {selectedDuplicates.size} duplicates, {selectedReclassify.size} reclassify, {selectedConflicts.size} conflicts selected
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            {result && !isClean && (
-              <Button onClick={handleAnalyze} variant="outline" disabled={loading} className="gap-2">
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                Re-analyze
-              </Button>
-            )}
-            {hasResults && hasSelections && (
-              <Button onClick={handleApply} disabled={applying} className="gap-2">
-                {applying ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4" />
-                )}
-                Apply Selected
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+      )}
+    </Modal>
   );
 }

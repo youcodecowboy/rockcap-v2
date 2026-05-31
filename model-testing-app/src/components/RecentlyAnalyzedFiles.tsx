@@ -4,20 +4,18 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { 
-  FileText, 
-  ChevronDown, 
-  ChevronRight, 
-  X, 
-  RefreshCw, 
+import { Panel, Button, IconButton, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import {
+  FileText,
+  ChevronDown,
+  ChevronRight,
+  X,
+  RefreshCw,
   Eye,
   Building2,
   FolderKanban,
-  AlertCircle,
-  CheckCircle2
+  AlertCircle
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,6 +29,7 @@ interface RecentlyAnalyzedFilesProps {
 }
 
 export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
+  const colors = useColors();
   const router = useRouter();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [refileModalOpen, setRefileModalOpen] = useState<string | null>(null);
@@ -214,34 +213,26 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
   };
 
   return (
-    <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
-      <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-white" />
-          <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-            Recently Analyzed
-          </span>
-        </div>
-        <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+    <Panel
+      title="Recently Analyzed"
+      accent={colors.accent.blue}
+      actions={
+        <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
           {allCompletedJobs.length} {allCompletedJobs.length === 1 ? 'File' : 'Files'}
           {totalCompletedCount > MAX_RECENT_FILES && (
-            <span className="ml-1 text-blue-200">(Recent)</span>
+            <span style={{ marginLeft: 4, color: colors.text.dim }}>(Recent)</span>
           )}
         </span>
-      </div>
-      <CardContent className="pt-4 pb-6 flex-1 flex flex-col">
+      }
+    >
+      <div className="flex flex-col">
         <div className="flex-1 overflow-y-auto">
           {allCompletedJobs.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p className="text-sm" style={{ fontWeight: 500 }}>No files analyzed yet</p>
-              <p className="text-xs text-gray-400 mt-2" style={{ fontWeight: 400 }}>
-                Upload files to see them here after analysis
-              </p>
-              <p className="text-xs text-gray-400 mt-1" style={{ fontWeight: 400 }}>
-                Showing up to {MAX_RECENT_FILES} most recent files
-              </p>
-            </div>
+            <EmptyState
+              icon={<FileText size={28} />}
+              title="No files analyzed yet"
+              body={`Upload files to see them here after analysis. Showing up to ${MAX_RECENT_FILES} most recent files.`}
+            />
           ) : (
             <div className="space-y-3">
               {completedJobs.map((job) => {
@@ -253,20 +244,20 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                 return (
                   <div
                     key={job._id}
-                    className={`border rounded-lg transition-colors ${
-                      needsReview
-                        ? 'bg-yellow-50 border-yellow-200'
-                        : 'bg-white border-gray-200 hover:bg-gray-50'
-                    }`}
+                    style={{
+                      border: `1px solid ${needsReview ? `${colors.accent.yellow}40` : colors.border.default}`,
+                      borderRadius: 4,
+                      background: needsReview ? `${colors.accent.yellow}15` : colors.bg.card,
+                    }}
                   >
                     {/* Main row - always visible */}
-                    <div className="p-4">
+                    <div style={{ padding: 14 }}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <button
                               onClick={() => toggleExpand(job._id)}
-                              className="text-gray-400 hover:text-gray-600 transition-colors"
+                              style={{ color: colors.text.muted, background: 'transparent', border: 'none', cursor: 'pointer', display: 'inline-flex' }}
                             >
                               {isExpanded ? (
                                 <ChevronDown className="w-4 h-4" />
@@ -274,27 +265,21 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                                 <ChevronRight className="w-4 h-4" />
                               )}
                             </button>
-                            <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <FileText className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.muted }} />
+                            <p className="truncate" style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
                               {job.fileName}
                             </p>
                             {needsReview && (
-                              <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
-                                <AlertCircle className="w-3 h-3 mr-1" />
-                                Needs Review
-                              </Badge>
+                              <StatusPill label="Needs Review" tone={colors.accent.yellow} />
                             )}
                             {!needsReview && (
-                              <Badge className="bg-green-100 text-green-800 border-green-300">
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                Filed
-                              </Badge>
+                              <StatusPill label="Filed" tone={colors.accent.green} />
                             )}
                           </div>
-                          <div className="flex items-center gap-3 text-xs text-gray-600 ml-6">
+                          <div className="flex items-center gap-3" style={{ fontSize: 11, color: colors.text.muted, marginLeft: 24 }}>
                             {analysisResult?.fileTypeDetected && (
                               <span className="flex items-center gap-1">
-                                <span className="font-medium">Type:</span>
+                                <span style={{ fontWeight: 500 }}>Type:</span>
                                 {analysisResult.fileTypeDetected}
                               </span>
                             )}
@@ -302,7 +287,7 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                               <>
                                 <span>•</span>
                                 <span className="flex items-center gap-1">
-                                  <span className="font-medium">Category:</span>
+                                  <span style={{ fontWeight: 500 }}>Category:</span>
                                   {analysisResult.category}
                                 </span>
                               </>
@@ -334,7 +319,7 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                                 <>
                                   <span>•</span>
                                   <span className="flex items-center gap-1">
-                                    <span className="font-medium">Uploaded by:</span>
+                                    <span style={{ fontWeight: 500 }}>Uploaded by:</span>
                                     {displayName}
                                   </span>
                                 </>
@@ -352,9 +337,8 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                               variant="ghost"
                               size="sm"
                               onClick={() => setRefileModalOpen(job._id)}
-                              className="h-7 px-2 text-xs"
                             >
-                              <RefreshCw className="w-3 h-3 mr-1" />
+                              <RefreshCw className="w-3 h-3" />
                               Refile
                             </Button>
                           )}
@@ -362,51 +346,46 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                             variant="ghost"
                             size="sm"
                             onClick={() => router.push(`/uploads/${job._id}`)}
-                            className="h-7 px-2 text-xs"
                           >
-                            <Eye className="w-3 h-3 mr-1" />
+                            <Eye className="w-3 h-3" />
                             View Summary
                           </Button>
-                          <button
-                            onClick={() => handleClear(job._id)}
-                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                            aria-label="Clear"
-                          >
+                          <IconButton label="Clear" onClick={() => handleClear(job._id)}>
                             <X className="w-4 h-4" />
-                          </button>
+                          </IconButton>
                         </div>
                       </div>
                     </div>
 
                     {/* Expanded content - quick fix UI */}
                     {isExpanded && needsReview && (
-                      <div className="border-t border-yellow-200 bg-yellow-50 p-4 space-y-4">
+                      <div style={{ borderTop: `1px solid ${colors.accent.yellow}40`, background: `${colors.accent.yellow}15`, padding: 14 }} className="space-y-4">
                         <div>
-                          <p className="text-xs font-medium text-gray-700 mb-2">
+                          <p style={{ fontSize: 11, fontWeight: 500, color: colors.text.secondary, marginBottom: 8 }}>
                             What needs review:
                           </p>
-                          <div className="space-y-2 text-xs text-gray-600">
+                          <div className="space-y-2" style={{ fontSize: 11, color: colors.text.muted }}>
                             {!analysisResult?.clientId && !document?.clientId && (
                               <div className="flex items-center gap-2">
-                                <AlertCircle className="w-3 h-3 text-yellow-600" />
+                                <AlertCircle className="w-3 h-3" style={{ color: colors.accent.yellow }} />
                                 <span>Client not identified</span>
                               </div>
                             )}
                             {analysisResult?.suggestedClientName && (
                               <div className="flex items-center gap-2">
-                                <AlertCircle className="w-3 h-3 text-yellow-600" />
+                                <AlertCircle className="w-3 h-3" style={{ color: colors.accent.yellow }} />
                                 <span>Suggested client: {analysisResult.suggestedClientName}</span>
                               </div>
                             )}
                             {analysisResult?.suggestedProjectName && !analysisResult?.projectId && (
                               <div className="flex items-center gap-2">
-                                <AlertCircle className="w-3 h-3 text-yellow-600" />
+                                <AlertCircle className="w-3 h-3" style={{ color: colors.accent.yellow }} />
                                 <span>Suggested project: {analysisResult.suggestedProjectName}</span>
                               </div>
                             )}
                             {analysisResult?.confidence !== undefined && analysisResult.confidence < 0.9 && (
                               <div className="flex items-center gap-2">
-                                <AlertCircle className="w-3 h-3 text-yellow-600" />
+                                <AlertCircle className="w-3 h-3" style={{ color: colors.accent.yellow }} />
                                 <span>Low confidence: {Math.round(analysisResult.confidence * 100)}%</span>
                               </div>
                             )}
@@ -415,7 +394,7 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
 
                         {job.documentId && (
                           <div className="space-y-3">
-                            <p className="text-xs font-medium text-gray-700">
+                            <p style={{ fontSize: 11, fontWeight: 500, color: colors.text.secondary }}>
                               Quick Fix:
                             </p>
                             <ClientProjectSearch
@@ -435,9 +414,10 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
                               }}
                             />
                             <Button
+                              variant="primary"
+                              size="sm"
+                              accent={colors.accent.blue}
                               onClick={() => handleQuickFix(job._id, job.documentId)}
-                              className="bg-black hover:bg-gray-800 text-white h-8 text-xs px-3"
-                              style={{ fontWeight: 500 }}
                             >
                               File Document
                             </Button>
@@ -454,48 +434,46 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
         
         {/* Pagination */}
         {allCompletedJobs.length > FILES_PER_PAGE && (
-          <div className="pt-4 border-t border-gray-200 space-y-2">
+          <div className="space-y-2" style={{ paddingTop: 14, marginTop: 14, borderTop: `1px solid ${colors.border.default}` }}>
             <div className="flex items-center justify-between">
-              <div className="text-xs text-gray-600">
+              <div style={{ fontSize: 11, color: colors.text.muted }}>
                 Showing {startIndex + 1}-{Math.min(endIndex, allCompletedJobs.length)} of {allCompletedJobs.length}
                 {totalCompletedCount > MAX_RECENT_FILES && (
-                  <span className="ml-1 text-gray-500">
+                  <span style={{ marginLeft: 4, color: colors.text.dim }}>
                     (showing {MAX_RECENT_FILES} most recent)
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
-                  className="h-7 px-3 text-xs"
                 >
                   Previous
                 </Button>
-                <span className="text-xs text-gray-600">
+                <span style={{ fontSize: 11, color: colors.text.muted }}>
                   Page {currentPage} of {totalPages}
                 </span>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
-                  className="h-7 px-3 text-xs"
                 >
                   Next
                 </Button>
               </div>
             </div>
             {totalCompletedCount > MAX_RECENT_FILES && (
-              <p className="text-xs text-gray-500 text-center">
-                View older files in the <Link href="/docs" className="text-blue-600 hover:underline">Document Library</Link>
+              <p style={{ fontSize: 11, color: colors.text.muted, textAlign: 'center' }}>
+                View older files in the <Link href="/docs" style={{ color: colors.accent.blue, textDecoration: 'none' }}>Document Library</Link>
               </p>
             )}
           </div>
         )}
-      </CardContent>
+      </div>
 
       {/* Refile Modals */}
       {completedJobs.map((job) => {
@@ -521,7 +499,7 @@ export default function RecentlyAnalyzedFiles({}: RecentlyAnalyzedFilesProps) {
         }
         return null;
       })}
-    </Card>
+    </Panel>
   );
 }
 

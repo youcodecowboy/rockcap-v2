@@ -6,22 +6,29 @@ import { api } from '../../../convex/_generated/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { 
-  CheckSquare, 
-  Bell, 
+import {
+  Panel,
+  Button,
+  StatusPill,
+  EmptyState,
+  DataTable,
+  Modal,
+  type Column,
+} from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import type { ColorPalette } from '@/lib/colors';
+import {
+  CheckSquare,
+  Bell,
   Mail,
-  Calendar, 
-  FileText, 
-  UserPlus, 
-  Plus, 
+  Calendar,
+  FileText,
+  UserPlus,
+  Plus,
   Upload,
   Clock,
   Inbox,
   ArrowRight,
-  X,
   FolderKanban,
   Building2,
   ListTodo
@@ -32,18 +39,19 @@ import TaskFormCompact from '@/components/TaskFormCompact';
 import { Id } from '../../../convex/_generated/dataModel';
 
 export default function Dashboard() {
+  const colors = useColors();
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const firstName = user?.firstName || 'there';
   const { setIsOpen: setChatDrawerOpen } = useChatDrawer();
-  
+
   // State for modals
   const [isCreateContactModalOpen, setIsCreateContactModalOpen] = useState(false);
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
-  
+
   // State for today's date (client-side only to avoid hydration mismatch)
   const [todayDate, setTodayDate] = useState<string>('');
-  
+
   // Fetch dashboard data
   const taskMetrics = useQuery(api.tasks.getMetrics, {});
   const nextReminder = useQuery(api.reminders.getUpcoming, { limit: 1 });
@@ -60,7 +68,7 @@ export default function Dashboard() {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMs < 0) return 'Overdue';
     if (diffMins < 60) return `${diffMins} minutes`;
     if (diffHours < 24) return `${diffHours} hours`;
@@ -75,7 +83,7 @@ export default function Dashboard() {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMs < 0) return { text: 'Overdue', urgent: true, isOverdue: true };
     if (diffMins < 60) return { text: `${diffMins}m remaining`, urgent: diffMins < 30, isOverdue: false };
     if (diffHours < 24) return { text: `${diffHours}h remaining`, urgent: diffHours < 2, isOverdue: false };
@@ -117,12 +125,12 @@ export default function Dashboard() {
     return upcomingTasks?.find(t => t._id === taskId)?.title;
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityTone = (priority: string, c: ColorPalette) => {
     switch (priority) {
-      case 'high': return 'text-red-600 bg-red-50';
-      case 'medium': return 'text-yellow-600 bg-yellow-50';
-      case 'low': return 'text-blue-600 bg-blue-50';
-      default: return 'text-gray-600 bg-gray-50';
+      case 'high': return c.accent.red;
+      case 'medium': return c.accent.yellow;
+      case 'low': return c.accent.blue;
+      default: return c.text.muted;
     }
   };
 
@@ -165,15 +173,61 @@ export default function Dashboard() {
     router.push('/docs');
   };
 
+  const metaText = (children: React.ReactNode) => (
+    <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted }}>
+      {children}
+    </span>
+  );
+
+  const linkStyle = { fontSize: 12, color: colors.text.secondary, textDecoration: 'none' } as const;
+
+  const upcomingTaskColumns: Column<typeof filteredUpcomingTasks[number]>[] = [
+    {
+      key: 'task',
+      header: 'Task',
+      render: (task) => (
+        <div className="flex flex-col">
+          <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{task.title}</span>
+          {(getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)) && (
+            <span style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+              {getTaskClientName(task.clientId) && getTaskProjectName(task.projectId)
+                ? `${getTaskClientName(task.clientId)} • ${getTaskProjectName(task.projectId)}`
+                : getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'due',
+      header: 'Due Date',
+      render: (task) => (
+        <div className="flex items-center gap-2">
+          <Clock className="w-3 h-3" style={{ color: colors.text.muted }} />
+          <span style={{ fontSize: 11, color: colors.text.secondary }}>
+            {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      render: (task) => (
+        <StatusPill label={task.priority || 'medium'} tone={getPriorityTone(task.priority || 'medium', colors)} />
+      ),
+    },
+  ];
+
   return (
-    <div className="bg-gray-50 min-h-screen" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
+    <div style={{ background: colors.bg.light, minHeight: '100vh' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h1 className="text-3xl text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 600, color: colors.text.primary }}>
             Hello {isLoaded ? firstName : '...'}
           </h1>
-          <p className="mt-2 text-lg text-gray-600" style={{ fontWeight: 400 }}>
+          <p style={{ marginTop: 8, fontSize: 15, color: colors.text.muted }}>
             Here is what you have to do today — {todayDate || '...'}
           </p>
         </div>
@@ -181,59 +235,29 @@ export default function Dashboard() {
         {/* Action Buttons - Moved Above Cards */}
         <div className="mb-8">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleNewNote}
-              className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
-            >
-              <FileText className="w-4 h-4 text-blue-400" />
-                <span style={{ fontWeight: 500 }}>New Note</span>
+            <Button variant="secondary" onClick={handleNewNote} style={{ justifyContent: 'center', height: 36 }}>
+              <FileText className="w-4 h-4" style={{ color: colors.accent.blue }} />
+              <span>New Note</span>
             </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleNewContact}
-              className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
-            >
-              <UserPlus className="w-4 h-4 text-green-400" />
-                <span style={{ fontWeight: 500 }}>New Contact</span>
+            <Button variant="secondary" onClick={handleNewContact} style={{ justifyContent: 'center', height: 36 }}>
+              <UserPlus className="w-4 h-4" style={{ color: colors.accent.green }} />
+              <span>New Contact</span>
             </Button>
-            <Button
-              variant="default"
-              size="sm"
-              disabled
-              className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg opacity-50"
-            >
-              <Mail className="w-4 h-4 text-purple-400" />
-                <span style={{ fontWeight: 500 }}>New E-mail</span>
+            <Button variant="secondary" disabled style={{ justifyContent: 'center', height: 36 }}>
+              <Mail className="w-4 h-4" style={{ color: colors.accent.purple }} />
+              <span>New E-mail</span>
             </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleNewTask}
-              className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
-            >
-              <Plus className="w-4 h-4 text-yellow-400" />
-                <span style={{ fontWeight: 500 }}>New Task</span>
+            <Button variant="secondary" onClick={handleNewTask} style={{ justifyContent: 'center', height: 36 }}>
+              <Plus className="w-4 h-4" style={{ color: colors.accent.yellow }} />
+              <span>New Task</span>
             </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleNewReminder}
-              className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
-            >
-              <Bell className="w-4 h-4 text-orange-400" />
-                <span style={{ fontWeight: 500 }}>New Reminder</span>
+            <Button variant="secondary" onClick={handleNewReminder} style={{ justifyContent: 'center', height: 36 }}>
+              <Bell className="w-4 h-4" style={{ color: colors.accent.orange }} />
+              <span>New Reminder</span>
             </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleNewUpload}
-              className="bg-black text-white hover:bg-gray-800 flex items-center justify-center gap-2 h-9 rounded-lg"
-            >
-              <Upload className="w-4 h-4 text-red-400" />
-                <span style={{ fontWeight: 500 }}>New Upload</span>
+            <Button variant="secondary" onClick={handleNewUpload} style={{ justifyContent: 'center', height: 36 }}>
+              <Upload className="w-4 h-4" style={{ color: colors.accent.red }} />
+              <span>New Upload</span>
             </Button>
           </div>
         </div>
@@ -241,416 +265,298 @@ export default function Dashboard() {
         {/* Dynamic Cards - 3 Rectangular Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 items-stretch">
           {/* Next Task Card */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
-            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckSquare className="w-4 h-4 text-white" />
-                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Next Task</span>
-              </div>
-              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-                {taskMetrics?.upNext?.dueDate && isOverdue(taskMetrics.upNext.dueDate)
-                  ? 'OVERDUE'
-                  : taskMetrics?.upNext
-                  ? 'UPCOMING'
-                  : 'NO TASK'}
-              </span>
-            </div>
-            <div className="px-4 pt-3 pb-3 flex-1 flex flex-col">
-              <div className="flex flex-col h-full">
-                <div className="mb-3">
-                  {taskMetrics?.upNext ? (
-                    <>
-                      <h2 className="text-base text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                        {taskMetrics.upNext.title}
-                      </h2>
-                      {taskMetrics.upNext.description && (
-                        <p className="text-xs text-gray-600 mb-2 line-clamp-2" style={{ fontWeight: 400 }}>
-                          {taskMetrics.upNext.description}
-                        </p>
-                      )}
-                      <div className="space-y-1.5">
-                        {getTaskClientName(taskMetrics.upNext.clientId) && (
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Client:</span>
-                            <Link 
-                              href={`/clients/${taskMetrics.upNext.clientId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
-                            >
-                              {getTaskClientName(taskMetrics.upNext.clientId)}
-                            </Link>
-                          </div>
-                        )}
-                        {getTaskProjectName(taskMetrics.upNext.projectId) && (
-                          <div className="flex items-center gap-1.5">
-                            <FolderKanban className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Project:</span>
-                            <Link 
-                              href={`/projects/${taskMetrics.upNext.projectId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 700 }}
-                            >
-                              {getTaskProjectName(taskMetrics.upNext.projectId)}
-                            </Link>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <h2 className="text-base text-gray-500 mb-0.5" style={{ fontWeight: 700 }}>
-                      No tasks scheduled
+          <Panel
+            title="Next Task"
+            accent={colors.accent.blue}
+            actions={metaText(
+              taskMetrics?.upNext?.dueDate && isOverdue(taskMetrics.upNext.dueDate)
+                ? 'Overdue'
+                : taskMetrics?.upNext
+                ? 'Upcoming'
+                : 'No Task'
+            )}
+          >
+            <div className="flex flex-col h-full">
+              <div className="mb-3">
+                {taskMetrics?.upNext ? (
+                  <>
+                    <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary, marginBottom: 8 }}>
+                      {taskMetrics.upNext.title}
                     </h2>
+                    {taskMetrics.upNext.description && (
+                      <p className="line-clamp-2" style={{ fontSize: 12, color: colors.text.muted, marginBottom: 8 }}>
+                        {taskMetrics.upNext.description}
+                      </p>
+                    )}
+                    <div className="space-y-1.5">
+                      {getTaskClientName(taskMetrics.upNext.clientId) && (
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3 h-3" style={{ color: colors.text.muted }} />
+                          <span style={{ fontSize: 11, color: colors.text.muted }}>Client:</span>
+                          <Link href={`/clients/${taskMetrics.upNext.clientId}`} style={linkStyle}>
+                            {getTaskClientName(taskMetrics.upNext.clientId)}
+                          </Link>
+                        </div>
+                      )}
+                      {getTaskProjectName(taskMetrics.upNext.projectId) && (
+                        <div className="flex items-center gap-1.5">
+                          <FolderKanban className="w-3 h-3" style={{ color: colors.text.muted }} />
+                          <span style={{ fontSize: 11, color: colors.text.muted }}>Project:</span>
+                          <Link href={`/projects/${taskMetrics.upNext.projectId}`} style={{ ...linkStyle, fontWeight: 600 }}>
+                            {getTaskProjectName(taskMetrics.upNext.projectId)}
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.muted }}>
+                    No tasks scheduled
+                  </h2>
+                )}
+              </div>
+
+              <div className="mt-auto flex items-center justify-between" style={{ paddingTop: 8, borderTop: `1px solid ${colors.border.default}` }}>
+                <div className="flex items-center gap-2">
+                  {taskMetrics?.upNext?.dueDate ? (
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" style={{ color: colors.text.muted }} />
+                      <span style={{ fontSize: 11, fontWeight: 500, color: formatTimeRemaining(taskMetrics.upNext.dueDate).urgent ? colors.accent.red : colors.text.secondary }}>
+                        {formatTimeRemaining(taskMetrics.upNext.dueDate).text}
+                      </span>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 11, color: colors.text.dim }}>No scheduled time</span>
+                  )}
+                  {taskMetrics?.upNext?.priority && (
+                    <StatusPill label={taskMetrics.upNext.priority} tone={getPriorityTone(taskMetrics.upNext.priority, colors)} />
                   )}
                 </div>
-                
-                <div className="pt-2 border-t border-gray-200 mt-auto flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {taskMetrics?.upNext?.dueDate ? (
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
-                        <span className={`text-xs ${
-                          formatTimeRemaining(taskMetrics.upNext.dueDate).urgent ? 'text-red-600' : 'text-gray-600'
-                        }`} style={{ fontWeight: 500 }}>
-                          {formatTimeRemaining(taskMetrics.upNext.dueDate).text}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">No scheduled time</span>
-                    )}
-                    {taskMetrics?.upNext?.priority && (
-                      <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPriorityColor(taskMetrics.upNext.priority)}`} style={{ fontWeight: 500 }}>
-                        {taskMetrics.upNext.priority}
-                      </span>
-                    )}
-                  </div>
-                  <Button
-                    onClick={() => router.push('/tasks')}
-                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3" style={{ fontWeight: 500 }}
-                  >
-                    {taskMetrics?.upNext ? 'View Task' : 'Create Task'}
-                    <ArrowRight className="w-3 h-3 ml-1" />
-                  </Button>
-                </div>
+                <Button variant="secondary" size="sm" onClick={() => router.push('/tasks')}>
+                  {taskMetrics?.upNext ? 'View Task' : 'Create Task'}
+                  <ArrowRight className="w-3 h-3" />
+                </Button>
               </div>
             </div>
-          </Card>
+          </Panel>
 
           {/* Next Reminder Card */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
-            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-white" />
-                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Next Reminder</span>
-              </div>
-              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-                {nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor && isOverdue(nextReminder[0].scheduledFor)
-                  ? 'OVERDUE'
-                  : nextReminder && nextReminder.length > 0
-                  ? 'UPCOMING'
-                  : 'NO REMINDER'}
-              </span>
-            </div>
-            <div className="px-4 pt-3 pb-3 flex-1 flex flex-col">
-              <div className="flex flex-col h-full">
-                <div className="mb-3">
-                  {nextReminder && nextReminder.length > 0 ? (
-                    <>
-                      <h2 className="text-base text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                        {nextReminder[0].title}
-                      </h2>
-                      {nextReminder[0].description && (
-                        <p className="text-xs text-gray-600 mb-2 line-clamp-2" style={{ fontWeight: 400 }}>
-                          {nextReminder[0].description}
-                        </p>
-                      )}
-                      <div className="space-y-1.5">
-                        {getTaskName(nextReminder[0].taskId) && (
-                          <div className="flex items-center gap-1.5">
-                            <ListTodo className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Task:</span>
-                            <Link 
-                              href={`/tasks`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
-                            >
-                              {getTaskName(nextReminder[0].taskId)}
-                            </Link>
-                          </div>
-                        )}
-                        {getTaskClientName(nextReminder[0].clientId) && (
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Client:</span>
-                            <Link 
-                              href={`/clients/${nextReminder[0].clientId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
-                            >
-                              {getTaskClientName(nextReminder[0].clientId)}
-                            </Link>
-                          </div>
-                        )}
-                        {getTaskProjectName(nextReminder[0].projectId) && (
-                          <div className="flex items-center gap-1.5">
-                            <FolderKanban className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Project:</span>
-                            <Link 
-                              href={`/projects/${nextReminder[0].projectId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 700 }}
-                            >
-                              {getTaskProjectName(nextReminder[0].projectId)}
-                            </Link>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <h2 className="text-base text-gray-500 mb-0.5" style={{ fontWeight: 700 }}>
-                      No reminders scheduled
+          <Panel
+            title="Next Reminder"
+            accent={colors.accent.orange}
+            actions={metaText(
+              nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor && isOverdue(nextReminder[0].scheduledFor)
+                ? 'Overdue'
+                : nextReminder && nextReminder.length > 0
+                ? 'Upcoming'
+                : 'No Reminder'
+            )}
+          >
+            <div className="flex flex-col h-full">
+              <div className="mb-3">
+                {nextReminder && nextReminder.length > 0 ? (
+                  <>
+                    <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary, marginBottom: 8 }}>
+                      {nextReminder[0].title}
                     </h2>
+                    {nextReminder[0].description && (
+                      <p className="line-clamp-2" style={{ fontSize: 12, color: colors.text.muted, marginBottom: 8 }}>
+                        {nextReminder[0].description}
+                      </p>
+                    )}
+                    <div className="space-y-1.5">
+                      {getTaskName(nextReminder[0].taskId) && (
+                        <div className="flex items-center gap-1.5">
+                          <ListTodo className="w-3 h-3" style={{ color: colors.text.muted }} />
+                          <span style={{ fontSize: 11, color: colors.text.muted }}>Task:</span>
+                          <Link href={`/tasks`} style={linkStyle}>
+                            {getTaskName(nextReminder[0].taskId)}
+                          </Link>
+                        </div>
+                      )}
+                      {getTaskClientName(nextReminder[0].clientId) && (
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3 h-3" style={{ color: colors.text.muted }} />
+                          <span style={{ fontSize: 11, color: colors.text.muted }}>Client:</span>
+                          <Link href={`/clients/${nextReminder[0].clientId}`} style={linkStyle}>
+                            {getTaskClientName(nextReminder[0].clientId)}
+                          </Link>
+                        </div>
+                      )}
+                      {getTaskProjectName(nextReminder[0].projectId) && (
+                        <div className="flex items-center gap-1.5">
+                          <FolderKanban className="w-3 h-3" style={{ color: colors.text.muted }} />
+                          <span style={{ fontSize: 11, color: colors.text.muted }}>Project:</span>
+                          <Link href={`/projects/${nextReminder[0].projectId}`} style={{ ...linkStyle, fontWeight: 600 }}>
+                            {getTaskProjectName(nextReminder[0].projectId)}
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.muted }}>
+                    No reminders scheduled
+                  </h2>
+                )}
+              </div>
+
+              <div className="mt-auto flex items-center justify-between" style={{ paddingTop: 8, borderTop: `1px solid ${colors.border.default}` }}>
+                <div className="flex items-center gap-2">
+                  {nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor ? (
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" style={{ color: colors.text.muted }} />
+                      <span style={{ fontSize: 11, fontWeight: 500, color: formatTimeRemaining(nextReminder[0].scheduledFor).urgent ? colors.accent.red : colors.text.secondary }}>
+                        {formatTimeRemaining(nextReminder[0].scheduledFor).text}
+                      </span>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 11, color: colors.text.dim }}>No scheduled time</span>
                   )}
                 </div>
-                
-                <div className="pt-2 border-t border-gray-200 mt-auto flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor ? (
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
-                        <span className={`text-xs ${
-                          formatTimeRemaining(nextReminder[0].scheduledFor).urgent ? 'text-red-600' : 'text-gray-600'
-                        }`} style={{ fontWeight: 500 }}>
-                          {formatTimeRemaining(nextReminder[0].scheduledFor).text}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">No scheduled time</span>
-                    )}
-                  </div>
-                  <Button
-                    onClick={() => router.push('/tasks')}
-                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3" style={{ fontWeight: 500 }}
-                  >
-                    {nextReminder && nextReminder.length > 0 ? 'View Reminder' : 'Create Reminder'}
-                    <ArrowRight className="w-3 h-3 ml-1" />
-                  </Button>
-                </div>
+                <Button variant="secondary" size="sm" onClick={() => router.push('/tasks')}>
+                  {nextReminder && nextReminder.length > 0 ? 'View Reminder' : 'Create Reminder'}
+                  <ArrowRight className="w-3 h-3" />
+                </Button>
               </div>
             </div>
-          </Card>
+          </Panel>
 
           {/* Next Event Card */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
-            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-white" />
-                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Next Event</span>
-              </div>
-              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-                {nextEvent && nextEvent.startTime && isOverdue(nextEvent.startTime)
-                  ? 'OVERDUE'
-                  : nextEvent
-                  ? 'UPCOMING'
-                  : 'NO EVENT'}
-              </span>
-            </div>
-            <div className="px-4 pt-3 pb-3 flex-1 flex flex-col">
-              <div className="flex flex-col h-full">
-                <div className="mb-3">
-                  {nextEvent ? (
-                    <>
-                      <h2 className="text-base text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                        {nextEvent.title}
-                      </h2>
-                      {nextEvent.description && (
-                        <p className="text-xs text-gray-600 mb-2 line-clamp-2" style={{ fontWeight: 400 }}>
-                          {nextEvent.description}
-                        </p>
-                      )}
-                      {nextEvent.location && (
-                        <p className="text-xs text-gray-500 mb-2 flex items-center gap-1" style={{ fontWeight: 400 }}>
-                          <span className="w-3 h-3">📍</span>
-                          {nextEvent.location}
-                        </p>
-                      )}
-                      <div className="space-y-1.5">
-                        {getTaskClientName(nextEvent.clientId) && (
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Client:</span>
-                            <Link 
-                              href={`/clients/${nextEvent.clientId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 400 }}
-                            >
-                              {getTaskClientName(nextEvent.clientId)}
-                            </Link>
-                          </div>
-                        )}
-                        {getTaskProjectName(nextEvent.projectId) && (
-                          <div className="flex items-center gap-1.5">
-                            <FolderKanban className="w-3 h-3 text-gray-400" />
-                            <span className="text-xs text-gray-500" style={{ fontWeight: 400 }}>Project:</span>
-                            <Link 
-                              href={`/projects/${nextEvent.projectId}`}
-                              className="text-xs text-gray-700 hover:text-blue-600 hover:underline" style={{ fontWeight: 700 }}
-                            >
-                              {getTaskProjectName(nextEvent.projectId)}
-                            </Link>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <h2 className="text-base text-gray-500 mb-0.5" style={{ fontWeight: 700 }}>
-                      No events scheduled
+          <Panel
+            title="Next Event"
+            accent={colors.accent.blue}
+            actions={metaText(
+              nextEvent && nextEvent.startTime && isOverdue(nextEvent.startTime)
+                ? 'Overdue'
+                : nextEvent
+                ? 'Upcoming'
+                : 'No Event'
+            )}
+          >
+            <div className="flex flex-col h-full">
+              <div className="mb-3">
+                {nextEvent ? (
+                  <>
+                    <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary, marginBottom: 8 }}>
+                      {nextEvent.title}
                     </h2>
+                    {nextEvent.description && (
+                      <p className="line-clamp-2" style={{ fontSize: 12, color: colors.text.muted, marginBottom: 8 }}>
+                        {nextEvent.description}
+                      </p>
+                    )}
+                    {nextEvent.location && (
+                      <p className="flex items-center gap-1" style={{ fontSize: 11, color: colors.text.muted, marginBottom: 8 }}>
+                        <span className="w-3 h-3">📍</span>
+                        {nextEvent.location}
+                      </p>
+                    )}
+                    <div className="space-y-1.5">
+                      {getTaskClientName(nextEvent.clientId) && (
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3 h-3" style={{ color: colors.text.muted }} />
+                          <span style={{ fontSize: 11, color: colors.text.muted }}>Client:</span>
+                          <Link href={`/clients/${nextEvent.clientId}`} style={linkStyle}>
+                            {getTaskClientName(nextEvent.clientId)}
+                          </Link>
+                        </div>
+                      )}
+                      {getTaskProjectName(nextEvent.projectId) && (
+                        <div className="flex items-center gap-1.5">
+                          <FolderKanban className="w-3 h-3" style={{ color: colors.text.muted }} />
+                          <span style={{ fontSize: 11, color: colors.text.muted }}>Project:</span>
+                          <Link href={`/projects/${nextEvent.projectId}`} style={{ ...linkStyle, fontWeight: 600 }}>
+                            {getTaskProjectName(nextEvent.projectId)}
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.muted }}>
+                    No events scheduled
+                  </h2>
+                )}
+              </div>
+
+              <div className="mt-auto flex items-center justify-between" style={{ paddingTop: 8, borderTop: `1px solid ${colors.border.default}` }}>
+                <div className="flex items-center gap-2">
+                  {nextEvent?.startTime ? (
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" style={{ color: colors.text.muted }} />
+                      <span style={{ fontSize: 11, fontWeight: 500, color: formatTimeRemaining(nextEvent.startTime).urgent ? colors.accent.red : colors.text.secondary }}>
+                        {formatTimeRemaining(nextEvent.startTime).text}
+                      </span>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 11, color: colors.text.dim }}>No scheduled time</span>
                   )}
                 </div>
-                
-                <div className="pt-2 border-t border-gray-200 mt-auto flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {nextEvent?.startTime ? (
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
-                        <span className={`text-xs ${
-                          formatTimeRemaining(nextEvent.startTime).urgent ? 'text-red-600' : 'text-gray-600'
-                        }`} style={{ fontWeight: 500 }}>
-                          {formatTimeRemaining(nextEvent.startTime).text}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">No scheduled time</span>
-                    )}
-                  </div>
-                  <Button
-                    onClick={() => router.push('/calendar')}
-                    className="bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3" style={{ fontWeight: 500 }}
-                  >
-                    {nextEvent ? 'View Event' : 'Create Event'}
-                    <ArrowRight className="w-3 h-3 ml-1" />
-                  </Button>
-                </div>
+                <Button variant="secondary" size="sm" onClick={() => router.push('/calendar')}>
+                  {nextEvent ? 'View Event' : 'Create Event'}
+                  <ArrowRight className="w-3 h-3" />
+                </Button>
               </div>
             </div>
-          </Card>
+          </Panel>
         </div>
 
         {/* Tables Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Inbox */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
-            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Inbox className="w-4 h-4 text-white" />
-                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Inbox</span>
-              </div>
-              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Notifications & Emails</span>
-            </div>
-            <div className="px-4 pb-3 flex-1 flex flex-col">
-              <div className="flex flex-col h-full">
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center py-8 text-gray-500">
-                    <Inbox className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p className="text-sm" style={{ fontWeight: 500 }}>Coming soon</p>
-                    <p className="text-xs text-gray-400 mt-2" style={{ fontWeight: 400 }}>Email integration and notifications will appear here</p>
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-gray-200 mt-auto flex flex-col">
-                  <Button
-                    onClick={() => router.push('/inbox')}
-                    className="ml-auto bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
-                  >
-                    View Inbox
-                    <ArrowRight className="w-3 h-3 ml-1" />
-                  </Button>
-                </div>
+          <Panel title="Inbox" accent={colors.accent.blue} actions={metaText('Notifications & Emails')}>
+            <div className="flex flex-col h-full">
+              <EmptyState
+                icon={<Inbox size={28} />}
+                title="Coming soon"
+                body="Email integration and notifications will appear here."
+              />
+              <div className="mt-4 flex">
+                <Button variant="secondary" size="sm" onClick={() => router.push('/inbox')} style={{ marginLeft: 'auto' }}>
+                  View Inbox
+                  <ArrowRight className="w-3 h-3" />
+                </Button>
               </div>
             </div>
-          </Card>
+          </Panel>
 
           {/* Upcoming Tasks */}
-          <Card className="hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 h-full flex flex-col">
-            <div className="bg-blue-600 text-white px-3 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckSquare className="w-4 h-4 text-white" />
-                <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>Upcoming Tasks</span>
+          <Panel
+            title="Upcoming Tasks"
+            accent={colors.accent.blue}
+            actions={metaText(
+              upcomingTasks === undefined
+                ? 'Loading...'
+                : filteredUpcomingTasks.length > 0
+                ? `${filteredUpcomingTasks.length} Tasks`
+                : 'No Tasks'
+            )}
+          >
+            <div className="flex flex-col h-full">
+              <div className="flex-1 overflow-y-auto">
+                <DataTable
+                  columns={upcomingTaskColumns}
+                  rows={filteredUpcomingTasks.slice(0, 5)}
+                  getRowKey={(task) => task._id}
+                  empty={
+                    <EmptyState icon={<CheckSquare size={28} />} title="No upcoming tasks" />
+                  }
+                />
+                {filteredUpcomingTasks.length > 5 && (
+                  <p style={{ fontSize: 11, color: colors.text.muted, textAlign: 'center', marginTop: 8 }}>
+                    +{filteredUpcomingTasks.length - 5} more tasks
+                  </p>
+                )}
               </div>
-              <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
-                {upcomingTasks === undefined 
-                  ? 'Loading...' 
-                  : filteredUpcomingTasks.length > 0 
-                  ? `${filteredUpcomingTasks.length} Tasks` 
-                  : 'No Tasks'}
-              </span>
-            </div>
-            <div className="px-4 pb-3 flex-1 flex flex-col">
-              <div className="flex flex-col h-full">
-                <div className="flex-1 overflow-y-auto">
-                  {upcomingTasks === undefined ? (
-                    <div className="text-center py-8 text-gray-500" style={{ fontWeight: 400 }}>Loading...</div>
-                  ) : filteredUpcomingTasks.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <CheckSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p className="text-sm" style={{ fontWeight: 500 }}>No upcoming tasks</p>
-                    </div>
-                  ) : (
-                    <div className="pb-2 pt-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-xs" style={{ fontWeight: 600 }}>Task</TableHead>
-                            <TableHead className="text-xs" style={{ fontWeight: 600 }}>Due Date</TableHead>
-                            <TableHead className="text-xs" style={{ fontWeight: 600 }}>Priority</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredUpcomingTasks.slice(0, 5).map((task) => (
-                            <TableRow key={task._id}>
-                              <TableCell className="py-2">
-                                <div className="flex flex-col">
-                                  <span className="text-sm" style={{ fontWeight: 500 }}>{task.title}</span>
-                                  {(getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)) && (
-                                    <span className="text-xs text-gray-500 mt-1" style={{ fontWeight: 400 }}>
-                                      {getTaskClientName(task.clientId) && getTaskProjectName(task.projectId)
-                                        ? `${getTaskClientName(task.clientId)} • ${getTaskProjectName(task.projectId)}`
-                                        : getTaskClientName(task.clientId) || getTaskProjectName(task.projectId)}
-                                    </span>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-2">
-                                <div className="flex items-center gap-2">
-                                  <Clock className="w-3 h-3 text-gray-400" />
-                                  <span className="text-xs" style={{ fontWeight: 400 }}>
-                                    {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-2">
-                                <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPriorityColor(task.priority || 'medium')}`} style={{ fontWeight: 500 }}>
-                                  {task.priority || 'medium'}
-                                </span>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                      {filteredUpcomingTasks.length > 5 && (
-                        <p className="text-xs text-gray-500 text-center mt-2" style={{ fontWeight: 400 }}>
-                          +{filteredUpcomingTasks.length - 5} more tasks
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="pt-2 border-t border-gray-200 mt-auto flex flex-col">
-                  <Button
-                    onClick={() => router.push('/tasks')}
-                    className="ml-auto bg-black hover:bg-gray-800 text-white rounded-lg h-8 text-xs px-3"
-                  >
-                    {filteredUpcomingTasks && filteredUpcomingTasks.length > 0 ? 'View All Tasks' : 'Create Task'}
-                    <ArrowRight className="w-3 h-3 ml-1" />
-                  </Button>
-                </div>
+              <div className="mt-4 flex">
+                <Button variant="secondary" size="sm" onClick={() => router.push('/tasks')} style={{ marginLeft: 'auto' }}>
+                  {filteredUpcomingTasks && filteredUpcomingTasks.length > 0 ? 'View All Tasks' : 'Create Task'}
+                  <ArrowRight className="w-3 h-3" />
+                </Button>
               </div>
             </div>
-          </Card>
+          </Panel>
         </div>
 
         {/* Modals */}
@@ -662,41 +568,21 @@ export default function Dashboard() {
           }}
         />
 
-        {isCreateTaskModalOpen && (
-          <div 
-            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setIsCreateTaskModalOpen(false);
-              }
+        <Modal
+          open={isCreateTaskModalOpen}
+          onClose={() => setIsCreateTaskModalOpen(false)}
+          title="Create New Task"
+          width={672}
+        >
+          <TaskFormCompact
+            onSuccess={() => {
+              setIsCreateTaskModalOpen(false);
             }}
-          >
-            <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle style={{ fontWeight: 700 }}>Create New Task</CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsCreateTaskModalOpen(false)}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <TaskFormCompact
-                  onSuccess={() => {
-                    setIsCreateTaskModalOpen(false);
-                  }}
-                  onCancel={() => {
-                    setIsCreateTaskModalOpen(false);
-                  }}
-                />
-              </CardContent>
-            </Card>
-          </div>
-        )}
+            onCancel={() => {
+              setIsCreateTaskModalOpen(false);
+            }}
+          />
+        </Modal>
       </div>
     </div>
   );

@@ -1,13 +1,7 @@
 'use client';
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select';
 import { ChevronDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useColors } from '@/lib/useColors';
 
 type ProjectType = 'new-build' | 'roof-renovation' | 'new-development' | 'renovation' | 'refurbishment' | 'extension' | 'commercial' | 'residential';
 
@@ -17,100 +11,64 @@ interface EditableProjectTypeBadgeProps {
   className?: string;
 }
 
-const typeConfig = {
-  'new-build': {
-    label: 'New Build',
-    className: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  },
-  'roof-renovation': {
-    label: 'Roof Renovation',
-    className: 'bg-amber-100 text-amber-800 border-amber-200',
-  },
-  'new-development': {
-    label: 'New Development',
-    className: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  'renovation': {
-    label: 'Renovation',
-    className: 'bg-orange-100 text-orange-800 border-orange-200',
-  },
-  'refurbishment': {
-    label: 'Refurbishment',
-    className: 'bg-purple-100 text-purple-800 border-purple-200',
-  },
-  'extension': {
-    label: 'Extension',
-    className: 'bg-pink-100 text-pink-800 border-pink-200',
-  },
-  'commercial': {
-    label: 'Commercial',
-    className: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-  },
-  'residential': {
-    label: 'Residential',
-    className: 'bg-teal-100 text-teal-800 border-teal-200',
-  },
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+const TYPE_LABELS: Record<ProjectType, string> = {
+  'new-build': 'New Build',
+  'roof-renovation': 'Roof Renovation',
+  'new-development': 'New Development',
+  'renovation': 'Renovation',
+  'refurbishment': 'Refurbishment',
+  'extension': 'Extension',
+  'commercial': 'Commercial',
+  'residential': 'Residential',
 };
 
-export default function EditableProjectTypeBadge({ 
-  type, 
-  onTypeChange, 
-  className = '' 
+export default function EditableProjectTypeBadge({
+  type,
+  onTypeChange,
+  className = '',
 }: EditableProjectTypeBadgeProps) {
-  // Normalize type - handle variations
+  const colors = useColors();
   const normalizedType = type || 'new-build';
-  
-  const currentType = (Object.keys(typeConfig).includes(normalizedType) 
-    ? normalizedType 
+  const currentType = (Object.keys(TYPE_LABELS).includes(normalizedType)
+    ? normalizedType
     : 'new-build') as ProjectType;
-  
-  const config = typeConfig[currentType] || typeConfig['new-build'];
-  
+
+  // Project entity tone = indigo.
+  const tone = colors.entityTypes.project;
+
   return (
-    <Select
-      value={currentType}
-      onValueChange={(value) => onTypeChange(value as ProjectType)}
-    >
-      <SelectTrigger
-        className={cn(
-          "h-auto py-0.5 px-2 border rounded-md cursor-pointer hover:opacity-80 transition-opacity shadow-none",
-          config.className,
-          "data-[state=open]:ring-2 data-[state=open]:ring-blue-500 data-[state=open]:ring-offset-1",
-          "focus:ring-0 focus-visible:ring-0",
-          "[&>svg]:hidden", // Hide the default SelectPrimitive.Icon chevron
-          className
-        )}
+    <div className={className} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <select
+        value={currentType}
+        onChange={(e) => onTypeChange(e.target.value as ProjectType)}
+        style={{
+          appearance: 'none',
+          cursor: 'pointer',
+          fontFamily: MONO,
+          fontSize: 9,
+          lineHeight: 1.3,
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          padding: '2px 20px 2px 6px',
+          borderRadius: 2,
+          background: `${tone}20`,
+          color: tone,
+          border: `1px solid ${tone}40`,
+          outline: 'none',
+        }}
       >
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium">{config.label}</span>
-          <ChevronDown className="w-3 h-3 opacity-60" />
-        </div>
-      </SelectTrigger>
-      <SelectContent>
-        {Object.entries(typeConfig).map(([value, config]) => (
-          <SelectItem key={value} value={value}>
-            <div className="flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", config.className.split(' ')[0])} />
-              <span>{config.label}</span>
-            </div>
-          </SelectItem>
+        {(Object.keys(TYPE_LABELS) as ProjectType[]).map((value) => (
+          <option key={value} value={value} style={{ color: colors.text.primary, background: colors.bg.card }}>
+            {TYPE_LABELS[value]}
+          </option>
         ))}
-      </SelectContent>
-    </Select>
+      </select>
+      <ChevronDown
+        size={11}
+        style={{ position: 'absolute', right: 5, color: tone, pointerEvents: 'none', opacity: 0.7 }}
+      />
+    </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
