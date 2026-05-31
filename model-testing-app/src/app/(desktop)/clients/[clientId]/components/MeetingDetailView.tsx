@@ -6,7 +6,6 @@ import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import { useColors } from '@/lib/useColors';
 import { Button, IconButton, StatusPill, FlagChip } from '@/components/layouts';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Calendar,
   Users,
@@ -23,6 +22,7 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle2,
+  Check,
   Flag,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
@@ -352,11 +352,27 @@ export default function MeetingDetailView({ meeting, clientId, onClose }: Meetin
                     border: `1px solid ${colors.border.default}`,
                   }}
                 >
-                  <Checkbox
-                    checked={item.status === 'completed'}
-                    onCheckedChange={() => handleToggleActionItem(item.id, item.status)}
-                    className="mt-0.5"
-                  />
+                  <button
+                    role="checkbox"
+                    aria-checked={item.status === 'completed'}
+                    onClick={() => handleToggleActionItem(item.id, item.status)}
+                    style={{
+                      marginTop: 2,
+                      width: 16,
+                      height: 16,
+                      flexShrink: 0,
+                      borderRadius: 3,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: item.status === 'completed' ? colors.entityTypes.client : colors.bg.card,
+                      border: `1px solid ${item.status === 'completed' ? colors.entityTypes.client : colors.border.mid}`,
+                      color: '#fff',
+                    }}
+                  >
+                    {item.status === 'completed' && <Check className="w-3 h-3" />}
+                  </button>
                   <div className="flex-1 min-w-0">
                     <p
                       style={{

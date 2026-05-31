@@ -6,17 +6,6 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import {
   FileText,
   Briefcase,
@@ -34,7 +23,7 @@ import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
 import RestorationBanner from '@/components/RestorationBanner';
 import { useColors } from '@/lib/useColors';
-import { EntityDetailScaffold, StatusPill, projectStatusTone, type Kpi, type TabDef, SkeletonText } from '@/components/layouts';
+import { EntityDetailScaffold, StatusPill, projectStatusTone, type Kpi, type TabDef, SkeletonText, Button, Modal } from '@/components/layouts';
 import { ProjectDetailAside } from './components/ProjectDetailAside';
 
 // Import project-specific components
@@ -158,14 +147,14 @@ function ProjectDetailContent() {
 
   const actions = (
     <>
-      <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }}>
-        <Settings className="w-3.5 h-3.5 mr-1" /> Settings
+      <Button size="sm" variant="ghost" onClick={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }}>
+        <Settings className="w-3.5 h-3.5" /> Settings
       </Button>
-      <Button size="sm" variant="ghost" className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-7 text-xs px-2" onClick={() => setFlagModalOpen(true)}>
-        <Flag className="w-3.5 h-3.5 mr-1" /> Flag
+      <Button size="sm" variant="ghost" onClick={() => setFlagModalOpen(true)} style={{ color: colors.accent.orange }}>
+        <Flag className="w-3.5 h-3.5" /> Flag
       </Button>
-      <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setShowArchiveDialog(true)}>
-        <Archive className="w-3.5 h-3.5 mr-1" /> Archive
+      <Button size="sm" variant="ghost" onClick={() => setShowArchiveDialog(true)}>
+        <Archive className="w-3.5 h-3.5" /> Archive
       </Button>
     </>
   );
@@ -221,18 +210,21 @@ function ProjectDetailContent() {
         {activeTab === 'data' && <ProjectDataTab projectId={projectId} projectName={project.name} />}
       </EntityDetailScaffold>
 
-      <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archive Project?</AlertDialogTitle>
-            <AlertDialogDescription>This will archive the project. You can restore it later by changing its status.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleArchiveProject}>Archive</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Modal
+        open={showArchiveDialog}
+        onClose={() => setShowArchiveDialog(false)}
+        title="Archive project?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowArchiveDialog(false)}>Cancel</Button>
+            <Button variant="danger" onClick={handleArchiveProject}>Archive</Button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 12, color: colors.text.secondary }}>
+          This will archive the project. You can restore it later by changing its status.
+        </p>
+      </Modal>
 
       <ProjectSettingsPanel isOpen={showSettingsPanel} onClose={() => setShowSettingsPanel(false)} projectId={projectId} clientId={clientId} defaultTab={settingsDefaultTab} onTrash={() => router.push(`/clients/${clientId}?tab=projects`)} />
 
