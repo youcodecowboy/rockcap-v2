@@ -11,8 +11,8 @@ import { useQuery, useMutation } from 'convex/react';
 const XlsxPreview = dynamic(() => import('@/components/preview/XlsxPreview'), { ssr: false });
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Button, IconButton, Input, StatusPill, FlagChip, Section, Row, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Separator } from '@/components/ui/separator';
 import {
   Sheet,
@@ -26,7 +26,6 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
 import {
   FileText,
   FileSpreadsheet,
@@ -34,17 +33,10 @@ import {
   File,
   Download,
   ExternalLink,
-  Calendar,
-  HardDrive,
-  User,
   FolderOpen,
-  Tag,
-  FileType,
-  Clock,
   Trash2,
   FolderInput,
   BookOpen,
-  Info,
   Sparkles,
   Loader2,
   Brain,
@@ -55,7 +47,7 @@ import {
   Link as LinkIcon,
   Unlink,
   Search,
-  MessageSquare,
+  Clock,
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -128,29 +120,11 @@ interface FileDetailPanelProps {
   onAnalysisComplete?: () => void;
 }
 
-const CONFIDENCE_COLORS: Record<string, string> = {
-  high: 'bg-green-100 text-green-700 border-green-200',
-  medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  low: 'bg-red-100 text-red-700 border-red-200',
-};
-
 function getConfidenceLevel(confidence: number): string {
   if (confidence >= 0.8) return 'high';
   if (confidence >= 0.6) return 'medium';
   return 'low';
 }
-
-const CATEGORY_ICONS: Record<string, string> = {
-  financials: 'text-green-600',
-  overview: 'text-blue-600',
-  timeline: 'text-amber-600',
-  location: 'text-emerald-600',
-  legal: 'text-purple-600',
-  contact: 'text-cyan-600',
-  company: 'text-indigo-600',
-  financial: 'text-green-600',
-  custom: 'text-gray-600',
-};
 
 export default function FileDetailPanel({
   document: initialDocument,
@@ -160,6 +134,7 @@ export default function FileDetailPanel({
   onMove,
   onAnalysisComplete,
 }: FileDetailPanelProps) {
+  const colors = useColors();
   const router = useRouter();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
@@ -321,15 +296,15 @@ export default function FileDetailPanel({
   const getFileIcon = () => {
     const type = document.fileType.toLowerCase();
     if (type.includes('pdf')) {
-      return <FileText className="w-12 h-12 text-red-500" />;
+      return <FileText className="w-12 h-12" style={{ color: colors.accent.red }} />;
     }
     if (type.includes('sheet') || type.includes('excel') || type.includes('csv')) {
-      return <FileSpreadsheet className="w-12 h-12 text-green-600" />;
+      return <FileSpreadsheet className="w-12 h-12" style={{ color: colors.accent.green }} />;
     }
     if (type.includes('image') || type.includes('png') || type.includes('jpg') || type.includes('jpeg')) {
-      return <FileImage className="w-12 h-12 text-blue-500" />;
+      return <FileImage className="w-12 h-12" style={{ color: colors.accent.blue }} />;
     }
-    return <File className="w-12 h-12 text-gray-500" />;
+    return <File className="w-12 h-12" style={{ color: colors.text.muted }} />;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -349,18 +324,22 @@ export default function FileDetailPanel({
     });
   };
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      'Appraisals': 'bg-purple-100 text-purple-800 border-purple-200',
-      'Financial': 'bg-green-100 text-green-800 border-green-200',
-      'Legal': 'bg-blue-100 text-blue-800 border-blue-200',
-      'Terms': 'bg-orange-100 text-orange-800 border-orange-200',
-      'Credit': 'bg-red-100 text-red-800 border-red-200',
-      'KYC': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      'Correspondence': 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  // Map document category to a canon accent tone.
+  const getCategoryTone = (category: string): string => {
+    const tones: Record<string, string> = {
+      'Appraisals': colors.accent.purple,
+      'Financial': colors.accent.green,
+      'Legal': colors.accent.blue,
+      'Terms': colors.accent.orange,
+      'Credit': colors.accent.red,
+      'KYC': colors.accent.yellow,
+      'Correspondence': colors.accent.cyan,
     };
-    return colors[category] || 'bg-gray-100 text-gray-800 border-gray-200';
+    return tones[category] || colors.text.muted;
   };
+
+  const confidenceTone = (level: string): string =>
+    level === 'high' ? colors.accent.green : level === 'medium' ? colors.accent.yellow : colors.accent.red;
 
   const handleDownload = async () => {
     if (!fileUrl) {
@@ -435,12 +414,14 @@ export default function FileDetailPanel({
       }, {} as Record<string, any[]>)
     : {};
 
+  const tabTrigger = "text-xs px-2 py-1.5";
+
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-[1460px] sm:max-w-[1460px] p-0 flex flex-col">
-        <SheetHeader className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
+      <SheetContent className="w-[1460px] sm:max-w-[1460px] p-0 flex flex-col" style={{ background: colors.bg.card }}>
+        <SheetHeader className="px-6 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
           <div className="flex items-center justify-between">
-            <SheetTitle className="text-xl font-semibold truncate pr-4">
+            <SheetTitle className="text-xl font-semibold truncate pr-4" style={{ color: colors.text.primary }}>
               {document.displayName || document.documentCode || document.fileName}
             </SheetTitle>
           </div>
@@ -449,31 +430,24 @@ export default function FileDetailPanel({
         {/* Two-column layout */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Column - Document Info */}
-          <div className="w-[450px] flex-shrink-0 border-r border-gray-200 flex flex-col overflow-hidden">
+          <div className="w-[450px] flex-shrink-0 flex flex-col overflow-hidden" style={{ borderRight: `1px solid ${colors.border.default}` }}>
             <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
               {/* Tab Header */}
-              <div className="px-4 pt-4 pb-2 border-b border-gray-100 flex-shrink-0">
+              <div className="px-4 pt-4 pb-2 flex-shrink-0" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
                 <div className="flex items-center justify-between mb-3">
                   <TabsList className="grid grid-cols-6 h-auto p-1">
-                    <TabsTrigger value="details" className="text-xs px-2 py-1.5">
-                      Details
-                    </TabsTrigger>
-                    <TabsTrigger value="summary" className="text-xs px-2 py-1.5" disabled={!hasSummary}>
-                      Summary
-                    </TabsTrigger>
-                    <TabsTrigger value="intelligence" className="text-xs px-2 py-1.5">
-                      Intel
-                    </TabsTrigger>
-                    <TabsTrigger value="checklist" className="text-xs px-2 py-1.5">
-                      Checklist
-                    </TabsTrigger>
-                    <TabsTrigger value="notes" className="text-xs px-2 py-1.5">
-                      Notes
-                    </TabsTrigger>
-                    <TabsTrigger value="threads" className="text-xs px-2 py-1.5 relative">
+                    <TabsTrigger value="details" className={tabTrigger}>Details</TabsTrigger>
+                    <TabsTrigger value="summary" className={tabTrigger} disabled={!hasSummary}>Summary</TabsTrigger>
+                    <TabsTrigger value="intelligence" className={tabTrigger}>Intel</TabsTrigger>
+                    <TabsTrigger value="checklist" className={tabTrigger}>Checklist</TabsTrigger>
+                    <TabsTrigger value="notes" className={tabTrigger}>Notes</TabsTrigger>
+                    <TabsTrigger value="threads" className={cn(tabTrigger, 'relative')}>
                       Threads
                       {openFlagCount !== undefined && openFlagCount > 0 && (
-                        <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 rounded-full bg-orange-100 text-orange-600 text-[10px] font-semibold px-1">
+                        <span
+                          className="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 rounded-full text-[10px] font-semibold px-1"
+                          style={{ background: `${colors.accent.orange}20`, color: colors.accent.orange }}
+                        >
                           {openFlagCount}
                         </span>
                       )}
@@ -482,13 +456,7 @@ export default function FileDetailPanel({
                 </div>
                 {/* Action Button Area */}
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleAnalyze}
-                    disabled={isAnalyzing}
-                    className="h-7 text-xs gap-1.5"
-                  >
+                  <Button variant="secondary" size="sm" onClick={handleAnalyze} disabled={isAnalyzing}>
                     {isAnalyzing ? (
                       <>
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -502,7 +470,7 @@ export default function FileDetailPanel({
                     )}
                   </Button>
                   {analyzeError && (
-                    <span className="text-xs text-red-600">{analyzeError}</span>
+                    <span className="text-xs" style={{ color: colors.accent.red }}>{analyzeError}</span>
                   )}
                 </div>
               </div>
@@ -510,126 +478,66 @@ export default function FileDetailPanel({
               {/* Tab Content - Scrollable */}
               <div className="flex-1 overflow-y-auto min-h-0 scrollbar-subtle">
                 {/* Details Tab */}
-                <TabsContent value="details" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
-                  {/* Original Filename */}
-                  {document.documentCode && (
-                    <div className="flex items-start gap-2">
-                      <File className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Original Filename</div>
-                        <div className="text-sm text-gray-900 break-all mt-0.5">{document.fileName}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Document Type */}
-                  {document.fileTypeDetected && (
-                    <div className="flex items-start gap-2">
-                      <FileType className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Document Type</div>
-                        <Badge variant="outline" className="text-sm mt-0.5">
-                          {document.fileTypeDetected}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Category */}
-                  <div className="flex items-start gap-2">
-                    <Tag className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Category</div>
-                      <Badge variant="outline" className={cn("text-sm mt-0.5", getCategoryColor(document.category))}>
-                        {document.category}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {/* Client/Project */}
-                  {(document.clientName || document.projectName) && (
-                    <div className="flex items-start gap-2">
-                      <FolderOpen className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Location</div>
-                        <div className="text-sm text-gray-900 mt-0.5">
-                          {document.clientName}
-                          {document.projectName && (
-                            <span className="text-gray-500"> / {document.projectName}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* File Size */}
-                  <div className="flex items-start gap-2">
-                    <HardDrive className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">File Size</div>
-                      <div className="text-sm text-gray-900 mt-0.5">{formatFileSize(document.fileSize)}</div>
-                    </div>
-                  </div>
-
-                  {/* Upload Date */}
-                  <div className="flex items-start gap-2">
-                    <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Uploaded</div>
-                      <div className="text-sm text-gray-900 mt-0.5">{formatDate(document.uploadedAt)}</div>
-                    </div>
-                  </div>
-
-                  {/* Version */}
-                  {document.version && (
-                    <div className="flex items-start gap-2">
-                      <Clock className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Version</div>
-                        <Badge variant="secondary" className="text-sm mt-0.5">{document.version}</Badge>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Uploader */}
-                  {document.uploaderInitials && (
-                    <div className="flex items-start gap-2">
-                      <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Uploaded By</div>
-                        <div className="text-sm text-gray-900 mt-0.5">{document.uploaderInitials}</div>
-                      </div>
-                    </div>
-                  )}
+                <TabsContent value="details" className="mt-0 p-5 data-[state=inactive]:hidden">
+                  <Section title="Document">
+                    {document.documentCode && (
+                      <Row label="Original filename" value={document.fileName} mono />
+                    )}
+                    {document.fileTypeDetected && (
+                      <Row label="Document type" value={document.fileTypeDetected} />
+                    )}
+                    <Row
+                      label="Category"
+                      value={document.category}
+                      pill={getCategoryTone(document.category)}
+                    />
+                    {(document.clientName || document.projectName) && (
+                      <Row
+                        label="Location"
+                        value={
+                          <>
+                            {document.clientName}
+                            {document.projectName && (
+                              <span style={{ color: colors.text.muted }}> / {document.projectName}</span>
+                            )}
+                          </>
+                        }
+                      />
+                    )}
+                    <Row label="File size" value={formatFileSize(document.fileSize)} />
+                    <Row label="Uploaded" value={formatDate(document.uploadedAt)} />
+                    {document.version && (
+                      <Row label="Version" value={document.version} mono />
+                    )}
+                    {document.uploaderInitials && (
+                      <Row label="Uploaded by" value={document.uploaderInitials} />
+                    )}
+                  </Section>
 
                   {/* Characteristics (show in details if analysis exists) */}
                   {hasAnalysis && (
-                    <div className="flex items-start gap-2">
-                      <Info className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">Characteristics</div>
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {document.documentAnalysis!.documentCharacteristics.isFinancial && (
-                            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-green-50 text-green-700">Financial</Badge>
-                          )}
-                          {document.documentAnalysis!.documentCharacteristics.isLegal && (
-                            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700">Legal</Badge>
-                          )}
-                          {document.documentAnalysis!.documentCharacteristics.isIdentity && (
-                            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700">Identity</Badge>
-                          )}
-                          {document.documentAnalysis!.documentCharacteristics.isReport && (
-                            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-amber-50 text-amber-700">Report</Badge>
-                          )}
-                          {document.documentAnalysis!.documentCharacteristics.isDesign && (
-                            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-pink-50 text-pink-700">Design</Badge>
-                          )}
-                          {document.documentAnalysis!.documentCharacteristics.isCorrespondence && (
-                            <Badge variant="outline" className="text-xs px-2 py-0.5 bg-cyan-50 text-cyan-700">Correspondence</Badge>
-                          )}
-                        </div>
+                    <Section title="Characteristics">
+                      <div className="flex flex-wrap gap-1.5">
+                        {document.documentAnalysis!.documentCharacteristics.isFinancial && (
+                          <StatusPill label="Financial" tone={colors.accent.green} />
+                        )}
+                        {document.documentAnalysis!.documentCharacteristics.isLegal && (
+                          <StatusPill label="Legal" tone={colors.accent.blue} />
+                        )}
+                        {document.documentAnalysis!.documentCharacteristics.isIdentity && (
+                          <StatusPill label="Identity" tone={colors.accent.purple} />
+                        )}
+                        {document.documentAnalysis!.documentCharacteristics.isReport && (
+                          <StatusPill label="Report" tone={colors.accent.orange} />
+                        )}
+                        {document.documentAnalysis!.documentCharacteristics.isDesign && (
+                          <StatusPill label="Design" tone={colors.accent.purple} />
+                        )}
+                        {document.documentAnalysis!.documentCharacteristics.isCorrespondence && (
+                          <StatusPill label="Correspondence" tone={colors.accent.cyan} />
+                        )}
                       </div>
-                    </div>
+                    </Section>
                   )}
                 </TabsContent>
 
@@ -638,24 +546,24 @@ export default function FileDetailPanel({
                   {hasAnalysis ? (
                     <>
                       <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1.5">Executive Summary</div>
-                        <p className="text-sm text-gray-900 leading-relaxed">
+                        <div className="text-xs uppercase tracking-wide font-medium mb-1.5" style={{ color: colors.text.muted }}>Executive Summary</div>
+                        <p className="text-sm leading-relaxed" style={{ color: colors.text.primary }}>
                           {document.documentAnalysis!.executiveSummary}
                         </p>
                       </div>
                       <Separator />
                       <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1.5">Detailed Summary</div>
-                        <p className="text-sm text-gray-700 leading-relaxed">
+                        <div className="text-xs uppercase tracking-wide font-medium mb-1.5" style={{ color: colors.text.muted }}>Detailed Summary</div>
+                        <p className="text-sm leading-relaxed" style={{ color: colors.text.secondary }}>
                           {document.documentAnalysis!.detailedSummary}
                         </p>
                       </div>
                       {document.classificationReasoning && (
                         <>
                           <Separator />
-                          <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                            <div className="text-xs text-blue-700 uppercase tracking-wide font-medium mb-1.5">Classification Reasoning</div>
-                            <p className="text-xs text-blue-800 leading-relaxed">
+                          <div className="p-3 rounded" style={{ background: `${colors.accent.blue}10`, border: `1px solid ${colors.accent.blue}30` }}>
+                            <div className="text-xs uppercase tracking-wide font-medium mb-1.5" style={{ color: colors.accent.blue }}>Classification Reasoning</div>
+                            <p className="text-xs leading-relaxed" style={{ color: colors.accent.blue }}>
                               {document.classificationReasoning}
                             </p>
                           </div>
@@ -665,17 +573,17 @@ export default function FileDetailPanel({
                   ) : document.summary ? (
                     <>
                       <div>
-                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1.5">Summary</div>
-                        <p className="text-sm text-gray-900 leading-relaxed">
+                        <div className="text-xs uppercase tracking-wide font-medium mb-1.5" style={{ color: colors.text.muted }}>Summary</div>
+                        <p className="text-sm leading-relaxed" style={{ color: colors.text.primary }}>
                           {document.summary}
                         </p>
                       </div>
                       {document.classificationReasoning && (
                         <>
                           <Separator />
-                          <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                            <div className="text-xs text-blue-700 uppercase tracking-wide font-medium mb-1.5">Classification Reasoning</div>
-                            <p className="text-xs text-blue-800 leading-relaxed">
+                          <div className="p-3 rounded" style={{ background: `${colors.accent.blue}10`, border: `1px solid ${colors.accent.blue}30` }}>
+                            <div className="text-xs uppercase tracking-wide font-medium mb-1.5" style={{ color: colors.accent.blue }}>Classification Reasoning</div>
+                            <p className="text-xs leading-relaxed" style={{ color: colors.accent.blue }}>
                               {document.classificationReasoning}
                             </p>
                           </div>
@@ -689,19 +597,17 @@ export default function FileDetailPanel({
                 <TabsContent value="intelligence" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
                   {hasIntelligence ? (
                     <div className="space-y-4">
-                      <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                      <div className="text-xs uppercase tracking-wide font-medium" style={{ color: colors.text.muted }}>
                         Extracted Fields ({intelligenceItems.length})
                       </div>
                       {Object.entries(intelligenceByCategory).map(([category, items]) => (
                         <div key={category} className="space-y-2">
                           <div className="flex items-center gap-2">
-                            <Brain className={cn("w-4 h-4", CATEGORY_ICONS[category] || 'text-gray-500')} />
-                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                            <Brain className="w-4 h-4" style={{ color: colors.text.muted }} />
+                            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: colors.text.secondary }}>
                               {category.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
                             </span>
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                              {(items as any[]).length}
-                            </Badge>
+                            <StatusPill label={String((items as any[]).length)} tone={colors.text.muted} />
                           </div>
                           <div className="space-y-1.5 pl-6">
                             {(items as any[]).map((item: any) => {
@@ -709,33 +615,30 @@ export default function FileDetailPanel({
                               return (
                                 <div
                                   key={item._id}
-                                  className="flex items-start justify-between gap-2 p-2 rounded-md bg-gray-50 border border-gray-100"
+                                  className="flex items-start justify-between gap-2 p-2 rounded"
+                                  style={{ background: colors.bg.cardAlt, border: `1px solid ${colors.border.light}` }}
                                 >
                                   <div className="flex-1 min-w-0">
-                                    <div className="text-xs font-medium text-gray-800">
+                                    <div className="text-xs font-medium" style={{ color: colors.text.secondary }}>
                                       {item.label || item.fieldPath}
                                     </div>
-                                    <div className="text-sm text-gray-900 mt-0.5 break-words">
+                                    <div className="text-sm mt-0.5 break-words" style={{ color: colors.text.primary }}>
                                       {typeof item.value === 'object' ? JSON.stringify(item.value) : String(item.value)}
                                     </div>
                                     {item.sourceText && (
-                                      <div className="text-[10px] text-gray-400 mt-0.5 truncate" title={item.sourceText}>
+                                      <div className="text-[10px] mt-0.5 truncate" style={{ color: colors.text.dim }} title={item.sourceText}>
                                         {item.sourceText}
                                       </div>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
                                     {item.isCanonical && (
-                                      <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-600 border-blue-200">
-                                        Canonical
-                                      </Badge>
+                                      <StatusPill label="Canonical" tone={colors.accent.blue} />
                                     )}
-                                    <Badge
-                                      variant="outline"
-                                      className={cn("text-[10px] px-1 py-0", CONFIDENCE_COLORS[level])}
-                                    >
-                                      {Math.round((item.normalizationConfidence ?? item.confidence ?? 0) * 100)}%
-                                    </Badge>
+                                    <StatusPill
+                                      label={`${Math.round((item.normalizationConfidence ?? item.confidence ?? 0) * 100)}%`}
+                                      tone={confidenceTone(level)}
+                                    />
                                   </div>
                                 </div>
                               );
@@ -745,68 +648,61 @@ export default function FileDetailPanel({
                       ))}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-8 text-center">
-                      <Brain className="w-8 h-8 text-gray-300 mb-2" />
-                      <p className="text-sm text-gray-500">No intelligence extracted yet</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Click &quot;Analyze Document&quot; to extract structured intelligence
-                      </p>
-                    </div>
+                    <EmptyState
+                      icon={<Brain className="w-8 h-8" />}
+                      title="No intelligence extracted yet"
+                      body='Click "Analyze Document" to extract structured intelligence'
+                    />
                   )}
                 </TabsContent>
 
                 {/* Checklist Tab */}
                 <TabsContent value="checklist" className="mt-0 p-5 space-y-4 data-[state=inactive]:hidden">
                   {!document.clientId ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-center">
-                      <ClipboardCheck className="w-8 h-8 text-gray-300 mb-2" />
-                      <p className="text-sm text-gray-500">No client associated</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        This document must be filed to a client to view checklist items
-                      </p>
-                    </div>
+                    <EmptyState
+                      icon={<ClipboardCheck className="w-8 h-8" />}
+                      title="No client associated"
+                      body="This document must be filed to a client to view checklist items"
+                    />
                   ) : (
                     <>
                       {/* Search */}
                       <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: colors.text.dim, pointerEvents: 'none', zIndex: 1 }} />
                         <Input
                           placeholder="Search checklist items..."
                           value={checklistSearch}
                           onChange={(e) => setChecklistSearch(e.target.value)}
-                          className="pl-8 h-8 text-xs"
+                          style={{ paddingLeft: 30 }}
                         />
                       </div>
 
                       {/* Linked Requirements */}
                       {hasChecklist && (
                         <div className="space-y-2">
-                          <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                          <div className="text-xs uppercase tracking-wide font-medium" style={{ color: colors.text.muted }}>
                             Linked to this Document ({checklistLinks.length})
                           </div>
                           {checklistLinks.map((link: any) => (
                             <div
                               key={link._id}
-                              className="flex items-center gap-2.5 p-2.5 bg-green-50 rounded-lg border border-green-100 group"
+                              className="flex items-center gap-2.5 p-2.5 rounded group"
+                              style={{ background: `${colors.accent.green}10`, border: `1px solid ${colors.accent.green}30` }}
                             >
-                              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.green }} />
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-gray-900">
+                                <div className="text-sm font-medium" style={{ color: colors.text.primary }}>
                                   {link.checklistItem?.name || 'Unknown requirement'}
                                 </div>
                                 {link.checklistItem?.category && (
-                                  <div className="text-xs text-gray-500 mt-0.5">{link.checklistItem.category}</div>
+                                  <div className="text-xs mt-0.5" style={{ color: colors.text.muted }}>{link.checklistItem.category}</div>
                                 )}
                               </div>
                               {link.isPrimary && (
-                                <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-200">
-                                  Primary
-                                </Badge>
+                                <StatusPill label="Primary" tone={colors.accent.green} />
                               )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 flex-shrink-0"
+                              <span
+                                className="opacity-0 group-hover:opacity-100 flex-shrink-0"
                                 onClick={async () => {
                                   await unlinkDocFromChecklist({
                                     checklistItemId: link.checklistItem?._id,
@@ -814,8 +710,10 @@ export default function FileDetailPanel({
                                   });
                                 }}
                               >
-                                <Unlink className="w-3.5 h-3.5" />
-                              </Button>
+                                <IconButton label="Unlink" style={{ width: 24, height: 24 }}>
+                                  <Unlink className="w-3.5 h-3.5" />
+                                </IconButton>
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -824,59 +722,56 @@ export default function FileDetailPanel({
                       {/* All Available Requirements */}
                       {allChecklistItems === undefined ? (
                         <div className="flex items-center justify-center py-4">
-                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                          <Loader2 className="w-4 h-4 animate-spin" style={{ color: colors.text.dim }} />
                         </div>
                       ) : Object.keys(checklistByCategory).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-6 text-center">
-                          <ClipboardCheck className="w-8 h-8 text-gray-300 mb-2" />
-                          <p className="text-sm text-gray-500">
-                            {checklistSearch ? 'No matching requirements' : 'No checklist items for this client'}
-                          </p>
-                        </div>
+                        <EmptyState
+                          icon={<ClipboardCheck className="w-8 h-8" />}
+                          title={checklistSearch ? 'No matching requirements' : 'No checklist items for this client'}
+                        />
                       ) : (
                         <div className="space-y-3">
-                          <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                          <div className="text-xs uppercase tracking-wide font-medium" style={{ color: colors.text.muted }}>
                             Available Requirements
                           </div>
                           {Object.entries(checklistByCategory).map(([category, items]) => (
                             <div key={category}>
-                              <div className="text-xs font-medium text-gray-600 mb-1.5 px-1">{category}</div>
+                              <div className="text-xs font-medium mb-1.5 px-1" style={{ color: colors.text.secondary }}>{category}</div>
                               <div className="space-y-1">
                                 {(items as any[]).map((item: any) => {
                                   const isLinked = linkedChecklistItemIds.has(item._id as string);
                                   return (
                                     <div
                                       key={item._id}
-                                      className={cn(
-                                        "flex items-center gap-2.5 p-2 rounded-lg border transition-colors",
-                                        isLinked
-                                          ? "bg-green-50 border-green-100"
+                                      className="flex items-center gap-2.5 p-2 rounded"
+                                      style={{
+                                        background: isLinked
+                                          ? `${colors.accent.green}10`
                                           : item.status === 'fulfilled'
-                                          ? "bg-gray-50 border-gray-100"
-                                          : "bg-white border-gray-200 hover:border-blue-200"
-                                      )}
+                                          ? colors.bg.cardAlt
+                                          : colors.bg.card,
+                                        border: `1px solid ${isLinked ? `${colors.accent.green}30` : colors.border.default}`,
+                                        transition: 'border-color 100ms linear',
+                                      }}
                                     >
                                       {item.status === 'fulfilled' ? (
-                                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                        <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.green }} />
                                       ) : item.status === 'pending_review' ? (
-                                        <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                        <Clock className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.orange }} />
                                       ) : (
-                                        <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                                        <Circle className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.dim }} />
                                       )}
                                       <div className="flex-1 min-w-0">
-                                        <div className="text-xs font-medium text-gray-900 truncate">
+                                        <div className="text-xs font-medium truncate" style={{ color: colors.text.primary }}>
                                           {item.name}
                                         </div>
                                       </div>
                                       {isLinked ? (
-                                        <Badge variant="outline" className="text-[10px] h-4 bg-green-100 text-green-700 border-green-200 flex-shrink-0">
-                                          Linked
-                                        </Badge>
+                                        <StatusPill label="Linked" tone={colors.accent.green} />
                                       ) : (
                                         <Button
-                                          size="sm"
                                           variant="ghost"
-                                          className="h-6 px-2 text-xs text-gray-500 hover:text-blue-600 flex-shrink-0"
+                                          size="sm"
                                           onClick={async () => {
                                             if (!currentUser?._id) return;
                                             await linkDocToChecklist({
@@ -886,7 +781,7 @@ export default function FileDetailPanel({
                                             });
                                           }}
                                         >
-                                          <LinkIcon className="w-3 h-3 mr-1" />
+                                          <LinkIcon className="w-3 h-3" />
                                           Link
                                         </Button>
                                       )}
@@ -929,7 +824,7 @@ export default function FileDetailPanel({
           </div>
 
           {/* Right Column - Document Preview */}
-          <div className="flex-1 flex flex-col bg-gray-50 min-w-0">
+          <div className="flex-1 flex flex-col min-w-0" style={{ background: colors.bg.light }}>
             <div className="flex-1 p-4 flex flex-col">
               {canPreview && fileUrl ? (
                 <div className="w-full flex-1 min-h-0 relative">
@@ -940,8 +835,8 @@ export default function FileDetailPanel({
                     // shown for PDFs — the browser's viewer handles it.
                     <iframe
                       src={`${fileUrl}#toolbar=1&navpanes=0`}
-                      className="w-full h-full rounded-lg border border-gray-200 bg-white"
-                      style={{ minHeight: '600px' }}
+                      className="w-full h-full"
+                      style={{ minHeight: '600px', borderRadius: 4, border: `1px solid ${colors.border.default}`, background: colors.bg.card }}
                       title="PDF Preview"
                     />
                   ) : isXlsx ? (
@@ -953,26 +848,23 @@ export default function FileDetailPanel({
                     <div className="absolute inset-0 flex flex-col">
                       {/* Zoom toolbar */}
                       <div className="flex items-center justify-center gap-1 mb-2 flex-shrink-0">
-                        <Button variant="outline" size="sm" onClick={xlsxZoomOut} className="h-8 w-8 p-0" aria-label="Zoom out">
+                        <IconButton label="Zoom out" onClick={xlsxZoomOut}>
                           <ZoomOut className="w-4 h-4" />
-                        </Button>
-                        <span className="text-xs text-gray-600 w-12 text-center font-medium tabular-nums">
+                        </IconButton>
+                        <span className="text-xs w-12 text-center font-medium tabular-nums" style={{ color: colors.text.secondary }}>
                           {Math.round(xlsxZoom * 100)}%
                         </span>
-                        <Button variant="outline" size="sm" onClick={xlsxZoomIn} className="h-8 w-8 p-0" aria-label="Zoom in">
+                        <IconButton label="Zoom in" onClick={xlsxZoomIn}>
                           <ZoomIn className="w-4 h-4" />
-                        </Button>
+                        </IconButton>
                         {xlsxZoom !== 1 && (
-                          <Button variant="outline" size="sm" onClick={xlsxZoomReset} className="h-8 w-8 p-0 ml-1" aria-label="Reset zoom">
+                          <IconButton label="Reset zoom" onClick={xlsxZoomReset} style={{ marginLeft: 4 }}>
                             <RotateCcw className="w-3.5 h-3.5" />
-                          </Button>
+                          </IconButton>
                         )}
                       </div>
                       {/* Scrollable canvas — flex flex-col so XlsxPreview's
-                          outer flex-1 has a flex parent to grow within.
-                          (Drawer chain is deeply nested with multiple flex
-                          items; percentage heights stop resolving cleanly
-                          at this depth, so we use flex-1 throughout.) */}
+                          outer flex-1 has a flex parent to grow within. */}
                       <div className="flex-1 min-h-0 flex flex-col">
                         <XlsxPreview
                           fileUrl={fileUrl}
@@ -987,7 +879,8 @@ export default function FileDetailPanel({
                       <img
                         src={fileUrl}
                         alt={document.fileName}
-                        className="max-w-full max-h-full rounded-lg border border-gray-200"
+                        className="max-w-full max-h-full"
+                        style={{ borderRadius: 4, border: `1px solid ${colors.border.default}` }}
                       />
                     </div>
                   )}
@@ -995,20 +888,16 @@ export default function FileDetailPanel({
               ) : (
                 <div className="flex flex-col items-center justify-center flex-1 text-center">
                   {getFileIcon()}
-                  <p className="mt-4 text-base text-gray-500">Preview not available</p>
-                  <p className="mt-1 text-sm text-gray-400">
+                  <p className="mt-4 text-base" style={{ color: colors.text.muted }}>Preview not available</p>
+                  <p className="mt-1 text-sm" style={{ color: colors.text.dim }}>
                     {document.fileType.toUpperCase()} files cannot be previewed
                   </p>
-                  <Button
-                    variant="outline"
-                    size="default"
-                    className="mt-4 gap-2"
-                    onClick={handleOpenExternal}
-                    disabled={!fileUrl}
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open in New Tab
-                  </Button>
+                  <div className="mt-4">
+                    <Button variant="secondary" onClick={handleOpenExternal} disabled={!fileUrl}>
+                      <ExternalLink className="w-4 h-4" />
+                      Open in New Tab
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1016,39 +905,24 @@ export default function FileDetailPanel({
         </div>
 
         {/* Sticky Footer Actions */}
-        <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
+        <div className="p-4 flex-shrink-0" style={{ borderTop: `1px solid ${colors.border.default}`, background: colors.bg.card }}>
           <div className="flex items-center gap-3">
-            <Button
-              size="lg"
-              className="flex-1 gap-2"
-              onClick={handleOpenReader}
-            >
+            <Button variant="primary" onClick={handleOpenReader} style={{ flex: 1, justifyContent: 'center', padding: '10px 14px' }}>
               <BookOpen className="w-5 h-5" />
               Open in Reader
             </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              className="gap-2"
-              onClick={handleDownload}
-              disabled={!fileUrl}
-            >
+            <Button variant="secondary" onClick={handleDownload} disabled={!fileUrl} style={{ padding: '10px 14px' }}>
               <Download className="w-5 h-5" />
               Download
             </Button>
             {onMove && (
-              <Button variant="outline" size="lg" className="gap-2" onClick={onMove}>
+              <Button variant="secondary" onClick={onMove} style={{ padding: '10px 14px' }}>
                 <FolderInput className="w-5 h-5" />
                 Move
               </Button>
             )}
             {onDelete && (
-              <Button
-                variant="outline"
-                size="lg"
-                className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-                onClick={onDelete}
-              >
+              <Button variant="danger" onClick={onDelete} style={{ padding: '10px 14px' }}>
                 <Trash2 className="w-5 h-5" />
                 Delete
               </Button>

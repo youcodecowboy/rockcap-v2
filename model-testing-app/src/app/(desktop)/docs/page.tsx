@@ -6,8 +6,8 @@ import { useSearchParams } from 'next/navigation';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Button, Skeleton } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Clock, FileText, Building, User } from 'lucide-react';
 
 import DocsSidebar, { DocumentScope } from './components/DocsSidebar';
@@ -40,6 +40,7 @@ interface Document {
 }
 
 function DocsPageContent() {
+  const colors = useColors();
   // URL params for deep linking
   const searchParams = useSearchParams();
   const urlClientId = searchParams.get('clientId');
@@ -215,13 +216,18 @@ function DocsPageContent() {
   const currentFolder = getCurrentFolder();
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col" style={{ background: colors.bg.base }}>
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+      <header
+        className="px-4 py-3 flex items-center justify-between flex-shrink-0"
+        style={{ background: colors.bg.card, borderBottom: `1px solid ${colors.border.default}` }}
+      >
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <FileText className="w-6 h-6 text-blue-600" />
-            <h1 className="text-xl font-bold text-gray-900">Document Library</h1>
+            <FileText className="w-5 h-5" style={{ color: colors.accent.blue }} />
+            <h1 style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary }}>
+              Document Library
+            </h1>
           </div>
 
           {/* Breadcrumb */}
@@ -244,14 +250,14 @@ function DocsPageContent() {
                 }}
               />
             ) : (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex items-center gap-2" style={{ fontSize: 12, color: colors.text.secondary }}>
                 <button
                   onClick={handleHomeClick}
-                  className="hover:text-gray-900 transition-colors"
+                  style={{ background: 'transparent', border: 'none', color: colors.text.secondary, cursor: 'pointer' }}
                 >
                   Documents
                 </button>
-                <span>/</span>
+                <span style={{ color: colors.text.dim }}>/</span>
                 <span className="flex items-center gap-1.5">
                   {activeScope === 'internal' ? (
                     <Building className="w-3.5 h-3.5" />
@@ -262,16 +268,16 @@ function DocsPageContent() {
                 </span>
                 {currentFolder && (
                   <>
-                    <span>/</span>
-                    <span className="font-medium text-gray-900">
+                    <span style={{ color: colors.text.dim }}>/</span>
+                    <span style={{ fontWeight: 500, color: colors.text.primary }}>
                       {currentFolder.folderName}
                     </span>
                   </>
                 )}
                 {isInboxSelected && (
                   <>
-                    <span>/</span>
-                    <span className="font-medium text-gray-900">Inbox</span>
+                    <span style={{ color: colors.text.dim }}>/</span>
+                    <span style={{ fontWeight: 500, color: colors.text.primary }}>Inbox</span>
                   </>
                 )}
               </div>
@@ -283,12 +289,22 @@ function DocsPageContent() {
           {/* Review Queue - hidden for V1, only show if there are pending items from legacy flow */}
           {queueCount > 0 && (
             <Link href="/docs/queue">
-              <Button variant="default" size="sm" className="relative">
-                <Clock className="w-4 h-4 mr-2" />
+              <Button variant="primary" size="sm" accent={colors.accent.blue}>
+                <Clock className="w-4 h-4" />
                 Review Queue
-                <Badge variant="secondary" className="ml-2 bg-white text-blue-600">
+                <span
+                  style={{
+                    marginLeft: 4,
+                    padding: '0 6px',
+                    borderRadius: 2,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 10,
+                    background: colors.bg.card,
+                    color: colors.accent.blue,
+                  }}
+                >
                   {queueCount}
-                </Badge>
+                </span>
               </Button>
             </Link>
           )}
@@ -373,7 +389,7 @@ function DocsPageContent() {
 // Wrap in Suspense for useSearchParams
 export default function DocsPage() {
   return (
-    <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" /></div>}>
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center p-6" style={{ width: '100%' }}><Skeleton width={240} height={12} /></div>}>
       <DocsPageContent />
     </Suspense>
   );

@@ -1,16 +1,8 @@
 'use client';
 
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { IconButton, Panel, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   FileText,
   FileSpreadsheet,
@@ -31,8 +23,7 @@ import {
   Flag,
   Pencil,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import DocumentNotesIndicator from '@/components/DocumentNotesIndicator';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
@@ -102,20 +93,32 @@ export default function FileCard({
   isVersionExpanded,
   onToggleVersions,
 }: FileCardProps) {
+  const colors = useColors();
   const [flagModalOpen, setFlagModalOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    window.document.addEventListener('mousedown', onDoc);
+    return () => window.document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
 
   const getFileIcon = (iconClass = "w-8 h-8") => {
     const type = document.fileType.toLowerCase();
     if (type.includes('pdf')) {
-      return <FileText className={cn(iconClass, "text-red-500")} />;
+      return <FileText className={iconClass} style={{ color: colors.accent.red }} />;
     }
     if (type.includes('sheet') || type.includes('excel') || type.includes('csv')) {
-      return <FileSpreadsheet className={cn(iconClass, "text-green-600")} />;
+      return <FileSpreadsheet className={iconClass} style={{ color: colors.accent.green }} />;
     }
     if (type.includes('image') || type.includes('png') || type.includes('jpg') || type.includes('jpeg')) {
-      return <FileImage className={cn(iconClass, "text-blue-500")} />;
+      return <FileImage className={iconClass} style={{ color: colors.accent.blue }} />;
     }
-    return <File className={cn(iconClass, "text-gray-500")} />;
+    return <File className={iconClass} style={{ color: colors.text.muted }} />;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -133,114 +136,105 @@ export default function FileCard({
     });
   };
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      'Appraisals':          'bg-violet-50 text-violet-700 border-violet-200',
-      'Communications':      'bg-sky-50 text-sky-700 border-sky-200',
-      'Financial Documents': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      'Inspections':         'bg-amber-50 text-amber-700 border-amber-200',
-      'Insurance':           'bg-teal-50 text-teal-700 border-teal-200',
-      'KYC':                 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      'Legal Documents':     'bg-blue-50 text-blue-700 border-blue-200',
-      'Loan Terms':          'bg-orange-50 text-orange-700 border-orange-200',
-      'Photographs':         'bg-pink-50 text-pink-700 border-pink-200',
-      'Plans':               'bg-indigo-50 text-indigo-700 border-indigo-200',
-      'Professional Reports':'bg-cyan-50 text-cyan-700 border-cyan-200',
-      'Project Documents':   'bg-lime-50 text-lime-700 border-lime-200',
-      'Warranties':          'bg-rose-50 text-rose-700 border-rose-200',
+  // Map document category to a canon accent tone.
+  const getCategoryTone = (category: string): string => {
+    const tones: Record<string, string> = {
+      'Appraisals':          colors.accent.purple,
+      'Communications':      colors.accent.cyan,
+      'Financial Documents': colors.accent.green,
+      'Inspections':         colors.accent.orange,
+      'Insurance':           colors.accent.teal,
+      'KYC':                 colors.accent.yellow,
+      'Legal Documents':     colors.accent.blue,
+      'Loan Terms':          colors.accent.orange,
+      'Photographs':         colors.accent.purple,
+      'Plans':               colors.accent.indigo,
+      'Professional Reports':colors.accent.cyan,
+      'Project Documents':   colors.accent.green,
+      'Warranties':          colors.accent.red,
     };
-    return colors[category] || 'bg-stone-50 text-stone-600 border-stone-200';
+    return tones[category] || colors.text.muted;
   };
 
-  const getCategoryDot = (category: string) => {
-    const dots: Record<string, string> = {
-      'Appraisals':          'bg-violet-500',
-      'Communications':      'bg-sky-500',
-      'Financial Documents': 'bg-emerald-500',
-      'Inspections':         'bg-amber-500',
-      'Insurance':           'bg-teal-500',
-      'KYC':                 'bg-yellow-500',
-      'Legal Documents':     'bg-blue-500',
-      'Loan Terms':          'bg-orange-500',
-      'Photographs':         'bg-pink-500',
-      'Plans':               'bg-indigo-500',
-      'Professional Reports':'bg-cyan-500',
-      'Project Documents':   'bg-lime-500',
-      'Warranties':          'bg-rose-500',
-    };
-    return dots[category] || 'bg-gray-400';
-  };
+  // Token-styled dropdown menu item
+  const MenuItem = ({
+    icon,
+    label,
+    onSelect,
+    danger,
+  }: { icon: React.ReactNode; label: string; onSelect: () => void; danger?: boolean }) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSelect(); }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        padding: '7px 10px',
+        fontSize: 12,
+        textAlign: 'left',
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        color: danger ? colors.accent.red : colors.text.secondary,
+        transition: 'background 100ms linear',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
 
-  const handleDropdownAction = (e: React.MouseEvent, action: () => void) => {
-    e.stopPropagation();
-    action();
-  };
+  const MenuSeparator = () => (
+    <div style={{ height: 1, background: colors.border.light, margin: '4px 0' }} />
+  );
 
-  const renderDropdownItems = () => (
-    <>
-      <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onView)}>
-        <Eye className="w-4 h-4 mr-2" />
-        View Details
-      </DropdownMenuItem>
-      {onRename && (
-        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onRename)}>
-          <Pencil className="w-4 h-4 mr-2" />
-          Rename
-        </DropdownMenuItem>
+  const dropdownMenu = (
+    <div ref={menuRef} style={{ position: 'relative' }}>
+      <IconButton label="Actions" onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}>
+        <MoreVertical className="w-3.5 h-3.5" />
+      </IconButton>
+      {menuOpen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            top: '100%',
+            right: 0,
+            marginTop: 4,
+            minWidth: 180,
+            zIndex: 50,
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 4,
+            padding: 4,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+          }}
+        >
+          <MenuItem icon={<Eye className="w-4 h-4" />} label="View Details" onSelect={onView} />
+          {onRename && <MenuItem icon={<Pencil className="w-4 h-4" />} label="Rename" onSelect={onRename} />}
+          {onOpenReader && <MenuItem icon={<BookOpen className="w-4 h-4" />} label="Open in Reader" onSelect={onOpenReader} />}
+          <MenuItem icon={<Download className="w-4 h-4" />} label="Download" onSelect={onDownload} />
+          <MenuSeparator />
+          {onLinkAsVersion && <MenuItem icon={<Layers className="w-4 h-4" />} label="Link as Version" onSelect={onLinkAsVersion} />}
+          {onUnlinkVersion && document.previousVersionId && (
+            <MenuItem icon={<Unlink className="w-4 h-4" />} label="Unlink Version" onSelect={onUnlinkVersion} />
+          )}
+          {onMove && <MenuItem icon={<FolderInput className="w-4 h-4" />} label="Move to Folder" onSelect={onMove} />}
+          {onDuplicate && <MenuItem icon={<Copy className="w-4 h-4" />} label="Duplicate" onSelect={onDuplicate} />}
+          <MenuSeparator />
+          <MenuItem icon={<Flag className="w-4 h-4" />} label="Flag for Review" onSelect={() => setFlagModalOpen(true)} />
+          {onDelete && (
+            <>
+              <MenuSeparator />
+              <MenuItem icon={<Trash2 className="w-4 h-4" />} label="Delete" onSelect={onDelete} danger />
+            </>
+          )}
+        </div>
       )}
-      {onOpenReader && (
-        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onOpenReader)}>
-          <BookOpen className="w-4 h-4 mr-2" />
-          Open in Reader
-        </DropdownMenuItem>
-      )}
-      <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDownload)}>
-        <Download className="w-4 h-4 mr-2" />
-        Download
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      {onLinkAsVersion && (
-        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onLinkAsVersion)}>
-          <Layers className="w-4 h-4 mr-2" />
-          Link as Version
-        </DropdownMenuItem>
-      )}
-      {onUnlinkVersion && document.previousVersionId && (
-        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onUnlinkVersion)}>
-          <Unlink className="w-4 h-4 mr-2" />
-          Unlink Version
-        </DropdownMenuItem>
-      )}
-      {onMove && (
-        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onMove)}>
-          <FolderInput className="w-4 h-4 mr-2" />
-          Move to Folder
-        </DropdownMenuItem>
-      )}
-      {onDuplicate && (
-        <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, onDuplicate)}>
-          <Copy className="w-4 h-4 mr-2" />
-          Duplicate
-        </DropdownMenuItem>
-      )}
-      <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={(e) => handleDropdownAction(e as any, () => setFlagModalOpen(true))}>
-        <Flag className="w-4 h-4 mr-2" />
-        Flag for Review
-      </DropdownMenuItem>
-      {onDelete && (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={(e) => handleDropdownAction(e as any, onDelete)}
-            className="text-red-600"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete
-          </DropdownMenuItem>
-        </>
-      )}
-    </>
+    </div>
   );
 
   const flagModal = (
@@ -263,36 +257,43 @@ export default function FileCard({
         onClick={onClick}
         draggable={!!onDragStart}
         onDragStart={onDragStart}
-        className={cn(
-          "flex items-center px-3 border-b border-gray-100 cursor-pointer group transition-colors",
-          hasSubline ? "py-1.5" : "py-2",
-          isSelected ? "bg-blue-50/50" : "hover:bg-gray-50/60",
-          isDragging && "opacity-35",
-          onDragStart && "cursor-grab",
-        )}
+        className="flex items-center px-3 group"
+        style={{
+          borderBottom: `1px solid ${colors.border.light}`,
+          paddingTop: hasSubline ? 6 : 8,
+          paddingBottom: hasSubline ? 6 : 8,
+          cursor: onDragStart ? 'grab' : 'pointer',
+          background: isSelected ? `${colors.accent.blue}10` : 'transparent',
+          opacity: isDragging ? 0.35 : 1,
+          transition: 'background 100ms linear',
+        }}
+        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = colors.bg.cardAlt; }}
+        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
       >
         {/* Expand chevron — fixed width for alignment */}
         <div className="flex-shrink-0 w-5 flex items-center justify-center">
           {onToggleVersions && (
-            <button
-              className="p-0.5 rounded hover:bg-gray-200/50 transition-colors"
+            <IconButton
+              label={isVersionExpanded ? 'Collapse versions' : 'Expand versions'}
+              style={{ width: 20, height: 20 }}
               onClick={(e) => { e.stopPropagation(); onToggleVersions(); }}
             >
               {isVersionExpanded
-                ? <ChevronDown className="w-3 h-3 text-gray-400" />
-                : <ChevronRight className="w-3 h-3 text-gray-400" />
+                ? <ChevronDown className="w-3 h-3" />
+                : <ChevronRight className="w-3 h-3" />
               }
-            </button>
+            </IconButton>
           )}
         </div>
 
         {/* Checkbox */}
         {onSelectionChange && (
           <div className="flex-shrink-0 w-5 flex items-center" onClick={(e) => e.stopPropagation()}>
-            <Checkbox
-              checked={isSelected}
-              onCheckedChange={(checked) => onSelectionChange(!!checked)}
-              className="h-3.5 w-3.5"
+            <input
+              type="checkbox"
+              checked={!!isSelected}
+              onChange={(e) => onSelectionChange(e.target.checked)}
+              style={{ width: 14, height: 14, accentColor: colors.accent.blue, cursor: 'pointer' }}
             />
           </div>
         )}
@@ -300,72 +301,58 @@ export default function FileCard({
         {/* Name block */}
         <div className="flex-1 min-w-0 pl-2 pr-4">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[13px] font-medium text-gray-900 truncate">
+            <span className="text-[13px] font-medium truncate" style={{ color: colors.text.primary }}>
               {document.displayName || document.documentCode || document.fileName}
             </span>
             {document.version && (
-              <span className="text-[10px] font-mono text-gray-400 flex-shrink-0">
+              <span className="text-[10px] flex-shrink-0" style={{ fontFamily: 'ui-monospace, monospace', color: colors.text.dim }}>
                 {document.version}
               </span>
             )}
             {versionCount && versionCount > 1 && (
-              <span className="text-[10px] text-gray-400 flex-shrink-0 tabular-nums">
+              <span className="text-[10px] flex-shrink-0 tabular-nums" style={{ color: colors.text.dim }}>
                 +{versionCount - 1} ver
               </span>
             )}
             <FlagIndicator entityType="document" entityId={document._id} />
             {document.noteCount && document.noteCount > 0 ? (
-              <span className="flex items-center gap-0.5 text-[10px] text-amber-600 flex-shrink-0">
+              <span className="flex items-center gap-0.5 text-[10px] flex-shrink-0" style={{ color: colors.accent.orange }}>
                 <MessageSquareText className="w-3 h-3" />
                 {document.noteCount}
               </span>
             ) : null}
           </div>
           {hasSubline && (
-            <p className="text-[11px] text-gray-400 truncate leading-tight">
+            <p className="text-[11px] truncate leading-tight" style={{ color: colors.text.dim }}>
               {document.fileName}
             </p>
           )}
         </div>
 
         {/* Type */}
-        <div className="flex-shrink-0 w-32 hidden md:block text-[12px] text-gray-500 truncate pr-3">
+        <div className="flex-shrink-0 w-32 hidden md:block text-[12px] truncate pr-3" style={{ color: colors.text.muted }}>
           {document.fileTypeDetected || '—'}
         </div>
 
         {/* Category with color dot */}
         <div className="flex-shrink-0 w-32 hidden lg:flex items-center gap-1.5 pr-3">
-          <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", getCategoryDot(document.category))} />
-          <span className="text-[12px] text-gray-500 truncate">{document.category}</span>
+          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getCategoryTone(document.category) }} />
+          <span className="text-[12px] truncate" style={{ color: colors.text.muted }}>{document.category}</span>
         </div>
 
         {/* Date */}
-        <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
+        <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] tabular-nums text-right" style={{ color: colors.text.dim }}>
           {formatDate(document.uploadedAt)}
         </div>
 
         {/* Size */}
-        <div className="flex-shrink-0 w-16 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
+        <div className="flex-shrink-0 w-16 hidden sm:block text-[12px] tabular-nums text-right" style={{ color: colors.text.dim }}>
           {formatFileSize(document.fileSize)}
         </div>
 
         {/* Actions */}
-        <div className="flex-shrink-0 w-7 flex justify-end ml-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {renderDropdownItems()}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div className="flex-shrink-0 w-7 flex justify-end ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {dropdownMenu}
         </div>
       </div>
       {flagModal}
@@ -374,78 +361,60 @@ export default function FileCard({
   }
 
   // Grid view
+  const catTone = getCategoryTone(document.category);
   return (
     <>
     <div
       onClick={onClick}
       draggable={!!onDragStart}
       onDragStart={onDragStart}
-      className={cn(
-        "bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group",
-        isDragging && "opacity-35",
-        onDragStart && "cursor-grab",
-      )}
+      className="group"
+      style={{ cursor: onDragStart ? 'grab' : 'pointer', opacity: isDragging ? 0.35 : 1 }}
     >
-      {/* Header with Icon and Actions */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="p-2 bg-gray-50 rounded-lg">
-          {getFileIcon()}
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MoreVertical className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {renderDropdownItems()}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Document Name */}
-      <div className="mb-2">
-        <div className="flex items-center gap-1 font-medium text-gray-900 text-sm">
-          <span className="truncate">{document.displayName || document.documentCode || document.fileName}</span>
-          <FlagIndicator entityType="document" entityId={document._id} />
-        </div>
-        {document.documentCode && (
-          <div className="text-xs text-gray-500 truncate mt-0.5">
-            {document.fileName}
+      <Panel>
+        {/* Header with Icon and Actions */}
+        <div className="flex items-start justify-between mb-3">
+          <div style={{ padding: 8, background: colors.bg.cardAlt, borderRadius: 4 }}>
+            {getFileIcon()}
           </div>
-        )}
-      </div>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+            {dropdownMenu}
+          </div>
+        </div>
 
-      {/* Badges */}
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {document.version && (
-          <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
-            {document.version}
-          </Badge>
-        )}
-        {document.fileTypeDetected && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {document.fileTypeDetected}
-          </Badge>
-        )}
-        <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", getCategoryColor(document.category))}>
-          {document.category}
-        </Badge>
-        {document.noteCount && document.noteCount > 0 && (
-          <DocumentNotesIndicator noteCount={document.noteCount} size="sm" />
-        )}
-      </div>
+        {/* Document Name */}
+        <div className="mb-2">
+          <div className="flex items-center gap-1 font-medium text-sm" style={{ color: colors.text.primary }}>
+            <span className="truncate">{document.displayName || document.documentCode || document.fileName}</span>
+            <FlagIndicator entityType="document" entityId={document._id} />
+          </div>
+          {document.documentCode && (
+            <div className="text-xs truncate mt-0.5" style={{ color: colors.text.muted }}>
+              {document.fileName}
+            </div>
+          )}
+        </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span>{formatDate(document.uploadedAt)}</span>
-        <span>{formatFileSize(document.fileSize)}</span>
-      </div>
+        {/* Badges */}
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {document.version && (
+            <StatusPill label={document.version} tone={colors.text.muted} />
+          )}
+          {document.fileTypeDetected && (
+            <StatusPill label={document.fileTypeDetected} tone={colors.text.muted} />
+          )}
+          <StatusPill label={document.category} tone={catTone} />
+          {document.noteCount && document.noteCount > 0 && (
+            <DocumentNotesIndicator noteCount={document.noteCount} size="sm" />
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between text-xs" style={{ color: colors.text.muted }}>
+          <span>{formatDate(document.uploadedAt)}</span>
+          <span>{formatFileSize(document.fileSize)}</span>
+        </div>
+      </Panel>
     </div>
     {flagModal}
     </>

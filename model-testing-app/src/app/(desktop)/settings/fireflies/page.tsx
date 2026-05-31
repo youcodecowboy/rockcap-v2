@@ -4,10 +4,19 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, ExternalLink } from "lucide-react";
+import {
+  Panel,
+  Section,
+  Row,
+  StatusPill,
+  Button,
+  Field,
+  Input,
+  SkeletonText,
+  Skeleton,
+} from "@/components/layouts";
+import { useColors } from "@/lib/useColors";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 
 // Fireflies settings page.
 // Per docs/INTEGRATIONS/fireflies-scoping.md confirmed decisions:
@@ -15,6 +24,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Loader2, ExternalLink } from "lucide-
 // - Sync action and cron arrive in BL-3.3; this page handles connect/disconnect only.
 
 export default function FirefliesSettingsPage() {
+  const colors = useColors();
   const status = useQuery(api.fireflies.getConnectionStatus as any);
   const syncConfig = useQuery(api.fireflies.getSyncConfig as any);
 
@@ -84,195 +94,200 @@ export default function FirefliesSettingsPage() {
   const loading = status === undefined;
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-3xl mx-auto px-6 py-8">
-        <div className="mb-6">
+    <div style={{ background: colors.bg.light, minHeight: "100vh" }}>
+      <div style={{ maxWidth: 768, margin: "0 auto", padding: "32px 24px" }}>
+        <div style={{ marginBottom: 24 }}>
           <Link
             href="/settings"
-            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+              color: colors.text.muted,
+            }}
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
+            <ArrowLeft size={14} />
             Back to settings
           </Link>
         </div>
 
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-gray-900">Fireflies Integration</h1>
-          <p className="mt-2 text-gray-600">
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: colors.text.primary }}>
+            Fireflies Integration
+          </h1>
+          <p style={{ marginTop: 8, fontSize: 13, color: colors.text.secondary, lineHeight: 1.5 }}>
             Connect your Fireflies account so meeting transcripts and action items
             sync into RockCap automatically. Each user connects their own account;
             transcripts stay private to the connecting user.
           </p>
         </div>
 
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Connection</span>
-              {loading ? (
-                <Badge variant="outline">Loading</Badge>
+        <div style={{ marginBottom: 24 }}>
+          <Panel
+            title="Connection"
+            actions={
+              loading ? (
+                <Skeleton width={88} height={18} />
               ) : status?.connected ? (
-                <Badge variant="default" className="bg-emerald-600">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                  Connected
-                </Badge>
+                <StatusPill label="Connected" tone={colors.accent.green} />
               ) : (
-                <Badge variant="outline">
-                  <XCircle className="w-3.5 h-3.5 mr-1" />
-                  Not connected
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
+                <StatusPill label="Not connected" tone={colors.text.dim} />
+              )
+            }
+          >
+            <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 14 }}>
               Fireflies uses a personal API token. Generate one in your{" "}
               <a
                 href="https://app.fireflies.ai/integrations/custom/api"
                 target="_blank"
                 rel="noreferrer"
-                className="text-blue-600 hover:underline inline-flex items-center"
+                style={{ color: colors.accent.blue, display: "inline-flex", alignItems: "center", gap: 2 }}
               >
                 Fireflies API settings
-                <ExternalLink className="w-3 h-3 ml-1" />
+                <ExternalLink size={12} />
               </a>{" "}
               and paste it below.
-            </CardDescription>
-          </CardHeader>
+            </p>
 
-          <CardContent>
             {loading ? (
-              <div className="text-sm text-gray-500 flex items-center">
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                Loading connection status...
-              </div>
+              <SkeletonText lines={3} />
             ) : status?.connected ? (
-              <div className="space-y-3 text-sm">
-                {status.connectedEmail && (
-                  <div>
-                    <div className="text-gray-500">Connected account</div>
-                    <div className="font-medium text-gray-900">{status.connectedEmail}</div>
-                  </div>
-                )}
-                {status.connectedAt && (
-                  <div>
-                    <div className="text-gray-500">Connected on</div>
-                    <div className="text-gray-900">
-                      {new Date(status.connectedAt).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-                {status.lastSyncAt && (
-                  <div>
-                    <div className="text-gray-500">Last sync</div>
-                    <div className="text-gray-900">
-                      {new Date(status.lastSyncAt).toLocaleString()}
-                      {status.lastSyncStatus && (
-                        <span className="ml-2 text-xs text-gray-500">
-                          ({status.lastSyncStatus})
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
+              <div>
+                <Section title="Account">
+                  {status.connectedEmail && (
+                    <Row label="Connected account" value={status.connectedEmail} />
+                  )}
+                  {status.connectedAt && (
+                    <Row
+                      label="Connected on"
+                      value={new Date(status.connectedAt).toLocaleString()}
+                      mono
+                    />
+                  )}
+                  {status.lastSyncAt && (
+                    <Row
+                      label="Last sync"
+                      value={
+                        new Date(status.lastSyncAt).toLocaleString() +
+                        (status.lastSyncStatus ? ` (${status.lastSyncStatus})` : "")
+                      }
+                      mono
+                    />
+                  )}
+                </Section>
+
                 {status.needsReconnect && (
-                  <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 text-sm">
+                  <div
+                    style={{
+                      color: colors.accent.yellow,
+                      background: `${colors.accent.yellow}15`,
+                      border: `1px solid ${colors.accent.yellow}40`,
+                      borderRadius: 4,
+                      padding: 12,
+                      fontSize: 12,
+                      marginBottom: 12,
+                    }}
+                  >
                     Your Fireflies token is no longer valid. Paste a new one
                     below to reconnect.
                   </div>
                 )}
-                <div className="pt-3">
-                  <Button
-                    variant="outline"
-                    onClick={handleDisconnect}
-                    disabled={disconnecting}
-                  >
-                    {disconnecting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        Disconnecting
-                      </>
-                    ) : (
-                      "Disconnect"
-                    )}
-                  </Button>
-                </div>
+
+                <Button variant="secondary" onClick={handleDisconnect} disabled={disconnecting}>
+                  {disconnecting ? "Disconnecting" : "Disconnect"}
+                </Button>
               </div>
             ) : (
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700">
-                  Fireflies API token
-                </label>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={apiToken}
-                  onChange={(e) => setApiToken(e.target.value)}
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm font-mono"
-                  placeholder="Paste your Fireflies API token"
-                  disabled={connecting}
-                />
-                <div className="flex items-center gap-2">
-                  <Button onClick={handleConnect} disabled={connecting || !apiToken.trim()}>
-                    {connecting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        Connecting
-                      </>
-                    ) : (
-                      "Connect Fireflies"
-                    )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Field label="Fireflies API token">
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={apiToken}
+                    onChange={(e) => setApiToken(e.target.value)}
+                    placeholder="Paste your Fireflies API token"
+                    disabled={connecting}
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                  />
+                </Field>
+                <div>
+                  <Button
+                    variant="primary"
+                    onClick={handleConnect}
+                    disabled={connecting || !apiToken.trim()}
+                  >
+                    {connecting ? "Connecting" : "Connect Fireflies"}
                   </Button>
                 </div>
               </div>
             )}
 
             {error && (
-              <div className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+              <div
+                style={{
+                  marginTop: 16,
+                  fontSize: 12,
+                  color: colors.accent.red,
+                  background: `${colors.accent.red}15`,
+                  border: `1px solid ${colors.accent.red}40`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}
+              >
                 {error}
               </div>
             )}
             {successMessage && !error && (
-              <div className="mt-4 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3">
+              <div
+                style={{
+                  marginTop: 16,
+                  fontSize: 12,
+                  color: colors.accent.green,
+                  background: `${colors.accent.green}15`,
+                  border: `1px solid ${colors.accent.green}40`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}
+              >
                 {successMessage}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Sync settings</CardTitle>
-            <CardDescription>
-              Sync runs are controlled centrally. The cron and backfill action
-              ship in a later release; for now this page handles credential
-              connection only.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <dl className="text-sm space-y-2">
-              <div className="flex justify-between">
-                <dt className="text-gray-500">Global sync enabled</dt>
-                <dd>
-                  {syncConfig === undefined ? (
-                    <span className="text-gray-400">loading</span>
-                  ) : syncConfig.isEnabled ? (
-                    <Badge variant="default" className="bg-emerald-600">on</Badge>
-                  ) : (
-                    <Badge variant="outline">off (default)</Badge>
-                  )}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-500">Backfill window</dt>
-                <dd>{syncConfig?.defaultBackfillDays ?? 365} days</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-500">Sync interval</dt>
-                <dd>{syncConfig?.syncIntervalMinutes ?? 30} minutes</dd>
-              </div>
-            </dl>
-          </CardContent>
-        </Card>
+        <Panel title="Sync settings">
+          <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 14 }}>
+            Sync runs are controlled centrally. The cron and backfill action
+            ship in a later release; for now this page handles credential
+            connection only.
+          </p>
+          <Section title="Configuration">
+            <Row
+              label="Global sync enabled"
+              value={
+                syncConfig === undefined ? (
+                  <span style={{ color: colors.text.dim }}>loading</span>
+                ) : syncConfig.isEnabled ? (
+                  <StatusPill label="on" tone={colors.accent.green} />
+                ) : (
+                  <StatusPill label="off (default)" tone={colors.text.dim} />
+                )
+              }
+            />
+            <Row
+              label="Backfill window"
+              value={`${syncConfig?.defaultBackfillDays ?? 365} days`}
+              mono
+            />
+            <Row
+              label="Sync interval"
+              value={`${syncConfig?.syncIntervalMinutes ?? 30} minutes`}
+              mono
+            />
+          </Section>
+        </Panel>
       </div>
     </div>
   );

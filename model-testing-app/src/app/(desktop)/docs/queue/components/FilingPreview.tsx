@@ -3,8 +3,9 @@
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
-import { Building2, Briefcase, Folder, FolderOpen, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Panel, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
+import { Building2, Briefcase, FolderOpen, ChevronRight } from 'lucide-react';
 
 interface FilingPreviewProps {
   clientId: Id<"clients"> | null;
@@ -19,6 +20,8 @@ export default function FilingPreview({
   folderId,
   folderType,
 }: FilingPreviewProps) {
+  const colors = useColors();
+
   // Fetch client info
   const client = useQuery(
     api.clients.get,
@@ -46,17 +49,17 @@ export default function FilingPreview({
   // Find the selected folder name
   const getFolderName = () => {
     if (!folderId) return null;
-    
+
     if (folderType === 'project' && projectFolders) {
       const folder = projectFolders.find(f => f.folderType === folderId);
       return folder?.name || folderId;
     }
-    
+
     if (folderType === 'client' && clientFolders) {
       const folder = clientFolders.find(f => f.folderType === folderId);
       return folder?.name || folderId;
     }
-    
+
     return folderId;
   };
 
@@ -65,55 +68,56 @@ export default function FilingPreview({
   // Empty state
   if (!clientId) {
     return (
-      <div className="bg-gray-50 rounded-lg p-4 border border-dashed border-gray-300">
-        <p className="text-sm text-gray-500 text-center">
+      <div
+        style={{
+          background: colors.bg.light,
+          borderRadius: 4,
+          padding: 16,
+          border: `1px dashed ${colors.border.mid}`,
+        }}
+      >
+        <p style={{ fontSize: 12, color: colors.text.muted, textAlign: 'center' }}>
           Select a client to see filing preview
         </p>
       </div>
     );
   }
 
+  const showMissing = !folderId || (folderType === 'project' && !projectId);
+
   return (
-    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-        Filing Destination
-      </h4>
-      
-      <div className="space-y-1">
+    <Panel title="Filing Destination">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {/* Client Level */}
-        <div className="flex items-center gap-2 text-sm">
-          <Building2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
-          <span className={cn(
-            "font-medium",
-            client ? "text-gray-900" : "text-gray-400"
-          )}>
+        <div className="flex items-center gap-2" style={{ fontSize: 12 }}>
+          <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.blue }} />
+          <span style={{ fontWeight: 500, color: client ? colors.text.primary : colors.text.dim }}>
             {client?.name || 'Loading...'}
           </span>
           {client?.type && (
-            <span className={cn(
-              "text-xs px-1.5 py-0.5 rounded",
-              client.type === 'lender' 
-                ? "bg-blue-100 text-blue-700"
-                : "bg-green-100 text-green-700"
-            )}>
-              {client.type}
-            </span>
+            <StatusPill
+              label={client.type}
+              tone={client.type === 'lender' ? colors.accent.blue : colors.accent.green}
+            />
           )}
         </div>
 
         {/* Project Level (if selected) */}
         {projectId && (
-          <div className="flex items-center gap-2 text-sm ml-4">
-            <ChevronRight className="w-3 h-3 text-gray-400 -ml-1" />
-            <Briefcase className="w-4 h-4 text-purple-500 flex-shrink-0" />
-            <span className={cn(
-              "font-medium",
-              project ? "text-gray-900" : "text-gray-400"
-            )}>
+          <div className="flex items-center gap-2" style={{ fontSize: 12, marginLeft: 16 }}>
+            <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: colors.text.dim, marginLeft: -4 }} />
+            <Briefcase className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.purple }} />
+            <span style={{ fontWeight: 500, color: project ? colors.text.primary : colors.text.dim }}>
               {project?.name || 'Loading...'}
             </span>
             {project?.projectShortcode && (
-              <span className="text-xs text-gray-500 font-mono">
+              <span
+                style={{
+                  fontSize: 11,
+                  color: colors.text.muted,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                }}
+              >
                 ({project.projectShortcode})
               </span>
             )}
@@ -122,13 +126,10 @@ export default function FilingPreview({
 
         {/* Folder Level (if selected) */}
         {folderId && folderName && (
-          <div className={cn(
-            "flex items-center gap-2 text-sm",
-            projectId ? "ml-8" : "ml-4"
-          )}>
-            <ChevronRight className="w-3 h-3 text-gray-400 -ml-1" />
-            <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            <span className="font-medium text-amber-700">
+          <div className="flex items-center gap-2" style={{ fontSize: 12, marginLeft: projectId ? 32 : 16 }}>
+            <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: colors.text.dim, marginLeft: -4 }} />
+            <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.orange }} />
+            <span style={{ fontWeight: 500, color: colors.accent.orange }}>
               {folderName}
             </span>
           </div>
@@ -136,18 +137,17 @@ export default function FilingPreview({
       </div>
 
       {/* Missing selection indicator */}
-      {(!folderId || (folderType === 'project' && !projectId)) && (
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <p className="text-xs text-amber-600">
-            {!projectId && folderType === 'project' 
-              ? '⚠️ Select a project to choose a folder'
-              : !folderId 
-                ? '⚠️ Select a folder to complete filing'
-                : null
-            }
+      {showMissing && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${colors.border.light}` }}>
+          <p style={{ fontSize: 11, color: colors.accent.orange }}>
+            {!projectId && folderType === 'project'
+              ? 'Select a project to choose a folder'
+              : !folderId
+                ? 'Select a folder to complete filing'
+                : null}
           </p>
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

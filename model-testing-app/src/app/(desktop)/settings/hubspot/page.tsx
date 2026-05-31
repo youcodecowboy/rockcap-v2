@@ -1,14 +1,65 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { api } from "../../../../../convex/_generated/api";
 import { useQuery } from "convex/react";
-import { ExternalLink, RefreshCw, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Panel, Section, Row, StatusPill, Button } from "@/components/layouts";
+import { useColors } from "@/lib/useColors";
+import { ExternalLink, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import type { ColorPalette } from "@/lib/colors";
+
+function statusTone(status: string | undefined, colors: ColorPalette): string {
+  switch (status) {
+    case "success":
+      return colors.accent.green;
+    case "error":
+      return colors.accent.red;
+    case "in_progress":
+      return colors.accent.blue;
+    default:
+      return colors.text.dim;
+  }
+}
+
+// Result banner — canon-toned replacement for the ad-hoc colored result cards.
+function ResultBanner({
+  success,
+  tone,
+  title,
+  children,
+  colors,
+}: {
+  success: boolean;
+  tone: string;
+  title: string;
+  children?: React.ReactNode;
+  colors: ColorPalette;
+}) {
+  const t = success ? tone : colors.accent.red;
+  return (
+    <div
+      style={{
+        padding: 14,
+        borderRadius: 4,
+        border: `1px solid ${t}40`,
+        background: `${t}15`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        {success ? (
+          <CheckCircle2 size={18} style={{ color: t }} />
+        ) : (
+          <XCircle size={18} style={{ color: colors.accent.red }} />
+        )}
+        <span style={{ fontWeight: 500, fontSize: 13, color: t }}>{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export default function HubSpotSettingsPage() {
+  const colors = useColors();
   const syncConfig = useQuery(api.hubspotSync.getSyncConfig as any);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
@@ -235,208 +286,178 @@ export default function HubSpotSettingsPage() {
     return new Date(dateString).toLocaleString();
   };
 
-  const getStatusBadge = (status?: string) => {
-    switch (status) {
-      case "success":
-        return (
-          <Badge variant="default" className="bg-green-500">
-            <CheckCircle2 className="size-3 mr-1" />
-            Success
-          </Badge>
-        );
-      case "error":
-        return (
-          <Badge variant="destructive">
-            <XCircle className="size-3 mr-1" />
-            Error
-          </Badge>
-        );
-      case "in_progress":
-        return (
-          <Badge variant="secondary">
-            <Clock className="size-3 mr-1" />
-            In Progress
-          </Badge>
-        );
-      default:
-        return null;
-    }
-  };
+  const anyBusy =
+    isSyncing ||
+    isSyncingLeads ||
+    isSyncingDeals ||
+    isSyncingCompanies ||
+    isSyncingContacts ||
+    isTestingImport;
+
+  const muted = { fontSize: 12, color: colors.text.muted };
+  const detail = { fontSize: 11, color: colors.text.muted };
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
-        <h3 className="font-semibold text-blue-900">New sync interface available</h3>
-        <p className="text-sm text-blue-800 mt-1">
-          The unified HubSpot sync (V2) has moved to{" "}
-          <a href="/settings/hubspot-sync" className="underline font-medium">
-            /settings/hubspot-sync
-          </a>
-          . This legacy page has scoped sync buttons that pre-date the unified pipeline.
-        </p>
-      </div>
-
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">HubSpot Integration</h1>
-        <p className="text-muted-foreground">
-          Sync your HubSpot CRM data with this application
-        </p>
-      </div>
-
-      <div className="space-y-6">
-        {/* Sync Status Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Sync Status</CardTitle>
-            <CardDescription>
-              Last sync information and statistics
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Last Sync:</span>
-              <span className="font-medium">
-                {formatDate(syncConfig?.lastSyncAt)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Status:</span>
-              {getStatusBadge(syncConfig?.lastSyncStatus)}
-            </div>
-            {syncConfig?.lastSyncStats && (
-              <div className="pt-4 border-t space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Companies Synced:</span>
-                  <span className="font-medium">{syncConfig.lastSyncStats.companiesSynced}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Contacts Synced:</span>
-                  <span className="font-medium">{syncConfig.lastSyncStats.contactsSynced}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Deals Synced:</span>
-                  <span className="font-medium">{syncConfig.lastSyncStats.dealsSynced}</span>
-                </div>
-                {syncConfig.lastSyncStats.errors > 0 && (
-                  <div className="flex items-center justify-between text-destructive">
-                    <span className="text-sm">Errors:</span>
-                    <span className="font-medium">{syncConfig.lastSyncStats.errors}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Test Single Import Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Test Single Import</CardTitle>
-            <CardDescription>
-              Import a single contact, company, and deal to verify they link together correctly
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button
-              onClick={handleTestSingleImport}
-              disabled={isSyncing || isSyncingLeads || isSyncingDeals || isSyncingCompanies || isSyncingContacts || isTestingImport}
-              variant="default"
-              className="w-full"
+    <div style={{ background: colors.bg.light, minHeight: "100vh" }}>
+      <div
+        style={{
+          maxWidth: 896,
+          margin: "0 auto",
+          padding: 24,
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+        }}
+      >
+        <div
+          style={{
+            borderRadius: 4,
+            border: `1px solid ${colors.accent.blue}40`,
+            background: `${colors.accent.blue}15`,
+            padding: 14,
+          }}
+        >
+          <h3 style={{ fontWeight: 600, fontSize: 13, color: colors.accent.blue }}>
+            New sync interface available
+          </h3>
+          <p style={{ fontSize: 12, color: colors.text.secondary, marginTop: 4 }}>
+            The unified HubSpot sync (V2) has moved to{" "}
+            <a
+              href="/settings/hubspot-sync"
+              style={{ color: colors.accent.blue, fontWeight: 500, textDecoration: "underline" }}
             >
-              {isTestingImport ? (
-                <>
-                  <RefreshCw className="size-4 mr-2 animate-spin" />
-                  Testing Import...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="size-4 mr-2" />
-                  Test Single Import
-                </>
-              )}
-            </Button>
+              /settings/hubspot-sync
+            </a>
+            . This legacy page has scoped sync buttons that pre-date the unified pipeline.
+          </p>
+        </div>
 
-            {testImportResult && (
-              <div className={`p-4 rounded-lg border ${
-                testImportResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  {testImportResult.success ? (
-                    <CheckCircle2 className="size-5 text-green-600" />
-                  ) : (
-                    <XCircle className="size-5 text-red-600" />
-                  )}
-                  <span className={`font-medium ${
-                    testImportResult.success ? "text-green-900" : "text-red-900"
-                  }`}>
-                    {testImportResult.success ? "Test Import Completed" : "Test Import Failed"}
-                  </span>
-                </div>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: colors.text.primary, marginBottom: 4 }}>
+            HubSpot Integration
+          </h1>
+          <p style={muted}>Sync your HubSpot CRM data with this application</p>
+        </div>
+
+        {/* Sync Status */}
+        <Panel title="Sync Status">
+          <Section title="Last sync">
+            <Row label="Last sync" value={formatDate(syncConfig?.lastSyncAt)} mono />
+            <Row
+              label="Status"
+              value={
+                <StatusPill
+                  label={syncConfig?.lastSyncStatus ?? "none"}
+                  tone={statusTone(syncConfig?.lastSyncStatus, colors)}
+                />
+              }
+            />
+          </Section>
+          {syncConfig?.lastSyncStats && (
+            <Section title="Statistics">
+              <Row label="Companies synced" value={syncConfig.lastSyncStats.companiesSynced} mono />
+              <Row label="Contacts synced" value={syncConfig.lastSyncStats.contactsSynced} mono />
+              <Row label="Deals synced" value={syncConfig.lastSyncStats.dealsSynced} mono />
+              {syncConfig.lastSyncStats.errors > 0 && (
+                <Row
+                  label="Errors"
+                  value={syncConfig.lastSyncStats.errors}
+                  mono
+                  valueColor={colors.accent.red}
+                />
+              )}
+            </Section>
+          )}
+        </Panel>
+
+        {/* Test Single Import */}
+        <Panel title="Test Single Import">
+          <p style={{ ...muted, marginBottom: 14 }}>
+            Import a single contact, company, and deal to verify they link together correctly
+          </p>
+          <Button
+            variant="primary"
+            onClick={handleTestSingleImport}
+            disabled={anyBusy}
+            style={{ width: "100%", justifyContent: "center" }}
+          >
+            <RefreshCw size={14} className={isTestingImport ? "animate-spin" : undefined} />
+            {isTestingImport ? "Testing Import..." : "Test Single Import"}
+          </Button>
+
+          {testImportResult && (
+            <div style={{ marginTop: 14 }}>
+              <ResultBanner
+                success={testImportResult.success}
+                tone={colors.accent.green}
+                title={testImportResult.success ? "Test Import Completed" : "Test Import Failed"}
+                colors={colors}
+              >
                 {testImportResult.results && (
-                  <div className="text-sm space-y-2 mt-3">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
                     {testImportResult.results.contact && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="font-medium">Contact:</div>
-                        <div className="text-xs text-muted-foreground">
-                          ID: {testImportResult.results.contact.id} | 
-                          HubSpot ID: {testImportResult.results.contact.hubspotId} | 
-                          Name: {testImportResult.results.contact.name} | 
-                          Action: {testImportResult.results.contact.action}
+                      <div style={{ padding: 8, background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>Contact:</div>
+                        <div style={detail}>
+                          ID: {testImportResult.results.contact.id} | HubSpot ID:{" "}
+                          {testImportResult.results.contact.hubspotId} | Name:{" "}
+                          {testImportResult.results.contact.name} | Action:{" "}
+                          {testImportResult.results.contact.action}
                         </div>
                       </div>
                     )}
                     {testImportResult.results.company && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="font-medium">Company:</div>
-                        <div className="text-xs text-muted-foreground">
-                          ID: {testImportResult.results.company.id} | 
-                          HubSpot ID: {testImportResult.results.company.hubspotId} | 
-                          Name: {testImportResult.results.company.name} | 
-                          Action: {testImportResult.results.company.action}
+                      <div style={{ padding: 8, background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>Company:</div>
+                        <div style={detail}>
+                          ID: {testImportResult.results.company.id} | HubSpot ID:{" "}
+                          {testImportResult.results.company.hubspotId} | Name:{" "}
+                          {testImportResult.results.company.name} | Action:{" "}
+                          {testImportResult.results.company.action}
                         </div>
                       </div>
                     )}
                     {testImportResult.results.deal && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="font-medium">Deal:</div>
-                        <div className="text-xs text-muted-foreground">
-                          ID: {testImportResult.results.deal.id} | 
-                          HubSpot ID: {testImportResult.results.deal.hubspotId} | 
-                          Name: {testImportResult.results.deal.name} | 
-                          Action: {testImportResult.results.deal.action}
+                      <div style={{ padding: 8, background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>Deal:</div>
+                        <div style={detail}>
+                          ID: {testImportResult.results.deal.id} | HubSpot ID:{" "}
+                          {testImportResult.results.deal.hubspotId} | Name:{" "}
+                          {testImportResult.results.deal.name} | Action:{" "}
+                          {testImportResult.results.deal.action}
                         </div>
                       </div>
                     )}
                     {testImportResult.results.links && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="font-medium">Links:</div>
-                        <div className="text-xs text-muted-foreground space-y-1 mt-1">
-                          <div>Deal → Contact: {testImportResult.results.links.dealLinkedToContact ? '✅ Linked' : '❌ Not Linked'}</div>
-                          <div>Deal → Company: {testImportResult.results.links.dealLinkedToCompany ? '✅ Linked' : '❌ Not Linked'}</div>
+                      <div style={{ padding: 8, background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>Links:</div>
+                        <div style={{ ...detail, display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
+                          <div>Deal → Contact: {testImportResult.results.links.dealLinkedToContact ? "Linked" : "Not Linked"}</div>
+                          <div>Deal → Company: {testImportResult.results.links.dealLinkedToCompany ? "Linked" : "Not Linked"}</div>
                           {testImportResult.results.links.dealLinkedContactIds && testImportResult.results.links.dealLinkedContactIds.length > 0 && (
-                            <div>Linked Contact IDs: {testImportResult.results.links.dealLinkedContactIds.join(', ')}</div>
+                            <div>Linked Contact IDs: {testImportResult.results.links.dealLinkedContactIds.join(", ")}</div>
                           )}
                           {testImportResult.results.links.dealLinkedCompanyIds && testImportResult.results.links.dealLinkedCompanyIds.length > 0 && (
-                            <div>Linked Company IDs: {testImportResult.results.links.dealLinkedCompanyIds.join(', ')}</div>
+                            <div>Linked Company IDs: {testImportResult.results.links.dealLinkedCompanyIds.join(", ")}</div>
                           )}
                         </div>
                       </div>
                     )}
                     {testImportResult.results.associations && (
-                      <div className="p-2 bg-white rounded border">
-                        <div className="font-medium">HubSpot Associations:</div>
-                        <div className="text-xs text-muted-foreground space-y-1 mt-1">
+                      <div style={{ padding: 8, background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.default}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>HubSpot Associations:</div>
+                        <div style={{ ...detail, display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
                           {testImportResult.results.associations.contactToCompany && (
-                            <div>Contact → Companies: {testImportResult.results.associations.contactToCompany.join(', ')}</div>
+                            <div>Contact → Companies: {testImportResult.results.associations.contactToCompany.join(", ")}</div>
                           )}
                           {testImportResult.results.associations.contactToDeal && (
-                            <div>Contact → Deals: {testImportResult.results.associations.contactToDeal.join(', ')}</div>
+                            <div>Contact → Deals: {testImportResult.results.associations.contactToDeal.join(", ")}</div>
                           )}
                           {testImportResult.results.associations.dealToContact && (
-                            <div>Deal → Contacts: {testImportResult.results.associations.dealToContact.join(', ')}</div>
+                            <div>Deal → Contacts: {testImportResult.results.associations.dealToContact.join(", ")}</div>
                           )}
                           {testImportResult.results.associations.dealToCompany && (
-                            <div>Deal → Companies: {testImportResult.results.associations.dealToCompany.join(', ')}</div>
+                            <div>Deal → Companies: {testImportResult.results.associations.dealToCompany.join(", ")}</div>
                           )}
                         </div>
                       </div>
@@ -444,486 +465,349 @@ export default function HubSpotSettingsPage() {
                   </div>
                 )}
                 {testImportResult.error && (
-                  <div className="text-sm text-red-600 mt-2">{testImportResult.error}</div>
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>{testImportResult.error}</div>
                 )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Background Variables Sync Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Background Variables</CardTitle>
-            <CardDescription>
-              Sync pipeline and stage definitions from HubSpot to map IDs to names
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button
-              onClick={async () => {
-                try {
-                  const response = await fetch("/api/hubspot/sync-pipelines", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                  });
-                  const result = await response.json();
-                  if (result.success) {
-                    alert(`Pipelines synced: ${result.pipelines.synced} (${result.pipelines.created} created, ${result.pipelines.updated} updated)\nDeals updated: ${result.deals.updated} of ${result.deals.total}`);
-                  } else {
-                    alert(`Error: ${result.error}`);
-                  }
-                } catch (error: any) {
-                  alert(`Error: ${error.message}`);
-                }
-              }}
-              variant="default"
-              className="w-full"
-            >
-              <RefreshCw className="size-4 mr-2" />
-              Sync Pipelines & Stages
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Data Fixes Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Data Fixes</CardTitle>
-            <CardDescription>
-              Fix existing data: extract dates from metadata and link contacts to companies
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <Button
-                onClick={async () => {
-                  try {
-                    const response = await fetch("/api/hubspot/fix-data", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ action: "link-contacts-to-companies" }),
-                    });
-                    const result = await response.json();
-                    alert(`Contacts linked: ${result.result?.contactsUpdated || 0}, Companies updated: ${result.result?.companiesUpdated || 0}`);
-                  } catch (error: any) {
-                    alert(`Error: ${error.message}`);
-                  }
-                }}
-                variant="outline"
-                className="w-full"
-              >
-                Link Contacts to Companies
-              </Button>
-              <Button
-                onClick={async () => {
-                  try {
-                    const response = await fetch("/api/hubspot/fix-data", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ action: "link-deals" }),
-                    });
-                    const result = await response.json();
-                    alert(`Deals linked: ${result.result?.dealsUpdated || 0}`);
-                  } catch (error: any) {
-                    alert(`Error: ${error.message}`);
-                  }
-                }}
-                variant="outline"
-                className="w-full"
-              >
-                Link Deals to Contacts/Companies
-              </Button>
+              </ResultBanner>
             </div>
+          )}
+        </Panel>
+
+        {/* Background Variables */}
+        <Panel title="Background Variables">
+          <p style={{ ...muted, marginBottom: 14 }}>
+            Sync pipeline and stage definitions from HubSpot to map IDs to names
+          </p>
+          <Button
+            variant="primary"
+            onClick={async () => {
+              try {
+                const response = await fetch("/api/hubspot/sync-pipelines", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                });
+                const result = await response.json();
+                if (result.success) {
+                  alert(`Pipelines synced: ${result.pipelines.synced} (${result.pipelines.created} created, ${result.pipelines.updated} updated)\nDeals updated: ${result.deals.updated} of ${result.deals.total}`);
+                } else {
+                  alert(`Error: ${result.error}`);
+                }
+              } catch (error: any) {
+                alert(`Error: ${error.message}`);
+              }
+            }}
+            style={{ width: "100%", justifyContent: "center" }}
+          >
+            <RefreshCw size={14} />
+            Sync Pipelines & Stages
+          </Button>
+        </Panel>
+
+        {/* Data Fixes */}
+        <Panel title="Data Fixes">
+          <p style={{ ...muted, marginBottom: 14 }}>
+            Fix existing data: extract dates from metadata and link contacts to companies
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Button
+              variant="secondary"
               onClick={async () => {
                 try {
                   const response = await fetch("/api/hubspot/fix-data", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "fix-all" }),
+                    body: JSON.stringify({ action: "link-contacts-to-companies" }),
                   });
                   const result = await response.json();
-                  alert(`All fixes completed! Check console for details.`);
-                  console.log('Fix all results:', result.results);
+                  alert(`Contacts linked: ${result.result?.contactsUpdated || 0}, Companies updated: ${result.result?.companiesUpdated || 0}`);
                 } catch (error: any) {
                   alert(`Error: ${error.message}`);
                 }
               }}
-              variant="default"
-              className="w-full"
+              style={{ width: "100%", justifyContent: "center" }}
             >
-              Fix All Data
+              Link Contacts to Companies
             </Button>
-          </CardContent>
-        </Card>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  const response = await fetch("/api/hubspot/fix-data", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "link-deals" }),
+                  });
+                  const result = await response.json();
+                  alert(`Deals linked: ${result.result?.dealsUpdated || 0}`);
+                } catch (error: any) {
+                  alert(`Error: ${error.message}`);
+                }
+              }}
+              style={{ width: "100%", justifyContent: "center" }}
+            >
+              Link Deals to Contacts/Companies
+            </Button>
+          </div>
+          <Button
+            variant="primary"
+            onClick={async () => {
+              try {
+                const response = await fetch("/api/hubspot/fix-data", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "fix-all" }),
+                });
+                const result = await response.json();
+                alert(`All fixes completed! Check console for details.`);
+                console.log("Fix all results:", result.results);
+              } catch (error: any) {
+                alert(`Error: ${error.message}`);
+              }
+            }}
+            style={{ width: "100%", justifyContent: "center", marginTop: 16 }}
+          >
+            Fix All Data
+          </Button>
+        </Panel>
 
-        {/* Manual Sync Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Manual Sync</CardTitle>
-            <CardDescription>
-              Trigger a one-time sync of up to 20 records from HubSpot
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-              <Button
-                onClick={handleManualSync}
-                disabled={isSyncing || isSyncingLeads || isSyncingDeals || isSyncingCompanies || isSyncingContacts || isTestingImport}
-                className="w-full"
-              >
-                {isSyncing ? (
-                  <>
-                    <RefreshCw className="size-4 mr-2 animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="size-4 mr-2" />
-                    Sync All
-                  </>
-                )}
-              </Button>
-              <Button
-                onClick={handleSyncLeads}
-                disabled={isSyncing || isSyncingLeads || isSyncingDeals || isSyncingCompanies || isSyncingContacts || isTestingImport}
-                variant="outline"
-                className="w-full"
-              >
-                {isSyncingLeads ? (
-                  <>
-                    <RefreshCw className="size-4 mr-2 animate-spin" />
-                    Syncing Leads...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="size-4 mr-2" />
-                    Sync Leads Only
-                  </>
-                )}
-              </Button>
-              <Button
-                onClick={handleSyncDeals}
-                disabled={isSyncing || isSyncingLeads || isSyncingDeals || isSyncingCompanies || isSyncingContacts || isTestingImport}
-                variant="outline"
-                className="w-full"
-              >
-                {isSyncingDeals ? (
-                  <>
-                    <RefreshCw className="size-4 mr-2 animate-spin" />
-                    Syncing Deals...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="size-4 mr-2" />
-                    Sync Deals Only
-                  </>
-                )}
-              </Button>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <Button
-                onClick={handleSyncCompanies}
-                disabled={isSyncing || isSyncingLeads || isSyncingDeals || isSyncingCompanies || isSyncingContacts || isTestingImport}
-                variant="outline"
-                className="w-full"
-              >
-                {isSyncingCompanies ? (
-                  <>
-                    <RefreshCw className="size-4 mr-2 animate-spin" />
-                    Syncing Companies...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="size-4 mr-2" />
-                    Sync Companies (500)
-                  </>
-                )}
-              </Button>
-              <Button
-                onClick={handleSyncContacts}
-                disabled={isSyncing || isSyncingLeads || isSyncingDeals || isSyncingCompanies || isSyncingContacts || isTestingImport}
-                variant="outline"
-                className="w-full"
-              >
-                {isSyncingContacts ? (
-                  <>
-                    <RefreshCw className="size-4 mr-2 animate-spin" />
-                    Syncing Contacts...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="size-4 mr-2" />
-                    Sync Contacts (500)
-                  </>
-                )}
-              </Button>
-            </div>
+        {/* Manual Sync */}
+        <Panel title="Manual Sync">
+          <p style={{ ...muted, marginBottom: 14 }}>
+            Trigger a one-time sync of up to 20 records from HubSpot
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+            <Button variant="primary" onClick={handleManualSync} disabled={anyBusy} style={{ width: "100%", justifyContent: "center" }}>
+              <RefreshCw size={14} className={isSyncing ? "animate-spin" : undefined} />
+              {isSyncing ? "Syncing..." : "Sync All"}
+            </Button>
+            <Button variant="secondary" onClick={handleSyncLeads} disabled={anyBusy} style={{ width: "100%", justifyContent: "center" }}>
+              <RefreshCw size={14} className={isSyncingLeads ? "animate-spin" : undefined} />
+              {isSyncingLeads ? "Syncing Leads..." : "Sync Leads Only"}
+            </Button>
+            <Button variant="secondary" onClick={handleSyncDeals} disabled={anyBusy} style={{ width: "100%", justifyContent: "center" }}>
+              <RefreshCw size={14} className={isSyncingDeals ? "animate-spin" : undefined} />
+              {isSyncingDeals ? "Syncing Deals..." : "Sync Deals Only"}
+            </Button>
+          </div>
 
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+            <Button variant="secondary" onClick={handleSyncCompanies} disabled={anyBusy} style={{ width: "100%", justifyContent: "center" }}>
+              <RefreshCw size={14} className={isSyncingCompanies ? "animate-spin" : undefined} />
+              {isSyncingCompanies ? "Syncing Companies..." : "Sync Companies (500)"}
+            </Button>
+            <Button variant="secondary" onClick={handleSyncContacts} disabled={anyBusy} style={{ width: "100%", justifyContent: "center" }}>
+              <RefreshCw size={14} className={isSyncingContacts ? "animate-spin" : undefined} />
+              {isSyncingContacts ? "Syncing Contacts..." : "Sync Contacts (500)"}
+            </Button>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
             {syncResult && (
-              <div className={`p-4 rounded-lg border ${
-                syncResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  {syncResult.success ? (
-                    <CheckCircle2 className="size-5 text-green-600" />
-                  ) : (
-                    <XCircle className="size-5 text-red-600" />
-                  )}
-                  <span className={`font-medium ${
-                    syncResult.success ? "text-green-900" : "text-red-900"
-                  }`}>
-                    {syncResult.success ? "Sync Completed" : "Sync Failed"}
-                  </span>
-                </div>
+              <ResultBanner
+                success={syncResult.success}
+                tone={colors.accent.green}
+                title={syncResult.success ? "Sync Completed" : "Sync Failed"}
+                colors={colors}
+              >
                 {syncResult.stats && (
-                  <div className="text-sm space-y-1 mt-2">
+                  <div style={{ ...detail, display: "flex", flexDirection: "column", gap: 2 }}>
                     <div>Companies: {syncResult.stats.companiesSynced}</div>
                     <div>Contacts: {syncResult.stats.contactsSynced}</div>
                     <div>Deals: {syncResult.stats.dealsSynced}</div>
                     {syncResult.stats.errors > 0 && (
-                      <div className="text-red-600">Errors: {syncResult.stats.errors}</div>
+                      <div style={{ color: colors.accent.red }}>Errors: {syncResult.stats.errors}</div>
                     )}
                   </div>
                 )}
                 {syncResult.error && (
-                  <div className="text-sm text-red-600 mt-2">{syncResult.error}</div>
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>{syncResult.error}</div>
                 )}
                 {syncResult.errorMessages && syncResult.errorMessages.length > 0 && (
-                  <div className="text-sm text-red-600 mt-2">
-                    <div className="font-medium mb-1">Error Details:</div>
-                    <ul className="list-disc list-inside space-y-1">
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>Error Details:</div>
+                    <ul style={{ listStyle: "disc", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 2 }}>
                       {syncResult.errorMessages.slice(0, 5).map((msg: string, i: number) => (
                         <li key={i}>{msg}</li>
                       ))}
                     </ul>
                   </div>
                 )}
-              </div>
+              </ResultBanner>
             )}
-            
+
             {leadsSyncResult && (
-              <div className={`p-4 rounded-lg border ${
-                leadsSyncResult.success ? "bg-blue-50 border-blue-200" : "bg-red-50 border-red-200"
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  {leadsSyncResult.success ? (
-                    <CheckCircle2 className="size-5 text-blue-600" />
-                  ) : (
-                    <XCircle className="size-5 text-red-600" />
-                  )}
-                  <span className={`font-medium ${
-                    leadsSyncResult.success ? "text-blue-900" : "text-red-900"
-                  }`}>
-                    {leadsSyncResult.success ? "Leads Sync Completed" : "Leads Sync Failed"}
-                  </span>
-                </div>
+              <ResultBanner
+                success={leadsSyncResult.success}
+                tone={colors.accent.blue}
+                title={leadsSyncResult.success ? "Leads Sync Completed" : "Leads Sync Failed"}
+                colors={colors}
+              >
                 {leadsSyncResult.stats && (
-                  <div className="text-sm space-y-1 mt-2">
+                  <div style={{ ...detail, display: "flex", flexDirection: "column", gap: 2 }}>
                     <div>Contacts Processed: {leadsSyncResult.stats.contactsProcessed}</div>
                     <div>Leads Synced: {leadsSyncResult.stats.leadsSynced}</div>
                     {leadsSyncResult.stats.errors > 0 && (
-                      <div className="text-red-600">Errors: {leadsSyncResult.stats.errors}</div>
+                      <div style={{ color: colors.accent.red }}>Errors: {leadsSyncResult.stats.errors}</div>
                     )}
                   </div>
                 )}
                 {leadsSyncResult.error && (
-                  <div className="text-sm text-red-600 mt-2">{leadsSyncResult.error}</div>
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>{leadsSyncResult.error}</div>
                 )}
                 {leadsSyncResult.stats?.errorDetails && leadsSyncResult.stats.errorDetails.length > 0 && (
-                  <div className="text-sm text-red-600 mt-2">
-                    <div className="font-medium mb-1">Error Details:</div>
-                    <ul className="list-disc list-inside space-y-1">
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>Error Details:</div>
+                    <ul style={{ listStyle: "disc", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 2 }}>
                       {leadsSyncResult.stats.errorDetails.slice(0, 5).map((msg: string, i: number) => (
                         <li key={i}>{msg}</li>
                       ))}
                     </ul>
                   </div>
                 )}
-              </div>
+              </ResultBanner>
             )}
-            
+
             {dealsSyncResult && (
-              <div className={`p-4 rounded-lg border ${
-                dealsSyncResult.success ? "bg-purple-50 border-purple-200" : "bg-red-50 border-red-200"
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  {dealsSyncResult.success ? (
-                    <CheckCircle2 className="size-5 text-purple-600" />
-                  ) : (
-                    <XCircle className="size-5 text-red-600" />
-                  )}
-                  <span className={`font-medium ${
-                    dealsSyncResult.success ? "text-purple-900" : "text-red-900"
-                  }`}>
-                    {dealsSyncResult.success ? "Deals Sync Completed" : "Deals Sync Failed"}
-                  </span>
-                </div>
+              <ResultBanner
+                success={dealsSyncResult.success}
+                tone={colors.accent.purple}
+                title={dealsSyncResult.success ? "Deals Sync Completed" : "Deals Sync Failed"}
+                colors={colors}
+              >
                 {dealsSyncResult.success && (
-                  <div className="text-sm space-y-1 mt-2">
+                  <div style={{ ...detail, display: "flex", flexDirection: "column", gap: 2 }}>
                     <div>Deals Synced: {dealsSyncResult.synced || 0}</div>
                     <div>Created: {dealsSyncResult.created || 0}</div>
                     <div>Updated: {dealsSyncResult.updated || 0}</div>
                     {dealsSyncResult.errors > 0 && (
-                      <div className="text-red-600">Errors: {dealsSyncResult.errors}</div>
+                      <div style={{ color: colors.accent.red }}>Errors: {dealsSyncResult.errors}</div>
                     )}
                   </div>
                 )}
                 {dealsSyncResult.error && (
-                  <div className="text-sm text-red-600 mt-2">{dealsSyncResult.error}</div>
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>{dealsSyncResult.error}</div>
                 )}
                 {dealsSyncResult.errorMessages && dealsSyncResult.errorMessages.length > 0 && (
-                  <div className="text-sm text-red-600 mt-2">
-                    <div className="font-medium mb-1">Error Details:</div>
-                    <ul className="list-disc list-inside space-y-1">
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>Error Details:</div>
+                    <ul style={{ listStyle: "disc", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 2 }}>
                       {dealsSyncResult.errorMessages.slice(0, 5).map((msg: string, i: number) => (
                         <li key={i}>{msg}</li>
                       ))}
                     </ul>
                   </div>
                 )}
-              </div>
+              </ResultBanner>
             )}
-            
+
             {companiesSyncResult && (
-              <div className={`p-4 rounded-lg border ${
-                companiesSyncResult.success ? "bg-cyan-50 border-cyan-200" : "bg-red-50 border-red-200"
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  {companiesSyncResult.success ? (
-                    <CheckCircle2 className="size-5 text-cyan-600" />
-                  ) : (
-                    <XCircle className="size-5 text-red-600" />
-                  )}
-                  <span className={`font-medium ${
-                    companiesSyncResult.success ? "text-cyan-900" : "text-red-900"
-                  }`}>
-                    {companiesSyncResult.success ? "Companies Sync Completed" : "Companies Sync Failed"}
-                  </span>
-                </div>
+              <ResultBanner
+                success={companiesSyncResult.success}
+                tone={colors.accent.cyan}
+                title={companiesSyncResult.success ? "Companies Sync Completed" : "Companies Sync Failed"}
+                colors={colors}
+              >
                 {companiesSyncResult.success && (
-                  <div className="text-sm space-y-1 mt-2">
+                  <div style={{ ...detail, display: "flex", flexDirection: "column", gap: 2 }}>
                     <div>Companies Synced: {companiesSyncResult.synced || 0}</div>
                     <div>Created: {companiesSyncResult.created || 0}</div>
                     <div>Updated: {companiesSyncResult.updated || 0}</div>
                     {companiesSyncResult.errors > 0 && (
-                      <div className="text-red-600">Errors: {companiesSyncResult.errors}</div>
+                      <div style={{ color: colors.accent.red }}>Errors: {companiesSyncResult.errors}</div>
                     )}
                   </div>
                 )}
                 {companiesSyncResult.error && (
-                  <div className="text-sm text-red-600 mt-2">{companiesSyncResult.error}</div>
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>{companiesSyncResult.error}</div>
                 )}
                 {companiesSyncResult.errorMessages && companiesSyncResult.errorMessages.length > 0 && (
-                  <div className="text-sm text-red-600 mt-2">
-                    <div className="font-medium mb-1">Error Details:</div>
-                    <ul className="list-disc list-inside space-y-1">
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>Error Details:</div>
+                    <ul style={{ listStyle: "disc", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 2 }}>
                       {companiesSyncResult.errorMessages.slice(0, 5).map((msg: string, i: number) => (
                         <li key={i}>{msg}</li>
                       ))}
                     </ul>
                   </div>
                 )}
-              </div>
+              </ResultBanner>
             )}
-            
+
             {contactsSyncResult && (
-              <div className={`p-4 rounded-lg border ${
-                contactsSyncResult.success ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200"
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  {contactsSyncResult.success ? (
-                    <CheckCircle2 className="size-5 text-indigo-600" />
-                  ) : (
-                    <XCircle className="size-5 text-red-600" />
-                  )}
-                  <span className={`font-medium ${
-                    contactsSyncResult.success ? "text-indigo-900" : "text-red-900"
-                  }`}>
-                    {contactsSyncResult.success ? "Contacts Sync Completed" : "Contacts Sync Failed"}
-                  </span>
-                </div>
+              <ResultBanner
+                success={contactsSyncResult.success}
+                tone={colors.accent.indigo}
+                title={contactsSyncResult.success ? "Contacts Sync Completed" : "Contacts Sync Failed"}
+                colors={colors}
+              >
                 {contactsSyncResult.success && (
-                  <div className="text-sm space-y-1 mt-2">
+                  <div style={{ ...detail, display: "flex", flexDirection: "column", gap: 2 }}>
                     <div>Contacts Synced: {contactsSyncResult.synced || 0}</div>
                     <div>Created: {contactsSyncResult.created || 0}</div>
                     <div>Updated: {contactsSyncResult.updated || 0}</div>
                     {contactsSyncResult.errors > 0 && (
-                      <div className="text-red-600">Errors: {contactsSyncResult.errors}</div>
+                      <div style={{ color: colors.accent.red }}>Errors: {contactsSyncResult.errors}</div>
                     )}
                   </div>
                 )}
                 {contactsSyncResult.error && (
-                  <div className="text-sm text-red-600 mt-2">{contactsSyncResult.error}</div>
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>{contactsSyncResult.error}</div>
                 )}
                 {contactsSyncResult.errorMessages && contactsSyncResult.errorMessages.length > 0 && (
-                  <div className="text-sm text-red-600 mt-2">
-                    <div className="font-medium mb-1">Error Details:</div>
-                    <ul className="list-disc list-inside space-y-1">
+                  <div style={{ fontSize: 12, color: colors.accent.red, marginTop: 8 }}>
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>Error Details:</div>
+                    <ul style={{ listStyle: "disc", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 2 }}>
                       {contactsSyncResult.errorMessages.slice(0, 5).map((msg: string, i: number) => (
                         <li key={i}>{msg}</li>
                       ))}
                     </ul>
                   </div>
                 )}
-              </div>
+              </ResultBanner>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </Panel>
 
-        {/* Recurring Sync Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recurring Sync</CardTitle>
-            <CardDescription>
-              Automatically sync data from HubSpot on a schedule
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium">Recurring Sync</div>
-                <div className="text-sm text-muted-foreground">
-                  {recurringSyncEnabled
-                    ? "Syncs every 6 hours (incremental — only changes since last sync)"
-                    : "Currently disabled"}
-                </div>
+        {/* Recurring Sync */}
+        <Panel title="Recurring Sync">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>Recurring Sync</div>
+              <div style={detail}>
+                {recurringSyncEnabled
+                  ? "Syncs every 6 hours (incremental — only changes since last sync)"
+                  : "Currently disabled"}
               </div>
-              <Button
-                onClick={handleToggleRecurringSync}
-                variant={recurringSyncEnabled ? "destructive" : "default"}
-                size="sm"
-              >
-                {recurringSyncEnabled ? "Disable" : "Enable"}
-              </Button>
             </div>
-          </CardContent>
-        </Card>
+            <Button
+              variant={recurringSyncEnabled ? "danger" : "primary"}
+              size="sm"
+              onClick={handleToggleRecurringSync}
+            >
+              {recurringSyncEnabled ? "Disable" : "Enable"}
+            </Button>
+          </div>
+        </Panel>
 
         {/* HubSpot Portal Link */}
-        <Card>
-          <CardHeader>
-            <CardTitle>HubSpot Portal</CardTitle>
-            <CardDescription>
-              Access your HubSpot account
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <a
-              href="https://app.hubspot.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-primary hover:underline"
-            >
-              <ExternalLink className="size-4" />
-              Open HubSpot Portal
-            </a>
-          </CardContent>
-        </Card>
+        <Panel title="HubSpot Portal">
+          <p style={{ ...muted, marginBottom: 14 }}>Access your HubSpot account</p>
+          <a
+            href="https://app.hubspot.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              color: colors.accent.blue,
+            }}
+          >
+            <ExternalLink size={14} />
+            Open HubSpot Portal
+          </a>
+        </Panel>
       </div>
     </div>
   );
 }
-

@@ -4,24 +4,10 @@ import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button, IconButton, Field, Input, Modal, StatusPill } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { toast } from 'sonner';
 import { showUndoToast } from '@/components/UndoToast';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   Folder,
   FolderOpen,
@@ -92,6 +78,7 @@ function UnfiledFolderRow({
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
 }) {
+  const colors = useColors();
   const selected =
     selectedFolder?.type === 'project' &&
     selectedFolder?.folderId === 'unfiled' &&
@@ -108,21 +95,23 @@ function UnfiledFolderRow({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={cn(
-        "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
-        selected
-          ? "bg-orange-100 text-orange-900"
-          : "hover:bg-gray-100 text-orange-600/70",
-        isDropTarget && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
-      )}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md"
+      style={{
+        background: selected ? `${colors.accent.orange}20` : isDropTarget ? `${colors.accent.orange}15` : 'transparent',
+        color: selected ? colors.accent.orange : `${colors.accent.orange}b0`,
+        border: `1px ${isDropTarget ? 'dashed' : 'solid'} ${isDropTarget ? colors.accent.orange : 'transparent'}`,
+        transition: 'background 100ms linear',
+      }}
+      onMouseEnter={(e) => { if (!selected && !isDropTarget) e.currentTarget.style.background = colors.bg.cardAlt; }}
+      onMouseLeave={(e) => { if (!selected && !isDropTarget) e.currentTarget.style.background = 'transparent'; }}
     >
       {selected ? (
-        <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
+        <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.orange }} />
       ) : (
-        <Folder className="w-4 h-4 text-orange-300 flex-shrink-0" />
+        <Folder className="w-4 h-4 flex-shrink-0" style={{ color: `${colors.accent.orange}90` }} />
       )}
       <span className="flex-1 text-left truncate min-w-0 italic">Unfiled</span>
-      <span className="text-xs text-orange-400 flex-shrink-0 ml-auto">({count})</span>
+      <span className="text-xs flex-shrink-0 ml-auto" style={{ color: colors.accent.orange }}>({count})</span>
     </button>
   );
 }
@@ -145,6 +134,7 @@ function ClientUnfiledFolderRow({
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
 }) {
+  const colors = useColors();
   const selected =
     selectedFolder?.type === 'client' &&
     selectedFolder?.folderId === 'unfiled';
@@ -159,21 +149,23 @@ function ClientUnfiledFolderRow({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={cn(
-        "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md",
-        selected
-          ? "bg-orange-100 text-orange-900"
-          : "hover:bg-gray-100 text-orange-600/70",
-        isDropTarget && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
-      )}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md"
+      style={{
+        background: selected ? `${colors.accent.orange}20` : isDropTarget ? `${colors.accent.orange}15` : 'transparent',
+        color: selected ? colors.accent.orange : `${colors.accent.orange}b0`,
+        border: `1px ${isDropTarget ? 'dashed' : 'solid'} ${isDropTarget ? colors.accent.orange : 'transparent'}`,
+        transition: 'background 100ms linear',
+      }}
+      onMouseEnter={(e) => { if (!selected && !isDropTarget) e.currentTarget.style.background = colors.bg.cardAlt; }}
+      onMouseLeave={(e) => { if (!selected && !isDropTarget) e.currentTarget.style.background = 'transparent'; }}
     >
       {selected ? (
-        <FolderOpen className="w-4 h-4 text-orange-400 flex-shrink-0" />
+        <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.orange }} />
       ) : (
-        <Folder className="w-4 h-4 text-orange-300 flex-shrink-0" />
+        <Folder className="w-4 h-4 flex-shrink-0" style={{ color: `${colors.accent.orange}90` }} />
       )}
       <span className="flex-1 text-left truncate min-w-0 italic">Unfiled</span>
-      <span className="text-xs text-orange-400 flex-shrink-0 ml-auto">({count})</span>
+      <span className="text-xs flex-shrink-0 ml-auto" style={{ color: colors.accent.orange }}>({count})</span>
     </button>
   );
 }
@@ -186,6 +178,7 @@ export default function FolderBrowser({
   onFolderSelect,
   onClientTypeChange,
 }: FolderBrowserProps) {
+  const colors = useColors();
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [expandedProjectFolders, setExpandedProjectFolders] = useState<Set<string>>(new Set());
   const [addFolderTarget, setAddFolderTarget] = useState<AddFolderTarget>(null);
@@ -288,7 +281,7 @@ export default function FolderBrowser({
   // Handle adding a new folder
   const handleAddFolder = async () => {
     if (!newFolderName.trim() || !addFolderTarget) return;
-    
+
     setIsAddingFolder(true);
     try {
       if (addFolderTarget.type === 'client') {
@@ -315,12 +308,12 @@ export default function FolderBrowser({
 
   // Handle deleting a custom folder
   const handleDeleteFolder = async (
-    folderId: string, 
-    folderName: string, 
+    folderId: string,
+    folderName: string,
     type: 'client' | 'project'
   ) => {
     if (!confirm(`Delete folder "${folderName}"? Documents inside will be moved to the parent folder. This cannot be undone.`)) return;
-    
+
     try {
       if (type === 'client') {
         await deleteClientFolder({ folderId: folderId as Id<"clientFolders"> });
@@ -338,11 +331,11 @@ export default function FolderBrowser({
     if (!projects) return [];
     const projectCounts = projectFoldersMap || {};
     const projectFoldersData = allProjectFolders || {};
-    
+
     return projects.map(project => {
       const projectData = projectCounts[project._id] || { folders: {}, total: 0 };
       const actualFolders = projectFoldersData[project._id] || [];
-      
+
       // Use actual folders from database, with document counts
       const folders = actualFolders.map(folder => ({
         _id: folder._id,
@@ -352,7 +345,7 @@ export default function FolderBrowser({
         documentCount: (projectData.folders?.[folder.folderType] as number) || 0,
         isCustom: folder.isCustom,
       }));
-      
+
       const filedCount = folders.reduce((sum, f) => sum + f.documentCount, 0);
       const total = projectData.total || 0;
 
@@ -476,6 +469,7 @@ export default function FolderBrowser({
       selectedFolder?.projectId === projectId;
     const isExpanded = expandedProjectFolders.has(folder._id);
     const displayCount = aggregatedCounts[folder._id] ?? folder.documentCount;
+    const isDrop = dropTargetId === folder._id;
 
     return (
       <div key={folder._id} className="group/projfolder">
@@ -511,43 +505,46 @@ export default function FolderBrowser({
             clientId: clientId,
           })}
           className={cn(
-            "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md cursor-pointer",
-            selected
-              ? "bg-blue-100 text-blue-900"
-              : "hover:bg-gray-100 text-gray-700",
+            "w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md cursor-pointer",
             depth > 0 && "ml-4",
-            dropTargetId === folder._id && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
           )}
+          style={{
+            background: selected ? `${colors.accent.blue}15` : isDrop ? `${colors.accent.orange}15` : 'transparent',
+            color: selected ? colors.accent.blue : colors.text.secondary,
+            border: `1px ${isDrop ? 'dashed' : 'solid'} ${isDrop ? colors.accent.orange : selected ? `${colors.accent.blue}40` : 'transparent'}`,
+            transition: 'background 100ms linear',
+          }}
+          onMouseEnter={(e) => { if (!selected && !isDrop) e.currentTarget.style.background = colors.bg.cardAlt; }}
+          onMouseLeave={(e) => { if (!selected && !isDrop) e.currentTarget.style.background = 'transparent'; }}
         >
           {hasChildren && (
-            <button
+            <IconButton
+              label={isExpanded ? 'Collapse' : 'Expand'}
+              style={{ width: 18, height: 18 }}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleProjectFolder(folder._id);
               }}
-              className="p-0 hover:bg-gray-200 rounded flex-shrink-0"
             >
               {isExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                <ChevronDown className="w-3.5 h-3.5" />
               ) : (
-                <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                <ChevronRight className="w-3.5 h-3.5" />
               )}
-            </button>
+            </IconButton>
           )}
           {selected ? (
-            <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.yellow }} />
           ) : (
-            <Folder className={cn(
-              "w-4 h-4 flex-shrink-0",
-              folder.isCustom ? "text-purple-500" : "text-amber-500"
-            )} />
+            <Folder className="w-4 h-4 flex-shrink-0" style={{ color: folder.isCustom ? colors.accent.purple : colors.accent.yellow }} />
           )}
           <span className="flex-1 text-left truncate min-w-0">{folder.name}</span>
           {folder.isCustom && (
-            <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
+            <Sparkles className="w-3 h-3 flex-shrink-0" style={{ color: colors.accent.purple }} />
           )}
-          <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">({displayCount})</span>
-          <button
+          <span className="text-xs flex-shrink-0 ml-auto" style={{ color: colors.text.dim }}>({displayCount})</span>
+          <span
+            className="opacity-0 group-hover/projfolder:opacity-100 flex-shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               setAddFolderTarget({
@@ -558,25 +555,27 @@ export default function FolderBrowser({
                 parentFolderName: folder.name,
               });
             }}
-            className="opacity-0 group-hover/projfolder:opacity-100 p-0.5 hover:bg-gray-200 rounded transition-opacity flex-shrink-0"
-            title="Add subfolder"
           >
-            <Plus className="w-3 h-3 text-gray-500" />
-          </button>
+            <IconButton label="Add subfolder" style={{ width: 20, height: 20 }}>
+              <Plus className="w-3 h-3" />
+            </IconButton>
+          </span>
           {folder.isCustom && (
-            <button
+            <span
+              className="opacity-0 group-hover/projfolder:opacity-100 flex-shrink-0"
               onClick={(e) => {
                 e.stopPropagation();
                 handleDeleteFolder(folder._id, folder.name, 'project');
               }}
-              className="opacity-0 group-hover/projfolder:opacity-100 p-0.5 hover:bg-red-100 rounded transition-opacity flex-shrink-0"
             >
-              <Trash2 className="w-3 h-3 text-red-500" />
-            </button>
+              <IconButton label="Delete folder" style={{ width: 20, height: 20 }}>
+                <Trash2 className="w-3 h-3" style={{ color: colors.accent.red }} />
+              </IconButton>
+            </span>
           )}
         </div>
         {hasChildren && isExpanded && (
-          <div className="ml-2 border-l border-gray-200">
+          <div className="ml-2" style={{ borderLeft: `1px solid ${colors.border.default}` }}>
             {children.map(child => renderProjectFolder(
               child, projectId, projectName, allFolders, childMap, aggregatedCounts, depth + 1
             ))}
@@ -590,6 +589,7 @@ export default function FolderBrowser({
     const children = childFolders[folder._id] || [];
     const hasChildren = children.length > 0;
     const selected = isSelected(folder.folderType, 'client');
+    const isDrop = dropTargetId === folder._id;
 
     return (
       <div key={folder._id} className="group">
@@ -620,41 +620,44 @@ export default function FolderBrowser({
             clientId: clientId,
           })}
           className={cn(
-            "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors rounded-md cursor-pointer",
-            selected
-              ? "bg-blue-100 text-blue-900"
-              : "hover:bg-gray-100 text-gray-700",
+            "w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md cursor-pointer",
             depth > 0 && "ml-4",
-            dropTargetId === folder._id && "ring-2 ring-dashed ring-amber-400 bg-amber-50"
           )}
+          style={{
+            background: selected ? `${colors.accent.blue}15` : isDrop ? `${colors.accent.orange}15` : 'transparent',
+            color: selected ? colors.accent.blue : colors.text.secondary,
+            border: `1px ${isDrop ? 'dashed' : 'solid'} ${isDrop ? colors.accent.orange : selected ? `${colors.accent.blue}40` : 'transparent'}`,
+            transition: 'background 100ms linear',
+          }}
+          onMouseEnter={(e) => { if (!selected && !isDrop) e.currentTarget.style.background = colors.bg.cardAlt; }}
+          onMouseLeave={(e) => { if (!selected && !isDrop) e.currentTarget.style.background = 'transparent'; }}
         >
           {selected ? (
-            <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: colors.accent.yellow }} />
           ) : (
-            <Folder className={cn(
-              "w-4 h-4 flex-shrink-0",
-              folder.isCustom ? "text-purple-500" : "text-amber-500"
-            )} />
+            <Folder className="w-4 h-4 flex-shrink-0" style={{ color: folder.isCustom ? colors.accent.purple : colors.accent.yellow }} />
           )}
           <span className="flex-1 text-left truncate min-w-0">{folder.name}</span>
           {folder.isCustom && (
-            <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" />
+            <Sparkles className="w-3 h-3 flex-shrink-0" style={{ color: colors.accent.purple }} />
           )}
-          <span className="text-xs text-gray-400 flex-shrink-0 ml-auto">({folder.documentCount})</span>
+          <span className="text-xs flex-shrink-0 ml-auto" style={{ color: colors.text.dim }}>({folder.documentCount})</span>
           {folder.isCustom && (
-            <button
+            <span
+              className="opacity-0 group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
                 handleDeleteFolder(folder._id, folder.name, 'client');
               }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 rounded transition-opacity"
             >
-              <Trash2 className="w-3 h-3 text-red-500" />
-            </button>
+              <IconButton label="Delete folder" style={{ width: 20, height: 20 }}>
+                <Trash2 className="w-3 h-3" style={{ color: colors.accent.red }} />
+              </IconButton>
+            </span>
           )}
         </div>
         {hasChildren && (
-          <div className="ml-2 border-l border-gray-200">
+          <div className="ml-2" style={{ borderLeft: `1px solid ${colors.border.default}` }}>
             {children.map(child => renderClientFolder(child, depth + 1))}
           </div>
         )}
@@ -662,27 +665,29 @@ export default function FolderBrowser({
     );
   };
 
+  const sectionHeader: React.CSSProperties = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 9,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: colors.text.muted,
+    fontWeight: 500,
+  };
+
   return (
-    <div className="w-[380px] min-w-[320px] border-r border-gray-200 bg-white flex flex-col h-full">
+    <div
+      className="w-[380px] min-w-[320px] flex flex-col h-full"
+      style={{ borderRight: `1px solid ${colors.border.default}`, background: colors.bg.card }}
+    >
       {/* Client Header */}
-      <div className="p-3 border-b border-gray-200 bg-gray-50">
+      <div className="p-3" style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.light }}>
         <div className="flex items-center gap-2">
-          <div className="font-semibold text-gray-900 truncate flex-1">{clientName}</div>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link
-                  href={`/clients/${clientId}`}
-                  className="p-1 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-gray-500 hover:text-gray-700" />
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>View client profile</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <div className="font-semibold truncate flex-1" style={{ color: colors.text.primary }}>{clientName}</div>
+          <Link href={`/clients/${clientId}`} title="View client profile" className="flex-shrink-0">
+            <IconButton label="View client profile">
+              <ExternalLink className="w-3.5 h-3.5" />
+            </IconButton>
+          </Link>
         </div>
         {clientType && onClientTypeChange && (
           <div className="mt-1">
@@ -694,17 +699,12 @@ export default function FolderBrowser({
           </div>
         )}
         {clientType && !onClientTypeChange && (
-          <Badge
-            variant="outline"
-            className={cn(
-              "text-xs mt-1",
-              clientType.toLowerCase() === 'lender'
-                ? "bg-blue-50 text-blue-700 border-blue-200"
-                : "bg-green-50 text-green-700 border-green-200"
-            )}
-          >
-            {clientType}
-          </Badge>
+          <div className="mt-1">
+            <StatusPill
+              label={clientType}
+              tone={clientType.toLowerCase() === 'lender' ? colors.entityTypes.lender : colors.entityTypes.client}
+            />
+          </div>
         )}
       </div>
 
@@ -712,23 +712,13 @@ export default function FolderBrowser({
         <div className="p-2">
           {/* Client-level Folders */}
           <div className="mb-4">
-            <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+            <div className="px-3 py-1 flex items-center justify-between" style={sectionHeader}>
               <span>Client Folders</span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => setAddFolderTarget({ type: 'client' })}
-                      className="p-0.5 hover:bg-gray-200 rounded transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-gray-500 hover:text-gray-700" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Add custom folder</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <span onClick={() => setAddFolderTarget({ type: 'client' })}>
+                <IconButton label="Add custom folder" style={{ width: 20, height: 20 }}>
+                  <Plus className="w-3.5 h-3.5" />
+                </IconButton>
+              </span>
             </div>
             <div className="space-y-0.5">
               {rootFolders.map(folder => renderClientFolder(folder))}
@@ -752,37 +742,40 @@ export default function FolderBrowser({
           {/* Projects Section */}
           {projectsWithFolders.length > 0 && (
             <div>
-              <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider border-t border-gray-200 pt-3">
+              <div className="px-3 py-1 pt-3" style={{ ...sectionHeader, borderTop: `1px solid ${colors.border.default}` }}>
                 Projects
               </div>
               <div className="space-y-1 mt-1">
                 {projectsWithFolders.map((project) => {
                   const isExpanded = expandedProjects.has(project._id);
-                  
+
                   return (
                     <div key={project._id}>
                       {/* Project Header */}
                       <button
                         onClick={() => toggleProject(project._id)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md"
+                        style={{ background: 'transparent', transition: 'background 100ms linear' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                       >
                         {isExpanded ? (
-                          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.dim }} />
                         ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: colors.text.dim }} />
                         )}
-                        <Briefcase className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                        <Briefcase className="w-4 h-4 flex-shrink-0" style={{ color: colors.entityTypes.project }} />
                         <div className="flex-1 text-left min-w-0">
-                          <div className="font-medium text-gray-900 truncate">
+                          <div className="font-medium truncate" style={{ color: colors.text.primary }}>
                             {project.name}
                           </div>
                           {project.projectShortcode && (
-                            <div className="text-xs text-gray-500 font-mono">
+                            <div className="text-xs" style={{ fontFamily: 'ui-monospace, monospace', color: colors.text.muted }}>
                               {project.projectShortcode}
                             </div>
                           )}
                         </div>
-                        <span className="text-xs text-gray-400 flex-shrink-0">
+                        <span className="text-xs flex-shrink-0" style={{ color: colors.text.dim }}>
                           ({project.totalDocuments})
                         </span>
                       </button>
@@ -819,7 +812,10 @@ export default function FolderBrowser({
                                 projectId: project._id,
                                 projectName: project.name
                               })}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md"
+                              style={{ color: colors.text.dim, transition: 'background 100ms linear' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; e.currentTarget.style.color = colors.text.muted; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = colors.text.dim; }}
                             >
                               <FolderPlus className="w-4 h-4 flex-shrink-0" />
                               <span className="text-xs">Add custom folder...</span>
@@ -836,7 +832,7 @@ export default function FolderBrowser({
 
           {/* Empty State */}
           {rootFolders.length === 0 && projectsWithFolders.length === 0 && (
-            <div className="text-center py-8 text-gray-500 text-sm">
+            <div className="text-center py-8 text-sm" style={{ color: colors.text.muted }}>
               No folders available
             </div>
           )}
@@ -844,63 +840,56 @@ export default function FolderBrowser({
       </div>
 
       {/* Add Custom Folder Dialog */}
-      <Dialog open={addFolderTarget !== null} onOpenChange={(open) => !open && setAddFolderTarget(null)}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FolderPlus className="w-5 h-5 text-purple-500" />
-              Add Custom Folder
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="text-sm text-gray-500">
-              {addFolderTarget?.type === 'client'
-                ? `Add a custom folder to ${clientName}`
-                : addFolderTarget?.type === 'project'
-                  ? addFolderTarget.parentFolderName
-                    ? `Add a subfolder inside "${addFolderTarget.parentFolderName}"`
-                    : `Add a custom folder to project "${addFolderTarget.projectName}"`
-                  : ''
-              }
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                Folder Name
-              </label>
-              <Input
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="e.g., Special Documents"
-                className="w-full"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newFolderName.trim()) {
-                    handleAddFolder();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
+      <Modal
+        open={addFolderTarget !== null}
+        onClose={() => { setAddFolderTarget(null); setNewFolderName(''); }}
+        title="Add Custom Folder"
+        width={400}
+        footer={
+          <>
             <Button
-              variant="outline"
-              onClick={() => {
-                setAddFolderTarget(null);
-                setNewFolderName('');
-              }}
+              variant="secondary"
+              onClick={() => { setAddFolderTarget(null); setNewFolderName(''); }}
               disabled={isAddingFolder}
             >
               Cancel
             </Button>
             <Button
+              variant="primary"
               onClick={handleAddFolder}
               disabled={!newFolderName.trim() || isAddingFolder}
             >
               {isAddingFolder ? 'Adding...' : 'Add Folder'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="text-sm" style={{ color: colors.text.muted }}>
+            {addFolderTarget?.type === 'client'
+              ? `Add a custom folder to ${clientName}`
+              : addFolderTarget?.type === 'project'
+                ? addFolderTarget.parentFolderName
+                  ? `Add a subfolder inside "${addFolderTarget.parentFolderName}"`
+                  : `Add a custom folder to project "${addFolderTarget.projectName}"`
+                : ''
+            }
+          </div>
+          <Field label="Folder Name">
+            <Input
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="e.g., Special Documents"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newFolderName.trim()) {
+                  handleAddFolder();
+                }
+              }}
+            />
+          </Field>
+        </div>
+      </Modal>
     </div>
   );
 }

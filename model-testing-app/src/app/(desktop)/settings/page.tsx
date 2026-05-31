@@ -1,11 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator, Mic, Mail, Key } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useColors } from '@/lib/useColors';
 
 const settingsSections = [
   {
@@ -96,50 +94,32 @@ const settingsSections = [
 
 export default function SettingsPage() {
   const pathname = usePathname();
+  const colors = useColors();
 
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div style={{ background: colors.bg.light, minHeight: '100vh' }}>
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="mt-2 text-gray-600">
-            Manage your account settings and integrations
-          </p>
+        <div className="mb-8 flex items-center gap-3">
+          <Settings style={{ width: 22, height: 22, color: colors.text.muted }} />
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 300, color: colors.text.primary }}>Settings</h1>
+            <p style={{ marginTop: 4, fontSize: 12, color: colors.text.muted }}>
+              Manage your account settings and integrations
+            </p>
+          </div>
         </div>
 
         {/* Settings Sections */}
-        <div className="space-y-4">
+        <div className="space-y-2">
           {settingsSections.map((section) => {
             const Icon = section.icon;
             const isActive = pathname === section.href || pathname.startsWith(section.href + '/');
-            
+            const accent = isActive ? colors.accent.blue : undefined;
+
             return (
-              <Link key={section.id} href={section.href}>
-                <Card className={`cursor-pointer transition-all hover:shadow-md ${
-                  isActive ? 'ring-2 ring-blue-500' : ''
-                }`}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-lg ${
-                          isActive ? 'bg-blue-100' : 'bg-gray-100'
-                        }`}>
-                          <Icon className={`w-6 h-6 ${
-                            isActive ? 'text-blue-600' : 'text-gray-600'
-                          }`} />
-                        </div>
-                        <div>
-                          <CardTitle className="text-lg">{section.title}</CardTitle>
-                          <CardDescription className="mt-1">
-                            {section.description}
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    </div>
-                  </CardHeader>
-                </Card>
+              <Link key={section.id} href={section.href} style={{ display: 'block', textDecoration: 'none' }}>
+                <SettingsRow Icon={Icon} title={section.title} description={section.description} accent={accent} />
               </Link>
             );
           })}
@@ -149,3 +129,57 @@ export default function SettingsPage() {
   );
 }
 
+function SettingsRow({
+  Icon,
+  title,
+  description,
+  accent,
+}: {
+  Icon: typeof Settings;
+  title: string;
+  description: string;
+  accent?: string;
+}) {
+  const colors = useColors();
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 14,
+        padding: '14px 16px',
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.default}`,
+        borderLeft: accent ? `2px solid ${accent}` : `1px solid ${colors.border.default}`,
+        borderRadius: 4,
+        transition: 'border-color 100ms linear, background 100ms linear',
+        cursor: 'pointer',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = colors.bg.cardAlt)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = colors.bg.card)}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 40,
+            height: 40,
+            borderRadius: 4,
+            background: accent ? `${accent}15` : colors.bg.cardAlt,
+            border: `1px solid ${accent ? `${accent}40` : colors.border.light}`,
+          }}
+        >
+          <Icon style={{ width: 18, height: 18, color: accent ?? colors.text.muted }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>{title}</div>
+          <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>{description}</div>
+        </div>
+      </div>
+      <ChevronRight style={{ width: 16, height: 16, color: colors.text.dim }} />
+    </div>
+  );
+}

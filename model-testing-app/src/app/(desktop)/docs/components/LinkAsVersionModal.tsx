@@ -4,26 +4,16 @@ import { useState, useEffect } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Modal, Field, Input, Textarea, Button, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   FileText,
   FileSpreadsheet,
   FileImage,
   File,
-  Layers,
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface Document {
   _id: Id<"documents">;
@@ -87,6 +77,7 @@ export default function LinkAsVersionModal({
   sourceDocument,
   folderDocuments,
 }: LinkAsVersionModalProps) {
+  const colors = useColors();
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [relationship, setRelationship] = useState<'newer' | 'older'>('newer');
   const [versionNumber, setVersionNumber] = useState('');
@@ -106,12 +97,12 @@ export default function LinkAsVersionModal({
 
   const getFileIcon = (fileType: string) => {
     const type = fileType.toLowerCase();
-    if (type.includes('pdf')) return <FileText className="w-4 h-4 text-red-500" />;
+    if (type.includes('pdf')) return <FileText className="w-4 h-4" style={{ color: colors.accent.red }} />;
     if (type.includes('sheet') || type.includes('excel') || type.includes('csv'))
-      return <FileSpreadsheet className="w-4 h-4 text-green-600" />;
+      return <FileSpreadsheet className="w-4 h-4" style={{ color: colors.accent.green }} />;
     if (type.includes('image') || type.includes('png') || type.includes('jpg'))
-      return <FileImage className="w-4 h-4 text-blue-500" />;
-    return <File className="w-4 h-4 text-gray-500" />;
+      return <FileImage className="w-4 h-4" style={{ color: colors.accent.blue }} />;
+    return <File className="w-4 h-4" style={{ color: colors.text.muted }} />;
   };
 
   const formatDate = (dateString: string) => {
@@ -150,154 +141,168 @@ export default function LinkAsVersionModal({
   // Filter out documents that are already in the same version chain
   const availableDocuments = folderDocuments.filter(d => d._id !== sourceDocument._id);
 
+  const relCardStyle = (active: boolean): React.CSSProperties => ({
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 6,
+    padding: 12,
+    borderRadius: 4,
+    textAlign: 'center',
+    cursor: 'pointer',
+    background: active ? `${colors.accent.blue}15` : 'transparent',
+    border: `1px solid ${active ? `${colors.accent.blue}40` : colors.border.default}`,
+    transition: 'background 100ms linear, border-color 100ms linear',
+  });
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Layers className="w-5 h-5" />
-            Link as Version
-          </DialogTitle>
-          <DialogDescription>
-            Link &ldquo;{sourceDocument.documentCode || sourceDocument.fileName}&rdquo; as a version of another document.
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* Step 1: Select target document */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium text-gray-700">Select document to link with</label>
-          <div className="max-h-48 overflow-y-auto border rounded-md divide-y">
-            {availableDocuments.length === 0 ? (
-              <div className="p-4 text-sm text-gray-500 text-center">
-                No other documents in this folder to link with.
-              </div>
-            ) : (
-              availableDocuments.map((doc) => (
-                <button
-                  key={doc._id}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 transition-colors",
-                    selectedTargetId === doc._id && "bg-blue-50 hover:bg-blue-50"
-                  )}
-                  onClick={() => setSelectedTargetId(doc._id)}
-                >
-                  <div className="flex-shrink-0">{getFileIcon(doc.fileType)}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">
-                      {doc.documentCode || doc.fileName}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {formatDate(doc.uploadedAt)}
-                      {doc.version && <span className="ml-2 font-mono">{doc.version}</span>}
-                    </div>
-                  </div>
-                  {doc.fileTypeDetected && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">
-                      {doc.fileTypeDetected}
-                    </Badge>
-                  )}
-                  {selectedTargetId === doc._id && (
-                    <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                  )}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Step 2: Choose relationship */}
-        {selectedTarget && (
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-gray-700">Relationship</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={cn(
-                  "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 text-center transition-colors",
-                  relationship === 'newer'
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                )}
-                onClick={() => setRelationship('newer')}
-              >
-                <ArrowUp className="w-4 h-4 text-blue-600" />
-                <div className="text-sm font-medium">Newer version</div>
-                <div className="text-[10px] text-gray-500 leading-tight">
-                  This replaces the selected doc
-                </div>
-              </button>
-              <button
-                className={cn(
-                  "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 text-center transition-colors",
-                  relationship === 'older'
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                )}
-                onClick={() => setRelationship('older')}
-              >
-                <ArrowDown className="w-4 h-4 text-orange-600" />
-                <div className="text-sm font-medium">Older version</div>
-                <div className="text-[10px] text-gray-500 leading-tight">
-                  This is an earlier version
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Version number */}
-        {selectedTarget && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Version number</label>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
-                  {selectedTarget.version || 'V1.0'}
-                </Badge>
-                <span className="text-gray-400">&rarr;</span>
-              </div>
-              <input
-                type="text"
-                value={versionNumber}
-                onChange={(e) => setVersionNumber(e.target.value)}
-                placeholder="e.g. V2.0"
-                className="flex-1 text-sm font-mono border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <p className="text-[11px] text-gray-400">
-              Major change (V1.0 &rarr; V2.0) or minor revision (V1.0 &rarr; V1.1)
-            </p>
-          </div>
-        )}
-
-        {/* Step 4: Version note (optional) */}
-        {selectedTarget && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">
-              Change note <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={versionNote}
-              onChange={(e) => setVersionNote(e.target.value)}
-              placeholder="e.g. Updated exit yield to 5.25%, revised unit mix on Block C"
-              className="w-full text-sm border rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={2}
-              maxLength={500}
-            />
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={isLinking}>
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      width={512}
+      title="Link as Version"
+      footer={
+        <>
+          <Button variant="secondary" onClick={handleClose} disabled={isLinking}>
             Cancel
           </Button>
           <Button
+            variant="primary"
+            accent={colors.accent.blue}
             onClick={handleLink}
             disabled={!selectedTargetId || !versionNumber.trim() || isLinking}
           >
             {isLinking ? 'Linking...' : 'Link Versions'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <div style={{ fontSize: 11, color: colors.text.muted, marginBottom: 14 }}>
+        Link &ldquo;{sourceDocument.documentCode || sourceDocument.fileName}&rdquo; as a version of another document.
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Step 1: Select target document */}
+        <Field label="Select document to link with">
+          {availableDocuments.length === 0 ? (
+            <EmptyState icon={<File size={24} />} title="No other documents in this folder to link with." />
+          ) : (
+            <div
+              style={{
+                maxHeight: 192,
+                overflowY: 'auto',
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 4,
+              }}
+            >
+              {availableDocuments.map((doc, idx) => {
+                const isSelected = selectedTargetId === doc._id;
+                return (
+                  <button
+                    key={doc._id}
+                    onClick={() => setSelectedTargetId(doc._id)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '8px 12px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      background: isSelected ? `${colors.accent.blue}15` : 'transparent',
+                      borderTop: idx === 0 ? 'none' : `1px solid ${colors.border.light}`,
+                      borderLeft: 'none',
+                      borderRight: 'none',
+                      borderBottom: 'none',
+                      transition: 'background 100ms linear',
+                    }}
+                  >
+                    <div className="flex-shrink-0">{getFileIcon(doc.fileType)}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate" style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                        {doc.documentCode || doc.fileName}
+                      </div>
+                      <div style={{ fontSize: 11, color: colors.text.muted }}>
+                        {formatDate(doc.uploadedAt)}
+                        {doc.version && (
+                          <span style={{ marginLeft: 8, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                            {doc.version}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {doc.fileTypeDetected && (
+                      <span className="flex-shrink-0">
+                        <StatusPill label={doc.fileTypeDetected} tone={colors.text.muted} />
+                      </span>
+                    )}
+                    {isSelected && (
+                      <div
+                        style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent.blue, flexShrink: 0 }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Field>
+
+        {/* Step 2: Choose relationship */}
+        {selectedTarget && (
+          <Field label="Relationship">
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setRelationship('newer')} style={relCardStyle(relationship === 'newer')}>
+                <ArrowUp className="w-4 h-4" style={{ color: colors.accent.blue }} />
+                <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>Newer version</div>
+                <div style={{ fontSize: 10, color: colors.text.muted, lineHeight: 1.3 }}>
+                  This replaces the selected doc
+                </div>
+              </button>
+              <button onClick={() => setRelationship('older')} style={relCardStyle(relationship === 'older')}>
+                <ArrowDown className="w-4 h-4" style={{ color: colors.accent.orange }} />
+                <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>Older version</div>
+                <div style={{ fontSize: 10, color: colors.text.muted, lineHeight: 1.3 }}>
+                  This is an earlier version
+                </div>
+              </button>
+            </div>
+          </Field>
+        )}
+
+        {/* Step 3: Version number */}
+        {selectedTarget && (
+          <Field label="Version number" hint="Major change (V1.0 → V2.0) or minor revision (V1.0 → V1.1)">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2" style={{ fontSize: 12, color: colors.text.muted }}>
+                <StatusPill label={selectedTarget.version || 'V1.0'} tone={colors.text.muted} />
+                <span style={{ color: colors.text.dim }}>&rarr;</span>
+              </div>
+              <Input
+                type="text"
+                value={versionNumber}
+                onChange={(e) => setVersionNumber(e.target.value)}
+                placeholder="e.g. V2.0"
+                style={{ flex: 1, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+              />
+            </div>
+          </Field>
+        )}
+
+        {/* Step 4: Version note (optional) */}
+        {selectedTarget && (
+          <Field label="Change note (optional)">
+            <Textarea
+              value={versionNote}
+              onChange={(e) => setVersionNote(e.target.value)}
+              placeholder="e.g. Updated exit yield to 5.25%, revised unit mix on Block C"
+              rows={2}
+              maxLength={500}
+              style={{ resize: 'none' }}
+            />
+          </Field>
+        )}
+      </div>
+    </Modal>
   );
 }

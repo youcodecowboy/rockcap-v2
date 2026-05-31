@@ -4,50 +4,28 @@ import { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../convex/_generated/dataModel';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Section, Row, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   FileType,
-  Tag,
   FolderOpen,
   Calendar,
   Clock,
   HardDrive,
   User,
-  CheckSquare,
   FileText,
   MessageSquare,
   Brain,
-  Loader2,
-  CheckCircle2,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import DocumentNoteForm from './DocumentNoteForm';
 import DocumentNoteCard from './DocumentNoteCard';
-
-const CONFIDENCE_COLORS: Record<string, string> = {
-  high: 'bg-green-100 text-green-700 border-green-200',
-  medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  low: 'bg-red-100 text-red-700 border-red-200',
-};
 
 function getConfidenceLevel(confidence: number): string {
   if (confidence >= 0.8) return 'high';
   if (confidence >= 0.6) return 'medium';
   return 'low';
 }
-
-const CATEGORY_ICONS: Record<string, string> = {
-  financials: 'text-green-600',
-  overview: 'text-blue-600',
-  timeline: 'text-amber-600',
-  parties: 'text-purple-600',
-  property: 'text-teal-600',
-  legal: 'text-red-600',
-  general: 'text-gray-600',
-};
 
 interface Document {
   _id: Id<"documents">;
@@ -77,6 +55,7 @@ interface ReaderSidebarProps {
 }
 
 export default function ReaderSidebar({ document, documentId }: ReaderSidebarProps) {
+  const colors = useColors();
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeResult, setAnalyzeResult] = useState<'success' | 'error' | null>(null);
 
@@ -114,200 +93,118 @@ export default function ReaderSidebar({ document, documentId }: ReaderSidebarPro
     });
   };
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      'Appraisals': 'bg-purple-100 text-purple-800 border-purple-200',
-      'Financial': 'bg-green-100 text-green-800 border-green-200',
-      'Legal': 'bg-blue-100 text-blue-800 border-blue-200',
-      'Terms': 'bg-orange-100 text-orange-800 border-orange-200',
-      'Credit': 'bg-red-100 text-red-800 border-red-200',
-      'KYC': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      'Correspondence': 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  const confidenceTone = (level: string) =>
+    level === 'high' ? colors.accent.green : level === 'medium' ? colors.accent.yellow : colors.accent.red;
+
+  const categoryTone = (category: string) => {
+    const map: Record<string, string> = {
+      Appraisals: colors.accent.purple,
+      Financial: colors.accent.green,
+      Legal: colors.accent.blue,
+      Terms: colors.accent.orange,
+      Credit: colors.accent.red,
+      KYC: colors.accent.yellow,
+      Correspondence: colors.accent.cyan,
     };
-    return colors[category] || 'bg-gray-100 text-gray-800 border-gray-200';
+    return map[category] || colors.text.muted;
   };
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-4 space-y-6">
+      <div style={{ padding: 16 }}>
         {/* Classification Section */}
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <FileType className="w-4 h-4" />
-            Classification
-          </h3>
-          <div className="space-y-3">
-            {/* Document Type */}
-            {document.fileTypeDetected && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Document Type</div>
-                <Badge variant="outline" className="text-xs">
-                  {document.fileTypeDetected}
-                </Badge>
-              </div>
-            )}
-
-            {/* Category */}
-            <div>
-              <div className="text-xs text-gray-500 mb-1">Category</div>
-              <Badge variant="outline" className={cn("text-xs", getCategoryColor(document.category))}>
-                {document.category}
-              </Badge>
-            </div>
-
-            {/* Location */}
-            {(document.clientName || document.projectName) && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                  <FolderOpen className="w-3 h-3" />
-                  Location
-                </div>
-                <div className="text-sm text-gray-900">
+        <Section title="Classification">
+          {document.fileTypeDetected && (
+            <Row label="Document Type" value={document.fileTypeDetected} pill={colors.text.muted} />
+          )}
+          <Row label="Category" value={document.category} pill={categoryTone(document.category)} />
+          {(document.clientName || document.projectName) && (
+            <Row
+              label="Location"
+              value={
+                <>
                   {document.clientName}
                   {document.projectName && (
-                    <span className="text-gray-500"> / {document.projectName}</span>
+                    <span style={{ color: colors.text.muted }}> / {document.projectName}</span>
                   )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <Separator />
+                </>
+              }
+            />
+          )}
+        </Section>
 
         {/* File Details Section */}
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            File Details
-          </h3>
-          <div className="space-y-3">
-            {/* Original Filename */}
-            {document.documentCode && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Original Filename</div>
-                <div className="text-sm text-gray-900 break-all">{document.fileName}</div>
-              </div>
-            )}
-
-            {/* File Size */}
-            <div className="flex items-center gap-2">
-              <HardDrive className="w-3 h-3 text-gray-400" />
-              <span className="text-xs text-gray-500">Size:</span>
-              <span className="text-sm text-gray-900">{formatFileSize(document.fileSize)}</span>
-            </div>
-
-            {/* Version */}
-            {document.version && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Version:</span>
-                <Badge variant="secondary" className="text-xs">{document.version}</Badge>
-              </div>
-            )}
-
-            {/* Uploader */}
-            {document.uploaderInitials && (
-              <div className="flex items-center gap-2">
-                <User className="w-3 h-3 text-gray-400" />
-                <span className="text-xs text-gray-500">Uploaded by:</span>
-                <span className="text-sm text-gray-900">{document.uploaderInitials}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <Separator />
+        <Section title="File Details">
+          {document.documentCode && (
+            <Row label="Original Filename" value={document.fileName} mono />
+          )}
+          <Row label="Size" value={formatFileSize(document.fileSize)} mono />
+          {document.version && <Row label="Version" value={document.version} pill={colors.accent.blue} />}
+          {document.uploaderInitials && (
+            <Row label="Uploaded by" value={document.uploaderInitials} />
+          )}
+        </Section>
 
         {/* Dates Section */}
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Dates
-          </h3>
-          <div className="space-y-3">
-            {/* Uploaded */}
-            <div>
-              <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                <Calendar className="w-3 h-3" />
-                Uploaded
-              </div>
-              <div className="text-sm text-gray-900">{formatDate(document.uploadedAt)}</div>
-            </div>
-
-            {/* Last Opened */}
-            {document.lastOpenedAt && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  Last Opened
-                </div>
-                <div className="text-sm text-gray-900">{formatDate(document.lastOpenedAt)}</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <Separator />
+        <Section title="Dates">
+          <Row label="Uploaded" value={formatDate(document.uploadedAt)} mono />
+          {document.lastOpenedAt && (
+            <Row label="Last Opened" value={formatDate(document.lastOpenedAt)} mono />
+          )}
+        </Section>
 
         {/* Summary Section */}
         {document.summary && (
-          <>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Summary</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">{document.summary}</p>
-            </div>
-            <Separator />
-          </>
+          <Section title="Summary">
+            <p style={{ fontSize: 12, color: colors.text.secondary, lineHeight: 1.6 }}>{document.summary}</p>
+          </Section>
         )}
 
         {/* Intelligence Section */}
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Brain className="w-4 h-4" />
-            Intelligence
-            {hasIntelligence && (
-              <Badge variant="secondary" className="text-xs ml-auto">
-                {intelligenceItems.length}
-              </Badge>
-            )}
-          </h3>
-
+        <Section title={hasIntelligence ? `Intelligence · ${intelligenceItems.length}` : 'Intelligence'}>
           {hasIntelligence ? (
-            <div className="space-y-3">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {Object.entries(intelligenceByCategory).map(([category, items]) => (
-                <div key={category} className="space-y-1.5">
+                <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div className="flex items-center gap-2">
-                    <Brain className={cn("w-3.5 h-3.5", CATEGORY_ICONS[category] || 'text-gray-500')} />
-                    <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
-                      {category.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
+                    <Brain className="w-3.5 h-3.5" style={{ color: colors.text.muted }} />
+                    <span
+                      style={{
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                        fontSize: 9,
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        color: colors.text.muted,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {category.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())} ({(items as any[]).length})
                     </span>
-                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                      {(items as any[]).length}
-                    </Badge>
                   </div>
-                  <div className="space-y-1 pl-5">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 20 }}>
                     {(items as any[]).map((item: any) => {
-                      const level = getConfidenceLevel(item.normalizationConfidence ?? item.confidence ?? 0);
+                      const conf = item.normalizationConfidence ?? item.confidence ?? 0;
+                      const level = getConfidenceLevel(conf);
                       return (
                         <div
                           key={item._id}
-                          className="p-1.5 rounded bg-gray-50 border border-gray-100"
+                          style={{
+                            padding: 8,
+                            borderRadius: 4,
+                            background: colors.bg.light,
+                            border: `1px solid ${colors.border.light}`,
+                          }}
                         >
                           <div className="flex items-start justify-between gap-1">
                             <div className="flex-1 min-w-0">
-                              <div className="text-[11px] font-medium text-gray-700">
+                              <div style={{ fontSize: 11, fontWeight: 500, color: colors.text.secondary }}>
                                 {item.label || item.fieldPath}
                               </div>
-                              <div className="text-xs text-gray-900 mt-0.5 break-words">
+                              <div style={{ fontSize: 12, color: colors.text.primary, marginTop: 2, wordBreak: 'break-word' }}>
                                 {typeof item.value === 'object' ? JSON.stringify(item.value) : String(item.value)}
                               </div>
                             </div>
-                            <Badge
-                              variant="outline"
-                              className={cn("text-[9px] px-1 py-0 flex-shrink-0", CONFIDENCE_COLORS[level])}
-                            >
-                              {Math.round((item.normalizationConfidence ?? item.confidence ?? 0) * 100)}%
-                            </Badge>
+                            <StatusPill label={`${Math.round(conf * 100)}%`} tone={confidenceTone(level)} />
                           </div>
                         </div>
                       );
@@ -317,27 +214,12 @@ export default function ReaderSidebar({ document, documentId }: ReaderSidebarPro
               ))}
             </div>
           ) : (
-            <div className="text-center py-4">
-              <Brain className="w-6 h-6 text-gray-300 mx-auto mb-1.5" />
-              <p className="text-xs text-gray-400">No intelligence extracted yet</p>
-            </div>
+            <EmptyState icon={<Brain className="w-6 h-6" />} title="No intelligence extracted yet" />
           )}
-        </div>
-
-        <Separator />
+        </Section>
 
         {/* Notes Section */}
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <MessageSquare className="w-4 h-4" />
-            Notes
-            {notes && notes.length > 0 && (
-              <Badge variant="secondary" className="text-xs ml-auto">
-                {notes.length}
-              </Badge>
-            )}
-          </h3>
-
+        <Section title={notes && notes.length > 0 ? `Notes · ${notes.length}` : 'Notes'}>
           {/* Add Note Form */}
           <DocumentNoteForm
             documentId={documentId}
@@ -347,7 +229,7 @@ export default function ReaderSidebar({ document, documentId }: ReaderSidebarPro
 
           {/* Existing Notes */}
           {notes && notes.length > 0 && (
-            <div className="mt-4 space-y-3">
+            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {notes.map((note) => (
                 <DocumentNoteCard key={note._id} note={note} />
               ))}
@@ -355,11 +237,11 @@ export default function ReaderSidebar({ document, documentId }: ReaderSidebarPro
           )}
 
           {notes && notes.length === 0 && (
-            <p className="text-xs text-gray-400 mt-3 text-center">
+            <p style={{ fontSize: 11, color: colors.text.dim, marginTop: 12, textAlign: 'center' }}>
               No notes yet. Add a note above.
             </p>
           )}
-        </div>
+        </Section>
       </div>
     </ScrollArea>
   );

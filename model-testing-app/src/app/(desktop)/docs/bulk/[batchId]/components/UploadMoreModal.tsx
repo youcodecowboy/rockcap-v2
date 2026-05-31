@@ -5,15 +5,9 @@ import { useMutation, useQuery, useConvex } from 'convex/react';
 import { useUser } from '@clerk/nextjs';
 import { api } from '../../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../../convex/_generated/dataModel';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Modal, Button, FlagChip } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
 import {
   Upload,
   X,
@@ -21,9 +15,7 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
-  Plus,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { createBulkQueueProcessor, BatchInfo } from '@/lib/bulkQueueProcessor';
 import { getUserInitials } from '@/lib/documentNaming';
 
@@ -60,6 +52,7 @@ export default function UploadMoreModal({
   batchId,
   batch,
 }: UploadMoreModalProps) {
+  const colors = useColors();
   const { user } = useUser();
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -260,163 +253,166 @@ export default function UploadMoreModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="w-5 h-5" />
-            Upload More Files
-          </DialogTitle>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-            <span>{batch.clientName}</span>
-            {batch.projectName && (
-              <>
-                <span>/</span>
-                <span>{batch.projectName}</span>
-              </>
-            )}
-            <Badge variant="outline" className="text-xs ml-2">
-              {batch.isInternal ? 'Internal' : 'External'}
-            </Badge>
-          </div>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Drop Zone */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => !isProcessing && fileInputRef.current?.click()}
-            className={cn(
-              "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
-              isDragOver
-                ? "border-primary bg-primary/5"
-                : "border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/50",
-              isProcessing && "pointer-events-none opacity-50"
-            )}
-          >
-            <Upload className={cn(
-              "w-10 h-10 mx-auto mb-3",
-              isDragOver ? "text-primary" : "text-muted-foreground"
-            )} />
-            <p className="text-sm font-medium">
-              {isDragOver ? 'Drop files here' : 'Drag & drop files here'}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              or click to browse
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
-              onChange={handleFileSelect}
-              className="hidden"
-              disabled={isProcessing}
-            />
-          </div>
-
-          {/* File List */}
-          {hasFiles && (
-            <div className="mt-4 flex-1 overflow-auto max-h-[300px]">
-              <div className="text-sm font-medium mb-2">
-                Files ({files.length})
-              </div>
-              <div className="space-y-2">
-                {files.map((file) => (
-                  <div
-                    key={file.id}
-                    className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg"
-                  >
-                    <FileText className="w-8 h-8 text-muted-foreground flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {file.file.name}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-muted-foreground">
-                          {formatFileSize(file.file.size)}
-                        </span>
-                        {file.status === 'pending' && (
-                          <span className="text-xs text-muted-foreground">Ready to upload</span>
-                        )}
-                        {file.status === 'uploading' && (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                            <span className="text-xs text-blue-600">Uploading...</span>
-                          </>
-                        )}
-                        {file.status === 'analyzing' && (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin text-purple-500" />
-                            <span className="text-xs text-purple-600">Analyzing...</span>
-                          </>
-                        )}
-                        {file.status === 'complete' && (
-                          <>
-                            <CheckCircle className="w-3 h-3 text-green-500" />
-                            <span className="text-xs text-green-600">Complete</span>
-                          </>
-                        )}
-                        {file.status === 'error' && (
-                          <>
-                            <AlertCircle className="w-3 h-3 text-red-500" />
-                            <span className="text-xs text-red-600">{file.error || 'Failed'}</span>
-                          </>
-                        )}
-                      </div>
-                      {(file.status === 'uploading' || file.status === 'analyzing') && (
-                        <Progress value={file.progress} className="mt-2 h-1" />
-                      )}
-                    </div>
-                    {file.status === 'pending' && !isProcessing && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeFile(file.id);
-                        }}
-                        className="p-1 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-2 pt-4 border-t">
-          <Button
-            variant="outline"
-            onClick={handleClose}
-            disabled={isProcessing}
-          >
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      title="Upload More Files"
+      width={600}
+      footer={
+        <>
+          <Button variant="secondary" onClick={handleClose} disabled={isProcessing}>
             {allComplete ? 'Done' : 'Cancel'}
           </Button>
           {!allComplete && (
-            <Button
-              onClick={processFiles}
-              disabled={pendingFiles === 0 || isProcessing}
-            >
+            <Button variant="primary" onClick={processFiles} disabled={pendingFiles === 0 || isProcessing}>
               {isProcessing ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Processing...
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="w-4 h-4" />
                   Upload {pendingFiles} {pendingFiles === 1 ? 'file' : 'files'}
                 </>
               )}
             </Button>
           )}
+        </>
+      }
+    >
+      {/* Destination summary */}
+      <div className="flex items-center gap-2" style={{ fontSize: 12, color: colors.text.muted, marginBottom: 16 }}>
+        <span>{batch.clientName}</span>
+        {batch.projectName && (
+          <>
+            <span>/</span>
+            <span>{batch.projectName}</span>
+          </>
+        )}
+        <FlagChip label={batch.isInternal ? 'Internal' : 'External'} severity="info" />
+      </div>
+
+      {/* Drop Zone */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !isProcessing && fileInputRef.current?.click()}
+        className="text-center"
+        style={{
+          border: `2px dashed ${isDragOver ? colors.accent.blue : colors.border.mid}`,
+          background: isDragOver ? `${colors.accent.blue}15` : colors.bg.light,
+          borderRadius: 4,
+          padding: 32,
+          cursor: isProcessing ? 'default' : 'pointer',
+          pointerEvents: isProcessing ? 'none' : 'auto',
+          opacity: isProcessing ? 0.5 : 1,
+          transition: 'border-color 100ms linear, background 100ms linear',
+        }}
+      >
+        <Upload
+          className="mx-auto"
+          style={{ width: 40, height: 40, marginBottom: 12, color: isDragOver ? colors.accent.blue : colors.text.muted }}
+        />
+        <p style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+          {isDragOver ? 'Drop files here' : 'Drag & drop files here'}
+        </p>
+        <p style={{ fontSize: 11, color: colors.text.muted, marginTop: 4 }}>
+          or click to browse
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.docx,.doc,.xls,.xlsx,.csv,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif"
+          onChange={handleFileSelect}
+          className="hidden"
+          disabled={isProcessing}
+        />
+      </div>
+
+      {/* File List */}
+      {hasFiles && (
+        <div style={{ marginTop: 16, maxHeight: 300, overflowY: 'auto' }}>
+          <div
+            style={{
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: 9,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: colors.text.muted,
+              fontWeight: 500,
+              marginBottom: 8,
+            }}
+          >
+            Files ({files.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {files.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center gap-3"
+                style={{ padding: 8, background: colors.bg.light, borderRadius: 4, border: `1px solid ${colors.border.light}` }}
+              >
+                <FileText className="w-8 h-8 flex-shrink-0" style={{ color: colors.text.muted }} />
+                <div className="flex-1 min-w-0">
+                  <p className="truncate" style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                    {file.file.name}
+                  </p>
+                  <div className="flex items-center gap-2" style={{ marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: colors.text.muted }}>
+                      {formatFileSize(file.file.size)}
+                    </span>
+                    {file.status === 'pending' && (
+                      <span style={{ fontSize: 11, color: colors.text.muted }}>Ready to upload</span>
+                    )}
+                    {file.status === 'uploading' && (
+                      <span className="flex items-center gap-1" style={{ fontSize: 11, color: colors.accent.blue }}>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Uploading...
+                      </span>
+                    )}
+                    {file.status === 'analyzing' && (
+                      <span className="flex items-center gap-1" style={{ fontSize: 11, color: colors.accent.purple }}>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Analyzing...
+                      </span>
+                    )}
+                    {file.status === 'complete' && (
+                      <span className="flex items-center gap-1" style={{ fontSize: 11, color: colors.accent.green }}>
+                        <CheckCircle className="w-3 h-3" />
+                        Complete
+                      </span>
+                    )}
+                    {file.status === 'error' && (
+                      <span className="flex items-center gap-1" style={{ fontSize: 11, color: colors.accent.red }}>
+                        <AlertCircle className="w-3 h-3" />
+                        {file.error || 'Failed'}
+                      </span>
+                    )}
+                  </div>
+                  {(file.status === 'uploading' || file.status === 'analyzing') && (
+                    <Progress value={file.progress} className="mt-2 h-1" />
+                  )}
+                </div>
+                {file.status === 'pending' && !isProcessing && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFile(file.id);
+                    }}
+                    aria-label="Remove file"
+                    style={{ background: 'transparent', border: 'none', color: colors.text.muted, cursor: 'pointer' }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+    </Modal>
   );
 }

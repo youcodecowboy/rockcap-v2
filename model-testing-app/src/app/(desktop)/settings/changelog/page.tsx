@@ -3,14 +3,17 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { 
-  Clock, 
-  FileText, 
-  Sparkles, 
-  ChevronLeft, 
+import { useColors } from '@/lib/useColors';
+import {
+  Button,
+  EmptyState,
+  Skeleton,
+} from '@/components/layouts';
+import {
+  Clock,
+  FileText,
+  Sparkles,
+  ChevronLeft,
   ChevronRight,
   History,
   Settings,
@@ -33,6 +36,7 @@ import {
   Link2,
   Tag,
 } from 'lucide-react';
+import type { ColorPalette } from '@/lib/colors';
 
 const ITEMS_PER_PAGE = 10;
 const BASE_VERSION = '2.1'; // Starting version
@@ -43,54 +47,17 @@ type ChangeType = 'new-feature' | 'bug-fix' | 'ui-improvement' | 'security' | 'p
 interface ChangeTypeInfo {
   label: string;
   icon: typeof Sparkles;
-  color: string;
-  bgColor: string;
-  borderColor: string;
+  /** Resolver: pick the canon accent for this change type. */
+  accent: (c: ColorPalette) => string;
 }
 
 const changeTypes: Record<ChangeType, ChangeTypeInfo> = {
-  'new-feature': {
-    label: 'New Feature',
-    icon: Sparkles,
-    color: 'text-purple-700',
-    bgColor: 'bg-purple-50',
-    borderColor: 'border-purple-200',
-  },
-  'bug-fix': {
-    label: 'Bug Fix',
-    icon: Zap,
-    color: 'text-orange-700',
-    bgColor: 'bg-orange-50',
-    borderColor: 'border-orange-200',
-  },
-  'ui-improvement': {
-    label: 'UI Improvement',
-    icon: Layout,
-    color: 'text-blue-700',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
-  },
-  'security': {
-    label: 'Security',
-    icon: Shield,
-    color: 'text-red-700',
-    bgColor: 'bg-red-50',
-    borderColor: 'border-red-200',
-  },
-  'performance': {
-    label: 'Performance',
-    icon: Zap,
-    color: 'text-green-700',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
-  },
-  'general-update': {
-    label: 'General Update',
-    icon: FileText,
-    color: 'text-gray-700',
-    bgColor: 'bg-gray-50',
-    borderColor: 'border-gray-200',
-  },
+  'new-feature': { label: 'New Feature', icon: Sparkles, accent: (c) => c.accent.purple },
+  'bug-fix': { label: 'Bug Fix', icon: Zap, accent: (c) => c.accent.orange },
+  'ui-improvement': { label: 'UI Improvement', icon: Layout, accent: (c) => c.accent.blue },
+  'security': { label: 'Security', icon: Shield, accent: (c) => c.accent.red },
+  'performance': { label: 'Performance', icon: Zap, accent: (c) => c.accent.green },
+  'general-update': { label: 'General Update', icon: FileText, accent: (c) => c.text.muted },
 };
 
 // Feature/page icon mapping
@@ -120,10 +87,10 @@ const getChangeIcon = (title: string, description: string, changeType?: ChangeTy
   if (changeType && changeTypes[changeType]) {
     return changeTypes[changeType].icon;
   }
-  
+
   const lowerTitle = title.toLowerCase();
   const lowerDesc = description.toLowerCase();
-  
+
   if (lowerTitle.includes('ui') || lowerTitle.includes('design') || lowerTitle.includes('styling')) {
     return Layout;
   }
@@ -149,7 +116,7 @@ const getChangeIcon = (title: string, description: string, changeType?: ChangeTy
 const detectChangeType = (title: string, description: string): ChangeType => {
   const lowerTitle = title.toLowerCase();
   const lowerDesc = description.toLowerCase();
-  
+
   if (lowerTitle.includes('new') || lowerTitle.includes('add') || lowerDesc.includes('new feature')) {
     return 'new-feature';
   }
@@ -169,8 +136,11 @@ const detectChangeType = (title: string, description: string): ChangeType => {
 };
 
 export default function ChangelogPage() {
+  const colors = useColors();
   const [currentPage, setCurrentPage] = useState(1);
   const entries = useQuery(api.changelog.getAll);
+
+  const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
   const formatDate = (isoString: string) => {
     const date = new Date(isoString);
@@ -193,7 +163,7 @@ export default function ChangelogPage() {
   // Newest entries get the highest version numbers
   const entriesWithVersions = useMemo(() => {
     if (!entries) return [];
-    
+
     const totalEntries = entries.length;
     return entries.map((entry, index) => {
       // Reverse the numbering so newest entries get highest version
@@ -201,7 +171,7 @@ export default function ChangelogPage() {
       const version = `${BASE_VERSION}.${versionNumber}`;
       const title = (entry as any).title || entry.description.split('.')[0] || 'Update';
       const changeType = detectChangeType(title, entry.description);
-      
+
       return {
         ...entry,
         version,
@@ -217,31 +187,27 @@ export default function ChangelogPage() {
   const paginatedEntries = entriesWithVersions.slice(startIndex, endIndex);
 
   return (
-    <div className="bg-gray-50 min-h-screen" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}>
+    <div style={{ background: colors.bg.light, minHeight: '100vh' }}>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl text-gray-900" style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', fontWeight: 700 }}>
-            Changelog
-          </h1>
-          <p className="mt-2 text-gray-600" style={{ fontWeight: 400 }}>
-            Track all application changes and updates
-          </p>
+        <div className="mb-8 flex items-center gap-3">
+          <History style={{ width: 22, height: 22, color: colors.text.muted }} />
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 300, color: colors.text.primary }}>Changelog</h1>
+            <p style={{ marginTop: 4, fontSize: 12, color: colors.text.muted }}>
+              Track all application changes and updates
+            </p>
+          </div>
         </div>
 
         {/* Changelog Entries */}
         {entries === undefined ? (
-          <Card className="rounded-xl overflow-hidden">
-            <CardContent className="py-12">
-              <div className="text-center text-gray-500">Loading changelog...</div>
-            </CardContent>
-          </Card>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Skeleton height={140} />
+            <Skeleton height={140} />
+          </div>
         ) : entries.length === 0 ? (
-          <Card className="rounded-xl overflow-hidden">
-            <CardContent className="py-12">
-              <div className="text-center text-gray-500">No changelog entries yet.</div>
-            </CardContent>
-          </Card>
+          <EmptyState icon={<History size={24} />} title="No changelog entries yet" />
         ) : (
           <>
             <div className="space-y-4 mb-6">
@@ -252,67 +218,96 @@ export default function ChangelogPage() {
                 const changeType = entry.changeType || 'general-update';
                 const typeInfo = changeTypes[changeType];
                 const TypeIcon = typeInfo.icon;
+                const accent = typeInfo.accent(colors);
                 const BannerIcon = getChangeIcon(title, description, changeType);
                 const pagesAffected = (entry as any).pagesAffected || [];
                 const featuresAffected = (entry as any).featuresAffected || [];
 
                 return (
-                  <Card 
-                    key={entry._id} 
-                    className={`hover:shadow-lg transition-shadow rounded-xl overflow-hidden p-0 gap-0 border-2 ${typeInfo.borderColor}`}
+                  <div
+                    key={entry._id}
+                    style={{
+                      background: colors.bg.card,
+                      border: `1px solid ${colors.border.default}`,
+                      borderTop: `2px solid ${accent}`,
+                      borderRadius: 4,
+                      overflow: 'hidden',
+                    }}
                   >
-                    {/* Blue Banner Header */}
-                    <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <BannerIcon className="w-5 h-5 text-white" />
-                        <span className="text-sm font-bold">
+                    {/* Banner Header */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        background: colors.bg.light,
+                        borderBottom: `1px solid ${colors.border.default}`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <BannerIcon style={{ width: 16, height: 16, color: accent }} />
+                        <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: colors.text.primary }}>
                           Version {entry.version}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-white opacity-90" />
-                        <span className="text-xs uppercase tracking-wide" style={{ fontWeight: 600 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Clock style={{ width: 13, height: 13, color: colors.text.muted }} />
+                        <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.05em', textTransform: 'uppercase', color: colors.text.muted }}>
                           {formatDate(entry.createdAt)} • {formatTime(entry.createdAt)}
                         </span>
                       </div>
                     </div>
 
                     {/* Card Content */}
-                    <CardContent className="p-6">
-                      {/* Change Type Badge */}
-                      <div className="mb-4">
-                        <Badge 
-                          className={`${typeInfo.bgColor} ${typeInfo.color} ${typeInfo.borderColor} border flex items-center gap-1.5 w-fit`}
+                    <div style={{ padding: 18 }}>
+                      {/* Change Type Chip */}
+                      <div style={{ marginBottom: 14 }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '2px 8px',
+                            borderRadius: 2,
+                            fontFamily: MONO,
+                            fontSize: 9,
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            background: `${accent}15`,
+                            color: accent,
+                            border: `1px solid ${accent}40`,
+                          }}
                         >
-                          <TypeIcon className="w-3.5 h-3.5" />
-                          <span className="text-xs font-semibold">{typeInfo.label}</span>
-                        </Badge>
+                          <TypeIcon style={{ width: 12, height: 12 }} />
+                          {typeInfo.label}
+                        </span>
                       </div>
 
                       {/* Title */}
                       {(entry as any).title && (
-                        <div className="mb-3">
-                          <h3 className="text-xl font-bold text-gray-900">
+                        <div style={{ marginBottom: 10 }}>
+                          <h3 style={{ fontSize: 17, fontWeight: 500, color: colors.text.primary }}>
                             {(entry as any).title}
                           </h3>
                         </div>
                       )}
-                      
+
                       {/* Description */}
-                      <div className="mb-6">
-                        <p className="text-base text-gray-700 leading-relaxed">
+                      <div style={{ marginBottom: 18 }}>
+                        <p style={{ fontSize: 13, color: colors.text.secondary, lineHeight: 1.6 }}>
                           {description}
                         </p>
                       </div>
 
                       {/* Features and Pages Affected - Visual Grid */}
                       {(pagesAffected.length > 0 || featuresAffected.length > 0) && (
-                        <div className="space-y-4 pt-4 border-t border-gray-200">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16, borderTop: `1px solid ${colors.border.light}` }}>
                           {pagesAffected.length > 0 && (
                             <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <FileText className="w-4 h-4 text-gray-600" />
-                                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                                <FileText style={{ width: 13, height: 13, color: colors.text.muted }} />
+                                <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
                                   Pages Affected
                                 </span>
                               </div>
@@ -322,10 +317,18 @@ export default function ChangelogPage() {
                                   return (
                                     <div
                                       key={idx}
-                                      className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-200"
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '8px 10px',
+                                        background: `${colors.accent.blue}15`,
+                                        borderRadius: 4,
+                                        border: `1px solid ${colors.accent.blue}40`,
+                                      }}
                                     >
-                                      <PageIcon className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                                      <span className="text-sm font-medium text-blue-900">{page}</span>
+                                      <PageIcon style={{ width: 14, height: 14, color: colors.accent.blue, flexShrink: 0 }} />
+                                      <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{page}</span>
                                     </div>
                                   );
                                 })}
@@ -335,9 +338,9 @@ export default function ChangelogPage() {
 
                           {featuresAffected.length > 0 && (
                             <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <Sparkles className="w-4 h-4 text-gray-600" />
-                                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                                <Sparkles style={{ width: 13, height: 13, color: colors.text.muted }} />
+                                <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.text.muted, fontWeight: 500 }}>
                                   Features Affected
                                 </span>
                               </div>
@@ -347,10 +350,18 @@ export default function ChangelogPage() {
                                   return (
                                     <div
                                       key={idx}
-                                      className="flex items-center gap-2 px-3 py-2 bg-purple-50 rounded-lg border border-purple-200"
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '8px 10px',
+                                        background: `${colors.accent.purple}15`,
+                                        borderRadius: 4,
+                                        border: `1px solid ${colors.accent.purple}40`,
+                                      }}
                                     >
-                                      <FeatureIcon className="w-4 h-4 text-purple-600 flex-shrink-0" />
-                                      <span className="text-sm font-medium text-purple-900">{feature}</span>
+                                      <FeatureIcon style={{ width: 14, height: 14, color: colors.accent.purple, flexShrink: 0 }} />
+                                      <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{feature}</span>
                                     </div>
                                   );
                                 })}
@@ -359,41 +370,39 @@ export default function ChangelogPage() {
                           )}
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 );
               })}
             </div>
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-                <div className="text-sm text-gray-600">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, borderTop: `1px solid ${colors.border.light}` }}>
+                <div style={{ fontSize: 12, color: colors.text.muted }}>
                   Showing {startIndex + 1}-{Math.min(endIndex, entriesWithVersions.length)} of {entriesWithVersions.length} entries
                 </div>
-                <div className="flex items-center gap-2">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className="flex items-center gap-1"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft style={{ width: 14, height: 14 }} />
                     Previous
                   </Button>
-                  <div className="text-sm text-gray-600 px-3">
+                  <div style={{ fontSize: 12, color: colors.text.muted, padding: '0 12px' }}>
                     Page {currentPage} of {totalPages}
                   </div>
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
-                    className="flex items-center gap-1"
                   >
                     Next
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight style={{ width: 14, height: 14 }} />
                   </Button>
                 </div>
               </div>

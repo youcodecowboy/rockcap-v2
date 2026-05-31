@@ -4,9 +4,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useColors } from "@/lib/useColors";
+import {
+  Panel,
+  Button,
+  Field,
+  Input,
+  StatusPill,
+  EmptyState,
+  Skeleton,
+  IconButton,
+} from "@/components/layouts";
 import {
   ArrowLeft,
   Key,
@@ -23,7 +31,10 @@ import {
 // MCP server (convex/mcp.ts). The plaintext is shown once at mint time
 // and never re-exposed; only the hash and a display prefix persist.
 
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+
 export default function McpTokenSettingsPage() {
+  const colors = useColors();
   const tokens = useQuery(api.mcpTokens.listMyTokens as any);
   const mintToken = useAction(api.mcpTokens.mintToken as any);
   const revokeToken = useMutation(api.mcpTokens.revokeToken as any);
@@ -89,156 +100,193 @@ export default function McpTokenSettingsPage() {
   const activeTokens = tokens?.filter((t: any) => !t.revokedAt) ?? [];
   const revokedTokens = tokens?.filter((t: any) => t.revokedAt) ?? [];
 
+  const codeChip = (text: string) => (
+    <code
+      style={{
+        fontFamily: MONO,
+        fontSize: 10,
+        background: colors.bg.cardAlt,
+        border: `1px solid ${colors.border.light}`,
+        padding: "1px 4px",
+        borderRadius: 2,
+        color: colors.text.secondary,
+      }}
+    >
+      {text}
+    </code>
+  );
+
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div style={{ background: colors.bg.light, minHeight: "100vh" }}>
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="mb-6">
           <Link
             href="/settings"
-            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: colors.text.muted, textDecoration: "none" }}
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
+            <ArrowLeft style={{ width: 14, height: 14 }} />
             Back to settings
           </Link>
         </div>
 
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-            <Key className="w-6 h-6" />
-            MCP Tokens
-          </h1>
-          <p className="mt-2 text-gray-600">
-            Personal access tokens for Claude Code to authenticate against the RockCap MCP server.
-            Each token grants the same access as your account. Generate one per device. Tokens are
-            shown in full only at mint time; if lost, generate a new one and revoke the old.
-          </p>
+        <div className="mb-8 flex items-center gap-3">
+          <Key style={{ width: 22, height: 22, color: colors.text.muted }} />
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 300, color: colors.text.primary }}>MCP Tokens</h1>
+            <p style={{ marginTop: 4, fontSize: 12, color: colors.text.muted, maxWidth: 620 }}>
+              Personal access tokens for Claude Code to authenticate against the RockCap MCP server.
+              Each token grants the same access as your account. Generate one per device. Tokens are
+              shown in full only at mint time; if lost, generate a new one and revoke the old.
+            </p>
+          </div>
         </div>
 
         {/* Mint new token */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Generate a new token</CardTitle>
-            <CardDescription>
+        <div style={{ marginBottom: 24 }}>
+          <Panel title="Generate a new token">
+            <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
               Give the token a label so you can identify it later. The plaintext is shown once,
               so copy it into Claude Code straight away.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+            </p>
             {!mintedToken ? (
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700">
-                  Token label
-                </label>
-                <input
-                  type="text"
-                  value={newTokenName}
-                  onChange={(e) => setNewTokenName(e.target.value)}
-                  placeholder="e.g., My MacBook, Office desktop"
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                  disabled={minting}
-                />
-                <Button onClick={handleMint} disabled={minting || !newTokenName.trim()}>
-                  {minting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                      Generating
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Generate token
-                    </>
-                  )}
-                </Button>
-                {error && (
-                  <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
-                    {error}
-                  </div>
-                )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Field label="Token label" error={error ?? undefined}>
+                  <Input
+                    type="text"
+                    value={newTokenName}
+                    onChange={(e) => setNewTokenName(e.target.value)}
+                    placeholder="e.g., My MacBook, Office desktop"
+                    disabled={minting}
+                  />
+                </Field>
+                <div>
+                  <Button variant="primary" onClick={handleMint} disabled={minting || !newTokenName.trim()}>
+                    {minting ? (
+                      <>
+                        <Loader2 className="animate-spin" style={{ width: 14, height: 14 }} />
+                        Generating
+                      </>
+                    ) : (
+                      <>
+                        <Plus style={{ width: 14, height: 14 }} />
+                        Generate token
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded p-3 text-sm">
-                  <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 8,
+                    color: colors.accent.orange,
+                    background: `${colors.accent.orange}15`,
+                    border: `1px solid ${colors.accent.orange}40`,
+                    borderRadius: 4,
+                    padding: 12,
+                    fontSize: 12,
+                  }}
+                >
+                  <AlertTriangle style={{ width: 18, height: 18, flexShrink: 0, marginTop: 1 }} />
                   <div>
-                    <div className="font-semibold mb-1">Copy this token now</div>
-                    <div>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>Copy this token now</div>
+                    <div style={{ color: colors.text.secondary }}>
                       It is shown only once. If you close this page without copying, you will need
                       to revoke this token and generate a new one.
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 font-mono text-sm bg-gray-900 text-gray-100 rounded px-3 py-2 break-all">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <code
+                    style={{
+                      flex: 1,
+                      fontFamily: MONO,
+                      fontSize: 12,
+                      background: colors.text.primary,
+                      color: colors.bg.card,
+                      borderRadius: 4,
+                      padding: "8px 12px",
+                      wordBreak: "break-all",
+                    }}
+                  >
                     {mintedToken}
                   </code>
-                  <Button onClick={handleCopy} variant="outline" size="sm">
+                  <Button onClick={handleCopy} variant="secondary" size="sm">
                     {copied ? (
                       <>
-                        <CheckCircle2 className="w-4 h-4 mr-1 text-emerald-600" />
+                        <CheckCircle2 style={{ width: 14, height: 14, color: colors.accent.green }} />
                         Copied
                       </>
                     ) : (
                       <>
-                        <Copy className="w-4 h-4 mr-1" />
+                        <Copy style={{ width: 14, height: 14 }} />
                         Copy
                       </>
                     )}
                   </Button>
                 </div>
-                <div className="text-sm text-gray-600">
-                  Paste this into your Claude Code settings under{" "}
-                  <code className="font-mono text-xs bg-gray-100 px-1 rounded">
-                    mcpServers.rockcap.headers.Authorization
-                  </code>{" "}
-                  as <code className="font-mono text-xs bg-gray-100 px-1 rounded">Bearer {"{token}"}</code>.
-                  See <code className="font-mono text-xs bg-gray-100 px-1 rounded">skills/SETUP.md</code> for the full configuration.
+                <div style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.6 }}>
+                  Paste this into your Claude Code settings under {codeChip("mcpServers.rockcap.headers.Authorization")} as {codeChip("Bearer {token}")}. See {codeChip("skills/SETUP.md")} for the full configuration.
                 </div>
-                <Button onClick={() => setMintedToken(null)} variant="outline">
-                  Done
-                </Button>
+                <div>
+                  <Button onClick={() => setMintedToken(null)} variant="secondary">
+                    Done
+                  </Button>
+                </div>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+        </div>
 
         {/* Active tokens */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Active tokens</CardTitle>
-            <CardDescription>
+        <div style={{ marginBottom: 24 }}>
+          <Panel title="Active tokens">
+            <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
               Tokens currently usable for MCP requests. Revoking a token blocks it immediately.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+            </p>
             {loading ? (
-              <div className="text-sm text-gray-500 flex items-center">
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                Loading...
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Skeleton height={40} />
+                <Skeleton height={40} />
               </div>
             ) : activeTokens.length === 0 ? (
-              <div className="text-sm text-gray-500 py-4 text-center">
-                No active tokens. Generate one above to connect Claude Code.
-              </div>
+              <EmptyState
+                icon={<Key size={20} />}
+                title="No active tokens"
+                body="Generate one above to connect Claude Code."
+              />
             ) : (
-              <div className="divide-y">
-                {activeTokens.map((token: any) => (
-                  <div key={token._id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm">{token.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        <code className="font-mono">{token.tokenPrefix}...</code>
-                        <span className="mx-2">·</span>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {activeTokens.map((token: any, i: number) => (
+                  <div
+                    key={token._id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      padding: "12px 0",
+                      borderBottom: i === activeTokens.length - 1 ? "none" : `1px solid ${colors.border.light}`,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>{token.name}</div>
+                      <div style={{ fontSize: 10, color: colors.text.muted, marginTop: 2 }}>
+                        <code style={{ fontFamily: MONO }}>{token.tokenPrefix}...</code>
+                        <span style={{ margin: "0 8px" }}>·</span>
                         Created {new Date(token.createdAt).toLocaleDateString()}
                         {token.lastUsedAt ? (
                           <>
-                            <span className="mx-2">·</span>
+                            <span style={{ margin: "0 8px" }}>·</span>
                             Last used {new Date(token.lastUsedAt).toLocaleString()}
                           </>
                         ) : (
                           <>
-                            <span className="mx-2">·</span>
-                            <span className="text-gray-400">never used</span>
+                            <span style={{ margin: "0 8px" }}>·</span>
+                            <span style={{ color: colors.text.dim }}>never used</span>
                           </>
                         )}
                       </div>
@@ -246,11 +294,11 @@ export default function McpTokenSettingsPage() {
                     <Button
                       onClick={() => handleRevoke(token._id)}
                       disabled={revokingId === token._id}
-                      variant="outline"
+                      variant="secondary"
                       size="sm"
                     >
                       {revokingId === token._id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="animate-spin" style={{ width: 14, height: 14 }} />
                       ) : (
                         "Revoke"
                       )}
@@ -259,48 +307,51 @@ export default function McpTokenSettingsPage() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+        </div>
 
         {/* Revoked tokens (allow deletion to clean up the list) */}
         {revokedTokens.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Revoked tokens</CardTitle>
-              <CardDescription>
-                Tokens that were revoked. Kept for audit; can be deleted to clean up the list.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y">
-                {revokedTokens.map((token: any) => (
-                  <div key={token._id} className="py-3 flex items-center justify-between gap-3 opacity-60">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm">
-                        {token.name}
-                        <Badge variant="outline" className="ml-2">
-                          revoked
-                        </Badge>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        <code className="font-mono">{token.tokenPrefix}...</code>
-                        <span className="mx-2">·</span>
-                        Revoked {token.revokedAt && new Date(token.revokedAt).toLocaleDateString()}
-                      </div>
+          <Panel title="Revoked tokens">
+            <p style={{ fontSize: 11, color: colors.text.muted, marginBottom: 12 }}>
+              Tokens that were revoked. Kept for audit; can be deleted to clean up the list.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {revokedTokens.map((token: any, i: number) => (
+                <div
+                  key={token._id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "12px 0",
+                    opacity: 0.6,
+                    borderBottom: i === revokedTokens.length - 1 ? "none" : `1px solid ${colors.border.light}`,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                      {token.name}
+                      <StatusPill label="revoked" tone={colors.text.dim} />
                     </div>
-                    <Button
-                      onClick={() => handleDelete(token._id)}
-                      disabled={revokingId === token._id}
-                      variant="ghost"
-                      size="sm"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <div style={{ fontSize: 10, color: colors.text.muted, marginTop: 2 }}>
+                      <code style={{ fontFamily: MONO }}>{token.tokenPrefix}...</code>
+                      <span style={{ margin: "0 8px" }}>·</span>
+                      Revoked {token.revokedAt && new Date(token.revokedAt).toLocaleDateString()}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <IconButton
+                    label="Delete token"
+                    onClick={() => handleDelete(token._id)}
+                    disabled={revokingId === token._id}
+                  >
+                    <Trash2 style={{ width: 14, height: 14 }} />
+                  </IconButton>
+                </div>
+              ))}
+            </div>
+          </Panel>
         )}
       </div>
     </div>

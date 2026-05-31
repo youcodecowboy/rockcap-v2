@@ -5,38 +5,18 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Button, Select, Modal, StatusPill, EmptyState } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import {
   LayoutGrid,
   List,
   Upload,
   FolderOpen,
   FileText,
-  ArrowUpDown,
   FolderInput,
   FolderPlus,
   Trash2,
   ChevronRight,
-  StickyNote,
   Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -46,7 +26,6 @@ import InternalUploadModal from './InternalUploadModal';
 import LinkAsVersionModal from './LinkAsVersionModal';
 import BulkMoveModal from './BulkMoveModal';
 import RenameDocumentDialog from '@/components/RenameDocumentDialog';
-import { cn } from '@/lib/utils';
 import { FolderSelection } from '@/types/folders';
 
 type DocumentScope = 'client' | 'internal' | 'personal';
@@ -106,6 +85,7 @@ export default function FileList({
   onCreateSubfolder,
   scope = 'client',
 }: FileListProps) {
+  const colors = useColors();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<SortOption>('date-desc');
@@ -499,14 +479,12 @@ export default function FileList({
   // Empty state
   if (!isInbox && !selectedFolder) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <FolderOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-1">Select a folder</h3>
-          <p className="text-sm text-gray-500">
-            Choose a folder from the sidebar to view its contents
-          </p>
-        </div>
+      <div className="flex-1 flex items-center justify-center" style={{ background: colors.bg.light }}>
+        <EmptyState
+          icon={<FolderOpen className="w-16 h-16" />}
+          title="Select a folder"
+          body="Choose a folder from the sidebar to view its contents"
+        />
       </div>
     );
   }
@@ -516,13 +494,26 @@ export default function FileList({
     scope === 'client' ? clientId : true
   );
 
+  const headerCell: React.CSSProperties = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 10,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: colors.text.dim,
+    fontWeight: 500,
+  };
+
   const renderListHeader = () => (
-    <div className="flex items-center h-7 px-3 border-b border-gray-200 bg-gray-50/80 text-[10px] font-medium text-gray-400 uppercase tracking-wider select-none sticky top-0 z-10">
+    <div
+      className="flex items-center h-7 px-3 select-none sticky top-0 z-10"
+      style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.light, ...headerCell }}
+    >
       <div className="w-5 flex-shrink-0 flex items-center justify-center">
-        <Checkbox
+        <input
+          type="checkbox"
           checked={sortedDocuments.length > 0 && selectedDocIds.size === sortedDocuments.length}
-          onCheckedChange={handleSelectAll}
-          className="h-3 w-3"
+          onChange={handleSelectAll}
+          style={{ width: 12, height: 12, accentColor: colors.accent.blue, cursor: 'pointer' }}
         />
       </div>
       <div className="w-5 flex-shrink-0" />
@@ -557,7 +548,7 @@ export default function FileList({
             />
 
             {isExpanded && (
-              <div className="border-l border-gray-200 ml-5">
+              <div className="ml-5" style={{ borderLeft: `1px solid ${colors.border.default}` }}>
                 {olderVersions.map(version => (
                   <FileCard
                     key={version._id}
@@ -589,7 +580,10 @@ export default function FileList({
         <div
           key={`note-${note._id}`}
           onClick={() => router.push(`/notes?note=${note._id}`)}
-          className="flex items-center px-3 py-2 border-b border-gray-100 cursor-pointer group transition-colors hover:bg-gray-50/60"
+          className="flex items-center px-3 py-2 cursor-pointer group"
+          style={{ borderBottom: `1px solid ${colors.border.light}`, transition: 'background 100ms linear' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
         >
           {/* Spacer for expand chevron */}
           <div className="flex-shrink-0 w-5" />
@@ -598,36 +592,32 @@ export default function FileList({
           {/* Name block */}
           <div className="flex-1 min-w-0 pl-2 pr-4">
             <div className="flex items-center gap-1.5 min-w-0">
-              <Pencil className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-              <span className="text-[13px] font-medium text-gray-900 truncate">
+              <Pencil className="w-3.5 h-3.5 flex-shrink-0" style={{ color: colors.accent.yellow }} />
+              <span className="text-[13px] font-medium truncate" style={{ color: colors.text.primary }}>
                 {note.emoji ? `${note.emoji} ` : ''}{note.title || 'Untitled Note'}
               </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
-                Note
-              </Badge>
+              <StatusPill label="Note" tone={colors.accent.yellow} />
               {note.isDraft && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  Draft
-                </Badge>
+                <StatusPill label="Draft" tone={colors.text.muted} />
               )}
             </div>
           </div>
           {/* Type */}
-          <div className="flex-shrink-0 w-32 hidden md:block text-[12px] text-gray-500 truncate pr-3">
+          <div className="flex-shrink-0 w-32 hidden md:block text-[12px] truncate pr-3" style={{ color: colors.text.muted }}>
             Note
           </div>
           {/* Category */}
           <div className="flex-shrink-0 w-32 hidden lg:flex items-center gap-1.5 pr-3">
-            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-500" />
-            <span className="text-[12px] text-gray-500 truncate">Notes</span>
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: colors.accent.yellow }} />
+            <span className="text-[12px] truncate" style={{ color: colors.text.muted }}>Notes</span>
           </div>
           {/* Date */}
-          <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
+          <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] tabular-nums text-right" style={{ color: colors.text.dim }}>
             {new Date(note.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
           </div>
           {/* Size placeholder — show word count */}
-          <div className="flex-shrink-0 w-16 hidden sm:block text-[12px] text-gray-400 tabular-nums text-right">
-            {note.wordCount ? `${note.wordCount}w` : '\u2014'}
+          <div className="flex-shrink-0 w-16 hidden sm:block text-[12px] tabular-nums text-right" style={{ color: colors.text.dim }}>
+            {note.wordCount ? `${note.wordCount}w` : '—'}
           </div>
           {/* Actions spacer */}
           <div className="flex-shrink-0 w-7 ml-1" />
@@ -636,12 +626,25 @@ export default function FileList({
     </div>
   );
 
+  // View-toggle segment button
+  const viewToggleBtn = (active: boolean): React.CSSProperties => ({
+    padding: 6,
+    background: active ? colors.bg.cardAlt : colors.bg.card,
+    color: active ? colors.text.primary : colors.text.muted,
+    cursor: 'pointer',
+    transition: 'background 100ms linear',
+    border: 'none',
+  });
+
   return (
-    <div className="flex-1 flex flex-col bg-white h-full min-w-0">
+    <div className="flex-1 flex flex-col h-full min-w-0" style={{ background: colors.bg.card }}>
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 gap-2 flex-wrap">
+      <div
+        className="flex items-center justify-between px-4 py-3 gap-2 flex-wrap"
+        style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.light }}
+      >
         <div className="flex items-center gap-2 min-w-0">
-          <FolderOpen className="w-5 h-5 text-amber-500 flex-shrink-0" />
+          <FolderOpen className="w-5 h-5 flex-shrink-0" style={{ color: colors.accent.yellow }} />
           {/* Breadcrumb navigation for subfolders */}
           {selectedFolder?.parentPath && selectedFolder.parentPath.length > 0 && onFolderSelect ? (
             <div className="flex items-center gap-1 min-w-0">
@@ -654,19 +657,20 @@ export default function FileList({
                       folderName: ancestor.folderName,
                       projectId: selectedFolder.projectId,
                     })}
-                    className="text-sm text-gray-500 hover:text-gray-900 hover:underline"
+                    className="text-sm hover:underline"
+                    style={{ color: colors.text.muted, background: 'transparent', border: 'none', cursor: 'pointer' }}
                   >
                     {ancestor.folderName}
                   </button>
-                  <ChevronRight className="w-3 h-3 text-gray-400" />
+                  <ChevronRight className="w-3 h-3" style={{ color: colors.text.dim }} />
                 </span>
               ))}
-              <h2 className="font-semibold text-gray-900 truncate">{getTitle()}</h2>
+              <h2 className="font-semibold truncate" style={{ color: colors.text.primary }}>{getTitle()}</h2>
             </div>
           ) : (
-            <h2 className="font-semibold text-gray-900 truncate">{getTitle()}</h2>
+            <h2 className="font-semibold truncate" style={{ color: colors.text.primary }}>{getTitle()}</h2>
           )}
-          <span className="text-sm text-gray-500 flex-shrink-0">
+          <span className="text-sm flex-shrink-0" style={{ color: colors.text.muted }}>
             ({sortedDocuments.length + noteItems.length} {(sortedDocuments.length + noteItems.length) === 1 ? 'item' : 'items'})
           </span>
         </div>
@@ -674,82 +678,65 @@ export default function FileList({
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Bulk selection actions */}
           {selectedDocIds.size > 0 && (
-            <Badge variant="secondary" className="text-xs">
-              {selectedDocIds.size} selected
-            </Badge>
+            <StatusPill label={`${selectedDocIds.size} selected`} tone={colors.accent.blue} />
           )}
-          <Button size="sm" variant="outline" className="gap-1.5 h-8"
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={selectedDocIds.size === 0}
-            onClick={() => setShowBulkMoveModal(true)}>
+            onClick={() => setShowBulkMoveModal(true)}
+          >
             <FolderInput className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Move</span>
           </Button>
-          <Button size="sm" variant="outline"
-            className="gap-1.5 h-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+          <Button
+            variant="danger"
+            size="sm"
             disabled={selectedDocIds.size === 0}
-            onClick={() => setShowDeleteConfirm(true)}>
+            onClick={() => setShowDeleteConfirm(true)}
+          >
             <Trash2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Delete</span>
           </Button>
 
           {/* New Folder — only for project folders */}
           {selectedFolder?.type === 'project' && onCreateSubfolder && (
-            <Button size="sm" variant="outline" className="gap-1.5 h-8"
-              onClick={onCreateSubfolder}>
+            <Button variant="secondary" size="sm" onClick={onCreateSubfolder}>
               <FolderPlus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">New Folder</span>
             </Button>
           )}
 
           {/* Sort */}
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
-            <SelectTrigger className="w-[130px] h-8 text-xs">
-              <ArrowUpDown className="w-3 h-3 mr-1 flex-shrink-0" />
-              <SelectValue placeholder="Sort" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="date-desc">Newest first</SelectItem>
-              <SelectItem value="date-asc">Oldest first</SelectItem>
-              <SelectItem value="name-asc">Name A-Z</SelectItem>
-              <SelectItem value="name-desc">Name Z-A</SelectItem>
-              <SelectItem value="size-desc">Largest first</SelectItem>
-              <SelectItem value="size-asc">Smallest first</SelectItem>
-            </SelectContent>
+          <Select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            style={{ width: 140, padding: '4px 10px' }}
+          >
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="name-asc">Name A-Z</option>
+            <option value="name-desc">Name Z-A</option>
+            <option value="size-desc">Largest first</option>
+            <option value="size-asc">Smallest first</option>
           </Select>
 
           {/* View Toggle */}
-          <div className="flex border border-gray-200 rounded-md overflow-hidden flex-shrink-0">
-            <button
-              onClick={() => setViewMode('list')}
-              className={cn(
-                "p-1.5 transition-colors",
-                viewMode === 'list'
-                  ? "bg-gray-100 text-gray-900"
-                  : "bg-white text-gray-500 hover:text-gray-900"
-              )}
-            >
+          <div
+            className="flex overflow-hidden flex-shrink-0"
+            style={{ border: `1px solid ${colors.border.default}`, borderRadius: 4 }}
+          >
+            <button onClick={() => setViewMode('list')} style={viewToggleBtn(viewMode === 'list')} aria-label="List view">
               <List className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={cn(
-                "p-1.5 transition-colors",
-                viewMode === 'grid'
-                  ? "bg-gray-100 text-gray-900"
-                  : "bg-white text-gray-500 hover:text-gray-900"
-              )}
-            >
+            <button onClick={() => setViewMode('grid')} style={viewToggleBtn(viewMode === 'grid')} aria-label="Grid view">
               <LayoutGrid className="w-4 h-4" />
             </button>
           </div>
 
           {/* Upload Button */}
           {canUpload && (
-            <Button
-              size="sm"
-              className="gap-1.5 h-8 flex-shrink-0"
-              onClick={() => setShowUploadModal(true)}
-            >
+            <Button variant="primary" size="sm" onClick={() => setShowUploadModal(true)}>
               <Upload className="w-4 h-4" />
               <span className="hidden sm:inline">Upload</span>
             </Button>
@@ -767,36 +754,39 @@ export default function FileList({
             onDrop={canUpload ? handleDrop : undefined}
           >
             <div
-              className={cn(
-                "text-center py-12 px-8 rounded-xl transition-all max-w-md mx-4",
-                canUpload && "cursor-pointer",
-                isDragOver
-                  ? "border-2 border-dashed border-blue-500 bg-blue-50"
+              className="text-center py-12 px-8 max-w-md mx-4"
+              style={{
+                borderRadius: 4,
+                cursor: canUpload ? 'pointer' : undefined,
+                border: isDragOver
+                  ? `2px dashed ${colors.accent.blue}`
                   : canUpload
-                    ? "border-2 border-dashed border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    : ""
-              )}
+                    ? `2px dashed ${colors.border.mid}`
+                    : undefined,
+                background: isDragOver ? `${colors.accent.blue}10` : undefined,
+                transition: 'background 100ms linear, border-color 100ms linear',
+              }}
               onClick={() => canUpload && setShowUploadModal(true)}
             >
               {isDragOver ? (
                 <>
-                  <Upload className="w-12 h-12 text-blue-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-blue-700 mb-1">Drop files here</h3>
-                  <p className="text-sm text-blue-600">
+                  <Upload className="w-12 h-12 mx-auto mb-4" style={{ color: colors.accent.blue }} />
+                  <h3 className="text-lg font-medium mb-1" style={{ color: colors.accent.blue }}>Drop files here</h3>
+                  <p className="text-sm" style={{ color: colors.accent.blue }}>
                     Release to upload to {selectedFolder?.folderName}
                   </p>
                 </>
               ) : (
                 <>
-                  <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-1">No files</h3>
-                  <p className="text-sm text-gray-500">
+                  <FileText className="w-12 h-12 mx-auto mb-4" style={{ color: colors.text.dim }} />
+                  <h3 className="text-lg font-medium mb-1" style={{ color: colors.text.primary }}>No files</h3>
+                  <p className="text-sm" style={{ color: colors.text.muted }}>
                     {isInbox
                       ? 'No unfiled documents. Great job!'
                       : 'This folder is empty.'}
                   </p>
                   {canUpload && (
-                    <p className="text-sm text-gray-400 mt-2">
+                    <p className="text-sm mt-2" style={{ color: colors.text.dim }}>
                       Drag & drop files here or click to upload
                     </p>
                   )}
@@ -818,27 +808,34 @@ export default function FileList({
               <div
                 key={`note-${note._id}`}
                 onClick={() => router.push(`/notes?note=${note._id}`)}
-                className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all group"
+                className="cursor-pointer group"
+                style={{
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  padding: 16,
+                  transition: 'border-color 100ms linear',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.border.mid; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.border.default; }}
               >
                 <div className="flex items-start justify-between mb-3">
-                  <div className="p-2 bg-amber-50 rounded-lg">
-                    <Pencil className="w-8 h-8 text-amber-500" />
+                  <div style={{ padding: 8, background: `${colors.accent.yellow}15`, borderRadius: 4 }}>
+                    <Pencil className="w-8 h-8" style={{ color: colors.accent.yellow }} />
                   </div>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
-                    Note
-                  </Badge>
+                  <StatusPill label="Note" tone={colors.accent.yellow} />
                 </div>
                 <div className="mb-2">
-                  <div className="font-medium text-gray-900 text-sm truncate">
+                  <div className="font-medium text-sm truncate" style={{ color: colors.text.primary }}>
                     {note.emoji ? `${note.emoji} ` : ''}{note.title || 'Untitled Note'}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {note.isDraft && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Draft</Badge>
+                    <StatusPill label="Draft" tone={colors.text.muted} />
                   )}
                 </div>
-                <div className="flex items-center justify-between text-xs text-gray-400">
+                <div className="flex items-center justify-between text-xs" style={{ color: colors.text.dim }}>
                   <span>{new Date(note.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
                   {note.wordCount && <span>{note.wordCount} words</span>}
                 </div>
@@ -889,22 +886,25 @@ export default function FileList({
       )}
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedDocIds.size} document{selectedDocIds.size !== 1 ? 's' : ''}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the selected documents. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleBulkDelete} disabled={isBulkDeleting} className="bg-red-600 hover:bg-red-700">
+      <Modal
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title={`Delete ${selectedDocIds.size} document${selectedDocIds.size !== 1 ? 's' : ''}?`}
+        footer={
+          <>
+            <Button variant="secondary" disabled={isBulkDeleting} onClick={() => setShowDeleteConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleBulkDelete} disabled={isBulkDeleting}>
               {isBulkDeleting ? 'Deleting...' : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm" style={{ color: colors.text.muted }}>
+          This will permanently delete the selected documents. This action cannot be undone.
+        </p>
+      </Modal>
 
       {/* Bulk Move Modal */}
       <BulkMoveModal
