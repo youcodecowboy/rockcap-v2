@@ -537,9 +537,18 @@ export const aggregateClientSummary = query({
       .query("projects")
       .filter((q) => q.neq(q.field("isDeleted"), true))
       .collect();
-    const relatedProjects = projects.filter(p => 
+    const relatedProjects = projects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
+
+    // Operator context — the running operator-knowledge log (contextMarkdown),
+    // surfaced so the notes-AI reads what the operator has captured (replaces the
+    // retired aiSummary.recentUpdates, which this summary never actually carried).
+    const intel = await ctx.db
+      .query("clientIntelligence")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .first();
+    const operatorContext = (intel as any)?.contextMarkdown ?? null;
 
     // Group entries by type
     const entriesByType: Record<string, typeof entries> = {};
@@ -576,6 +585,7 @@ export const aggregateClientSummary = query({
       allTags,
       recentDealUpdates: dealUpdates,
       recentProjectStatusUpdates: projectStatusUpdates,
+      operatorContext,
       relatedProjects: relatedProjects.map(p => ({
         id: p._id,
         name: p.name,

@@ -216,7 +216,7 @@ export const INTELLIGENCE_TOOLS: AtomicTool[] = [
     domain: "intelligence",
     action: "write",
     description:
-      "Add a text update to a client's intelligence profile. Appends to the recent updates list (max 10 kept). Use this to record findings, insights, or notes from conversations about the client.",
+      "Add a dated text update to a client's running operator-context log (contextMarkdown). Use this to record findings, insights, or notes from conversations about the client; it lands in the Context tab alongside the client-context-capture skill's entries.",
     parameters: {
       type: "object",
       properties: {
@@ -240,7 +240,7 @@ export const INTELLIGENCE_TOOLS: AtomicTool[] = [
     domain: "intelligence",
     action: "write",
     description:
-      "Add a text update to a project's intelligence profile. Appends to the recent updates list (max 10 kept). Use this to record findings, insights, or notes from conversations about the project.",
+      "Add a dated text update to a project's running operator-context log (contextMarkdown). Use this to record findings, insights, or notes from conversations about the project; it lands in the deal's Context tab.",
     parameters: {
       type: "object",
       properties: {
