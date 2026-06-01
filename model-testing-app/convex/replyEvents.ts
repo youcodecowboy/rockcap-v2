@@ -234,10 +234,11 @@ export const countUnrouted = query({
 
 // ── Inbox feed: all inbound, newest first, paginated ─────────────────
 // Powers the dashboard Inbox panel (initialNumItems 5) and the /inbox
-// "Gmail" tab (larger page). Ordered by ingestion (default _creationTime
-// desc), which tracks received recency since the poller inserts oldest-
-// first per tick. Each row is enriched with the linked client name +
-// matched contact name so the UI renders without extra round-trips.
+// "Gmail" tab (larger page). Ordered by receivedAt desc via the
+// by_received_at index — true received-time order, so a backfilled older
+// message can't jump above newer mail just because we ingested it later.
+// Each row is enriched with the linked client name + matched contact name
+// so the UI renders without extra round-trips.
 //
 // Intentionally org-wide (not user-scoped): the operator inbox is a shared
 // surface, mirroring reply.listUnrouted / the prospects triage queue.
@@ -269,6 +270,7 @@ export const listInboundPaginated = query({
   handler: async (ctx, args) => {
     const result = await ctx.db
       .query("replyEvents")
+      .withIndex("by_received_at")
       .order("desc")
       .paginate(args.paginationOpts);
     const page = await Promise.all(

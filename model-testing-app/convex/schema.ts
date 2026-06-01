@@ -4275,7 +4275,12 @@ export default defineSchema({
     .index("by_processed", ["processed"])
     .index("by_user", ["userId"])
     .index("by_linked_client", ["linkedClientId"])
-    .index("by_dispatched_to", ["dispatchedTo"]),
+    .index("by_dispatched_to", ["dispatchedTo"])
+    // Inbox feed ordering. receivedAt is always an ISO-8601 UTC string
+    // (…Z) so lexicographic index order === chronological order; the
+    // inbox reads this descending for true received-time ordering rather
+    // than ingestion order.
+    .index("by_received_at", ["receivedAt"]),
 
   skillRuns: defineTable({
     // Identity
