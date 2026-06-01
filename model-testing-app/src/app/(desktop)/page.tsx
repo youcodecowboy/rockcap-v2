@@ -99,6 +99,11 @@ export default function Dashboard() {
   const handleConnectCalendar = () => {
     window.location.href = `/api/google/auth?returnTo=${encodeURIComponent('/')}`;
   };
+  const gmailStatus = useQuery(api.gmailTokens.getConnectionStatus, {});
+  const gmailConnected = gmailStatus?.connected ?? true;
+  const handleConnectGmail = () => {
+    window.location.href = `/api/gmail/auth?returnTo=${encodeURIComponent('/')}`;
+  };
   const upcomingTasks = useQuery(api.tasks.getByUser, {});
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
@@ -146,6 +151,15 @@ export default function Dashboard() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('google') === 'success') {
       fetch('/api/google/setup-sync', { method: 'POST' }).catch(console.error);
+      router.replace('/');
+    }
+  }, [router]);
+
+  // After returning from the Gmail OAuth round-trip, just strip the ?gmail=
+  // param. The connection status query is reactive, so the Inbox panel flips
+  // to connected on its own — no explicit sync step (unlike Calendar).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('gmail') === 'success') {
       router.replace('/');
     }
   }, [router]);
@@ -547,19 +561,37 @@ export default function Dashboard() {
         {/* Tables Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Inbox */}
-          <Panel title="Inbox" accent={colors.accent.blue} actions={metaText('Notifications & Emails')}>
+          <Panel title="Inbox" accent={colors.accent.blue} actions={metaText(gmailConnected ? 'Notifications & Emails' : 'Gmail not connected')}>
             <div className="flex flex-col h-full">
-              <EmptyState
-                icon={<Inbox size={28} />}
-                title="Coming soon"
-                body="Email integration and notifications will appear here."
-              />
-              <div className="mt-4 flex">
-                <Button variant="secondary" size="sm" onClick={() => router.push('/inbox')} style={{ marginLeft: 'auto' }}>
-                  View Inbox
-                  <ArrowRight className="w-3 h-3" />
-                </Button>
-              </div>
+              {gmailConnected ? (
+                <>
+                  <EmptyState
+                    icon={<Inbox size={28} />}
+                    title="Coming soon"
+                    body="Email integration and notifications will appear here."
+                  />
+                  <div className="mt-4 flex">
+                    <Button variant="secondary" size="sm" onClick={() => router.push('/inbox')} style={{ marginLeft: 'auto' }}>
+                      View Inbox
+                      <ArrowRight className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <EmptyState
+                    icon={<Mail size={28} />}
+                    title="Connect Gmail"
+                    body="Connect your inbox to read and send email from RockCap."
+                  />
+                  <div className="mt-4 flex">
+                    <Button variant="primary" accent={colors.accent.purple} size="sm" onClick={handleConnectGmail} style={{ marginLeft: 'auto' }}>
+                      <Mail className="w-3 h-3" />
+                      Connect Gmail
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </Panel>
 

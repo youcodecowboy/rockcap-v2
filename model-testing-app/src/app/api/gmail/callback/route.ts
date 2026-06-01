@@ -17,23 +17,38 @@ export async function GET(request: NextRequest) {
   const stateParam = searchParams.get("state");
   const error = searchParams.get("error");
 
+  // Decode returnTo up front so error redirects honor it too. Re-validate the
+  // relative-path constraint here since state is attacker-influenceable.
+  let returnTo = "/settings/gmail";
+  if (stateParam) {
+    try {
+      const decoded = JSON.parse(Buffer.from(stateParam, "base64").toString());
+      if (typeof decoded.returnTo === "string" && decoded.returnTo.startsWith("/") && !decoded.returnTo.startsWith("//")) {
+        returnTo = decoded.returnTo;
+      }
+    } catch {
+      // fall back to /settings/gmail
+    }
+  }
+  const sep = returnTo.includes("?") ? "&" : "?";
+
   if (error) {
-    return NextResponse.redirect(new URL("/settings/gmail?gmail=denied", request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}gmail=denied`, request.url));
   }
   if (!code || !stateParam) {
-    return NextResponse.redirect(new URL("/settings/gmail?gmail=error", request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}gmail=error`, request.url));
   }
 
   try {
     const state = JSON.parse(Buffer.from(stateParam, "base64").toString());
     if (!state.userId) {
       console.error("[gmail/callback] No userId in state");
-      return NextResponse.redirect(new URL("/settings/gmail?gmail=error", request.url));
+      return NextResponse.redirect(new URL(`${returnTo}${sep}gmail=error`, request.url));
     }
     if (state.integration !== "gmail") {
       // Defensive: prevent state-confusion between Gmail and Calendar OAuth.
       console.error("[gmail/callback] Wrong integration in state:", state.integration);
-      return NextResponse.redirect(new URL("/settings/gmail?gmail=error", request.url));
+      return NextResponse.redirect(new URL(`${returnTo}${sep}gmail=error`, request.url));
     }
 
     const tokens = await exchangeCodeForTokens(code);
@@ -48,9 +63,9 @@ export async function GET(request: NextRequest) {
       connectedEmail: email,
     });
 
-    return NextResponse.redirect(new URL("/settings/gmail?gmail=success", request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}gmail=success`, request.url));
   } catch (err) {
     console.error("[gmail/callback] ERROR:", err);
-    return NextResponse.redirect(new URL("/settings/gmail?gmail=error", request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}gmail=error`, request.url));
   }
 }
