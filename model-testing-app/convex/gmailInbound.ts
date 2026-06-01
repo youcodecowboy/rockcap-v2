@@ -116,9 +116,12 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-// Walk the MIME tree, prefer text/plain, fall back to stripped text/html.
-function extractBody(payload: any): string {
-  if (!payload) return "";
+// Walk the MIME tree and collect BOTH the text/plain and text/html parts.
+// We keep the raw HTML (rendered, sandboxed, in the inbox UI) AND a plain-
+// text version (search, previews, the dashboard panel, fallback). `text` is
+// the real text/plain part if present, else HTML stripped to text.
+function extractBody(payload: any): { text: string; html?: string } {
+  if (!payload) return { text: "" };
   const fromPart = (part: any): { plain?: string; html?: string } => {
     const mime = part?.mimeType ?? "";
     const out: { plain?: string; html?: string } = {};
@@ -136,9 +139,8 @@ function extractBody(payload: any): string {
     return out;
   };
   const r = fromPart(payload);
-  if (r.plain) return r.plain.trim();
-  if (r.html) return stripHtml(r.html);
-  return "";
+  const text = r.plain ? r.plain.trim() : r.html ? stripHtml(r.html) : "";
+  return { text, html: r.html };
 }
 
 function epochOrHeaderToIso(internalDate?: string, dateHeader?: string): string {
@@ -258,7 +260,8 @@ export const pollUserInbound = internalAction({
         msg?.internalDate,
         getHeader(headers, "Date"),
       );
-      const body = extractBody(msg?.payload) || (msg?.snippet ?? "");
+      const extracted = extractBody(msg?.payload);
+      const body = extracted.text || (msg?.snippet ?? "");
 
       try {
         await ctx.runAction(internal.replyEventProcessor.ingestGmailMessage, {
@@ -268,6 +271,7 @@ export const pollUserInbound = internalAction({
           fromName: from.name,
           subject,
           body,
+          bodyHtml: extracted.html,
           receivedAt,
           externalId: messageIdHeader,
           gmailThreadId: msg?.threadId,

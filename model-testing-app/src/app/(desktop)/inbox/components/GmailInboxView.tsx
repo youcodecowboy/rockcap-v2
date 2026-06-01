@@ -7,6 +7,7 @@ import { useColors } from '@/lib/useColors';
 import { Button, EmptyState, SkeletonText, StatusPill } from '@/components/layouts';
 import { Mail, Send, ExternalLink, Inbox } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import EmailViewer from './EmailViewer';
 
 // Relative "time ago" for received mail.
 function timeAgo(iso: string): string {
@@ -240,12 +241,7 @@ function EmailDetail({
 
       {/* Body */}
       <div className="flex-1 px-6 py-4 overflow-y-auto">
-        <pre
-          className="whitespace-pre-wrap text-sm font-sans"
-          style={{ color: colors.text.primary, fontFamily: 'inherit' }}
-        >
-          {email.replyBodyText || '(no message body)'}
-        </pre>
+        <EmailViewer html={email.replyBodyHtml} text={email.replyBodyText} />
       </div>
 
       {/* Reply */}

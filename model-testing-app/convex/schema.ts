@@ -4269,6 +4269,10 @@ export default defineSchema({
     gmailMessageId: v.optional(v.string()),
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
+    // Raw HTML body (when the message had a text/html part). Rendered
+    // sandboxed in the inbox for proper formatting; replyBodyText remains the
+    // plain-text version for search/previews/fallback.
+    replyBodyHtml: v.optional(v.string()),
   })
     .index("by_source_externalId", ["source", "externalId"])
     .index("by_contact", ["contactId"])
