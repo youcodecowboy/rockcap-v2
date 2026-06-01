@@ -112,9 +112,9 @@ This list is current as of 2026-06-01.
 
 **Live and working end to end:**
 
-- **MCP server** (BL-5.1): served from Convex HTTP actions at `https://incredible-kudu-562.convex.site/mcp`. 120 tools across 23 domains; see `skills/CATALOGUE.md` for the full list. Verify with the canary in step 5.
+- **MCP server** (BL-5.1): served from Convex HTTP actions at `https://incredible-kudu-562.convex.site/mcp`. 122 tools across 23 domains; see `skills/CATALOGUE.md` for the full list. Verify with the canary in step 5.
 - **Per-user MCP token issuance** (BL-5.9): the `/settings/mcp-token` page mints, rotates, and revokes tokens. Tokens are stored only as a hash; auth is validated per request against the per-user token table.
-- **Operational skills**: 9 of 21 skills are v2-hardened and executable against the live tool surface (`prospect-intel`, `outreach-draft`, `client-context-capture`, `qualify-and-draft`, `meeting-prep`, `meeting-capture`, `lender-intel`, `deal-intake`, `client-decision-capture`). `cadence-fire` is event-driven substrate, `document-author` is docgen substrate (v1), and `skill-forge` is the meta skill for editing skills (v1); the remaining 8 are skeletons. See `skills/skills/README.md` for the full maturity table.
+- **Operational skills**: 9 of 22 skills are v2-hardened and executable against the live tool surface (`prospect-intel`, `outreach-draft`, `client-context-capture`, `qualify-and-draft`, `meeting-prep`, `meeting-capture`, `lender-intel`, `deal-intake`, `client-decision-capture`). `cadence-fire` is event-driven substrate, `document-author` is docgen substrate (v1), and `skill-forge` is the meta skill for editing skills (v1); the remaining 8 are skeletons. See `skills/skills/README.md` for the full maturity table.
 
 **Built but gated (default-off kill switches):**
 

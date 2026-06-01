@@ -32,6 +32,7 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 | `classification-critic/` | skeleton | — |
 | `document-author/` | **v1** | docgen substrate v1 (2026-05-29) |
 | `corporate-structure/` | skeleton (spec + libs landed) | — |
+| `deal-appraisal-extraction/` | **v1** | **NEW 2026-06-01** — Claude-side extraction of appraisal figures (GDV/TDC/units/peak debt/LTGDV) from spreadsheets via `document.getSheetData` → reason → `document.saveIntelligence` (templateTags + provenance). Front half of appraisal-template automation. |
 | `skill-forge/` | **v1 (meta)** | **NEW 2026-06-01** — the skill that edits skills. Safe self-service editing/hardening for non-technical operators: sync → refresh tool manifest (`meta.listTools`) → edit → hard-gate validate (`tools/validate-skills.mjs`) → push to main. Not a deal-lifecycle skill; a repo-maintenance skill. |
 
 **v2 hardened** means: workflow retargeted at v1.3 MCP tool surface, `## Dedup` section present, `## Cadence package` section present (or explicit "doesn't produce one"), reference files authored, failure modes enumerated, multiple invocation paths documented. Skeleton skills predate this template; usable as intent statements but not operationally hardened.

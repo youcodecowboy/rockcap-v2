@@ -3670,6 +3670,98 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Spreadsheet extraction, Claude-side (2026-06-01) ─────────
+  // The server hands over the cells; the agent does the extraction. getSheetData
+  // turns a stored xlsx/csv into structured cells so the model can reason out the
+  // figures (GDV/TDC/units/peak debt/LTGDV…) with provenance, then write them back
+  // via saveIntelligence (with templateTags, for re-populating appraisal templates).
+  {
+    name: "document.getSheetData",
+    description:
+      "Read a stored spreadsheet (xlsx/xls/csv) as STRUCTURED CELLS so YOU can extract the figures. Returns `{ sheets: [{ name, rows: [[cell,…]] }] }` (rows capped per sheet — raise maxRows for big models). The workflow for an appraisal/financial spreadsheet: call this → reason out GDV / total development cost / unit schedule / peak debt / LTGDV / profit-on-cost etc. (note the sheet!cell each came from) → persist with `document.saveIntelligence`. Pass a `documentId` (resolves its stored file) or a raw `storageId`. The server only parses cells; it does not interpret them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string", description: "A documents row with a stored file. Resolves its storageId + fileName." },
+        storageId: { type: "string", description: "Alternatively, a raw Convex storageId (e.g. straight from document.requestUpload)." },
+        fileName: { type: "string", description: "Helps detect csv vs xlsx. Auto-filled when documentId is given." },
+        maxRows: { type: "number", description: "Rows per sheet cap (default 250). Raise for large appraisal models." },
+      },
+      required: [],
+    },
+    handler: async (ctx, _userId, args) => {
+      let storageId: string | undefined = args.storageId;
+      let fileName: string | undefined = args.fileName;
+      if (!storageId && args.documentId) {
+        const d: any = await ctx.runQuery(api.documents.get, { id: args.documentId });
+        if (!d) return asText({ error: "document_not_found", documentId: args.documentId });
+        storageId = d.fileStorageId;
+        fileName = fileName ?? d.fileName;
+      }
+      if (!storageId) {
+        return asText({ error: "no_storage", note: "Pass a documentId (with a stored file) or a storageId." });
+      }
+      const fileUrl = await ctx.runQuery(api.documents.getFileUrl, { storageId });
+      if (!fileUrl) return asText({ error: "storage_not_found", note: "No file at that storageId." });
+
+      const rawAppUrl = process.env.NEXT_APP_URL;
+      if (!rawAppUrl) return asText({ error: "next_app_url_not_set", note: "Server missing NEXT_APP_URL; cannot reach the sheet parser." });
+      const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
+      const res = await fetch(`${appUrl}/api/sheet-data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl, fileName, maxRows: args.maxRows }),
+      });
+      if (!res.ok) {
+        return asText({ error: "sheet_data_failed", status: res.status, note: (await res.text()).slice(0, 300) });
+      }
+      return asText(await res.json());
+    },
+  },
+  {
+    name: "document.saveIntelligence",
+    description:
+      "Write structured extracted fields onto a document AND into the knowledge library — how you persist appraisal figures after extracting them from document.getSheetData. Each field: `{ fieldPath (e.g. 'financials.grossDevelopmentValue'), label, value, valueType ('number'|'string'|'date'|…), confidence (0-1), scope ('project'|'client'|'document'), isCanonical, category (e.g. 'Appraisals'), templateTags? (tag figures so they can re-populate appraisal templates), sourceText? (the sheet!cell or range it came from) }`. Pass `projectId` / `clientId` so project/client-scoped facts land on the right entity (defaults to the document's own links). Supersedes prior facts at the same fieldPath from this document.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+        projectId: { type: "string", description: "Scope target for project-level facts. Defaults to the document's projectId." },
+        clientId: { type: "string", description: "Scope target for client-level facts. Defaults to the document's clientId." },
+        fields: {
+          type: "array",
+          description: "The extracted fields to persist.",
+          items: {
+            type: "object",
+            properties: {
+              fieldPath: { type: "string", description: "e.g. 'financials.grossDevelopmentValue', 'financials.totalDevelopmentCost', 'financials.peakDebt'." },
+              label: { type: "string", description: "Human label, e.g. 'Gross Development Value'." },
+              value: { description: "The value (number for figures)." },
+              valueType: { type: "string", description: "number / string / date / currency / percent." },
+              confidence: { type: "number", description: "0-1." },
+              scope: { type: "string", description: "project / client / document." },
+              isCanonical: { type: "boolean", description: "True if this is the authoritative value for the fieldPath." },
+              category: { type: "string", description: "e.g. 'Appraisals'." },
+              templateTags: { type: "array", items: { type: "string" }, description: "Tags for template re-population." },
+              sourceText: { type: "string", description: "Provenance — the sheet!cell or range, e.g. 'Appraisal!B12'." },
+            },
+            required: ["fieldPath", "label", "value", "valueType", "confidence", "scope", "isCanonical", "category"],
+          },
+        },
+      },
+      required: ["documentId", "fields"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.documents.saveDocumentIntelligence, {
+        documentId: args.documentId,
+        fields: args.fields,
+        clientId: args.clientId,
+        projectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
+
   // ── Last CLI-fallback removers (2026-06-01) ──────────────────
   {
     name: "bulkUpload.getBatchItems",

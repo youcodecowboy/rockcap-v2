@@ -1,6 +1,6 @@
 {
   "generatedFrom": "model-testing-app/convex/mcp.ts (seed); refreshed live via meta.listTools",
-  "toolCount": 120,
+  "toolCount": 122,
   "domainCount": 23,
   "domains": [
     "apollo",
@@ -319,6 +319,11 @@
       "description": "Get full document metadata by id (summary, reasoning, confidence, fileStorageId for download via storage URL, classification details). Use when document.listByClient returns an id you want to drill into."
     },
     {
+      "name": "document.getSheetData",
+      "domain": "document",
+      "description": "Read a stored spreadsheet (xlsx/xls/csv) as STRUCTURED CELLS so YOU can extract the figures. Returns `{ sheets: [{ name, rows: [[cell,…]] }] }` (rows capped per sheet — raise maxRows for big models). The workflow for an appraisal/financial spreadsheet: call this → reason out GDV / total development cost / unit schedule / peak debt / LTGDV / profit-on-cost etc. (note the sheet!cell each came from) → persist with `document.saveIntelligence`. Pass a `documentId` (resolves its stored file) or a raw `storageId`. The server only parses cells; it does not interpret them."
+    },
+    {
       "name": "document.linkToProject",
       "domain": "document",
       "description": "Link an existing document to a project. Patches the document's projectId + projectName + sets isBaseDocument=false. Pass projectId=null to unlink (moves back to Base Documents). Operator-driven: 'this Red Book Val is for Comberton, not Bayfield Base'."
@@ -337,6 +342,11 @@
       "name": "document.requestUpload",
       "domain": "document",
       "description": "Step 1 of ingesting a document via MCP. Returns a short-lived, pre-signed Convex storage upload URL. Claude Code then uploads the raw bytes directly: `curl -X POST '<uploadUrl>' -H 'Content-Type: <mime>' --data-binary @<localfile>` — the response JSON is `{ storageId }`. Pass that storageId to `document.analyze` (step 2). The bytes go straight to Convex storage and never pass through the model context, so large PDFs/xlsx are fine. No extra credentials: the signed URL carries its own authorization."
+    },
+    {
+      "name": "document.saveIntelligence",
+      "domain": "document",
+      "description": "Write structured extracted fields onto a document AND into the knowledge library — how you persist appraisal figures after extracting them from document.getSheetData. Each field: `{ fieldPath (e.g. 'financials.grossDevelopmentValue'), label, value, valueType ('number'|'string'|'date'|…), confidence (0-1), scope ('project'|'client'|'document'), isCanonical, category (e.g. 'Appraisals'), templateTags? (tag figures so they can re-populate appraisal templates), sourceText? (the sheet!cell or range it came from) }`. Pass `projectId` / `clientId` so project/client-scoped facts land on the right entity (defaults to the document's own links). Supersedes prior facts at the same fieldPath from this document."
     },
     {
       "name": "document.search",
