@@ -163,6 +163,43 @@ export const getInternal = internalQuery({
   },
 });
 
+// ── HTML backfill (one-time): rows ingested before replyBodyHtml capture ──
+// List gmail_push rows missing an HTML body so the backfill action can
+// re-fetch + populate them. Newest first (most useful to fix first).
+export const listMissingHtmlInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_source_received_at", (q) => q.eq("source", "gmail_push"))
+      .order("desc")
+      .take(args.limit ?? 100);
+    return rows
+      .filter((r) => !r.replyBodyHtml)
+      .map((r) => ({
+        _id: r._id,
+        userId: r.userId,
+        externalId: r.externalId,
+        gmailThreadId: r.gmailThreadId,
+      }));
+  },
+});
+
+export const patchBodyHtmlInternal = internalMutation({
+  args: {
+    replyEventId: v.id("replyEvents"),
+    replyBodyHtml: v.optional(v.string()),
+    replyBodyText: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const patch: Record<string, unknown> = {};
+    if (args.replyBodyHtml !== undefined) patch.replyBodyHtml = args.replyBodyHtml;
+    if (args.replyBodyText !== undefined) patch.replyBodyText = args.replyBodyText;
+    if (Object.keys(patch).length > 0) await ctx.db.patch(args.replyEventId, patch);
+    return { ok: true };
+  },
+});
+
 // ── Public get by id (used by /api/meeting-prep-respond) ─────────────
 // Called from a Next.js route via ConvexHttpClient (no user session).
 // Intentionally public — the route is already protected by

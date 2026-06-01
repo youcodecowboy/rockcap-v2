@@ -321,3 +321,103 @@ export const pollAllInbound = internalAction({
     return { users: users.length, processed };
   },
 });
+
+// ── One-time backfill: populate replyBodyHtml on rows ingested before HTML
+// capture existed. Re-fetches each message's HTML from Gmail (by RFC822
+// Message-ID, or the embedded Gmail id for the gmail-msg: fallback) and
+// patches the row. Idempotent: only touches rows still missing HTML. Run via
+//   npx convex run gmailInbound:backfillHtml '{"limit":80}'
+export const backfillHtml = internalAction({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ scanned: number; fixed: number; failed: number; samples: string[] }> => {
+    const samples: string[] = [];
+    const note = (s: string) => { if (samples.length < 5) samples.push(s); };
+    const rows: any[] = await ctx.runQuery(internal.replyEvents.listMissingHtmlInternal, {
+      limit: args.limit ?? 80,
+    });
+
+    // Per-user access token cache (refresh once per user).
+    const tokenCache = new Map<string, string | null>();
+    async function accessTokenFor(userId: string): Promise<string | null> {
+      if (tokenCache.has(userId)) return tokenCache.get(userId) ?? null;
+      const token: any = await ctx.runQuery(internal.gmailTokens.getForSyncInternal, {
+        userId: userId as any,
+      });
+      if (!token || token.needsReconnect) {
+        tokenCache.set(userId, null);
+        return null;
+      }
+      let accessToken: string = token.accessToken;
+      const expiresMs = new Date(token.expiresAt).getTime();
+      if (Number.isNaN(expiresMs) || Date.now() > expiresMs - 60_000) {
+        try {
+          const refreshed = await refreshAccessToken(token.refreshToken);
+          accessToken = refreshed.access_token;
+          await ctx.runMutation(internal.gmailSend.writeRefreshedToken, {
+            userId: userId as any,
+            accessToken,
+            expiresAt: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+          });
+        } catch {
+          tokenCache.set(userId, null);
+          return null;
+        }
+      }
+      tokenCache.set(userId, accessToken);
+      return accessToken;
+    }
+
+    let fixed = 0;
+    let failed = 0;
+    for (const row of rows) {
+      const accessToken = await accessTokenFor(String(row.userId));
+      if (!accessToken) {
+        note(`no_token user=${row.userId}`);
+        failed++;
+        continue;
+      }
+      try {
+        // Resolve the Gmail message id.
+        let gmailId: string | undefined;
+        if (typeof row.externalId === "string" && row.externalId.startsWith("gmail-msg:")) {
+          gmailId = row.externalId.slice("gmail-msg:".length);
+        } else if (typeof row.externalId === "string") {
+          const rfcId = row.externalId.replace(/^<|>$/g, "");
+          const r = await gmailGet(
+            accessToken,
+            `/messages?q=${encodeURIComponent(`rfc822msgid:${rfcId}`)}`,
+          );
+          if (!r.ok) note(`search_${r.status} id=${rfcId.slice(0, 40)}`);
+          else if (!r.data?.messages?.[0]?.id) note(`search_empty id=${rfcId.slice(0, 40)}`);
+          gmailId = r.ok ? r.data?.messages?.[0]?.id : undefined;
+        }
+        if (!gmailId) {
+          failed++;
+          continue;
+        }
+        const full = await gmailGet(accessToken, `/messages/${gmailId}?format=full`);
+        if (!full.ok) {
+          note(`fetch_${full.status}`);
+          failed++;
+          continue;
+        }
+        const extracted = extractBody(full.data?.payload);
+        if (!extracted.html) {
+          // No HTML part — leave as-is (plain-text path already renders it).
+          continue;
+        }
+        await ctx.runMutation(internal.replyEvents.patchBodyHtmlInternal, {
+          replyEventId: row._id,
+          replyBodyHtml: extracted.html,
+          replyBodyText: extracted.text || undefined,
+        });
+        fixed++;
+      } catch (err) {
+        console.error(`[gmailInbound] backfill failed for ${row._id}:`, err);
+        failed++;
+      }
+    }
+
+    return { scanned: rows.length, fixed, failed, samples };
+  },
+});
