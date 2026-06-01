@@ -174,6 +174,23 @@ export const getUserIdByEmailInternal = internalQuery({
   },
 });
 
+// Clear the needsReconnect flag. Used to recover a token that was flagged
+// because refresh failed for an environmental reason (e.g. GMAIL_CLIENT_ID
+// not set on the deployment) rather than a genuinely revoked refresh token —
+// once the env is fixed, the existing refresh token should work again.
+export const clearNeedsReconnectInternal = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("googleGmailTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+    if (!row) return { ok: false, reason: "no_token" };
+    await ctx.db.patch(row._id, { needsReconnect: false });
+    return { ok: true };
+  },
+});
+
 export const updateHistoryId = internalMutation({
   args: { userId: v.id("users"), historyId: v.string() },
   handler: async (ctx, args) => {
