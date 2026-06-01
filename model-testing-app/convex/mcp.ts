@@ -3327,6 +3327,360 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+
+  // ── Close-the-loop writes (2026-06-01) ──────────────────────
+  // The MCP surface could draft + stage but not ACT. These wrap existing
+  // internal mutations (the execution dispatchers already work server-side),
+  // so a fresh MCP-only operator can actually fire the outbound action and
+  // seed a net-new prospect — no web UI / CLI escape hatch needed.
+  {
+    name: "approval.approve",
+    description:
+      "Approve a pending approval and FIRE its action. This is the trust gate that actually acts — approving a gmail_send approval really sends the email, a document_publish really publishes (the executor runs server-side via the scheduler). Use after the operator has reviewed the staged draft (see approval.listPendingByClient / approval.get). No-op-safe: returns {ok:false, reason:'not_pending_*'} if the row is not pending. Pair with approval.reject to decline.",
+    inputSchema: {
+      type: "object",
+      properties: { approvalId: { type: "string", description: "Convex id of the approvals row to approve." } },
+      required: ["approvalId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.approveInternal, {
+        approvalId: args.approvalId,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.reject",
+    description:
+      "Reject a pending approval so it does NOT fire (the drafted email/doc is discarded). Optionally pass a reason for the audit trail. No-op-safe on non-pending rows. Use when the operator reviews a staged draft and decides against it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalId: { type: "string", description: "Convex id of the approvals row to reject." },
+        reason: { type: "string", description: "Optional reason, recorded on the row." },
+      },
+      required: ["approvalId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.rejectInternal, {
+        approvalId: args.approvalId,
+        reason: args.reason,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.approvePackage",
+    description:
+      "Approve a whole cadence PACKAGE (all touches sharing a packageId) so the dispatcher will fire them. A freshly-created cold-outreach package is queued at packageApprovalStatus='pending' and never fires until approved — this is that gate. Get the packageId from cadence.create's result or cadence.listByPackage. Pair with cadence.denyPackage to discard the sequence.",
+    inputSchema: {
+      type: "object",
+      properties: { packageId: { type: "string", description: "The shared packageId of the cadence touches to approve." } },
+      required: ["packageId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.approvePackageInternal, {
+        packageId: args.packageId,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.denyPackage",
+    description:
+      "Deny a cadence package: marks every touch in the package denied + inactive (cancelledReason='operator_denied_package') so none fire. Use when the operator reviews a staged cold-outreach sequence and decides against running it.",
+    inputSchema: {
+      type: "object",
+      properties: { packageId: { type: "string", description: "The shared packageId of the cadence touches to deny." } },
+      required: ["packageId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.denyPackageInternal, {
+        packageId: args.packageId,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "client.create",
+    description:
+      "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Company name. REQUIRED for mode 3; optional for modes 1/2 (defaults to the source company's name)." },
+        type: { type: "string", description: "Client type: 'borrower' (default) or 'developer'." },
+        status: { type: "string", description: "prospect (default) / active." },
+        promoteFromCompanyId: { type: "string", description: "Mode 1: Convex companies id to promote." },
+        hubspotCompanyId: { type: "string", description: "Mode 2: HubSpot company id; resolved to a Convex company before promoting." },
+        companyName: { type: "string", description: "Optional legal name if different from name." },
+        notes: { type: "string", description: "Optional 1-2 sentence summary." },
+        website: { type: "string" },
+        email: { type: "string" },
+        phone: { type: "string" },
+        country: { type: "string", description: "Default 'United Kingdom'." },
+      },
+      required: [],
+    },
+    handler: async (ctx, _userId, args) => {
+      const type = args.type ?? "borrower";
+      const status = (args.status ?? "prospect") as any;
+      let convexCompanyId: string | undefined = args.promoteFromCompanyId;
+
+      if (!convexCompanyId && args.hubspotCompanyId) {
+        const companies = await ctx.runQuery(api.companies.listWithHubspotId, {});
+        const match = (companies as any[]).find((c) => c.hubspotCompanyId === args.hubspotCompanyId);
+        if (!match) {
+          return asText({
+            error: "hubspot_company_not_found_in_convex",
+            note: `No companies row with hubspotCompanyId=${args.hubspotCompanyId}. The HubSpot sync may not have run yet, or the id is wrong. Try mode 3 (pass just 'name').`,
+          });
+        }
+        convexCompanyId = match._id;
+      }
+
+      if (convexCompanyId) {
+        const company = await ctx.runQuery(api.companies.get, { id: convexCompanyId });
+        if (!company) {
+          return asText({ error: "company_not_found", note: `companies row ${convexCompanyId} not found.` });
+        }
+        const id = await ctx.runMutation(api.clients.createWithPromotion, {
+          name: args.name ?? (company as any).name,
+          type,
+          status,
+          companyName: args.companyName ?? (company as any).name,
+          website: args.website ?? (company as any).website,
+          phone: args.phone ?? (company as any).phone,
+          address: (company as any).address,
+          city: (company as any).city,
+          country: args.country ?? (company as any).country ?? "United Kingdom",
+          promoteFromCompanyId: convexCompanyId as any,
+        });
+        return asText({
+          status: "promoted",
+          clientId: id,
+          sourceCompanyId: convexCompanyId,
+          sourceCompanyName: (company as any).name,
+          note: "Prospect created by promoting an existing company. Now populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel.",
+        });
+      }
+
+      if (!args.name) {
+        return asText({ error: "name_required_for_mode_3", note: "Naked creation requires `name`. For modes 1/2 pass promoteFromCompanyId or hubspotCompanyId." });
+      }
+      const id = await ctx.runMutation(api.clients.create, {
+        name: args.name,
+        type,
+        status,
+        companyName: args.companyName,
+        notes: args.notes,
+        website: args.website,
+        email: args.email,
+        phone: args.phone,
+        country: args.country ?? "United Kingdom",
+        source: "manual" as const,
+      });
+      return asText({
+        status: "created",
+        clientId: id,
+        note: "Prospect created via naked path (no HubSpot link). Now populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel.",
+      });
+    },
+  },
+
+  // ── Document ingestion (2026-06-01): drop docs → analyze → filed ──
+  // The inbound half of close-the-loop. Two-step so file bytes never pass
+  // through the model context: (1) requestUpload returns a pre-signed Convex
+  // storage URL the client curls the file to; (2) analyze runs the stored file
+  // through the V4 classifier and files it as a documents row. Mirrors the
+  // server-side pattern in convex/bulkBackgroundProcessor.ts.
+  {
+    name: "document.requestUpload",
+    description:
+      "Step 1 of ingesting a document via MCP. Returns a short-lived, pre-signed Convex storage upload URL. Claude Code then uploads the raw bytes directly: `curl -X POST '<uploadUrl>' -H 'Content-Type: <mime>' --data-binary @<localfile>` — the response JSON is `{ storageId }`. Pass that storageId to `document.analyze` (step 2). The bytes go straight to Convex storage and never pass through the model context, so large PDFs/xlsx are fine. No extra credentials: the signed URL carries its own authorization.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    handler: async (ctx, _userId, _args) => {
+      const uploadUrl = await ctx.runMutation(api.files.generateUploadUrl, {});
+      return asText({
+        uploadUrl,
+        howToUpload: "curl -X POST '<uploadUrl>' -H 'Content-Type: <mime-type>' --data-binary @<local-file-path>",
+        next: "The POST response is JSON { storageId }. Call document.analyze with that storageId + the fileName to classify and file it.",
+      });
+    },
+  },
+  {
+    name: "document.analyze",
+    description:
+      "Step 2 of ingesting a document via MCP (after document.requestUpload + curl upload). Takes the storageId of an uploaded file, runs it through the V4 classifier, and files it as a documents row under the given client/project — AI-assigned category + summary + auto document code. Returns the created documentId + classification. This is the 'drop docs → analyzed → filed' path for MCP-only operators. Requires NEXT_APP_URL on the server (already set for the other Convex→Next fetchers).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        storageId: { type: "string", description: "From the curl upload response (document.requestUpload)." },
+        fileName: { type: "string", description: "Original filename incl. extension, e.g. 'appraisal.pdf'." },
+        fileType: { type: "string", description: "MIME type, e.g. 'application/pdf'. Default 'application/octet-stream'." },
+        fileSize: { type: "number", description: "Optional file size in bytes, for the record." },
+        clientId: { type: "string", description: "Client to file the document under." },
+        projectId: { type: "string", description: "Optional project/deal to file under." },
+      },
+      required: ["storageId", "fileName"],
+    },
+    handler: async (ctx, userId, args) => {
+      // 1. Resolve a fetchable URL for the stored file.
+      const fileUrl = await ctx.runQuery(api.documents.getFileUrl, { storageId: args.storageId });
+      if (!fileUrl) {
+        return asText({ error: "storage_not_found", note: "No file at that storageId. Re-upload via document.requestUpload." });
+      }
+
+      // 2. Gather light client/project context for classification + filing.
+      let clientName: string | undefined;
+      let clientType: string | undefined;
+      let projectName: string | undefined;
+      if (args.clientId) {
+        const c: any = await ctx.runQuery(api.clients.get, { id: args.clientId });
+        clientName = c?.name;
+        clientType = c?.type;
+      }
+      if (args.projectId) {
+        const p: any = await ctx.runQuery(api.projects.get, { id: args.projectId });
+        projectName = p?.name;
+      }
+
+      // 3. Run the V4 classifier (same server-side path as bulkBackgroundProcessor).
+      const rawAppUrl = process.env.NEXT_APP_URL;
+      if (!rawAppUrl) {
+        return asText({ error: "next_app_url_not_set", note: "Server missing NEXT_APP_URL; cannot reach the V4 analyzer." });
+      }
+      const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
+      const fd = new FormData();
+      fd.append("fileUrl_0", fileUrl);
+      fd.append("fileName_0", args.fileName);
+      fd.append("fileType_0", args.fileType ?? "application/octet-stream");
+      fd.append("metadata", JSON.stringify({
+        clientName,
+        clientContext: { clientName, clientType },
+      }));
+      const res = await fetch(`${appUrl}/api/v4-analyze`, { method: "POST", body: fd });
+      if (!res.ok) {
+        return asText({ error: "v4_analyze_failed", status: res.status, note: (await res.text()).slice(0, 500) });
+      }
+      const data: any = await res.json();
+      const doc = data?.documents?.[0];
+      if (!data?.success || !doc) {
+        return asText({ error: "v4_no_classification", raw: data });
+      }
+
+      // 4. Persist as a filed documents row (one-shot, not the bulk-batch flow).
+      const documentId = await ctx.runMutation(api.documents.uploadFileAndCreateDocument, {
+        storageId: args.storageId,
+        fileName: args.fileName,
+        fileSize: args.fileSize ?? 0,
+        fileType: args.fileType ?? "application/octet-stream",
+        summary: doc.summary ?? "",
+        fileTypeDetected: doc.fileType ?? "",
+        category: doc.category ?? "Uncategorized",
+        reasoning: doc.classificationReasoning ?? "",
+        confidence: typeof doc.confidence === "number" ? doc.confidence : 0,
+        tokensUsed: 0,
+        clientId: args.clientId,
+        clientName,
+        projectId: args.projectId,
+        projectName,
+        extractedData: doc.extractedData ?? undefined,
+        uploadedBy: userId,
+      });
+
+      return asText({
+        status: "filed",
+        documentId,
+        category: doc.category,
+        summary: doc.summary,
+        confidence: doc.confidence,
+        suggestedFolder: doc.suggestedFolder,
+        documentCode: doc.generatedDocumentCode,
+        note: "Document classified + filed. Link to a project with document.linkToProject or refine via document.updateClassification if the category is off.",
+      });
+    },
+  },
+
+  // ── Last CLI-fallback removers (2026-06-01) ──────────────────
+  {
+    name: "bulkUpload.getBatchItems",
+    description:
+      "List the items in a bulk-upload batch (the per-file rows + their classification/status). Use when a deal-intake or doc workflow is driven from a `bulkUploadBatchId` — removes the prior `npx convex run` fallback. Returns the bulkUploadItems rows for the batch.",
+    inputSchema: {
+      type: "object",
+      properties: { batchId: { type: "string", description: "Convex id of the bulkUploadBatches row." } },
+      required: ["batchId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.bulkUpload.getBatchItems, { batchId: args.batchId });
+      return asText(result);
+    },
+  },
+  {
+    name: "checklist.initializeForProject",
+    description:
+      "Seed the document checklist for a project from the client-type template. Idempotent — returns a no-op if the project already has a checklist. Note: `project.create` already auto-seeds the checklist, so this is the explicit / re-initialise path (e.g. a legacy project created before auto-seeding). Removes the prior `npx convex run` fallback in deal-intake.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the client." },
+        projectId: { type: "string", description: "Convex id of the project." },
+        clientType: { type: "string", description: "Client type driving the template (e.g. 'borrower', 'developer')." },
+      },
+      required: ["clientId", "projectId", "clientType"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.knowledgeLibrary.initializeChecklistForProject, {
+        clientId: args.clientId,
+        projectId: args.projectId,
+        clientType: args.clientType,
+      });
+      return asText(result);
+    },
+  },
+
+  // ── Meta / introspection ─────────────────────────────────────
+  // Self-describing catalogue. The skills repo lives separately from this app,
+  // so skill-forge calls this at the start of each session to refresh its
+  // `tools-manifest.json` and validate that skills only reference tools that
+  // actually exist. Source of truth IS the TOOLS array below it — zero drift.
+  {
+    name: "meta.listTools",
+    description:
+      "Introspection: return the full catalogue of MCP tools this server exposes — name, domain, description, and inputSchema — as structured JSON. Use this to refresh the skills repo's tools-manifest.json and to validate that a skill only references tools that actually exist. Read-only. Optional `domain` filter (the prefix before the first dot, e.g. 'lender').",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: {
+          type: "string",
+          description: "Optional. Only return tools in this domain (prefix before the first dot).",
+        },
+      },
+    },
+    handler: async (_ctx, _userId, args) => {
+      const all = TOOLS.map((t) => ({
+        name: t.name,
+        domain: t.name.split(".")[0],
+        description: t.description,
+        inputSchema: t.inputSchema,
+      }));
+      const domains = [...new Set(all.map((t) => t.domain))].sort();
+      const tools = (args?.domain ? all.filter((t) => t.domain === args.domain) : all).sort(
+        (a, b) => a.name.localeCompare(b.name),
+      );
+      return asText({
+        toolCount: all.length,
+        domainCount: domains.length,
+        domains,
+        tools,
+      });
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(

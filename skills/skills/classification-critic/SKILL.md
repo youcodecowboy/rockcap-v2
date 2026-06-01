@@ -1,5 +1,7 @@
 # classification-critic
 
+> **⚠ v1 SKELETON — not yet operational.** This skill documents *intended* behaviour for a future version. Some tools it references are **not yet in the MCP surface** (see `../../CATALOGUE.md` → "What's NOT yet MCP-exposed"). If a user triggers this skill: tell them this workflow isn't built yet, do only what the **live** tools (in `tools-manifest.json`) allow, and **never call a tool that isn't in the manifest** — log the rest as gaps via `skillRun.complete`.
+
 Lifts the V3 critic-agent decision logic into a skill (per BL-2.10 / BL-6.5). Reviews document classifications produced by the V4 pipeline, applies RockCap-specific override rules learned from operator corrections, and produces a final confirmed classification.
 
 ## Trigger
@@ -61,7 +63,7 @@ All CONVENTIONS apply. Two that matter most:
 
 ## Tool dependencies
 
-- `document.get`, `document.update` (for the final classification write)
+- `document.get`, `document.updateClassification` (for the final classification write)
 - `documentContent.get` (or the V4 extraction interface for partial content reads)
 - `filingCorrections.getRelevant`
 - `learningEvents.create`

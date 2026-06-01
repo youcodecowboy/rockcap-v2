@@ -1,5 +1,7 @@
 # terms-comparison
 
+> **⚠ v1 SKELETON — not yet operational.** This skill documents *intended* behaviour for a future version. Some tools it references are **not yet in the MCP surface** (see `../../CATALOGUE.md` → "What's NOT yet MCP-exposed"). If a user triggers this skill: tell them this workflow isn't built yet, do only what the **live** tools (in `tools-manifest.json`) allow, and **never call a tool that isn't in the manifest** — log the rest as gaps via `skillRun.complete`.
+
 Step 9 of the deal lifecycle. Multiple lenders have returned indicative terms; this skill normalises them into a common shape, runs sensitivities against the underwriting model, and drafts a recommendation grounded in the numbers.
 
 ## Trigger

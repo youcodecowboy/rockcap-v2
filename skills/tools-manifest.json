@@ -1,0 +1,617 @@
+{
+  "generatedFrom": "model-testing-app/convex/mcp.ts (seed); refreshed live via meta.listTools",
+  "toolCount": 117,
+  "domainCount": 23,
+  "domains": [
+    "apollo",
+    "approval",
+    "bulkUpload",
+    "cadence",
+    "checklist",
+    "client",
+    "clients",
+    "companies",
+    "contact",
+    "document",
+    "intelligence",
+    "lender",
+    "meeting",
+    "meta",
+    "note",
+    "outreach",
+    "project",
+    "prospect",
+    "reply",
+    "skillRun",
+    "structure",
+    "task",
+    "touchpoint"
+  ],
+  "tools": [
+    {
+      "name": "apollo.findEmail",
+      "domain": "apollo",
+      "description": "Find a person's email address via Apollo's people-match API. Pass firstName + lastName + ideally companyName or companyDomain for disambiguation. Returns {ok, found, email, emailStatus, title, linkedinUrl, photoUrl, apolloPersonId, organization}. emailStatus values: 'verified' (safe for outreach), 'unverified' (needs manual confirmation), 'questionable' (do not use), 'unavailable' (Apollo has no email for this person). The cadence engine should refuse to fire on non-verified emails. Cost: 1 Apollo credit per successful reveal. Errors: APOLLO_API_KEY not set, apollo_auth_error, apollo_rate_limit, apollo_http_<status>."
+    },
+    {
+      "name": "approval.approve",
+      "domain": "approval",
+      "description": "Approve a pending approval and FIRE its action. This is the trust gate that actually acts — approving a gmail_send approval really sends the email, a document_publish really publishes (the executor runs server-side via the scheduler). Use after the operator has reviewed the staged draft (see approval.listPendingByClient / approval.get). No-op-safe: returns {ok:false, reason:'not_pending_*'} if the row is not pending. Pair with approval.reject to decline."
+    },
+    {
+      "name": "approval.create",
+      "domain": "approval",
+      "description": "Create a new approval request for human review. Use this when a skill produces output that needs human sign-off before action (drafted email, document, HubSpot write, etc.). The caller MUST set entityType correctly, supply a clear summary, and structure draftPayload per the entity type. Returns approvalId."
+    },
+    {
+      "name": "approval.get",
+      "domain": "approval",
+      "description": "Read an approval row by id (read-only). Closes the v1.1 gap where skills couldn't audit the approval rows they created. Returns the full row including draftPayload + linked entity ids."
+    },
+    {
+      "name": "approval.listByReplyEvent",
+      "domain": "approval",
+      "description": "List approvals (any status) linked to a specific reply event. Typically returns 0 or 1 row — the qualify-and-draft or meeting-prep-respond output. Use to check whether a reply has been drafted for yet."
+    },
+    {
+      "name": "approval.listPendingByClient",
+      "domain": "approval",
+      "description": "List pending approvals for a specific client. Use to check whether qualify-and-draft or any other skill has staged drafts awaiting operator review. Returns the same approval rows as the Overview tab's 'Pending approvals' card. Includes all entity types (client_communication, gmail_send, lender_outreach, etc)."
+    },
+    {
+      "name": "approval.reject",
+      "domain": "approval",
+      "description": "Reject a pending approval so it does NOT fire (the drafted email/doc is discarded). Optionally pass a reason for the audit trail. No-op-safe on non-pending rows. Use when the operator reviews a staged draft and decides against it."
+    },
+    {
+      "name": "bulkUpload.getBatchItems",
+      "domain": "bulkUpload",
+      "description": "List the items in a bulk-upload batch (the per-file rows + their classification/status). Use when a deal-intake or doc workflow is driven from a `bulkUploadBatchId` — removes the prior `npx convex run` fallback. Returns the bulkUploadItems rows for the batch."
+    },
+    {
+      "name": "cadence.approvePackage",
+      "domain": "cadence",
+      "description": "Approve a whole cadence PACKAGE (all touches sharing a packageId) so the dispatcher will fire them. A freshly-created cold-outreach package is queued at packageApprovalStatus='pending' and never fires until approved — this is that gate. Get the packageId from cadence.create's result or cadence.listByPackage. Pair with cadence.denyPackage to discard the sequence."
+    },
+    {
+      "name": "cadence.cancel",
+      "domain": "cadence",
+      "description": "Set a cadence's isActive to false with a reason. Used by operators for manual cancellation. Reply-event-driven cancellation goes through the webhook handler, not this tool."
+    },
+    {
+      "name": "cadence.create",
+      "domain": "cadence",
+      "description": "Queue a cadence row that the dispatcher will fire at nextDueAt. For gauntlet-mode pre-drafted packages (prospect-intel uses this), set packageId + packageOrder + preDraftedTouch together. For recurring cadences (e.g., BDM relationship maintenance), set scheduleConfig.intervalDays and omit preDraftedTouch (v1 ships pre-drafted only; recurring composition lands in v1.1). contactId is OPTIONAL (Phase 3): omit it to create a held 'needs_contact' draft — the touch is composed and reviewable on the board but is forced inactive and the dispatcher will never fire it until a verified contact is attached. With contactId present, the v1.2.4 email guard still applies (refuses contacts with no/bad email)."
+    },
+    {
+      "name": "cadence.denyPackage",
+      "domain": "cadence",
+      "description": "Deny a cadence package: marks every touch in the package denied + inactive (cancelledReason='operator_denied_package') so none fire. Use when the operator reviews a staged cold-outreach sequence and decides against running it."
+    },
+    {
+      "name": "cadence.get",
+      "domain": "cadence",
+      "description": "Get a single cadence row by id. Use when you have a cadence id from prospect.getDeepContext's cadences section and need the full row (preDraftedTouch, scheduleConfig, pauseUntil status, etc)."
+    },
+    {
+      "name": "cadence.listByPackage",
+      "domain": "cadence",
+      "description": "List all cadences in a package (all 4 touches of a prospect-intel package, typically). Useful when operator says 'show me Mccarthy's outreach package' and you want to enumerate touches without going through getDeepContext."
+    },
+    {
+      "name": "cadence.pause",
+      "domain": "cadence",
+      "description": "Soft-pause a single cadence row by setting pauseUntil. The dispatcher checks pauseUntil before firing and skips while it's > now. Default: 14 days. Idempotent — re-running with a later date extends the pause; with an earlier date shortens it. Errors: cadence_not_found, cannot_pause_fired_cadence (Touch already sent)."
+    },
+    {
+      "name": "cadence.requestRevision",
+      "domain": "cadence",
+      "description": "Mark all cadences in a package as revision-requested with an operator note. Skill re-runs use the note as context to produce a new package; the new package's diff is shown to the operator for per-touch accept/reject."
+    },
+    {
+      "name": "cadence.resume",
+      "domain": "cadence",
+      "description": "Clear pauseUntil on a cadence (resume). Optionally also reschedule by passing newNextDueAt. Use after cadence.pause when whatever the operator was waiting for has happened. If you don't pass newNextDueAt, the dispatcher will fire on the next tick if the original nextDueAt is now in the past."
+    },
+    {
+      "name": "cadence.snooze",
+      "domain": "cadence",
+      "description": "Push a cadence's nextDueAt forward by N days. Different from pause: snooze is a HARD reschedule of the next send date; pause leaves nextDueAt alone and just suppresses firing temporarily via pauseUntil. Use snooze when you want a specific delay (e.g., 'they said wait until next week'); use pause when the duration is open-ended. Errors: invalid_byDays (must be 1-365), cannot_snooze_fired_cadence."
+    },
+    {
+      "name": "cadence.update",
+      "domain": "cadence",
+      "description": "Update an existing cadence row's preDraftedTouch content or scheduled nextDueAt. Sets editedByOperator + editedAt audit fields. Revision re-runs respect editedByOperator and skip overwriting unless the operator's revision note specifically calls out the edited touch."
+    },
+    {
+      "name": "checklist.createCustomItem",
+      "domain": "checklist",
+      "description": "Add a custom (non-template) checklist item to a client or project. Use for bespoke requirements like lender-specific PG forms, unusual planning conditions, side letters. Defaults: phaseRequired=indicative_terms, priority=required, status=missing. Order auto-computed as last+1 within the scope."
+    },
+    {
+      "name": "checklist.getByClient",
+      "domain": "checklist",
+      "description": "Get the client-level checklist for a client. Returns the KYC and account-level requirements."
+    },
+    {
+      "name": "checklist.getByProject",
+      "domain": "checklist",
+      "description": "Get the document checklist for a project. Returns all knowledgeChecklistItems with status, priority, isBlocking, rockcapStatus, lenderStatus."
+    },
+    {
+      "name": "checklist.initializeForProject",
+      "domain": "checklist",
+      "description": "Seed the document checklist for a project from the client-type template. Idempotent — returns a no-op if the project already has a checklist. Note: `project.create` already auto-seeds the checklist, so this is the explicit / re-initialise path (e.g. a legacy project created before auto-seeding). Removes the prior `npx convex run` fallback in deal-intake."
+    },
+    {
+      "name": "checklist.linkDocument",
+      "domain": "checklist",
+      "description": "Link a document to a checklist item (knowledgeChecklistItems row). If this is the first document linked, the item's status becomes 'fulfilled' and the doc becomes the primary. If links already exist, the new one is added as non-primary. Idempotent: returns alreadyExists=true if the same doc was already linked. Use when (1) V4 failed to auto-link an obviously-fulfilling doc, OR (2) operator wants to attach a second supporting doc to a requirement (e.g., a revised floorplan alongside the original)."
+    },
+    {
+      "name": "checklist.unlinkDocument",
+      "domain": "checklist",
+      "description": "Remove a document link from a checklist item. If the unlinked doc was the primary AND other links remain, the oldest remaining link is auto-promoted to primary. If no links remain, the item's status reverts to 'missing'. Use when V4 wrongly linked a non-matching doc to a requirement (e.g., a HoTs Comparison wrongly linked to the 'Planning Decision Notice' requirement) and you want to clean up. Pair with document.updateClassification when the doc itself is also miscategorised."
+    },
+    {
+      "name": "checklist.updateStatus",
+      "domain": "checklist",
+      "description": "Flip a checklist item's status (missing / pending_review / fulfilled). Use when a document was received OR when operator decides an item is no longer required (mark fulfilled with a note in evidence document)."
+    },
+    {
+      "name": "client.activate",
+      "domain": "client",
+      "description": "Promote a client from prospect to active. Atomic: (1) patches `clients.status` to 'active', (2) if `prospectState` is set + not terminal, transitions to 'promoted' with audit fields, (3) schedules the HubSpot lifecycleStage push-back. Idempotent: returns ok:true with idempotent:true if client is already active. The natural firing point is the deal-intake skill — after the first meaningful doc batch arrives + a project is created, the client conceptually transitions from 'lead we're chasing' to 'active client we're executing on.' Operators can also fire manually for non-deal-intake activations (e.g., a referred direct-active client that skipped the prospect phase)."
+    },
+    {
+      "name": "client.clearOutreachReady",
+      "domain": "client",
+      "description": "Clear the ready-for-outreach flag on a prospect (the 'unmark' action). Meaningful only pre-draft; once a prospect is drafted, readiness is moot (it has left the pool). Idempotent."
+    },
+    {
+      "name": "client.create",
+      "domain": "client",
+      "description": "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'."
+    },
+    {
+      "name": "client.get",
+      "domain": "client",
+      "description": "Get a single client by id. Returns the full client row including status, type, companyName, and metadata."
+    },
+    {
+      "name": "client.getDeepContext",
+      "domain": "client",
+      "description": "Alias of prospect.getDeepContext. Same query, surfaced under client.* for operator-side clarity when working with active clients. Returns identity + contacts + meetings + touchpoints + deals + projects + pending approvals + clientIntelligence + (when present) the prospect-flavour fields like cadences/replies/intel-run that survived from the prospect phase. The summary.entityFocus field tells you whether this entity is currently in prospect or active-client mode."
+    },
+    {
+      "name": "client.getStats",
+      "domain": "client",
+      "description": "Get aggregate stats for a client: project count, document count, last activity. Useful for at-a-glance health checks."
+    },
+    {
+      "name": "client.list",
+      "domain": "client",
+      "description": "List clients with optional filters. Returns active prospects and clients by default. Use status='prospect' for cold prospects, status='active' for engaged clients, type='lender' or type='borrower' to filter by role."
+    },
+    {
+      "name": "client.listOutreachReady",
+      "domain": "client",
+      "description": "List prospects that are READY FOR OUTREACH but NOT YET DRAFTED (outreachReadyAt is set AND prospectState is still `researched`). This is exactly the pool the outreach-draft skill enumerates when the operator says 'draft all outreach for ready companies'. Drafted prospects drop out automatically (outreach-draft advances them past `researched`), so re-running the batch never double-drafts. Returns whole client rows."
+    },
+    {
+      "name": "client.markOutreachReady",
+      "domain": "client",
+      "description": "Accept a prospect's intel and mark it READY FOR OUTREACH. This is the operator gate between prospect-intel (intel-only) and outreach-draft (drafts the cadence package). Guard: rejects with `no_completed_intel_run` if no completed prospect-intel run exists for the client — you accept intel that exists. Idempotent (re-marking preserves the original accept timestamp). Does NOT draft anything and does NOT change prospectState or HubSpot lifecycle; it only sets outreachReadyAt/outreachReadyBy. Normally the operator clicks the UI accept button; use this tool only when explicitly asked to mark a prospect ready from the agent side."
+    },
+    {
+      "name": "clients.setProspectFacts",
+      "domain": "clients",
+      "description": "Set structured prospect facts on a clients row (companiesHouseNumber, relatedCompaniesHouseNumbers, website, primaryDirectorName, primaryContactId, dealType, dealSizeRange). Called by prospect-intel workflow step 10 to promote facts out of intelMarkdown text into queryable DB columns. The CRM aside / PeopleTab / OverviewTab / prospects table read these directly when present and fall back to regex extraction on intelMarkdown when undefined (legacy data). relatedCompaniesHouseNumbers persists the corporate-group sibling SPVs discovered by the resolve-related-entities sub-skill — it powers the CH-tab group-charges rollup (companies.getGroupCharges). All fields are optional — pass only what you've discovered. Idempotent: re-running overwrites."
+    },
+    {
+      "name": "companies.getGroupCharges",
+      "domain": "companies",
+      "description": "Aggregate the Companies House charge book across a prospect's whole corporate group — the parent (clients.companiesHouseNumber) plus the sibling SPVs on clients.relatedCompaniesHouseNumbers (set by the resolve-related-entities sub-skill). Read-only. A single CH number understates a developer's borrowing because schemes are spread across SPVs; this rolls the group's charges into one view. Returns { companyCount, totalCharges, activeCharges, satisfiedCharges, distinctLenders, lendersByCount: [{name,total,active}] (desc), byCompany: [{companyNumber,companyName,chargesCount,activeCount}], charges: [{companyNumber,companyName,companyStatus?,chargeId,lender,date?,status?,description?}] (newest-first) }. Returns the empty shape (companyCount 0, charges []) when the client has no related numbers. CH numbers not yet synced (no companiesHouseCompanies row) are skipped. Powers the prospect CH-tab group-charges rollup."
+    },
+    {
+      "name": "companies.getLenderTierConflict",
+      "domain": "companies",
+      "description": "Check a prospect's group lenders against RockCap's protected lender tiers. Returns { action: 'park'|'soften'|'none', tier1[], tier2[] }. Tier 1 (favourite lender, e.g. Quantum) means park the prospect (do not pitch cold); Tier 2 (preferred, e.g. Yellow Tree) means soften the hook to broad-brush. Consulted before drafting cold outreach. Source of truth: skills/shared-references/lender-tiers.md."
+    },
+    {
+      "name": "companies.getOfficerAppointments",
+      "domain": "companies",
+      "description": "Fetch an individual's full Companies House appointment list via the CH API. Pass `appointmentsLink` — the stored `links.officer.appointments` path persisted on each companiesHouseOfficers row (e.g. '/officers/{appointment_id}/appointments') — exactly as returned by companies.syncCompaniesHouse. (Or pass a bare `appointmentId`, which is normalised to the canonical path.) Read-only (does NOT persist). For each appointment returns: company_number, company_name, company_status (active/dissolved/...), officer_role, appointed_on, resigned_on, plus the appointed person's name + date_of_birth (echoed per-row for disambiguation when a common name resolves to multiple officers). Also returns a top-level name + date_of_birth and an activeCount split. Used by prospect-intel (via the resolve-related-entities sub-skill) to map the corporate group: a majority PSC/director who controls the prospect usually controls the sibling SPVs too, so their other active appointments reveal likely scheme vehicles vs the trading parent. The heuristic is a strong signal, not proof of ownership. Errors: missing_appointments_link_or_id (neither arg supplied), officer_appointments_not_found (CH 404), or COMPANIES_HOUSE_API_KEY not set (Convex env gap)."
+    },
+    {
+      "name": "companies.getProspectSchemes",
+      "domain": "companies",
+      "description": "Per-scheme view of a prospect's corporate group: one row per charge-bearing SPV, split into live[] and past[] (live = active company with an outstanding charge), each ranked by most-recent charge date. Merges the SPV's charges (lender(s), dates) with any prospectSchemes enrichment (address, what they're building, confidence). Powers the Track Record tab. Args: { clientId }."
+    },
+    {
+      "name": "companies.listUnprocessed",
+      "domain": "companies",
+      "description": "List HubSpot-synced companies that don't have a prospect-intel skillRun yet (or are in NEW/RUNNING/STUCK state). Used by Claude Code to find batch candidates for prospect-intel runs. Default filter: states=['new'], sinceDays=30, limit=25, excludePromoted=true. Returns rows with a per-row 'state' field."
+    },
+    {
+      "name": "companies.mapGroup",
+      "domain": "companies",
+      "description": "One-call group map: returns the prospect group's CH numbers + the distinct directors across them (with each director's appointmentsLink). The starting point for the corporate-structure walk — feed each appointmentsLink to companies.getOfficerAppointments to find scheme SPVs, and search CH by the deal/scheme name. Director != owner: confirm ownership via PSC before crediting a company to the prospect. Read-only; aggregates already-synced rows."
+    },
+    {
+      "name": "companies.searchCompaniesHouse",
+      "domain": "companies",
+      "description": "Search Companies House by company NAME and return ranked matches via the CH search API. Use this FIRST when you have a prospect's name but not its Companies House number — pick the right company_number from the results, then call companies.syncCompaniesHouse({chNumber}) to fetch + persist its data. Read-only (does not persist). Each result has: company_number, title, company_status (active/dissolved/liquidation/...), date_of_creation, address_snippet, and sic_codes when CH returns them on the hit. Returns { ok, query, totalResults, returnedResults, results[] }. Errors: COMPANIES_HOUSE_API_KEY not set (Convex env gap)."
+    },
+    {
+      "name": "companies.syncCompaniesHouse",
+      "domain": "companies",
+      "description": "Fetch a Companies House company by number — profile + charges + officers + PSCs — via the CH API and persist into RockCap's companiesHouseCompanies / Charges / Officers / PSC tables. Each officer row stores its CH links.officer.appointments URL (a join key for cross-company appointment resolution). Idempotent: re-running upserts existing rows on their natural keys. Called by prospect-intel skill workflow step 2 to ensure CH data is present before running lender-DNA analysis. Returns summary counts (chargesCount, officersCount, pscCount). Common errors: company_not_found_on_companies_house (CH returned 404 — verify the number) or COMPANIES_HOUSE_API_KEY not set (Convex env config gap)."
+    },
+    {
+      "name": "companies.upsertProspectScheme",
+      "domain": "companies",
+      "description": "Upsert per-scheme enrichment for a prospect (keyed by clientId + companyNumber). The prospect-intel skill writes draft estimates (operatorConfirmed defaults false); operator edits in the Track Record tab set operatorConfirmed true and are not clobbered by skill re-runs. Pass address, planningRefs, estimatedUnits, schemeType, whatBuilding, gdvEstimate (range string), confidence ('high'|'med'|'low'), status ('live'|'past'), sourceUrls. Surface-only: does not create clients/companies rows."
+    },
+    {
+      "name": "contact.create",
+      "domain": "contact",
+      "description": "Create a new contact row. Use when prospect-intel / qualify-and-draft discovers a person (director, BDM, primary contact) who isn't yet in the system. Pass `name` (required) plus any of role/email/phone/company/notes. Link it by passing clientId, projectId, and/or linkedCompanyIds (Convex companies ids — also back-links the contact onto those companies). Email verification metadata (v1.2.4): when email comes from Apollo, pass emailStatus (e.g. 'verified'/'unverified') + emailSource='apollo'; when manually entered, leave both undefined (the cadence guard treats undefined as operator-entered/presumed-valid). Returns the new contactId — feed it to clients.setProspectFacts({primaryContactId}) or cadence.create({contactId})."
+    },
+    {
+      "name": "contact.get",
+      "domain": "contact",
+      "description": "Get a single contact by id."
+    },
+    {
+      "name": "contact.getByClient",
+      "domain": "contact",
+      "description": "List contacts associated with a specific client."
+    },
+    {
+      "name": "contact.update",
+      "domain": "contact",
+      "description": "Update an existing contact by id. Pass `id` (required) plus any subset of name/role/email/phone/company/notes to patch — omitted fields are left unchanged. To re-link to a different client pass clientId; to unlink from any client pass clientId=null. Common use: persisting an email discovered via apollo.findEmail (contact.update({id, email})) so a subsequent cadence.create passes the email guard."
+    },
+    {
+      "name": "document.analyze",
+      "domain": "document",
+      "description": "Step 2 of ingesting a document via MCP (after document.requestUpload + curl upload). Takes the storageId of an uploaded file, runs it through the V4 classifier, and files it as a documents row under the given client/project — AI-assigned category + summary + auto document code. Returns the created documentId + classification. This is the 'drop docs → analyzed → filed' path for MCP-only operators. Requires NEXT_APP_URL on the server (already set for the other Convex→Next fetchers)."
+    },
+    {
+      "name": "document.createFromGeneration",
+      "domain": "document",
+      "description": "Persist a document that was *generated* by a skill (e.g., lender brief package, IC paper, terms-comparison memo, post-meeting notes) into the documents table. Content lives inline in the `summary` field as markdown / plain text — no file storage required until a separate markdown→PDF/DOCX conversion step runs. The resulting row appears in the standard documents UI (filterable by category, linkable to a project, etc.). For UPLOADS of files (PDFs / spreadsheets), use the normal documents.create flow with file storage. For pre-existing docs that need linking to a project, use document.linkToProject."
+    },
+    {
+      "name": "document.generate",
+      "domain": "document",
+      "description": "Generate a formatted document (PDF + DOCX) from composed HTML and stage it for operator approval; on approval it is filed to the client's Documents library. YOU compose the body as semantic HTML (h1/h2/p/table; NO <html>/<head>/<style> wrappers — house styling is applied automatically). Ground every figure in real data; never fabricate. Use for ad-hoc requests like a company one-pager. See the document-author skill + the document-house-style reference for voice and structure."
+    },
+    {
+      "name": "document.generateBrief",
+      "domain": "document",
+      "description": "Generate a branded RockCap multi-page BRIEF (PDF + DOCX) and stage it for operator approval; on approval it is filed to the client's Documents library. Two layouts: 'lender-brief' sells a borrower's deal TO a lender (track-record depth from Companies House charges); 'client-brief' advises the BORROWER on the indicative lender landscape, leverage scenarios and expected pricing BEFORE going to market. YOU compose the structured briefData (title, key facts, numbered sections whose bodies are semantic HTML, sign-off), grounded in real data — read the deal's documents + intel first; never fabricate. Section bodyHtml is semantic HTML only (no <html>/<head>/<style> wrappers; <table> with class=\"num\" on numeric cells, class=\"caption\" for source/footnote lines). Follow the doc-type-lender-brief / doc-type-client-brief references for the section set."
+    },
+    {
+      "name": "document.generateComps",
+      "domain": "document",
+      "description": "Generate a RockCap 'Appendix A — Master Comparable Schedule' (comps) as a spreadsheet (XLSX, default) or Word table (DOCX), and stage it for operator approval; on approval it is filed to the client's Documents library. A comps appendix is the comparable-evidence table attached to a lender credit pack / client brief that justifies a scheme's GDV pricing. YOU compose the structured compsData: one or more sheets (tabs), each with configurable columns and tier/section groups of comparable rows (address, scheme, date, price, sqft, £psf, type, beds, notes, evidence). Set column roles ('price','sqft','psf') and leave £psf blank to auto-compute it (price ÷ sqft); a tier can carry an auto-average row. Ground every comp in real evidence (Land Registry / agent listings); never fabricate prices or sqft. See the doc-type-comps-appendix reference for structure."
+    },
+    {
+      "name": "document.get",
+      "domain": "document",
+      "description": "Get full document metadata by id (summary, reasoning, confidence, fileStorageId for download via storage URL, classification details). Use when document.listByClient returns an id you want to drill into."
+    },
+    {
+      "name": "document.linkToProject",
+      "domain": "document",
+      "description": "Link an existing document to a project. Patches the document's projectId + projectName + sets isBaseDocument=false. Pass projectId=null to unlink (moves back to Base Documents). Operator-driven: 'this Red Book Val is for Comberton, not Bayfield Base'."
+    },
+    {
+      "name": "document.listByClient",
+      "domain": "document",
+      "description": "List all documents linked to a client. Includes Base Documents (not project-specific) AND any project-linked docs for that client's projects. Each row carries fileName + fileTypeDetected (AI-classified) + category + uploadedAt + summary + projectId/Name if linked."
+    },
+    {
+      "name": "document.listByProject",
+      "domain": "document",
+      "description": "List documents linked to a specific project. Use after prospect.getDeepContext.projects.active reveals a project id and you want the document list for that specific scheme."
+    },
+    {
+      "name": "document.requestUpload",
+      "domain": "document",
+      "description": "Step 1 of ingesting a document via MCP. Returns a short-lived, pre-signed Convex storage upload URL. Claude Code then uploads the raw bytes directly: `curl -X POST '<uploadUrl>' -H 'Content-Type: <mime>' --data-binary @<localfile>` — the response JSON is `{ storageId }`. Pass that storageId to `document.analyze` (step 2). The bytes go straight to Convex storage and never pass through the model context, so large PDFs/xlsx are fine. No extra credentials: the signed URL carries its own authorization."
+    },
+    {
+      "name": "document.search",
+      "domain": "document",
+      "description": "Search documents by query string. Returns documents whose fileName, summary, or fileTypeDetected match. Use for 'find Mccarthy's red book valuation' style queries."
+    },
+    {
+      "name": "document.updateClassification",
+      "domain": "document",
+      "description": "Patch a document's classification fields (category, fileTypeDetected, summary, reasoning) — for correcting V4 ingestion classifier mistakes. Use when you've identified that a document is in the wrong category (e.g., an email auto-classified as 'Scheme Brief' should be 'Communications'). Does NOT change the file itself, only its metadata. Common cases: (1) V4 mis-categorised a doc, (2) the operator wants to add a more specific fileTypeDetected (e.g., 'Personal Guarantee' instead of generic 'Legal Document'), (3) the summary or reasoning is wrong and worth re-stating. Each field is optional; pass only what you want to change. Does not re-run V4 — strictly a metadata patch."
+    },
+    {
+      "name": "intelligence.addKnowledgeItem",
+      "domain": "intelligence",
+      "description": "Add a single canonical or non-canonical fact to a client's or project's intelligence library. Used by skills (qualify-and-draft, meeting-capture, deal-intake) to promote facts discovered in a reply / meeting transcript / document into the structured intelligence layer that the deep-context tools read from. Supersedes any prior active item with the same (clientId|projectId, fieldPath, qualifier) tuple — the prior item is marked status='superseded' and the new one becomes active. fieldPath examples: 'borrower.experienceYears', 'project.gdv', 'project.peakDebt', 'lender.appetiteMaxLtv'. valueType controls how the UI renders the value. sourceType='ai_extraction' for skill-derived facts; 'manual' for operator-entered; 'document' for extracted from an uploaded doc (then set sourceDocumentId)."
+    },
+    {
+      "name": "intelligence.appendContext",
+      "domain": "intelligence",
+      "description": "Append a dated, operator-attributed markdown block to a client's OR a deal's running context reference (clientIntelligence.contextMarkdown / projectIntelligence.contextMarkdown). This is the home for OPERATOR-STATED primary knowledge — what the operator learned in a meeting/call or just knows — as opposed to document- or web-derived intel. The block is prepended (reverse-chronological) and the row is created if absent. Supply EXACTLY ONE of clientId / projectId (client-wide facts → clientId; deal-specific facts → projectId). Single responsibility: it writes only contextMarkdown; it does NOT touch the activity feed or the legacy recentUpdates field. Compose the block with a dated header line (e.g. '## 2026-05-31 — operator capture (Name)'), a '**Source:**' line, then the prose/bullets; mark unconfirmed items '(unconfirmed)'. For discrete supersedable facts, ALSO call intelligence.addKnowledgeItem with sourceType='manual'."
+    },
+    {
+      "name": "intelligence.getClientIntelligence",
+      "domain": "intelligence",
+      "description": "Get structured intelligence for a client: identity, key people, lender profile, borrower profile, evidence trail. Returns the canonical singleton."
+    },
+    {
+      "name": "intelligence.getKnowledgeItemsByClient",
+      "domain": "intelligence",
+      "description": "Read back the structured knowledge items (facts) stored for a client — the AI-extracted (prospect-intel: lender DNA, classification, related entities) plus operator-entered facts that intelligence.addKnowledgeItem writes. Returns active items by default, sorted by category then fieldPath. Use this to read a client's captured facts without re-parsing the intel report's intelMarkdown (prospect.getDeepContext also now returns these under `knowledgeItems`). Optional category filter ('borrower'|'lender'|'project'|'financials'|'security'|'kyc'|'other') and status filter."
+    },
+    {
+      "name": "intelligence.getProjectIntelligence",
+      "domain": "intelligence",
+      "description": "Get structured intelligence for a project: overview, location, financials, timeline, development, key parties."
+    },
+    {
+      "name": "intelligence.searchLenders",
+      "domain": "intelligence",
+      "description": "Search the lender database against a deal profile. Useful for producing a lender shortlist. All filters are optional."
+    },
+    {
+      "name": "intelligence.updateClientIntelligence",
+      "domain": "intelligence",
+      "description": "Enrich the structured clientIntelligence DOC for a client (partial merge — pass only the fields you have; objects merge, arrays/primitives replace; the row is created if absent). This is the canonical structured intelligence layer the deep-context tools read. prospect-intel calls this (Output #2) to promote identity + key people + a summary off the report into queryable fields: pass `identity` (legalName/tradingName/companyNumber/incorporationDate), `keyPeople` (one entry per key person, isDecisionMaker for the primary), `borrowerProfile` (experienceLevel/completedProjects/totalDevelopmentValue where derivable), and `aiSummary` (executiveSummary = the brief, keyFacts = bullet list incl. the lender-DNA one-liner). For discrete supersedable facts (e.g. a single GDV figure) prefer intelligence.addKnowledgeItem. `lenderProfile` here describes a client that IS a lender, not a borrower's lender DNA — leave it unset for borrowers."
+    },
+    {
+      "name": "lender.create",
+      "domain": "lender",
+      "description": "Create a new lender record (a clients row with type='lender'). Three input modes (in priority order): (1) Pass `promoteFromCompanyId` (Convex id) to promote an existing companies-table row into a lender — auto-inherits name/website/etc. + marks the company as promoted + links any HubSpot-synced contacts to the new lender. (2) Pass `hubspotCompanyId` (string) when you only know the HubSpot id (e.g., reading off a contact's `hubspotCompanyIds[0]`) — skill resolves to Convex companies row + promotes. (3) Pass just `name` for naked creation — escape hatch for genuine net-new lenders never seen in HubSpot. After create, call `lender.recordAppetite` repeatedly + `lender.setSubmissionRequirements` to populate substrate. Common patterns: (A) after BDM meeting on a known HubSpot lender → mode 2 + `lender.recordAppetite × N`; (B) lender with rich HubSpot doc evidence → mode 1; (C) cold-add a new lender you're starting to track → mode 3."
+    },
+    {
+      "name": "lender.getAppetite",
+      "domain": "lender",
+      "description": "Get current appetite for a lender as a fieldPath→value map. Returns only isCurrent=true signals. Use after lender.getDeepContext if you only need appetite (cheaper) OR when filtering by specific fields. Pass asMap=true (default) for the convenient map shape; asMap=false returns the raw array of signal rows including sourceType + asOfDate + confidence."
+    },
+    {
+      "name": "lender.getAppetiteHistory",
+      "domain": "lender",
+      "description": "Get full appetite history for a lender (current + superseded signals, newest first). Use to answer 'how has Octopus's max LTV changed over time?' or to audit signal sources. Optionally filter to one fieldPath for a single-dimension timeline."
+    },
+    {
+      "name": "lender.getDeepContext",
+      "domain": "lender",
+      "description": "Comprehensive snapshot of a lender: identity + current appetite (all isCurrent=true signals as a fieldPath→value map) + recent appetite changes (last 90 days) + BDM contacts + projects where they appear in clientRoles + meetings (upcoming + past) + cadences (relationship maintenance) + pending approvals (lender-bound outreach). The summary block surfaces 'currentAppetiteFieldCount' so operator-agent knows how complete the appetite picture is. THE first tool to call when operator asks about a specific lender."
+    },
+    {
+      "name": "lender.getSubmissionRequirements",
+      "domain": "lender",
+      "description": "Fetch the most recent Submission Requirements doc for a lender. Returns the doc's full content (markdown), or {found:false} if the lender has no Submission Requirements yet. Used by terms-package-build to tailor each pack; used by lender-intel to read prior preferences before a BDM call. When multiple versions exist (because operator has updated over time), returns the most recently created."
+    },
+    {
+      "name": "lender.list",
+      "domain": "lender",
+      "description": "List all lenders in the database (clients with type='lender'). Optionally filter by name substring. Use for 'show me all our lenders' or 'find the Octopus entry' type questions."
+    },
+    {
+      "name": "lender.matchForDeal",
+      "domain": "lender",
+      "description": "THE headline matching tool. Given a deal's criteria (dealSize, dealType, assetClass, geography, ltv, ltgdv, timelineWeeks — all optional), returns a RANKED list of lenders with per-lender matchScore + matchReasons + fitConcerns + currentSignalsCount. Scoring: each matching dimension contributes +2 to +4 to score; each incompatible dimension subtracts -2 to -5. Lenders with zero appetite signals get score=0 + a note (uninformed match). Use right after prospect-intel produces its Recommended Approach section to compose 'Optimal lenders for this £X bridging deal: A (score 12 — reasons), B (score 9 — reasons)' answers."
+    },
+    {
+      "name": "lender.recordAppetite",
+      "domain": "lender",
+      "description": "Record a new appetite signal for a lender. Each signal is (fieldPath, value, valueType, sourceType, asOfDate, confidence). Writing a new value for an existing (lender, fieldPath) automatically supersedes the prior — sets prior.isCurrent=false + supersededBy=<new id>, marks new.isCurrent=true. Standard fieldPaths (use these for matching to work): dealSize.min, dealSize.max, products.offered (array of LENDER product codes — bridging/development_finance/term/btl/mezzanine/commercial/land; this is the lender-side vocabulary, distinct from prospect deal-type codes, which lender.matchForDeal auto-maps onto it), propertyType.allowed (array: residential/commercial/mixed_use), geography.regions (array including 'uk_wide'), ltv.maximum (0-1), ltgdv.maximum (0-1), timeline.typicalWeeksToOffer (number). Custom fieldPaths are fine but won't contribute to matching scores unless lender.matchForDeal is extended to handle them."
+    },
+    {
+      "name": "lender.setSubmissionRequirements",
+      "domain": "lender",
+      "description": "Set / update the Submission Requirements doc for a lender. Wraps document.createFromGeneration with the standard shape locked in: clientId=lender, fileTypeDetected='Submission Requirements', category='Lender outreach', isBaseDocument=true. Creates a NEW doc version each call (supersession via getSubmissionRequirements returning the most recent). Use after a BDM call when you've learned new lender preferences, OR initially when seeding a lender from HoTs evidence + operator domain knowledge. Always follow the canonical structure in shared-references/lender-submission-requirements-canon.md (8 sections: Identity, Submission preferences, Content emphasis, Credit committee, Appetite envelope, Submission history, Past wins/losses, Provenance). Sections you can't populate should be present with 'Not yet captured' placeholders, not omitted."
+    },
+    {
+      "name": "meeting.create",
+      "domain": "meeting",
+      "description": "Create a meeting record. Used by meeting-prep skill after operator approves a proposed time, and by meeting-capture skill when persisting captured notes. For a JUST-SCHEDULED meeting (no notes yet), pass title + meetingDate + attendees + meetingType only; leave summary='' / keyPoints=[] / decisions=[] / actionItems=[] empty — they get populated by meeting-capture post-meeting."
+    },
+    {
+      "name": "meeting.get",
+      "domain": "meeting",
+      "description": "Get one meeting by id with full content (attendees, decisions, action items, summary). Use after meeting.listByClient / listUpcoming has returned an id and you need the full payload."
+    },
+    {
+      "name": "meeting.getByClient",
+      "domain": "meeting",
+      "description": "Get meetings linked to a client across all projects."
+    },
+    {
+      "name": "meeting.getByProject",
+      "domain": "meeting",
+      "description": "Get meetings linked to a project, most recent first."
+    },
+    {
+      "name": "meeting.listUpcoming",
+      "domain": "meeting",
+      "description": "List upcoming meetings across all clients, soonest first. The operator's 'what calls do I have' surface — populates the UpcomingMeetingsSection on the /prospects home page AND Claude Code's morning-queue surveys. Filters to meetings whose meetingDate is in the future."
+    },
+    {
+      "name": "meeting.update",
+      "domain": "meeting",
+      "description": "Update an existing meeting record with captured content (summary, keyPoints, decisions, actionItems, attendees). Used by meeting-capture skill after parsing a Fireflies transcript or operator-pasted notes — the meeting record was created via meeting.create at scheduling time; this fills in the post-call content."
+    },
+    {
+      "name": "meta.listTools",
+      "domain": "meta",
+      "description": "Introspection: return the full catalogue of MCP tools this server exposes — name, domain, description, and inputSchema — as structured JSON. Use this to refresh the skills repo's tools-manifest.json and to validate that a skill only references tools that actually exist. Read-only. Optional `domain` filter (the prefix before the first dot, e.g. 'lender')."
+    },
+    {
+      "name": "note.create",
+      "domain": "note",
+      "description": "Create a freeform NOTE on a client or project (a separate lane from intelligence — use for a reminder, a to-do, a draft-this prompt, an unstructured jotting; use intelligence.appendContext / addKnowledgeItem for actual entity knowledge). Author in markdown (headings/bullets/quotes supported); it is converted to the notes editor's format. Pass clientId OR projectId to file it (filed notes are shared); pass neither to leave it unfiled under the calling operator. Returns the noteId."
+    },
+    {
+      "name": "note.listByClient",
+      "domain": "note",
+      "description": "List the notes filed under a client. Use to read existing notes before adding (avoid duplicates)."
+    },
+    {
+      "name": "note.listByProject",
+      "domain": "note",
+      "description": "List the notes filed under a project/deal."
+    },
+    {
+      "name": "note.update",
+      "domain": "note",
+      "description": "Update an existing note's title, body (markdown), and/or tags. Pass only the fields you want to change; markdown replaces the whole body."
+    },
+    {
+      "name": "outreach.draftFreshEmail",
+      "domain": "outreach",
+      "description": "Stage a NEW outreach email as a pending approval (distinct from outreach.draftReply which threads onto a reply event). Use when operator initiates a fresh email outside the cadence package + outside a reply. Examples: 'send Mccarthy an email asking for the appraisal', 'follow up with Bayfield on Comberton planning status'. The approval appears on the Overview Pending Approvals card + in /approvals."
+    },
+    {
+      "name": "outreach.draftReply",
+      "domain": "outreach",
+      "description": "Stage a drafted email reply as a pending approval. Use this from qualify-and-draft (or any draft-an-email skill) to surface the draft to the operator for review BEFORE it sends. The approval will appear on the prospect-detail Overview's 'Pending approvals' card AND in /approvals. Once approved, the existing approval-execution path triggers the actual send (Gmail or whichever provider is wired). Required: contactId + clientId (so the draft surfaces in both contact-scoped and client-scoped views) + subject + bodyText + bodyHtml. Optional: replyToReplyEventId (when drafting in response to a tracked inbound reply — links the approval back to the reply for cross-navigation) + skillRunId (audit linkage) + reasoning (1-2 sentence summary of why the draft says what it says, for the operator's quick-review)."
+    },
+    {
+      "name": "outreach.draftToLender",
+      "domain": "outreach",
+      "description": "Stage a lender-bound email as a pending approval with entityType=lender_outreach (vs client_communication for borrower-bound). Use when sending indicative terms requests, follow-ups to lender BDMs, or term sheet acceptance / rejection notifications. The approvals UI applies any lender-specific gates (e.g., terms package signed off) before allowing send."
+    },
+    {
+      "name": "project.addLenderRole",
+      "domain": "project",
+      "description": "Idempotently add a lender (clients row with type='lender') to a project's clientRoles array. Used by the terms-package-build workflow after lender.matchForDeal picks a shortlist — each chosen lender is attached to the project here before outreach.draftToLender stages an approval per lender. Refuses non-lender clients with error='not_a_lender' (use projects.update directly for borrower/developer/professional roles). If the lender + role pair is already present, returns ok:true with idempotent:true."
+    },
+    {
+      "name": "project.create",
+      "domain": "project",
+      "description": "Create a new project (a deal record). Auto-generates a 10-char shortcode if not provided; uniqueness checked. Auto-seeds folder structure based on the primary client's type (borrower / lender / developer). Default status is 'active'. The natural firing point is the deal-intake skill — after detecting the deal type + phase, the skill creates the project as the substrate the docs will be filed against. Returns the new projectId. Errors: shortcode_in_use (operator-provided shortcode collides) — auto-generation avoids this by appending a counter."
+    },
+    {
+      "name": "project.get",
+      "domain": "project",
+      "description": "Get a single project by id. Returns the full row including dealPhase, status, address, and metadata."
+    },
+    {
+      "name": "project.getByClient",
+      "domain": "project",
+      "description": "List projects belonging to a specific client."
+    },
+    {
+      "name": "project.getDeepContext",
+      "domain": "project",
+      "description": "Returns a comprehensive snapshot of a project (scheme / deal): the project row, projectIntelligence, linked clients via clientRoles (with role labels), project-scoped meetings (upcoming + past), documents, checklist split by status (missing/pending_review/fulfilled), cadences, skillRuns, deals, touchpoints, and pending approvals. The summary block includes counts so the operator-agent can compose an answer in one round-trip. Use this FIRST when an operator asks about a specific project (vs prospect.getDeepContext for client-level questions)."
+    },
+    {
+      "name": "project.getStats",
+      "domain": "project",
+      "description": "Get aggregate stats for a project: document count, checklist progress, model run count."
+    },
+    {
+      "name": "project.list",
+      "domain": "project",
+      "description": "List projects with optional client and status filters. Each project represents one transaction attempt. Use this when looking for active deals."
+    },
+    {
+      "name": "project.listByClient",
+      "domain": "project",
+      "description": "List all projects where a client appears in any clientRoles entry (borrower / lender / developer / etc.). Use to enumerate projects for a client when client.getDeepContext returned project counts and you want the full project list."
+    },
+    {
+      "name": "prospect.getDeepContext",
+      "domain": "prospect",
+      "description": "Returns a comprehensive snapshot of any clients-table entity (prospect or active client). For prospects: contacts, cadences (active/fired/queued split), reply events (newest first), latest prospect-intel skillRun, CH profile + charges. For active clients: deals (active/all), projects (active/all), pending approvals. Always returns: identity, contacts, recent meetings (upcoming + past), touchpoints, clientIntelligence row. The `summary` block has an `entityFocus` field ('prospect' or 'active_client') so Claude Code knows which section counts matter most. Use this as the FIRST tool call when an operator asks about a specific entity. Subsequent narrower tool calls (reply.get, cadence.update, etc.) operate on data already in scope from the deep context return. v1.3 update: works for both prospects AND active clients with adaptive summary."
+    },
+    {
+      "name": "prospect.transitionState",
+      "domain": "prospect",
+      "description": "Transition a prospect through the 9-state pipeline (researched/drafted/needs_revision/active/replied/engaged/promoted/parked/lost). Called by the prospects CRM and by skill workflows (e.g., reply event processor on intent classification). Side effect: pushes the mapped lifecycleStage + hs_lead_status to HubSpot (see spec section 2.8)."
+    },
+    {
+      "name": "reply.get",
+      "domain": "reply",
+      "description": "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply."
+    },
+    {
+      "name": "reply.ingestManual",
+      "domain": "reply",
+      "description": "Operator pasted a reply they received via a channel that doesn't auto-sync (WhatsApp, text, forwarded email). Routes through the SAME flow as automated ingest: cancels active cadences for the matched contact, runs the intent classifier, dispatches to a downstream skill (or operator_review). Returns the same {status, replyEventId} shape as ingestFromGmailPush / ingestFromHubspot. Also useful for testing the reply-handling backbone before the Gmail Pub/Sub topic is provisioned. Errors: no_contact_match (the contactEmail doesn't resolve to any RockCap contact) — the reply event is still created but no cadence cancellation or dispatch happens."
+    },
+    {
+      "name": "reply.listByClient",
+      "domain": "reply",
+      "description": "List reply events linked to a specific clients row (newest first). Use this to see what inbound replies a prospect has sent. Each row carries the classified intent + confidence + dispatch destination. The body text is in replyBodyText when persisted."
+    },
+    {
+      "name": "reply.listUnrouted",
+      "domain": "reply",
+      "description": "List reply events where the classifier dispatched to 'operator_review' (didn't auto-route to a downstream skill). This is the operator's morning triage queue — replies that need a human decision before action. Each row carries the classified intent + evidence so the operator can see why the classifier flagged it."
+    },
+    {
+      "name": "skillRun.complete",
+      "domain": "skillRun",
+      "description": "Close a skill execution. Sets status (complete / complete_with_gaps / failed / cancelled), persists the narrative brief, records linked entities and the structured gaps + errors arrays. Sets completedAt and computes durationMs. Validates that the runId belongs to the calling user."
+    },
+    {
+      "name": "skillRun.start",
+      "domain": "skillRun",
+      "description": "Begin a skill execution. Creates a skillRuns row, returns runId. If dedupKey + dedupWindowDays are provided and a prior complete/complete_with_gaps run exists within the window for the same skill+dedupKey, returns status=duplicate_found with the prior run summary so the caller can surface it to the operator before continuing."
+    },
+    {
+      "name": "structure.renderChart",
+      "domain": "structure",
+      "description": "Render a corporate StructureGraph to a styled SVG (ownership-only layout) + a data:image/svg+xml URI + the high/med/low verdict. Pass { graph } (shape per src/lib/structure/types.ts). Use after building the graph in the corporate-structure skill: embed the returned dataUri in intelMarkdown and inline the svg in a lender brief's Corporate Structure section. Read-only (does not persist)."
+    },
+    {
+      "name": "task.complete",
+      "domain": "task",
+      "description": "Mark a task as completed. Notifies stakeholders and logs the completion to any open flag thread on the task. Only the creator or an assignee may complete it. Prefer this over `task.update` with status='completed' so the completion side-effects fire."
+    },
+    {
+      "name": "task.create",
+      "domain": "task",
+      "description": "Create an operator-facing task. Used by skills to surface follow-up work (e.g., meeting-capture creating 'Schedule follow-up call' or 'Send signed NDA'; qualify-and-draft creating 'Manual review of low-confidence reply'; deal-intake creating 'Request missing KYC items'). Tasks land in the operator's task inbox + appear on the linked client / project page. Defaults: status='todo', priority='medium', assignedTo=[calling operator]. Use `assignedTo` to route to a specific teammate."
+    },
+    {
+      "name": "task.delete",
+      "domain": "task",
+      "description": "Permanently delete a task. Only the task creator may delete it; stakeholders are notified before removal. Irreversible — to keep an audit trail, prefer setting status to 'cancelled' via `task.update` instead."
+    },
+    {
+      "name": "task.get",
+      "domain": "task",
+      "description": "Fetch a single task by id. Returns the full task row (title, status, priority, dueDate, assignees, linked client/project, tags, notes) or null if it doesn't exist or the calling operator isn't the creator/assignee."
+    },
+    {
+      "name": "task.list",
+      "domain": "task",
+      "description": "List the calling operator's tasks (created by or assigned to them), most-recently-updated first. Filter by status, client, project, or tags. Use to answer 'what's on my plate', surface overdue/open follow-ups for a client, or check whether a follow-up task already exists before creating a duplicate."
+    },
+    {
+      "name": "task.update",
+      "domain": "task",
+      "description": "Update fields on an existing task — retitle, change status/priority, reschedule (dueDate), edit notes, reassign, or relink client/project. Only the creator or an assignee may edit. Stakeholders are notified of status/dueDate/notes/assignee changes. Pass null to clear an optional field (dueDate, clientId, projectId, assignedTo, attachmentIds). To mark a task done prefer `task.complete` (it also notifies + logs completion)."
+    },
+    {
+      "name": "touchpoint.getByClient",
+      "domain": "touchpoint",
+      "description": "Get touchpoints for a client. Returns recent activity across all projects with that client."
+    },
+    {
+      "name": "touchpoint.getByContact",
+      "domain": "touchpoint",
+      "description": "Get touchpoints for a contact, most recent first. Useful for relationship history before a meeting or reachout."
+    },
+    {
+      "name": "touchpoint.getByProject",
+      "domain": "touchpoint",
+      "description": "Get touchpoints for a project. Useful for deal-context summaries and chase decisions."
+    }
+  ]
+}

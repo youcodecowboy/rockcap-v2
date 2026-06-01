@@ -50,7 +50,7 @@ Persisted to Convex via the v1.3 MCP tool surface:
    - Client thank-you / next-steps note: `outreach.draftFreshEmail`
    - Doc-share to lender / BDM follow-up: `outreach.draftToLender`
    - Calendar invite for next meeting: TBD (Sprint F / calendar integration)
-5. **`appetiteSignals`** rows if the meeting was with a lender BDM and they shared appetite info. **v1.3 gap:** no `lender.recordAppetiteSignal` MCP tool yet — defer to direct CLI / Convex action for now; flag as gap.
+5. **`appetiteSignals`** rows if the meeting was with a lender BDM and they shared appetite info — record each signal via `lender.recordAppetite` (see the BDM special path in the workflow).
 6. **A `skillRun`** via `skillRun.start` / `skillRun.complete`. `linkedClientId` set. `linkedApprovalIds` set if any follow-ups staged. Brief summarises what was captured + what's flagged for review.
 
 ## High-level workflow
@@ -76,7 +76,7 @@ Persisted to Convex via the v1.3 MCP tool surface:
 
 7. **Mine for intelligence updates:** new figures (GDV / TDC / units), asset details (postcode / planning ref / type), sponsor preferences, lender constraints (if BDM call). Each becomes one `intelligence.addKnowledgeItem` call with `sourceType: "ai_extraction"`, `context: "from meeting transcript <meetingId>"`, `valueType` matching the data (currency/number/string/array/etc.), `isCanonical: true` when the transcript states the figure unambiguously; `false` when it's an estimate or in-passing reference (operator can promote to canonical via the UI).
 
-8. **Lender BDM call special path:** if the meeting was with a lender BDM (client.type === "lender"), capture appetite signals separately. Each signal: `{fieldPath, value, valueType, sourceType: "bdm_meeting", asOfDate: meeting date, confidence}`. v1.3 gap: `lender.recordAppetiteSignal` MCP tool doesn't exist yet — capture in skillRun.complete.gaps.
+8. **Lender BDM call special path:** if the meeting was with a lender BDM (client.type === "lender"), capture appetite signals separately. For each signal call `lender.recordAppetite` with `{fieldPath, value, valueType, sourceType: "bdm_meeting", asOfDate: meeting date, confidence}` — one call per signal inferred from the transcript.
 
 9. **Stage follow-up communications.** For each decision/action item that requires outbound communication:
    - Client thank-you or confirmation: `outreach.draftFreshEmail({contactId, clientId, subject: "Re: <meeting title>", body, reasoning: "Meeting follow-up agreed in <meeting title>"})`.
@@ -127,7 +127,7 @@ This skill calls these MCP-exposed tools (v1.3):
 - `skillRun.start` + `skillRun.complete` — workflow envelope
 
 Tools NOT yet MCP-exposed (capture in gaps):
-- `lender.recordAppetiteSignal` — for BDM meeting outputs. The lender-intel skill's `lender.recordAppetite` covers the structured-intake path; the meeting-capture variant (which infers signals from free-form transcript) is deferred. Capture findings in `skillRun.complete.gaps` with `kind: "intelligence_capture_deferred"` for manual review.
+- `lender.recordAppetite` — for BDM meeting outputs (one call per appetite signal inferred from the transcript). Same tool the lender-intel skill uses for structured intake.
 
 ## What goes wrong
 

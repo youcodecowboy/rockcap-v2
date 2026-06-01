@@ -1,94 +1,159 @@
 # client-decision-capture
 
-Step 10 of the deal lifecycle. The client has made a decision in response to indicative terms: pick a lender, push back for different terms, or step away. This skill captures the decision structurally and advances the deal state.
+**Last hardening:** v2 2026-06-01 (hardened from skeleton via skill-forge; retargeted at the live MCP tool surface).
+
+Step 10 of the deal lifecycle. The client has made a decision in response to
+indicative terms: pick a lender, push back for different terms, pause, or step
+away. This skill captures the decision **faithfully and structurally** against
+the live tool surface, stages any client/lender communications for approval, and
+records the structured facts that downstream steps and the audit trail depend on.
+
+> **Substrate note.** Two state transitions this step *conceptually* owns —
+> advancing `projects.dealPhase` and moving per-lender approach statuses
+> (selected → credit submission, others → closed-lost) — have **no MCP tool
+> today**. This skill captures the decision in full (knowledge items + a
+> verbatim note + running context) and **logs those transitions as gaps** via
+> `skillRun.complete`. It does **not** invent tools to perform them. When the
+> substrate lands, this skill gets the two writes added.
 
 ## Trigger
 
-Invoke after a client communication (email reply, meeting transcript, phone-call note) carries the decision. Common forms:
+Invoke after a client communication (email reply, meeting transcript, call note)
+carries the decision:
 
-- "Client picked Lender B, let's lock it in"
-- "Client wants to push back on terms, capture the asks"
-- "Client is pausing the deal, write it up"
+- "Client picked Lender B, lock it in."
+- "Client wants to push back on terms — capture the asks."
+- "Client is pausing the deal, write it up."
+- "Client's not proceeding."
 
 ## Inputs
 
 Required (one of):
 
-- `inboundTouchpointId`: the touchpoint that carries the decision
-- `decisionDescription`: free-form description when no formal communication exists
+- `decisionDescription`: free-form description of the decision (the operator's or
+  client's words).
+- a touchpoint reference for the deal carrying the decision (resolve via
+  `touchpoint.getByProject`).
 
 Plus:
 
-- `projectId`: required if not derivable from the touchpoint
+- `projectId`: required (the deal the decision is about).
 
 Optional:
 
-- `selectedLenderClientId`: if the decision is "pick this lender", explicit pointer
-- `loopBackReason`: if the decision is "go back and ask for different terms", the rationale
+- `selectedLenderClientId`: explicit pointer when the decision is "pick this lender".
+- `loopBackReason`: rationale when the decision is "go back for better terms".
+
+## Dedup
+
+`dedupKey: "decision:" + projectId`, `dedupWindowDays: 30`. A deal's decision
+should be captured once. On `duplicate_found`, surface the prior decision brief
+to the operator and confirm before recording a superseding decision (a genuine
+change of mind is valid; an accidental re-run is not).
+
+## Cadence package
+
+Does not produce a gauntlet cadence package. It may create **standalone** cadence
+rows for two paths: a warm re-engagement cadence on `pause`, and a longer-dated
+re-engagement on `dropped`. These are individual `cadence.create` calls, not a
+packaged sequence.
 
 ## Outputs
 
-Persisted to Convex:
+- **Verbatim decision record** — `note.create` on the project, capturing the
+  client's exact wording (faithful to source; see Style rules).
+- **Structured decision facts** — `intelligence.addKnowledgeItem` (projectId
+  scope): the decision kind, the selected lender (if any), key conditions, the
+  rationale. These are what `*.getDeepContext` later reads.
+- **Running context block** — `intelligence.appendContext` on the project: a
+  dated, operator-attributed summary of the decision and state changes made.
+- **Staged communications** — `approval.create` (`entityType: "gmail_send"`,
+  shapes per `approval-payload-shapes.md`): confirmation to the selected lender's
+  BDM, short thank-you/declines to unselected BDMs, client acknowledgement.
+- **Logged gaps** — for the dealPhase advance and lender-approach status changes
+  that have no MCP tool yet (via `skillRun.complete` `gaps`).
+- **Brief** — decision kind, what was captured, what was staged, what was logged
+  as a gap.
 
-1. **A structured decision record** written to `knowledgeBankEntries` as `entryType: "deal_update"` with the decision payload (kind, selected lender, conditions, rationale).
-2. **`lenderApproaches` updates**: the selected lender moves to `status: "submitted_for_credit"` (next phase); the others move to `closed_lost` with a declineReason capturing why they were not selected.
-3. **Project state advance**: `projects.dealPhase` moves from `indicative_terms` to `credit_submission` for the "lender selected" path. For loop-back paths, dealPhase stays at `indicative_terms` and lenderApproaches stay at `indicative_received` while we negotiate.
-4. **Optional staged communications**: thank-you notes to the unselected lenders (`approvals` of type `gmail_send`), a confirmation-of-instruction email to the selected lender's BDM, and any client-facing acknowledgement.
+## High-level workflow
 
-## Workflow
-
-1. Read the decision input. Classify into one of four kinds:
-   - `lender_selected`: client has picked a specific lender to proceed with
-   - `loop_back_for_better_terms`: client wants more rounds with lenders
-   - `pause`: client wants to step away temporarily; resume later
-   - `dropped`: client is not proceeding; deal closes lost
-2. For `lender_selected`:
-   - Confirm or resolve `selectedLenderClientId` from the decision text.
-   - Update lenderApproaches: selected to `submitted_for_credit`, others to `closed_lost`.
-   - Advance project `dealPhase` to `credit_submission`.
-   - Stage a confirmation email to the selected lender's BDM ("we are moving forward with you on this deal").
-   - Stage thank-you-and-decline emails to the unselected lenders (one per BDM contact).
-3. For `loop_back_for_better_terms`:
-   - Capture the loop-back reason and which terms the client wants improved (rate, leverage, conditions).
-   - Stage a follow-up to the relevant lender(s) with the client's pushback framed neutrally.
-   - Keep dealPhase at `indicative_terms`.
-4. For `pause`:
-   - Stage a follow-up cadence (warm_lead_chase) keyed off the client's preferred re-touch date.
-   - Note the pause reason in `projectIntelligence`. Do not close lender approaches; mark them `withdrawn` with reason "client paused" so they can be reactivated.
-5. For `dropped`:
-   - Move project to a closed-lost state. Update all open lenderApproaches to `closed_lost`.
-   - Stage a brief courtesy note to the client.
-   - Schedule the `post_lost_re_engagement` cadence for 6 months out.
-6. Write the structured decision record.
-7. Return a brief: kind of decision, state changes made, communications staged.
+1. `skillRun.start({ skillName: "client-decision-capture", input, dedupKey, dedupWindowDays: 30 })`.
+   Honour a `duplicate_found` response.
+2. `project.getDeepContext({ projectId })` — load the deal, its linked lenders
+   (clientRoles), projectIntelligence, and recent touchpoints in one call. If the
+   decision came from a touchpoint, confirm it via `touchpoint.getByProject`.
+3. Classify the decision into one kind (see `references/decision-kinds-catalogue.md`):
+   `lender_selected` · `loop_back_for_better_terms` · `pause` · `dropped`.
+   If ambiguous (e.g. "let's keep talking to lenders" with no name), STOP and ask
+   the operator — do not guess.
+4. **Capture (all paths):**
+   - `note.create` — the client's decision in their own words, verbatim.
+   - `intelligence.addKnowledgeItem` — structured facts (kind; selected lender id
+     if any; conditions; rationale). Use `sourceType: "operator"` /
+     the touchpoint as appropriate.
+5. **Per kind:**
+   - `lender_selected`: resolve `selectedLenderClientId`; record it as a canonical
+     knowledge item; stage a confirmation `gmail_send` to that lender's BDM and
+     short thank-you/declines to the others; **log gaps** for advancing
+     `projects.dealPhase` → credit submission and for the lender-approach status
+     transitions (no MCP tool yet).
+   - `loop_back_for_better_terms`: capture the loop-back reason + which terms to
+     improve; stage a neutrally-framed follow-up to the relevant lender(s); deal
+     phase stays put.
+   - `pause`: `cadence.create` a warm re-engagement keyed to the client's
+     preferred re-touch date; record the pause reason via `intelligence.appendContext`.
+   - `dropped`: stage a brief courtesy note to the client; `cadence.create` a
+     longer-dated (≈6 month) re-engagement; **log a gap** for closing the deal /
+     lender approaches (no MCP tool yet).
+6. `intelligence.appendContext` — a dated block summarising the decision and every
+   action taken (including gaps logged), so the deal's running context is current.
+7. `skillRun.complete({ runId, status, brief, gaps, linkedProjectId, linkedApprovalIds })`.
+   Use `complete_with_gaps` whenever a substrate gap was logged.
 
 ## Style rules
 
-All CONVENTIONS apply. Two that matter most:
+All `../../CONVENTIONS.md` apply. Two that matter most here:
 
-- **Faithful to the source.** The client's exact wording on why they picked or paused matters. Capture it verbatim in the decision record; do not paraphrase.
-- **Thank-you notes are short.** Two sentences to a non-selected lender BDM. "Thanks for the work on the indicative; we've gone with another lender on this one. We'll be back with the next deal."
+- **Faithful to the source.** The client's exact wording on *why* they picked,
+  paused, or walked matters. Capture it verbatim in the note; do not paraphrase.
+- **Thank-you notes are short.** Two sentences to a non-selected lender BDM:
+  "Thanks for the work on the indicative; we've gone with another lender on this
+  one. We'll be back with the next deal."
 
 ## Tool dependencies
 
-- `project.get`, `project.update` (for dealPhase advance)
-- `lenderApproach.listByProject`, `lenderApproach.update`
-- `touchpoint.get`
-- `knowledge.addEntry` for the decision record
-- `cadence.create` for the pause and re-engagement paths
-- `approval.create` of type `gmail_send` for the staged emails
-- `intelligence.addProjectUpdate`
+Real, MCP-exposed tools this skill uses:
+
+- `skillRun.start`, `skillRun.complete` — the execution envelope.
+- `project.getDeepContext` — deal + lenders + intelligence + touchpoints in one read.
+- `touchpoint.getByProject` — confirm the decision's source touchpoint.
+- `note.create` — the verbatim decision record.
+- `intelligence.addKnowledgeItem` — structured decision facts.
+- `intelligence.appendContext` — the running deal-context block.
+- `cadence.create` — pause / dropped re-engagement.
+- `approval.create` (`gmail_send`) — staged BDM + client communications.
+
+Substrate gaps (no MCP tool yet — **log via `skillRun.complete`, do not invent a
+tool**): advancing `projects.dealPhase`; transitioning per-lender approach status
+(selected → credit submission, others → closed-lost / withdrawn on pause).
 
 ## What goes wrong
 
-1. **Decision is ambiguous**: client says "let's keep talking to lenders" without naming one. Skill asks for clarification rather than guessing.
-2. **Multiple decisions in one communication**: client picked Lender A but also wants to renegotiate the LTGDV. Skill captures both; advances state to `submitted_for_credit` with Lender A; queues the LTGDV renegotiation as a `cadence` of type `execution_chaser`.
-3. **The selected lender's BDM has changed**: skill detects via the lender's last `bdm_relationship` touchpoint and surfaces the BDM-mobility update.
-4. **Client decision contradicts the recommendation**: skill captures faithfully without comment. The recommendation was advice; the decision is the client's.
-5. **No prior recommendation document**: skill captures the decision but flags that the audit trail is incomplete (was the comparison documented?).
+1. **Ambiguous decision** — client says "keep talking to lenders" with no name.
+   Ask for clarification; never guess which lender.
+2. **Multiple decisions at once** — picked Lender A *and* wants the LTGDV
+   renegotiated. Capture both: record the selection, and stage the renegotiation
+   follow-up to Lender A.
+3. **Decision contradicts the recommendation** — capture it faithfully, without
+   editorialising. The recommendation was advice; the decision is the client's.
+4. **No prior recommendation on file** — capture the decision but flag in the
+   brief that the audit trail is incomplete (was the comparison documented?).
+5. **Tempted to advance state with a tool that doesn't exist** — don't. Log the
+   gap; the decision capture is still complete and valuable without it.
 
 ## References
 
-- `../../shared-references/uk-property-finance-glossary.md`
-- `../../shared-references/approval-payload-shapes.md`
-- This skill's own references to be authored: `decision-kinds-catalogue.md`, `loop-back-pattern-library.md`.
+- [`references/decision-kinds-catalogue.md`](./references/decision-kinds-catalogue.md) — the four decision kinds + how to classify + what each captures.
+- [`../../shared-references/approval-payload-shapes.md`](../../shared-references/approval-payload-shapes.md) — the `gmail_send` payload shape for staged comms.
+- [`../../shared-references/uk-property-finance-glossary.md`](../../shared-references/uk-property-finance-glossary.md) — terminology.
+- [`../../CONVENTIONS.md`](../../CONVENTIONS.md) — cross-skill voice + style.

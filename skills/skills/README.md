@@ -26,12 +26,13 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 | `terms-comparison/` | skeleton | — |
 | `ic-paper-drafter/` | skeleton | — |
 | `info-request-grader/` | skeleton | — |
-| `client-decision-capture/` | skeleton | — |
+| `client-decision-capture/` | **v2 hardened** | **2026-06-01** — hardened from skeleton via skill-forge; retargeted at the live tool surface (6 phantom tools removed); genuine substrate gaps (dealPhase advance, lender-approach status) logged, not invented |
 | `case-study-author/` | skeleton | — |
 | `monitoring-watcher/` | skeleton | — |
 | `classification-critic/` | skeleton | — |
 | `document-author/` | **v1** | docgen substrate v1 (2026-05-29) |
 | `corporate-structure/` | skeleton (spec + libs landed) | — |
+| `skill-forge/` | **v1 (meta)** | **NEW 2026-06-01** — the skill that edits skills. Safe self-service editing/hardening for non-technical operators: sync → refresh tool manifest (`meta.listTools`) → edit → hard-gate validate (`tools/validate-skills.mjs`) → push to main. Not a deal-lifecycle skill; a repo-maintenance skill. |
 
 **v2 hardened** means: workflow retargeted at v1.3 MCP tool surface, `## Dedup` section present, `## Cadence package` section present (or explicit "doesn't produce one"), reference files authored, failure modes enumerated, multiple invocation paths documented. Skeleton skills predate this template; usable as intent statements but not operationally hardened.
 
@@ -52,7 +53,7 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 | 7 | Deal data intake + underwriting model | [`deal-intake/`](./deal-intake/) | v2 |
 | 8 | Indicative terms + lender submission pack | [`terms-package-build/`](./terms-package-build/) | skeleton |
 | 9 | Terms comparison + recommendation | [`terms-comparison/`](./terms-comparison/) | skeleton |
-| 10 | Client decision capture | [`client-decision-capture/`](./client-decision-capture/) | skeleton |
+| 10 | Client decision capture | [`client-decision-capture/`](./client-decision-capture/) | v2 |
 | 11a | IC paper draft | [`ic-paper-drafter/`](./ic-paper-drafter/) | skeleton |
 | 11b | Lender info-request grading | [`info-request-grader/`](./info-request-grader/) | skeleton |
 | 12 | Deal triage (daily sweep) | [`deal-triage/`](./deal-triage/) | skeleton |
@@ -69,7 +70,7 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 
 ## How operator-agent should select a skill
 
-The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 5 v2-hardened skills are the operationally-ready ones; their SKILL.md files document multiple invocation paths so Claude Code can recognise when to invoke them:
+The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 9 v2-hardened skills are the operationally-ready ones; their SKILL.md files document multiple invocation paths so Claude Code can recognise when to invoke them:
 
 - **prospect-intel**: operator says "run prospect-intel on {company name / CH number}" OR Claude Code surfaces a candidate via `companies.listUnprocessed`. Intel-only — it never drafts outreach.
 - **outreach-draft**: operator says "draft outreach for {prospect}" (single) OR "draft all outreach for ready companies" (batch). Only drafts for prospects the operator has marked ready (`outreachReadyAt` set); enumerates the batch pool via `client.listOutreachReady`. See [`prospect-pipeline-gates.md`](./prospect-pipeline-gates.md).
@@ -95,19 +96,18 @@ The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 5 v2-
 
 When hardening a skeleton skill: follow this template + harden the SKILL.md + author 1-2 reference files in `references/` + update this README's status table in the same commit.
 
-## Hardening order (recommended for the 9 remaining skeletons)
+## Hardening order (recommended for the 8 remaining skeletons)
 
 Ranked by operator-cycle leverage:
 
 1. **terms-package-build** (step 8) — produces the lender brief package. High leverage: pairs with lender-intel matching to operationalize lender outreach.
 2. **terms-comparison** (step 9) — pairs with terms-package-build; activated when indicative terms come back.
 3. **ic-paper-drafter** (step 11a) — when a lender wants to proceed; produces the IC submission.
-4. **client-decision-capture** (step 10) — when client chooses a lender from the comparison.
-5. **info-request-grader** (step 11b) — lender-side document requests; can be paired with checklist tooling.
-6. **monitoring-watcher** (step 14) — post-credit phase; lower urgency until first deal closes.
-7. **case-study-author** (step 13) — post-close; lowest urgency until first deal closes.
-8. **deal-triage** (step 12) — daily sweep; useful once deal-intake creates a real pipeline.
-9. **classification-critic** — parallel system; lower priority than deal-lifecycle skills.
+4. **info-request-grader** (step 11b) — lender-side document requests; can be paired with checklist tooling.
+5. **monitoring-watcher** (step 14) — post-credit phase; lower urgency until first deal closes.
+6. **case-study-author** (step 13) — post-close; lowest urgency until first deal closes.
+7. **deal-triage** (step 12) — daily sweep; useful once deal-intake creates a real pipeline.
+8. **classification-critic** — parallel system; lower priority than deal-lifecycle skills.
 
 ## Adding a new skill
 

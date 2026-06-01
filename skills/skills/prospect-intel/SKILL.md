@@ -72,7 +72,7 @@ What it does not do:
 
 1. **Resolve the company**. If a Companies House number was given, fetch the company profile directly. If a name was given, search Companies House for matches and disambiguate. If multiple plausible matches, surface them and ask. At this point the canonical `companiesHouseNumber` is available; call `skillRun.start` with `dedupKey: companiesHouseNumber`, `dedupWindowDays: 7`, `skillName: "prospect-intel"`. If the response is `duplicate_found`, surface the prior brief + intelMarkdown and ask. If `already_running`, surface the in-flight run and ask before competing. Otherwise proceed with the returned runId.
 
-2. **Fetch Companies House data.** Call `companies.syncCompaniesHouse({chNumber})` (added v1.2.1) — fetches profile + charges directly from the CH API and persists into `companiesHouseCompanies` + `companiesHouseCharges`. Idempotent: safe to call even if data exists; tool upserts. Verify after via `companiesHouse:getCompanyByNumber({companyNumber})`.
+2. **Fetch Companies House data.** Call `companies.syncCompaniesHouse({chNumber})` (added v1.2.1) — fetches profile + charges directly from the CH API and persists into `companiesHouseCompanies` + `companiesHouseCharges`. It persists the profile + charges + officers + PSC and stores each officer's `appointmentsLink` (used later in step 8b for group mapping). Idempotent: safe to call even if data exists; tool upserts and returns the synced result.
    - **Why this comes BEFORE web research:** the structured charges data from CH is more complete than what the company's public CH profile page shows (the website summary doesn't surface the charges sub-page contents). The validation walkthrough on Mccarthy proved this: web-only research returned "no charges"; the CH API returned 2 outstanding charges with specific lender names + a charged property address. **Skipping this step risks producing wrong lender DNA conclusions.**
    - **Officers + PSCs:** the v1.2.1 sync tool does NOT persist these (data-shape adapter not yet built). Fetch them via WebFetch on the CH public site as needed for section 3 of the intel report. Pattern from the validation walkthrough:
      - `WebFetch https://find-and-update.company-information.service.gov.uk/company/{N}/officers` → director list
@@ -158,12 +158,12 @@ All voice and output rules from `../../CONVENTIONS.md` apply. The four that matt
 
 ## Tool dependencies
 
-This skill calls these MCP-exposed tools (or their pre-MCP atomic-tool equivalents during the transition):
+This skill calls these MCP-exposed tools:
 
-- `companies-house.searchCompanies`, `companies-house.getCompanyProfile`, `companies-house.getCharges`, `companies-house.getOfficers`, `companies-house.getPSC` — for step 2 (CH data fetch)
-- `companiesHouse:getCompanyByNumber` (Convex query) — for step 2 sync check
-- `client.list`, `client.get`, `client.create`, `client.checkExists` — for step 3
-- `intelligence.getClientIntelligence`, `intelligence.updateClientIntelligence`, `intelligence.addKnowledgeItem`, `intelligence.searchLenders`, `intelligence.searchPeople` — for steps 3, 9, 10
+- `companies.searchCompaniesHouse` — for step 2 (find the company at Companies House)
+- `companies.syncCompaniesHouse` — for step 2 (sync the CH profile + charges + officers onto the record)
+- `client.list`, `client.get`, `client.create` — for step 3 (find an existing record, or seed a net-new prospect via `client.create`, which defaults `type='borrower'` / `status='prospect'` and supports promote-from-company modes)
+- `intelligence.getClientIntelligence`, `intelligence.updateClientIntelligence`, `intelligence.addKnowledgeItem`, `intelligence.searchLenders` — for steps 3, 9, 10 (people are enriched per-person via `apollo.findEmail` + `contact.create` in step 8, not a people-search tool)
 - `contact.get`, `contact.getByClient`, `contact.create`, `contact.update` — for step 8 (contact per key person + Apollo enrichment)
 - `apollo.findEmail` — for step 8 (per-director email discovery; the v1.2.3 capability; cached 30 days at v1.2.4)
 - `companies.syncCompaniesHouse` — for step 2 (CH profile + charges sync)

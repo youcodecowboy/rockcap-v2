@@ -1,6 +1,6 @@
 # MCP tool catalogue
 
-The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 100 tools across 21 domains. Latest pass (knowledge surface, 2026-05-31): adds `intelligence.getKnowledgeItemsByClient` (read structured facts back) + `intelligence.updateClientIntelligence` (bulk-patch the clientIntelligence doc — prospect-intel uses it for Output #2: identity + key people + summary), and `prospect.getDeepContext` now returns `knowledgeItems` (the AI/operator facts were previously write-only, invisible to the read path). Prior pass (client context capture, 2026-05-31): adds `intelligence.appendContext` (operator running-context md) + `note.create` / `note.update` / `note.listByClient` / `note.listByProject` (the notes lane, previously unexposed) — the agent surface for the `client-context-capture` skill (operator primary-knowledge input). Prior pass (outreach gating, 2026-05-30): adds `client.markOutreachReady` / `client.clearOutreachReady` / `client.listOutreachReady` — the operator "accept → ready for outreach" gate between intel-only `prospect-intel` and the new `outreach-draft` skill (see [`skills/prospect-pipeline-gates.md`](./skills/prospect-pipeline-gates.md)). Prior pass (corporate-structure): adds structure.renderChart (render a StructureGraph to a styled ownership-only SVG + data-URI + high/med/low verdict) + companies.mapGroup (one-call group map: CH numbers + directors + appointmentsLinks — the starting point for the corporate-structure walk). Prior pass (P4 docgen): adds document.generate. Prior pass (lender-tier-conflict): adds companies.getLenderTierConflict. Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme. Prior pass (corporate-group charges): adds companies.getGroupCharges. Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
+The complete, canonical list of MCP tools exposed by the RockCap Convex backend (`https://incredible-kudu-562.convex.site/mcp`). 117 tools across 23 domains. Latest pass (knowledge surface, 2026-05-31): adds `intelligence.getKnowledgeItemsByClient` (read structured facts back) + `intelligence.updateClientIntelligence` (bulk-patch the clientIntelligence doc — prospect-intel uses it for Output #2: identity + key people + summary), and `prospect.getDeepContext` now returns `knowledgeItems` (the AI/operator facts were previously write-only, invisible to the read path). Prior pass (client context capture, 2026-05-31): adds `intelligence.appendContext` (operator running-context md) + `note.create` / `note.update` / `note.listByClient` / `note.listByProject` (the notes lane, previously unexposed) — the agent surface for the `client-context-capture` skill (operator primary-knowledge input). Prior pass (outreach gating, 2026-05-30): adds `client.markOutreachReady` / `client.clearOutreachReady` / `client.listOutreachReady` — the operator "accept → ready for outreach" gate between intel-only `prospect-intel` and the new `outreach-draft` skill (see [`skills/prospect-pipeline-gates.md`](./skills/prospect-pipeline-gates.md)). Prior pass (corporate-structure): adds structure.renderChart (render a StructureGraph to a styled ownership-only SVG + data-URI + high/med/low verdict) + companies.mapGroup (one-call group map: CH numbers + directors + appointmentsLinks — the starting point for the corporate-structure walk). Prior pass (P4 docgen): adds document.generate. Prior pass (lender-tier-conflict): adds companies.getLenderTierConflict. Prior pass (prospect-schemes): adds companies.getProspectSchemes + upsertProspectScheme. Prior pass (corporate-group charges): adds companies.getGroupCharges. Prior pass (post-v1.4 Sprint K): contact.create/update, companies.searchCompaniesHouse, companies.getOfficerAppointments.
 
 **This document is the source of truth.** When adding or removing an MCP tool, update this file in the same commit (see `CLAUDE.md` rules). Drift between the live tool list and this catalogue silently degrades Claude Code's ability to make good tool choices.
 
@@ -77,13 +77,14 @@ The deep-context tools are the spine:
 | `prospect.getDeepContext({clientId})` | **HEADLINE.** Comprehensive snapshot: prospect + contacts + cadences (split active/fired/queued) + replies + intel run + meetings + CH profile + clientIntelligence + touchpoints + deals + projects + pending approvals + summary block with 22 at-a-glance counts. FIRST tool call for any prospect-scoped question. |
 | `prospect.transitionState({clientId, newState})` | Move a prospect through the 9-state machine: researched / drafted / needs_revision / active / replied / engaged / promoted / parked / lost. `researched` is set by prospect-intel on completion (intel exists, no outreach drafted yet); later states are operator-driven. Side effect: schedules HubSpot push-back via existing sync. |
 
-### `client.*` — Client workflows (alias of prospect; for active clients) (8)
+### `client.*` — Client workflows (alias of prospect; for active clients) (9)
 
 | Tool | Purpose |
 |---|---|
 | `client.getDeepContext({clientId})` | **HEADLINE.** Alias of `prospect.getDeepContext` — same query, surfaced under `client.*` namespace for clarity when working with active clients. `summary.entityFocus` field tells you whether the entity is currently a prospect or active client. |
 | `client.get({id})` | Single client by id (raw row, no aggregations). Use when you just need the contact details + don't need the deep context overhead. |
 | `client.list({filters?})` | List clients with optional filters. Use sparingly — `prospect.getDeepContext` is the recommended path for any specific entity. |
+| `client.create({name?, type?, status?, promoteFromCompanyId?, hubspotCompanyId?, ...})` | **Close-the-loop (2026-06-01).** Create a borrower/developer client row (defaults `type='borrower'`, `status='prospect'`) — the borrower-side counterpart to `lender.create`. Three modes: promote a Convex company (`promoteFromCompanyId`), resolve+promote a HubSpot company (`hubspotCompanyId`), or naked create (`name` only). Closes the gap where a net-new prospect could only be seeded via CLI. After create, populate via `clients.setProspectFacts` / `intelligence.*` / `contact.create`, then run prospect-intel. |
 | `client.getStats({clientId})` | Aggregate counts for a client. Subsumed by `getDeepContext.summary`; use only if you don't need the full context. |
 | `client.activate({clientId})` | **Sprint I.** Promote a prospect to active client. Atomic: patches `clients.status: "active"`, transitions `prospectState: "promoted"` (with audit fields), schedules HubSpot lifecycleStage push. Idempotent — returns `idempotent: true` if already active. The natural firing point is deal-intake: the moment a borrower's first meaningful doc batch arrives + a project is created. Distinct from `prospect.transitionState` (which only flips prospectState; doesn't touch client.status). |
 | `client.markOutreachReady({clientId})` | **Outreach gate (2026-05-30).** Accept a prospect's intel and mark it ready for outreach (sets `outreachReadyAt`/`outreachReadyBy`). The gate between `prospect-intel` (intel-only) and `outreach-draft` (drafts the package). Rejects (`no_completed_intel_run`) if no completed prospect-intel run exists. Idempotent. Does NOT draft, change `prospectState`, or touch HubSpot. Normally driven by the UI accept button; use the tool only when explicitly asked. See [`skills/prospect-pipeline-gates.md`](./skills/prospect-pipeline-gates.md). |
@@ -96,13 +97,15 @@ The deep-context tools are the spine:
 |---|---|
 | `clients.setProspectFacts({clientId, companiesHouseNumber?, relatedCompaniesHouseNumbers?, website?, primaryDirectorName?, primaryContactId?, dealType?, dealSizeRange?})` | Bulk-patch the structured prospect facts on a clients row. Used by `prospect-intel` skill workflow step 10 to promote facts out of intelMarkdown text. `dealType` is the canonical deal-type code (new_development / bridging / existing_asset / unclassifiable); `dealSizeRange` is the indicative-size display string (range + confidence + basis). `relatedCompaniesHouseNumbers` is the array of corporate-group sibling-SPV CH numbers (excl. the parent) discovered by the `resolve-related-entities` sub-skill — it powers the CH-tab group-charges rollup (`companies.getGroupCharges`). |
 
-### `project.*` — Project (scheme/deal) workflows (6)
+### `project.*` — Project (scheme/deal) workflows (8)
 
 | Tool | Purpose |
 |---|---|
 | `project.getDeepContext({projectId})` | **HEADLINE.** Comprehensive snapshot: project + projectIntelligence + linked clients via clientRoles (with role labels) + meetings + documents + checklist (split by status: missing/pending_review/fulfilled) + cadences + skillRuns + deals + touchpoints + pending approvals. FIRST tool call for any project-scoped question. |
 | `project.get({id})` | Single project by id. |
+| `project.list({clientId?, status?})` | List projects with optional client + status filters. Each project is one transaction attempt. Use when looking for active deals across the book. |
 | `project.getByClient({clientId})` | All projects a client appears in (via `clientRoles` array — any role). |
+| `project.listByClient({clientId})` | All projects where a client appears in any `clientRoles` entry. Use to enumerate the full project list when `client.getDeepContext` returned only project counts. |
 | `project.getStats({projectId})` | Aggregate counts (subsumed by `getDeepContext.summary`). |
 | `project.addLenderRole({projectId, clientId, role?})` | Idempotently attach a lender (type=lender client) to a project's clientRoles. Defaults role='lender'; supports co-lender / syndicate-lead. Refuses non-lender clients with error='not_a_lender'. Used by terms-package-build after `lender.matchForDeal` picks a shortlist. |
 | `project.create({name, clientId?, clientRoles?, projectShortcode?, address?, ...})` | **Sprint I.** Create a new project (deal record). Auto-generates 10-char shortcode if not provided; auto-seeds folder structure based on primary client's type. Status defaults to 'active', country to 'United Kingdom'. Returns `{ok:true, projectId}`. Used by deal-intake when standing up a new deal from the first meaningful doc batch. |
@@ -121,7 +124,7 @@ The deep-context tools are the spine:
 | `lender.setSubmissionRequirements({lenderClientId, requirementsMarkdown, sourceContext?})` | **Sprint K.** Set / update Submission Requirements doc for a lender. Wraps `document.createFromGeneration` with standard shape (clientId=lender, fileTypeDetected='Submission Requirements', category='Lender outreach', isBaseDocument=true). Creates NEW doc version each call (auto-supersede via most-recent-wins on read). Follow canon at `shared-references/lender-submission-requirements-canon.md`. |
 | `lender.getSubmissionRequirements({lenderClientId})` | **Sprint K.** Fetch the most recent Submission Requirements doc for a lender. Returns `{found, content, documentId, ...}` or `{found:false}` if none exist yet. Used by terms-package-build to tailor each pack. |
 
-### `cadence.*` — Outreach cadence flow (9)
+### `cadence.*` — Outreach cadence flow (11)
 
 | Tool | Purpose |
 |---|---|
@@ -129,6 +132,8 @@ The deep-context tools are the spine:
 | `cadence.cancel({cadenceId, reason})` | Set isActive=false with a reason. |
 | `cadence.update({cadenceId, preDraftedTouch?, nextDueAt?})` | Edit a single touch's content or scheduled date. Sets `editedByOperator` audit fields. |
 | `cadence.requestRevision({packageId, revisionNote})` | Mark all cadences in a package for revision with operator note. Skill re-runs and re-drafts. |
+| `cadence.approvePackage({packageId})` | **Close-the-loop (2026-06-01).** Approve a whole cadence package so the dispatcher will fire its touches. A freshly-created package is queued `packageApprovalStatus='pending'` and never fires until approved — this is that gate. |
+| `cadence.denyPackage({packageId})` | Deny a package: marks every touch denied + inactive (`cancelledReason='operator_denied_package'`) so none fire. |
 | `cadence.pause({cadenceId, untilDate?})` | Soft-pause via `pauseUntil` (default 14 days). Dispatcher skips while pauseUntil > now. |
 | `cadence.resume({cadenceId, newNextDueAt?})` | Clear pauseUntil. Optionally reschedule nextDueAt. |
 | `cadence.snooze({cadenceId, byDays})` | Push nextDueAt forward by N days. Different from pause (hard reschedule vs soft hold). |
@@ -168,7 +173,7 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `meeting.listUpcoming({limit?})` | Upcoming meetings across all clients, soonest first. Operator's "what calls do I have" surface. |
 | (`meeting.listByClient` removed in catalogue cleanup — use `meeting.getByClient`) | — |
 
-### `document.*` — Document discovery + linkage + classification fixes + generation (8)
+### `document.*` — Document ingestion + discovery + linkage + classification fixes + generation (12)
 
 | Tool | Purpose |
 |---|---|
@@ -179,11 +184,13 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `document.linkToProject({documentId, projectId?})` | Re-file a document: assign to a project (sets isBaseDocument=false) or unlink (pass projectId=null). |
 | `document.createFromGeneration({fileName, fileTypeDetected, category, summary, clientId?, projectId?, ...})` | Persist a skill-generated artefact (lender brief, client brief, IC paper, terms comparison, meeting notes) into documents. Content lives inline in `summary` as markdown — no file storage needed. Appears in the standard documents UI. For file UPLOADS use the regular `documents.create` flow. |
 | `document.updateClassification({documentId, category?, fileTypeDetected?, summary?, reasoning?})` | Patch a document's classification fields — for correcting V4 ingestion classifier mistakes. Does NOT re-run V4, strictly a metadata patch. All fields optional; pass only what to change. Recommend always passing `reasoning` for audit trail. |
+| `document.requestUpload()` | **Ingestion step 1 (2026-06-01).** Returns a short-lived pre-signed Convex storage upload URL. Claude Code curls the local file straight to it (`curl -X POST '<url>' --data-binary @file`) → response JSON `{ storageId }`. Bytes go machine→Convex directly (never through model context), so large files are fine; the signed URL is self-authorizing (no extra creds). |
+| `document.analyze({storageId, fileName, fileType?, fileSize?, clientId?, projectId?})` | **Ingestion step 2 (2026-06-01).** Runs the uploaded file through the V4 classifier and files it as a documents row under the client/project — AI category + summary + auto document code. The "drop docs → analyzed → filed" path for MCP-only operators. Returns `{documentId, category, summary, confidence}`. Refine after with `document.updateClassification` / `document.linkToProject`. |
 | `document.generate({contentHtml, title, docType, category?, summary?, formats?, clientId?, projectId?})` | **P4 — ad-hoc document generation from Claude Code.** Compose the body as semantic HTML (h1/h2/p/table; NO html/head/style wrappers — house styling applied automatically), render to PDF + DOCX via the Next `/api/documents/generate` route, and stage a `document_publish` approval. On approval the files are filed to the client's Documents library. Ground every figure in real data; never fabricate. Use for one-pagers, IC papers, company summaries etc. See the `document-author` skill + `skills/shared-references/document-house-style.md` for voice and structure. |
 | `document.generateBrief({layout, briefData, title, docType?, category?, summary?, formats?, clientId?, projectId?})` | **P4 — branded multi-page BRIEF generation.** Render a RockCap **lender brief** (`layout:"lender-brief"`) or **client brief** (`layout:"client-brief"`) from structured `briefData` (variant, confidentiality, title, meta, keyFacts[], numbered sections[] with semantic-HTML bodies, signOff) and stage a `document_publish` approval. Same render route + approval flow as `document.generate`, but assembled into the branded brief frame (masthead, key-facts block, black footer, RM sign-off). Use for "make me a client brief for {scheme}" / "draft a lender brief on {borrower}". Section set per layout in `skills/shared-references/doc-type-client-brief.md` / `doc-type-lender-brief.md`. Read the deal's documents + intel first; never fabricate figures. |
 | `document.generateComps({title, compsData, docType?, category?, summary?, formats?, clientId?, projectId?})` | **P4 — comps appendix (Master Comparable Schedule).** Render a comparable-evidence schedule that justifies a scheme's GDV pricing, as a **spreadsheet (xlsx, default)** or Word table (docx), and stage a `document_publish` approval. `compsData` = title/subtitle/preparedBy + `sheets[]` (tabs), each with `columns[]` (set roles `price`/`sqft`/`psf` to auto-compute £psf) and `tiers[]` (banded groups of comparable rows, optional per-tier auto-average). Use for "make me a comps appendix / comparable schedule for {scheme}". Single tiered schedule = one sheet; hero/second-hand/new-build pack = several. Ground every comp in real evidence (Land Registry / agent listings); flag asking rows `excludeFromAverage`. Structure in `skills/shared-references/doc-type-comps-appendix.md`. PDF not supported. |
 
-### `checklist.*` — Requirements tracking + link fixes (6)
+### `checklist.*` — Requirements tracking + link fixes (7)
 
 | Tool | Purpose |
 |---|---|
@@ -193,8 +200,9 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `checklist.createCustomItem({clientId, projectId?, name, category, ...})` | Add a one-off custom item (non-template). Defaults: phaseRequired=indicative_terms, priority=required, status=missing. |
 | `checklist.linkDocument({checklistItemId, documentId})` | Attach a document to a checklist item. First link becomes primary + sets status=fulfilled. Subsequent links are non-primary supporting docs. Idempotent. Use when V4 failed to auto-link an obviously-fulfilling doc. |
 | `checklist.unlinkDocument({checklistItemId, documentId})` | Remove a document link. If the unlinked doc was primary AND other links remain, oldest remaining is promoted. If no links remain, status reverts to 'missing'. Use when V4 wrongly linked a non-matching doc. |
+| `checklist.initializeForProject({clientId, projectId, clientType})` | Seed the 15-item standard checklist from the client-type template. Idempotent. Note: `project.create` already auto-seeds this — use only to re-init a legacy project missing one. |
 
-### `approval.*` — Operator approval queue (4)
+### `approval.*` — Operator approval queue (6)
 
 | Tool | Purpose |
 |---|---|
@@ -202,6 +210,8 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `approval.listByReplyEvent({replyEventId})` | Approvals linked to a specific reply (typically 0 or 1 — the qualify-and-draft or meeting-prep-respond output). |
 | `approval.get({approvalId})` | Full approval row including draftPayload. |
 | `approval.create({entityType, summary, draftPayload, ...})` | Create an approval directly. Skills typically use the higher-level `outreach.draft*` tools instead. |
+| `approval.approve({approvalId})` | **Close-the-loop (2026-06-01).** Approve a pending approval and FIRE its action — really sends the `gmail_send` / publishes the document (the executor runs server-side via the scheduler). The trust gate that turns a staged draft into a real outbound action. No-op-safe: `{ok:false, reason:'not_pending_*'}` if not pending. |
+| `approval.reject({approvalId, reason?})` | Reject a pending approval so it does NOT fire; the draft is discarded. Optional reason recorded for the audit trail. No-op-safe on non-pending rows. |
 
 ### `contact.*` — Contact lookups + writes (4)
 
@@ -284,6 +294,18 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 |---|---|
 | `skillRun.start({skillName, input, trigger?, dedupKey?, dedupWindowDays?})` | Begin a skill execution. If dedupKey + dedupWindowDays provided, checks for prior runs; returns `status: "duplicate_found"` or `"already_running"` with prior run info. |
 | `skillRun.complete({runId, status, brief?, intelMarkdown?, structureGraph?, linkedClientId?, linkedProjectId?, linkedApprovalIds?, gaps?, errors?})` | Close a skill execution. Sets status (complete / complete_with_gaps / failed / cancelled), persists brief + intelMarkdown + structureGraph (the corporate `StructureGraph` rendered in the prospect Intel tab), records linked entities + gaps + errors arrays. |
+
+### `bulkUpload.*` — Bulk-upload batches (1)
+
+| Tool | Purpose |
+|---|---|
+| `bulkUpload.getBatchItems({batchId})` | List the per-file items in a bulk-upload batch (with classification/status). Use when a deal-intake / doc workflow is driven from a `bulkUploadBatchId`. |
+
+### `meta.*` — Introspection (1)
+
+| Tool | Purpose |
+|---|---|
+| `meta.listTools({domain?})` | Return this server's full tool catalogue as structured JSON — `{toolCount, domainCount, domains, tools:[{name, domain, description, inputSchema}]}`. Source of truth IS the server's tool array, so it cannot drift. Used by `skill-forge` to refresh the skills repo's `tools-manifest.json` and validate that skills only reference tools that exist. Read-only. |
 
 ## Common patterns (cookbook)
 

@@ -1,5 +1,7 @@
 # monitoring-watcher
 
+> **⚠ v1 SKELETON — not yet operational.** This skill documents *intended* behaviour for a future version. Some tools it references are **not yet in the MCP surface** (see `../../CATALOGUE.md` → "What's NOT yet MCP-exposed"). If a user triggers this skill: tell them this workflow isn't built yet, do only what the **live** tools (in `tools-manifest.json`) allow, and **never call a tool that isn't in the manifest** — log the rest as gaps via `skillRun.complete`.
+
 Step 14 of the deal lifecycle. The deal is in `post_credit` phase; monitoring documents (reports, drawdown statements, sales updates) flow in periodically. This skill watches them, runs variance analysis against the underwriting baseline, flags anomalies, and surfaces them to both the team and the client.
 
 ## Trigger

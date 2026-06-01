@@ -47,7 +47,7 @@ Persisted to Convex:
 
 1. **`clients` row transitioned to active.** Via `client.activate` (Sprint I): patches `status: "active"`, transitions `prospectState: "promoted"`, schedules HubSpot lifecycleStage push-back. Idempotent — no-op if already active. This is THE lifecycle moment.
 2. **A `projects` row** with `name`, `projectShortcode`, `clientRoles` linking the borrower. Via `project.create` (Sprint I): auto-generates shortcode, auto-seeds the borrower project-level folder template (8 folders). Returns `projectId`.
-3. **Default checklist** seeded via `knowledgeLibrary.initializeChecklistForProject` (15 items from the standard requirementTemplate; substrate gap — not yet MCP-exposed, skill falls back to `npx convex run`). For Bridging-type deals the skill ALSO seeds bridging-specific items via `checklist.createCustomItem`.
+3. **Default checklist** (15 items from the standard requirementTemplate) — **`project.create` auto-seeds this** (it schedules the checklist init on creation). For a legacy project missing one, re-seed explicitly via `checklist.initializeForProject`. For Bridging-type deals the skill ALSO seeds bridging-specific items via `checklist.createCustomItem`.
 4. **Filed documents** — each input doc classified via V4, linked to checklist items where `matchingDocumentTypes` align (via `checklist.linkDocument`), placed in the right project folder.
 5. **`knowledgeItems` rows** for intelligence mined at intake (deal type + phase, scheme address, GDV/TDC/units from appraisal, SPV structure from HoTs/FL, filename-extracted metadata). All via `intelligence.addKnowledgeItem`.
 6. **Approval row** for the misclassification audit (`entityType: document_classification_audit`) — operator approves the batch of proposed corrections (now including Check 6 link-opportunities) before any classification fixes are applied (always-ask-operator rule).
@@ -71,7 +71,7 @@ Persisted to Convex:
 
 7. **Detect deal type + phase.** Per `references/deal-type-and-phase-detection.md`: score against the detection signals, output `{dealType, dealPhase, confidence, evidence[]}`. Honour operator's `dealTypeHint` / `dealPhaseHint` if provided (skip detection and use the override). Persist via `intelligence.addKnowledgeItem` at `deal.type`, `deal.phase`, `deal.detectionConfidence`, `deal.detectionEvidence`.
 
-8. **Seed the right checklist.** For new projects: trigger `knowledgeLibrary.initializeChecklistForProject` (15 items standard template; substrate gap — falls back to `npx convex run` until MCP-exposed). For existing projects: skip. For Bridging-type, also seed bridging-specific items via `checklist.createCustomItem`. Auto-link any matching docs via `checklist.linkDocument` (this is a first-pass; the audit at step 9 catches additional link opportunities).
+8. **Seed the right checklist.** New projects get the 15-item standard template automatically (`project.create` schedules it). If a project is somehow missing one, re-seed via `checklist.initializeForProject`. For Bridging-type, also seed bridging-specific items via `checklist.createCustomItem`. Auto-link any matching docs via `checklist.linkDocument` (this is a first-pass; the audit at step 9 catches additional link opportunities).
 
 9. **Run the misclassification audit pass.** Per `references/misclassification-audit-playbook.md`: 6 checks (fulfilled-but-mismatched, V4 defeat state, low confidence, inconsistent-with-sibling, corpus cross-reference, link opportunities). **Check 6 (link opportunities) is highest-leverage** — test fire showed it typically dominates the proposed-corrections batch when project is mid-stage. Produce a single `approvals` row (`entityType: document_classification_audit`) with the proposed corrections list. **Do NOT auto-apply.**
 
@@ -126,11 +126,11 @@ This skill calls these MCP-exposed tools (v1.4):
 - `task.create` (Sprint G) — surface missing-doc follow-ups (step 12)
 - `companies.syncCompaniesHouse` — enrich SPV entities with CH numbers (best-effort; step 10)
 
-Tools NOT YET MCP-exposed (skill falls back to `npx convex run` OR captures in gaps):
+Tools NOT YET MCP-exposed (skill falls back to gaps):
 
-- `knowledgeLibrary.initializeChecklistForProject` — needed in step 8 (seeds the 15-item template on fresh project)
-- `bulkUpload.getBatchItems` — needed when input is `bulkUploadBatchId` (step 1)
 - xlsx content extraction — needed to mine appraisal financials in step 11 (until exists, mining is partial; flagged as gap)
+
+(Previously listed here and now MCP-exposed: `checklist.initializeForProject` — though `project.create` auto-seeds the checklist anyway — and `bulkUpload.getBatchItems`.)
 
 **Claude Code native tools used:** none required. All data is in Convex; all reads/writes are MCP. (V4 classification is a separate pipeline triggered by upload — deal-intake reads its output, does not invoke it.)
 
@@ -152,7 +152,7 @@ Tools NOT YET MCP-exposed (skill falls back to `npx convex run` OR captures in g
 
 8. **Audit produces zero corrections.** No misclassifications detected (V4 did clean work). Skill skips step 8's approvals row, sets `status: "complete"`.
 
-9. **macOS resource forks in batch.** Sprint I added a server-side filter at `bulkUpload.addItemToBatch` that rejects `._*` files at upload time. The skill's step 4 resource-fork check is now defence-in-depth — should be a no-op for new uploads but still rejects any historical `._*` docs that slipped through before the filter landed. If the rejection count is unusually high (>10), the operator should be alerted via the brief — likely the borrower drag-dropped from a Mac with hidden files visible.
+9. **macOS resource forks in batch.** Sprint I added a server-side filter in the bulk-upload pipeline that rejects `._*` files at upload time. The skill's step 4 resource-fork check is now defence-in-depth — should be a no-op for new uploads but still rejects any historical `._*` docs that slipped through before the filter landed. If the rejection count is unusually high (>10), the operator should be alerted via the brief — likely the borrower drag-dropped from a Mac with hidden files visible.
 
 ## References
 
