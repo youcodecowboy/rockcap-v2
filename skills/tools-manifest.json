@@ -1,6 +1,6 @@
 {
   "generatedFrom": "model-testing-app/convex/mcp.ts (seed); refreshed live via meta.listTools",
-  "toolCount": 117,
+  "toolCount": 120,
   "domainCount": 23,
   "domains": [
     "apollo",
@@ -69,6 +69,11 @@
       "description": "List the items in a bulk-upload batch (the per-file rows + their classification/status). Use when a deal-intake or doc workflow is driven from a `bulkUploadBatchId` — removes the prior `npx convex run` fallback. Returns the bulkUploadItems rows for the batch."
     },
     {
+      "name": "cadence.applyPresetSchedule",
+      "domain": "cadence",
+      "description": "Reconfigure a whole cadence PACKAGE's timing by intensity preset — `light` / `moderate` / `aggressive` — rescheduling every UNFIRED touch's nextDueAt off touch 1's anchor date (fired touches are left alone). The fastest way to make a cold-outreach sequence more or less aggressive from Claude Code. Get the packageId from cadence.create / cadence.listByPackage / cadence.listByClient. Returns counts: rescheduled + skippedFired."
+    },
+    {
       "name": "cadence.approvePackage",
       "domain": "cadence",
       "description": "Approve a whole cadence PACKAGE (all touches sharing a packageId) so the dispatcher will fire them. A freshly-created cold-outreach package is queued at packageApprovalStatus='pending' and never fires until approved — this is that gate. Get the packageId from cadence.create's result or cadence.listByPackage. Pair with cadence.denyPackage to discard the sequence."
@@ -92,6 +97,16 @@
       "name": "cadence.get",
       "domain": "cadence",
       "description": "Get a single cadence row by id. Use when you have a cadence id from prospect.getDeepContext's cadences section and need the full row (preDraftedTouch, scheduleConfig, pauseUntil status, etc)."
+    },
+    {
+      "name": "cadence.listByClient",
+      "domain": "cadence",
+      "description": "List all cadences attached to a client (via relatedClientId). Use to see + manage everything in flight for a client before editing/pausing/rescheduling. Returns the cadence rows (each with cadenceType, scheduleConfig, nextDueAt, isActive, packageId, packageApprovalStatus)."
+    },
+    {
+      "name": "cadence.listByContact",
+      "domain": "cadence",
+      "description": "List all cadences targeting a specific contact (via contactId). Use to see + manage a person's outreach touches before editing/pausing/rescheduling."
     },
     {
       "name": "cadence.listByPackage",
@@ -121,7 +136,7 @@
     {
       "name": "cadence.update",
       "domain": "cadence",
-      "description": "Update an existing cadence row's preDraftedTouch content or scheduled nextDueAt. Sets editedByOperator + editedAt audit fields. Revision re-runs respect editedByOperator and skip overwriting unless the operator's revision note specifically calls out the edited touch."
+      "description": "Edit an existing cadence row — its drafted content (`preDraftedTouch`), schedule (`nextDueAt`), recurrence config (`scheduleConfig`: intervalDays / anchorDate / customSchedule), and/or `cadenceType`. All fields optional; only what you pass is changed. Sets editedByOperator + editedAt audit fields (revision re-runs then skip overwriting unless the operator's note calls out the edited touch). Use to reconfigure a cadence from Claude Code — e.g. change a quarterly prospect_followup to monthly, retype it, or rewrite a touch."
     },
     {
       "name": "checklist.createCustomItem",

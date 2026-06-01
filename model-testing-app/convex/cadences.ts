@@ -293,6 +293,23 @@ export const updateInternal = internalMutation({
       dynamicVars: v.optional(v.any()),
     })),
     nextDueAt: v.optional(v.string()),
+    // Configurable cadence shape (MCP cadence management). Optional — only
+    // patched when provided.
+    cadenceType: v.optional(v.union(
+      v.literal("prospect_followup"),
+      v.literal("warm_lead_chase"),
+      v.literal("execution_chaser"),
+      v.literal("client_checkin"),
+      v.literal("bdm_relationship"),
+      v.literal("monitoring_ask"),
+      v.literal("post_lost_re_engagement"),
+      v.literal("custom"),
+    )),
+    scheduleConfig: v.optional(v.object({
+      intervalDays: v.optional(v.number()),
+      anchorDate: v.optional(v.string()),
+      customSchedule: v.optional(v.any()),
+    })),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -304,6 +321,8 @@ export const updateInternal = internalMutation({
     };
     if (args.preDraftedTouch !== undefined) patch.preDraftedTouch = args.preDraftedTouch;
     if (args.nextDueAt !== undefined) patch.nextDueAt = args.nextDueAt;
+    if (args.cadenceType !== undefined) patch.cadenceType = args.cadenceType;
+    if (args.scheduleConfig !== undefined) patch.scheduleConfig = args.scheduleConfig;
     await ctx.db.patch(args.cadenceId, patch);
     return { ok: true };
   },
@@ -629,6 +648,66 @@ export const applyPresetSchedule = mutation({
         editedByOperator: true,
         editedAt: now,
         editedBy: userId,
+        updatedAt: now,
+      });
+      rescheduled++;
+    }
+
+    return {
+      ok: true as const,
+      packageId: args.packageId,
+      preset: args.preset,
+      rescheduled,
+      skippedFired,
+      anchor: anchorIso,
+    };
+  },
+});
+
+// Internal applyPresetSchedule — MCP path (bearer auth → explicit userId).
+// Same logic as applyPresetSchedule but takes userId instead of a Clerk session.
+export const applyPresetScheduleInternal = internalMutation({
+  args: {
+    packageId: v.string(),
+    preset: v.union(v.literal("light"), v.literal("moderate"), v.literal("aggressive")),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    if (rows.length === 0) {
+      return { ok: false as const, error: "package_not_found", packageId: args.packageId };
+    }
+
+    const sorted = [...rows].sort((a, b) => (a.packageOrder ?? 0) - (b.packageOrder ?? 0));
+    const touch1 = sorted[0];
+    const anchorIso = touch1.lastFiredAt ?? touch1.nextDueAt;
+    if (!anchorIso) {
+      return { ok: false as const, error: "touch_1_has_no_anchor_date" };
+    }
+    const anchorMs = new Date(anchorIso).getTime();
+    const offsets = PRESET_OFFSETS[args.preset];
+    const now = new Date().toISOString();
+
+    let rescheduled = 0;
+    let skippedFired = 0;
+    for (const row of sorted) {
+      const order = row.packageOrder ?? 0;
+      if (order < 1 || order > 4) continue;
+      if (row.lastFiredAt) {
+        skippedFired++;
+        continue;
+      }
+      const offsetDays = offsets[order - 1] ?? offsets[offsets.length - 1];
+      const newDueIso = new Date(anchorMs + offsetDays * 24 * 60 * 60 * 1000).toISOString();
+      if (row.nextDueAt === newDueIso) continue;
+      await ctx.db.patch(row._id, {
+        nextDueAt: newDueIso,
+        editedByOperator: true,
+        editedAt: now,
+        editedBy: args.userId,
         updatedAt: now,
       });
       rescheduled++;
