@@ -46,6 +46,10 @@ This flow was split into gates on 2026-05-30. Before, `prospect-intel` ran intel
 
 `prospect-intel` (intel-only) → `researched` → operator **Accept** → `outreachReadyAt` → `outreach-draft` → `drafted` (4 pending cadences) → operator **Approve & Schedule** → `active` → `replied` → **meeting booked** → `engaged` (semi-client: files + meetings flow) → operator **Promote** (judgment) → `promoted` / active client.
 
+## Every stage is operator-advanceable
+
+The gate triggers above are the *default* path, not the only one. **The operator can set any stage manually at any time** — via the **Stage** dropdown on the prospect detail header, or `prospect.transitionState({clientId, newState})` from Claude Code. **Promote** is available from any non-promoted state (it's a judgment call, not gated to a rung), via the header button or `client.activate`. So the auto-triggers (intel→researched, draft→drafted, approve→active, meeting→engaged) just save clicks; nothing is locked.
+
 ## Edge cases
 
 - **No verified email** → held/contactless package + `no_contact` gap (existing Phase-3 behaviour). Marking ready does NOT require an email.
