@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 
@@ -772,6 +772,91 @@ export const addManualItem = mutation({
     });
     
     return { itemId };
+  },
+});
+
+// Upsert an extracted data item by (projectId, itemCode) — MCP path for
+// Claude-side appraisal extraction. Inserts a new item or updates an existing
+// one (appending to valueHistory), so re-running an extraction is safe. Takes an
+// explicit userId (the MCP server authenticates by bearer token, not a session).
+export const upsertExtractedItemInternal = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    itemCode: v.string(),
+    category: v.string(),
+    originalName: v.string(),
+    value: v.any(),
+    dataType: v.string(),
+    userId: v.id("users"),
+    sourceDocumentId: v.optional(v.id("documents")),
+    sourceDocumentName: v.optional(v.string()),
+    note: v.optional(v.string()), // provenance, e.g. "Appraisal!C10"
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    let normalizedValue = 0;
+    if (typeof args.value === "number") normalizedValue = args.value;
+    else if (typeof args.value === "string") normalizedValue = parseFloat(args.value.replace(/[^0-9.-]/g, "")) || 0;
+    const sourceDocId = args.sourceDocumentId || ("manual" as unknown as Id<"documents">);
+    const sourceDocName = args.sourceDocumentName || "Manual Entry";
+
+    const histEntry = {
+      value: args.value,
+      valueNormalized: normalizedValue,
+      sourceDocumentId: sourceDocId,
+      sourceDocumentName: sourceDocName,
+      sourceExtractionId: "" as unknown as Id<"codifiedExtractions">,
+      originalName: args.originalName,
+      addedAt: now,
+      addedBy: "extraction" as const,
+      addedByUserId: args.userId,
+      isCurrentValue: true,
+      wasReverted: false,
+    };
+
+    const existing = await ctx.db
+      .query("projectDataItems")
+      .withIndex("by_project_code", (q) => q.eq("projectId", args.projectId).eq("itemCode", args.itemCode))
+      .first();
+
+    if (existing && !existing.isDeleted) {
+      const priorHistory = (existing.valueHistory || []).map((h: any) => ({ ...h, isCurrentValue: false }));
+      await ctx.db.patch(existing._id, {
+        category: args.category,
+        originalName: args.originalName,
+        currentValue: args.value,
+        currentValueNormalized: normalizedValue,
+        currentSourceDocumentId: sourceDocId,
+        currentSourceDocumentName: sourceDocName,
+        currentDataType: args.dataType,
+        lastUpdatedAt: now,
+        lastUpdatedBy: "extraction",
+        lastUpdatedByUserId: args.userId,
+        manualOverrideNote: args.note,
+        hasMultipleSources: (existing.valueHistory?.length ?? 0) > 0,
+        valueHistory: [...priorHistory, histEntry],
+      });
+      return { itemId: existing._id, action: "updated" as const };
+    }
+
+    const itemId = await ctx.db.insert("projectDataItems", {
+      projectId: args.projectId,
+      itemCode: args.itemCode,
+      category: args.category,
+      originalName: args.originalName,
+      currentValue: args.value,
+      currentValueNormalized: normalizedValue,
+      currentSourceDocumentId: sourceDocId,
+      currentSourceDocumentName: sourceDocName,
+      currentDataType: args.dataType,
+      lastUpdatedAt: now,
+      lastUpdatedBy: "extraction",
+      lastUpdatedByUserId: args.userId,
+      manualOverrideNote: args.note,
+      hasMultipleSources: false,
+      valueHistory: [histEntry],
+    });
+    return { itemId, action: "created" as const };
   },
 });
 

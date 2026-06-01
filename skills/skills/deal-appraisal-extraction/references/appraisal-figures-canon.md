@@ -5,8 +5,38 @@ and the `templateTags` that let them re-populate appraisal templates later. Use
 these exact fieldPaths so `project.getDeepContext`, `lender.matchForDeal`, and the
 (future) template-population step all read the same keys.
 
-All values: plain numbers (strip £/commas/%). `valueType: "number"` unless noted.
-Always set `sourceText` to the `Sheet!Cell` it came from.
+All values: plain numbers (strip £/commas/%). Always carry the `Sheet!Cell`
+provenance — in `projectData.upsertItem`'s `note`, and in `addKnowledgeItem`'s
+`sourceText`.
+
+## itemCode ↔ fieldPath map (for `projectData.upsertItem`)
+
+`projectData.upsertItem` files figures into the Data tab by `itemCode`; the
+headline ones also bridge to `knowledgeItems` by `fieldPath`. `category` is
+`Financials` (FIN.*), `Scheme` (SCH.*), or `Timeline` (TIME.*); `dataType` is
+`currency` (£), `percentage` (ratios), or `number` (units/area/months).
+
+| itemCode | fieldPath | dataType | bridge to knowledge? |
+|---|---|---|---|
+| `FIN.GDV` | `financials.grossDevelopmentValue` | currency | **yes** |
+| `FIN.TDC` | `financials.totalDevelopmentCost` | currency | **yes** |
+| `FIN.LAND` | `financials.landCost` | currency | no |
+| `FIN.BUILD` | `financials.constructionCost` | currency | no |
+| `FIN.FEES` | `financials.professionalFees` | currency | no |
+| `FIN.FINANCE` | `financials.financeCosts` | currency | no |
+| `FIN.CONTINGENCY` | `financials.contingency` | currency | no |
+| `FIN.PEAKDEBT` | `financials.peakDebt` | currency | no |
+| `FIN.LOAN` | `financials.loanRequired` | currency | no |
+| `FIN.PROFIT` | `financials.profit` | currency | no |
+| `FIN.PROFITONCOST` | `financials.profitOnCost` | percentage | no |
+| `FIN.PROFITONGDV` | `financials.profitOnGdv` | percentage | no |
+| `FIN.LTGDV` | `financials.ltgdv` | percentage | **yes** |
+| `FIN.LTC` | `financials.ltc` | percentage | no |
+| `SCH.UNITS` | `scheme.numberOfUnits` | number | **yes** |
+| `SCH.SCHEDULE` | `scheme.unitSchedule` | number (json in value) | no |
+| `SCH.GIA` | `scheme.grossInternalArea` | number | no |
+| `SCH.PSF` | `scheme.avgPricePerSqft` | currency | no |
+| `TIME.BUILDMONTHS` | `timeline.buildDurationMonths` | number | no |
 
 ## Headline figures (write canonical at project scope)
 

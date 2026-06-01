@@ -1,7 +1,7 @@
 {
   "generatedFrom": "model-testing-app/convex/mcp.ts (seed); refreshed live via meta.listTools",
-  "toolCount": 122,
-  "domainCount": 23,
+  "toolCount": 123,
+  "domainCount": 24,
   "domains": [
     "apollo",
     "approval",
@@ -20,6 +20,7 @@
     "note",
     "outreach",
     "project",
+    "projectData",
     "prospect",
     "reply",
     "skillRun",
@@ -547,6 +548,11 @@
       "name": "project.listByClient",
       "domain": "project",
       "description": "List all projects where a client appears in any clientRoles entry (borrower / lender / developer / etc.). Use to enumerate projects for a client when client.getDeepContext returned project counts and you want the full project list."
+    },
+    {
+      "name": "projectData.upsertItem",
+      "domain": "projectData",
+      "description": "Write a single extracted figure into a project's DATA LIBRARY (the project/client Data tab) — this is where appraisal financials belong. Upsert by `(projectId, itemCode)`: re-running an extraction updates the value and appends to its history. Use a canonical `itemCode` (e.g. `FIN.GDV`, `FIN.TDC`, `FIN.LTGDV`, `SCH.UNITS`), the `category` (e.g. 'Financials' / 'Scheme'), `originalName` (display label), `value` (number for £/%), `dataType` ('currency' / 'percentage' / 'number'), the source `documentId` (so it groups under the file in the Data tab), and `note` for provenance (e.g. 'Appraisal!C10'). The library normalizes the value + computes category totals. For headline figures that lender-matching needs (GDV/TDC/LTGDV/units), ALSO call `intelligence.addKnowledgeItem` with the matching `financials.*` fieldPath."
     },
     {
       "name": "prospect.getDeepContext",

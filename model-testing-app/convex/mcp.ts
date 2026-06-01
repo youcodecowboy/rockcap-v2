@@ -3761,6 +3761,45 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  {
+    name: "projectData.upsertItem",
+    description:
+      "Write a single extracted figure into a project's DATA LIBRARY (the project/client Data tab) — this is where appraisal financials belong. Upsert by `(projectId, itemCode)`: re-running an extraction updates the value and appends to its history. Use a canonical `itemCode` (e.g. `FIN.GDV`, `FIN.TDC`, `FIN.LTGDV`, `SCH.UNITS`), the `category` (e.g. 'Financials' / 'Scheme'), `originalName` (display label), `value` (number for £/%), `dataType` ('currency' / 'percentage' / 'number'), the source `documentId` (so it groups under the file in the Data tab), and `note` for provenance (e.g. 'Appraisal!C10'). The library normalizes the value + computes category totals. For headline figures that lender-matching needs (GDV/TDC/LTGDV/units), ALSO call `intelligence.addKnowledgeItem` with the matching `financials.*` fieldPath.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        itemCode: { type: "string", description: "Canonical code, e.g. FIN.GDV / FIN.TDC / SCH.UNITS." },
+        category: { type: "string", description: "Grouping category, e.g. 'Financials', 'Scheme', 'Timeline'." },
+        originalName: { type: "string", description: "Display label, e.g. 'Gross Development Value'." },
+        value: { description: "The value — a number for currency/percent figures." },
+        dataType: { type: "string", description: "currency / percentage / number." },
+        documentId: { type: "string", description: "Source document, so the figure files under its name in the Data tab." },
+        note: { type: "string", description: "Provenance — the sheet!cell or derivation, e.g. 'Appraisal!C10' or 'derived'." },
+      },
+      required: ["projectId", "itemCode", "category", "originalName", "value", "dataType"],
+    },
+    handler: async (ctx, userId, args) => {
+      let sourceDocumentName: string | undefined;
+      if (args.documentId) {
+        const d: any = await ctx.runQuery(api.documents.get, { id: args.documentId });
+        sourceDocumentName = d?.fileName;
+      }
+      const result = await ctx.runMutation(internal.projectDataLibrary.upsertExtractedItemInternal, {
+        projectId: args.projectId,
+        itemCode: args.itemCode,
+        category: args.category,
+        originalName: args.originalName,
+        value: args.value,
+        dataType: args.dataType,
+        userId,
+        sourceDocumentId: args.documentId,
+        sourceDocumentName,
+        note: args.note,
+      });
+      return asText(result);
+    },
+  },
 
   // ── Last CLI-fallback removers (2026-06-01) ──────────────────
   {

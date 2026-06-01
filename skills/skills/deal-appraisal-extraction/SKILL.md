@@ -36,13 +36,16 @@ Does not produce one.
 
 ## Outputs
 
-- Structured figures written via `document.saveIntelligence` — one field per
-  figure, each with `fieldPath` (see `references/appraisal-figures-canon.md`),
-  `value`, `valueType: "number"`, `confidence`, `templateTags`, and `sourceText`
-  carrying the **sheet!cell** provenance.
-- Canonical project-level financials also written via
-  `intelligence.addKnowledgeItem` (scope `project`, `fieldPath: "financials.*"`)
-  so `project.getDeepContext` + `lender.matchForDeal` can read them.
+- **Data tab (primary):** each figure written via `projectData.upsertItem` into the
+  project data library — the project/client **Data tab**. One call per figure with a
+  canonical `itemCode` (see `references/appraisal-figures-canon.md`), `category`,
+  `originalName`, numeric `value`, `dataType`, the source `documentId` (so it files
+  under the document in the Data tab), and `note` = the **sheet!cell** provenance.
+  Upsert by `(projectId, itemCode)` — re-running is safe. The library normalizes
+  values + computes category totals.
+- **Knowledge bridge (headline figures):** GDV, TDC, LTGDV, units also written via
+  `intelligence.addKnowledgeItem` (scope `project`, `fieldPath: "financials.*"`) so
+  `project.getDeepContext` + `lender.matchForDeal` can read them.
 - A short brief: what was extracted, confidence, anything ambiguous left for the operator.
 
 ## High-level workflow
@@ -59,10 +62,11 @@ Does not produce one.
 3. **Cross-check the arithmetic.** GDV − TDC ≈ profit; profit ÷ TDC ≈ profit-on-cost;
    loan ÷ GDV ≈ LTGDV. If the sheet's stated ratios don't reconcile with the
    figures you pulled, flag it rather than silently "fixing" it.
-4. **Persist.** `document.saveIntelligence({documentId, projectId?, clientId?, fields:[…]})`
-   with one field per figure (templateTags + sourceText). Then write the headline
-   project-level figures as canonical knowledge items via
-   `intelligence.addKnowledgeItem`.
+4. **Persist to the Data tab.** For each figure call `projectData.upsertItem({projectId,
+   itemCode, category, originalName, value, dataType, documentId, note})` — `itemCode`
+   + `category` from the canon, `value` a plain number, `note` the sheet!cell. Then
+   bridge the headline figures (GDV/TDC/LTGDV/units) to `intelligence.addKnowledgeItem`
+   (scope `project`, `fieldPath: financials.*`) for lender-matching.
 5. **Brief.** Report the figures table, confidence, and any unreconciled / ambiguous
    items for the operator to confirm.
 
@@ -79,10 +83,11 @@ Does not produce one.
 ## Tool dependencies
 
 - `document.getSheetData` — the cells (server parses, you extract).
-- `document.saveIntelligence` — persist structured fields (templateTags + provenance).
-- `intelligence.addKnowledgeItem` — canonical project-level `financials.*` facts.
+- `projectData.upsertItem` — persist each figure into the Data tab (upsert by itemCode; carries documentId + cell provenance).
+- `intelligence.addKnowledgeItem` — bridge headline `financials.*` figures for lender-matching / getDeepContext.
 - `document.get` — resolve the document / its links.
 - `project.getDeepContext` — confirm the project + read back what landed.
+- `document.saveIntelligence` — optional: also record fields on the document's own intelligence (Knowledge tab).
 
 ## What goes wrong
 
