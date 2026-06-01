@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, type CSSProperties } from 'react';
-import { Plus, AlertTriangle } from 'lucide-react';
+import { useState, useMemo, useEffect, type CSSProperties } from 'react';
+import { useRouter } from 'next/navigation';
+import { Plus, Calendar as CalendarIcon } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -77,6 +78,23 @@ export default function CalendarPage() {
     startDate: dateRange.start,
     endDate: dateRange.end,
   });
+
+  const calendarStatus = useQuery(api.googleCalendar.getSyncStatus, {});
+  const router = useRouter();
+  // Same-tab connect so the user returns to the calendar after OAuth.
+  const handleConnectCalendar = () => {
+    window.location.href = `/api/google/auth?returnTo=${encodeURIComponent('/calendar')}`;
+  };
+
+  // On return from OAuth, trigger the initial sync and strip the query param.
+  // Read from window.location (not useSearchParams) to keep this page
+  // statically prerenderable without a Suspense boundary.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('google') === 'success') {
+      fetch('/api/google/setup-sync', { method: 'POST' }).catch(console.error);
+      router.replace('/calendar');
+    }
+  }, [router]);
 
   // Transform events for react-big-calendar
   const calendarEvents: CalendarEvent[] = useMemo(() => {
@@ -180,23 +198,30 @@ export default function CalendarPage() {
   return (
     <div style={{ minHeight: '100vh', background: colors.bg.light }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Development Banner */}
-        <div
-          style={{
-            marginBottom: 24,
-            padding: 12,
-            borderRadius: 4,
-            background: `${colors.accent.yellow}15`,
-            border: `1px solid ${colors.accent.yellow}40`,
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" style={{ color: colors.accent.yellow }} />
-            <p style={{ fontSize: 12, color: colors.text.secondary }}>
-              <span style={{ fontWeight: 500 }}>In Development</span> — Not all features are fully functional. Google Calendar sync coming soon.
-            </p>
+        {/* Connect Google Calendar prompt — only while not connected */}
+        {calendarStatus && !calendarStatus.isConnected && (
+          <div
+            style={{
+              marginBottom: 24,
+              padding: 12,
+              borderRadius: 4,
+              background: `${colors.accent.blue}12`,
+              border: `1px solid ${colors.accent.blue}33`,
+            }}
+            className="flex items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="w-4 h-4" style={{ color: colors.accent.blue }} />
+              <p style={{ fontSize: 12, color: colors.text.secondary }}>
+                <span style={{ fontWeight: 500 }}>Connect your Google Calendar</span> to sync your events into this view.
+              </p>
+            </div>
+            <Button variant="primary" size="sm" accent={colors.accent.blue} onClick={handleConnectCalendar}>
+              <CalendarIcon className="w-3.5 h-3.5" />
+              Connect
+            </Button>
           </div>
-        </div>
+        )}
 
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">

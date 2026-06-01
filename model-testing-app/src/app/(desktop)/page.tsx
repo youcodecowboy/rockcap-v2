@@ -1,7 +1,7 @@
 'use client';
 
 import { useUser } from '@clerk/nextjs';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -31,12 +31,43 @@ import {
   ArrowRight,
   FolderKanban,
   Building2,
-  ListTodo
+  Flag,
+  AtSign,
+  MessageSquare,
+  CheckCircle
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
 import CreateRolodexModal from '@/components/CreateRolodexModal';
 import TaskFormCompact from '@/components/TaskFormCompact';
 import { Id } from '../../../convex/_generated/dataModel';
+
+// Relative "time ago" for notifications (past events, unlike task/event due dates).
+const formatNotificationTime = (dateString: string) => {
+  const date = new Date(dateString);
+  const diffMs = Date.now() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+
+// Map notification type → icon + accent. Mirrors the mobile NotificationsSection.
+const notifTypeConfig = (type: string, c: ColorPalette): { Icon: React.ElementType; color: string } => {
+  switch (type) {
+    case 'reminder': return { Icon: Clock, color: c.accent.blue };
+    case 'task': return { Icon: CheckSquare, color: c.accent.purple };
+    case 'flag': return { Icon: Flag, color: c.accent.orange };
+    case 'mention': return { Icon: AtSign, color: c.accent.blue };
+    case 'message': return { Icon: MessageSquare, color: c.accent.green };
+    case 'changelog': return { Icon: CheckCircle, color: c.accent.green };
+    case 'file_upload': return { Icon: FileText, color: c.text.muted };
+    default: return { Icon: Bell, color: c.text.muted };
+  }
+};
 
 export default function Dashboard() {
   const colors = useColors();
@@ -54,8 +85,20 @@ export default function Dashboard() {
 
   // Fetch dashboard data
   const taskMetrics = useQuery(api.tasks.getMetrics, {});
-  const nextReminder = useQuery(api.reminders.getUpcoming, { limit: 1 });
+  const recentNotifications = useQuery(api.notifications.getRecent, { limit: 3, includeRead: false });
+  const unreadNotifCount = useQuery(api.notifications.getUnreadCount, {});
+  const markNotificationRead = useMutation(api.notifications.markAsRead);
+  const markAllNotificationsRead = useMutation(api.notifications.markAllAsRead);
   const nextEvent = useQuery(api.events.getNextEvent, {});
+  const calendarStatus = useQuery(api.googleCalendar.getSyncStatus, {});
+  // Default to "connected" while the status query is loading so we don't flash
+  // the connect CTA before we know the real state.
+  const calendarConnected = calendarStatus?.isConnected ?? true;
+  // Same-tab connect so the user returns here (not the settings page) after the
+  // OAuth round-trip. The callback honors returnTo and lands back with ?google=success.
+  const handleConnectCalendar = () => {
+    window.location.href = `/api/google/auth?returnTo=${encodeURIComponent('/')}`;
+  };
   const upcomingTasks = useQuery(api.tasks.getByUser, {});
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
@@ -97,6 +140,16 @@ export default function Dashboard() {
     setTodayDate(today.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
   }, []);
 
+  // After returning from the Google OAuth round-trip, kick off the initial sync
+  // and strip the ?google= param so it doesn't re-fire on refresh. Read from
+  // window.location (not useSearchParams) to avoid a CSR Suspense bailout.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('google') === 'success') {
+      fetch('/api/google/setup-sync', { method: 'POST' }).catch(console.error);
+      router.replace('/');
+    }
+  }, [router]);
+
   // Filter upcoming tasks (non-completed, include all tasks including overdue)
   const filteredUpcomingTasks = upcomingTasks?.filter(task => {
     // Exclude only completed and cancelled tasks
@@ -118,11 +171,6 @@ export default function Dashboard() {
   const getTaskProjectName = (projectId?: Id<'projects'>) => {
     if (!projectId) return null;
     return projects?.find(p => p._id === projectId)?.name;
-  };
-
-  const getTaskName = (taskId?: Id<'tasks'>) => {
-    if (!taskId) return null;
-    return upcomingTasks?.find(t => t._id === taskId)?.title;
   };
 
   const getPriorityTone = (priority: string, c: ColorPalette) => {
@@ -163,10 +211,6 @@ export default function Dashboard() {
 
   const handleNewTask = () => {
     setIsCreateTaskModalOpen(true);
-  };
-
-  const handleNewReminder = () => {
-    router.push('/tasks');
   };
 
   const handleNewUpload = () => {
@@ -250,10 +294,6 @@ export default function Dashboard() {
             <Button variant="secondary" onClick={handleNewTask} style={{ justifyContent: 'center', height: 36 }}>
               <Plus className="w-4 h-4" style={{ color: colors.accent.yellow }} />
               <span>New Task</span>
-            </Button>
-            <Button variant="secondary" onClick={handleNewReminder} style={{ justifyContent: 'center', height: 36 }}>
-              <Bell className="w-4 h-4" style={{ color: colors.accent.orange }} />
-              <span>New Reminder</span>
             </Button>
             <Button variant="secondary" onClick={handleNewUpload} style={{ justifyContent: 'center', height: 36 }}>
               <Upload className="w-4 h-4" style={{ color: colors.accent.red }} />
@@ -340,82 +380,70 @@ export default function Dashboard() {
             </div>
           </Panel>
 
-          {/* Next Reminder Card */}
+          {/* Notifications Card */}
           <Panel
-            title="Next Reminder"
+            title="Notifications"
             accent={colors.accent.orange}
             actions={metaText(
-              nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor && isOverdue(nextReminder[0].scheduledFor)
-                ? 'Overdue'
-                : nextReminder && nextReminder.length > 0
-                ? 'Upcoming'
-                : 'No Reminder'
+              unreadNotifCount && unreadNotifCount > 0
+                ? `${unreadNotifCount} Unread`
+                : 'All Caught Up'
             )}
           >
             <div className="flex flex-col h-full">
-              <div className="mb-3">
-                {nextReminder && nextReminder.length > 0 ? (
-                  <>
-                    <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary, marginBottom: 8 }}>
-                      {nextReminder[0].title}
-                    </h2>
-                    {nextReminder[0].description && (
-                      <p className="line-clamp-2" style={{ fontSize: 12, color: colors.text.muted, marginBottom: 8 }}>
-                        {nextReminder[0].description}
-                      </p>
-                    )}
-                    <div className="space-y-1.5">
-                      {getTaskName(nextReminder[0].taskId) && (
-                        <div className="flex items-center gap-1.5">
-                          <ListTodo className="w-3 h-3" style={{ color: colors.text.muted }} />
-                          <span style={{ fontSize: 11, color: colors.text.muted }}>Task:</span>
-                          <Link href={`/tasks`} style={linkStyle}>
-                            {getTaskName(nextReminder[0].taskId)}
-                          </Link>
-                        </div>
-                      )}
-                      {getTaskClientName(nextReminder[0].clientId) && (
-                        <div className="flex items-center gap-1.5">
-                          <Building2 className="w-3 h-3" style={{ color: colors.text.muted }} />
-                          <span style={{ fontSize: 11, color: colors.text.muted }}>Client:</span>
-                          <Link href={`/clients/${nextReminder[0].clientId}`} style={linkStyle}>
-                            {getTaskClientName(nextReminder[0].clientId)}
-                          </Link>
-                        </div>
-                      )}
-                      {getTaskProjectName(nextReminder[0].projectId) && (
-                        <div className="flex items-center gap-1.5">
-                          <FolderKanban className="w-3 h-3" style={{ color: colors.text.muted }} />
-                          <span style={{ fontSize: 11, color: colors.text.muted }}>Project:</span>
-                          <Link href={`/projects/${nextReminder[0].projectId}`} style={{ ...linkStyle, fontWeight: 600 }}>
-                            {getTaskProjectName(nextReminder[0].projectId)}
-                          </Link>
-                        </div>
-                      )}
-                    </div>
-                  </>
+              <div className="mb-3 flex-1">
+                {recentNotifications && recentNotifications.length > 0 ? (
+                  <div className="space-y-1">
+                    {recentNotifications.map((n) => {
+                      const { Icon, color } = notifTypeConfig(n.type, colors);
+                      return (
+                        <button
+                          key={n._id}
+                          onClick={() => markNotificationRead({ id: n._id })}
+                          className="w-full flex items-start gap-2 text-left rounded-md px-1.5 py-1.5"
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                          title="Mark as read"
+                        >
+                          <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color, marginTop: 2 }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate" style={{ fontSize: 13, fontWeight: 600, color: colors.text.primary }}>
+                                {n.title}
+                              </span>
+                              <span style={{ fontSize: 10, color: colors.text.muted, flexShrink: 0 }}>
+                                {formatNotificationTime(n.createdAt)}
+                              </span>
+                            </div>
+                            <p className="truncate" style={{ fontSize: 11, color: colors.text.muted, marginTop: 1 }}>
+                              {n.message}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.muted }}>
-                    No reminders scheduled
+                    No new notifications
                   </h2>
                 )}
               </div>
 
               <div className="mt-auto flex items-center justify-between" style={{ paddingTop: 8, borderTop: `1px solid ${colors.border.default}` }}>
                 <div className="flex items-center gap-2">
-                  {nextReminder && nextReminder.length > 0 && nextReminder[0].scheduledFor ? (
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" style={{ color: colors.text.muted }} />
-                      <span style={{ fontSize: 11, fontWeight: 500, color: formatTimeRemaining(nextReminder[0].scheduledFor).urgent ? colors.accent.red : colors.text.secondary }}>
-                        {formatTimeRemaining(nextReminder[0].scheduledFor).text}
-                      </span>
-                    </div>
+                  {unreadNotifCount && unreadNotifCount > 0 ? (
+                    <button
+                      onClick={() => markAllNotificationsRead({})}
+                      style={{ fontSize: 11, fontWeight: 500, color: colors.accent.blue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    >
+                      Mark all read
+                    </button>
                   ) : (
-                    <span style={{ fontSize: 11, color: colors.text.dim }}>No scheduled time</span>
+                    <span style={{ fontSize: 11, color: colors.text.dim }}>Nothing unread</span>
                   )}
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => router.push('/tasks')}>
-                  {nextReminder && nextReminder.length > 0 ? 'View Reminder' : 'Create Reminder'}
+                <Button variant="secondary" size="sm" onClick={() => router.push('/inbox')}>
+                  View All
                   <ArrowRight className="w-3 h-3" />
                 </Button>
               </div>
@@ -474,9 +502,16 @@ export default function Dashboard() {
                     </div>
                   </>
                 ) : (
-                  <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.muted }}>
-                    No events scheduled
-                  </h2>
+                  <div>
+                    <h2 style={{ fontSize: 15, fontWeight: 600, color: colors.text.muted }}>
+                      No events scheduled
+                    </h2>
+                    {!calendarConnected && (
+                      <p style={{ fontSize: 12, color: colors.text.muted, marginTop: 8 }}>
+                        Connect your Google Calendar to see your schedule here.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -493,10 +528,17 @@ export default function Dashboard() {
                     <span style={{ fontSize: 11, color: colors.text.dim }}>No scheduled time</span>
                   )}
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => router.push('/calendar')}>
-                  {nextEvent ? 'View Event' : 'Create Event'}
-                  <ArrowRight className="w-3 h-3" />
-                </Button>
+                {nextEvent || calendarConnected ? (
+                  <Button variant="secondary" size="sm" onClick={() => router.push('/calendar')}>
+                    {nextEvent ? 'View Event' : 'Create Event'}
+                    <ArrowRight className="w-3 h-3" />
+                  </Button>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={handleConnectCalendar}>
+                    <Calendar className="w-3 h-3" />
+                    Connect Calendar
+                  </Button>
+                )}
               </div>
             </div>
           </Panel>

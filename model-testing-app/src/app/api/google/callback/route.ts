@@ -9,11 +9,26 @@ export async function GET(request: NextRequest) {
   const stateParam = searchParams.get('state');
   const error = searchParams.get('error');
 
+  // Decode returnTo up front so error redirects honor it too. Re-validate the
+  // relative-path constraint here since state is attacker-influenceable.
+  let returnTo = '/m-settings';
+  if (stateParam) {
+    try {
+      const decoded = JSON.parse(Buffer.from(stateParam, 'base64').toString());
+      if (typeof decoded.returnTo === 'string' && decoded.returnTo.startsWith('/') && !decoded.returnTo.startsWith('//')) {
+        returnTo = decoded.returnTo;
+      }
+    } catch {
+      // fall back to /m-settings
+    }
+  }
+  const sep = returnTo.includes('?') ? '&' : '?';
+
   if (error) {
-    return NextResponse.redirect(new URL('/m-settings?google=denied', request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}google=denied`, request.url));
   }
   if (!code || !stateParam) {
-    return NextResponse.redirect(new URL('/m-settings?google=error', request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}google=error`, request.url));
   }
 
   try {
@@ -21,7 +36,7 @@ export async function GET(request: NextRequest) {
     const state = JSON.parse(Buffer.from(stateParam, 'base64').toString());
     if (!state.userId) {
       console.error('[Google callback] No userId in state');
-      return NextResponse.redirect(new URL('/m-settings?google=error', request.url));
+      return NextResponse.redirect(new URL(`${returnTo}${sep}google=error`, request.url));
     }
 
     console.log('[Google callback] Exchanging code for tokens...');
@@ -44,9 +59,9 @@ export async function GET(request: NextRequest) {
     });
 
     console.log('[Google callback] Success!');
-    return NextResponse.redirect(new URL('/m-settings?google=success', request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}google=success`, request.url));
   } catch (err) {
     console.error('[Google callback] ERROR:', err);
-    return NextResponse.redirect(new URL('/m-settings?google=error', request.url));
+    return NextResponse.redirect(new URL(`${returnTo}${sep}google=error`, request.url));
   }
 }

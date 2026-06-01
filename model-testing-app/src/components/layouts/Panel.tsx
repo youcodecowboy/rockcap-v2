@@ -23,7 +23,12 @@ export function Panel({
     <div
       style={{
         background: colors.bg.card,
-        border: `1px solid ${colors.border.default}`,
+        // Per-side longhand only — mixing the `border` shorthand with the
+        // `borderTop` longhand triggers a React shorthand/longhand warning on
+        // re-render.
+        borderRight: `1px solid ${colors.border.default}`,
+        borderBottom: `1px solid ${colors.border.default}`,
+        borderLeft: `1px solid ${colors.border.default}`,
         borderTop: accent ? `2px solid ${accent}` : `1px solid ${colors.border.default}`,
         borderRadius: 4,
       }}

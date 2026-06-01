@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
 // Helper function to get authenticated user
@@ -216,106 +216,150 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    const { id, ...updates } = args;
+    return updateTaskCore(ctx, user._id, args);
+  },
+});
 
-    const existing = await ctx.db.get(id);
-    if (!existing) {
-      throw new Error("Task not found");
+// Core update logic shared by the public `update` mutation (Clerk session) and
+// the `updateInternal` mutation (MCP/skill callers that pass userId directly).
+async function updateTaskCore(
+  ctx: any,
+  userId: Id<"users">,
+  args: any,
+) {
+  const { id, ...updates } = args;
+
+  const existing = await ctx.db.get(id);
+  if (!existing) {
+    throw new Error("Task not found");
+  }
+
+  // Verify user can edit: creator or assigned user can edit (backwards compat for old single-ID data)
+  const isAssigned = Array.isArray(existing.assignedTo)
+    ? existing.assignedTo.includes(userId)
+    : existing.assignedTo === userId;
+  if (existing.createdBy !== userId && !isAssigned) {
+    throw new Error("Unauthorized: You can only edit tasks you created or are assigned to");
+  }
+
+  const patchData: any = {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Convert null to undefined for optional ID fields
+  if (patchData.clientId === null) patchData.clientId = undefined;
+  if (patchData.projectId === null) patchData.projectId = undefined;
+  if (patchData.assignedTo === null) patchData.assignedTo = undefined;
+  if (patchData.attachmentIds === null) patchData.attachmentIds = undefined;
+  if (patchData.dueDate === null) patchData.dueDate = undefined;
+
+  await ctx.db.patch(id, patchData);
+
+  // Notifications for key changes
+  const now = new Date().toISOString();
+  const taskForNotify = { createdBy: existing.createdBy, assignedTo: Array.isArray(existing.assignedTo) ? existing.assignedTo : existing.assignedTo ? [existing.assignedTo] : [], _id: id };
+
+  if (args.status !== undefined && args.status !== existing.status) {
+    await notifyTaskStakeholders(ctx, taskForNotify, userId, "Task status changed", `Task "${existing.title}" status changed to "${args.status}"`);
+  }
+  if (args.dueDate !== undefined && args.dueDate !== existing.dueDate) {
+    await notifyTaskStakeholders(ctx, taskForNotify, userId, "Task due date changed", `Task "${existing.title}" due date was updated`);
+  }
+  if (args.notes !== undefined && args.notes !== existing.notes) {
+    await notifyTaskStakeholders(ctx, taskForNotify, userId, "Task notes updated", `Notes were updated on task "${existing.title}"`);
+  }
+
+  // Notify newly added assignees
+  if (args.assignedTo && Array.isArray(args.assignedTo)) {
+    const oldAssignees = new Set(Array.isArray(existing.assignedTo) ? existing.assignedTo : existing.assignedTo ? [existing.assignedTo] : []);
+    for (const newId of args.assignedTo) {
+      if (!oldAssignees.has(newId) && newId !== userId) {
+        await ctx.db.insert("notifications", {
+          userId: newId,
+          type: "task" as const,
+          title: "Task assigned to you",
+          message: `You have been assigned to task: "${existing.title}"`,
+          relatedId: String(id),
+          isRead: false,
+          createdAt: now,
+        });
+      }
     }
+  }
 
-    // Verify user can edit: creator or assigned user can edit (backwards compat for old single-ID data)
-    const isAssigned = Array.isArray(existing.assignedTo)
-      ? existing.assignedTo.includes(user._id)
-      : existing.assignedTo === user._id;
-    if (existing.createdBy !== user._id && !isAssigned) {
-      throw new Error("Unauthorized: You can only edit tasks you created or are assigned to");
-    }
-
-    const patchData: any = {
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Convert null to undefined for optional ID fields
-    if (patchData.clientId === null) patchData.clientId = undefined;
-    if (patchData.projectId === null) patchData.projectId = undefined;
-    if (patchData.assignedTo === null) patchData.assignedTo = undefined;
-    if (patchData.attachmentIds === null) patchData.attachmentIds = undefined;
-    if (patchData.dueDate === null) patchData.dueDate = undefined;
-
-    await ctx.db.patch(id, patchData);
-
-    // Notifications for key changes
-    const now = new Date().toISOString();
-    const taskForNotify = { createdBy: existing.createdBy, assignedTo: Array.isArray(existing.assignedTo) ? existing.assignedTo : existing.assignedTo ? [existing.assignedTo] : [], _id: id };
-
-    if (args.status !== undefined && args.status !== existing.status) {
-      await notifyTaskStakeholders(ctx, taskForNotify, user._id, "Task status changed", `Task "${existing.title}" status changed to "${args.status}"`);
-    }
-    if (args.dueDate !== undefined && args.dueDate !== existing.dueDate) {
-      await notifyTaskStakeholders(ctx, taskForNotify, user._id, "Task due date changed", `Task "${existing.title}" due date was updated`);
-    }
-    if (args.notes !== undefined && args.notes !== existing.notes) {
-      await notifyTaskStakeholders(ctx, taskForNotify, user._id, "Task notes updated", `Notes were updated on task "${existing.title}"`);
-    }
-
-    // Notify newly added assignees
+  // Log flag activity for status or assignedTo changes
+  const activityMessages: string[] = [];
+  if (args.status !== undefined && args.status !== existing.status) {
+    activityMessages.push(`Changed task status to "${args.status}"`);
+  }
+  if (args.assignedTo !== undefined) {
     if (args.assignedTo && Array.isArray(args.assignedTo)) {
-      const oldAssignees = new Set(Array.isArray(existing.assignedTo) ? existing.assignedTo : existing.assignedTo ? [existing.assignedTo] : []);
-      for (const newId of args.assignedTo) {
-        if (!oldAssignees.has(newId) && newId !== user._id) {
-          await ctx.db.insert("notifications", {
-            userId: newId,
-            type: "task" as const,
-            title: "Task assigned to you",
-            message: `You have been assigned to task: "${existing.title}"`,
-            relatedId: String(id),
-            isRead: false,
-            createdAt: now,
-          });
-        }
+      const names: string[] = [];
+      for (const uid of args.assignedTo) {
+        const u = await ctx.db.get(uid);
+        names.push(u?.name || u?.email || "unknown");
+      }
+      activityMessages.push(`Reassigned task to ${names.join(", ")}`);
+    } else {
+      activityMessages.push("Unassigned task");
+    }
+  }
+  if (activityMessages.length > 0) {
+    const openFlags = await ctx.db
+      .query("flags")
+      .withIndex("by_entity", (q: any) =>
+        q.eq("entityType", "task").eq("entityId", id)
+      )
+      .collect();
+    for (const flag of openFlags.filter((f: any) => f.status === "open")) {
+      for (const msg of activityMessages) {
+        await ctx.db.insert("flagThreadEntries", {
+          flagId: flag._id,
+          entryType: "activity",
+          userId,
+          content: msg,
+          metadata: { action: "updated" },
+          createdAt: now,
+        });
       }
     }
+  }
 
-    // Log flag activity for status or assignedTo changes
-    const activityMessages: string[] = [];
-    if (args.status !== undefined && args.status !== existing.status) {
-      activityMessages.push(`Changed task status to "${args.status}"`);
-    }
-    if (args.assignedTo !== undefined) {
-      if (args.assignedTo && Array.isArray(args.assignedTo)) {
-        const names: string[] = [];
-        for (const uid of args.assignedTo) {
-          const u = await ctx.db.get(uid);
-          names.push(u?.name || u?.email || "unknown");
-        }
-        activityMessages.push(`Reassigned task to ${names.join(", ")}`);
-      } else {
-        activityMessages.push("Unassigned task");
-      }
-    }
-    if (activityMessages.length > 0) {
-      const openFlags = await ctx.db
-        .query("flags")
-        .withIndex("by_entity", (q: any) =>
-          q.eq("entityType", "task").eq("entityId", id)
-        )
-        .collect();
-      for (const flag of openFlags.filter((f) => f.status === "open")) {
-        for (const msg of activityMessages) {
-          await ctx.db.insert("flagThreadEntries", {
-            flagId: flag._id,
-            entryType: "activity",
-            userId: user._id,
-            content: msg,
-            metadata: { action: "updated" },
-            createdAt: now,
-          });
-        }
-      }
-    }
+  return id;
+}
 
-    return id;
+// ── Internal variant for MCP/skill callers (userId threaded from MCP layer) ──
+export const updateInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    id: v.id("tasks"),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    dueDate: v.optional(v.union(v.string(), v.null())),
+    status: v.optional(v.union(
+      v.literal("todo"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("paused")
+    )),
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high")
+    )),
+    tags: v.optional(v.array(v.string())),
+    clientId: v.optional(v.union(v.id("clients"), v.null())),
+    projectId: v.optional(v.union(v.id("projects"), v.null())),
+    assignedTo: v.optional(v.union(v.array(v.id("users")), v.null())),
+    attachmentIds: v.optional(v.union(v.array(v.id("documents")), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const { userId, ...rest } = args;
+    const id = await updateTaskCore(ctx, userId, rest);
+    return { ok: true as const, taskId: id };
   },
 });
 
@@ -489,46 +533,59 @@ export const complete = mutation({
   args: { id: v.id("tasks") },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
+    return completeTaskCore(ctx, user._id, args.id);
+  },
+});
 
-    const task = await ctx.db.get(args.id);
-    if (!task) {
-      throw new Error("Task not found");
-    }
+// Core completion logic shared by the public `complete` mutation and the
+// `completeInternal` mutation (MCP/skill callers).
+async function completeTaskCore(ctx: any, userId: Id<"users">, id: Id<"tasks">) {
+  const task = await ctx.db.get(id);
+  if (!task) {
+    throw new Error("Task not found");
+  }
 
-    // Verify user can complete: creator or assigned user can complete
-    const isAssigned = Array.isArray(task.assignedTo) && task.assignedTo.includes(user._id);
-    if (task.createdBy !== user._id && !isAssigned) {
-      throw new Error("Unauthorized: You can only complete tasks you created or are assigned to");
-    }
+  // Verify user can complete: creator or assigned user can complete
+  const isAssigned = Array.isArray(task.assignedTo) && task.assignedTo.includes(userId);
+  if (task.createdBy !== userId && !isAssigned) {
+    throw new Error("Unauthorized: You can only complete tasks you created or are assigned to");
+  }
 
-    await ctx.db.patch(args.id, {
-      status: "completed",
-      updatedAt: new Date().toISOString(),
+  await ctx.db.patch(id, {
+    status: "completed",
+    updatedAt: new Date().toISOString(),
+  });
+
+  // Notify stakeholders about completion
+  const taskForNotify = { createdBy: task.createdBy, assignedTo: Array.isArray(task.assignedTo) ? task.assignedTo : task.assignedTo ? [task.assignedTo] : [], _id: id };
+  await notifyTaskStakeholders(ctx, taskForNotify, userId, "Task completed", `Task "${task.title}" has been marked as completed`);
+
+  // Log flag activity for completion
+  const openFlags = await ctx.db
+    .query("flags")
+    .withIndex("by_entity", (q: any) =>
+      q.eq("entityType", "task").eq("entityId", id)
+    )
+    .collect();
+  for (const flag of openFlags.filter((f: any) => f.status === "open")) {
+    await ctx.db.insert("flagThreadEntries", {
+      flagId: flag._id,
+      entryType: "activity",
+      userId,
+      content: 'Changed task status to "completed"',
+      metadata: { action: "completed" },
+      createdAt: new Date().toISOString(),
     });
+  }
 
-    // Notify stakeholders about completion
-    const taskForNotify = { createdBy: task.createdBy, assignedTo: Array.isArray(task.assignedTo) ? task.assignedTo : task.assignedTo ? [task.assignedTo] : [], _id: args.id };
-    await notifyTaskStakeholders(ctx, taskForNotify, user._id, "Task completed", `Task "${task.title}" has been marked as completed`);
+  return id;
+}
 
-    // Log flag activity for completion
-    const openFlags = await ctx.db
-      .query("flags")
-      .withIndex("by_entity", (q: any) =>
-        q.eq("entityType", "task").eq("entityId", args.id)
-      )
-      .collect();
-    for (const flag of openFlags.filter((f) => f.status === "open")) {
-      await ctx.db.insert("flagThreadEntries", {
-        flagId: flag._id,
-        entryType: "activity",
-        userId: user._id,
-        content: 'Changed task status to "completed"',
-        metadata: { action: "completed" },
-        createdAt: new Date().toISOString(),
-      });
-    }
-
-    return args.id;
+export const completeInternal = internalMutation({
+  args: { userId: v.id("users"), id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const id = await completeTaskCore(ctx, args.userId, args.id);
+    return { ok: true as const, taskId: id };
   },
 });
 
@@ -537,22 +594,35 @@ export const remove = mutation({
   args: { id: v.id("tasks") },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
+    await removeTaskCore(ctx, user._id, args.id);
+  },
+});
 
-    const task = await ctx.db.get(args.id);
-    if (!task) {
-      throw new Error("Task not found");
-    }
+// Core deletion logic shared by the public `remove` mutation and the
+// `removeInternal` mutation (MCP/skill callers).
+async function removeTaskCore(ctx: any, userId: Id<"users">, id: Id<"tasks">) {
+  const task = await ctx.db.get(id);
+  if (!task) {
+    throw new Error("Task not found");
+  }
 
-    // Verify user can delete: creator can delete
-    if (task.createdBy !== user._id) {
-      throw new Error("Unauthorized: Only the task creator can delete tasks");
-    }
+  // Verify user can delete: creator can delete
+  if (task.createdBy !== userId) {
+    throw new Error("Unauthorized: Only the task creator can delete tasks");
+  }
 
-    // Notify stakeholders before deletion
-    const taskForNotify = { createdBy: task.createdBy, assignedTo: Array.isArray(task.assignedTo) ? task.assignedTo : task.assignedTo ? [task.assignedTo] : [], _id: args.id };
-    await notifyTaskStakeholders(ctx, taskForNotify, user._id, "Task deleted", `Task "${task.title}" has been deleted`);
+  // Notify stakeholders before deletion
+  const taskForNotify = { createdBy: task.createdBy, assignedTo: Array.isArray(task.assignedTo) ? task.assignedTo : task.assignedTo ? [task.assignedTo] : [], _id: id };
+  await notifyTaskStakeholders(ctx, taskForNotify, userId, "Task deleted", `Task "${task.title}" has been deleted`);
 
-    await ctx.db.delete(args.id);
+  await ctx.db.delete(id);
+}
+
+export const removeInternal = internalMutation({
+  args: { userId: v.id("users"), id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    await removeTaskCore(ctx, args.userId, args.id);
+    return { ok: true as const };
   },
 });
 
@@ -582,6 +652,25 @@ export const get = query({
     // Only return if user created or is assigned to the task
     const isAssigned = Array.isArray(task.assignedTo) && task.assignedTo.includes(user._id);
     if (task.createdBy !== user._id && !isAssigned) {
+      return null;
+    }
+
+    return task;
+  },
+});
+
+// ── Internal variant for MCP/skill callers (userId threaded from MCP layer) ──
+export const getInternal = internalQuery({
+  args: { userId: v.id("users"), id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.id);
+    if (!task) {
+      return null;
+    }
+
+    // Only return if the caller created or is assigned to the task
+    const isAssigned = Array.isArray(task.assignedTo) && task.assignedTo.includes(args.userId);
+    if (task.createdBy !== args.userId && !isAssigned) {
       return null;
     }
 
@@ -664,6 +753,62 @@ export const getByUser = query({
     }
 
     // Sort by updatedAt descending (most recently updated first)
+    return tasks.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+  },
+});
+
+// ── Internal variant for MCP/skill callers (userId threaded from MCP layer) ──
+export const getByUserInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    status: v.optional(v.union(
+      v.literal("todo"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("paused")
+    )),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    tags: v.optional(v.array(v.string())),
+    includeCreated: v.optional(v.boolean()),
+    includeAssigned: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const includeCreated = args.includeCreated !== false; // Default true
+    const includeAssigned = args.includeAssigned !== false; // Default true
+
+    let tasks = await ctx.db.query("tasks").collect();
+
+    // Filter by user relationship
+    tasks = tasks.filter((task) => {
+      if (includeCreated && task.createdBy === args.userId) return true;
+      if (includeAssigned) {
+        if (Array.isArray(task.assignedTo)) {
+          return task.assignedTo.includes(args.userId);
+        }
+        return task.assignedTo === args.userId;
+      }
+      return false;
+    });
+
+    if (args.status) {
+      tasks = tasks.filter((t) => t.status === args.status);
+    }
+    if (args.clientId) {
+      tasks = tasks.filter((t) => t.clientId === args.clientId);
+    }
+    if (args.projectId) {
+      tasks = tasks.filter((t) => t.projectId === args.projectId);
+    }
+    if (args.tags && args.tags.length > 0) {
+      tasks = tasks.filter(
+        (t) => t.tags && args.tags!.some((tag) => t.tags!.includes(tag))
+      );
+    }
+
     return tasks.sort((a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );

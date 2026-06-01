@@ -17,7 +17,6 @@ export default function DashboardContent() {
 
   // All queries fire in parallel
   const tasks = useQuery(api.tasks.getByUser, {});
-  const nextReminder = useQuery(api.reminders.getUpcoming, { limit: 1 });
   const nextEvent = useQuery(api.events.getNextEvent, {});
   const notifications = useQuery(api.notifications.getRecent, { limit: 3, includeRead: false });
   const unreadCount = useQuery(api.notifications.getUnreadCount, {});
@@ -80,18 +79,6 @@ export default function DashboardContent() {
           href: '/m-tasks',
         });
       }
-    }
-
-    // Most urgent reminder
-    if (nextReminder && nextReminder.length > 0) {
-      const r = nextReminder[0];
-      candidates.push({
-        type: 'reminder',
-        title: r.title,
-        context: (r.clientId && clientMap.get(r.clientId)) || 'Reminder',
-        dueDate: new Date(r.scheduledFor),
-        href: '/m-tasks',
-      });
     }
 
     // Next event
