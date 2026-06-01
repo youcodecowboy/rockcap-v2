@@ -487,6 +487,7 @@ export default defineSchema({
     hubspotLifecycleStage: v.optional(v.string()), // Lifecycle stage ID
     hubspotLifecycleStageName: v.optional(v.string()), // Lifecycle stage name (human-readable)
     hubspotOwnerId: v.optional(v.string()), // HubSpot owner/user ID
+    ownerName: v.optional(v.string()), // Resolved owner display name, cached at sync time
     linkedinUrl: v.optional(v.string()), // Derived from hublead_linkedin_public_identifier
     // Set by webhook handler on HubSpot `*.deletion` events. Cleared
     // (patched to undefined → removed) on next `syncContactFromHubSpot`

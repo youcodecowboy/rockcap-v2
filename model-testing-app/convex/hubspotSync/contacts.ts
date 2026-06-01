@@ -106,6 +106,7 @@ export const syncContactFromHubSpot = mutation({
     lifecycleStage: v.optional(v.string()), // Lifecycle stage ID
     lifecycleStageName: v.optional(v.string()), // Lifecycle stage name (human-readable)
     hubspotOwnerId: v.optional(v.string()), // HubSpot owner/user ID
+    ownerName: v.optional(v.string()), // Resolved owner display name, cached at sync time
     hubspotCompanyIds: v.optional(v.array(v.string())), // HubSpot company IDs (multiple companies)
     hubspotDealIds: v.optional(v.array(v.string())), // HubSpot deal IDs (multiple deals)
     lastContactedDate: v.optional(v.string()),
@@ -150,6 +151,7 @@ export const syncContactFromHubSpot = mutation({
       if (cleanArgs.lifecycleStage) updateData.hubspotLifecycleStage = cleanArgs.lifecycleStage;
       if (cleanArgs.lifecycleStageName) updateData.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
       if (cleanArgs.hubspotOwnerId) updateData.hubspotOwnerId = cleanArgs.hubspotOwnerId;
+      if (cleanArgs.ownerName) updateData.ownerName = cleanArgs.ownerName;
       if (cleanArgs.lastContactedDate) updateData.lastContactedDate = cleanArgs.lastContactedDate;
       if (cleanArgs.lastActivityDate) updateData.lastActivityDate = cleanArgs.lastActivityDate;
       if (cleanArgs.email) updateData.email = cleanArgs.email;
@@ -216,6 +218,7 @@ export const syncContactFromHubSpot = mutation({
         if (cleanArgs.lifecycleStage) updateData.hubspotLifecycleStage = cleanArgs.lifecycleStage;
         if (cleanArgs.lifecycleStageName) updateData.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
         if (cleanArgs.hubspotOwnerId) updateData.hubspotOwnerId = cleanArgs.hubspotOwnerId;
+        if (cleanArgs.ownerName) updateData.ownerName = cleanArgs.ownerName;
         if (cleanArgs.lastContactedDate) updateData.lastContactedDate = cleanArgs.lastContactedDate;
         if (cleanArgs.lastActivityDate) updateData.lastActivityDate = cleanArgs.lastActivityDate;
         
@@ -275,6 +278,7 @@ export const syncContactFromHubSpot = mutation({
       if (cleanArgs.lifecycleStage) updateData.hubspotLifecycleStage = cleanArgs.lifecycleStage;
       if (cleanArgs.lifecycleStageName) updateData.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
       if (cleanArgs.hubspotOwnerId) updateData.hubspotOwnerId = cleanArgs.hubspotOwnerId;
+      if (cleanArgs.ownerName) updateData.ownerName = cleanArgs.ownerName;
       if (cleanArgs.lastContactedDate) updateData.lastContactedDate = cleanArgs.lastContactedDate;
       if (cleanArgs.lastActivityDate) updateData.lastActivityDate = cleanArgs.lastActivityDate;
       
@@ -332,6 +336,7 @@ export const syncContactFromHubSpot = mutation({
     if (cleanArgs.lifecycleStage) contactDataClean.hubspotLifecycleStage = cleanArgs.lifecycleStage;
     if (cleanArgs.lifecycleStageName) contactDataClean.hubspotLifecycleStageName = cleanArgs.lifecycleStageName;
     if (cleanArgs.hubspotOwnerId) contactDataClean.hubspotOwnerId = cleanArgs.hubspotOwnerId;
+    if (cleanArgs.ownerName) contactDataClean.ownerName = cleanArgs.ownerName;
     if (cleanArgs.lastContactedDate) contactDataClean.lastContactedDate = cleanArgs.lastContactedDate;
     if (cleanArgs.lastActivityDate) contactDataClean.lastActivityDate = cleanArgs.lastActivityDate;
     if (cleanArgs.linkedinUrl) contactDataClean.linkedinUrl = cleanArgs.linkedinUrl;
