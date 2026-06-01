@@ -1989,7 +1989,7 @@ const TOOLS: McpTool[] = [
   {
     name: "cadence.update",
     description:
-      "Update an existing cadence row's preDraftedTouch content or scheduled nextDueAt. Sets editedByOperator + editedAt audit fields. Revision re-runs respect editedByOperator and skip overwriting unless the operator's revision note specifically calls out the edited touch.",
+      "Edit an existing cadence row — its drafted content (`preDraftedTouch`), schedule (`nextDueAt`), recurrence config (`scheduleConfig`: intervalDays / anchorDate / customSchedule), and/or `cadenceType`. All fields optional; only what you pass is changed. Sets editedByOperator + editedAt audit fields (revision re-runs then skip overwriting unless the operator's note calls out the edited touch). Use to reconfigure a cadence from Claude Code — e.g. change a quarterly prospect_followup to monthly, retype it, or rewrite a touch.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2003,7 +2003,20 @@ const TOOLS: McpTool[] = [
             dynamicVars: { type: "object" },
           },
         },
-        nextDueAt: { type: "string", description: "ISO timestamp" },
+        nextDueAt: { type: "string", description: "ISO timestamp for the next send." },
+        cadenceType: {
+          type: "string",
+          description: "Retype the cadence: prospect_followup / warm_lead_chase / execution_chaser / client_checkin / bdm_relationship / monitoring_ask / post_lost_re_engagement / custom.",
+        },
+        scheduleConfig: {
+          type: "object",
+          description: "Recurrence config.",
+          properties: {
+            intervalDays: { type: "number", description: "Simple recurring interval, e.g. 90 for quarterly, 30 for monthly." },
+            anchorDate: { type: "string", description: "ISO date the schedule anchors to." },
+            customSchedule: { type: "object", description: "Flexible config for non-trivial cadences." },
+          },
+        },
       },
       required: ["cadenceId"],
     },
@@ -2013,7 +2026,58 @@ const TOOLS: McpTool[] = [
         userId,
         preDraftedTouch: args.preDraftedTouch,
         nextDueAt: args.nextDueAt,
+        cadenceType: args.cadenceType,
+        scheduleConfig: args.scheduleConfig,
       });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.applyPresetSchedule",
+    description:
+      "Reconfigure a whole cadence PACKAGE's timing by intensity preset — `light` / `moderate` / `aggressive` — rescheduling every UNFIRED touch's nextDueAt off touch 1's anchor date (fired touches are left alone). The fastest way to make a cold-outreach sequence more or less aggressive from Claude Code. Get the packageId from cadence.create / cadence.listByPackage / cadence.listByClient. Returns counts: rescheduled + skippedFired.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageId: { type: "string", description: "The shared packageId of the cadence touches." },
+        preset: { type: "string", description: "light / moderate / aggressive." },
+      },
+      required: ["packageId", "preset"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.applyPresetScheduleInternal, {
+        packageId: args.packageId,
+        preset: args.preset,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.listByClient",
+    description:
+      "List all cadences attached to a client (via relatedClientId). Use to see + manage everything in flight for a client before editing/pausing/rescheduling. Returns the cadence rows (each with cadenceType, scheduleConfig, nextDueAt, isActive, packageId, packageApprovalStatus).",
+    inputSchema: {
+      type: "object",
+      properties: { clientId: { type: "string" } },
+      required: ["clientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.cadences.listByClient, { clientId: args.clientId });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.listByContact",
+    description:
+      "List all cadences targeting a specific contact (via contactId). Use to see + manage a person's outreach touches before editing/pausing/rescheduling.",
+    inputSchema: {
+      type: "object",
+      properties: { contactId: { type: "string" } },
+      required: ["contactId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.cadences.listByContact, { contactId: args.contactId });
       return asText(result);
     },
   },
