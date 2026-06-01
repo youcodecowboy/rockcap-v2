@@ -25,6 +25,7 @@ import Mention from '@tiptap/extension-mention';
 import { Extension } from '@tiptap/core';
 import Suggestion from '@tiptap/suggestion';
 import NoteHeader from './NoteHeader';
+import { useColors } from '@/lib/useColors';
 import BlockMenu from './BlockMenu';
 import LinkInputModal from './LinkInputModal';
 import { AIAssistantBlock } from './AIAssistantBlock';
@@ -84,6 +85,7 @@ function extractMentionedUserIds(content: any): string[] {
 }
 
 export default function NotesEditor({ noteId, note }: NotesEditorProps) {
+  const colors = useColors();
   const updateNote = useMutation(api.notes.update);
   const [title, setTitle] = useState(note.title);
   const [emoji, setEmoji] = useState(note.emoji || '');
@@ -587,7 +589,19 @@ export default function NotesEditor({ noteId, note }: NotesEditorProps) {
               <button
                 onClick={handleCleanupSelection}
                 disabled={isCleaningUp}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg shadow-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5"
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: colors.text.primary,
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 6,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  cursor: isCleaningUp ? 'not-allowed' : 'pointer',
+                  opacity: isCleaningUp ? 0.5 : 1,
+                }}
               >
                 {isCleaningUp ? (
                   <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor" className="opacity-75"/></svg>
