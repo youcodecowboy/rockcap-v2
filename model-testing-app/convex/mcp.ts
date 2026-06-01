@@ -2671,6 +2671,153 @@ const TOOLS: McpTool[] = [
   },
 
   {
+    name: "task.get",
+    description:
+      "Fetch a single task by id. Returns the full task row (title, status, priority, dueDate, assignees, linked client/project, tags, notes) or null if it doesn't exist or the calling operator isn't the creator/assignee.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Convex id of the task" },
+      },
+      required: ["id"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.tasks.getInternal, {
+        userId,
+        id: args.id,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "task.list",
+    description:
+      "List the calling operator's tasks (created by or assigned to them), most-recently-updated first. Filter by status, client, project, or tags. Use to answer 'what's on my plate', surface overdue/open follow-ups for a client, or check whether a follow-up task already exists before creating a duplicate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["todo", "in_progress", "completed", "cancelled", "paused"],
+          description: "Optional status filter",
+        },
+        clientId: { type: "string", description: "Optional Convex client id filter" },
+        projectId: { type: "string", description: "Optional Convex project id filter" },
+        tags: { type: "array", items: { type: "string" }, description: "Optional tag filter (matches any)" },
+        includeCreated: { type: "boolean", description: "Include tasks the operator created (default true)" },
+        includeAssigned: { type: "boolean", description: "Include tasks assigned to the operator (default true)" },
+      },
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.tasks.getByUserInternal, {
+        userId,
+        status: args.status,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        tags: args.tags,
+        includeCreated: args.includeCreated,
+        includeAssigned: args.includeAssigned,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "task.update",
+    description:
+      "Update fields on an existing task — retitle, change status/priority, reschedule (dueDate), edit notes, reassign, or relink client/project. Only the creator or an assignee may edit. Stakeholders are notified of status/dueDate/notes/assignee changes. Pass null to clear an optional field (dueDate, clientId, projectId, assignedTo, attachmentIds). To mark a task done prefer `task.complete` (it also notifies + logs completion).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Convex id of the task (required)" },
+        title: { type: "string", description: "New title" },
+        description: { type: "string", description: "New longer-form context" },
+        notes: { type: "string", description: "New free-form notes" },
+        dueDate: { type: ["string", "null"], description: "New ISO timestamp, or null to clear" },
+        status: {
+          type: "string",
+          enum: ["todo", "in_progress", "completed", "cancelled", "paused"],
+          description: "New status",
+        },
+        priority: { type: "string", enum: ["low", "medium", "high"], description: "New priority" },
+        tags: { type: "array", items: { type: "string" }, description: "Replacement tag list" },
+        clientId: { type: ["string", "null"], description: "Relink to a client, or null to clear" },
+        projectId: { type: ["string", "null"], description: "Relink to a project, or null to clear" },
+        assignedTo: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          description: "Replacement array of Convex user ids, or null to unassign",
+        },
+        attachmentIds: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          description: "Replacement document id list, or null to clear",
+        },
+      },
+      required: ["id"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.tasks.updateInternal, {
+        userId,
+        id: args.id,
+        title: args.title,
+        description: args.description,
+        notes: args.notes,
+        dueDate: args.dueDate,
+        status: args.status,
+        priority: args.priority,
+        tags: args.tags,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        assignedTo: args.assignedTo,
+        attachmentIds: args.attachmentIds,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "task.complete",
+    description:
+      "Mark a task as completed. Notifies stakeholders and logs the completion to any open flag thread on the task. Only the creator or an assignee may complete it. Prefer this over `task.update` with status='completed' so the completion side-effects fire.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Convex id of the task" },
+      },
+      required: ["id"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.tasks.completeInternal, {
+        userId,
+        id: args.id,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "task.delete",
+    description:
+      "Permanently delete a task. Only the task creator may delete it; stakeholders are notified before removal. Irreversible — to keep an audit trail, prefer setting status to 'cancelled' via `task.update` instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Convex id of the task" },
+      },
+      required: ["id"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.tasks.removeInternal, {
+        userId,
+        id: args.id,
+      });
+      return asText(result);
+    },
+  },
+
+  {
     name: "document.createFromGeneration",
     description:
       "Persist a document that was *generated* by a skill (e.g., lender brief package, IC paper, terms-comparison memo, post-meeting notes) into the documents table. Content lives inline in the `summary` field as markdown / plain text — no file storage required until a separate markdown→PDF/DOCX conversion step runs. The resulting row appears in the standard documents UI (filterable by category, linkable to a project, etc.). For UPLOADS of files (PDFs / spreadsheets), use the normal documents.create flow with file storage. For pre-existing docs that need linking to a project, use document.linkToProject.",

@@ -229,11 +229,16 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 | `note.listByClient({clientId})` | List notes filed under a client (read before adding to avoid duplicates). |
 | `note.listByProject({projectId})` | List notes filed under a project/deal. |
 
-### `task.*` — Operator task creation (1)
+### `task.*` — Operator task CRUD (6)
 
 | Tool | Purpose |
 |---|---|
 | `task.create({title, clientId?, projectId?, priority?, dueDate?, assignedTo?, ...})` | Create an operator-facing task. Used by skills to surface follow-up work (meeting-capture → 'Schedule follow-up call'; qualify-and-draft → 'Manual review of low-confidence reply'; deal-intake → 'Request missing KYC items'). Defaults: status='todo', priority='medium', assignedTo=[calling operator]. |
+| `task.get({id})` | Fetch one task by id. Returns null if it doesn't exist or the caller isn't creator/assignee. |
+| `task.list({status?, clientId?, projectId?, tags?, includeCreated?, includeAssigned?})` | List the caller's tasks (created/assigned), most-recently-updated first. Use for 'what's on my plate', a client's open follow-ups, or a dup-check before `task.create`. |
+| `task.update({id, title?, status?, priority?, dueDate?, notes?, assignedTo?, clientId?, projectId?, ...})` | Edit a task (retitle, reschedule, reassign, relink). Creator or assignee only; notifies stakeholders on status/dueDate/notes/assignee changes. Pass null to clear an optional field. |
+| `task.complete({id})` | Mark a task completed — notifies stakeholders + logs to any open flag thread. Prefer over `task.update status='completed'`. |
+| `task.delete({id})` | Permanently delete a task (creator only). Irreversible — prefer `task.update status='cancelled'` to keep an audit trail. |
 
 ### `touchpoint.*` — Outreach activity log reads (3)
 
