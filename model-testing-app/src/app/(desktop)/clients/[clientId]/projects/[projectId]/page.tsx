@@ -18,6 +18,7 @@ import {
   Brain,
   CheckSquare,
   ListTodo,
+  Activity,
 } from 'lucide-react';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
@@ -32,12 +33,13 @@ import ProjectDocumentsTab from './components/ProjectDocumentsTab';
 import ProjectNotesTab from './components/ProjectNotesTab';
 import ProjectKnowledgeTab from './components/ProjectKnowledgeTab';
 import ProjectDataTab from './components/ProjectDataTab';
+import ProjectActivityTab from './components/ProjectActivityTab';
 import ProjectTasksTab from './components/ProjectTasksTab';
 import ProjectThreadsTab from './components/ProjectThreadsTab';
 import { ProjectIntelligenceTab } from '@/components/IntelligenceTab';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 
-type TabType = 'overview' | 'documents' | 'intelligence' | 'checklist' | 'threads' | 'data' | 'notes' | 'tasks';
+type TabType = 'overview' | 'documents' | 'activity' | 'intelligence' | 'checklist' | 'threads' | 'data' | 'notes' | 'tasks';
 
 function ProjectDetailContent() {
   const params = useParams();
@@ -127,6 +129,7 @@ function ProjectDetailContent() {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
     { id: 'documents', label: 'Documents', icon: FileText, count: documents.length },
+    { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
     { id: 'intelligence', label: 'Intelligence', icon: Brain },
     { id: 'checklist', label: 'Checklist', icon: CheckSquare },
@@ -208,6 +211,7 @@ function ProjectDetailContent() {
         {activeTab === 'threads' && <ProjectThreadsTab projectId={projectId} clientId={clientId} />}
         {activeTab === 'intelligence' && <ProjectIntelligenceTab projectId={projectId} />}
         {activeTab === 'data' && <ProjectDataTab projectId={projectId} projectName={project.name} />}
+        {activeTab === 'activity' && <ProjectActivityTab projectId={projectId} />}
       </EntityDetailScaffold>
 
       <Modal

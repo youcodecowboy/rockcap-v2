@@ -12,8 +12,8 @@ interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "threads" | "knowledge" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "threads" | "knowledge" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "notes" | "threads" | "knowledge" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "notes" | "threads" | "knowledge" | "activity") => void;
   peopleCount?: number;
   chargesCount?: number;
   repliesCount?: number;
@@ -28,12 +28,32 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
   const colors = useColors();
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
+  const transition = useMutation(api.prospects.transitionState as any);
   const [promoting, setPromoting] = useState(false);
+  const [changingStage, setChangingStage] = useState(false);
 
   const state = prospect?.prospectState ?? "drafted";
   const touchCount = cadences?.length ?? 0;
-  // Promote-to-client is offered only at the "engaged" rung (Meeting booked).
-  const canPromote = state === "engaged" && !!prospect?._id;
+  // Every step is operator-advanceable: promote is available from any non-promoted
+  // state (it's a judgment call, not gated to a rung), and the stage dropdown lets
+  // the operator move to any other stage manually.
+  const canPromote = state !== "promoted" && !!prospect?._id;
+
+  // Manual stages the operator can set directly (promotion is the separate button,
+  // since it also flips the client to active).
+  const MANUAL_STAGES = ["researched", "drafted", "needs_revision", "active", "replied", "engaged", "parked", "lost"] as const;
+
+  const handleStageChange = async (newState: string) => {
+    if (!prospect?._id || changingStage || newState === state) return;
+    setChangingStage(true);
+    try {
+      await transition({ clientId: prospect._id as string, newState });
+    } catch (err) {
+      console.error("Failed to change prospect stage", err);
+    } finally {
+      setChangingStage(false);
+    }
+  };
 
   const handlePromote = async () => {
     if (!prospect?._id || promoting) return;
@@ -87,26 +107,51 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
             )}
           </div>
 
-          {canPromote && (
-            <button
-              onClick={handlePromote}
-              disabled={promoting}
-              style={{
-                padding: "8px 16px",
-                fontSize: 13,
-                fontWeight: 500,
-                borderRadius: 6,
-                border: `1px solid ${colors.entityTypes.client}`,
-                background: promoting ? colors.bg.card : colors.entityTypes.client,
-                color: promoting ? colors.text.muted : "#fff",
-                cursor: promoting ? "default" : "pointer",
-                opacity: promoting ? 0.7 : 1,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {promoting ? "Promoting…" : "Promote to client"}
-            </button>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Manual stage control — operator can advance to any stage. */}
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
+              Stage
+              <select
+                value={MANUAL_STAGES.includes(state as any) ? state : ""}
+                disabled={changingStage}
+                onChange={(e) => handleStageChange(e.target.value)}
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: `1px solid ${colors.border.default}`,
+                  background: colors.bg.card,
+                  color: colors.text.primary,
+                  cursor: changingStage ? "default" : "pointer",
+                }}
+              >
+                {!MANUAL_STAGES.includes(state as any) && <option value="">{state}</option>}
+                {MANUAL_STAGES.map((s) => (
+                  <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+            </label>
+            {canPromote && (
+              <button
+                onClick={handlePromote}
+                disabled={promoting}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  borderRadius: 6,
+                  border: `1px solid ${colors.entityTypes.client}`,
+                  background: promoting ? colors.bg.card : colors.entityTypes.client,
+                  color: promoting ? colors.text.muted : "#fff",
+                  cursor: promoting ? "default" : "pointer",
+                  opacity: promoting ? 0.7 : 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {promoting ? "Promoting…" : "Promote to client"}
+              </button>
+            )}
+          </div>
         </div>
 
         <div style={{
@@ -129,7 +174,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "threads", "knowledge", "activity"] as const).map((tab) => {
+          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "files", "notes", "threads", "knowledge", "activity"] as const).map((tab) => {
             const labelMap: Record<typeof tab, string> = {
               overview: "Overview",
               intel: "Intel",
@@ -139,6 +184,8 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               outreach: "Outreach",
               replies: "Replies",
               meetings: "Meetings",
+              files: "Files",
+              notes: "Notes",
               threads: "Threads",
               knowledge: "Knowledge",
               activity: "Activity",

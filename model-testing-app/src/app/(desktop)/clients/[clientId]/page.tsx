@@ -42,6 +42,7 @@ import ClientOverviewTab from './components/ClientOverviewTab';
 import ClientProjectsTab from './components/ClientProjectsTab';
 import ClientCommunicationsTab from './components/ClientCommunicationsTab';
 import ClientDataTab from './components/ClientDataTab';
+import ClientCompanyTab from './components/ClientCompanyTab';
 import ClientNotesTab from './components/ClientNotesTab';
 import ClientKnowledgeTab from './components/ClientKnowledgeTab';
 import ClientContactsTab from './components/ClientContactsTab';
@@ -54,7 +55,7 @@ import ClientDealsTab from './components/ClientDealsTab';
 import ClientActivityTab from './components/ClientActivityTab';
 import ClientSettingsPanel from '@/components/ClientSettingsPanel';
 
-type TabType = 'overview' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads' | 'deals' | 'activity';
+type TabType = 'overview' | 'company' | 'documents' | 'projects' | 'communications' | 'contacts' | 'data' | 'intelligence' | 'checklist' | 'notes' | 'meetings' | 'tasks' | 'threads' | 'deals' | 'activity';
 
 function ClientProfileContent() {
   const params = useParams();
@@ -174,6 +175,7 @@ function ClientProfileContent() {
 
   const tabs: TabDef[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'company', label: 'Company' },
     { id: 'deals', label: 'Deals' },
     { id: 'activity', label: 'Activity' },
     { id: 'documents', label: 'Documents', count: documents.length },
@@ -259,6 +261,7 @@ function ClientProfileContent() {
             <ClientIntelligenceTab clientId={clientId} clientName={client.name} clientType={client.type} projects={projects} />
           </div>
         )}
+        {activeTab === 'company' && <ClientCompanyTab clientId={clientId} client={client} />}
         {activeTab === 'deals' && <ClientDealsTab clientId={clientId} />}
         {activeTab === 'activity' && <ClientActivityTab clientId={clientId} />}
         {activeTab === 'documents' && <ClientDocumentLibrary clientId={clientId} clientName={client.name} clientType={client.type} />}

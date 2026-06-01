@@ -14,6 +14,8 @@ import { CompaniesHouseTab } from "@/components/prospects/tabs/CompaniesHouseTab
 import { OutreachTab } from "@/components/prospects/tabs/OutreachTab";
 import { RepliesTab } from "@/components/prospects/tabs/RepliesTab";
 import { MeetingsTab } from "@/components/prospects/tabs/MeetingsTab";
+import { FilesTab } from "@/components/prospects/tabs/FilesTab";
+import { NotesTab } from "@/components/prospects/tabs/NotesTab";
 import { ActivityTab } from "@/components/prospects/tabs/ActivityTab";
 import { ThreadsTab } from "@/components/prospects/tabs/ThreadsTab";
 import { KnowledgeTab } from "@/components/prospects/tabs/KnowledgeTab";
@@ -28,7 +30,7 @@ export default function ProspectDetailPage() {
   const params = useParams();
   const prospectId = params.prospectId as Id<"clients">;
 
-  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "threads" | "knowledge" | "activity">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "notes" | "threads" | "knowledge" | "activity">("overview");
   const [showRevisionModal, setShowRevisionModal] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
@@ -187,6 +189,8 @@ export default function ProspectDetailPage() {
           {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}
           {activeTab === "meetings" && <MeetingsTab prospect={prospect} />}
+          {activeTab === "files" && <FilesTab prospect={prospect} />}
+          {activeTab === "notes" && <NotesTab prospect={prospect} />}
           {activeTab === "threads" && <ThreadsTab prospect={prospect} />}
           {activeTab === "knowledge" && <KnowledgeTab prospect={prospect} />}
           {activeTab === "activity" && (

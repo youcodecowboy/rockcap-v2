@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 /**
  * Create a prospect from a company number
@@ -226,6 +227,38 @@ export const transitionStateInternal = internalMutation({
       prospectStateChangedBy: args.userId,
     });
     // Fire-and-forget HubSpot push-back. Doesn't block the transition.
+    await ctx.scheduler.runAfter(0, internal.prospects.pushStateToHubspotInternal, {
+      clientId: args.clientId,
+      newState: args.newState,
+    });
+    return { ok: true, transitionedAt: now };
+  },
+});
+
+// Public state transition for the prospect detail UI — the operator can advance
+// the prospect to ANY stage manually (every step is operator-controllable, not
+// just the auto-triggers). Resolves the acting user from the Clerk identity
+// (same pattern as clients.activate). NOTE: moving to "promoted" should go through
+// clients.activate (it also flips clients.status → active); this only moves
+// prospectState, so the UI routes the promote action to activate instead.
+export const transitionState = mutation({
+  args: { clientId: v.id("clients"), newState: PROSPECT_STATE },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    let userId: Id<"users"> | undefined;
+    if (identity) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+        .first();
+      userId = user?._id;
+    }
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.clientId, {
+      prospectState: args.newState,
+      prospectStateChangedAt: now,
+      prospectStateChangedBy: userId,
+    });
     await ctx.scheduler.runAfter(0, internal.prospects.pushStateToHubspotInternal, {
       clientId: args.clientId,
       newState: args.newState,

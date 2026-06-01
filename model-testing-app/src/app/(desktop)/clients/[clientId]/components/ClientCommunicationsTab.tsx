@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from 'convex/react';
+import { api } from '../../../../../../convex/_generated/api';
 import { Id } from '../../../../../../convex/_generated/dataModel';
 import { useColors } from '@/lib/useColors';
 import { Panel, DataTable, EmptyState, StatusPill } from '@/components/layouts';
@@ -9,6 +11,8 @@ import {
   FileText,
   MessageSquare,
   Calendar,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from 'lucide-react';
 
 interface Communication {
@@ -33,6 +37,14 @@ export default function ClientCommunicationsTab({
 }: ClientCommunicationsTabProps) {
   const router = useRouter();
   const colors = useColors();
+
+  // Outreach + replies fold into Communications: the EMAIL activity stream
+  // (outbound = outreach we sent, inbound = replies received).
+  const emails = (useQuery(api.activities.listForClient, { clientId, typeFilter: 'EMAIL', limit: 200 }) ?? []) as any[];
+  const sortedEmails = useMemo(
+    () => [...emails].sort((a, b) => (b.activityDate ?? '').localeCompare(a.activityDate ?? '')),
+    [emails],
+  );
 
   // Group communications by date
   const groupedCommunications = useMemo(() => {
@@ -66,19 +78,46 @@ export default function ClientCommunicationsTab({
     return doc?.fileTypeDetected || doc?.category || 'Document';
   };
 
-  if (communications.length === 0) {
+  if (communications.length === 0 && sortedEmails.length === 0) {
     return (
       <EmptyState
         icon={<MessageSquare size={32} />}
         title="No communications"
-        body="Communications will appear here as documents are uploaded and interactions are recorded."
+        body="Outreach, replies, and document interactions will appear here as emails are sent/received and documents are uploaded."
       />
     );
   }
 
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    {sortedEmails.length > 0 && (
+      <Panel title={`Outreach & Replies · ${sortedEmails.length}`} accent={colors.entityTypes.client} padded={false}>
+        {sortedEmails.map((e) => {
+          const outbound = e.direction === 'outbound';
+          return (
+            <div key={e._id} className="flex items-start gap-3" style={{ padding: '10px 14px', borderBottom: `1px solid ${colors.border.light}` }}>
+              <span style={{ color: outbound ? colors.accent.orange : colors.accent.green, flexShrink: 0, marginTop: 2 }}>
+                {outbound ? <ArrowUpRight size={15} /> : <ArrowDownLeft size={15} />}
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="truncate" style={{ fontSize: 13, color: colors.text.primary, fontWeight: 500 }}>
+                  {e.subject || (outbound ? 'Outreach email' : 'Reply')}
+                </div>
+                {e.bodyPreview && (
+                  <div className="truncate" style={{ fontSize: 12, color: colors.text.muted, marginTop: 2 }}>{e.bodyPreview}</div>
+                )}
+              </div>
+              <span style={{ fontSize: 11, color: colors.text.dim, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                {outbound ? 'Outreach' : 'Reply'}{e.activityDate ? ` · ${new Date(e.activityDate).toLocaleDateString()}` : ''}
+              </span>
+            </div>
+          );
+        })}
+      </Panel>
+    )}
+    {communications.length > 0 && (
     <Panel
-      title={`Communication Timeline · ${communications.length} interactions`}
+      title={`Documents · ${communications.length}`}
       accent={colors.entityTypes.client}
       padded={false}
     >
@@ -169,5 +208,7 @@ export default function ClientCommunicationsTab({
         </div>
       ))}
     </Panel>
+    )}
+    </div>
   );
 }

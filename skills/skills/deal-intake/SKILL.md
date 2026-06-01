@@ -45,7 +45,7 @@ dedupWindowDays: 7. On `status: "duplicate_found"`, surface the prior run's brie
 
 Persisted to Convex:
 
-1. **`clients` row transitioned to active.** Via `client.activate` (Sprint I): patches `status: "active"`, transitions `prospectState: "promoted"`, schedules HubSpot lifecycleStage push-back. Idempotent — no-op if already active. This is THE lifecycle moment.
+1. **A promotion recommendation (not an auto-promotion).** Promotion to active client is an operator judgment call (`client.activate`), never fired automatically by intake — a prospect can carry a project + docs as a semi-client (`engaged`) until the operator decides. Intake surfaces the recommendation in the brief. See `prospect-pipeline-gates.md` Gate 6.
 2. **A `projects` row** with `name`, `projectShortcode`, `clientRoles` linking the borrower. Via `project.create` (Sprint I): auto-generates shortcode, auto-seeds the borrower project-level folder template (8 folders). Returns `projectId`.
 3. **Default checklist** (15 items from the standard requirementTemplate) — **`project.create` auto-seeds this** (it schedules the checklist init on creation). For a legacy project missing one, re-seed explicitly via `checklist.initializeForProject`. For Bridging-type deals the skill ALSO seeds bridging-specific items via `checklist.createCustomItem`.
 4. **Filed documents** — each input doc classified via V4, linked to checklist items where `matchingDocumentTypes` align (via `checklist.linkDocument`), placed in the right project folder.
@@ -59,7 +59,7 @@ Persisted to Convex:
 
 1. **Validate input.** If `bulkUploadBatchId` was given, list batch items via direct Convex query (no MCP tool yet — substrate gap). If `documentIds[]`, verify each exists via `document.get` per doc. If `clientId + projectId`, this is a re-run — load existing context via `project.getDeepContext`. Either way, load the client via `client.getDeepContext` to check current status.
 
-2. **Activate the client.** Call `client.activate({clientId})` (Sprint I). Patches `status: "active"`, transitions `prospectState: "promoted"`, schedules HubSpot push. Idempotent (no-op if already active). This is the lifecycle moment — record it explicitly in the brief: "Promoted {Client Name} from prospect to active client."
+2. **Recommend promotion — do NOT auto-promote.** Promotion to client is a **pure operator judgment call** (see `prospect-pipeline-gates.md` Gate 6), never automatic. Intake stands up the project and files the docs for the prospect/semi-client (it can stay `engaged` in the prospecting section); then **recommend** in the brief that the operator promote — e.g. "{Client} now has a project + appraisal on file; looks like a live deal — promote to client? (`client.activate`)". Only call `client.activate({clientId})` yourself if the operator explicitly says to.
 
 3. **Resolve or create the project.** Use the appraisal, scheme brief, OR filename extraction (per `references/filename-extraction-patterns.md`) to extract a sensible name + address. Check for existing project under same client (name match or shortcode hint) — if found, switch to update mode (skip creation). Otherwise call `project.create({name, clientId, address?, ...})` (Sprint I). Returns `projectId`. Project status defaults to "active", folder structure auto-seeded.
 

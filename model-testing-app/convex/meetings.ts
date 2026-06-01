@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 /**
  * Meetings - CRUD operations for meeting summaries
@@ -384,6 +385,23 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Booking a meeting advances a prospect to "engaged" — the semi-client zone.
+    // Only moves forward from a pre-engagement active state; never downgrades a
+    // promoted / parked / lost prospect, no-ops for non-prospects and for a
+    // prospect already engaged. Promotion to client stays a separate operator call.
+    const client = await ctx.db.get(args.clientId);
+    const ps = (client as any)?.prospectState;
+    if (ps === "researched" || ps === "drafted" || ps === "active" || ps === "replied") {
+      const actor = args.createdBy ?? (await ctx.db.query("users").take(1))[0]?._id;
+      if (actor) {
+        await ctx.scheduler.runAfter(0, internal.prospects.transitionStateInternal, {
+          clientId: args.clientId,
+          newState: "engaged",
+          userId: actor,
+        });
+      }
+    }
 
     return meetingId;
   },
