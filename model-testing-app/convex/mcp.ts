@@ -3223,6 +3223,110 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  // ── P4: comps appendix (Master Comparable Schedule) generation ────────
+  {
+    name: "document.generateComps",
+    description:
+      "Generate a RockCap 'Appendix A — Master Comparable Schedule' (comps) as a spreadsheet (XLSX, default) or Word table (DOCX), and stage it for operator approval; on approval it is filed to the client's Documents library. A comps appendix is the comparable-evidence table attached to a lender credit pack / client brief that justifies a scheme's GDV pricing. YOU compose the structured compsData: one or more sheets (tabs), each with configurable columns and tier/section groups of comparable rows (address, scheme, date, price, sqft, £psf, type, beds, notes, evidence). Set column roles ('price','sqft','psf') and leave £psf blank to auto-compute it (price ÷ sqft); a tier can carry an auto-average row. Ground every comp in real evidence (Land Registry / agent listings); never fabricate prices or sqft. See the doc-type-comps-appendix reference for structure.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Document title; also the file-name stem." },
+        compsData: {
+          type: "object",
+          description: "The structured comps appendix. One workbook; one sheet per entry in sheets[].",
+          properties: {
+            title: { type: "string", description: "Heading at the top of the sheet." },
+            subtitle: { type: "string", description: "Scheme address + purpose line." },
+            preparedBy: { type: "string", description: "e.g. 'Prepared by RockCap Ltd | May 2026 | …'." },
+            sheets: {
+              type: "array",
+              description: "One or more tabs (single tiered schedule = one sheet; hero/second-hand/new-build = several).",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string", description: "Tab name, e.g. 'Appendix A', 'Hero Comps'." },
+                  intro: { type: "array", items: { type: "string" }, description: "Optional framing bullets above the table." },
+                  columns: {
+                    type: "array",
+                    description: "Column definitions, left to right.",
+                    items: {
+                      type: "object",
+                      properties: {
+                        key: { type: "string", description: "Stable key referenced by each row's cells." },
+                        label: { type: "string", description: "Header text." },
+                        type: { type: "string", enum: ["text", "price", "psf", "number", "date", "link"], description: "Formatting; 'price'/'psf' format as £, 'link' is a hyperlink." },
+                        role: { type: "string", enum: ["price", "sqft", "psf"], description: "Set on price/sqft/psf columns to enable £psf auto-compute." },
+                        width: { type: "number", description: "Optional column width." },
+                        align: { type: "string", enum: ["left", "center", "right"], description: "Optional alignment." },
+                      },
+                      required: ["key", "label"],
+                    },
+                  },
+                  tiers: {
+                    type: "array",
+                    description: "Grouped sections. For a flat schedule, use a single tier with no heading.",
+                    items: {
+                      type: "object",
+                      properties: {
+                        heading: { type: "string", description: "Full-width band, e.g. 'TIER 1: WALL HALL (WD25)'. Omit for a flat sheet." },
+                        rows: {
+                          type: "array",
+                          description: "Comparable rows.",
+                          items: {
+                            type: "object",
+                            properties: {
+                              cells: { type: "object", description: "Values keyed by column key. Numeric columns take numbers; a 'link' column takes { text, url }. Leave £psf empty to auto-compute." },
+                              excludeFromAverage: { type: "boolean", description: "True for asking/marketing evidence (left out of the tier average)." },
+                              isSummary: { type: "boolean", description: "Render as an emphasised summary row." },
+                            },
+                            required: ["cells"],
+                          },
+                        },
+                        average: {
+                          type: "object",
+                          description: "Optional per-tier average row.",
+                          properties: {
+                            label: { type: "string", description: "Row label, e.g. 'Average (3-bed)'." },
+                            auto: { type: "array", items: { type: "string" }, description: "Column keys to mean-average across non-excluded rows." },
+                          },
+                        },
+                      },
+                      required: ["rows"],
+                    },
+                  },
+                },
+                required: ["name", "columns", "tiers"],
+              },
+            },
+          },
+          required: ["title", "sheets"],
+        },
+        docType: { type: "string", description: "Stored doc type. Defaults to 'Comparable Schedule'." },
+        category: { type: "string", description: "Filing category. Defaults to 'Generated'." },
+        summary: { type: "string", description: "One-line operator-facing summary. Defaults to the title." },
+        formats: { type: "array", items: { type: "string", description: "xlsx or docx" }, description: "Output formats. Defaults to ['xlsx']. PDF not supported." },
+        clientId: { type: "string", description: "Client id to file under on approval." },
+        projectId: { type: "string", description: "Project id to associate (optional)." },
+      },
+      required: ["title", "compsData"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.documentGen.renderAndStage, {
+        compsData: args.compsData,
+        title: args.title,
+        docType: args.docType ?? "Comparable Schedule",
+        category: args.category,
+        summary: args.summary,
+        formats: args.formats,
+        isBaseDocument: true,
+        requestedByUserId: userId,
+        relatedClientId: args.clientId,
+        relatedProjectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(

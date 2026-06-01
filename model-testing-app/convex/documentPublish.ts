@@ -23,7 +23,7 @@ async function getAuthenticatedUser(ctx: any) {
 }
 
 const FILE = v.object({
-  format: v.union(v.literal("pdf"), v.literal("docx")),
+  format: v.union(v.literal("pdf"), v.literal("docx"), v.literal("xlsx")),
   storageId: v.id("_storage"),
   fileName: v.string(),
   fileSize: v.number(),
@@ -111,7 +111,7 @@ export const recordPublishedDocs = internalMutation({
     }
     const payload = approval.draftPayload as {
       title: string; docType: string; category: string; isBaseDocument: boolean;
-      files: Array<{ format: "pdf" | "docx"; storageId: string; fileName: string; fileSize: number; mime: string }>;
+      files: Array<{ format: "pdf" | "docx" | "xlsx"; storageId: string; fileName: string; fileSize: number; mime: string }>;
     };
 
     let clientName: string | undefined;

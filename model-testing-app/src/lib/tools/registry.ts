@@ -43,6 +43,7 @@ const GLOBAL_WRITE_TOOLS = new Set([
   "saveChatDocument",
   "generateDocument",
   "generateBrief",
+  "generateComps",
   "createMeeting",
   "extractMeetingFromText",
   "createFlag",

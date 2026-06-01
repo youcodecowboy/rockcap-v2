@@ -311,4 +311,111 @@ export const ANALYSIS_TOOLS: AtomicTool[] = [
     convexMapping: { type: "mutation", path: "documentPublish.requestPublish" },
     contextRelevance: ["document", "client", "project"],
   },
+  // -------------------------------------------------------------------------
+  // WRITE — Generate a comps appendix (Master Comparable Schedule) for approval
+  // -------------------------------------------------------------------------
+  {
+    name: "generateComps",
+    domain: "document",
+    action: "write",
+    description:
+      "Generate a RockCap 'Appendix A — Master Comparable Schedule' (comps) as a spreadsheet (XLSX, default) or Word table (DOCX), and stage it for operator approval. Use for 'make me a comps appendix / comparable schedule for {scheme}'. A comps appendix is the comparable-evidence table attached to a lender credit pack / client brief to justify a scheme's GDV pricing. YOU compose the structured compsData: one or more sheets (tabs), each with configurable columns and tier/section groups of comparable rows (address, scheme, date, price, sqft, £psf, type, beds, notes, evidence link). Set column roles ('price','sqft','psf') and leave £psf blank to have it auto-computed (price ÷ sqft). Tiers can carry an auto-average row. Ground every comp in real evidence (Land Registry / agent listings); never fabricate prices or sqft. On approval the file is filed to the client's library. See the doc-type-comps-appendix reference for structure. Requires user confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Document title / file-name stem, e.g. 'Horton — Master Comparable Appendix'." },
+        compsData: {
+          type: "object",
+          description: "The structured comps appendix. One workbook; one sheet per entry in sheets[].",
+          properties: {
+            title: { type: "string", description: "Heading at the top of the sheet, e.g. 'Horton — Master Comparable Appendix'." },
+            subtitle: { type: "string", description: "Scheme address + purpose, e.g. 'Land at …, GL5 2TG. Comparable evidence for lender credit pack.'" },
+            preparedBy: { type: "string", description: "e.g. 'Prepared by RockCap Ltd | May 2026 | All comps are materially older stock'." },
+            sheets: {
+              type: "array",
+              description: "One or more tabs. A single tiered schedule is one sheet; a hero/second-hand/new-build pack is several.",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string", description: "Tab name, e.g. 'Appendix A', 'Hero Comps', 'New Build'." },
+                  intro: {
+                    type: "array",
+                    description: "Optional framing bullets above the table.",
+                    items: { type: "string", description: "One bullet." },
+                  },
+                  columns: {
+                    type: "array",
+                    description: "Column definitions, left to right. Typical: Scheme, Unit/Address, Date, Price (£), SqFt, £/psf, Type, Beds, Notes, Evidence.",
+                    items: {
+                      type: "object",
+                      properties: {
+                        key: { type: "string", description: "Stable key referenced by each row's cells, e.g. 'price'." },
+                        label: { type: "string", description: "Header text, e.g. 'Price (£)'." },
+                        type: { type: "string", enum: ["text", "price", "psf", "number", "date", "link"], description: "Formatting. 'price'/'psf' format as £; 'link' is a hyperlink cell." },
+                        role: { type: "string", enum: ["price", "sqft", "psf"], description: "Set on the price, sqft and £psf columns to enable £psf auto-compute." },
+                        width: { type: "number", description: "Optional Excel column width." },
+                        align: { type: "string", enum: ["left", "center", "right"], description: "Optional cell alignment." },
+                      },
+                      required: ["key", "label"],
+                    },
+                  },
+                  tiers: {
+                    type: "array",
+                    description: "Grouped sections. Each tier has a banded heading + its rows. For a flat schedule use a single tier with no heading.",
+                    items: {
+                      type: "object",
+                      properties: {
+                        heading: { type: "string", description: "Full-width band, e.g. 'TIER 1: WALL HALL (WD25) — Tier 1 Benchmark'. Omit for a flat sheet." },
+                        rows: {
+                          type: "array",
+                          description: "Comparable rows.",
+                          items: {
+                            type: "object",
+                            properties: {
+                              cells: {
+                                type: "object",
+                                description: "Values keyed by column key. Numeric columns (price/sqft/psf/number) take numbers; a 'link' column takes { text, url }. Leave the £psf cell empty/absent to auto-compute it.",
+                              },
+                              excludeFromAverage: { type: "boolean", description: "True for asking/marketing evidence so it is left out of the tier average." },
+                              isSummary: { type: "boolean", description: "Render as an emphasised summary row." },
+                            },
+                            required: ["cells"],
+                          },
+                        },
+                        average: {
+                          type: "object",
+                          description: "Optional per-tier average row.",
+                          properties: {
+                            label: { type: "string", description: "Row label, e.g. 'Average (3-bed)'." },
+                            auto: { type: "array", description: "Column keys to mean-average across non-excluded rows.", items: { type: "string", description: "A column key." } },
+                          },
+                        },
+                      },
+                      required: ["rows"],
+                    },
+                  },
+                },
+                required: ["name", "columns", "tiers"],
+              },
+            },
+          },
+          required: ["title", "sheets"],
+        },
+        docType: { type: "string", description: "Stored document type. Defaults to 'Comparable Schedule'." },
+        category: { type: "string", description: "Filing category. Defaults to 'Generated'." },
+        summary: { type: "string", description: "One-line operator-facing summary for the approvals queue. Defaults to the title." },
+        formats: {
+          type: "array",
+          description: "Output formats — 'xlsx' (default) and/or 'docx'. PDF is not supported for comps.",
+          items: { type: "string", description: "xlsx or docx" },
+        },
+        clientId: { type: "string", description: "Client to file the document under on approval." },
+        projectId: { type: "string", description: "Project to associate (optional)." },
+      },
+      required: ["title", "compsData"],
+    },
+    requiresConfirmation: true,
+    convexMapping: { type: "mutation", path: "documentPublish.requestPublish" },
+    contextRelevance: ["document", "client", "project"],
+  },
 ];

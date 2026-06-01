@@ -7,6 +7,7 @@ Live shared references:
 - `deal-type-size-bands.md` — how to estimate an indicative deal size from public evidence when the prospect has not given a number (derivation methods, confidence rubric, the mandatory range + confidence + basis line, and the coarse fallback bands per deal type). Loaded by `prospect-intel`.
 - `doc-type-lender-brief.md` — the branded multi-page lender brief (structured `briefData` via the lender-brief layout): section set, the Track Record & Group Funding depth sourced from CH group charges, key-facts/sign-off fields, and the section-block page-break rule. Loaded by `document-author` (and the future `lender-brief` skill).
 - `doc-type-client-brief.md` — the branded multi-page **client brief** (the borrower-facing counterpart; structured `briefData` via the client-brief layout, shares the lender brief's chrome): the mandatory "no lender approached yet / pricing indicative" caveats, leverage-scenario + expected-pricing panel section set, the `new-facility` / `refinance` / `multi-scenario` variants, and the RockCap-model-leads source hierarchy. Loaded by `document-author`.
+- `doc-type-comps-appendix.md` — the **comps appendix** ("Appendix A — Master Comparable Schedule"): a comparable-evidence **spreadsheet** (xlsx, primary) or Word table (docx) that justifies a scheme's GDV pricing. Structured `compsData` via the comps engine — multi-sheet, tiered, configurable columns with £psf auto-compute + per-tier averages. Output via `generateComps` / `document.generateComps`. Loaded by `document-author`.
 
 Planned shared references:
 

@@ -12,6 +12,8 @@ export const renderAndStage = internalAction({
     // Branded brief: a layout ("lender-brief" | "client-brief") + structured briefData.
     layout: v.optional(v.string()),
     briefData: v.optional(v.any()),
+    // Comps appendix: structured compsData rendered to xlsx / docx.
+    compsData: v.optional(v.any()),
     title: v.string(),
     docType: v.string(),
     category: v.optional(v.string()),
@@ -28,12 +30,17 @@ export const renderAndStage = internalAction({
     // NEXT_APP_URL may be stored without a scheme (e.g. "rockcap-v2.vercel.app").
     // Normalise like replyEventProcessor so the fetch URL is absolute.
     const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
-    const formats = args.formats && args.formats.length ? args.formats : ["pdf", "docx"];
+    // Comps default to xlsx; briefs/house docs default to pdf+docx.
+    const defaultFormats = args.compsData ? ["xlsx"] : ["pdf", "docx"];
+    const formats = args.formats && args.formats.length ? args.formats : defaultFormats;
 
-    // Branded brief (layout + briefData) or freeform house document (contentHtml).
-    const payload = args.layout
-      ? { layout: args.layout, briefData: args.briefData, title: args.title, formats }
-      : { contentHtml: args.contentHtml, title: args.title, formats };
+    // Comps appendix (compsData), branded brief (layout + briefData), or freeform
+    // house document (contentHtml).
+    const payload = args.compsData
+      ? { compsData: args.compsData, title: args.title, formats }
+      : args.layout
+        ? { layout: args.layout, briefData: args.briefData, title: args.title, formats }
+        : { contentHtml: args.contentHtml, title: args.title, formats };
 
     const res = await fetch(`${appUrl}/api/documents/generate`, {
       method: "POST",

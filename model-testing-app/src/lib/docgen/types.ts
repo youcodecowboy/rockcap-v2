@@ -1,7 +1,7 @@
 // src/lib/docgen/types.ts
 // Shared types for the document render engine (P1 + lender-brief layout LB1).
 
-export type DocFormat = "pdf" | "docx";
+export type DocFormat = "pdf" | "docx" | "xlsx";
 export type DocLayout = "house" | "lender-brief" | "client-brief";
 
 export interface RenderResult {
@@ -14,6 +14,7 @@ export interface RenderResult {
 export const MIME: Record<DocFormat, string> = {
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
 // ── Lender-brief structured data ─────────────────────────────

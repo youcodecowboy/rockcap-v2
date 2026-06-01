@@ -1270,6 +1270,55 @@ const handlers: Record<string, ToolHandler> = {
     };
   },
 
+  // Comps appendix (Master Comparable Schedule) → XLSX (default) / DOCX. Same
+  // render-route + approval-staging path; the body carries { compsData }.
+  generateComps: async (params, client) => {
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    const formats =
+      Array.isArray(params.formats) && params.formats.length ? params.formats : ["xlsx"];
+
+    const res = await fetch(`${baseUrl}/api/documents/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-convex-internal-secret": process.env.CONVEX_INTERNAL_SECRET ?? "",
+      },
+      body: JSON.stringify({ compsData: params.compsData, title: params.title, formats }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Comps render failed: ${res.status} ${detail}`);
+    }
+    const { files } = await res.json();
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error("Comps render returned no files");
+    }
+
+    const isConvexId = (v: unknown) => typeof v === "string" && /^[a-z0-9]{20,}$/i.test(v);
+    const stageArgs: any = {
+      title: params.title,
+      docType: params.docType || "Comparable Schedule",
+      category: params.category || "Generated",
+      summary: params.summary || params.title,
+      files,
+      isBaseDocument: true,
+    };
+    if (isConvexId(params.clientId)) stageArgs.relatedClientId = params.clientId as Id<"clients">;
+    if (isConvexId(params.projectId)) stageArgs.relatedProjectId = params.projectId as Id<"projects">;
+
+    const { approvalId } = await client.mutation(api.documentPublish.requestPublish, stageArgs);
+
+    return {
+      approvalId,
+      formats: files.map((f: any) => f.format),
+      message: `Drafted "${params.title}" (${files
+        .map((f: any) => f.format)
+        .join(" + ")}). Review and approve it in the Approvals queue to file it to the client.`,
+    };
+  },
+
   saveChatDocument: async (params, client) => {
     // Convex IDs are lowercase alphanumeric, 20+ chars — validate before passing
     const isConvexId = (v: unknown) =>
