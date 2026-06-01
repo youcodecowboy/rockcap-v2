@@ -4280,7 +4280,13 @@ export default defineSchema({
     // (…Z) so lexicographic index order === chronological order; the
     // inbox reads this descending for true received-time ordering rather
     // than ingestion order.
-    .index("by_received_at", ["receivedAt"]),
+    .index("by_received_at", ["receivedAt"])
+    // Inbox feed, scoped by source. The email inbox shows only actual mail
+    // (source="gmail_push"); the HubSpot 6h sweep writes contentless
+    // reply-detection rows (no sender/subject/body) that must NOT appear in
+    // the inbox. Compound index keeps pages full + received-ordered without
+    // scanning past those metadata rows.
+    .index("by_source_received_at", ["source", "receivedAt"]),
 
   skillRuns: defineTable({
     // Identity

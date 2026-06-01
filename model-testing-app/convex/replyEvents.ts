@@ -232,13 +232,16 @@ export const countUnrouted = query({
   },
 });
 
-// ── Inbox feed: all inbound, newest first, paginated ─────────────────
+// ── Inbox feed: inbound EMAIL, newest first, paginated ───────────────
 // Powers the dashboard Inbox panel (initialNumItems 5) and the /inbox
-// "Gmail" tab (larger page). Ordered by receivedAt desc via the
-// by_received_at index — true received-time order, so a backfilled older
-// message can't jump above newer mail just because we ingested it later.
-// Each row is enriched with the linked client name + matched contact name
-// so the UI renders without extra round-trips.
+// "Gmail" tab (larger page). Scoped to source="gmail_push" — actual Gmail
+// mail captured by the poller — via the by_source_received_at index. This
+// deliberately EXCLUDES the HubSpot 6h reply-detection sweep, which writes
+// contentless replyEvents (no sender/subject/body, just an engagement id)
+// that would otherwise show as "Unknown sender / no subject". Manual pastes
+// (reply.ingestManual) also use source="hubspot_sync" and surface on the
+// prospect Replies tab, not here. Ordered by receivedAt desc; each row is
+// enriched with linked client + matched contact names for the UI.
 //
 // Intentionally org-wide (not user-scoped): the operator inbox is a shared
 // surface, mirroring reply.listUnrouted / the prospects triage queue.
@@ -270,7 +273,7 @@ export const listInboundPaginated = query({
   handler: async (ctx, args) => {
     const result = await ctx.db
       .query("replyEvents")
-      .withIndex("by_received_at")
+      .withIndex("by_source_received_at", (q) => q.eq("source", "gmail_push"))
       .order("desc")
       .paginate(args.paginationOpts);
     const page = await Promise.all(
