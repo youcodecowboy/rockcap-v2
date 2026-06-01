@@ -69,20 +69,65 @@ async function createOperatorReviewApproval(
 }
 
 // ── Entry point: Gmail push ──────────────────────────────────────────
-
+//
+// Fired by the Pub/Sub webhook (gmailWatch.pushWebhook). Resolves the
+// mailbox to its owning user and delegates to the SAME fetch+dispatch
+// logic the polling cron uses (gmailInbound.pollUserInbound), which reads
+// from the stored historyId watermark. We ignore the pushed historyId and
+// trust the watermark so push and poll can't double-process.
 export const ingestFromGmailPush = internalAction({
   args: { emailAddress: v.string(), historyId: v.string() },
-  handler: async (_ctx, _args) => {
-    // STUB for v1: real implementation calls users.history.list since
-    // last-known historyId, fetches each new message, then for each
-    // message dispatches to processReplyEvent with source: "gmail_push"
-    // and externalId: <Message-ID header>.
-    //
-    // Wired functionally when Pub/Sub setup completes (see gmailWatch.ts
-    // stubs). The webhook route exists, the dispatch path exists, the
-    // OAuth tokens exist; the missing piece is the operator's Pub/Sub
-    // topic provisioning.
-    return { status: "stub" as const, processed: 0 };
+  handler: async (ctx, args): Promise<{ status: string; processed: number }> => {
+    const userId = await ctx.runQuery(
+      internal.gmailTokens.getUserIdByEmailInternal,
+      { email: args.emailAddress },
+    );
+    if (!userId) {
+      return { status: "no_user_for_email", processed: 0 };
+    }
+    const result: any = await ctx.runAction(
+      internal.gmailInbound.pollUserInbound,
+      { userId },
+    );
+    return { status: result?.status ?? "ok", processed: result?.processed ?? 0 };
+  },
+});
+
+// ── Entry point: Gmail inbound message (from the poller) ─────────────
+//
+// The gmailInbound poller has already fetched + parsed a single inbound
+// message; this routes it through the shared processReplyEvent pipeline
+// (idempotent on source+externalId, so re-polling the same message is a
+// no-op). source is "gmail_push" — the same enum the real-time path uses.
+export const ingestGmailMessage = internalAction({
+  args: {
+    userId: v.id("users"),
+    contactEmail: v.optional(v.string()),
+    fromEmail: v.optional(v.string()),
+    fromName: v.optional(v.string()),
+    subject: v.string(),
+    body: v.string(),
+    receivedAt: v.string(),
+    externalId: v.string(),
+    gmailThreadId: v.optional(v.string()),
+    gmailMessageId: v.optional(v.string()),
+    rawMessageRef: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    return await processReplyEvent(ctx, {
+      source: "gmail_push",
+      externalId: args.externalId,
+      contactEmail: args.contactEmail,
+      receivedAt: args.receivedAt,
+      rawMessageRef: args.rawMessageRef,
+      userId: args.userId,
+      replyBody: args.body,
+      replySubject: args.subject,
+      fromEmail: args.fromEmail,
+      fromName: args.fromName,
+      gmailThreadId: args.gmailThreadId,
+      gmailMessageId: args.gmailMessageId,
+    });
   },
 });
 
@@ -187,6 +232,10 @@ async function processReplyEvent(
     userId: Id<"users">;
     replyBody?: string;
     replySubject?: string;
+    fromEmail?: string;
+    fromName?: string;
+    gmailThreadId?: string;
+    gmailMessageId?: string;
   },
 ) {
   // Step 1: Idempotency
@@ -227,6 +276,12 @@ async function processReplyEvent(
       replyBodyText: args.replyBody,
       replySubject: args.replySubject,
       linkedClientId,
+      // Gmail inbound capture — sender (for inbox display when no contact
+      // matches) + thread/message ids (for threaded replies).
+      fromEmail: args.fromEmail,
+      fromName: args.fromName,
+      gmailThreadId: args.gmailThreadId,
+      gmailMessageId: args.gmailMessageId,
     },
   ) as Id<"replyEvents">;
 

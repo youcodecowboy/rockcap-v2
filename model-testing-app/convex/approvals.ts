@@ -422,11 +422,26 @@ export const executeApproval = internalAction({
             approvalId: args.approvalId,
           });
           break;
+        case "client_communication": {
+          // client_communication covers BOTH drafted email replies
+          // (kind === "email_reply", from outreach.draftReply / the web
+          // inbox composer) AND non-sendable operator-review markers (the
+          // reply router's createOperatorReviewApproval). Only the former
+          // sends; the latter just advances the lifecycle.
+          const p: any = approval.draftPayload;
+          if (p && p.kind === "email_reply") {
+            result = await ctx.runAction(internal.gmailSend.executeClientCommunication, {
+              approvalId: args.approvalId,
+            });
+          } else {
+            result = { stub: true, note: "client_communication (non-email) — no send" };
+          }
+          break;
+        }
         // Other entity types register here. The rest mark executed with no
         // payload so the lifecycle still advances.
         case "hubspot_write":
         case "lender_outreach":
-        case "client_communication":
         case "skill_action":
         case "cadence_fire":
         case "other":

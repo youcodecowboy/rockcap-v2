@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 
 // Gmail integration: separate OAuth client from Google Calendar per
 // confirmed decision in docs/INTEGRATIONS/gmail-scoping.md.
@@ -121,6 +121,56 @@ export const flagNeedsReconnect = internalMutation({
       .first();
     if (!row) return;
     await ctx.db.patch(row._id, { needsReconnect: true });
+  },
+});
+
+// ── Inbound sync plumbing (gmailInbound poller) ──────────────
+//
+// Full token row (incl. historyId watermark) for one user, used by the
+// poller before it calls Gmail's history.list. Distinct from
+// gmailSend.getTokenForSend, which omits historyId.
+export const getForSyncInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("googleGmailTokens")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId))
+      .first();
+    if (!row) return null;
+    return {
+      userId: row.userId,
+      accessToken: row.accessToken,
+      refreshToken: row.refreshToken,
+      expiresAt: row.expiresAt,
+      connectedEmail: row.connectedEmail,
+      historyId: row.historyId,
+      needsReconnect: row.needsReconnect === true,
+    };
+  },
+});
+
+// All connected, healthy Gmail accounts — the poll set. Table is tiny
+// (one row per user) so a full collect is fine.
+export const listConnectedInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("googleGmailTokens").collect();
+    return rows
+      .filter((r) => r.needsReconnect !== true)
+      .map((r) => ({ userId: r.userId, connectedEmail: r.connectedEmail }));
+  },
+});
+
+// Resolve a connected account to its owning user by email — used by the
+// Pub/Sub push path (gmailWatch) to find whose mailbox changed.
+export const getUserIdByEmailInternal = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db.query("googleGmailTokens").collect();
+    const match = rows.find(
+      (r) => r.connectedEmail?.toLowerCase() === args.email.toLowerCase(),
+    );
+    return match ? match.userId : null;
   },
 });
 

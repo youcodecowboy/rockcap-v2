@@ -10,8 +10,10 @@ import { SkeletonText } from '@/components/layouts';
 import InboxSidebar, { type InboxFilter } from './components/InboxSidebar';
 import InboxItemList, { type InboxItem } from './components/InboxItemList';
 import InboxDetailPanel from './components/InboxDetailPanel';
+import GmailInboxView from './components/GmailInboxView';
 
 const VALID_FILTERS: InboxFilter[] = ['all', 'flags', 'notifications', 'mentions', 'resolved'];
+type InboxBox = 'app' | 'gmail';
 
 function InboxPageContent() {
   const searchParams = useSearchParams();
@@ -23,6 +25,7 @@ function InboxPageContent() {
   const activeFilter: InboxFilter =
     filterParam && VALID_FILTERS.includes(filterParam) ? filterParam : 'all';
   const selectedId = searchParams.get('selected') || searchParams.get('flag') || null;
+  const activeBox: InboxBox = searchParams.get('box') === 'gmail' ? 'gmail' : 'app';
 
   // Query all filter counts in parallel
   const allItems = useQuery(api.flags.getInboxItemsEnriched, { filter: 'all' });
@@ -94,26 +97,72 @@ function InboxPageContent() {
     [updateParams]
   );
 
+  const handleBoxChange = useCallback(
+    (box: InboxBox) => {
+      // Switching mailboxes clears the selection + app-inbox filter; selection
+      // ids aren't shared between the flag/notification inbox and Gmail.
+      updateParams({ box: box === 'app' ? null : box, selected: null, filter: null });
+    },
+    [updateParams]
+  );
+
   const colors = useColors();
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]" style={{ background: colors.bg.base }}>
-      {/* Left Panel */}
-      <InboxSidebar
-        activeFilter={activeFilter}
-        onFilterChange={handleFilterChange}
-        counts={counts}
+    <div className="flex flex-col h-[calc(100vh-4rem)]" style={{ background: colors.bg.base }}>
+      {/* Mailbox toggle: App inbox (flags / notifications / mentions) vs Gmail */}
+      <div
+        className="flex items-center gap-2 px-4 py-2"
+        style={{ borderBottom: `1px solid ${colors.border.default}` }}
       >
-        <InboxItemList
-          items={currentItems || []}
-          selectedId={selectedId}
-          onSelect={handleSelect}
-        />
-      </InboxSidebar>
+        {(['app', 'gmail'] as const).map((box) => {
+          const isActive = activeBox === box;
+          return (
+            <button
+              key={box}
+              onClick={() => handleBoxChange(box)}
+              className="px-3 py-1.5 rounded-md"
+              style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: 10,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                fontWeight: 600,
+                color: isActive ? colors.text.primary : colors.text.muted,
+                background: isActive ? colors.bg.light : 'transparent',
+                border: `1px solid ${isActive ? colors.border.default : 'transparent'}`,
+              }}
+            >
+              {box === 'app' ? 'App Inbox' : 'Gmail'}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Right Panel */}
-      <div className="flex-1 min-w-0">
-        <InboxDetailPanel selectedId={selectedId} selectedKind={selectedKind} />
+      <div className="flex flex-1 min-h-0">
+        {activeBox === 'gmail' ? (
+          <GmailInboxView selectedId={selectedId} onSelect={handleSelect} />
+        ) : (
+          <>
+            {/* Left Panel */}
+            <InboxSidebar
+              activeFilter={activeFilter}
+              onFilterChange={handleFilterChange}
+              counts={counts}
+            >
+              <InboxItemList
+                items={currentItems || []}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+              />
+            </InboxSidebar>
+
+            {/* Right Panel */}
+            <div className="flex-1 min-w-0">
+              <InboxDetailPanel selectedId={selectedId} selectedKind={selectedKind} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

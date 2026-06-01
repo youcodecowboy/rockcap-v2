@@ -314,6 +314,139 @@ async function sendViaGmailApi(accessToken: string, raw: string, threadId?: stri
 
 // ── Executor (called by approvals.executeApproval) ───────────
 
+// Normalised send shape. Both executors below resolve their entity-specific
+// payload into this, then call performApprovedSend so the kill-switch gate,
+// token refresh, HubSpot BCC, RFC822 composition, send, and touchpoint
+// logging live in exactly one place.
+interface NormalizedSend {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  bodyHtml?: string;
+  bodyText?: string;
+  threadId?: string;
+  inReplyTo?: string;
+  references?: string[];
+}
+
+async function performApprovedSend(
+  ctx: any,
+  approval: any,
+  payload: NormalizedSend,
+): Promise<{ gmailMessageId: string; gmailThreadId: string; touchpointId?: string }> {
+  if (!payload.to || payload.to.length === 0) {
+    throw new Error("Send requires at least one recipient");
+  }
+
+  const token: any = await ctx.runQuery(internal.gmailSend.getTokenForSend, {
+    userId: approval.requestedBy,
+  });
+  if (!token) throw new Error("Gmail token not found for requester");
+  if (token.needsReconnect) throw new Error("Gmail token needs reconnect");
+
+  // Defense-in-depth kill switch. The gate is enforced at queue time in
+  // requestSend, but the cadence dispatcher + reply router bypass that path
+  // (they call approvals.internalCreate directly), so an approved staged
+  // draft would otherwise fire regardless of the switches. Re-check BOTH
+  // switches here so no approved send — whatever its origin — can leave the
+  // building while send is disabled. On throw, executeApproval marks the row
+  // execution_failed (not sent), which is the honest outcome.
+  if (token.sendEnabled !== true) {
+    throw new Error("Per-user Gmail send is disabled (kill switch)");
+  }
+  const globalSendEnabled: boolean = await ctx.runQuery(
+    internal.gmailSend.getGlobalSendEnabled,
+    {},
+  );
+  if (!globalSendEnabled) {
+    throw new Error("Global Gmail send is disabled (kill switch)");
+  }
+
+  // Refresh if within 60 seconds of expiry, or if expired.
+  let accessToken: string = token.accessToken;
+  const expiresMs = new Date(token.expiresAt).getTime();
+  if (Number.isNaN(expiresMs) || Date.now() > expiresMs - 60_000) {
+    const refreshed = await refreshGmailAccessToken(token.refreshToken);
+    accessToken = refreshed.access_token;
+    const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
+    await ctx.runMutation(internal.gmailSend.writeRefreshedToken, {
+      userId: approval.requestedBy,
+      accessToken,
+      expiresAt: newExpiresAt,
+    });
+  }
+
+  // Append the HubSpot logging BCC so the sent email auto-logs to the
+  // client's HubSpot timeline (and thus the mobile activity feed). Set via
+  // Convex env HUBSPOT_LOG_BCC (the portal's bcc.<region>.hubspot.com
+  // address). If unset, the send still goes out — it just isn't logged. BCC
+  // is invisible to the recipient. This is the single send-time chokepoint,
+  // so every send (cadence, qualify-and-draft reply, manual) logs.
+  const hubspotLogBcc = process.env.HUBSPOT_LOG_BCC;
+  const bcc = [
+    ...(payload.bcc ?? []),
+    ...(hubspotLogBcc ? [hubspotLogBcc] : []),
+  ].filter((val, i, arr) => !!val && arr.indexOf(val) === i);
+
+  const raw = base64Url(
+    composeRfc822({
+      fromEmail: token.connectedEmail,
+      to: payload.to,
+      cc: payload.cc,
+      bcc,
+      subject: payload.subject,
+      bodyHtml: payload.bodyHtml,
+      bodyText: payload.bodyText,
+      inReplyTo: payload.inReplyTo,
+      references: payload.references,
+    }),
+  );
+
+  const sent = await sendViaGmailApi(accessToken, raw, payload.threadId);
+
+  // Capture as a touchpoint. Direction outbound, provider gmail.
+  // We do not block on this; if it fails, the send itself succeeded
+  // and the approval is still marked executed via the result.
+  let touchpointId: string | undefined;
+  try {
+    const id: any = await ctx.runMutation(internal.touchpoints.internalCreate, {
+      provider: "gmail",
+      direction: "outbound",
+      kind: "email",
+      contactId: approval.relatedContactId,
+      participantEmails: [
+        token.connectedEmail,
+        ...payload.to,
+        ...(payload.cc ?? []),
+      ],
+      relatedClientId: approval.relatedClientId,
+      relatedProjectId: approval.relatedProjectId,
+      occurredAt: new Date().toISOString(),
+      payloadRef: sent.id,
+      payloadType: "gmail.message",
+      subject: payload.subject,
+      summary: approval.summary,
+      bodyExcerpt: (payload.bodyText ?? payload.bodyHtml ?? "").slice(0, 500),
+      threadId: sent.threadId,
+      capturedBy: approval.requestedBy,
+    });
+    touchpointId = id;
+  } catch (err) {
+    // Swallow; the send succeeded. Future hardening: surface this in
+    // the approval's executionResult.
+    console.error("[gmailSend] touchpoint write failed:", err);
+  }
+
+  return {
+    gmailMessageId: sent.id,
+    gmailThreadId: sent.threadId,
+    touchpointId,
+  };
+}
+
+// gmail_send approvals (requestSend, cadence dispatcher, meeting-prep
+// responder) — the payload already carries a recipient list.
 export const executeApprovedSend = internalAction({
   args: { approvalId: v.id("approvals") },
   handler: async (ctx, args): Promise<{
@@ -329,121 +462,60 @@ export const executeApprovedSend = internalAction({
     if (approval.entityType !== "gmail_send") {
       throw new Error(`Expected gmail_send approval, got ${approval.entityType}`);
     }
-    const payload = approval.draftPayload as {
-      to: string[];
-      cc?: string[];
-      bcc?: string[];
-      subject: string;
-      bodyHtml?: string;
-      bodyText?: string;
-      threadId?: string;
-      inReplyTo?: string;
-      references?: string[];
-    };
+    return await performApprovedSend(ctx, approval, approval.draftPayload as NormalizedSend);
+  },
+});
 
-    const token: any = await ctx.runQuery(internal.gmailSend.getTokenForSend, {
-      userId: approval.requestedBy,
-    });
-    if (!token) throw new Error("Gmail token not found for requester");
-    if (token.needsReconnect) throw new Error("Gmail token needs reconnect");
-
-    // Defense-in-depth kill switch. The gate is enforced at queue time in
-    // requestSend, but the cadence dispatcher bypasses that path (it calls
-    // approvals.internalCreate directly), so an approved cadence-staged draft
-    // would otherwise fire regardless of the switches. Re-check BOTH switches
-    // here so no approved gmail_send — whatever its origin — can send while
-    // send is disabled. On throw, executeApproval marks the row
-    // execution_failed (not sent), which is the honest outcome.
-    if (token.sendEnabled !== true) {
-      throw new Error("Per-user Gmail send is disabled (kill switch)");
-    }
-    const globalSendEnabled: boolean = await ctx.runQuery(
-      internal.gmailSend.getGlobalSendEnabled,
-      {},
+// client_communication approvals with kind === "email_reply" — the drafted
+// reply staged by outreach.draftReply (MCP) or the web inbox composer. The
+// recipient isn't in the payload; resolve it from the related contact's
+// email. Threads via the stored Gmail thread/message ids.
+export const executeClientCommunication = internalAction({
+  args: { approvalId: v.id("approvals") },
+  handler: async (ctx, args): Promise<{
+    gmailMessageId: string;
+    gmailThreadId: string;
+    touchpointId?: string;
+  }> => {
+    const approval: any = await ctx.runQuery(
+      internal.approvals.getApprovalForExecution,
+      { approvalId: args.approvalId },
     );
-    if (!globalSendEnabled) {
-      throw new Error("Global Gmail send is disabled (kill switch)");
+    if (!approval) throw new Error("Approval not found");
+    if (approval.entityType !== "client_communication") {
+      throw new Error(`Expected client_communication approval, got ${approval.entityType}`);
+    }
+    const p: any = approval.draftPayload ?? {};
+    if (p.kind !== "email_reply") {
+      throw new Error("client_communication payload is not an email_reply");
     }
 
-    // Refresh if within 60 seconds of expiry, or if expired.
-    let accessToken: string = token.accessToken;
-    const expiresMs = new Date(token.expiresAt).getTime();
-    if (Number.isNaN(expiresMs) || Date.now() > expiresMs - 60_000) {
-      const refreshed = await refreshGmailAccessToken(token.refreshToken);
-      accessToken = refreshed.access_token;
-      const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
-      await ctx.runMutation(internal.gmailSend.writeRefreshedToken, {
-        userId: approval.requestedBy,
-        accessToken,
-        expiresAt: newExpiresAt,
+    // Resolve the recipient: explicit payload.to wins, else the related
+    // contact's email.
+    let to: string[] = Array.isArray(p.to) ? p.to.filter(Boolean) : [];
+    if (to.length === 0) {
+      const contactId = p.contactId ?? approval.relatedContactId;
+      if (!contactId) throw new Error("No recipient: missing payload.to and relatedContactId");
+      const contact: any = await ctx.runQuery(internal.contacts.getInternal, {
+        contactId,
       });
+      if (!contact?.email) {
+        throw new Error("Related contact has no email address on file");
+      }
+      to = [contact.email];
     }
 
-    // Append the HubSpot logging BCC so the sent email auto-logs to the
-    // client's HubSpot timeline (and thus the mobile activity feed). Set via
-    // Convex env HUBSPOT_LOG_BCC (the portal's bcc.<region>.hubspot.com
-    // address). If unset, the send still goes out — it just isn't logged. BCC
-    // is invisible to the recipient. This is the single send-time chokepoint,
-    // so every gmail_send (cadence, qualify-and-draft reply, manual) logs.
-    const hubspotLogBcc = process.env.HUBSPOT_LOG_BCC;
-    const bcc = [
-      ...(payload.bcc ?? []),
-      ...(hubspotLogBcc ? [hubspotLogBcc] : []),
-    ].filter((v, i, arr) => !!v && arr.indexOf(v) === i);
-
-    const raw = base64Url(
-      composeRfc822({
-        fromEmail: token.connectedEmail,
-        to: payload.to,
-        cc: payload.cc,
-        bcc,
-        subject: payload.subject,
-        bodyHtml: payload.bodyHtml,
-        bodyText: payload.bodyText,
-        inReplyTo: payload.inReplyTo,
-        references: payload.references,
-      }),
-    );
-
-    const sent = await sendViaGmailApi(accessToken, raw, payload.threadId);
-
-    // Capture as a touchpoint. Direction outbound, provider gmail.
-    // We do not block on this; if it fails, the send itself succeeded
-    // and the approval is still marked executed via the result.
-    let touchpointId: string | undefined;
-    try {
-      const id: any = await ctx.runMutation(internal.touchpoints.internalCreate, {
-        provider: "gmail",
-        direction: "outbound",
-        kind: "email",
-        contactId: approval.relatedContactId,
-        participantEmails: [
-          token.connectedEmail,
-          ...payload.to,
-          ...(payload.cc ?? []),
-        ],
-        relatedClientId: approval.relatedClientId,
-        relatedProjectId: approval.relatedProjectId,
-        occurredAt: new Date().toISOString(),
-        payloadRef: sent.id,
-        payloadType: "gmail.message",
-        subject: payload.subject,
-        summary: approval.summary,
-        bodyExcerpt: (payload.bodyText ?? payload.bodyHtml ?? "").slice(0, 500),
-        threadId: sent.threadId,
-        capturedBy: approval.requestedBy,
-      });
-      touchpointId = id;
-    } catch (err) {
-      // Swallow; the send succeeded. Future hardening: surface this in
-      // the approval's executionResult.
-      console.error("[gmailSend] touchpoint write failed:", err);
-    }
-
-    return {
-      gmailMessageId: sent.id,
-      gmailThreadId: sent.threadId,
-      touchpointId,
+    const normalized: NormalizedSend = {
+      to,
+      cc: p.cc,
+      subject: p.subject,
+      bodyHtml: p.bodyHtml,
+      bodyText: p.bodyText,
+      threadId: p.threadId,
+      inReplyTo: p.inReplyTo,
+      // Seed References from the message we're replying to if not provided.
+      references: p.references ?? (p.inReplyTo ? [p.inReplyTo] : undefined),
     };
+    return await performApprovedSend(ctx, approval, normalized);
   },
 });

@@ -58,6 +58,7 @@ import type * as flags from "../flags.js";
 import type * as folderStructure from "../folderStructure.js";
 import type * as folderTemplates from "../folderTemplates.js";
 import type * as funnels from "../funnels.js";
+import type * as gmailInbound from "../gmailInbound.js";
 import type * as gmailSend from "../gmailSend.js";
 import type * as gmailTokens from "../gmailTokens.js";
 import type * as gmailWatch from "../gmailWatch.js";
@@ -208,6 +209,7 @@ declare const fullApi: ApiFromModules<{
   folderStructure: typeof folderStructure;
   folderTemplates: typeof folderTemplates;
   funnels: typeof funnels;
+  gmailInbound: typeof gmailInbound;
   gmailSend: typeof gmailSend;
   gmailTokens: typeof gmailTokens;
   gmailWatch: typeof gmailWatch;
