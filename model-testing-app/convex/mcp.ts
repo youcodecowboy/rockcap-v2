@@ -3125,6 +3125,104 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  // ── P4: branded multi-page BRIEF generation (structured briefData) ─────
+  {
+    name: "document.generateBrief",
+    description:
+      "Generate a branded RockCap multi-page BRIEF (PDF + DOCX) and stage it for operator approval; on approval it is filed to the client's Documents library. Two layouts: 'lender-brief' sells a borrower's deal TO a lender (track-record depth from Companies House charges); 'client-brief' advises the BORROWER on the indicative lender landscape, leverage scenarios and expected pricing BEFORE going to market. YOU compose the structured briefData (title, key facts, numbered sections whose bodies are semantic HTML, sign-off), grounded in real data — read the deal's documents + intel first; never fabricate. Section bodyHtml is semantic HTML only (no <html>/<head>/<style> wrappers; <table> with class=\"num\" on numeric cells, class=\"caption\" for source/footnote lines). Follow the doc-type-lender-brief / doc-type-client-brief references for the section set.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        layout: { type: "string", enum: ["lender-brief", "client-brief"], description: "Which brief to render." },
+        briefData: {
+          type: "object",
+          description: "The full structured brief. Section set differs per layout — see the doc-type reference.",
+          properties: {
+            variant: { type: "string", description: "lender-brief: senior-dev|dev-exit|jv. client-brief: new-facility|refinance|multi-scenario." },
+            confidentiality: { type: "string", enum: ["INTERNAL", "EXTERNAL"], description: "Client briefs are EXTERNAL; lender briefs default INTERNAL." },
+            title: {
+              type: "object",
+              properties: {
+                location: { type: "string", description: "Scheme/location headline (rendered uppercase)." },
+                descriptor: { type: "string", description: "One-line descriptor." },
+              },
+              required: ["location", "descriptor"],
+            },
+            meta: {
+              type: "object",
+              properties: {
+                borrower: { type: "string", description: "Borrower / group name." },
+                preparedBy: { type: "string", description: "Usually 'RockCap Ltd'." },
+                date: { type: "string", description: "e.g. 'April 2026'." },
+              },
+              required: ["borrower", "preparedBy", "date"],
+            },
+            keyFacts: {
+              type: "array",
+              description: "Key-facts block — short label + value rows.",
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string", description: "Short label, e.g. 'GDV'." },
+                  value: { type: "string", description: "The value." },
+                },
+                required: ["label", "value"],
+              },
+            },
+            sections: {
+              type: "array",
+              description: "Numbered sections; bodyHtml is semantic HTML (no html/head/style wrappers).",
+              items: {
+                type: "object",
+                properties: {
+                  n: { type: "number", description: "Section number." },
+                  title: { type: "string", description: "Section heading." },
+                  bodyHtml: { type: "string", description: "Section body as semantic HTML (prose + tables)." },
+                },
+                required: ["n", "title", "bodyHtml"],
+              },
+            },
+            signOff: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "RM name." },
+                role: { type: "string", description: "e.g. 'Director, RockCap'." },
+                email: { type: "string", description: "RM email." },
+                phone: { type: "string", description: "RM phone." },
+              },
+              required: ["name", "role", "email", "phone"],
+            },
+          },
+          required: ["variant", "confidentiality", "title", "meta", "keyFacts", "sections", "signOff"],
+        },
+        title: { type: "string", description: "Document title; also the file-name stem." },
+        docType: { type: "string", description: "Stored doc type. Defaults to 'Client Brief' / 'Lender Brief' from the layout." },
+        category: { type: "string", description: "Filing category. Defaults to 'Generated'." },
+        summary: { type: "string", description: "One-line operator-facing summary for the approvals queue. Defaults to the title." },
+        formats: { type: "array", items: { type: "string", description: "pdf or docx" }, description: "Output formats. Defaults to ['pdf','docx']." },
+        clientId: { type: "string", description: "Client id to file the document under on approval." },
+        projectId: { type: "string", description: "Project id to associate (optional)." },
+      },
+      required: ["layout", "briefData", "title"],
+    },
+    handler: async (ctx, userId, args) => {
+      const defaultDocType = args.layout === "client-brief" ? "Client Brief" : "Lender Brief";
+      const result = await ctx.runAction(internal.documentGen.renderAndStage, {
+        layout: args.layout,
+        briefData: args.briefData,
+        title: args.title,
+        docType: args.docType ?? defaultDocType,
+        category: args.category,
+        summary: args.summary,
+        formats: args.formats,
+        isBaseDocument: true,
+        requestedByUserId: userId,
+        relatedClientId: args.clientId,
+        relatedProjectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
 ];
 
 const TOOL_INDEX: Record<string, McpTool> = Object.fromEntries(

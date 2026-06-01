@@ -7,7 +7,11 @@ import { internal } from "./_generated/api";
 
 export const renderAndStage = internalAction({
   args: {
-    contentHtml: v.string(),
+    // Freeform house document. Optional when rendering a branded brief instead.
+    contentHtml: v.optional(v.string()),
+    // Branded brief: a layout ("lender-brief" | "client-brief") + structured briefData.
+    layout: v.optional(v.string()),
+    briefData: v.optional(v.any()),
     title: v.string(),
     docType: v.string(),
     category: v.optional(v.string()),
@@ -26,13 +30,18 @@ export const renderAndStage = internalAction({
     const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
     const formats = args.formats && args.formats.length ? args.formats : ["pdf", "docx"];
 
+    // Branded brief (layout + briefData) or freeform house document (contentHtml).
+    const payload = args.layout
+      ? { layout: args.layout, briefData: args.briefData, title: args.title, formats }
+      : { contentHtml: args.contentHtml, title: args.title, formats };
+
     const res = await fetch(`${appUrl}/api/documents/generate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-convex-internal-secret": process.env.CONVEX_INTERNAL_SECRET ?? "",
       },
-      body: JSON.stringify({ contentHtml: args.contentHtml, title: args.title, formats }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");

@@ -31,7 +31,10 @@ Does NOT produce a cadence.
 3. **Gather data:** `client.getDeepContext({clientId})` — identity, CH profile + charges, intelligence, track record, contacts, activity. **For document-grounded doc types (e.g. the lender brief) this is not sufficient on its own: enumerate and read the deal's documents (`document.listByProject` / `document.listByClient` → `document.search` / `document.get`) — they are the primary source for figures, terms, and named principals. The deep-context rollups are a cross-check. See the doc-type reference.**
 4. **Load the guardrails:** `../../shared-references/document-house-style.md` (voice + HTML rules) and the doc-type reference (for one-pagers, `../../shared-references/doc-type-company-one-pager.md`).
 5. **Compose** the document body as semantic HTML, following the house style and the doc-type structure, grounding every figure in the gathered data. Omit sections with no data; never fabricate.
-6. **Call the `generateDocument` tool** with `{ contentHtml, title, docType, category: "Generated", clientId }`. It renders PDF + DOCX and stages the `document_publish` approval.
+6. **Render + stage:**
+   - **One-pagers / freeform docs:** call the `generateDocument` tool with `{ contentHtml, title, docType, category: "Generated", clientId }`.
+   - **Branded briefs (lender brief, client brief):** call the **`generateBrief`** tool (MCP: `document.generateBrief`) with `{ layout: "lender-brief" | "client-brief", briefData, title, clientId }`. Compose `briefData` as a structured object (variant, confidentiality, title, meta, keyFacts[], numbered sections[] with semantic-HTML bodies, signOff) per the doc-type reference — **not** `contentHtml`. The branded frame (masthead, key-facts block, black footer, RM sign-off) is applied automatically.
+   Either path renders PDF + DOCX and stages the `document_publish` approval.
 7. **Report** to the operator that the document is staged for approval (with the approval link) and what to review.
 8. **`skillRun.complete`** with status, a one-paragraph brief, `linkedClientId`, `linkedApprovalIds`, and any `gaps` (missing data, unresolved entity).
 
@@ -41,8 +44,9 @@ Defer to `document-house-style.md` and the doc-type reference. The three that ma
 ## Tool dependencies
 - `client.getDeepContext` — one-shot data load (MCP).
 - `skillRun.start` / `skillRun.complete` — workflow envelope (MCP).
-- `generateDocument` — chat tool that renders (via `/api/documents/generate`) and stages the approval (via `documentPublish.requestPublish`).
-- **Deferred:** MCP exposure of `generateDocument` is v3; in v1 this skill runs on the chat surface.
+- `generateDocument` — chat tool that renders a freeform house document (via `/api/documents/generate`) and stages the approval (via `documentPublish.requestPublish`).
+- `generateBrief` — chat tool (MCP: `document.generateBrief`) that renders a branded **brief** from structured `briefData` (lender-brief / client-brief layout) and stages the approval. Same render route + approval flow.
+- MCP exposure: `document.generate` (freeform) and `document.generateBrief` (briefs) are live; the chat surface mirrors them as `generateDocument` / `generateBrief`.
 
 ## What goes wrong
 1. **Entity unresolved.** Ask the operator which client, rather than guessing.
