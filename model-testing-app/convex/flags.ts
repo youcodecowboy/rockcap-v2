@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { getAuthenticatedUser } from "./authHelpers";
+import { getAuthenticatedUser, getAuthenticatedUserOrNull } from "./authHelpers";
 
 // ============================================================================
 // Queries
@@ -181,7 +181,12 @@ export const getInboxItems = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the pre-auth window on cold loads: the inbox page reads these
+    // at top level, so a thrown "Unauthenticated" would crash the page via
+    // useQuery instead of waiting for Clerk. Return empty until identity
+    // arrives; the query re-runs and fills in automatically.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
     const filter = args.filter || "all";
     const limit = args.limit || 50;
 
@@ -460,7 +465,12 @@ export const getInboxItemsEnriched = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the pre-auth window on cold loads: the inbox page reads these
+    // at top level, so a thrown "Unauthenticated" would crash the page via
+    // useQuery instead of waiting for Clerk. Return empty until identity
+    // arrives; the query re-runs and fills in automatically.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
     const filter = args.filter || "all";
     const limit = args.limit || 50;
 
