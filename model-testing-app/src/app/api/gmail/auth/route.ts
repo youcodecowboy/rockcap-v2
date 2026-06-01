@@ -11,14 +11,18 @@ import crypto from "crypto";
 // Separate OAuth client from Google Calendar (BL-4.1 confirmed decision):
 // connecting Gmail does not disconnect Calendar and vice versa.
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
+    // Where to land after OAuth. Only accept a same-origin relative path
+    // (reject protocol-relative "//host") to avoid an open redirect.
+    const raw = new URL(request.url).searchParams.get("returnTo");
+    const returnTo = raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : undefined;
     const csrf = crypto.randomBytes(16).toString("hex");
-    const state = Buffer.from(JSON.stringify({ userId, csrf, integration: "gmail" })).toString("base64");
+    const state = Buffer.from(JSON.stringify({ userId, csrf, integration: "gmail", returnTo })).toString("base64");
     const url = buildAuthUrl(state);
     return NextResponse.redirect(url);
   } catch (error) {
