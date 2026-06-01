@@ -45,9 +45,10 @@ Write `mobile-app/docs/primitives.md` — the restyle-agent cheat-sheet.
 **Critical RN note for the cheat-sheet:** NativeWind cannot JIT dynamic classes (`bg-m-${type}`).
 Entity-coloured elements driven by data MUST use inline `style={{ }}` from `useColors()`.
 
-### Phase 2 — Screens, fanned out
-Parallel agents per disjoint screen group, each pointed at `primitives.md`, killing the scattered
-hardcoded colour maps in favour of entity/status tokens. Build between waves; commit per wave.
+### Phase 2 — Screens, fanned out ✅ DONE (commit 341a17c)
+6 parallel agents over disjoint screen groups, 64 files restyled onto entity/status tokens +
+primitives. All 5 hardcoded colour maps killed; shared chrome moved off the inverted light surface.
+Presentation-only; typecheck error set identical to baseline. Original plan below.
 Known hardcoded-colour cleanup targets:
 - `components/ClientListItem.tsx` — role badge colours (stock emerald/amber)
 - `components/TaskListItem.tsx` — priority colours (mixed hex + stock Tailwind)
