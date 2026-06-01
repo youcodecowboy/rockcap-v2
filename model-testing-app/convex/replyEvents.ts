@@ -48,6 +48,7 @@ export const createInternal = internalMutation({
     gmailMessageId: v.optional(v.string()),
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
+    replyBodyHtml: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("replyEvents", {

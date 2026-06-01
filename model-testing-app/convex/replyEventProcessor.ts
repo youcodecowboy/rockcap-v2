@@ -107,6 +107,7 @@ export const ingestGmailMessage = internalAction({
     fromName: v.optional(v.string()),
     subject: v.string(),
     body: v.string(),
+    bodyHtml: v.optional(v.string()),
     receivedAt: v.string(),
     externalId: v.string(),
     gmailThreadId: v.optional(v.string()),
@@ -122,6 +123,7 @@ export const ingestGmailMessage = internalAction({
       rawMessageRef: args.rawMessageRef,
       userId: args.userId,
       replyBody: args.body,
+      replyBodyHtml: args.bodyHtml,
       replySubject: args.subject,
       fromEmail: args.fromEmail,
       fromName: args.fromName,
@@ -231,6 +233,7 @@ async function processReplyEvent(
     rawMessageRef?: string;
     userId: Id<"users">;
     replyBody?: string;
+    replyBodyHtml?: string;
     replySubject?: string;
     fromEmail?: string;
     fromName?: string;
@@ -274,6 +277,7 @@ async function processReplyEvent(
       userId: args.userId,
       // v1.3 — persist body + subject + client link at insert time
       replyBodyText: args.replyBody,
+      replyBodyHtml: args.replyBodyHtml,
       replySubject: args.replySubject,
       linkedClientId,
       // Gmail inbound capture — sender (for inbox display when no contact
