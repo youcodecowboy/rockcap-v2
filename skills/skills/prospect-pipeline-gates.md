@@ -30,9 +30,21 @@ This flow was split into gates on 2026-05-30. Before, `prospect-intel` ran intel
 - **Leaves:** active cadence; state advances through `active` → `replied` → … via the cadence/reply machinery.
 - **Why:** the trust gate. No autonomous send — a human approves before anything leaves the system. This does not change as autonomy increases.
 
+### Gate 5 — Engaged (meeting booked → the semi-client zone)
+- **Trigger:** a **meeting is booked** for the prospect (`meeting.create` / the web booking). Automatic.
+- **What runs:** `meetings.create` advances `prospectState` forward to `engaged` (only from a pre-engagement active state — `researched` / `drafted` / `active` / `replied`; it never downgrades a `promoted` / `parked` / `lost` prospect, and no-ops if already engaged).
+- **Leaves:** `prospectState: "engaged"`. The prospect is now a **semi-client**: it stays in the prospecting section but is actively worked — taking meetings, receiving files (the **Files tab** persists from the start), and optionally a project + appraisal extraction. There is no time limit; it stays `engaged` for as long as the work takes.
+- **Why:** booking a meeting is the first hard signal of a live conversation. `engaged` gives that the-deal-is-real-but-not-yet-a-client phase a home, so features can flow without forcing a premature promotion.
+
+### Gate 6 — Promote to client (operator judgment)
+- **Trigger:** the operator clicks **Promote** on the prospect detail page (`client.activate`). **Manual only — never automatic.**
+- **What runs:** `client.activate` sets `clients.status: "active"`, transitions `prospectState → "promoted"`, schedules the HubSpot lifecycle push. The prospect moves from the prospecting board to the clients board.
+- **Leaves:** an active client.
+- **Definition of promotion:** *a pure operator judgment call* — typically once a real document batch / signed mandate signals a genuine live deal, but it is the operator's decision, not a rule and not automated. A prospect can do real deal work (files, meetings, a project, extracted figures) as a semi-client **before** promotion; promotion is the deliberate "this is a client now" act, decoupled from doing the work. `deal-intake` may *recommend* promotion but must never fire it automatically.
+
 ## Data flow (one line)
 
-`prospect-intel` (intel-only) → `researched` + Definition-of-Done manifest → operator **Accept** → `outreachReadyAt` set (board filter + badge) → later session "draft all outreach for ready companies" → `outreach-draft` → `drafted` (4 pending cadences) → operator **Approve & Schedule** → cadence fires.
+`prospect-intel` (intel-only) → `researched` → operator **Accept** → `outreachReadyAt` → `outreach-draft` → `drafted` (4 pending cadences) → operator **Approve & Schedule** → `active` → `replied` → **meeting booked** → `engaged` (semi-client: files + meetings flow) → operator **Promote** (judgment) → `promoted` / active client.
 
 ## Edge cases
 
@@ -49,4 +61,6 @@ This flow was split into gates on 2026-05-30. Before, `prospect-intel` ran intel
 | 1 Run intel | "run prospect intel on X" | `prospect-intel` skill | `researched` |
 | 2 Accept | click "Accept — ready for outreach" | `client.markOutreachReady` | `researched` + `outreachReadyAt` |
 | 3 Draft | "draft outreach for ready companies" | `outreach-draft` skill (`client.listOutreachReady`) | `drafted` (pending cadences) |
-| 4 Approve | click "Approve & Schedule" | `cadences.approvePackage` | active cadence |
+| 4 Approve | click "Approve & Schedule" | `cadences.approvePackage` | active cadence → `replied` |
+| 5 Engaged | book a meeting (automatic) | `meeting.create` (auto-advances) | `engaged` (semi-client) |
+| 6 Promote | click "Promote" (judgment) | `client.activate` | `promoted` / active client |
