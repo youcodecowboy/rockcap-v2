@@ -12,8 +12,8 @@ interface ProspectDetailHeaderProps {
   prospect: any;
   intelRun?: any;
   cadences: any[];
-  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "threads" | "knowledge" | "activity";
-  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "threads" | "knowledge" | "activity") => void;
+  activeTab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "notes" | "threads" | "knowledge" | "activity";
+  onTabChange: (tab: "overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "notes" | "threads" | "knowledge" | "activity") => void;
   peopleCount?: number;
   chargesCount?: number;
   repliesCount?: number;
@@ -174,7 +174,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
         </div>
 
         <div style={{ display: "flex", padding: "0 24px", gap: 0, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "files", "threads", "knowledge", "activity"] as const).map((tab) => {
+          {(["overview", "intel", "people", "ch", "track-record", "outreach", "replies", "meetings", "files", "notes", "threads", "knowledge", "activity"] as const).map((tab) => {
             const labelMap: Record<typeof tab, string> = {
               overview: "Overview",
               intel: "Intel",
@@ -185,6 +185,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
               replies: "Replies",
               meetings: "Meetings",
               files: "Files",
+              notes: "Notes",
               threads: "Threads",
               knowledge: "Knowledge",
               activity: "Activity",
