@@ -2,6 +2,8 @@
 
 The branded, multi-page RockCap **lender brief** — produced from prospect/deal data via the `lender-brief` layout (`model-testing-app/src/lib/docgen/layouts/lenderBrief.ts`), composed as structured **`briefData`** (not `contentHtml`). Pair with `document-house-style.md` for voice. Distinct from the one-pager: a fixed branded frame (masthead, key-facts block, black footer, RM sign-off) wrapping deal-type-driven sections of rich prose + tables.
 
+**To render:** compose a `LenderBriefData` object and call **`generateBrief`** (MCP: **`document.generateBrief`**) with `{ layout: "lender-brief", briefData, title, clientId }` — it renders PDF + DOCX and stages a `document_publish` approval. (The borrower-facing counterpart is the **client brief** — see `doc-type-client-brief.md`.)
+
 ## Purpose
 A senior, evidence-led brief presenting a financed (or to-be-financed) development scheme to a lender, syndication partner, or IC. **Table-first; 3–5 pages with genuine depth is the target — depth beats brevity.** Do not compress to fit a page count; a longer, well-structured brief is preferred over a thin one.
 

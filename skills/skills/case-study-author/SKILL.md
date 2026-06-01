@@ -1,5 +1,7 @@
 # case-study-author
 
+> **⚠ v1 SKELETON — not yet operational.** This skill documents *intended* behaviour for a future version. Some tools it references are **not yet in the MCP surface** (see `../../CATALOGUE.md` → "What's NOT yet MCP-exposed"). If a user triggers this skill: tell them this workflow isn't built yet, do only what the **live** tools (in `tools-manifest.json`) allow, and **never call a tool that isn't in the manifest** — log the rest as gaps via `skillRun.complete`.
+
 Step 13 of the deal lifecycle. A deal has closed (won or lost). This skill assembles the artefacts, drafts a case study, and seeds it into the precedent library that future deals draw on.
 
 ## Trigger

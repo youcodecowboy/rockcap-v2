@@ -1,0 +1,27 @@
+{
+  "$comment": "Project settings for the RockCap skills repo. These hooks make GitHub the central brain: pull latest on start, validate before every commit, never leave edits sitting only on one laptop. They activate only when this folder is opened as the Claude Code project root.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh tools/hook-session-start.sh" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "sh tools/hook-pre-commit-guard.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh tools/hook-stop.sh" }
+        ]
+      }
+    ]
+  }
+}

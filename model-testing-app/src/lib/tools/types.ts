@@ -42,6 +42,11 @@ export interface JsonSchemaProperty {
   description: string;
   enum?: string[];
   items?: JsonSchemaProperty;
+  /** Nested object shape — for tools whose params include a structured sub-object
+   *  (e.g. generateBrief's briefData). Passed straight through to the model's input_schema. */
+  properties?: Record<string, JsonSchemaProperty>;
+  /** Required keys of a nested object property. */
+  required?: string[];
   default?: unknown;
 }
 

@@ -85,7 +85,7 @@ Persisted to Convex:
 
 ### Capture mode
 
-1. **Resolve the lender.** If `lenderClientId` given, call `lender.get` to verify it exists + has type=lender. If `lenderName` only: call `lender.create({name, ...})` to create the record; use the returned id.
+1. **Resolve the lender.** If `lenderClientId` given, call `client.get` to verify it exists + has type=lender (lenders are clients rows). If `lenderName` only: call `lender.create({name, ...})` to create the record; use the returned id.
 
 2. **Call `skillRun.start`** with `skillName: "lender-intel"`, the appropriate `dedupKey`, `dedupWindowDays: 1`, `input: {lenderClientId, sourceType, sourceRef}`.
 
@@ -137,7 +137,7 @@ All `../../CONVENTIONS.md` rules apply. Three that matter most:
 This skill calls these MCP-exposed tools (v1.3 Sprint F):
 
 - `lender.create` — capture mode for new lenders
-- `lender.get` (via clients.get) — verify existing lender
+- `client.get` — verify existing lender (lenders are clients rows with type=lender)
 - `lender.getDeepContext` — load current appetite + history for novelty check
 - `lender.recordAppetite` — write a new signal (supersedes prior automatically)
 - `lender.getAppetite` / `lender.getAppetiteHistory` — read surfaces
@@ -146,7 +146,7 @@ This skill calls these MCP-exposed tools (v1.3 Sprint F):
 - `skillRun.start` / `skillRun.complete` — workflow envelope
 
 Tools NOT yet MCP-exposed (capture in gaps):
-- `intelligence.updateLenderProfile` — for static-layer facts; defer
+- `intelligence.updateLenderProfile` — for static-layer facts; planned, no MCP tool yet — capture in gaps
 - `knowledge.recordMatchOutcome` — for matching audit trail; defer
 
 ## What goes wrong

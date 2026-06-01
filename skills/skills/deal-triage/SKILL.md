@@ -1,5 +1,7 @@
 # deal-triage
 
+> **⚠ v1 SKELETON — not yet operational.** This skill documents *intended* behaviour for a future version. Some tools it references are **not yet in the MCP surface** (see `../../CATALOGUE.md` → "What's NOT yet MCP-exposed"). If a user triggers this skill: tell them this workflow isn't built yet, do only what the **live** tools (in `tools-manifest.json`) allow, and **never call a tool that isn't in the manifest** — log the rest as gaps via `skillRun.complete`.
+
 Step 12 of the deal lifecycle. Daily (or operator-invoked) sweep across all active deals to surface what's at risk, what needs a chaser, and what the operator should look at first this morning.
 
 ## Trigger
@@ -63,12 +65,12 @@ All CONVENTIONS apply. Two that matter most:
 
 - `project.list`, `project.get`
 - `milestone.listByProject`, `milestone.update`
-- `knowledge.getChecklistByProject`
-- `approval.listAll` (with status filter)
+- `checklist.getByProject`
+- a list-all-pending-approvals sweep *(planned — no MCP tool yet; `approval.listPendingByClient` is per-client only)*
 - `lenderApproach.listByProject`
-- `cadence.list`
+- a list-all-active-cadences sweep *(planned — no MCP tool yet; `cadence.listByPackage` is per-package only)*
 - `touchpoint.getByContact`, `touchpoint.getByProject`
-- `documents.getByProject` (for monitoring document recency)
+- `document.listByProject` (for monitoring document recency)
 - `intelligenceConflicts.list`
 - `gmail.requestSend` for staged chasers
 - `cadence.create` for cadence-driven follow-ups

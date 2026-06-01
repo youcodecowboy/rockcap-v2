@@ -110,12 +110,12 @@ All voice and output rules from `../../CONVENTIONS.md` apply. Two that matter mo
 ## Tool dependencies
 
 - `cadence.get` to read the triggering row
-- `cadence.advance` to patch `lastFiredAt`, `lastResult`, `nextDueAt`
+- `cadence.update` to patch `lastFiredAt`, `lastResult`, `nextDueAt`
 - `contact.get`, `client.get`, `project.get` for context
 - `touchpoint.getByContact` to check for recent inbound
-- `intelligence.queryIntelligence` for prior evidence and history
-- `companies-house.getCharges` for fresh evidence when cadence type benefits from it
-- `gmail.requestSend` to stage the approval
+- `intelligence.getClientIntelligence` / `intelligence.getProjectIntelligence` for prior evidence and history
+- `companies.getGroupCharges` for fresh evidence when cadence type benefits from it
+- `approval.create` (`entityType: "gmail_send"`) to stage the approval
 - `holiday.isBankHoliday(date)` (sub-skill, see `../../sub-skills/`) to check business-day rules
 
 ## What goes wrong

@@ -6,7 +6,7 @@
 // Convex Id types (storageId / clientId / uploadedBy arrive as strings here).
 
 export interface GeneratedFile {
-  format: "pdf" | "docx";
+  format: "pdf" | "docx" | "xlsx";
   storageId: string;
   fileName: string;
   fileSize: number;

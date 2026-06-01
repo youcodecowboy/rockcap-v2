@@ -312,6 +312,33 @@ export const reject = mutation({
   },
 });
 
+// Internal approve — MCP path. The public `approve` derives the actor from a
+// Clerk session; the MCP server authenticates by bearer token and passes the
+// resolved userId explicitly. Same effect: flip to approved + schedule the
+// executor that actually performs the action (Gmail send, document publish, …).
+export const approveInternal = internalMutation({
+  args: {
+    approvalId: v.id("approvals"),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) throw new Error("Approval not found");
+    if (approval.status !== "pending") {
+      return { ok: false, reason: `not_pending_${approval.status}` };
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "approved",
+      approvedBy: args.actorUserId,
+      approvedAt: new Date().toISOString(),
+    });
+    await ctx.scheduler.runAfter(0, internal.approvals.executeApproval, {
+      approvalId: args.approvalId,
+    });
+    return { ok: true };
+  },
+});
+
 // Internal reject — for system flows (a denied/parked cadence package clearing
 // its staged gmail_send approvals, or operator-driven cleanup) that have no
 // auth session. Idempotent: only acts on pending rows.

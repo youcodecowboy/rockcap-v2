@@ -71,7 +71,7 @@ What it does not do:
 
 5. **Pick the register.** Default formal. If the inbound text uses first names, exclamation marks, or familiar language, register as warm. Match the inbound; do not overcorrect. If `tone` was passed explicitly, honour it.
 
-6. **Compose the reply.** Open by acknowledging the SPECIFIC thing they wrote (one sentence; cite a phrase from `reply.replyBodyText`). State what we can do, grounded in evidence from the intel report (one sentence). Ask the qualification questions (≤3, the highest-leverage gaps). Propose a call as the close. Sign off with the partner who would actually own the relationship (the operator's name; pull from `users.getCurrent` if needed, else use a placeholder for the operator to fill).
+6. **Compose the reply.** Open by acknowledging the SPECIFIC thing they wrote (one sentence; cite a phrase from the reply body — the `replyBodyText` field returned by `reply.get`). State what we can do, grounded in evidence from the intel report (one sentence). Ask the qualification questions (≤3, the highest-leverage gaps). Propose a call as the close. Sign off with the partner who would actually own the relationship (the operator's name; ask the operator if unknown, else leave a placeholder for them to fill).
 
 7. **Stage the approval.** Call `outreach.draftReply({contactId, clientId, subject, bodyText, bodyHtml, replyToReplyEventId, skillRunId, reasoning})`. The `reasoning` field is a 1-2 sentence summary for the operator's quick-review on the /approvals page. Returns `{approvalId, viewAt}`.
 
