@@ -23,37 +23,37 @@ const EDITOR_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; color: #0a0a0a; background: #fff; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; color: #e5e5e5; background: #0a0a0a; }
   .toolbar {
     position: sticky; top: 0; z-index: 10;
     display: flex; gap: 2px; padding: 8px 12px;
-    background: #fff; border-bottom: 1px solid #e5e5e5;
+    background: #111111; border-bottom: 1px solid #2a2a2a;
     flex-wrap: wrap; align-items: center;
   }
   .toolbar button {
     width: 32px; height: 32px; border: none; background: transparent;
-    border-radius: 6px; font-size: 13px; font-weight: 600; color: #525252;
+    border-radius: 6px; font-size: 13px; font-weight: 600; color: #8a8a8a;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
-  .toolbar button:active, .toolbar button.is-active { background: #f5f5f4; color: #0a0a0a; }
-  .toolbar .sep { width: 1px; height: 20px; background: #e5e5e5; margin: 0 4px; }
+  .toolbar button:active, .toolbar button.is-active { background: #0d0d0d; color: #e5e5e5; }
+  .toolbar .sep { width: 1px; height: 20px; background: #2a2a2a; margin: 0 4px; }
   .ProseMirror { padding: 16px; min-height: 300px; outline: none; line-height: 1.6; }
   .ProseMirror p { margin-bottom: 0.5em; }
   .ProseMirror h1 { font-size: 1.5em; font-weight: 700; margin-bottom: 0.3em; }
   .ProseMirror h2 { font-size: 1.25em; font-weight: 600; margin-bottom: 0.3em; }
   .ProseMirror ul, .ProseMirror ol { padding-left: 1.5em; margin-bottom: 0.5em; }
   .ProseMirror li { margin-bottom: 0.2em; }
-  .ProseMirror blockquote { border-left: 3px solid #e5e5e5; padding-left: 12px; color: #525252; margin-bottom: 0.5em; }
-  .ProseMirror hr { border: none; border-top: 1px solid #e5e5e5; margin: 1em 0; }
+  .ProseMirror blockquote { border-left: 3px solid #2a2a2a; padding-left: 12px; color: #b8b8b8; margin-bottom: 0.5em; }
+  .ProseMirror hr { border: none; border-top: 1px solid #2a2a2a; margin: 1em 0; }
   .ProseMirror strong { font-weight: 600; }
   .ProseMirror em { font-style: italic; }
   .ProseMirror u { text-decoration: underline; }
   .ProseMirror s { text-decoration: line-through; }
-  .mention { background: #dbeafe; color: #1d4ed8; padding: 1px 4px; border-radius: 4px; font-weight: 500; }
+  .mention { background: #3b82f626; color: #3b82f6; padding: 1px 4px; border-radius: 4px; font-weight: 500; }
   .ProseMirror p.is-editor-empty:first-child::before {
-    content: attr(data-placeholder); float: left; color: #d4d4d4; pointer-events: none; height: 0;
+    content: attr(data-placeholder); float: left; color: #6e6e6e; pointer-events: none; height: 0;
   }
-  .loading { padding: 16px; color: #a3a3a3; font-size: 14px; }
+  .loading { padding: 16px; color: #8a8a8a; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -73,7 +73,7 @@ const EDITOR_HTML = `<!DOCTYPE html>
   <button id="btn-hr">&mdash;</button>
 </div>
 <div id="editor"><p class="loading">Loading editor...</p></div>
-<div id="mention-popup" style="display:none;position:fixed;z-index:100;background:#fff;border:1px solid #e5e5e5;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);max-height:200px;overflow-y:auto;width:240px;right:8px;"></div>
+<div id="mention-popup" style="display:none;position:fixed;z-index:100;background:#111111;border:1px solid #2a2a2a;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.4);max-height:200px;overflow-y:auto;width:240px;right:8px;"></div>
 
 <script type="module">
 import { Editor } from 'https://esm.sh/@tiptap/core@2.11.7';
@@ -89,7 +89,8 @@ let currentMentionCommand = null;
 
 // 👤 user · 🏢 client · 📁 project · 🪪 contact
 const typeIcons = { user: '\\ud83d\\udc64', client: '\\ud83c\\udfe2', project: '\\ud83d\\udcc1', contact: '\\ud83e\\ude92' };
-const typeColors = { user: '#3b82f6', client: '#f59e0b', project: '#8b5cf6', contact: '#059669' };
+// Entity colours (canon): user→blue, client→green, project→indigo, contact→purple.
+const typeColors = { user: '#3b82f6', client: '#22c55e', project: '#6366f1', contact: '#a855f7' };
 
 function renderMentionPopup(items, command) {
   const popup = document.getElementById('mention-popup');
@@ -98,10 +99,10 @@ function renderMentionPopup(items, command) {
   if (!items.length) { popup.style.display = 'none'; return; }
 
   popup.innerHTML = items.map((item, i) =>
-    '<div class="mention-item' + (i === 0 ? ' selected' : '') + '" data-index="' + i + '" style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;' + (i === 0 ? 'background:#f5f5f4;' : '') + '">' +
+    '<div class="mention-item' + (i === 0 ? ' selected' : '') + '" data-index="' + i + '" style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;' + (i === 0 ? 'background:#0d0d0d;' : '') + '">' +
     '<span style="font-size:14px;">' + (typeIcons[item.type] || '\\ud83d\\udc64') + '</span>' +
-    '<span style="font-size:13px;color:#0a0a0a;">' + item.label + '</span>' +
-    '<span style="font-size:10px;color:' + (typeColors[item.type] || '#525252') + ';margin-left:auto;text-transform:uppercase;font-weight:600;">' + item.type + '</span>' +
+    '<span style="font-size:13px;color:#e5e5e5;">' + item.label + '</span>' +
+    '<span style="font-size:10px;color:' + (typeColors[item.type] || '#8a8a8a') + ';margin-left:auto;text-transform:uppercase;font-weight:600;">' + item.type + '</span>' +
     '</div>'
   ).join('');
 
@@ -166,7 +167,7 @@ function init(content, placeholder) {
 
 function highlightMention() {
   document.querySelectorAll('#mention-popup .mention-item').forEach((el, i) => {
-    el.style.background = i === selectedMentionIndex ? '#f5f5f4' : 'transparent';
+    el.style.background = i === selectedMentionIndex ? '#0d0d0d' : 'transparent';
   });
 }
 

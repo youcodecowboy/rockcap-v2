@@ -28,7 +28,8 @@ import {
   Building,
   Activity as ActivityIcon,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { typography } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 // ---------------------------------------------------------------------------
 // RockCap mobile home — mission-control redesign. Ported from the Claude
@@ -101,20 +102,18 @@ interface HeroProps {
 }
 
 function HeroCommandDeck(props: HeroProps) {
-  const muted = 'rgba(255,255,255,0.55)';
-  const sub = 'rgba(255,255,255,0.75)';
-  const divider = 'rgba(255,255,255,0.08)';
-  const stageTints = [
-    'rgba(255,255,255,0.25)',
-    'rgba(255,255,255,0.45)',
-    'rgba(255,255,255,0.7)',
-    '#ffffff',
-  ];
+  const c = useColors();
+  const muted = c.text.muted;
+  const sub = c.text.secondary;
+  const divider = c.border.default;
+  // Pipeline reads as a deal surface (deal=blue), tinting from faint → solid.
+  const deal = c.accent.blue;
+  const stageTints = [`${deal}40`, `${deal}73`, `${deal}b3`, deal];
 
   return (
     <View
       style={{
-        backgroundColor: '#0a0a0a',
+        backgroundColor: c.bg.card,
         borderRadius: 16,
         padding: 16,
         borderWidth: 1,
@@ -153,8 +152,8 @@ function HeroCommandDeck(props: HeroProps) {
               width: 6,
               height: 6,
               borderRadius: 3,
-              backgroundColor: '#22c55e',
-              shadowColor: '#22c55e',
+              backgroundColor: c.accent.green,
+              shadowColor: c.accent.green,
               shadowOpacity: 0.5,
               shadowRadius: 3,
             }}
@@ -191,7 +190,7 @@ function HeroCommandDeck(props: HeroProps) {
             fontSize: 22,
             fontWeight: '600',
             letterSpacing: -0.4,
-            color: '#fff',
+            color: c.text.primary,
             lineHeight: 26,
           }}
         >
@@ -199,11 +198,11 @@ function HeroCommandDeck(props: HeroProps) {
         </Text>
         <Text style={{ fontSize: 13, color: sub, marginTop: 4 }}>
           You have{' '}
-          <Text style={{ color: '#fff', fontWeight: '600' }}>
+          <Text style={{ color: c.text.primary, fontWeight: '600' }}>
             {props.todayCount} task{props.todayCount === 1 ? '' : 's'}
           </Text>{' '}
           today and{' '}
-          <Text style={{ color: '#f87171', fontWeight: '600' }}>
+          <Text style={{ color: c.accent.red, fontWeight: '600' }}>
             {props.overdueCount} overdue
           </Text>
           .
@@ -221,15 +220,15 @@ function HeroCommandDeck(props: HeroProps) {
         }}
       >
         {[
-          { label: 'Today', value: props.todayCount, tint: '#fff' },
-          { label: 'Overdue', value: props.overdueCount, tint: '#f87171' },
-          { label: 'In progress', value: props.inProgressCount, tint: '#fff' },
-        ].map((c, i) => (
+          { label: 'Today', value: props.todayCount, tint: c.text.primary },
+          { label: 'Overdue', value: props.overdueCount, tint: c.accent.red },
+          { label: 'In progress', value: props.inProgressCount, tint: c.text.primary },
+        ].map((metric, i) => (
           <View
-            key={c.label}
+            key={metric.label}
             style={{
               flex: 1,
-              backgroundColor: '#0a0a0a',
+              backgroundColor: c.bg.cardAlt,
               paddingVertical: 10,
               paddingHorizontal: 12,
               borderLeftWidth: i === 0 ? 0 : 1,
@@ -245,18 +244,19 @@ function HeroCommandDeck(props: HeroProps) {
                 marginBottom: 4,
               }}
             >
-              {c.label}
+              {metric.label}
             </Text>
             <Text
               style={{
                 fontSize: 26,
                 fontWeight: '600',
                 letterSpacing: -0.6,
-                color: c.tint,
+                color: metric.tint,
                 lineHeight: 28,
+                fontFamily: typography.family.mono,
               }}
             >
-              {c.value}
+              {metric.value}
             </Text>
           </View>
         ))}
@@ -299,7 +299,8 @@ function HeroCommandDeck(props: HeroProps) {
                   fontSize: 22,
                   fontWeight: '700',
                   letterSpacing: -0.4,
-                  color: '#fff',
+                  color: c.text.primary,
+                  fontFamily: typography.family.mono,
                 }}
               >
                 {formatMoney(props.pipelineTotal)}
@@ -312,21 +313,21 @@ function HeroCommandDeck(props: HeroProps) {
                 big number above is unambiguously "active pipeline only". */}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: '#22c55e' }} />
+                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: c.accent.green }} />
                 <Text style={{ fontSize: 10, color: muted, letterSpacing: 0.2 }}>
-                  <Text style={{ color: '#fff', fontWeight: '600' }}>{props.pipelineCount}</Text> open
+                  <Text style={{ color: c.text.primary, fontWeight: '600' }}>{props.pipelineCount}</Text> open
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.6)' }} />
+                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: c.accent.blue }} />
                 <Text style={{ fontSize: 10, color: muted, letterSpacing: 0.2 }}>
-                  <Text style={{ color: '#fff', fontWeight: '600' }}>{props.wonCount}</Text> won
+                  <Text style={{ color: c.text.primary, fontWeight: '600' }}>{props.wonCount}</Text> won
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: '#f87171' }} />
+                <View style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: c.accent.red }} />
                 <Text style={{ fontSize: 10, color: muted, letterSpacing: 0.2 }}>
-                  <Text style={{ color: '#fff', fontWeight: '600' }}>{props.lostCount}</Text> lost
+                  <Text style={{ color: c.text.primary, fontWeight: '600' }}>{props.lostCount}</Text> lost
                 </Text>
               </View>
             </View>
@@ -335,12 +336,12 @@ function HeroCommandDeck(props: HeroProps) {
             <Polyline
               points="0,24 10,22 20,26 30,18 40,20 50,12 60,14 66,6 74,9"
               fill="none"
-              stroke="#fff"
+              stroke={c.text.secondary}
               strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            <Circle cx={74} cy={9} r={3} fill="#22c55e" />
+            <Circle cx={74} cy={9} r={3} fill={c.accent.green} />
           </Svg>
         </View>
 
@@ -382,7 +383,7 @@ function HeroCommandDeck(props: HeroProps) {
                       {s.label}
                     </Text>
                   </View>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#fff' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: c.text.primary, fontFamily: typography.family.mono }}>
                     {formatMoney(s.value)}
                   </Text>
                   <Text style={{ fontSize: 9, color: muted, marginTop: 1 }}>
@@ -408,6 +409,7 @@ function HeroCommandDeck(props: HeroProps) {
 
 function QuickActionsBar() {
   const router = useRouter();
+  const c = useColors();
   const actions = [
     { id: 'upload', label: 'Upload', icon: Camera, onPress: () => router.push('/upload' as any) },
     { id: 'task', label: 'New Task', icon: Plus, onPress: () => router.push('/tasks?create=true' as any) },
@@ -426,9 +428,9 @@ function QuickActionsBar() {
             activeOpacity={0.75}
             style={{
               flex: 1,
-              backgroundColor: '#fff',
+              backgroundColor: c.bg.card,
               borderWidth: 1,
-              borderColor: '#e5e5e5',
+              borderColor: c.border.default,
               borderRadius: 12,
               paddingVertical: 10,
               paddingHorizontal: 6,
@@ -436,8 +438,8 @@ function QuickActionsBar() {
               gap: 4,
             }}
           >
-            <Icon size={16} color={colors.textPrimary} />
-            <Text style={{ fontSize: 10, fontWeight: '500', color: colors.textPrimary }}>
+            <Icon size={16} color={c.text.primary} />
+            <Text style={{ fontSize: 10, fontWeight: '500', color: c.text.primary }}>
               {a.label}
             </Text>
           </TouchableOpacity>
@@ -477,6 +479,7 @@ interface AgendaProps {
 }
 
 function AgendaCard(props: AgendaProps) {
+  const c = useColors();
   const rows =
     props.tab === 'focus' ? props.focusRows : props.tab === 'all' ? props.allRows : props.doneRows;
   const tabs = [
@@ -501,9 +504,9 @@ function AgendaCard(props: AgendaProps) {
   return (
     <View
       style={{
-        backgroundColor: '#fff',
+        backgroundColor: c.bg.card,
         borderWidth: 1,
-        borderColor: '#e5e5e5',
+        borderColor: c.border.default,
         borderRadius: 12,
         padding: 14,
       }}
@@ -517,12 +520,12 @@ function AgendaCard(props: AgendaProps) {
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Calendar size={13} color={colors.textSecondary} />
+          <Calendar size={13} color={c.text.secondary} />
           <Text
             style={{
               fontSize: 10,
               fontWeight: '700',
-              color: colors.textTertiary,
+              color: c.text.muted,
               textTransform: 'uppercase',
               letterSpacing: 0.6,
             }}
@@ -530,7 +533,7 @@ function AgendaCard(props: AgendaProps) {
             Agenda · {todayStr}
           </Text>
         </View>
-        <Text style={{ fontSize: 10, color: colors.textSecondary }}>
+        <Text style={{ fontSize: 10, color: c.text.secondary }}>
           {bookedLabel}
         </Text>
       </View>
@@ -542,7 +545,9 @@ function AgendaCard(props: AgendaProps) {
           gap: 4,
           marginBottom: 12,
           padding: 3,
-          backgroundColor: '#f5f5f4',
+          backgroundColor: c.bg.cardAlt,
+          borderWidth: 1,
+          borderColor: c.border.default,
           borderRadius: 8,
         }}
       >
@@ -556,28 +561,21 @@ function AgendaCard(props: AgendaProps) {
                 flex: 1,
                 paddingVertical: 6,
                 paddingHorizontal: 8,
-                backgroundColor: active ? '#fff' : 'transparent',
+                backgroundColor: active ? c.bg.light : 'transparent',
+                borderWidth: active ? 1 : 0,
+                borderColor: c.border.mid,
                 borderRadius: 6,
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 5,
-                ...(active
-                  ? {
-                      shadowColor: '#000',
-                      shadowOpacity: 0.08,
-                      shadowRadius: 2,
-                      shadowOffset: { width: 0, height: 1 },
-                      elevation: 1,
-                    }
-                  : {}),
               }}
             >
               <Text
                 style={{
                   fontSize: 11,
                   fontWeight: '600',
-                  color: active ? colors.textPrimary : '#737373',
+                  color: active ? c.text.primary : c.text.muted,
                 }}
               >
                 {t.label}
@@ -587,7 +585,7 @@ function AgendaCard(props: AgendaProps) {
                   paddingHorizontal: 5,
                   borderRadius: 8,
                   minWidth: 16,
-                  backgroundColor: active ? '#0a0a0a' : '#e7e5e4',
+                  backgroundColor: active ? c.text.primary : c.bg.light,
                   alignItems: 'center',
                 }}
               >
@@ -595,7 +593,8 @@ function AgendaCard(props: AgendaProps) {
                   style={{
                     fontSize: 9,
                     fontWeight: '700',
-                    color: active ? '#fff' : colors.textSecondary,
+                    color: active ? c.bg.base : c.text.secondary,
+                    fontFamily: typography.family.mono,
                   }}
                 >
                   {t.count}
@@ -611,7 +610,7 @@ function AgendaCard(props: AgendaProps) {
         <Text
           style={{
             fontSize: 12,
-            color: colors.textTertiary,
+            color: c.text.muted,
             textAlign: 'center',
             paddingVertical: 16,
           }}
@@ -628,7 +627,7 @@ function AgendaCard(props: AgendaProps) {
               top: 4,
               bottom: 4,
               width: 2,
-              backgroundColor: '#f5f5f4',
+              backgroundColor: c.border.default,
             }}
           />
           {rows.map((r, i) => {
@@ -648,10 +647,11 @@ function AgendaCard(props: AgendaProps) {
                 <Text
                   style={{
                     fontSize: 10,
-                    color: colors.textSecondary,
+                    color: c.text.secondary,
                     fontWeight: '600',
                     width: 34,
                     paddingTop: 2,
+                    fontFamily: typography.family.mono,
                   }}
                 >
                   {r.time}
@@ -661,16 +661,16 @@ function AgendaCard(props: AgendaProps) {
                     width: 14,
                     height: 14,
                     borderRadius: 7,
-                    backgroundColor: r.now ? '#ef4444' : r.past ? '#e7e5e4' : '#fff',
+                    backgroundColor: r.now ? c.accent.red : r.past ? c.bg.light : c.bg.card,
                     borderWidth: r.now ? 0 : 2,
-                    borderColor: '#e7e5e4',
+                    borderColor: c.border.mid,
                     marginTop: 2,
                   }}
                 />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
                     <Text
-                      style={{ fontSize: 12, fontWeight: '600', color: colors.textPrimary, flex: 1 }}
+                      style={{ fontSize: 12, fontWeight: '600', color: c.text.primary, flex: 1 }}
                       numberOfLines={1}
                     >
                       {r.title}
@@ -678,7 +678,7 @@ function AgendaCard(props: AgendaProps) {
                     {r.now ? (
                       <View
                         style={{
-                          backgroundColor: '#fef2f2',
+                          backgroundColor: `${c.accent.red}26`,
                           paddingHorizontal: 5,
                           paddingVertical: 1,
                           borderRadius: 3,
@@ -688,7 +688,7 @@ function AgendaCard(props: AgendaProps) {
                           style={{
                             fontSize: 8,
                             fontWeight: '700',
-                            color: '#991b1b',
+                            color: c.accent.red,
                             letterSpacing: 0.4,
                           }}
                         >
@@ -698,7 +698,7 @@ function AgendaCard(props: AgendaProps) {
                     ) : r.overdue ? (
                       <View
                         style={{
-                          backgroundColor: '#fef2f2',
+                          backgroundColor: `${c.accent.red}26`,
                           paddingHorizontal: 5,
                           paddingVertical: 1,
                           borderRadius: 3,
@@ -708,7 +708,7 @@ function AgendaCard(props: AgendaProps) {
                           style={{
                             fontSize: 8,
                             fontWeight: '700',
-                            color: '#991b1b',
+                            color: c.accent.red,
                             letterSpacing: 0.4,
                           }}
                         >
@@ -725,8 +725,8 @@ function AgendaCard(props: AgendaProps) {
                       marginTop: 2,
                     }}
                   >
-                    <Icon size={10} color={colors.textTertiary} />
-                    <Text style={{ fontSize: 10, color: colors.textTertiary }} numberOfLines={1}>
+                    <Icon size={10} color={c.text.muted} />
+                    <Text style={{ fontSize: 10, color: c.text.muted }} numberOfLines={1}>
                       {r.sub}
                     </Text>
                   </View>
@@ -746,19 +746,19 @@ function AgendaCard(props: AgendaProps) {
             marginTop: 12,
             paddingVertical: 8,
             paddingHorizontal: 10,
-            backgroundColor: '#fafaf9',
+            backgroundColor: c.bg.cardAlt,
             borderRadius: 8,
             borderWidth: 1,
-            borderColor: '#f5f5f5',
+            borderColor: c.border.default,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 8,
           }}
         >
-          <Zap size={12} color={colors.textPrimary} />
-          <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }}>
+          <Zap size={12} color={c.accent.blue} />
+          <Text style={{ fontSize: 11, color: c.text.secondary, flex: 1 }}>
             Starts in{' '}
-            <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>
+            <Text style={{ color: c.text.primary, fontWeight: '700' }}>
               {props.nextMeetingStartsInMin} min
             </Text>{' '}
             — brief ready
@@ -767,13 +767,13 @@ function AgendaCard(props: AgendaProps) {
             style={{
               paddingHorizontal: 10,
               paddingVertical: 5,
-              backgroundColor: '#0a0a0a',
+              backgroundColor: c.accent.blue,
               borderRadius: 6,
             }}
           >
             <Text
               style={{
-                color: '#fff',
+                color: '#ffffff',
                 fontSize: 10,
                 fontWeight: '700',
                 letterSpacing: 0.6,
@@ -793,16 +793,17 @@ function AgendaCard(props: AgendaProps) {
 // ---------------------------------------------------------------------------
 
 function BriefCard({ content, onPress }: { content: string; onPress: () => void }) {
+  const c = useColors();
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.75}
       style={{
-        backgroundColor: '#fff',
+        backgroundColor: c.bg.card,
         borderWidth: 1,
-        borderColor: '#e5e5e5',
+        borderColor: c.border.default,
         borderLeftWidth: 3,
-        borderLeftColor: '#0a0a0a',
+        borderLeftColor: c.accent.orange,
         borderRadius: 12,
         padding: 14,
       }}
@@ -816,12 +817,12 @@ function BriefCard({ content, onPress }: { content: string; onPress: () => void 
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Sparkles size={13} color={colors.textPrimary} />
+          <Sparkles size={13} color={c.accent.orange} />
           <Text
             style={{
               fontSize: 10,
               fontWeight: '700',
-              color: colors.textPrimary,
+              color: c.text.primary,
               textTransform: 'uppercase',
               letterSpacing: 0.6,
             }}
@@ -829,9 +830,9 @@ function BriefCard({ content, onPress }: { content: string; onPress: () => void 
             Daily brief
           </Text>
         </View>
-        <Text style={{ fontSize: 10, color: colors.textTertiary }}>Read brief →</Text>
+        <Text style={{ fontSize: 10, color: c.text.muted }}>Read brief →</Text>
       </View>
-      <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 18 }} numberOfLines={3}>
+      <Text style={{ fontSize: 12, color: c.text.secondary, lineHeight: 18 }} numberOfLines={3}>
         {content}
       </Text>
     </TouchableOpacity>
@@ -866,28 +867,32 @@ type ActivityRow = {
   clientId?: string | null;
 };
 
-function tileFor(k: ActivityKind) {
+// Activity tile colour by kind, driven off the canon accent palette so the
+// tints read on dark (`${tint}26` translucent bg + solid icon). Inbound green,
+// outbound orange, meetings blue, transcripts/docs purple, client amber.
+function tileFor(k: ActivityKind, c: ReturnType<typeof useColors>) {
+  const t = (tint: string, Icon: any) => ({ bg: `${tint}26`, tint, Icon });
   switch (k) {
     case 'email-in':
-      return { bg: '#dcfce7', tint: '#059669', Icon: ArrowDownLeft };
+      return t(c.accent.green, ArrowDownLeft);
     case 'email-out':
-      return { bg: '#ffedd5', tint: '#ea580c', Icon: ArrowUpRight };
+      return t(c.accent.orange, ArrowUpRight);
     case 'meeting':
-      return { bg: '#dbeafe', tint: '#2563eb', Icon: Video };
+      return t(c.accent.blue, Video);
     case 'meeting-note':
       // Purple to distinguish transcripts from calendar meetings
       // while staying in the "meetings" visual family.
-      return { bg: '#ede9fe', tint: '#7c3aed', Icon: FileText };
+      return t(c.accent.purple, FileText);
     case 'doc':
-      return { bg: '#f3e8ff', tint: '#9333ea', Icon: FileText };
+      return t(c.accent.purple, FileText);
     case 'client':
-      return { bg: '#fef3c7', tint: '#d97706', Icon: Building };
+      return t(c.accent.yellow, Building);
     case 'note':
-      return { bg: '#f5f5f4', tint: colors.textSecondary, Icon: FileText };
+      return { bg: c.bg.cardAlt, tint: c.text.secondary, Icon: FileText };
     case 'call':
-      return { bg: '#ffedd5', tint: '#d97706', Icon: Phone };
+      return t(c.accent.orange, Phone);
     default:
-      return { bg: '#f5f5f4', tint: colors.textSecondary, Icon: ActivityIcon };
+      return { bg: c.bg.cardAlt, tint: c.text.secondary, Icon: ActivityIcon };
   }
 }
 
@@ -931,6 +936,7 @@ interface ActivityProps {
 const ACTIVITY_PAGE_SIZE = 30;
 
 function ActivityStream(props: ActivityProps) {
+  const c = useColors();
   const [filter, setFilter] = useState<string>('All');
   // Paginated limit — resets whenever the filter changes so the user
   // doesn't land on "Show more" with no rows visible for the new filter.
@@ -966,9 +972,9 @@ function ActivityStream(props: ActivityProps) {
   return (
     <View
       style={{
-        backgroundColor: '#fff',
+        backgroundColor: c.bg.card,
         borderWidth: 1,
-        borderColor: '#e5e5e5',
+        borderColor: c.border.default,
         borderRadius: 12,
         padding: 14,
       }}
@@ -987,14 +993,14 @@ function ActivityStream(props: ActivityProps) {
               width: 6,
               height: 6,
               borderRadius: 3,
-              backgroundColor: '#22c55e',
+              backgroundColor: c.accent.green,
             }}
           />
           <Text
             style={{
               fontSize: 10,
               fontWeight: '700',
-              color: colors.textTertiary,
+              color: c.text.muted,
               textTransform: 'uppercase',
               letterSpacing: 0.6,
             }}
@@ -1003,7 +1009,7 @@ function ActivityStream(props: ActivityProps) {
           </Text>
         </View>
         <TouchableOpacity onPress={props.onViewAll}>
-          <Text style={{ fontSize: 10, color: colors.textSecondary }}>View all</Text>
+          <Text style={{ fontSize: 10, color: c.text.secondary }}>View all</Text>
         </TouchableOpacity>
       </View>
 
@@ -1027,7 +1033,9 @@ function ActivityStream(props: ActivityProps) {
               style={{
                 paddingVertical: 4,
                 paddingHorizontal: 10,
-                backgroundColor: active ? '#0a0a0a' : '#f5f5f4',
+                backgroundColor: active ? c.text.primary : c.bg.cardAlt,
+                borderWidth: 1,
+                borderColor: active ? c.text.primary : c.border.default,
                 borderRadius: 999,
               }}
             >
@@ -1035,7 +1043,7 @@ function ActivityStream(props: ActivityProps) {
                 style={{
                   fontSize: 10,
                   fontWeight: '600',
-                  color: active ? '#fff' : colors.textSecondary,
+                  color: active ? c.bg.base : c.text.secondary,
                   letterSpacing: 0.2,
                 }}
               >
@@ -1050,7 +1058,7 @@ function ActivityStream(props: ActivityProps) {
         <Text
           style={{
             fontSize: 12,
-            color: colors.textTertiary,
+            color: c.text.muted,
             textAlign: 'center',
             paddingVertical: 16,
           }}
@@ -1070,7 +1078,7 @@ function ActivityStream(props: ActivityProps) {
                 style={{
                   fontSize: 9,
                   fontWeight: '700',
-                  color: colors.textTertiary,
+                  color: c.text.muted,
                   textTransform: 'uppercase',
                   letterSpacing: 0.6,
                   marginBottom: 6,
@@ -1086,11 +1094,11 @@ function ActivityStream(props: ActivityProps) {
                     top: 4,
                     bottom: 4,
                     width: 1,
-                    backgroundColor: '#f5f5f5',
+                    backgroundColor: c.border.default,
                   }}
                 />
                 {group.rows.map((r) => {
-                  const t = tileFor(r.kind);
+                  const t = tileFor(r.kind, c);
                   return (
                     <TouchableOpacity
                       key={r.id}
@@ -1110,10 +1118,8 @@ function ActivityStream(props: ActivityProps) {
                           backgroundColor: t.bg,
                           alignItems: 'center',
                           justifyContent: 'center',
-                          shadowColor: '#fff',
-                          shadowOpacity: 1,
-                          shadowRadius: 0,
-                          shadowOffset: { width: 0, height: 0 },
+                          borderWidth: 2,
+                          borderColor: c.bg.card,
                         }}
                       >
                         <t.Icon size={13} color={t.tint} />
@@ -1127,18 +1133,18 @@ function ActivityStream(props: ActivityProps) {
                           }}
                         >
                           <Text
-                            style={{ fontSize: 11, color: colors.textPrimary, lineHeight: 15, flex: 1 }}
+                            style={{ fontSize: 11, color: c.text.primary, lineHeight: 15, flex: 1 }}
                             numberOfLines={2}
                           >
                             <Text style={{ fontWeight: '600' }}>{r.who}</Text>
-                            <Text style={{ color: colors.textSecondary }}> {r.action} · </Text>
+                            <Text style={{ color: c.text.secondary }}> {r.action} · </Text>
                             <Text style={{ fontWeight: '600' }}>{r.target}</Text>
                           </Text>
-                          <Text style={{ fontSize: 9, color: colors.textTertiary }}>{r.ago}</Text>
+                          <Text style={{ fontSize: 9, color: c.text.muted, fontFamily: typography.family.mono }}>{r.ago}</Text>
                         </View>
                         {r.detail ? (
                           <Text
-                            style={{ fontSize: 10, color: colors.textTertiary, marginTop: 2 }}
+                            style={{ fontSize: 10, color: c.text.muted, marginTop: 2 }}
                             numberOfLines={1}
                           >
                             {r.detail}
@@ -1160,16 +1166,16 @@ function ActivityStream(props: ActivityProps) {
                 paddingVertical: 9,
                 alignItems: 'center',
                 borderRadius: 8,
-                backgroundColor: '#fafaf9',
+                backgroundColor: c.bg.cardAlt,
                 borderWidth: 1,
-                borderColor: '#f5f5f5',
+                borderColor: c.border.default,
               }}
             >
               <Text
                 style={{
                   fontSize: 11,
                   fontWeight: '600',
-                  color: colors.textSecondary,
+                  color: c.text.secondary,
                   letterSpacing: 0.2,
                 }}
               >

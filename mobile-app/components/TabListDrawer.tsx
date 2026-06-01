@@ -2,7 +2,7 @@ import { View, Text, TouchableOpacity, Modal, Pressable, ScrollView } from 'reac
 import { useRouter } from 'expo-router';
 import { X, FileText } from 'lucide-react-native';
 import { useDocTabs } from '@/contexts/TabContext';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 interface TabListDrawerProps {
   visible: boolean;
@@ -19,6 +19,7 @@ interface TabListDrawerProps {
 // tab, and see the count at a glance. Tap row → open viewer + close drawer.
 export default function TabListDrawer({ visible, onClose }: TabListDrawerProps) {
   const router = useRouter();
+  const c = useColors();
   const { tabs, activeTabId, switchTab, closeTab } = useDocTabs();
 
   const handleSelect = (tab: { id: string; documentId: string; title: string; fileType: string }) => {
@@ -46,7 +47,10 @@ export default function TabListDrawer({ visible, onClose }: TabListDrawerProps) 
             MobileNavDrawer's left-dock by flipping the order. */}
         <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} />
 
-        <View className="w-[300px] bg-m-bg-card pt-14 pb-8 shadow-2xl h-full">
+        <View
+          className="w-[300px] bg-m-bg-card pt-14 pb-8 h-full"
+          style={{ borderLeftWidth: 1, borderLeftColor: c.border.default }}
+        >
           <View className="flex-row items-center justify-between px-5 mb-3">
             <View>
               <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
@@ -57,7 +61,7 @@ export default function TabListDrawer({ visible, onClose }: TabListDrawerProps) 
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <X size={20} color={colors.textTertiary} />
+              <X size={20} color={c.text.muted} />
             </TouchableOpacity>
           </View>
 
@@ -74,9 +78,11 @@ export default function TabListDrawer({ visible, onClose }: TabListDrawerProps) 
                 return (
                   <View
                     key={tab.id}
-                    className="flex-row items-center gap-3 px-5 py-3 border-b border-m-border-subtle"
+                    className="flex-row items-center gap-3 px-5 py-3"
                     style={{
-                      backgroundColor: isActive ? colors.bgSubtle : 'transparent',
+                      borderBottomWidth: 1,
+                      borderBottomColor: c.border.default,
+                      backgroundColor: isActive ? c.bg.cardAlt : 'transparent',
                     }}
                   >
                     <TouchableOpacity
@@ -86,7 +92,7 @@ export default function TabListDrawer({ visible, onClose }: TabListDrawerProps) 
                     >
                       <FileText
                         size={16}
-                        color={isActive ? colors.accent : colors.textTertiary}
+                        color={isActive ? c.text.primary : c.text.muted}
                       />
                       <View className="flex-1 min-w-0">
                         <Text
@@ -109,9 +115,9 @@ export default function TabListDrawer({ visible, onClose }: TabListDrawerProps) 
                       onPress={() => closeTab(tab.id)}
                       hitSlop={8}
                       className="w-7 h-7 rounded-full items-center justify-center"
-                      style={{ backgroundColor: colors.bgSubtle }}
+                      style={{ backgroundColor: c.bg.cardAlt }}
                     >
-                      <X size={12} color={colors.textSecondary} strokeWidth={2.5} />
+                      <X size={12} color={c.text.secondary} strokeWidth={2.5} />
                     </TouchableOpacity>
                   </View>
                 );

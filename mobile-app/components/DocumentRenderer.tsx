@@ -60,7 +60,7 @@ export default function DocumentRenderer({ fileUrl, fileType, fileName }: Docume
   // Images (native — works in Expo Go)
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) || /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName)) {
     return (
-      <View className="flex-1 bg-m-bg-brand items-center justify-center">
+      <View className="flex-1 bg-m-bg items-center justify-center">
         <Image source={{ uri: fileUrl }} style={{ width, height: height - 120 }} resizeMode="contain" />
       </View>
     );

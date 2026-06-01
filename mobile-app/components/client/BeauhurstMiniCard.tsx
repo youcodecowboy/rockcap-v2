@@ -1,6 +1,9 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Building2, ChevronRight } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
+import EntityIconTile from '@/components/ui/EntityIconTile';
+import Chip from '@/components/ui/Chip';
 
 interface BeauhurstMiniCardProps {
   metadata?: any;
@@ -17,6 +20,7 @@ function fmtMoney(raw: any): string {
 }
 
 export default function BeauhurstMiniCard({ metadata, onPressFullIntel }: BeauhurstMiniCardProps) {
+  const c = useColors();
   if (!metadata) return null;
   const turnover = metadata.beauhurst_data_turnover;
   const ebitda = metadata.beauhurst_data_ebitda;
@@ -29,16 +33,14 @@ export default function BeauhurstMiniCard({ metadata, onPressFullIntel }: Beauhu
     return null; // No Beauhurst data available for this company
   }
 
+  // Mono treatment for data values (money / headcount); narrative stays sans.
+  const valueStyle = { fontFamily: typography.family.mono } as const;
+
   return (
     <View className="bg-m-bg-card border border-m-border rounded-[12px] p-[14px]">
       <View className="flex-row justify-between items-center mb-2.5">
         <View className="flex-row items-center gap-1.5">
-          <View
-            className="w-5 h-5 rounded-[6px] items-center justify-center"
-            style={{ backgroundColor: '#dbeafe' }}
-          >
-            <Building2 size={12} color="#2563eb" strokeWidth={2} />
-          </View>
+          <EntityIconTile icon={Building2} type="deal" size={20} />
           <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
             Beauhurst intel
           </Text>
@@ -49,26 +51,26 @@ export default function BeauhurstMiniCard({ metadata, onPressFullIntel }: Beauhu
           className="flex-row items-center gap-0.5"
         >
           <Text className="text-xs font-medium text-m-text-primary">Full intel</Text>
-          <ChevronRight size={12} color={colors.textPrimary} strokeWidth={2} />
+          <ChevronRight size={12} color={c.text.primary} strokeWidth={2} />
         </TouchableOpacity>
       </View>
 
       <View className="flex-row flex-wrap gap-y-2.5 mb-3">
         <View className="w-1/2 pr-2">
           <Text className="text-[10px] text-m-text-tertiary uppercase">Turnover</Text>
-          <Text className="text-[14px] font-semibold text-m-text-primary mt-0.5">
+          <Text className="text-[14px] font-semibold text-m-text-primary mt-0.5" style={valueStyle}>
             {fmtMoney(turnover)}
           </Text>
         </View>
         <View className="w-1/2 pl-2">
           <Text className="text-[10px] text-m-text-tertiary uppercase">Headcount</Text>
-          <Text className="text-[14px] font-semibold text-m-text-primary mt-0.5">
+          <Text className="text-[14px] font-semibold text-m-text-primary mt-0.5" style={valueStyle}>
             {headcount ?? '—'}
           </Text>
         </View>
         <View className="w-1/2 pr-2">
           <Text className="text-[10px] text-m-text-tertiary uppercase">EBITDA</Text>
-          <Text className="text-[14px] font-semibold text-m-text-primary mt-0.5">
+          <Text className="text-[14px] font-semibold text-m-text-primary mt-0.5" style={valueStyle}>
             {fmtMoney(ebitda)}
           </Text>
         </View>
@@ -83,14 +85,10 @@ export default function BeauhurstMiniCard({ metadata, onPressFullIntel }: Beauhu
       {/* Signal chips — Beauhurst returns these as semicolon-separated strings */}
       <View className="flex-row flex-wrap gap-1">
         {(growthSignals ? String(growthSignals).split(';').slice(0, 2) : []).map((s, i) => (
-          <View key={`g-${i}`} style={{ backgroundColor: '#dcfce7' }} className="px-2 py-0.5 rounded-full">
-            <Text className="text-[10px]" style={{ color: '#059669' }}>{s.trim()}</Text>
-          </View>
+          <Chip key={`g-${i}`} label={s.trim()} color={c.entityTypes.client} />
         ))}
         {(riskSignals ? String(riskSignals).split(';').slice(0, 1) : []).map((s, i) => (
-          <View key={`r-${i}`} style={{ backgroundColor: '#fef3c7' }} className="px-2 py-0.5 rounded-full">
-            <Text className="text-[10px]" style={{ color: '#d97706' }}>{s.trim()}</Text>
-          </View>
+          <Chip key={`r-${i}`} label={s.trim()} color={c.status.drafted} />
         ))}
       </View>
     </View>

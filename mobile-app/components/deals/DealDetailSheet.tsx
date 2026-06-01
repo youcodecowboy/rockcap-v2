@@ -7,10 +7,29 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import type { Doc } from '../../../model-testing-app/convex/_generated/dataModel';
 import {
-  X, ChevronRight, ExternalLink, User, Pencil, Check,
+  X, ChevronRight, ExternalLink, Pencil, Check,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
-import { stageTone } from '@/lib/dealStageColors';
+import ContactAvatar from '@/components/contacts/ContactAvatar';
+import { colors, typography } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { categorizeStage, type StageCategory } from '@/lib/dealStageColors';
+import type { Palette } from '@/lib/theme';
+
+// Map the (lib-owned) stage category onto a canon accent so stage chips read on
+// the dark canvas with the tinted treatment, instead of the light pastels the
+// lib helper hands back. Selection logic stays in lib; only the colour source
+// is canon-ified here.
+function stageAccent(accent: Palette['accent'], stageName?: string): string {
+  const byCategory: Record<StageCategory, string> = {
+    amber: accent.yellow,
+    blue: accent.blue,
+    purple: accent.purple,
+    green: accent.green,
+    grey: accent.cyan, // 'grey' = closed-lost; keep it muted-but-visible
+  };
+  const cat = categorizeStage(stageName);
+  return cat === 'grey' ? '#9a9a9a' : byCategory[cat];
+}
 
 interface DealDetailSheetProps {
   deal: Doc<'deals'> | null;
@@ -48,6 +67,7 @@ function formatDateInput(iso?: string): string {
 export default function DealDetailSheet({
   deal, visible, onClose, onViewAllActivity,
 }: DealDetailSheetProps) {
+  const c = useColors();
   const linkedContacts = useQuery(
     api.contacts.listByIds,
     deal?.linkedContactIds?.length ? { ids: deal.linkedContactIds } : 'skip',
@@ -71,7 +91,7 @@ export default function DealDetailSheet({
   }, [deal?._id]);
 
   if (!deal) return null;
-  const tone = stageTone(deal.stageName);
+  const stageColor = stageAccent(c.accent, deal.stageName);
   const probabilityPct = deal.probability ? Math.round(deal.probability * 100) : null;
 
   const handleSave = async () => {
@@ -130,17 +150,20 @@ export default function DealDetailSheet({
         />
         <SafeAreaView
           className="rounded-t-[20px] overflow-hidden"
-          style={{ backgroundColor: '#f5f5f4', height: '92%' }}
+          style={{ backgroundColor: c.bg.base, height: '92%' }}
         >
             {/* Drag handle + header. Header gets its own bg-m-bg-card panel
                 so the title area reads as a chrome element, not a content card. */}
             <View className="bg-m-bg-card">
               <View className="items-center pt-2 pb-1">
-                <View className="w-10 h-1 rounded-full" style={{ backgroundColor: '#d4d4d4' }} />
+                <View className="w-10 h-1 rounded-full" style={{ backgroundColor: c.border.mid }} />
               </View>
               <View className="flex-row items-start gap-2 px-4 pt-2 pb-3 border-b border-m-border">
                 <View className="flex-1 min-w-0">
-                  <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide mb-0.5">
+                  <Text
+                    className="text-[10px] font-semibold uppercase tracking-wide mb-0.5"
+                    style={{ color: c.entityTypes.deal, fontFamily: typography.family.mono }}
+                  >
                     Deal
                   </Text>
                   <Text className="text-[17px] font-bold text-m-text-primary" numberOfLines={2}>
@@ -160,7 +183,7 @@ export default function DealDetailSheet({
                     <TouchableOpacity
                       onPress={handleSave}
                       className="px-3 h-[30px] rounded-full items-center justify-center flex-row gap-1"
-                      style={{ backgroundColor: saving ? '#a3a3a3' : '#0a0a0a' }}
+                      style={{ backgroundColor: saving ? c.text.muted : c.entityTypes.deal }}
                       disabled={saving}
                       hitSlop={8}
                     >
@@ -208,11 +231,15 @@ export default function DealDetailSheet({
                     </Text>
                   </View>
                   <View
-                    style={{ backgroundColor: tone.bg }}
+                    style={{
+                      backgroundColor: `${stageColor}26`,
+                      borderWidth: 1,
+                      borderColor: `${stageColor}66`,
+                    }}
                     className="px-3 py-1 rounded-full self-center"
                   >
                     <Text
-                      style={{ color: tone.text }}
+                      style={{ color: stageColor }}
                       className="text-xs font-semibold"
                       numberOfLines={1}
                     >
@@ -324,24 +351,22 @@ export default function DealDetailSheet({
                     Linked contacts ({linkedContacts.length})
                   </Text>
                   <View className="gap-2.5">
-                    {linkedContacts.slice(0, 5).map((c) => (
-                      <View key={c._id} className="flex-row items-center gap-2.5">
-                        <View className="w-8 h-8 rounded-full bg-m-bg-subtle items-center justify-center">
-                          <User size={14} color={colors.textSecondary} />
-                        </View>
+                    {linkedContacts.slice(0, 5).map((lc) => (
+                      <View key={lc._id} className="flex-row items-center gap-2.5">
+                        <ContactAvatar name={lc.name} size={32} />
                         <View className="flex-1 min-w-0">
                           <Text
                             className="text-sm font-medium text-m-text-primary"
                             numberOfLines={1}
                           >
-                            {c.name}
+                            {lc.name}
                           </Text>
-                          {c.role ? (
+                          {lc.role ? (
                             <Text
                               className="text-[11px] text-m-text-tertiary"
                               numberOfLines={1}
                             >
-                              {c.role}
+                              {lc.role}
                             </Text>
                           ) : null}
                         </View>

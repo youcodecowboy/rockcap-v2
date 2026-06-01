@@ -8,10 +8,11 @@ import { api } from '../../../model-testing-app/convex/_generated/api';
 import {
   ArrowLeft, Activity as ActivityIcon,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import MobileHeader from '@/components/MobileHeader';
 import MiniTabBar from '@/components/MiniTabBar';
 import ActivityCard from '@/components/activity/ActivityCard';
+import EntityIconTile from '@/components/ui/EntityIconTile';
 
 /**
  * Global Activity stream (mobile) — counterpart to desktop /activity.
@@ -40,6 +41,7 @@ function bucketOf(iso?: string): Bucket {
 
 export default function GlobalActivityScreen() {
   const router = useRouter();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const [filter, setFilter] = useState<FilterKey>('all');
 
@@ -104,15 +106,10 @@ export default function GlobalActivityScreen() {
       {/* Sub-header */}
       <View className="bg-m-bg-card border-b border-m-border px-4 py-3 flex-row items-center gap-2">
         <TouchableOpacity onPress={() => router.back()} className="p-1 -ml-1" hitSlop={8}>
-          <ArrowLeft size={20} color={colors.textSecondary} />
+          <ArrowLeft size={20} color={c.text.secondary} />
         </TouchableOpacity>
         <View className="flex-row items-center gap-2 flex-1">
-          <View
-            className="w-7 h-7 rounded-lg items-center justify-center"
-            style={{ backgroundColor: '#fafaf9' }}
-          >
-            <ActivityIcon size={14} color={colors.textPrimary} />
-          </View>
+          <EntityIconTile icon={ActivityIcon} type="dashboard" size={28} />
           <View className="flex-1">
             <Text className="text-[15px] font-semibold text-m-text-primary">Activity</Text>
             <Text className="text-[10px] text-m-text-tertiary">
@@ -137,14 +134,14 @@ export default function GlobalActivityScreen() {
               onPress={() => setFilter(f.key)}
               className="px-2.5 py-1 rounded-full"
               style={{
-                backgroundColor: active ? '#0a0a0a' : '#fafaf9',
+                backgroundColor: active ? c.text.primary : c.bg.cardAlt,
                 borderWidth: active ? 0 : 1,
-                borderColor: colors.border,
+                borderColor: c.border.default,
               }}
             >
               <Text
                 className="text-[11px] font-medium"
-                style={{ color: active ? '#ffffff' : colors.textSecondary }}
+                style={{ color: active ? c.bg.base : c.text.secondary }}
               >
                 {f.label}
               </Text>
@@ -155,7 +152,7 @@ export default function GlobalActivityScreen() {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="small" color={colors.textTertiary} />
+          <ActivityIndicator size="small" color={c.text.muted} />
         </View>
       ) : sorted.length === 0 ? (
         <View className="flex-1 items-center justify-center p-12">

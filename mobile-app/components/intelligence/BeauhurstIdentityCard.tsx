@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, Linking } from 'react-native';
 import { ExternalLink } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { colors, typography } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 interface Props {
   metadata?: any;
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function BeauhurstIdentityCard({ metadata, companyName }: Props) {
+  const c = useColors();
   if (!metadata) return null;
   const chId = metadata.beauhurst_data_companies_house_id;
   const linkedin = metadata.beauhurst_data_linkedin_page;
@@ -27,7 +29,10 @@ export default function BeauhurstIdentityCard({ metadata, companyName }: Props) 
     : null;
 
   return (
-    <View className="bg-m-bg-card border border-m-border rounded-[12px] p-3.5">
+    <View
+      className="bg-m-bg-card border border-m-border rounded-[12px] p-3.5"
+      style={{ borderTopWidth: 2, borderTopColor: c.entityTypes.client }}
+    >
       <View className="mb-2.5">
         <Text className="text-[13px] font-semibold text-m-text-primary">{companyName}</Text>
         <Text className="text-[11px] text-m-text-tertiary mt-0.5">
@@ -39,7 +44,12 @@ export default function BeauhurstIdentityCard({ metadata, companyName }: Props) 
           <TouchableOpacity onPress={() => openUrl(chUrl)} className="flex-row justify-between">
             <Text className="text-xs text-m-text-tertiary">Companies House</Text>
             <View className="flex-row items-center gap-1">
-              <Text className="text-xs text-m-text-primary underline">{chId}</Text>
+              <Text
+                className="text-xs text-m-text-primary underline"
+                style={{ fontFamily: typography.family.mono }}
+              >
+                {chId}
+              </Text>
               <ExternalLink size={10} color={colors.textPrimary} strokeWidth={2} />
             </View>
           </TouchableOpacity>

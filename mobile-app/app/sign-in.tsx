@@ -7,11 +7,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { useColors } from '@/lib/useColors';
 
 // Required for OAuth redirect handling
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
+  const c = useColors();
   const { startSSOFlow } = useSSO();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,26 +38,38 @@ export default function SignInScreen() {
   }, [startSSOFlow]);
 
   return (
-    <View className="flex-1 bg-m-bg-brand justify-center px-8">
-      <Text className="text-3xl font-bold text-m-text-on-brand text-center mb-2">
+    <View className="flex-1 bg-m-bg justify-center px-8">
+      <Text className="text-3xl font-bold text-m-text-primary text-center mb-2">
         RockCap
       </Text>
-      <Text className="text-sm text-m-text-on-brand/50 text-center mb-10">
+      <Text className="text-sm text-m-text-tertiary text-center mb-10">
         Property Finance Platform
       </Text>
 
-      <View className="bg-m-bg-card rounded-xl p-6 gap-4">
+      <View
+        className="rounded-xl p-6 gap-4"
+        style={{
+          backgroundColor: c.bg.card,
+          borderWidth: 1,
+          borderColor: c.border.default,
+        }}
+      >
         <TouchableOpacity
           onPress={onGoogleSignIn}
           disabled={loading}
-          className="bg-m-bg-subtle rounded-lg py-3.5 flex-row items-center justify-center gap-3"
-          style={{ opacity: loading ? 0.5 : 1 }}
+          className="rounded-lg py-3.5 flex-row items-center justify-center gap-3"
+          style={{
+            opacity: loading ? 0.5 : 1,
+            backgroundColor: c.bg.cardAlt,
+            borderWidth: 1,
+            borderColor: c.border.default,
+          }}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#0a0a0a" />
+            <ActivityIndicator size="small" color={c.text.primary} />
           ) : (
             <>
-              <Text className="text-lg">G</Text>
+              <Text className="text-lg" style={{ color: c.text.primary }}>G</Text>
               <Text className="text-m-text-primary font-semibold text-base">
                 Continue with Google
               </Text>

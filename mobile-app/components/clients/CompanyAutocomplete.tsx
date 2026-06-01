@@ -4,7 +4,8 @@ import { useQuery } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import type { Doc } from '../../../model-testing-app/convex/_generated/dataModel';
 import { Search, Building2, Plus } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import EntityIconTile from '@/components/ui/EntityIconTile';
 
 interface Props {
   onSelectCompany: (company: Doc<'companies'>) => void;
@@ -17,6 +18,7 @@ export default function CompanyAutocomplete({
   onCreateNew,
   placeholder = 'Client name',
 }: Props) {
+  const c = useColors();
   const [query, setQuery] = useState('');
   const matches = useQuery(
     api.companies.searchByName,
@@ -32,12 +34,12 @@ export default function CompanyAutocomplete({
           Client name
         </Text>
         <View className="bg-m-bg-card border-2 border-m-text-primary rounded-[10px] px-3 py-2.5 flex-row items-center gap-2">
-          <Search size={16} color={colors.textTertiary} strokeWidth={2} />
+          <Search size={16} color={c.text.muted} strokeWidth={2} />
           <TextInput
             value={query}
             onChangeText={setQuery}
             placeholder={placeholder}
-            placeholderTextColor={colors.textPlaceholder ?? colors.textTertiary}
+            placeholderTextColor={c.text.dim}
             className="flex-1 text-sm text-m-text-primary"
             autoFocus
           />
@@ -65,12 +67,7 @@ export default function CompanyAutocomplete({
                 className="flex-row items-center gap-2.5 p-3 border-b border-m-border-subtle"
                 activeOpacity={0.6}
               >
-                <View
-                  className="w-9 h-9 rounded-[8px] items-center justify-center"
-                  style={{ backgroundColor: '#dbeafe' }}
-                >
-                  <Building2 size={14} color="#2563eb" strokeWidth={2} />
-                </View>
+                <EntityIconTile icon={Building2} type="client" size={36} />
                 <View className="flex-1 min-w-0">
                   <Text className="text-[13px] font-semibold text-m-text-primary" numberOfLines={1}>
                     {c.name}
@@ -106,7 +103,7 @@ export default function CompanyAutocomplete({
             activeOpacity={0.6}
           >
             <View className="w-9 h-9 rounded-[8px] bg-m-bg-subtle items-center justify-center">
-              <Plus size={16} color={colors.textSecondary} strokeWidth={2} />
+              <Plus size={16} color={c.text.secondary} strokeWidth={2} />
             </View>
             <View className="flex-1">
               <Text className="text-[13px] font-medium text-m-text-primary">

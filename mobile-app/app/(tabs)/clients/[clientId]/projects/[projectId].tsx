@@ -11,7 +11,9 @@ import {
   DollarSign, CheckSquare, TrendingUp, Briefcase, MapPin, Calendar,
   Percent,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { colors, typography, DARK } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import Chip from '@/components/ui/Chip';
 import Card from '@/components/ui/Card';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MobileHeader from '@/components/MobileHeader';
@@ -77,13 +79,14 @@ function formatProjectAddress(project: any): string | null {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
-// Shared palette for the metric tiles (same keys as the client overview).
+// Shared palette for the metric tiles (same keys as the client overview),
+// sourced from the canon entity/accent tokens. `bg` is the tint at 15% alpha.
 const metricTones = {
-  green: { bg: '#dcfce7', tint: '#059669' },
-  purple: { bg: '#f3e8ff', tint: '#9333ea' },
-  blue: { bg: '#dbeafe', tint: '#2563eb' },
-  orange: { bg: '#ffedd5', tint: '#ea580c' },
-  amber: { bg: '#fef3c7', tint: '#d97706' },
+  green: { bg: `${DARK.entityTypes.client}26`, tint: DARK.entityTypes.client },
+  purple: { bg: `${DARK.entityTypes.contact}26`, tint: DARK.entityTypes.contact },
+  blue: { bg: `${DARK.entityTypes.deal}26`, tint: DARK.entityTypes.deal },
+  orange: { bg: `${DARK.accent.orange}26`, tint: DARK.accent.orange },
+  amber: { bg: `${DARK.entityTypes.prospect}26`, tint: DARK.entityTypes.prospect },
 };
 
 // ============================================================================
@@ -91,22 +94,23 @@ const metricTones = {
 // ============================================================================
 
 function StatusBadge({ status, size = 'sm' }: { status: string; size?: 'sm' | 'xs' }) {
-  const colorMap: Record<string, { bg: string; text: string }> = {
-    active: { bg: 'bg-m-success/15', text: 'text-m-success' },
-    fulfilled: { bg: 'bg-m-success/15', text: 'text-m-success' },
-    completed: { bg: 'bg-m-success/15', text: 'text-m-success' },
-    pending: { bg: 'bg-m-warning/15', text: 'text-m-warning' },
-    pending_review: { bg: 'bg-m-warning/15', text: 'text-m-warning' },
-    in_progress: { bg: 'bg-m-warning/15', text: 'text-m-warning' },
-    open: { bg: 'bg-m-error/15', text: 'text-m-error' },
-    missing: { bg: 'bg-m-error/15', text: 'text-m-error' },
-    overdue: { bg: 'bg-m-error/15', text: 'text-m-error' },
+  const c = useColors();
+  const toneMap: Record<string, string> = {
+    active: c.accent.green,
+    fulfilled: c.accent.green,
+    completed: c.accent.green,
+    pending: c.accent.yellow,
+    pending_review: c.accent.yellow,
+    in_progress: c.accent.yellow,
+    open: c.accent.red,
+    missing: c.accent.red,
+    overdue: c.accent.red,
   };
-  const c = colorMap[status] || { bg: 'bg-m-bg-inset', text: 'text-m-text-tertiary' };
-  const textSize = size === 'xs' ? 'text-[10px]' : 'text-xs';
+  const base = toneMap[status] ?? c.text.muted;
+  const textSize = size === 'xs' ? 10 : typography.size.xs;
   return (
-    <View className={`px-2 py-0.5 rounded-full ${c.bg}`}>
-      <Text className={`${textSize} font-medium capitalize ${c.text}`}>
+    <View className="px-2 py-0.5 rounded-full" style={{ backgroundColor: `${base}26` }}>
+      <Text className="font-medium capitalize" style={{ color: base, fontSize: textSize }}>
         {status.replace(/_/g, ' ')}
       </Text>
     </View>
@@ -298,6 +302,7 @@ export default function ProjectDetailScreen() {
     projectId: string;
   }>();
   const router = useRouter();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const [activeTab, setActiveTab] = useState<TabName>('Overview');
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
@@ -590,19 +595,26 @@ export default function ProjectDetailScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, gap: 4 }}
         style={{ flexGrow: 0 }}
       >
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            className={`py-2.5 px-3 ${activeTab === tab ? 'border-b-2 border-m-accent' : ''}`}
-          >
-            <Text
-              className={`text-xs font-medium ${activeTab === tab ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <TouchableOpacity
+              key={tab}
+              onPress={() => setActiveTab(tab)}
+              className="py-2.5 px-3"
+              style={{
+                borderBottomWidth: 2,
+                borderBottomColor: isActive ? c.entityTypes.project : 'transparent',
+              }}
             >
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                className={`text-xs font-medium ${isActive ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}
+              >
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
       {/* Tab content */}
@@ -695,8 +707,11 @@ export default function ProjectDetailScreen() {
                 <View className="flex-row gap-2 pt-3 border-t border-m-border-subtle">
                   <View className="flex-1 items-center">
                     <View className="flex-row items-center gap-1 mb-0.5">
-                      <CheckCircle2 size={14} color={colors.success} />
-                      <Text className="text-lg font-semibold" style={{ color: '#15803d' }}>
+                      <CheckCircle2 size={14} color={c.accent.green} />
+                      <Text
+                        className="text-lg font-semibold"
+                        style={{ color: c.accent.green, fontFamily: typography.family.mono }}
+                      >
                         {checklistProgress.fulfilled}
                       </Text>
                     </View>
@@ -705,10 +720,10 @@ export default function ProjectDetailScreen() {
                   <View className="w-px bg-m-border-subtle" />
                   <View className="flex-1 items-center">
                     <View className="flex-row items-center gap-1 mb-0.5">
-                      <Clock size={14} color={metricTones.amber.tint} />
+                      <Clock size={14} color={c.accent.yellow} />
                       <Text
                         className="text-lg font-semibold"
-                        style={{ color: '#b45309' }}
+                        style={{ color: c.accent.yellow, fontFamily: typography.family.mono }}
                       >
                         {checklistProgress.pendingReview}
                       </Text>
@@ -718,9 +733,10 @@ export default function ProjectDetailScreen() {
                   <View className="w-px bg-m-border-subtle" />
                   <View className="flex-1 items-center">
                     <View className="flex-row items-center gap-1 mb-0.5">
-                      <Circle size={14} color={colors.textTertiary} />
+                      <Circle size={14} color={c.text.muted} />
                       <Text
                         className="text-lg font-semibold text-m-text-primary"
+                        style={{ fontFamily: typography.family.mono }}
                       >
                         {checklistProgress.missing}
                       </Text>
@@ -749,7 +765,7 @@ export default function ProjectDetailScreen() {
                             >
                               {cat}
                             </Text>
-                            <Text className="text-xs text-m-text-tertiary ml-2">
+                            <Text className="text-xs text-m-text-tertiary ml-2" style={{ fontFamily: typography.family.mono }}>
                               {s.fulfilled}/{s.total}
                             </Text>
                           </View>
@@ -762,10 +778,10 @@ export default function ProjectDetailScreen() {
                 {checklistProgress.missing > 3 && (
                   <View
                     className="mt-3 flex-row items-start gap-2 p-2 rounded-[8px]"
-                    style={{ backgroundColor: '#fffbeb' }}
+                    style={{ backgroundColor: `${c.accent.yellow}1a`, borderWidth: 1, borderColor: `${c.accent.yellow}55` }}
                   >
-                    <AlertTriangle size={14} color={metricTones.amber.tint} style={{ marginTop: 1 }} />
-                    <Text className="text-xs flex-1" style={{ color: '#92400e' }}>
+                    <AlertTriangle size={14} color={c.accent.yellow} style={{ marginTop: 1 }} />
+                    <Text className="text-xs flex-1" style={{ color: c.accent.yellow }}>
                       {checklistProgress.missing} documents still missing. Use the
                       Checklist tab to request them.
                     </Text>

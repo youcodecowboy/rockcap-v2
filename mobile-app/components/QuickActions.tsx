@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Camera, Plus, FileText } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 const actions = [
   { label: 'Upload', icon: Camera, route: '/upload' },
@@ -11,6 +11,7 @@ const actions = [
 
 export default function QuickActions() {
   const router = useRouter();
+  const c = useColors();
 
   return (
     <View className="flex-row gap-2">
@@ -22,7 +23,7 @@ export default function QuickActions() {
             onPress={() => router.push(action.route)}
             className="flex-1 bg-m-bg-card border border-m-border rounded-xl py-3 items-center gap-1.5"
           >
-            <Icon size={18} color={colors.textPrimary} />
+            <Icon size={18} color={c.text.primary} />
             <Text className="text-m-text-primary text-xs font-medium">
               {action.label}
             </Text>

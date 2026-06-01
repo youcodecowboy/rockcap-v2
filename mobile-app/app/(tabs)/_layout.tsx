@@ -2,9 +2,11 @@ import { Tabs } from 'expo-router';
 import { LayoutDashboard, Building, MessageCircle, File, Mail } from 'lucide-react-native';
 import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
-import { colors, layout } from '@/lib/theme';
+import { layout } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 export default function TabLayout() {
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
 
   const unreadNotifications = useQuery(
@@ -29,11 +31,12 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.textOnBrand,
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.5)',
+        tabBarActiveTintColor: c.text.primary,
+        tabBarInactiveTintColor: c.text.muted,
         tabBarStyle: {
-          backgroundColor: colors.bgBrand,
-          borderTopWidth: 0,
+          backgroundColor: c.bg.light,
+          borderTopWidth: 1,
+          borderTopColor: c.border.default,
           height: layout.footerHeight,
           paddingBottom: 8,
           paddingTop: 8,

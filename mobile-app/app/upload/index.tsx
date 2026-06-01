@@ -14,11 +14,13 @@ import { resolveApiBase } from '@/lib/apiBase';
 import {
   ArrowLeft, Upload, ChevronRight, ChevronDown, ChevronUp, Check, X,
   FileText, Table2, Image as ImageIcon, Mail, File as FileIcon, Plus,
-  FolderOpen, Camera, Clock, Eye, CheckCircle2,
+  FolderOpen, Camera,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import MobileHeader from '@/components/MobileHeader';
 import MiniTabBar from '@/components/MiniTabBar';
+import Chip from '@/components/ui/Chip';
 import ScopeToggle, { type UploadScope } from '@/components/upload/ScopeToggle';
 import PickerSheet, { type PickerItem } from '@/components/upload/PickerSheet';
 import FolderSheet from '@/components/upload/FolderSheet';
@@ -76,16 +78,17 @@ function getUserInitials(name: string | undefined): string {
 }
 
 function FileTypeIcon({ fileName }: { fileName: string }) {
+  const c = useColors();
   const ext = fileName.split('.').pop()?.toLowerCase() || '';
-  if (ext === 'pdf') return <FileText size={18} color="#ef4444" />;
+  if (ext === 'pdf') return <FileText size={18} color={c.accent.red} />;
   if (['xlsx', 'xls', 'xlsm', 'csv'].includes(ext))
-    return <Table2 size={18} color="#16a34a" />;
+    return <Table2 size={18} color={c.accent.green} />;
   if (['docx', 'doc'].includes(ext))
-    return <FileText size={18} color="#2563eb" />;
+    return <FileText size={18} color={c.accent.blue} />;
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'].includes(ext))
-    return <ImageIcon size={18} color="#a855f7" />;
-  if (ext === 'eml') return <Mail size={18} color="#d97706" />;
-  return <FileIcon size={18} color={colors.textTertiary} />;
+    return <ImageIcon size={18} color={c.accent.purple} />;
+  if (ext === 'eml') return <Mail size={18} color={c.accent.orange} />;
+  return <FileIcon size={18} color={c.text.muted} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,43 +155,14 @@ function RecentBatches({ userId }: { userId: string }) {
 }
 
 function RecentStatusBadge({ status }: { status: string }) {
+  const c = useColors();
   if (status === 'processing' || status === 'uploading') {
-    return (
-      <View
-        className="flex-row items-center self-start gap-1 rounded-[6px] px-1.5 py-0.5"
-        style={{ backgroundColor: '#fef3c7' }}
-      >
-        <Clock size={10} color="#b45309" />
-        <Text className="text-[10px] font-medium" style={{ color: '#b45309' }}>
-          Processing
-        </Text>
-      </View>
-    );
+    return <Chip label="Processing" color={c.status.drafted} dot />;
   }
   if (status === 'review') {
-    return (
-      <View
-        className="flex-row items-center self-start gap-1 rounded-[6px] px-1.5 py-0.5"
-        style={{ backgroundColor: '#dbeafe' }}
-      >
-        <Eye size={10} color="#1d4ed8" />
-        <Text className="text-[10px] font-medium" style={{ color: '#1d4ed8' }}>
-          Review
-        </Text>
-      </View>
-    );
+    return <Chip label="Review" color={c.status.active} dot />;
   }
-  return (
-    <View
-      className="flex-row items-center self-start gap-1 rounded-[6px] px-1.5 py-0.5"
-      style={{ backgroundColor: '#dcfce7' }}
-    >
-      <CheckCircle2 size={10} color="#15803d" />
-      <Text className="text-[10px] font-medium" style={{ color: '#15803d' }}>
-        Completed
-      </Text>
-    </View>
-  );
+  return <Chip label="Completed" color={c.status.promoted} dot />;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +171,7 @@ function RecentStatusBadge({ status }: { status: string }) {
 
 export default function UploadScreen() {
   const router = useRouter();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const { user } = useUser();
 
@@ -293,6 +268,16 @@ export default function UploadScreen() {
     }
     return items;
   }, [projects]);
+
+  // Entity colour for the current scope: project selected → indigo,
+  // client scope → green, internal/personal → neutral. Drives the accenting
+  // on the file dropzone, the deep-extraction switch, and the submit button.
+  const scopeAccent =
+    scope === 'client'
+      ? projectId
+        ? c.entityTypes.project
+        : c.entityTypes.client
+      : c.text.muted;
 
   // --- Handlers ---
 
@@ -747,7 +732,7 @@ export default function UploadScreen() {
                 Run a detailed second-pass analysis on spreadsheets
               </Text>
             </View>
-            <Switch value={deepExtraction} onChange={setDeepExtraction} />
+            <Switch value={deepExtraction} onChange={setDeepExtraction} accent={scopeAccent} />
           </View>
 
           {/* Files */}
@@ -797,14 +782,14 @@ export default function UploadScreen() {
                   onPress={pickFiles}
                   className="flex-1 flex-col items-center justify-center rounded-xl py-5"
                   style={{
-                    backgroundColor: colors.bgSubtle,
+                    backgroundColor: `${scopeAccent}14`,
                     borderWidth: 2,
-                    borderColor: colors.accent,
+                    borderColor: scopeAccent,
                     borderStyle: 'dashed',
                   }}
                 >
                   <View style={{ position: 'relative' }}>
-                    <FileIcon size={28} color={colors.accent} />
+                    <FileIcon size={28} color={scopeAccent} />
                     <View
                       style={{
                         position: 'absolute',
@@ -814,7 +799,7 @@ export default function UploadScreen() {
                         borderRadius: 8,
                       }}
                     >
-                      <Plus size={14} color={colors.accent} />
+                      <Plus size={14} color={scopeAccent} />
                     </View>
                   </View>
                   <Text className="text-[12px] font-medium text-m-text-primary mt-2">
@@ -853,23 +838,27 @@ export default function UploadScreen() {
             disabled={!canSubmit}
             className="flex-row items-center justify-center gap-2 rounded-xl py-3"
             style={{
-              backgroundColor: canSubmit ? colors.bgBrand : colors.bgSubtle,
+              backgroundColor: canSubmit
+                ? scopeAccent === c.text.muted
+                  ? c.entityTypes.client
+                  : scopeAccent
+                : colors.bgSubtle,
               opacity: canSubmit ? 1 : 0.6,
             }}
           >
             {submitting ? (
               <>
-                <ActivityIndicator size="small" color={colors.textOnBrand} />
-                <Text className="text-[15px] font-semibold" style={{ color: colors.textOnBrand }}>
+                <ActivityIndicator size="small" color="#ffffff" />
+                <Text className="text-[15px] font-semibold" style={{ color: '#ffffff' }}>
                   Creating batch...
                 </Text>
               </>
             ) : (
               <>
-                <Upload size={16} color={canSubmit ? colors.textOnBrand : colors.textTertiary} />
+                <Upload size={16} color={canSubmit ? '#ffffff' : colors.textTertiary} />
                 <Text
                   className="text-[15px] font-semibold"
-                  style={{ color: canSubmit ? colors.textOnBrand : colors.textTertiary }}
+                  style={{ color: canSubmit ? '#ffffff' : colors.textTertiary }}
                 >
                   Upload &amp; Analyze
                 </Text>
@@ -963,7 +952,9 @@ function FieldRow({
 // Toggle switch — simple pill
 // ---------------------------------------------------------------------------
 
-function Switch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+function Switch({
+  value, onChange, accent,
+}: { value: boolean; onChange: (v: boolean) => void; accent?: string }) {
   return (
     <TouchableOpacity
       onPress={() => onChange(!value)}
@@ -972,7 +963,7 @@ function Switch({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
         width: 42,
         height: 24,
         borderRadius: 12,
-        backgroundColor: value ? colors.bgBrand : colors.border,
+        backgroundColor: value ? (accent ?? colors.success) : colors.border,
         justifyContent: 'center',
         padding: 2,
       }}

@@ -2,7 +2,8 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { useMutation } from 'convex/react';
 import { api } from '../../model-testing-app/convex/_generated/api';
 import { Bell } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
 
 interface NotificationItemProps {
   notification: {
@@ -15,6 +16,7 @@ interface NotificationItemProps {
 }
 
 export default function NotificationItem({ notification }: NotificationItemProps) {
+  const c = useColors();
   const markAsRead = useMutation(api.notifications.markAsRead);
 
   return (
@@ -24,7 +26,7 @@ export default function NotificationItem({ notification }: NotificationItemProps
         notification.isRead ? 'border-m-border-subtle' : 'border-m-border'
       }`}
     >
-      <Bell size={16} color={notification.isRead ? colors.textTertiary : colors.textPrimary} />
+      <Bell size={16} color={notification.isRead ? c.text.muted : c.accent.blue} />
       <View className="flex-1">
         <Text
           className={`text-sm ${notification.isRead ? 'text-m-text-tertiary' : 'text-m-text-primary'}`}
@@ -32,11 +34,19 @@ export default function NotificationItem({ notification }: NotificationItemProps
         >
           {notification.message || notification.type}
         </Text>
-        <Text className="text-xs text-m-text-tertiary mt-1">
+        <Text
+          className="text-xs text-m-text-tertiary mt-1"
+          style={{ fontFamily: typography.family.mono }}
+        >
           {new Date(notification._creationTime).toLocaleDateString('en-GB')}
         </Text>
       </View>
-      {!notification.isRead && <View className="w-2 h-2 rounded-full bg-m-accent mt-1" />}
+      {!notification.isRead && (
+        <View
+          className="w-2 h-2 rounded-full mt-1"
+          style={{ backgroundColor: c.accent.blue }}
+        />
+      )}
     </TouchableOpacity>
   );
 }

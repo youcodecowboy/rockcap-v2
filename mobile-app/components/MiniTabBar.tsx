@@ -3,7 +3,8 @@ import { useRouter, usePathname } from 'expo-router';
 import { LayoutDashboard, Building, MessageCircle, File, Mail } from 'lucide-react-native';
 import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../model-testing-app/convex/_generated/api';
-import { colors, layout } from '@/lib/theme';
+import { layout } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 const TABS = [
   { route: '/', label: 'HOME', icon: LayoutDashboard },
@@ -15,6 +16,7 @@ const TABS = [
 
 export default function MiniTabBar() {
   const router = useRouter();
+  const c = useColors();
   const pathname = usePathname();
   const { isAuthenticated } = useConvexAuth();
 
@@ -27,7 +29,9 @@ export default function MiniTabBar() {
     <View
       style={{
         flexDirection: 'row',
-        backgroundColor: colors.bgBrand,
+        backgroundColor: c.bg.light,
+        borderTopWidth: 1,
+        borderTopColor: c.border.default,
         height: layout.footerHeight,
         paddingBottom: 8,
         paddingTop: 8,
@@ -36,7 +40,7 @@ export default function MiniTabBar() {
       {TABS.map((tab) => {
         const Icon = tab.icon;
         const isActive = pathname === tab.route || pathname.startsWith(tab.route + '/');
-        const iconColor = isActive ? colors.textOnBrand : 'rgba(255,255,255,0.5)';
+        const iconColor = isActive ? c.text.primary : c.text.muted;
         const showBadge = tab.route === '/inbox' && inboxBadge > 0;
 
         return (
@@ -50,7 +54,7 @@ export default function MiniTabBar() {
               {showBadge && (
                 <View style={{
                   position: 'absolute', top: -4, right: -8,
-                  backgroundColor: colors.error, borderRadius: 8,
+                  backgroundColor: c.accent.red, borderRadius: 8,
                   minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
                   paddingHorizontal: 3,
                 }}>

@@ -1,7 +1,8 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import Chip from '@/components/ui/Chip';
 
 interface ClientListItemProps {
   client: {
@@ -15,24 +16,20 @@ interface ClientListItemProps {
   compact?: boolean;
 }
 
-const roleBadgeStyles: Record<string, { bg: string; text: string }> = {
-  developer: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  borrower: { bg: 'bg-amber-100', text: 'text-amber-700' },
-};
-
+// Role badge — entity-coloured chip. Developer reads as a client (green), borrower
+// as a prospect-style amber accent; anything else falls back to a neutral chip.
 function RoleBadge({ type }: { type: string }) {
-  const style = roleBadgeStyles[type] ?? { bg: 'bg-gray-100', text: 'text-gray-600' };
-  return (
-    <View className={`px-1.5 py-0.5 rounded ${style.bg}`}>
-      <Text className={`text-[10px] font-semibold uppercase ${style.text}`}>
-        {type}
-      </Text>
-    </View>
-  );
+  const c = useColors();
+  const roleColor: Record<string, string> = {
+    developer: c.entityTypes.client,
+    borrower: c.entityTypes.prospect,
+  };
+  return <Chip label={type.toUpperCase()} color={roleColor[type] ?? c.text.muted} />;
 }
 
 export default function ClientListItem({ client, projectCount, docCount, compact }: ClientListItemProps) {
   const router = useRouter();
+  const c = useColors();
 
   const countParts: string[] = [];
   if (projectCount !== undefined) countParts.push(`${projectCount} ${projectCount === 1 ? 'project' : 'projects'}`);
@@ -48,7 +45,11 @@ export default function ClientListItem({ client, projectCount, docCount, compact
         <Text className="text-sm font-medium text-m-text-primary" numberOfLines={1}>
           {client.name}
         </Text>
-        {client.type && <RoleBadge type={client.type} />}
+        {client.type && (
+          <View className="self-start mt-1">
+            <RoleBadge type={client.type} />
+          </View>
+        )}
         {countParts.length > 0 && (
           <Text className="text-xs text-m-text-tertiary mt-1">
             {countParts.join(' · ')}
@@ -74,7 +75,7 @@ export default function ClientListItem({ client, projectCount, docCount, compact
           </Text>
         )}
       </View>
-      <ChevronRight size={16} color={colors.textTertiary} />
+      <ChevronRight size={16} color={c.text.muted} />
     </TouchableOpacity>
   );
 }

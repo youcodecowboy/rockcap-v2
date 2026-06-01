@@ -10,6 +10,7 @@ import {
   ArrowLeft, Search, X, Plus, Phone, Mail, Users, ChevronRight, Building,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import MobileHeader from '@/components/MobileHeader';
 import ContactAvatar from '@/components/contacts/ContactAvatar';
 import ContactCreateModal from '@/components/contacts/ContactCreateModal';
@@ -62,6 +63,7 @@ function groupContactsByLetter(contacts: any[]): ContactGroup[] {
 
 export default function ContactsScreen() {
   const router = useRouter();
+  const theme = useColors();
   const { isAuthenticated } = useConvexAuth();
 
   // Deep-link params:
@@ -305,7 +307,10 @@ export default function ContactsScreen() {
             if (item.kind === 'header') {
               return (
                 <View className="bg-m-bg-subtle/50 px-4 py-1.5 border-b border-m-border-subtle">
-                  <Text className="text-[11px] font-bold text-m-accent uppercase tracking-wider">
+                  <Text
+                    className="text-[11px] font-bold uppercase tracking-wider"
+                    style={{ color: theme.entityTypes.contact }}
+                  >
                     {item.letter}
                   </Text>
                 </View>
@@ -330,7 +335,7 @@ export default function ContactsScreen() {
           onPress={() => setShowCreate(true)}
           className="absolute bottom-6 right-4 flex-row items-center rounded-full px-4 py-3 shadow-lg"
           style={{
-            backgroundColor: colors.bgBrand,
+            backgroundColor: theme.entityTypes.contact,
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 3 },
             shadowOpacity: 0.25,
@@ -340,8 +345,8 @@ export default function ContactsScreen() {
           }}
           hitSlop={6}
         >
-          <Plus size={16} color={colors.textOnBrand} />
-          <Text className="text-sm font-semibold" style={{ color: colors.textOnBrand }}>
+          <Plus size={16} color="#ffffff" />
+          <Text className="text-sm font-semibold" style={{ color: '#ffffff' }}>
             New Contact
           </Text>
         </TouchableOpacity>
@@ -372,20 +377,23 @@ function FilterChip({
   active: boolean;
   onPress: () => void;
 }) {
+  const theme = useColors();
+  const accent = theme.entityTypes.contact;
+  // Active filter = canon tinted contact chip; inactive = plain card surface.
   return (
     <TouchableOpacity
       onPress={onPress}
       className="rounded-full px-3 py-1.5"
       style={{
-        backgroundColor: active ? colors.bgBrand : colors.bgSubtle,
+        backgroundColor: active ? `${accent}26` : colors.bgSubtle,
         borderWidth: 1,
-        borderColor: active ? colors.bgBrand : colors.border,
+        borderColor: active ? `${accent}66` : colors.border,
       }}
     >
       <Text
         className="text-[12px] font-medium"
         numberOfLines={1}
-        style={{ color: active ? colors.textOnBrand : colors.textSecondary }}
+        style={{ color: active ? accent : colors.textSecondary }}
       >
         {label}
       </Text>
@@ -400,6 +408,7 @@ function ContactRow({
   clientName?: string;
   onPress: () => void;
 }) {
+  const theme = useColors();
   // Row layout: outer View contains TWO siblings — a flex-1 TouchableOpacity
   // that covers the avatar + name/subtitle block, and a flat View with the
   // inline action buttons. This means:
@@ -470,9 +479,9 @@ function ContactRow({
             }}
             hitSlop={6}
             className="w-8 h-8 rounded-full items-center justify-center"
-            style={{ backgroundColor: colors.bgSubtle }}
+            style={{ backgroundColor: `${theme.entityTypes.contact}26` }}
           >
-            <Phone size={13} color={colors.accent} />
+            <Phone size={13} color={theme.entityTypes.contact} />
           </TouchableOpacity>
         ) : null}
         {contact.email ? (
@@ -482,9 +491,9 @@ function ContactRow({
             }}
             hitSlop={6}
             className="w-8 h-8 rounded-full items-center justify-center"
-            style={{ backgroundColor: colors.bgSubtle }}
+            style={{ backgroundColor: `${theme.entityTypes.contact}26` }}
           >
-            <Mail size={13} color={colors.accent} />
+            <Mail size={13} color={theme.entityTypes.contact} />
           </TouchableOpacity>
         ) : null}
         <ChevronRight size={14} color={colors.textTertiary} />
@@ -501,13 +510,18 @@ function EmptyState({
   ctaLabel: string;
   onCta: () => void;
 }) {
+  const theme = useColors();
   return (
     <View className="flex-1 items-center justify-center px-8">
       <View
         className="w-14 h-14 rounded-full items-center justify-center mb-3"
-        style={{ backgroundColor: colors.bgSubtle }}
+        style={{
+          backgroundColor: `${theme.entityTypes.contact}26`,
+          borderWidth: 1,
+          borderColor: `${theme.entityTypes.contact}66`,
+        }}
       >
-        <Users size={22} color={colors.textTertiary} />
+        <Users size={22} color={theme.entityTypes.contact} />
       </View>
       <Text className="text-base font-semibold text-m-text-primary text-center">
         {title}
@@ -518,9 +532,9 @@ function EmptyState({
       <TouchableOpacity
         onPress={onCta}
         className="mt-4 px-4 py-2.5 rounded-[10px]"
-        style={{ backgroundColor: colors.bgBrand }}
+        style={{ backgroundColor: theme.entityTypes.contact }}
       >
-        <Text className="text-sm font-medium" style={{ color: colors.textOnBrand }}>
+        <Text className="text-sm font-medium" style={{ color: '#ffffff' }}>
           {ctaLabel}
         </Text>
       </TouchableOpacity>

@@ -9,6 +9,8 @@ import {
   X, Search, FileText, Check, Upload, Building, FolderOpen, UserCircle,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import type { EntityType } from '@/lib/theme';
 
 export interface AttachedDoc {
   id: string;
@@ -34,6 +36,7 @@ export default function DocumentPicker({
   visible, onClose, selectedIds, onChange, contextClientId, contextProjectId,
 }: DocumentPickerProps) {
   const { isAuthenticated } = useConvexAuth();
+  const c = useColors();
   const [mode, setMode] = useState<Mode>('browse');
   const [search, setSearch] = useState('');
   const [filterScope, setFilterScope] = useState<'all' | 'client' | 'project' | 'personal'>('all');
@@ -214,10 +217,11 @@ export default function DocumentPicker({
             <View className="px-4 py-3 border-b border-m-border">
               <TouchableOpacity
                 onPress={pickFile}
-                className="flex-row items-center gap-2 bg-m-bg-brand rounded-lg px-3 py-2.5 justify-center"
+                className="flex-row items-center gap-2 rounded-lg px-3 py-2.5 justify-center"
+                style={{ backgroundColor: c.entityTypes.client }}
               >
-                <Upload size={14} color={colors.textOnBrand} />
-                <Text className="text-sm font-semibold text-m-text-on-brand">Upload New File</Text>
+                <Upload size={14} color="#ffffff" />
+                <Text className="text-sm font-semibold" style={{ color: '#ffffff' }}>Upload New File</Text>
               </TouchableOpacity>
             </View>
 
@@ -237,21 +241,30 @@ export default function DocumentPicker({
 
             {/* Scope filter pills */}
             <View className="px-4 py-2 flex-row gap-1.5 border-b border-m-border">
-              {(['all', 'personal', 'client', 'project'] as const).map((s) => (
-                <TouchableOpacity
-                  key={s}
-                  onPress={() => setFilterScope(s)}
-                  className={`px-3 py-1.5 rounded-full border ${
-                    filterScope === s ? 'bg-m-bg-brand border-m-bg-brand' : 'border-m-border bg-m-bg-card'
-                  }`}
-                >
-                  <Text className={`text-xs font-medium capitalize ${
-                    filterScope === s ? 'text-m-text-on-brand' : 'text-m-text-tertiary'
-                  }`}>
-                    {s}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {(['all', 'personal', 'client', 'project'] as const).map((s) => {
+                const active = filterScope === s;
+                const entity: EntityType | null =
+                  s === 'client' ? 'client' : s === 'project' ? 'project' : s === 'personal' ? 'contact' : null;
+                const accent = entity ? c.entityTypes[entity] : c.text.muted;
+                return (
+                  <TouchableOpacity
+                    key={s}
+                    onPress={() => setFilterScope(s)}
+                    className="px-3 py-1.5 rounded-full border"
+                    style={{
+                      backgroundColor: active ? `${accent}26` : c.bg.card,
+                      borderColor: active ? `${accent}66` : c.border.default,
+                    }}
+                  >
+                    <Text
+                      className="text-xs font-medium capitalize"
+                      style={{ color: active ? accent : c.text.muted }}
+                    >
+                      {s}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* Selected summary */}
@@ -293,11 +306,13 @@ export default function DocumentPicker({
                       </View>
                     </View>
                     <View
-                      className={`w-5 h-5 rounded-full border items-center justify-center ${
-                        isSelected ? 'bg-m-bg-brand border-m-bg-brand' : 'border-m-border'
-                      }`}
+                      className="w-5 h-5 rounded-full border items-center justify-center"
+                      style={{
+                        backgroundColor: isSelected ? c.entityTypes.client : 'transparent',
+                        borderColor: isSelected ? c.entityTypes.client : c.border.default,
+                      }}
                     >
-                      {isSelected && <Check size={12} color={colors.textOnBrand} />}
+                      {isSelected && <Check size={12} color="#ffffff" />}
                     </View>
                   </TouchableOpacity>
                 );
@@ -336,6 +351,8 @@ export default function DocumentPicker({
                 const active = uploadScope === s;
                 const icon = s === 'personal' ? UserCircle : s === 'client' ? Building : FolderOpen;
                 const Icon = icon;
+                const entity: EntityType = s === 'personal' ? 'contact' : s === 'client' ? 'client' : 'project';
+                const accent = c.entityTypes[entity];
                 return (
                   <TouchableOpacity
                     key={s}
@@ -343,20 +360,27 @@ export default function DocumentPicker({
                       setUploadScope(s);
                       if (s === 'personal') { setUploadClientId(null); setUploadProjectId(null); }
                     }}
-                    className={`flex-row items-center gap-3 px-3 py-3 rounded-xl mb-2 border ${
-                      active ? 'border-m-accent bg-m-bg-subtle' : 'border-m-border bg-m-bg-card'
-                    }`}
+                    className="flex-row items-center gap-3 px-3 py-3 rounded-xl mb-2 border"
+                    style={{
+                      backgroundColor: active ? `${accent}26` : c.bg.card,
+                      borderColor: active ? `${accent}66` : c.border.default,
+                    }}
                   >
-                    <Icon size={16} color={active ? colors.textPrimary : colors.textTertiary} />
+                    <Icon size={16} color={active ? accent : colors.textTertiary} />
                     <View className="flex-1">
-                      <Text className={`text-sm font-medium capitalize ${active ? 'text-m-text-primary' : 'text-m-text-secondary'}`}>
+                      <Text
+                        className="text-sm font-medium capitalize"
+                        style={{ color: active ? c.text.primary : c.text.secondary }}
+                      >
                         {s === 'personal' ? 'Personal (just for me)' : s === 'client' ? 'Client library' : 'Project library'}
                       </Text>
                     </View>
                     <View
-                      className={`w-4 h-4 rounded-full border ${
-                        active ? 'border-m-accent bg-m-accent' : 'border-m-border'
-                      }`}
+                      className="w-4 h-4 rounded-full border"
+                      style={{
+                        backgroundColor: active ? accent : 'transparent',
+                        borderColor: active ? accent : c.border.default,
+                      }}
                     />
                   </TouchableOpacity>
                 );
@@ -394,10 +418,14 @@ export default function DocumentPicker({
               <TouchableOpacity
                 onPress={uploadAndAttach}
                 disabled={uploadScope === 'client' && !uploadClientId}
-                className="bg-m-bg-brand rounded-lg py-3 items-center"
-                style={{ opacity: (uploadScope === 'client' && !uploadClientId) || (uploadScope === 'project' && !uploadProjectId) ? 0.4 : 1 }}
+                className="rounded-lg py-3 items-center"
+                style={{
+                  backgroundColor:
+                    c.entityTypes[uploadScope === 'personal' ? 'contact' : uploadScope === 'project' ? 'project' : 'client'],
+                  opacity: (uploadScope === 'client' && !uploadClientId) || (uploadScope === 'project' && !uploadProjectId) ? 0.4 : 1,
+                }}
               >
-                <Text className="text-sm font-semibold text-m-text-on-brand">
+                <Text className="text-sm font-semibold" style={{ color: '#ffffff' }}>
                   Upload & Attach
                 </Text>
               </TouchableOpacity>

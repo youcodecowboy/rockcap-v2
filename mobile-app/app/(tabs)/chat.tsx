@@ -1,14 +1,28 @@
 import { View, Text } from 'react-native';
 import { MessageCircle } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import MobileHeader from '@/components/MobileHeader';
 
 export default function ChatScreen() {
+  const c = useColors();
   return (
     <View className="flex-1 bg-m-bg">
       <MobileHeader />
       <View className="flex-1 items-center justify-center px-8">
-        <MessageCircle size={48} color={colors.textTertiary} />
+        <View
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: `${c.accent.orange}26`,
+            borderWidth: 1,
+            borderColor: c.border.default,
+          }}
+        >
+          <MessageCircle size={36} color={c.accent.orange} />
+        </View>
         <Text className="text-lg font-medium text-m-text-primary mt-4">
           Chat Agent
         </Text>

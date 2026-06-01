@@ -4,7 +4,7 @@ import { useQuery, useConvexAuth } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import { Search, Building, Clock, Plus } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import MobileHeader from '@/components/MobileHeader';
 import ClientListItem from '@/components/ClientListItem';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -12,6 +12,7 @@ import EmptyState from '@/components/ui/EmptyState';
 
 export default function ClientsScreen() {
   const router = useRouter();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const clients = useQuery(api.clients.list, isAuthenticated ? {} : 'skip');
   const allProjects = useQuery(api.projects.list, isAuthenticated ? {} : 'skip');
@@ -63,18 +64,19 @@ export default function ClientsScreen() {
       <MobileHeader />
       <View className="px-4 py-2 bg-m-bg-card border-b border-m-border flex-row items-center gap-2">
         <View className="flex-1 bg-m-bg-subtle rounded-lg flex-row items-center px-3 py-2">
-          <Search size={16} color={colors.textTertiary} />
+          <Search size={16} color={c.text.muted} />
           <TextInput
             placeholder="Search clients..."
             value={search}
             onChangeText={setSearch}
             className="flex-1 text-m-text text-sm ml-2"
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={c.text.muted}
           />
         </View>
         <TouchableOpacity
           onPress={() => router.push('/(tabs)/clients/new' as any)}
-          className="w-9 h-9 rounded-full bg-m-text-primary items-center justify-center"
+          className="w-9 h-9 rounded-full items-center justify-center"
+          style={{ backgroundColor: c.entityTypes.client }}
           accessibilityLabel="Create new client"
           hitSlop={8}
         >
@@ -97,7 +99,7 @@ export default function ClientsScreen() {
             !isSearching && recentClients.length > 0 ? (
               <View className="mb-4">
                 <View className="flex-row items-center gap-2 mb-2">
-                  <Clock size={14} color={colors.textTertiary} />
+                  <Clock size={14} color={c.text.muted} />
                   <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wide">
                     Recent
                   </Text>

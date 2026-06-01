@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, Modal, ScrollView, Platform } from 'react-native';
 import { useState, useMemo, useCallback } from 'react';
 import { X, ChevronLeft, ChevronRight, Clock } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 interface DateTimePickerProps {
   value?: string; // ISO string or empty
@@ -48,6 +48,7 @@ function formatSummary(iso: string, mode: 'date' | 'datetime'): string {
 }
 
 export default function DateTimePicker({ value, onChange, mode = 'date', minDate, placeholder }: DateTimePickerProps) {
+  const c = useColors();
   const initialDate = useMemo(() => {
     if (value) {
       const d = new Date(value);
@@ -111,11 +112,14 @@ export default function DateTimePicker({ value, onChange, mode = 'date', minDate
       </TouchableOpacity>
 
       <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={{ flex: 1, backgroundColor: c.bg.base }}>
           {/* Header */}
-          <View className="flex-row items-center justify-between px-4 pt-4 pb-3 border-b border-m-border bg-m-bg-card">
+          <View
+            className="flex-row items-center justify-between px-4 pt-4 pb-3"
+            style={{ backgroundColor: c.bg.light, borderBottomWidth: 1, borderBottomColor: c.border.default }}
+          >
             <TouchableOpacity onPress={() => setOpen(false)} hitSlop={8}>
-              <X size={20} color={colors.textSecondary} />
+              <X size={20} color={c.text.secondary} />
             </TouchableOpacity>
             <Text className="text-base font-semibold text-m-text-primary">
               {mode === 'datetime' ? 'Pick Date & Time' : 'Pick Date'}
@@ -160,11 +164,11 @@ export default function DateTimePicker({ value, onChange, mode = 'date', minDate
             {/* Month nav */}
             <View className="flex-row items-center justify-between bg-m-bg-card border border-m-border rounded-xl px-3 py-3 mb-2">
               <TouchableOpacity onPress={() => { const d = new Date(viewMonth); d.setMonth(d.getMonth() - 1); setViewMonth(d); }} hitSlop={8}>
-                <ChevronLeft size={18} color={colors.textSecondary} />
+                <ChevronLeft size={18} color={c.text.secondary} />
               </TouchableOpacity>
               <Text className="text-sm font-semibold text-m-text-primary">{monthName(viewMonth)}</Text>
               <TouchableOpacity onPress={() => { const d = new Date(viewMonth); d.setMonth(d.getMonth() + 1); setViewMonth(d); }} hitSlop={8}>
-                <ChevronRight size={18} color={colors.textSecondary} />
+                <ChevronRight size={18} color={c.text.secondary} />
               </TouchableOpacity>
             </View>
 
@@ -216,7 +220,7 @@ export default function DateTimePicker({ value, onChange, mode = 'date', minDate
             {mode === 'datetime' && (
               <View className="bg-m-bg-card border border-m-border rounded-xl px-3 py-3 mt-4">
                 <View className="flex-row items-center gap-2 mb-3">
-                  <Clock size={14} color={colors.textSecondary} />
+                  <Clock size={14} color={c.text.secondary} />
                   <Text className="text-sm font-medium text-m-text-primary">
                     Time — {String(hour).padStart(2, '0')}:{String(minute).padStart(2, '0')}
                   </Text>

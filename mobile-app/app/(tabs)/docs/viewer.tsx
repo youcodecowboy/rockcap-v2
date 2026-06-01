@@ -9,8 +9,10 @@ import {
   X, Send, Download, ExternalLink, Layers, ChevronDown, ChevronUp, FileText,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import { useDocTabs } from '@/contexts/TabContext';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import Chip from '@/components/ui/Chip';
 import DocumentRenderer from '@/components/DocumentRenderer';
 import MobileHeader from '@/components/MobileHeader';
 
@@ -36,6 +38,7 @@ export default function ViewerScreen() {
     documentId: string; title?: string; fileType?: string;
   }>();
   const router = useRouter();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const { openTab } = useDocTabs();
   const [activeTab, setActiveTab] = useState<TabKey>('Preview');
@@ -124,17 +127,27 @@ export default function ViewerScreen() {
         style={{ flexGrow: 0, maxHeight: 44, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bgCard }}
         contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'center' }}
       >
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            className={`px-3 py-2.5 ${activeTab === tab ? 'border-b-2 border-m-accent' : ''}`}
-          >
-            <Text className={`text-sm font-medium ${activeTab === tab ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}>
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <TouchableOpacity
+              key={tab}
+              onPress={() => setActiveTab(tab)}
+              className="px-3 py-2.5"
+              style={{
+                borderBottomWidth: isActive ? 2 : 0,
+                borderBottomColor: isActive ? c.entityTypes.client : 'transparent',
+              }}
+            >
+              <Text
+                className="text-sm font-medium"
+                style={{ color: isActive ? c.text.primary : c.text.muted }}
+              >
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
       {/* Tab content */}
@@ -279,9 +292,7 @@ function DetailsTab({ doc }: { doc: any }) {
 
       <View>
         <SectionLabel>Confidence</SectionLabel>
-        <View className="self-start bg-emerald-100 px-2.5 py-1 rounded-full">
-          <Text className="text-xs font-medium text-emerald-700">{confidence}</Text>
-        </View>
+        <Chip label={confidence} color={colors.success} />
       </View>
 
       {characteristics.length > 0 && (
@@ -380,6 +391,7 @@ function IntelligenceTab({ documentId }: { documentId: string }) {
 // ── Notes Tab ────────────────────────────────────────────────
 
 function NotesTab({ documentId }: { documentId: string }) {
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -434,9 +446,10 @@ function NotesTab({ documentId }: { documentId: string }) {
         <TouchableOpacity
           onPress={handleAdd}
           disabled={!draft.trim() || submitting}
-          className={`w-9 h-9 rounded-full items-center justify-center ${draft.trim() ? 'bg-m-bg-brand' : 'bg-m-bg-inset'}`}
+          className="w-9 h-9 rounded-full items-center justify-center"
+          style={{ backgroundColor: draft.trim() ? c.entityTypes.client : c.bg.cardAlt }}
         >
-          <Send size={14} color={draft.trim() ? colors.textOnBrand : colors.textTertiary} />
+          <Send size={14} color={draft.trim() ? '#ffffff' : colors.textTertiary} />
         </TouchableOpacity>
       </View>
 

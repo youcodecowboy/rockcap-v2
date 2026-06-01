@@ -10,6 +10,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { FileText, ChevronLeft, Search } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import type { Id } from '../../../../model-testing-app/convex/_generated/dataModel';
 
 type NavLevel =
@@ -32,6 +33,7 @@ type DocTab = typeof TABS[number];
 export default function DocsScreen() {
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
+  const c = useColors();
 
   // Deep-link params — other screens can push /docs?clientId=X&projectId=Y
   // &folderType=Z to jump straight to a specific level. Names are optional
@@ -445,10 +447,10 @@ export default function DocsScreen() {
       <MobileHeader />
 
       {nav.level !== 'clients' && (
-        <View className="bg-m-bg-brand pb-2 px-4">
+        <View className="bg-m-bg-card border-b border-m-border py-2 px-4">
           <TouchableOpacity onPress={handleBack} className="flex-row items-center">
-            <ChevronLeft size={16} color={colors.textOnBrand} />
-            <Text className="text-sm text-m-text-on-brand ml-1">Back</Text>
+            <ChevronLeft size={16} color={c.entityTypes.client} />
+            <Text className="text-sm ml-1" style={{ color: c.entityTypes.client }}>Back</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -457,17 +459,27 @@ export default function DocsScreen() {
         <>
           {/* Filter tabs */}
           <View className="flex-row border-b border-m-border">
-            {TABS.map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                onPress={() => setActiveTab(tab)}
-                className={`flex-1 py-2.5 items-center ${activeTab === tab ? 'border-b-2 border-m-accent' : ''}`}
-              >
-                <Text className={`text-sm font-medium ${activeTab === tab ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}>
-                  {tab}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
+                  className="flex-1 py-2.5 items-center"
+                  style={{
+                    borderBottomWidth: isActive ? 2 : 0,
+                    borderBottomColor: isActive ? c.entityTypes.client : 'transparent',
+                  }}
+                >
+                  <Text
+                    className="text-sm font-medium"
+                    style={{ color: isActive ? c.text.primary : c.text.muted }}
+                  >
+                    {tab}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Search */}
@@ -478,7 +490,7 @@ export default function DocsScreen() {
                 placeholder="Search clients..."
                 value={search}
                 onChangeText={setSearch}
-                className="flex-1 text-sm ml-2"
+                className="flex-1 text-sm ml-2 text-m-text-primary"
                 placeholderTextColor={colors.textTertiary}
               />
             </View>

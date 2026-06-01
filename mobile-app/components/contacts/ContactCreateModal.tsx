@@ -7,6 +7,7 @@ import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { X, Loader2, Search, Check, ChevronRight, Building } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 // ---------------------------------------------------------------------------
 // ContactCreateModal — modal form for adding a new contact.
@@ -29,6 +30,7 @@ interface Props {
 export default function ContactCreateModal({
   visible, onClose, onCreated, prefilledClientId,
 }: Props) {
+  const theme = useColors();
   const { isAuthenticated } = useConvexAuth();
 
   const [name, setName] = useState('');
@@ -294,7 +296,9 @@ export default function ContactCreateModal({
                         }}
                         className="flex-row items-center gap-3 px-4 py-3 border-b border-m-border-subtle"
                         style={{
-                          backgroundColor: isSelected ? colors.bgSubtle : 'transparent',
+                          backgroundColor: isSelected
+                            ? `${theme.entityTypes.contact}26`
+                            : 'transparent',
                         }}
                       >
                         <Building size={14} color={colors.textTertiary} />
@@ -304,7 +308,7 @@ export default function ContactCreateModal({
                         >
                           {c.name}
                         </Text>
-                        {isSelected && <Check size={14} color={colors.accent} />}
+                        {isSelected && <Check size={14} color={theme.entityTypes.contact} />}
                       </TouchableOpacity>
                     );
                   })

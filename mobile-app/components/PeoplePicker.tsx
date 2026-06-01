@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, Modal, TextInput, FlatList } from 'react-
 import { useState, useMemo } from 'react';
 import { X, Search, Check, User as UserIcon } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 export interface PersonOption {
   id: string;
@@ -29,6 +30,7 @@ export default function PeoplePicker({
   options, selectedIds, onChange, title = 'Select People', placeholder = 'No one',
   renderTrigger, maxSelection,
 }: PeoplePickerProps) {
+  const c = useColors();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -113,8 +115,18 @@ export default function PeoplePicker({
                   onPress={() => toggle(item.id)}
                   className="flex-row items-center gap-3 px-4 py-3 border-b border-m-border-subtle"
                 >
-                  <View className="w-8 h-8 rounded-full bg-m-bg-inset items-center justify-center">
-                    <Text className="text-[11px] font-semibold text-m-text-secondary">{getInitials(item.name)}</Text>
+                  {/* People are contacts → tint the initials tile contact-purple */}
+                  <View
+                    className="w-8 h-8 rounded-full items-center justify-center"
+                    style={{
+                      backgroundColor: `${c.entityTypes.contact}26`,
+                      borderWidth: 1,
+                      borderColor: `${c.entityTypes.contact}66`,
+                    }}
+                  >
+                    <Text className="text-[11px] font-semibold" style={{ color: c.entityTypes.contact }}>
+                      {getInitials(item.name)}
+                    </Text>
                   </View>
                   <View className="flex-1">
                     <Text className="text-sm font-medium text-m-text-primary">{item.name}</Text>
@@ -128,11 +140,13 @@ export default function PeoplePicker({
                     </View>
                   )}
                   <View
-                    className={`w-5 h-5 rounded-full border items-center justify-center ${
-                      isSelected ? 'bg-m-bg-brand border-m-bg-brand' : 'border-m-border'
-                    }`}
+                    className="w-5 h-5 rounded-full border items-center justify-center"
+                    style={{
+                      backgroundColor: isSelected ? c.entityTypes.contact : 'transparent',
+                      borderColor: isSelected ? c.entityTypes.contact : c.border.default,
+                    }}
                   >
-                    {isSelected && <Check size={12} color={colors.textOnBrand} />}
+                    {isSelected && <Check size={12} color="#ffffff" />}
                   </View>
                 </TouchableOpacity>
               );
