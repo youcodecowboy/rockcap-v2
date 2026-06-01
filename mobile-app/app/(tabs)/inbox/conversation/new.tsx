@@ -6,7 +6,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../../model-testing-app/convex/_generated/api';
 import { X, Search, Check, FileText } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import Button from '@/components/ui/Button';
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -15,6 +16,7 @@ function getInitials(name: string): string {
 export default function NewConversationScreen() {
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
+  const c = useColors();
   // When launched from the doc viewer's Share button, these params carry
   // the document to pre-attach to the first message.
   const params = useLocalSearchParams<{
@@ -97,7 +99,7 @@ export default function NewConversationScreen() {
           was too easy to miss + out of thumb range. */}
       <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center gap-3">
         <TouchableOpacity onPress={() => router.back()} className="p-1">
-          <X size={20} color={colors.textOnBrand} />
+          <X size={20} color={c.bg.base} />
         </TouchableOpacity>
         <Text className="text-lg font-semibold text-m-text-on-brand">
           New Conversation
@@ -122,7 +124,7 @@ export default function NewConversationScreen() {
                 onChangeText={setTitle}
                 placeholder="e.g., Wimbledon Park - Valuation"
                 className="bg-m-bg-card border border-m-border rounded-lg px-3 py-2.5 text-sm text-m-text-primary"
-                placeholderTextColor={colors.textPlaceholder}
+                placeholderTextColor={c.text.dim}
               />
             </View>
 
@@ -132,13 +134,13 @@ export default function NewConversationScreen() {
                 Participants {selectedUserIds.length > 0 ? `(${selectedUserIds.length})` : ''}
               </Text>
               <View className="bg-m-bg-card border border-m-border rounded-lg flex-row items-center px-3 py-2">
-                <Search size={14} color={colors.textTertiary} />
+                <Search size={14} color={c.text.muted} />
                 <TextInput
                   value={userSearch}
                   onChangeText={setUserSearch}
                   placeholder="Search users..."
                   className="flex-1 text-sm text-m-text-primary ml-2"
-                  placeholderTextColor={colors.textPlaceholder}
+                  placeholderTextColor={c.text.dim}
                 />
               </View>
             </View>
@@ -168,7 +170,7 @@ export default function NewConversationScreen() {
                   selected ? 'bg-m-bg-brand border-m-bg-brand' : 'border-m-border'
                 }`}
               >
-                {selected && <Check size={12} color={colors.textOnBrand} />}
+                {selected && <Check size={12} color={c.bg.base} />}
               </View>
             </TouchableOpacity>
           );
@@ -180,7 +182,7 @@ export default function NewConversationScreen() {
                 want to send without the doc they can just go back. */}
             {attachDocId && attachDocName ? (
               <View className="mb-3 flex-row items-center gap-2 px-3 py-2 rounded-[10px] bg-m-bg-subtle border border-m-border">
-                <FileText size={14} color={colors.textTertiary} />
+                <FileText size={14} color={c.entityTypes.deal} />
                 <View className="flex-1 min-w-0">
                   <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
                     Attaching
@@ -200,7 +202,7 @@ export default function NewConversationScreen() {
               placeholder="Kick off the conversation..."
               multiline
               className="bg-m-bg-card border border-m-border rounded-lg px-3 py-2.5 text-sm text-m-text-primary min-h-[80px]"
-              placeholderTextColor={colors.textPlaceholder}
+              placeholderTextColor={c.text.dim}
               textAlignVertical="top"
             />
           </View>
@@ -215,31 +217,21 @@ export default function NewConversationScreen() {
         className="border-t border-m-border bg-m-bg px-4 pt-3"
         style={{ paddingBottom: Platform.OS === 'ios' ? 32 : 16 }}
       >
-        <TouchableOpacity
+        <Button
+          variant="primary"
           onPress={handleCreate}
           disabled={!title.trim() || selectedUserIds.length === 0 || creating}
-          className="flex-row items-center justify-center gap-2 rounded-xl py-3"
-          style={{
-            backgroundColor: colors.bgBrand,
-            opacity:
-              !title.trim() || selectedUserIds.length === 0 || creating
-                ? 0.5
-                : 1,
-          }}
-        >
-          <Text
-            className="text-[15px] font-semibold"
-            style={{ color: colors.textOnBrand }}
-          >
-            {creating
+          loading={creating}
+          label={
+            creating
               ? attachDocId
                 ? 'Sending...'
                 : 'Creating...'
               : attachDocId
                 ? 'Send'
-                : 'Create thread'}
-          </Text>
-        </TouchableOpacity>
+                : 'Create thread'
+          }
+        />
       </View>
     </KeyboardAvoidingView>
   );

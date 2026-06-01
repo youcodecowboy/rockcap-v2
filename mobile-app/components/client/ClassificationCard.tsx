@@ -1,5 +1,6 @@
 import { View, Text } from 'react-native';
 import { Tag } from 'lucide-react-native';
+import EntityIconTile from '@/components/ui/EntityIconTile';
 
 interface ClassificationCardProps {
   companyType?: string;
@@ -25,12 +26,7 @@ export default function ClassificationCard({
   return (
     <View className="bg-m-bg-card border border-m-border rounded-[12px] p-[14px]">
       <View className="flex-row items-center gap-1.5 mb-2.5">
-        <View
-          className="w-5 h-5 rounded-[6px] items-center justify-center"
-          style={{ backgroundColor: '#fef3c7' }}
-        >
-          <Tag size={12} color="#d97706" strokeWidth={2} />
-        </View>
+        <EntityIconTile icon={Tag} type="prospect" size={20} />
         <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
           Classification
         </Text>

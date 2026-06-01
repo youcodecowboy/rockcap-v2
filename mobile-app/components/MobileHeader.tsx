@@ -8,9 +8,10 @@ import { useClerk } from '@clerk/clerk-expo';
 import Badge from '@/components/ui/Badge';
 import MobileNavDrawer from '@/components/MobileNavDrawer';
 import TabManager from '@/components/TabManager';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 export default function MobileHeader() {
+  const c = useColors();
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const { signOut } = useClerk();
@@ -38,27 +39,34 @@ export default function MobileHeader() {
   // with the brand bar so the chrome reads as one cohesive block.
   return (
     <View>
-      <View className="bg-m-bg-brand pt-14 pb-3 px-4 flex-row items-center justify-between">
+      <View
+        className="pt-14 pb-3 px-4 flex-row items-center justify-between"
+        style={{
+          backgroundColor: c.bg.light,
+          borderBottomWidth: 1,
+          borderBottomColor: c.border.default,
+        }}
+      >
         <View className="flex-row items-center gap-2.5">
           <TouchableOpacity onPress={() => setDrawerVisible(true)} className="p-1">
-            <Menu size={18} color={colors.textOnBrand} />
+            <Menu size={18} color={c.text.primary} />
           </TouchableOpacity>
           <Text
-            className="text-lg font-normal text-m-text-on-brand"
-            style={{ fontFamily: 'Helvetica Neue', letterSpacing: -0.2 }}
+            className="text-lg font-normal"
+            style={{ fontFamily: 'Helvetica Neue', letterSpacing: -0.2, color: c.text.primary }}
           >
             RockCap
           </Text>
         </View>
         <View className="flex-row items-center gap-3">
           <TouchableOpacity className="p-1 opacity-60">
-            <Search size={18} color={colors.textOnBrand} />
+            <Search size={18} color={c.text.muted} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push('/inbox')}
             className="relative p-1"
           >
-            <Bell size={18} color={colors.textOnBrand} />
+            <Bell size={18} color={c.text.primary} />
             {totalBadge > 0 && (
               <View className="absolute -top-1 -right-1">
                 <Badge count={totalBadge} variant="error" />
@@ -67,9 +75,10 @@ export default function MobileHeader() {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => signOut()}
-            className="w-6 h-6 rounded-full bg-white/20 items-center justify-center"
+            className="w-6 h-6 rounded-full items-center justify-center"
+            style={{ backgroundColor: c.bg.card, borderWidth: 1, borderColor: c.border.default }}
           >
-            <User size={13} color={colors.textOnBrand} />
+            <User size={13} color={c.text.secondary} />
           </TouchableOpacity>
         </View>
 

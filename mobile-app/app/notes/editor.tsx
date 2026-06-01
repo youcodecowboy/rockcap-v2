@@ -7,7 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { ArrowLeft, Save, X, Plus, Building2, FolderOpen, FileText } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import RichTextEditor, { type MentionItem } from '@/components/RichTextEditor';
 import MobileHeader from '@/components/MobileHeader';
@@ -25,6 +25,9 @@ function extractMentionedUserIds(content: any): string[] {
   return [...new Set(ids)];
 }
 
+// Deterministic per-tag hue palette (theme-invariant accent values; mostly mirrors
+// useColors().accent.*). Rendered with the canon tint pattern (`26` fill / `66` border),
+// so it reads correctly on the dark canvas.
 const TAG_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 function getTagColor(tag: string): string {
   let hash = 0;
@@ -41,6 +44,7 @@ function PickerModal({
   items: { id: string; name: string }[];
   onSelect: (id: string, name: string) => void;
 }) {
+  const c = useColors();
   const [search, setSearch] = useState('');
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -50,7 +54,7 @@ function PickerModal({
         <View className="flex-row items-center justify-between px-4 pt-14 pb-3 bg-m-bg-brand">
           <Text className="text-lg font-medium text-m-text-on-brand">{title}</Text>
           <TouchableOpacity onPress={onClose}>
-            <X size={20} color={colors.textOnBrand} />
+            <X size={20} color={c.bg.base} />
           </TouchableOpacity>
         </View>
         <TextInput
@@ -58,7 +62,7 @@ function PickerModal({
           value={search}
           onChangeText={setSearch}
           className="mx-4 mt-3 bg-m-bg-subtle rounded-lg px-3 py-2.5 text-sm text-m-text-primary"
-          placeholderTextColor={colors.textPlaceholder}
+          placeholderTextColor={c.text.dim}
         />
         <FlatList
           data={filtered}
@@ -86,6 +90,7 @@ function PickerModal({
 export default function NoteEditorScreen() {
   const { noteId, clientId: preselectedClientId } = useLocalSearchParams<{ noteId?: string; clientId?: string }>();
   const router = useRouter();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const [title, setTitle] = useState('');
   const [contentJson, setContentJson] = useState<any>(null);
@@ -261,11 +266,11 @@ export default function NoteEditorScreen() {
       {/* Sub-navigation — matches web's "← Notes" + "Docs" bar */}
       <View className="flex-row items-center justify-between px-4 py-2 border-b border-m-border bg-m-bg-card">
         <TouchableOpacity onPress={() => router.back()} className="flex-row items-center gap-1.5">
-          <ArrowLeft size={14} color={colors.textSecondary} />
+          <ArrowLeft size={14} color={c.text.secondary} />
           <Text className="text-sm text-m-text-secondary">Notes</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/docs')} className="flex-row items-center gap-1.5">
-          <FileText size={14} color={colors.textTertiary} />
+          <FileText size={14} color={c.text.muted} />
           <Text className="text-sm text-m-text-tertiary">Docs</Text>
         </TouchableOpacity>
       </View>
@@ -276,7 +281,7 @@ export default function NoteEditorScreen() {
           onPress={() => setShowClientPicker(true)}
           className="flex-row items-center gap-1.5 bg-m-bg-subtle rounded-full px-3 py-1.5"
         >
-          <Building2 size={12} color={selectedClientId ? colors.textPrimary : colors.textTertiary} />
+          <Building2 size={12} color={selectedClientId ? c.text.primary : c.text.muted} />
           <Text
             className={`text-xs font-medium ${selectedClientId ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}
             numberOfLines={1}
@@ -285,7 +290,7 @@ export default function NoteEditorScreen() {
           </Text>
           {selectedClientId && (
             <TouchableOpacity onPress={() => { setSelectedClientId(null); setSelectedClientName(null); setSelectedProjectId(null); setSelectedProjectName(null); }}>
-              <X size={10} color={colors.textTertiary} />
+              <X size={10} color={c.text.muted} />
             </TouchableOpacity>
           )}
         </TouchableOpacity>
@@ -297,7 +302,7 @@ export default function NoteEditorScreen() {
           }}
           className="flex-row items-center gap-1.5 bg-m-bg-subtle rounded-full px-3 py-1.5"
         >
-          <FolderOpen size={12} color={selectedProjectId ? colors.textPrimary : colors.textTertiary} />
+          <FolderOpen size={12} color={selectedProjectId ? c.text.primary : c.text.muted} />
           <Text
             className={`text-xs font-medium ${selectedProjectId ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}
             numberOfLines={1}
@@ -306,7 +311,7 @@ export default function NoteEditorScreen() {
           </Text>
           {selectedProjectId && (
             <TouchableOpacity onPress={() => { setSelectedProjectId(null); setSelectedProjectName(null); }}>
-              <X size={10} color={colors.textTertiary} />
+              <X size={10} color={c.text.muted} />
             </TouchableOpacity>
           )}
         </TouchableOpacity>
@@ -324,7 +329,7 @@ export default function NoteEditorScreen() {
           placeholder="Note title"
           autoFocus={!noteId}
           className="flex-1 text-lg text-m-text-primary font-semibold"
-          placeholderTextColor={colors.textPlaceholder}
+          placeholderTextColor={c.text.dim}
         />
         <TouchableOpacity onPress={handleSave} className="flex-row items-center gap-1.5 ml-2">
           {saved ? (
@@ -334,7 +339,7 @@ export default function NoteEditorScreen() {
             </>
           ) : (
             <>
-              <Save size={14} color={saving ? colors.textTertiary : colors.textPrimary} />
+              <Save size={14} color={saving ? c.text.muted : c.text.primary} />
               <Text className={`text-xs font-medium ${saving ? 'text-m-text-tertiary' : 'text-m-text-primary'}`}>
                 {saving ? 'Saving...' : 'Save'}
               </Text>
@@ -345,17 +350,24 @@ export default function NoteEditorScreen() {
 
       {/* Tags row */}
       <View className="flex-row flex-wrap items-center gap-1.5 px-4 py-1.5">
-        {tags.map(tag => (
-          <TouchableOpacity
-            key={tag}
-            onPress={() => removeTag(tag)}
-            className="flex-row items-center gap-1 rounded-full px-2.5 py-0.5"
-            style={{ backgroundColor: getTagColor(tag) + '20' }}
-          >
-            <Text style={{ color: getTagColor(tag), fontSize: 11, fontWeight: '500' }}>{tag}</Text>
-            <X size={9} color={getTagColor(tag)} />
-          </TouchableOpacity>
-        ))}
+        {tags.map(tag => {
+          const tagColor = getTagColor(tag);
+          return (
+            <TouchableOpacity
+              key={tag}
+              onPress={() => removeTag(tag)}
+              className="flex-row items-center gap-1 rounded-full px-2.5 py-0.5"
+              style={{
+                backgroundColor: `${tagColor}26`,
+                borderWidth: 1,
+                borderColor: `${tagColor}66`,
+              }}
+            >
+              <Text style={{ color: tagColor, fontSize: 11, fontWeight: '500' }}>{tag}</Text>
+              <X size={9} color={tagColor} />
+            </TouchableOpacity>
+          );
+        })}
         {showTagInput ? (
           <TextInput
             value={tagInput}
@@ -366,14 +378,14 @@ export default function NoteEditorScreen() {
             onBlur={() => { if (tagInput.trim()) addTag(tagInput); else setShowTagInput(false); }}
             returnKeyType="done"
             className="bg-m-bg-subtle rounded-full px-2.5 py-0.5 text-xs text-m-text-primary min-w-[80px]"
-            placeholderTextColor={colors.textPlaceholder}
+            placeholderTextColor={c.text.dim}
           />
         ) : (
           <TouchableOpacity
             onPress={() => setShowTagInput(true)}
             className="w-5 h-5 rounded-full bg-m-bg-subtle items-center justify-center"
           >
-            <Plus size={10} color={colors.textTertiary} />
+            <Plus size={10} color={c.text.muted} />
           </TouchableOpacity>
         )}
       </View>

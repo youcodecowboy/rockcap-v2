@@ -10,6 +10,7 @@ import {
   X, Sparkles, ArrowUp, Calendar, Building, FolderOpen, User, Flag, Users, Paperclip, FileText,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import DateTimePicker from '@/components/DateTimePicker';
 import PeoplePicker, { type PersonOption } from '@/components/PeoplePicker';
 import DocumentPicker, { type AttachedDoc } from '@/components/DocumentPicker';
@@ -48,6 +49,7 @@ export default function TaskCreationFlow({
   prefilledAttendeeIds, prefilledAssigneeIds, prefilledContactIds,
 }: TaskCreationFlowProps) {
   const { user } = useUser();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const [step, setStep] = useState<Step>('intro');
   const [mode, setMode] = useState<'task' | 'meeting'>(initialMode);
@@ -342,8 +344,12 @@ export default function TaskCreationFlow({
                 <TouchableOpacity
                   key={m}
                   onPress={() => setMode(m)}
-                  className={`flex-1 py-2.5 items-center rounded-lg ${mode === m ? 'bg-white' : ''}`}
-                  style={mode === m ? { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } } : undefined}
+                  className="flex-1 py-2.5 items-center rounded-lg"
+                  style={
+                    mode === m
+                      ? { backgroundColor: c.bg.cardAlt, borderWidth: 1, borderColor: c.border.mid }
+                      : undefined
+                  }
                 >
                   <Text className={`text-sm font-medium ${mode === m ? 'text-m-text-primary' : 'text-m-text-tertiary'}`}>
                     {m === 'task' ? 'Task' : 'Meeting'}

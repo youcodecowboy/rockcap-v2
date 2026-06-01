@@ -5,7 +5,7 @@ import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import FlagListItem from '@/components/FlagListItem';
 import NotificationItem from '@/components/NotificationItem';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { SkeletonCard } from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
 import MobileHeader from '@/components/MobileHeader';
 import {
@@ -16,7 +16,9 @@ import {
   CheckCheck,
   Plus,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
+import Button from '@/components/ui/Button';
 
 type TabKey = 'messages' | 'flags' | 'notifications';
 
@@ -44,9 +46,21 @@ function formatRelativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
+// Canon loading state — skeleton rows on the list surface, never a spinner.
+function ListSkeleton() {
+  return (
+    <View className="p-4" style={{ gap: 8 }}>
+      {[0, 1, 2, 3].map((i) => (
+        <SkeletonCard key={i} lines={2} />
+      ))}
+    </View>
+  );
+}
+
 export default function InboxScreen() {
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
+  const c = useColors();
   const [activeTab, setActiveTab] = useState<TabKey>('messages');
   const [flagFilter, setFlagFilter] = useState<'open' | 'resolved'>('open');
 
@@ -105,7 +119,7 @@ export default function InboxScreen() {
                 <View className="flex-row items-center gap-1.5">
                   <Icon
                     size={14}
-                    color={active ? colors.textPrimary : colors.textTertiary}
+                    color={active ? c.text.primary : c.text.muted}
                   />
                   <Text
                     className={`text-xs font-semibold ${
@@ -131,20 +145,20 @@ export default function InboxScreen() {
       {/* Messages tab */}
       {activeTab === 'messages' && (
         !conversations ? (
-          <LoadingSpinner />
+          <ListSkeleton />
         ) : (
           <FlatList
             data={conversations}
             keyExtractor={(item: any) => item._id}
             contentContainerStyle={{ paddingBottom: 16 }}
             ListHeaderComponent={
-              <TouchableOpacity
-                onPress={() => router.push('/inbox/conversation/new' as any)}
-                className="mx-4 mt-3 mb-2 bg-m-bg-brand rounded-lg py-3 flex-row items-center justify-center"
-              >
-                <Plus size={16} color={colors.textOnBrand} />
-                <Text className="text-sm font-medium text-m-text-on-brand ml-2">New Conversation</Text>
-              </TouchableOpacity>
+              <View className="mx-4 mt-3 mb-2">
+                <Button
+                  label="New Conversation"
+                  icon={Plus}
+                  onPress={() => router.push('/inbox/conversation/new' as any)}
+                />
+              </View>
             }
             ListEmptyComponent={<EmptyState icon={MessageSquare} title="No messages" />}
             renderItem={({ item }: { item: any }) => {
@@ -172,7 +186,10 @@ export default function InboxScreen() {
                       >
                         {item.title || 'Conversation'}
                       </Text>
-                      <Text className="text-[10px] text-m-text-tertiary ml-2">
+                      <Text
+                        className="text-[10px] text-m-text-tertiary ml-2"
+                        style={{ fontFamily: typography.family.mono }}
+                      >
                         {formatRelativeTime(item.lastMessageAt ?? item._creationTime)}
                       </Text>
                     </View>
@@ -241,7 +258,7 @@ export default function InboxScreen() {
           </View>
 
           {!flags ? (
-            <LoadingSpinner />
+            <ListSkeleton />
           ) : filteredFlags.length === 0 ? (
             <EmptyState
               icon={Flag}
@@ -272,7 +289,7 @@ export default function InboxScreen() {
                 onPress={() => markAllAsRead({})}
                 className="flex-row items-center gap-1"
               >
-                <CheckCheck size={14} color={colors.accent} />
+                <CheckCheck size={14} color={c.text.primary} />
                 <Text className="text-xs font-medium text-m-text-primary">
                   Mark all read
                 </Text>
@@ -281,7 +298,7 @@ export default function InboxScreen() {
           )}
 
           {!notifications ? (
-            <LoadingSpinner />
+            <ListSkeleton />
           ) : notifications.length === 0 ? (
             <EmptyState icon={Bell} title="No notifications" />
           ) : (

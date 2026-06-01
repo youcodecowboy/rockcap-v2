@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { X, Layers } from 'lucide-react-native';
 import { useDocTabs } from '@/contexts/TabContext';
 import TabListDrawer from '@/components/TabListDrawer';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 // Tab strip rendered app-wide as an extension of the RockCap MobileHeader
 // (dark brand bar). Shows every doc the user has "Added to tabs" from the
@@ -16,6 +16,7 @@ import { colors } from '@/lib/theme';
 // to any open tab without horizontal scrolling.
 export default function TabManager() {
   const router = useRouter();
+  const c = useColors();
   const { tabs, activeTabId, switchTab, closeTab } = useDocTabs();
   const [drawerVisible, setDrawerVisible] = useState(false);
 
@@ -42,9 +43,9 @@ export default function TabManager() {
       <View
         style={{
           flexDirection: 'row',
-          backgroundColor: colors.bgBrand,
+          backgroundColor: c.bg.light,
           borderBottomWidth: 1,
-          borderBottomColor: 'rgba(255,255,255,0.08)',
+          borderBottomColor: c.border.default,
           alignItems: 'center',
         }}
       >
@@ -75,18 +76,16 @@ export default function TabManager() {
                   paddingRight: 6,
                   paddingVertical: 4,
                   borderRadius: 999,
-                  backgroundColor: isActive
-                    ? 'rgba(255,255,255,0.22)'
-                    : 'rgba(255,255,255,0.08)',
+                  borderWidth: 1,
+                  borderColor: isActive ? c.border.mid : c.border.default,
+                  backgroundColor: isActive ? c.bg.card : 'transparent',
                 }}
               >
                 <Text
                   style={{
                     fontSize: 11,
                     fontWeight: '500',
-                    color: isActive
-                      ? colors.textOnBrand
-                      : 'rgba(255,255,255,0.7)',
+                    color: isActive ? c.text.primary : c.text.muted,
                     maxWidth: 120,
                   }}
                   numberOfLines={1}
@@ -102,10 +101,10 @@ export default function TabManager() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderRadius: 8,
-                    backgroundColor: 'rgba(255,255,255,0.12)',
+                    backgroundColor: c.bg.cardAlt,
                   }}
                 >
-                  <X size={10} color={colors.textOnBrand} strokeWidth={2.5} />
+                  <X size={10} color={c.text.muted} strokeWidth={2.5} />
                 </TouchableOpacity>
               </TouchableOpacity>
             );
@@ -127,16 +126,16 @@ export default function TabManager() {
             paddingRight: 12,
             paddingVertical: 6,
             borderLeftWidth: 1,
-            borderLeftColor: 'rgba(255,255,255,0.08)',
+            borderLeftColor: c.border.default,
             alignSelf: 'stretch',
           }}
         >
-          <Layers size={13} color={colors.textOnBrand} />
+          <Layers size={13} color={c.text.secondary} />
           <Text
             style={{
               fontSize: 10,
               fontWeight: '600',
-              color: colors.textOnBrand,
+              color: c.text.secondary,
             }}
           >
             {tabs.length}

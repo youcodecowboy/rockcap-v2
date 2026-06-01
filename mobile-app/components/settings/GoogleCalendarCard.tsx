@@ -6,9 +6,10 @@ import { Calendar } from 'lucide-react-native';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { useGoogleCalendarAuth } from '@/lib/googleCalendarAuth';
 import { resolveApiBase } from '@/lib/apiBase';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 export default function GoogleCalendarCard() {
+  const c = useColors();
   const syncStatus = useQuery(api.googleCalendar.getSyncStatus, {});
   const exchangeMobileCode = useAction(api.googleCalendar.exchangeMobileCode);
   const disconnect = useAction(api.googleCalendar.disconnect);
@@ -165,7 +166,7 @@ export default function GoogleCalendarCard() {
   if (syncStatus === undefined) {
     return (
       <View className="bg-m-bg-card border border-m-border rounded-2xl px-4 py-6 items-center justify-center">
-        <ActivityIndicator size="small" color={colors.textTertiary} />
+        <ActivityIndicator size="small" color={c.text.muted} />
       </View>
     );
   }
@@ -174,7 +175,7 @@ export default function GoogleCalendarCard() {
     <View className="bg-m-bg-card border border-m-border rounded-2xl overflow-hidden">
       <View className="px-4 py-4">
         <View className="flex-row items-center gap-3">
-          <Calendar size={20} color={colors.textTertiary} />
+          <Calendar size={20} color={c.accent.blue} />
           <View className="flex-1">
             <Text className="text-[14px] font-semibold text-m-text-primary">
               Google Calendar
@@ -191,14 +192,14 @@ export default function GoogleCalendarCard() {
 
         {statusMessage && (
           <View
-            className={`mt-3 px-3 py-2 rounded-lg ${
-              statusMessage.kind === 'success' ? 'bg-emerald-50' : 'bg-red-50'
-            }`}
+            className="mt-3 px-3 py-2 rounded-lg"
+            style={{
+              backgroundColor: `${statusMessage.kind === 'success' ? c.accent.green : c.accent.red}1a`,
+            }}
           >
             <Text
-              className={`text-[12px] font-medium ${
-                statusMessage.kind === 'success' ? 'text-emerald-700' : 'text-red-700'
-              }`}
+              className="text-[12px] font-medium"
+              style={{ color: statusMessage.kind === 'success' ? c.accent.green : c.accent.red }}
             >
               {statusMessage.text}
             </Text>
@@ -208,8 +209,8 @@ export default function GoogleCalendarCard() {
         <View className="mt-3 gap-2">
           {syncStatus.isConnected && syncStatus.needsReconnect ? (
             <>
-              <View className="px-3 py-2 rounded-lg bg-orange-50">
-                <Text className="text-[12px] font-medium text-orange-800">
+              <View className="px-3 py-2 rounded-lg" style={{ backgroundColor: `${c.accent.orange}1a` }}>
+                <Text className="text-[12px] font-medium" style={{ color: c.accent.orange }}>
                   Google Calendar disconnected — events no longer update. Tap
                   Reconnect to restore.
                 </Text>
@@ -240,8 +241,13 @@ export default function GoogleCalendarCard() {
               <TouchableOpacity
                 onPress={handleDisconnect}
                 disabled={disconnecting}
-                className="py-2 px-3 rounded-lg items-center bg-red-50 active:bg-red-100"
-                style={disconnecting ? { opacity: 0.5 } : undefined}
+                className="py-2 px-3 rounded-lg items-center"
+                style={{
+                  backgroundColor: `${c.accent.red}1a`,
+                  borderWidth: 1,
+                  borderColor: `${c.accent.red}66`,
+                  opacity: disconnecting ? 0.5 : 1,
+                }}
               >
                 <Text className="text-[13px] font-medium text-m-error">
                   {disconnecting ? 'Disconnecting...' : 'Disconnect'}

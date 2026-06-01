@@ -4,24 +4,28 @@ import {
   StickyNote, Mail, Video, Phone, CheckSquare, FileText,
   ArrowUpRight, ArrowDownLeft, ChevronDown, ChevronUp, ExternalLink,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
 import type { Doc } from '../../../model-testing-app/convex/_generated/dataModel';
 
 interface ActivityCardProps {
   activity: Doc<'activities'>;
 }
 
+// Type → semantic colour key. Resolved against useColors() at render so the
+// tinted-tile pattern (`${color}26` bg, `${color}66` border) stays canon.
+// NOTE→purple, EMAIL→orange, MEETING→blue, CALL→yellow, TASK→orange.
 const TYPE_TILE = {
-  NOTE: { bg: '#f3e8ff', tint: '#9333ea', Icon: StickyNote, label: 'Note' },
-  EMAIL: { bg: '#ffedd5', tint: '#ea580c', Icon: Mail, label: 'Email' },
-  INCOMING_EMAIL: { bg: '#dcfce7', tint: '#059669', Icon: Mail, label: 'Email' },
-  MEETING: { bg: '#dbeafe', tint: '#2563eb', Icon: Video, label: 'Meeting' },
+  NOTE: { tint: 'purple', Icon: StickyNote, label: 'Note' },
+  EMAIL: { tint: 'orange', Icon: Mail, label: 'Email' },
+  INCOMING_EMAIL: { tint: 'green', Icon: Mail, label: 'Email' },
+  MEETING: { tint: 'blue', Icon: Video, label: 'Meeting' },
   // Meeting transcripts (Fireflies.ai) — purple to distinguish from calendar
   // meetings while staying in the "meetings" visual family. Matches the home
   // tab's `meeting-note` ActivityKind tile colors (commit f777d2e).
-  MEETING_NOTE: { bg: '#ede9fe', tint: '#7c3aed', Icon: FileText, label: 'Meeting notes' },
-  CALL: { bg: '#fef3c7', tint: '#d97706', Icon: Phone, label: 'Call' },
-  TASK: { bg: '#ffedd5', tint: '#ea580c', Icon: CheckSquare, label: 'Task' },
+  MEETING_NOTE: { tint: 'purple', Icon: FileText, label: 'Meeting notes' },
+  CALL: { tint: 'yellow', Icon: Phone, label: 'Call' },
+  TASK: { tint: 'orange', Icon: CheckSquare, label: 'Task' },
 } as const;
 
 /**
@@ -98,9 +102,11 @@ function stripHtml(html?: string): string {
 }
 
 export default function ActivityCard({ activity }: ActivityCardProps) {
+  const c = useColors();
   const typeKey = activity.activityType as keyof typeof TYPE_TILE;
   const tile = TYPE_TILE[typeKey] ?? TYPE_TILE.NOTE;
   const Icon = tile.Icon;
+  const tint = c.accent[tile.tint];
   const direction = activity.direction; // 'inbound' | 'outbound' | undefined
   const isEmail = typeKey === 'EMAIL' || typeKey === 'INCOMING_EMAIL';
   // Fireflies.ai transcript affordances: small "FIREFLIES" pill next to the
@@ -145,16 +151,20 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
     >
       <View
         className="w-8 h-8 rounded-[8px] items-center justify-center relative"
-        style={{ backgroundColor: tile.bg }}
+        style={{
+          backgroundColor: `${tint}26`,
+          borderWidth: 1,
+          borderColor: `${tint}66`,
+        }}
       >
-        <Icon size={16} color={tile.tint} strokeWidth={2} />
+        <Icon size={16} color={tint} strokeWidth={2} />
         {isEmail && direction ? (
           <View
             className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full items-center justify-center"
             style={{
-              backgroundColor: direction === 'outbound' ? '#ea580c' : '#059669',
+              backgroundColor: direction === 'outbound' ? c.accent.orange : c.accent.green,
               borderWidth: 2,
-              borderColor: '#fafaf9',
+              borderColor: c.bg.card,
             }}
           >
             {direction === 'outbound' ? (
@@ -181,17 +191,22 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
                 style={{
                   paddingHorizontal: 5,
                   paddingVertical: 1,
-                  backgroundColor: '#ede9fe',
+                  backgroundColor: `${c.accent.purple}26`,
+                  borderWidth: 1,
+                  borderColor: `${c.accent.purple}66`,
                   borderRadius: 3,
                 }}
               >
-                <Text style={{ fontSize: 9, fontWeight: '700', color: '#7c3aed', letterSpacing: 0.3 }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: c.accent.purple, letterSpacing: 0.3 }}>
                   FIREFLIES
                 </Text>
               </View>
             ) : null}
           </View>
-          <Text className="text-[10px] text-m-text-tertiary ml-2">
+          <Text
+            className="text-[10px] text-m-text-tertiary ml-2"
+            style={{ fontFamily: typography.family.mono }}
+          >
             {formatDateTime(activity.activityDate)}
           </Text>
         </View>
@@ -238,11 +253,13 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
               paddingHorizontal: 8,
               paddingVertical: 4,
               borderRadius: 6,
-              backgroundColor: '#ede9fe',
+              backgroundColor: `${c.accent.purple}26`,
+              borderWidth: 1,
+              borderColor: `${c.accent.purple}66`,
             }}
           >
-            <ExternalLink size={11} color="#7c3aed" strokeWidth={2.2} />
-            <Text style={{ fontSize: 11, fontWeight: '600', color: '#7c3aed' }}>
+            <ExternalLink size={11} color={c.accent.purple} strokeWidth={2.2} />
+            <Text style={{ fontSize: 11, fontWeight: '600', color: c.accent.purple }}>
               Open transcript
             </Text>
           </TouchableOpacity>
@@ -252,14 +269,14 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
           <View className="flex-row items-center gap-1 mt-1.5">
             {expanded ? (
               <>
-                <ChevronUp size={11} color={colors.textTertiary} strokeWidth={2} />
+                <ChevronUp size={11} color={c.text.muted} strokeWidth={2} />
                 <Text className="text-[10px] text-m-text-tertiary font-medium">
                   Collapse
                 </Text>
               </>
             ) : (
               <>
-                <ChevronDown size={11} color={colors.textTertiary} strokeWidth={2} />
+                <ChevronDown size={11} color={c.text.muted} strokeWidth={2} />
                 <Text className="text-[10px] text-m-text-tertiary font-medium">
                   Read more
                 </Text>

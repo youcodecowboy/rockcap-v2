@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { X, FolderPlus } from 'lucide-react-native';
 import { api } from '../../model-testing-app/convex/_generated/api';
 import type { Id } from '../../model-testing-app/convex/_generated/dataModel';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import { generateShortcodeSuggestion } from '@/lib/shortcodeUtils';
 
 interface ProjectCreationSheetProps {
@@ -18,6 +18,7 @@ interface ProjectCreationSheetProps {
 }
 
 export default function ProjectCreationSheet({ visible, onClose, clientId, onCreated }: ProjectCreationSheetProps) {
+  const c = useColors();
   const router = useRouter();
   const [name, setName] = useState('');
   const [shortcode, setShortcode] = useState('');
@@ -90,7 +91,10 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
       >
         <View className="flex-1 bg-m-bg">
           {/* Header */}
-          <View className="px-4 pt-14 pb-3 bg-m-bg-brand gap-2">
+          <View
+            className="px-4 pt-14 pb-3 gap-2"
+            style={{ backgroundColor: c.bg.light, borderBottomWidth: 1, borderBottomColor: c.border.default }}
+          >
             <View className="flex-row items-center justify-between">
               <TouchableOpacity
                 onPress={handleClose}
@@ -98,7 +102,7 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
                 accessibilityRole="button"
                 accessibilityLabel="Cancel"
               >
-                <Text className="text-base text-m-text-on-brand">Cancel</Text>
+                <Text className="text-base text-m-text-secondary">Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSubmit}
@@ -106,14 +110,17 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
                 accessibilityRole="button"
                 accessibilityLabel="Create project"
               >
-                <Text className={`text-base font-semibold ${(!name.trim() || submitting) ? 'text-m-text-on-brand/40' : 'text-m-text-on-brand'}`}>
+                <Text
+                  className="text-base font-semibold"
+                  style={{ color: (!name.trim() || submitting) ? c.text.muted : c.entityTypes.project }}
+                >
                   {submitting ? 'Creating…' : 'Create'}
                 </Text>
               </TouchableOpacity>
             </View>
             <View className="flex-row items-center justify-center gap-2">
-              <FolderPlus size={18} color={colors.textOnBrand} />
-              <Text className="text-lg font-medium text-m-text-on-brand">New Project</Text>
+              <FolderPlus size={18} color={c.entityTypes.project} />
+              <Text className="text-lg font-medium text-m-text-primary">New Project</Text>
             </View>
           </View>
 
@@ -127,7 +134,7 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
                 value={name}
                 onChangeText={setName}
                 placeholder="e.g., Wimbledon Development Phase 2"
-                placeholderTextColor={colors.textPlaceholder}
+                placeholderTextColor={c.text.dim}
                 autoFocus
                 className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-3"
               />
@@ -142,7 +149,7 @@ export default function ProjectCreationSheet({ visible, onClose, clientId, onCre
                 value={shortcode}
                 onChangeText={handleShortcodeChange}
                 placeholder="e.g., WIMBDEV2"
-                placeholderTextColor={colors.textPlaceholder}
+                placeholderTextColor={c.text.dim}
                 maxLength={10}
                 autoCapitalize="characters"
                 className="text-sm text-m-text-primary bg-m-bg-subtle rounded-lg px-3 py-3 font-mono"

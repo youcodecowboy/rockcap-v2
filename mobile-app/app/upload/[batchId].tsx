@@ -11,9 +11,11 @@ import {
   ChevronDown, FolderOpen, Tag, ListChecks,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import MobileHeader from '@/components/MobileHeader';
 import MiniTabBar from '@/components/MiniTabBar';
 import Card from '@/components/ui/Card';
+import Chip from '@/components/ui/Chip';
 import CategorySheet from '@/components/upload/CategorySheet';
 import FolderSheet from '@/components/upload/FolderSheet';
 import type { UploadScope } from '@/components/upload/ScopeToggle';
@@ -37,22 +39,14 @@ function StatusPill({
   kind: 'ok' | 'warn' | 'err' | 'info';
   label: string;
 }) {
-  const palette = {
-    ok: { bg: '#dcfce7', fg: '#15803d' },
-    warn: { bg: '#fef3c7', fg: '#b45309' },
-    err: { bg: '#fef2f2', fg: '#b91c1c' },
-    info: { bg: '#dbeafe', fg: '#1d4ed8' },
+  const c = useColors();
+  const color = {
+    ok: c.status.promoted,
+    warn: c.status.drafted,
+    err: c.accent.red,
+    info: c.status.active,
   }[kind];
-  return (
-    <View
-      className="self-start rounded-[6px] px-1.5 py-0.5"
-      style={{ backgroundColor: palette.bg }}
-    >
-      <Text className="text-[10px] font-semibold" style={{ color: palette.fg }}>
-        {label}
-      </Text>
-    </View>
-  );
+  return <Chip label={label} color={color} />;
 }
 
 function ItemStatusPill({ status }: { status: string }) {
@@ -76,6 +70,7 @@ function ItemStatusPill({ status }: { status: string }) {
 
 export default function BatchDetailScreen() {
   const router = useRouter();
+  const c = useColors();
   const { batchId } = useLocalSearchParams<{ batchId: string }>();
   const { isAuthenticated } = useConvexAuth();
 
@@ -132,9 +127,10 @@ export default function BatchDetailScreen() {
           </Text>
           <TouchableOpacity
             onPress={() => router.replace('/upload')}
-            className="mt-4 px-4 py-2 bg-m-bg-brand rounded-[10px]"
+            className="mt-4 px-4 py-2 rounded-[10px]"
+            style={{ backgroundColor: c.entityTypes.client }}
           >
-            <Text className="text-sm font-medium text-m-text-on-brand">
+            <Text className="text-sm font-medium" style={{ color: '#ffffff' }}>
               Back to Upload
             </Text>
           </TouchableOpacity>
@@ -181,6 +177,15 @@ export default function BatchDetailScreen() {
       ? 'Personal'
       : batch.clientName || 'Client upload';
 
+  // Entity colour by context: a project-scoped batch is indigo, a client-scoped
+  // batch is green, anything else (internal/personal) is neutral.
+  const scopeAccent =
+    batch.scope === 'client'
+      ? batch.projectId
+        ? c.entityTypes.project
+        : c.entityTypes.client
+      : c.text.muted;
+
   const subLabel = batch.projectName
     ? `${batch.projectName}${batch.projectShortcode ? ` · ${batch.projectShortcode}` : ''}`
     : batch.internalFolderName || batch.personalFolderName || undefined;
@@ -221,21 +226,30 @@ export default function BatchDetailScreen() {
             <View
               className="w-10 h-10 rounded-[10px] items-center justify-center"
               style={{
-                backgroundColor:
+                backgroundColor: `${
                   isComplete
-                    ? '#dcfce7'
+                    ? c.status.promoted
                     : isReview
-                    ? '#dbeafe'
-                    : '#fef3c7',
+                    ? c.status.active
+                    : c.status.drafted
+                }26`,
+                borderWidth: 1,
+                borderColor: `${
+                  isComplete
+                    ? c.status.promoted
+                    : isReview
+                    ? c.status.active
+                    : c.status.drafted
+                }66`,
               }}
             >
               {isComplete ? (
-                <CheckCircle2 size={20} color={colors.success} />
+                <CheckCircle2 size={20} color={c.status.promoted} />
               ) : isReview ? (
-                <Eye size={20} color="#1d4ed8" />
+                <Eye size={20} color={c.status.active} />
               ) : (
                 <Animated.View style={{ opacity: pulseOpacity }}>
-                  <Sparkles size={20} color="#b45309" />
+                  <Sparkles size={20} color={c.status.drafted} />
                 </Animated.View>
               )}
             </View>
@@ -276,8 +290,8 @@ export default function BatchDetailScreen() {
               </View>
               <View className="h-1.5 bg-m-bg-inset rounded-full overflow-hidden">
                 <View
-                  className="h-full bg-m-accent rounded-full"
-                  style={{ width: `${pct}%` }}
+                  className="h-full rounded-full"
+                  style={{ width: `${pct}%`, backgroundColor: scopeAccent }}
                 />
               </View>
             </View>
@@ -288,7 +302,7 @@ export default function BatchDetailScreen() {
         {isReview && ready > 0 && (
           <Card>
             <View className="flex-row items-start gap-2.5">
-              <Eye size={16} color="#1d4ed8" style={{ marginTop: 2 }} />
+              <Eye size={16} color={c.status.active} style={{ marginTop: 2 }} />
               <View className="flex-1">
                 <Text className="text-sm font-semibold text-m-text-primary">
                   Ready to review
@@ -393,12 +407,9 @@ export default function BatchDetailScreen() {
             <TouchableOpacity
               onPress={() => router.replace('/(tabs)/docs' as any)}
               className="flex-1 py-3 rounded-[10px] items-center"
-              style={{ backgroundColor: colors.bgBrand }}
+              style={{ backgroundColor: scopeAccent === c.text.muted ? c.entityTypes.client : scopeAccent }}
             >
-              <Text
-                className="text-sm font-medium"
-                style={{ color: colors.textOnBrand }}
-              >
+              <Text className="text-sm font-medium" style={{ color: '#ffffff' }}>
                 View in Docs
               </Text>
             </TouchableOpacity>
@@ -423,10 +434,14 @@ function ReviewItem({
   batch: any;
   isFirst: boolean;
 }) {
+  const c = useColors();
   const [showCategorySheet, setShowCategorySheet] = useState(false);
   const [showFolderSheet, setShowFolderSheet] = useState(false);
   const [isFiling, setIsFiling] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  // Entity colour for this item's batch — project = indigo, client = green.
+  const fileAccent =
+    batch?.projectId ? c.entityTypes.project : c.entityTypes.client;
   // Local checklist selection state — start with all AI suggestions checked
   // (mirrors desktop default). User can un-toggle before filing.
   const initialChecklistIds: string[] = Array.isArray(item.suggestedChecklistItems)
@@ -586,8 +601,8 @@ function ReviewItem({
                     <View
                       className="w-4 h-4 rounded border items-center justify-center mt-0.5"
                       style={{
-                        backgroundColor: checked ? colors.accent : 'transparent',
-                        borderColor: checked ? colors.accent : colors.border,
+                        backgroundColor: checked ? fileAccent : 'transparent',
+                        borderColor: checked ? fileAccent : c.border.default,
                       }}
                     >
                       {checked && <CheckCircle2 size={10} color="#fff" />}
@@ -634,19 +649,16 @@ function ReviewItem({
           disabled={isFiling}
           className="flex-row items-center justify-center gap-2 py-2.5 rounded-[10px]"
           style={{
-            backgroundColor: colors.bgBrand,
+            backgroundColor: fileAccent,
             opacity: isFiling ? 0.6 : 1,
           }}
         >
           {isFiling ? (
-            <ActivityIndicator size="small" color={colors.textOnBrand} />
+            <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <CheckCircle2 size={14} color={colors.textOnBrand} />
+            <CheckCircle2 size={14} color="#ffffff" />
           )}
-          <Text
-            className="text-sm font-semibold"
-            style={{ color: colors.textOnBrand }}
-          >
+          <Text className="text-sm font-semibold" style={{ color: '#ffffff' }}>
             {isFiling ? 'Filing...' : 'File'}
           </Text>
         </TouchableOpacity>

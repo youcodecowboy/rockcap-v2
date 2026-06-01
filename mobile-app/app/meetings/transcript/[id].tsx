@@ -5,6 +5,8 @@ import { api } from '../../../../model-testing-app/convex/_generated/api';
 import type { Id } from '../../../../model-testing-app/convex/_generated/dataModel';
 import { ArrowLeft, Calendar, Clock, Users, ExternalLink, FileText } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { radius, typography } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
 import {
   parseFirefliesBody,
@@ -21,6 +23,7 @@ import {
  */
 export default function TranscriptDetail() {
   const router = useRouter();
+  const c = useColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const activity = useQuery(
     api.activities.getById,
@@ -58,29 +61,31 @@ export default function TranscriptDetail() {
         {/* Hero card */}
         <View
           style={{
-            backgroundColor: '#fff',
-            borderRadius: 16,
+            backgroundColor: c.bg.card,
+            borderRadius: radius.lg,
             borderWidth: 1,
-            borderColor: '#e5e5e5',
+            borderColor: c.border.default,
             padding: 18,
             gap: 10,
           }}
         >
-          {/* Fireflies badge */}
+          {/* Fireflies badge — canon tinted chip in the contact/purple accent */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <View
               style={{
                 paddingHorizontal: 8,
                 paddingVertical: 3,
-                backgroundColor: '#ede9fe',
-                borderRadius: 6,
+                backgroundColor: `${c.accent.purple}26`,
+                borderWidth: 1,
+                borderColor: `${c.accent.purple}66`,
+                borderRadius: radius.sm,
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 4,
               }}
             >
-              <FileText size={11} color="#7c3aed" />
-              <Text style={{ fontSize: 10, fontWeight: '700', color: '#7c3aed', letterSpacing: 0.4 }}>
+              <FileText size={11} color={c.accent.purple} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: c.accent.purple, letterSpacing: 0.4 }}>
                 FIREFLIES TRANSCRIPT
               </Text>
             </View>
@@ -136,12 +141,14 @@ export default function TranscriptDetail() {
                 justifyContent: 'center',
                 gap: 6,
                 paddingVertical: 10,
-                backgroundColor: '#0a0a0a',
-                borderRadius: 10,
+                backgroundColor: `${c.accent.purple}26`,
+                borderWidth: 1,
+                borderColor: `${c.accent.purple}66`,
+                borderRadius: radius.md,
               }}
             >
-              <ExternalLink size={14} color="#fff" />
-              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+              <ExternalLink size={14} color={c.accent.purple} />
+              <Text style={{ color: c.accent.purple, fontSize: 13, fontWeight: '600' }}>
                 Open recording in Fireflies
               </Text>
             </TouchableOpacity>
@@ -153,10 +160,10 @@ export default function TranscriptDetail() {
           <View
             key={`${section.heading}-${i}`}
             style={{
-              backgroundColor: '#fff',
-              borderRadius: 14,
+              backgroundColor: c.bg.card,
+              borderRadius: radius.lg,
               borderWidth: 1,
-              borderColor: '#e5e5e5',
+              borderColor: c.border.default,
               padding: 16,
               gap: 10,
             }}
@@ -196,10 +203,10 @@ export default function TranscriptDetail() {
         {parsed.actionItems.length > 0 && (
           <View
             style={{
-              backgroundColor: '#fff',
-              borderRadius: 14,
+              backgroundColor: c.bg.card,
+              borderRadius: radius.lg,
               borderWidth: 1,
-              borderColor: '#e5e5e5',
+              borderColor: c.border.default,
               padding: 16,
               gap: 12,
             }}
@@ -238,10 +245,10 @@ export default function TranscriptDetail() {
         {parsed.sections.length === 0 && parsed.actionItems.length === 0 && (
           <View
             style={{
-              backgroundColor: '#fff',
-              borderRadius: 14,
+              backgroundColor: c.bg.card,
+              borderRadius: radius.lg,
               borderWidth: 1,
-              borderColor: '#e5e5e5',
+              borderColor: c.border.default,
               padding: 20,
               alignItems: 'center',
               gap: 10,
@@ -316,6 +323,7 @@ function MetaChip({
 }
 
 function BulletRow({ bullet, depth = 0 }: { bullet: FirefliesBullet; depth?: number }) {
+  const c = useColors();
   return (
     <View style={{ marginLeft: depth * 14 }}>
       <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -327,7 +335,7 @@ function BulletRow({ bullet, depth = 0 }: { bullet: FirefliesBullet; depth?: num
           {bullet.timeMarkerUrl ? (
             <Text
               onPress={() => Linking.openURL(bullet.timeMarkerUrl!)}
-              style={{ color: '#7c3aed', fontWeight: '600' }}
+              style={{ color: c.accent.purple, fontWeight: '600' }}
             >
               {' '}
               ↗

@@ -6,14 +6,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../model-testing-app/convex/_generated/api';
 import { ArrowLeft, Send, CheckCircle2 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
 import Card from '@/components/ui/Card';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { SkeletonCard } from '@/components/ui/Skeleton';
 
 export default function FlagDetailScreen() {
   const { flagId } = useLocalSearchParams<{ flagId: string }>();
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
+  const c = useColors();
   const [replyText, setReplyText] = useState('');
 
   const flag = useQuery(api.flags.get, isAuthenticated && flagId ? { id: flagId as any } : 'skip');
@@ -42,23 +44,31 @@ export default function FlagDetailScreen() {
     }
   };
 
-  if (!flag) return <LoadingSpinner message="Loading flag..." />;
+  if (!flag) {
+    return (
+      <View className="flex-1 bg-m-bg p-4" style={{ gap: 8 }}>
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={2} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1 bg-m-bg">
       <View className="bg-m-bg-brand pt-14 pb-4 px-4 flex-row items-center justify-between">
         <View className="flex-row items-center flex-1">
           <TouchableOpacity onPress={() => router.back()} className="mr-3">
-            <ArrowLeft size={20} color={colors.textOnBrand} />
+            <ArrowLeft size={20} color={c.bg.base} />
           </TouchableOpacity>
           <Text className="text-base font-medium text-m-text-on-brand flex-1" numberOfLines={1}>{flag.title}</Text>
         </View>
         {flag.status === 'open' && (
           <TouchableOpacity
             onPress={handleResolve}
-            className="ml-2 flex-row items-center gap-1 bg-white/10 rounded-full px-3 py-1.5"
+            className="ml-2 flex-row items-center gap-1 rounded-full px-3 py-1.5"
+            style={{ backgroundColor: `${c.bg.base}1a` }}
           >
-            <CheckCircle2 size={14} color={colors.textOnBrand} />
+            <CheckCircle2 size={14} color={c.bg.base} />
             <Text className="text-m-text-on-brand text-xs font-medium">Resolve</Text>
           </TouchableOpacity>
         )}
@@ -67,7 +77,10 @@ export default function FlagDetailScreen() {
       <ScrollView className="flex-1 px-4 pt-3" contentContainerStyle={{ paddingBottom: 16, gap: 8 }}>
         {thread?.map((entry) => (
           <Card key={entry._id}>
-            <Text className="text-xs text-m-text-tertiary mb-1">
+            <Text
+              className="text-xs text-m-text-tertiary mb-1"
+              style={{ fontFamily: typography.family.mono }}
+            >
               {new Date(entry._creationTime).toLocaleString('en-GB')}
             </Text>
             <Text className="text-sm text-m-text-secondary">{entry.content}</Text>
@@ -83,10 +96,10 @@ export default function FlagDetailScreen() {
             onChangeText={setReplyText}
             multiline
             className="flex-1 bg-m-bg-subtle rounded-lg px-3 py-2.5 text-sm text-m-text-primary max-h-24"
-            placeholderTextColor={colors.textPlaceholder}
+            placeholderTextColor={c.text.dim}
           />
           <TouchableOpacity onPress={handleReply} disabled={!replyText.trim()} style={{ opacity: replyText.trim() ? 1 : 0.3 }}>
-            <Send size={20} color={colors.accent} />
+            <Send size={20} color={c.text.primary} />
           </TouchableOpacity>
         </View>
       )}

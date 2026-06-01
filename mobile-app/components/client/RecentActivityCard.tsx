@@ -3,21 +3,29 @@ import { useQuery } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { Id } from '../../../model-testing-app/convex/_generated/dataModel';
 import { Clock, ChevronRight, StickyNote, Mail, Video, Phone, CheckSquare } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { radius } from '@/lib/theme';
+import type { Palette } from '@/lib/theme';
+import EntityIconTile from '@/components/ui/EntityIconTile';
 
 interface RecentActivityCardProps {
   clientId: Id<'clients'>;
   onViewAll?: () => void;
 }
 
-const TYPE_TILE = {
-  NOTE: { bg: '#f3e8ff', tint: '#9333ea', icon: StickyNote, label: 'Note' },
-  EMAIL: { bg: '#ffedd5', tint: '#ea580c', icon: Mail, label: 'Email' },
-  INCOMING_EMAIL: { bg: '#dcfce7', tint: '#059669', icon: Mail, label: 'Email' },
-  MEETING: { bg: '#dbeafe', tint: '#2563eb', icon: Video, label: 'Meeting' },
-  CALL: { bg: '#fef3c7', tint: '#d97706', icon: Phone, label: 'Call' },
-  TASK: { bg: '#ffedd5', tint: '#ea580c', icon: CheckSquare, label: 'Task' },
-} as const;
+// Activity-type tiles, coloured off the canon entity/accent tokens (no hardcoded hex).
+// NOTE → note=contact-purple, EMAIL → cadence-orange, INCOMING_EMAIL → client-green,
+// MEETING → deal-blue, CALL → prospect-amber, TASK → cadence-orange.
+function typeTile(c: Palette) {
+  return {
+    NOTE: { tint: c.entityTypes.contact, icon: StickyNote, label: 'Note' },
+    EMAIL: { tint: c.entityTypes.cadence, icon: Mail, label: 'Email' },
+    INCOMING_EMAIL: { tint: c.entityTypes.client, icon: Mail, label: 'Email' },
+    MEETING: { tint: c.entityTypes.deal, icon: Video, label: 'Meeting' },
+    CALL: { tint: c.entityTypes.prospect, icon: Phone, label: 'Call' },
+    TASK: { tint: c.entityTypes.cadence, icon: CheckSquare, label: 'Task' },
+  } as const;
+}
 
 function formatRelativeDate(iso?: string): string {
   if (!iso) return '—';
@@ -32,6 +40,8 @@ function formatRelativeDate(iso?: string): string {
 }
 
 export default function RecentActivityCard({ clientId, onViewAll }: RecentActivityCardProps) {
+  const c = useColors();
+  const TYPE_TILE = typeTile(c);
   const recent = useQuery(api.activities.listRecentForClient, { clientId, limit: 2 }) ?? [];
   const total = useQuery(api.activities.countForClient, { clientId }) ?? 0;
 
@@ -39,19 +49,14 @@ export default function RecentActivityCard({ clientId, onViewAll }: RecentActivi
     <View className="bg-m-bg-card border border-m-border rounded-[12px] p-[14px]">
       <View className="flex-row justify-between items-center mb-2.5">
         <View className="flex-row items-center gap-1.5">
-          <View
-            className="w-5 h-5 rounded-[6px] items-center justify-center"
-            style={{ backgroundColor: '#ffedd5' }}
-          >
-            <Clock size={12} color="#ea580c" strokeWidth={2} />
-          </View>
+          <EntityIconTile icon={Clock} color={c.entityTypes.cadence} size={20} />
           <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
             Recent activity
           </Text>
         </View>
         <TouchableOpacity onPress={onViewAll} hitSlop={6} className="flex-row items-center gap-0.5">
           <Text className="text-xs font-medium text-m-text-primary">See all</Text>
-          <ChevronRight size={12} color={colors.textPrimary} strokeWidth={2} />
+          <ChevronRight size={12} color={c.text.primary} strokeWidth={2} />
         </TouchableOpacity>
       </View>
 
@@ -62,8 +67,13 @@ export default function RecentActivityCard({ clientId, onViewAll }: RecentActivi
           return (
             <View key={a._id} className="flex-row gap-2.5">
               <View
-                className="w-[30px] h-[30px] rounded-[8px] items-center justify-center"
-                style={{ backgroundColor: tile.bg }}
+                className="w-[30px] h-[30px] items-center justify-center"
+                style={{
+                  borderRadius: radius.sm,
+                  backgroundColor: `${tile.tint}26`,
+                  borderWidth: 1,
+                  borderColor: `${tile.tint}66`,
+                }}
               >
                 <Icon size={14} color={tile.tint} strokeWidth={2} />
               </View>

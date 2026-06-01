@@ -8,7 +8,7 @@ import { api } from '../../model-testing-app/convex/_generated/api';
 import {
   X, Calendar, Clock, MapPin, Trash2, Users, FileText, Plus, ExternalLink,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 interface EventDetailSheetProps {
   event: {
@@ -43,6 +43,7 @@ function formatTime(iso: string): string {
 }
 
 export default function EventDetailSheet({ event, visible, onClose, onCreateTaskFromEvent }: EventDetailSheetProps) {
+  const c = useColors();
   const isGoogleSynced = !!event.googleEventId || event.syncStatus === 'synced';
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(event.title);
@@ -102,11 +103,14 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1, backgroundColor: colors.bg }}
+        style={{ flex: 1, backgroundColor: c.bg.base }}
       >
         {/* Header */}
-        <View className="flex-row items-center justify-between px-4 pt-4 pb-3 border-b border-m-border bg-m-bg-card">
-          <TouchableOpacity onPress={onClose} hitSlop={8}><X size={20} color={colors.textSecondary} /></TouchableOpacity>
+        <View
+          className="flex-row items-center justify-between px-4 pt-4 pb-3"
+          style={{ backgroundColor: c.bg.light, borderBottomWidth: 1, borderBottomColor: c.border.default }}
+        >
+          <TouchableOpacity onPress={onClose} hitSlop={8}><X size={20} color={c.text.secondary} /></TouchableOpacity>
           <Text className="text-base font-semibold text-m-text-primary">Event</Text>
           <View style={{ width: 20 }} />
         </View>
@@ -114,14 +118,17 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
           {/* Title */}
           <View className="flex-row items-start mb-3">
-            <View className="w-7 h-7 rounded-full bg-indigo-100 items-center justify-center mr-3 mt-0.5">
-              <Calendar size={14} color="#6366f1" />
+            <View
+              className="w-7 h-7 rounded-full items-center justify-center mr-3 mt-0.5"
+              style={{ backgroundColor: `${c.entityTypes.project}26` }}
+            >
+              <Calendar size={14} color={c.entityTypes.project} />
             </View>
             <View className="flex-1">
               {isGoogleSynced && (
                 <View className="flex-row items-center gap-1.5 mb-1.5">
-                  <View className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <Text className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide">Google</Text>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.accent.green }} />
+                  <Text className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: c.accent.green }}>Google</Text>
                 </View>
               )}
               {editing && !isGoogleSynced ? (
@@ -130,7 +137,7 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
                   onChangeText={setTitle}
                   placeholder="Event title"
                   className="text-lg font-semibold text-m-text-primary"
-                  placeholderTextColor={colors.textPlaceholder}
+                  placeholderTextColor={c.text.dim}
                 />
               ) : (
                 <Text className="text-lg font-semibold text-m-text-primary">{event.title}</Text>
@@ -140,7 +147,7 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
 
           {/* Date / time */}
           <View className="flex-row items-center gap-2 mb-2 ml-10">
-            <Clock size={13} color={colors.textTertiary} />
+            <Clock size={13} color={c.text.muted} />
             <Text className="text-sm text-m-text-secondary">
               {formatDate(event.startTime)} · {formatTime(event.startTime)} – {formatTime(event.endTime)}
             </Text>
@@ -149,14 +156,14 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
           {/* Location */}
           {(event.location || editing) && (
             <View className="flex-row items-start gap-2 mb-3 ml-10">
-              <MapPin size={13} color={colors.textTertiary} style={{ marginTop: 3 }} />
+              <MapPin size={13} color={c.text.muted} style={{ marginTop: 3 }} />
               {editing && !isGoogleSynced ? (
                 <TextInput
                   value={location}
                   onChangeText={setLocation}
                   placeholder="Add location..."
                   className="flex-1 text-sm text-m-text-primary"
-                  placeholderTextColor={colors.textPlaceholder}
+                  placeholderTextColor={c.text.dim}
                 />
               ) : (
                 <Text className="text-sm text-m-text-secondary flex-1">{event.location || '—'}</Text>
@@ -167,7 +174,7 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
           {/* Attendees */}
           {event.attendees && event.attendees.length > 0 && (
             <View className="flex-row items-start gap-2 mb-3 ml-10">
-              <Users size={13} color={colors.textTertiary} style={{ marginTop: 3 }} />
+              <Users size={13} color={c.text.muted} style={{ marginTop: 3 }} />
               <View className="flex-1">
                 {event.attendees.slice(0, 5).map((a, i) => (
                   <Text key={i} className="text-sm text-m-text-secondary" numberOfLines={1}>
@@ -192,7 +199,7 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
                   placeholder="Add description..."
                   multiline
                   className="bg-m-bg-card border border-m-border rounded-xl px-3 py-3 text-sm text-m-text-primary"
-                  placeholderTextColor={colors.textPlaceholder}
+                  placeholderTextColor={c.text.dim}
                   style={{ minHeight: 72 }}
                   textAlignVertical="top"
                 />
@@ -212,7 +219,7 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
               multiline
               onFocus={() => setEditing(true)}
               className="bg-m-bg-card border border-m-border rounded-xl px-3 py-3 text-sm text-m-text-primary"
-              placeholderTextColor={colors.textPlaceholder}
+              placeholderTextColor={c.text.dim}
               style={{ minHeight: 72 }}
               textAlignVertical="top"
             />
@@ -226,7 +233,7 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
               onPress={() => { onCreateTaskFromEvent(event); onClose(); }}
               className="flex-row items-center gap-3 px-3 py-3 bg-m-bg-card border border-m-border rounded-xl mb-2"
             >
-              <Plus size={16} color={colors.textPrimary} />
+              <Plus size={16} color={c.text.primary} />
               <Text className="text-sm text-m-text-primary">Create Task from This</Text>
             </TouchableOpacity>
           )}
@@ -236,7 +243,7 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
               onPress={openGoogleCalendar}
               className="flex-row items-center gap-3 px-3 py-3 bg-m-bg-card border border-m-border rounded-xl mb-2"
             >
-              <ExternalLink size={16} color={colors.textPrimary} />
+              <ExternalLink size={16} color={c.text.primary} />
               <Text className="text-sm text-m-text-primary">Open in Google Calendar</Text>
             </TouchableOpacity>
           )}
@@ -257,10 +264,11 @@ export default function EventDetailSheet({ event, visible, onClose, onCreateTask
             {!isGoogleSynced && (
               <TouchableOpacity
                 onPress={handleDelete}
-                className="border border-red-200 rounded-xl py-3.5 items-center flex-row justify-center gap-2"
+                className="rounded-xl py-3.5 items-center flex-row justify-center gap-2"
+                style={{ borderWidth: 1, borderColor: `${c.accent.red}66`, backgroundColor: `${c.accent.red}1a` }}
               >
-                <Trash2 size={14} color={colors.error} />
-                <Text className="text-sm font-medium" style={{ color: colors.error }}>Delete Event</Text>
+                <Trash2 size={14} color={c.accent.red} />
+                <Text className="text-sm font-medium" style={{ color: c.accent.red }}>Delete Event</Text>
               </TouchableOpacity>
             )}
           </View>

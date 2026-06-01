@@ -6,7 +6,8 @@ import { useMutation, useQuery, useConvexAuth } from 'convex/react';
 import { X, Flag } from 'lucide-react-native';
 import { api } from '../../model-testing-app/convex/_generated/api';
 import type { Id } from '../../model-testing-app/convex/_generated/dataModel';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
 import PeoplePicker, { type PersonOption } from '@/components/PeoplePicker';
 
 interface FlagCreationSheetProps {
@@ -18,6 +19,7 @@ interface FlagCreationSheetProps {
 
 export default function FlagCreationSheet({ visible, onClose, clientId, onCreated }: FlagCreationSheetProps) {
   const { isAuthenticated } = useConvexAuth();
+  const c = useColors();
   const [note, setNote] = useState('');
   const [priority, setPriority] = useState<'normal' | 'urgent'>('normal');
   const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
@@ -124,7 +126,7 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
                 </TouchableOpacity>
               </View>
               <View className="flex-row items-center justify-center gap-2">
-                <Flag size={18} color={colors.textOnBrand} />
+                <Flag size={18} color={c.bg.base} />
                 <Text className="text-lg font-medium text-m-text-on-brand">New Flag</Text>
               </View>
             </View>
@@ -139,7 +141,7 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
                   value={note}
                   onChangeText={setNote}
                   placeholder="Describe what needs attention…"
-                  placeholderTextColor={colors.textPlaceholder}
+                  placeholderTextColor={c.text.dim}
                   multiline
                   autoFocus
                   textAlignVertical="top"
@@ -165,10 +167,16 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => setPriority('urgent')}
-                    className={`flex-1 py-2 rounded-lg items-center ${priority === 'urgent' ? 'bg-m-error' : 'bg-m-bg-subtle'}`}
+                    className="flex-1 py-2 rounded-lg items-center bg-m-bg-subtle"
+                    style={priority === 'urgent'
+                      ? { backgroundColor: c.accent.red }
+                      : undefined}
                     accessibilityRole="button"
                   >
-                    <Text className={`text-sm font-medium ${priority === 'urgent' ? 'text-white' : 'text-m-text-secondary'}`}>
+                    <Text
+                      className={priority === 'urgent' ? 'text-sm font-medium' : 'text-sm font-medium text-m-text-secondary'}
+                      style={priority === 'urgent' ? { color: '#ffffff' } : undefined}
+                    >
                       Urgent
                     </Text>
                   </TouchableOpacity>
@@ -194,7 +202,7 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
                       onPress={() => setAssignedToIds([])}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <X size={16} color={colors.textTertiary} />
+                      <X size={16} color={c.text.muted} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -225,15 +233,18 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
                       onPress={(e) => { e.stopPropagation?.(); setLinkedProjectId(null); }}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <X size={16} color={colors.textTertiary} />
+                      <X size={16} color={c.text.muted} />
                     </TouchableOpacity>
                   )}
                 </TouchableOpacity>
               </View>
 
               {error && (
-                <View className="bg-m-error/10 rounded-lg px-3 py-2">
-                  <Text className="text-xs text-m-error">{error}</Text>
+                <View
+                  className="rounded-lg px-3 py-2"
+                  style={{ backgroundColor: `${c.accent.red}1a`, borderWidth: 1, borderColor: `${c.accent.red}40` }}
+                >
+                  <Text className="text-xs" style={{ color: c.accent.red }}>{error}</Text>
                 </View>
               )}
             </ScrollView>
@@ -252,7 +263,7 @@ export default function FlagCreationSheet({ visible, onClose, clientId, onCreate
           <View className="flex-row items-center justify-between px-4 pt-14 pb-3 bg-m-bg-brand">
             <Text className="text-lg font-medium text-m-text-on-brand">Link project</Text>
             <TouchableOpacity onPress={() => setShowProjectPicker(false)} accessibilityRole="button">
-              <X size={20} color={colors.textOnBrand} />
+              <X size={20} color={c.bg.base} />
             </TouchableOpacity>
           </View>
           <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>

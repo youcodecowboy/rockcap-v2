@@ -5,24 +5,32 @@ import { useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../model-testing-app/convex/_generated/api';
 import { X, Trash2, Calendar, Paperclip, FileText, Pencil } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
+import type { Palette } from '@/lib/theme';
 import DocumentPicker, { type AttachedDoc } from '@/components/DocumentPicker';
 
 // ── Constants ────────────────────────────────────────────────
+// Status/priority chips carry a semantic colour KEY resolved against
+// useColors() at render; the chip itself uses the canon tinted treatment
+// (`${color}26` fill, `${color}66` border, solid text).
+// Status → colour: todo→muted, in_progress→blue, done→green, paused→amber, cancelled→red.
+type ChipColor = (c: Palette) => string;
 
-const STATUSES = [
-  { value: 'todo', label: 'To Do', bg: '#f5f5f4', text: '#525252' },
-  { value: 'in_progress', label: 'In Progress', bg: '#dbeafe', text: '#1d4ed8' },
-  { value: 'completed', label: 'Done', bg: '#dcfce7', text: '#059669' },
-  { value: 'paused', label: 'Paused', bg: '#fef3c7', text: '#d97706' },
-  { value: 'cancelled', label: 'Cancelled', bg: '#fee2e2', text: '#ef4444' },
-] as const;
+const STATUSES: { value: string; label: string; color: ChipColor }[] = [
+  { value: 'todo', label: 'To Do', color: (c) => c.text.muted },
+  { value: 'in_progress', label: 'In Progress', color: (c) => c.status.active },
+  { value: 'completed', label: 'Done', color: (c) => c.accent.green },
+  { value: 'paused', label: 'Paused', color: (c) => c.accent.yellow },
+  { value: 'cancelled', label: 'Cancelled', color: (c) => c.accent.red },
+];
 
-const PRIORITIES = [
-  { value: 'low', label: 'Low', bg: '#f5f5f4', text: '#a3a3a3' },
-  { value: 'medium', label: 'Med', bg: '#fef3c7', text: '#d97706' },
-  { value: 'high', label: 'High', bg: '#fee2e2', text: '#ef4444' },
-] as const;
+// Priority → colour: low→muted, medium→amber, high→red.
+const PRIORITIES: { value: string; label: string; color: ChipColor }[] = [
+  { value: 'low', label: 'Low', color: (c) => c.text.muted },
+  { value: 'medium', label: 'Med', color: (c) => c.accent.yellow },
+  { value: 'high', label: 'High', color: (c) => c.accent.red },
+];
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -48,6 +56,7 @@ interface TaskDetailSheetProps {
 // ── Component ────────────────────────────────────────────────
 
 export default function TaskDetailSheet({ task, clientName, projectName, visible, onClose }: TaskDetailSheetProps) {
+  const c = useColors();
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [status, setStatus] = useState(task.status);
@@ -166,18 +175,18 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
             read traffic. */}
         <View className="flex-row items-center justify-between px-4 pt-4 pb-3 border-b border-m-border bg-m-bg-card">
           <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <X size={22} color={colors.textSecondary} />
+            <X size={22} color={c.text.secondary} />
           </TouchableOpacity>
           <Text className="text-base font-semibold text-m-text-primary">
             {isEditMode ? 'Edit Task' : 'Task'}
           </Text>
           {isEditMode ? (
             <TouchableOpacity onPress={handleDelete} hitSlop={8}>
-              <Trash2 size={20} color={colors.error} />
+              <Trash2 size={20} color={c.accent.red} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity onPress={() => setIsEditMode(true)} hitSlop={8}>
-              <Pencil size={18} color={colors.textSecondary} />
+              <Pencil size={18} color={c.text.secondary} />
             </TouchableOpacity>
           )}
         </View>
@@ -191,7 +200,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
               value={title}
               onChangeText={setTitle}
               placeholder="Task title"
-              placeholderTextColor={colors.textPlaceholder}
+              placeholderTextColor={c.text.dim}
               className="bg-m-bg-card border border-m-border rounded-xl px-3 py-3 text-sm text-m-text-primary mb-4"
             />
           ) : (
@@ -210,7 +219,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
                   value={description}
                   onChangeText={setDescription}
                   placeholder="Add a description..."
-                  placeholderTextColor={colors.textPlaceholder}
+                  placeholderTextColor={c.text.dim}
                   multiline
                   numberOfLines={3}
                   textAlignVertical="top"
@@ -233,20 +242,21 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
               <View className="flex-row gap-2">
                 {STATUSES.map((s) => {
                   const isSelected = status === s.value;
+                  const color = s.color(c);
                   return (
                     <TouchableOpacity
                       key={s.value}
                       onPress={() => setStatus(s.value)}
                       className="rounded-full px-4 py-2"
                       style={{
-                        backgroundColor: isSelected ? s.bg : 'transparent',
+                        backgroundColor: isSelected ? `${color}26` : 'transparent',
                         borderWidth: 1,
-                        borderColor: isSelected ? s.text : colors.border,
+                        borderColor: isSelected ? `${color}66` : c.border.default,
                       }}
                     >
                       <Text
                         className="text-xs font-medium"
-                        style={{ color: isSelected ? s.text : colors.textTertiary }}
+                        style={{ color: isSelected ? color : c.text.muted }}
                       >
                         {s.label}
                       </Text>
@@ -259,12 +269,13 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
             <View className="flex-row mb-4">
               {(() => {
                 const s = STATUSES.find((x) => x.value === status) ?? STATUSES[0];
+                const color = s.color(c);
                 return (
                   <View
                     className="rounded-full px-4 py-2"
-                    style={{ backgroundColor: s.bg, borderWidth: 1, borderColor: s.text }}
+                    style={{ backgroundColor: `${color}26`, borderWidth: 1, borderColor: `${color}66` }}
                   >
-                    <Text className="text-xs font-medium" style={{ color: s.text }}>
+                    <Text className="text-xs font-medium" style={{ color }}>
                       {s.label}
                     </Text>
                   </View>
@@ -279,20 +290,21 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
             <View className="flex-row gap-2 mb-4">
               {PRIORITIES.map((p) => {
                 const isSelected = priority === p.value;
+                const color = p.color(c);
                 return (
                   <TouchableOpacity
                     key={p.value}
                     onPress={() => setPriority(p.value)}
                     className="rounded-full px-4 py-2"
                     style={{
-                      backgroundColor: isSelected ? p.bg : 'transparent',
+                      backgroundColor: isSelected ? `${color}26` : 'transparent',
                       borderWidth: 1,
-                      borderColor: isSelected ? p.text : colors.border,
+                      borderColor: isSelected ? `${color}66` : c.border.default,
                     }}
                   >
                     <Text
                       className="text-xs font-medium"
-                      style={{ color: isSelected ? p.text : colors.textTertiary }}
+                      style={{ color: isSelected ? color : c.text.muted }}
                     >
                       {p.label}
                     </Text>
@@ -304,12 +316,13 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
             <View className="flex-row mb-4">
               {(() => {
                 const p = PRIORITIES.find((x) => x.value === priority) ?? PRIORITIES[1];
+                const color = p.color(c);
                 return (
                   <View
                     className="rounded-full px-4 py-2"
-                    style={{ backgroundColor: p.bg, borderWidth: 1, borderColor: p.text }}
+                    style={{ backgroundColor: `${color}26`, borderWidth: 1, borderColor: `${color}66` }}
                   >
-                    <Text className="text-xs font-medium" style={{ color: p.text }}>
+                    <Text className="text-xs font-medium" style={{ color }}>
                       {p.label}
                     </Text>
                   </View>
@@ -323,7 +336,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
           <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wider mb-1.5">Due Date</Text>
           {isEditMode ? (
             <View className="flex-row items-center bg-m-bg-card border border-m-border rounded-xl px-3 py-3 mb-4">
-              <Calendar size={16} color={colors.textTertiary} />
+              <Calendar size={16} color={c.text.muted} />
               <TextInput
                 value={dueDate ? formatDisplayDate(dueDate) : ''}
                 onChangeText={(text) => {
@@ -349,14 +362,17 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
                   }
                 }}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textPlaceholder}
+                placeholderTextColor={c.text.dim}
                 className="flex-1 ml-2 text-sm text-m-text-primary"
               />
             </View>
           ) : (
             <View className="flex-row items-center bg-m-bg-subtle border border-m-border rounded-xl px-3 py-3 mb-4">
-              <Calendar size={16} color={colors.textTertiary} />
-              <Text className="flex-1 ml-2 text-sm text-m-text-secondary">
+              <Calendar size={16} color={c.text.muted} />
+              <Text
+                className="flex-1 ml-2 text-sm text-m-text-secondary"
+                style={dueDate ? { fontFamily: typography.family.mono } : undefined}
+              >
                 {dueDate ? formatDisplayDate(dueDate) : 'No due date'}
               </Text>
             </View>
@@ -392,7 +408,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
                   value={notes}
                   onChangeText={setNotes}
                   placeholder="Add notes..."
-                  placeholderTextColor={colors.textPlaceholder}
+                  placeholderTextColor={c.text.dim}
                   multiline
                   numberOfLines={4}
                   textAlignVertical="top"
@@ -413,7 +429,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
             <>
               <View className="flex-row items-center justify-between mb-2">
                 <View className="flex-row items-center gap-1.5">
-                  <Paperclip size={13} color={colors.textTertiary} />
+                  <Paperclip size={13} color={c.text.muted} />
                   <Text className="text-xs font-semibold text-m-text-tertiary uppercase tracking-wider">Attachments</Text>
                   {attachedDocs.length > 0 && (
                     <Text className="text-xs text-m-text-tertiary">({attachedDocs.length})</Text>
@@ -431,7 +447,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
                 <View className="gap-1.5 mb-6">
                   {attachedDocs.map((att) => (
                     <View key={att.id} className="flex-row items-center gap-2 bg-m-bg-card border border-m-border rounded-xl px-3 py-2.5">
-                      <FileText size={14} color={colors.textSecondary} />
+                      <FileText size={14} color={c.text.secondary} />
                       <Text className="text-sm text-m-text-primary flex-1" numberOfLines={1}>
                         {att.name}
                       </Text>
@@ -440,7 +456,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
                           onPress={() => setAttachmentIds(attachmentIds.filter(i => i !== att.id))}
                           hitSlop={8}
                         >
-                          <X size={13} color={colors.textTertiary} />
+                          <X size={13} color={c.text.muted} />
                         </TouchableOpacity>
                       ) : null}
                     </View>
@@ -471,9 +487,10 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleDelete}
-                className="border border-red-200 rounded-xl py-3.5 items-center"
+                className="rounded-xl py-3.5 items-center"
+                style={{ borderWidth: 1, borderColor: `${c.accent.red}66` }}
               >
-                <Text className="text-sm font-medium" style={{ color: colors.error }}>Delete Task</Text>
+                <Text className="text-sm font-medium" style={{ color: c.accent.red }}>Delete Task</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -481,7 +498,7 @@ export default function TaskDetailSheet({ task, clientName, projectName, visible
               onPress={() => setIsEditMode(true)}
               className="bg-m-bg-card border border-m-border rounded-xl py-3.5 flex-row items-center justify-center gap-2"
             >
-              <Pencil size={14} color={colors.textPrimary} />
+              <Pencil size={14} color={c.text.primary} />
               <Text className="text-sm font-semibold text-m-text-primary">Edit Task</Text>
             </TouchableOpacity>
           )}

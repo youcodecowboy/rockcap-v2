@@ -5,6 +5,7 @@ import {
 import { useState } from 'react';
 import { X, Search, Check } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 
 // Canonical category list — matches the mobile-web CategorySheet so the same
 // feedback loop applies (user edits get captured in userEdits, AI learns).
@@ -35,6 +36,7 @@ interface Props {
 export default function CategorySheet({
   visible, currentCategory, currentType, onSelect, onClose,
 }: Props) {
+  const c = useColors();
   const [selectedCategory, setSelectedCategory] = useState(currentCategory);
   const [docType, setDocType] = useState(currentType);
   const [search, setSearch] = useState('');
@@ -136,7 +138,7 @@ export default function CategorySheet({
                   <Text className="flex-1 text-sm text-m-text-primary">
                     {item}
                   </Text>
-                  {isSelected && <Check size={16} color={colors.accent} />}
+                  {isSelected && <Check size={16} color={c.entityTypes.client} />}
                 </TouchableOpacity>
               );
             }}
@@ -148,13 +150,13 @@ export default function CategorySheet({
               disabled={!selectedCategory}
               className="py-3 rounded-[10px] items-center"
               style={{
-                backgroundColor: selectedCategory ? colors.bgBrand : colors.bgSubtle,
+                backgroundColor: selectedCategory ? c.entityTypes.client : colors.bgSubtle,
                 opacity: selectedCategory ? 1 : 0.5,
               }}
             >
               <Text
                 className="text-sm font-semibold"
-                style={{ color: colors.textOnBrand }}
+                style={{ color: selectedCategory ? '#ffffff' : colors.textTertiary }}
               >
                 Confirm
               </Text>

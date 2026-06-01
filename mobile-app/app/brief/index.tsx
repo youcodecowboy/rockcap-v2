@@ -8,6 +8,7 @@ import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { ArrowLeft, RefreshCw, Sparkles, User, Users } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import Card from '@/components/ui/Card';
 import MobileHeader from '@/components/MobileHeader';
 import { resolveApiBase } from '@/lib/apiBase';
@@ -169,6 +170,7 @@ function StatTile({
 }
 
 function StatsBar({ summary }: { summary: BriefSummary }) {
+  const c = useColors();
   const overdue = summary.overdue ?? 0;
   const openFlags = summary.openFlags ?? 0;
   return (
@@ -179,7 +181,7 @@ function StatsBar({ summary }: { summary: BriefSummary }) {
         color={overdue > 0 ? colors.error : colors.textPrimary}
       />
       <StatTile label="Due Today" value={summary.dueToday ?? 0} color={colors.textPrimary} />
-      <StatTile label="Meetings" value={summary.meetings ?? 0} color="#6366f1" />
+      <StatTile label="Meetings" value={summary.meetings ?? 0} color={c.entityTypes.project} />
       <StatTile
         label="Open Flags"
         value={openFlags}
@@ -278,11 +280,12 @@ function AttentionNeededSection({ data }: { data: BriefContent['attentionNeeded'
 }
 
 function TodayScheduleSection({ data }: { data: BriefContent['todaySchedule'] }) {
+  const c = useColors();
   if (!data) return null;
   const items = data.items ?? [];
   return (
     <Card>
-      <SectionHeader title="Today's Schedule" dotColor="#6366f1" count={items.length} />
+      <SectionHeader title="Today's Schedule" dotColor={c.entityTypes.project} count={items.length} />
       {items.length === 0 ? (
         <Text className="text-sm text-m-text-tertiary text-center py-2">
           No events or tasks scheduled for today
@@ -304,7 +307,7 @@ function TodayScheduleSection({ data }: { data: BriefContent['todaySchedule'] })
                   borderRadius: 4,
                   marginTop: 5,
                   marginRight: 10,
-                  backgroundColor: item.type === 'event' ? '#6366f1' : colors.textPrimary,
+                  backgroundColor: item.type === 'event' ? c.entityTypes.project : colors.textPrimary,
                 }}
               />
               <View className="flex-1">
@@ -323,11 +326,12 @@ function TodayScheduleSection({ data }: { data: BriefContent['todaySchedule'] })
 }
 
 function ActivityRecapSection({ data }: { data: BriefContent['activityRecap'] }) {
+  const c = useColors();
   if (!data) return null;
   const items = data.items ?? [];
   return (
     <Card>
-      <SectionHeader title="Activity Recap" dotColor="#3b82f6" count={items.length} />
+      <SectionHeader title="Activity Recap" dotColor={c.entityTypes.deal} count={items.length} />
       {items.length === 0 ? (
         <EmptyState />
       ) : (
@@ -405,6 +409,7 @@ function LookingAheadSection({ data }: { data: BriefContent['lookingAhead'] }) {
 
 export default function BriefScreen() {
   const router = useRouter();
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
   const [scope, setScope] = useState<BriefScope>('personal');
 
@@ -626,9 +631,13 @@ export default function BriefScreen() {
           <View className="items-center py-16">
             <View
               className="w-12 h-12 rounded-full items-center justify-center mb-4"
-              style={{ backgroundColor: colors.bgBrand }}
+              style={{
+                backgroundColor: `${c.accent.cyan}26`,
+                borderWidth: 1,
+                borderColor: `${c.accent.cyan}66`,
+              }}
             >
-              <Sparkles size={20} color={colors.textOnBrand} />
+              <Sparkles size={20} color={c.accent.cyan} />
             </View>
             <ActivityIndicator size="small" color={colors.textTertiary} style={{ marginBottom: 10 }} />
             <Text className="text-sm text-m-text-secondary font-medium">
@@ -648,15 +657,19 @@ export default function BriefScreen() {
         {error && (
           <View
             className="rounded-[12px] px-4 py-3"
-            style={{ backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' }}
+            style={{
+              backgroundColor: `${c.accent.red}26`,
+              borderWidth: 1,
+              borderColor: `${c.accent.red}66`,
+            }}
           >
-            <Text className="text-[13px]" style={{ color: '#b91c1c' }}>
+            <Text className="text-[13px]" style={{ color: c.accent.red }}>
               {error}
             </Text>
             <TouchableOpacity onPress={handleGenerate} className="mt-1">
               <Text
                 className="text-[13px] font-medium"
-                style={{ color: '#b91c1c', textDecorationLine: 'underline' }}
+                style={{ color: c.accent.red, textDecorationLine: 'underline' }}
               >
                 Try again
               </Text>

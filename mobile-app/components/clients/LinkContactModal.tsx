@@ -7,7 +7,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import type { Id } from '../../../model-testing-app/convex/_generated/dataModel';
 import { X, Search, Check } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import ContactAvatar from '@/components/contacts/ContactAvatar';
 
 interface LinkContactModalProps {
@@ -33,6 +33,7 @@ interface LinkContactModalProps {
 export default function LinkContactModal({
   visible, clientId, clientName, alreadyLinkedIds = [], onClose,
 }: LinkContactModalProps) {
+  const c = useColors();
   const [query, setQuery] = useState('');
   const [linkingId, setLinkingId] = useState<string | null>(null);
 
@@ -90,11 +91,11 @@ export default function LinkContactModal({
             // Inline backgroundColor as a belt-and-braces fallback — some
             // SafeAreaView / NativeWind combos drop the `bg-m-bg` class,
             // leaving the sheet transparent over the underlying screen.
-            style={{ backgroundColor: '#ffffff' }}
+            style={{ backgroundColor: c.bg.base }}
           >
             {/* Drag handle + header */}
             <View className="items-center pt-2 pb-1">
-              <View className="w-10 h-1 rounded-full" style={{ backgroundColor: '#d4d4d4' }} />
+              <View className="w-10 h-1 rounded-full" style={{ backgroundColor: c.border.mid }} />
             </View>
             <View className="flex-row items-start gap-2 px-4 pt-2 pb-3 border-b border-m-border">
               <View className="flex-1 min-w-0">
@@ -113,20 +114,20 @@ export default function LinkContactModal({
                 className="w-[30px] h-[30px] rounded-full bg-m-bg-subtle items-center justify-center"
                 hitSlop={8}
               >
-                <X size={16} color={colors.textSecondary} strokeWidth={2} />
+                <X size={16} color={c.text.secondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
             {/* Search */}
             <View className="px-4 pt-3 pb-2">
               <View className="bg-m-bg-card rounded-[10px] border border-m-border flex-row items-center px-3">
-                <Search size={14} color={colors.textTertiary} />
+                <Search size={14} color={c.text.muted} />
                 <TextInput
                   autoFocus
                   value={query}
                   onChangeText={setQuery}
                   placeholder="Search contacts by name, email, role..."
-                  placeholderTextColor={colors.textTertiary}
+                  placeholderTextColor={c.text.muted}
                   className="flex-1 text-sm text-m-text-primary ml-2 py-2.5"
                 />
               </View>
@@ -187,7 +188,7 @@ export default function LinkContactModal({
                     ) : (
                       <View
                         className="w-7 h-7 rounded-full items-center justify-center"
-                        style={{ backgroundColor: '#0a0a0a' }}
+                        style={{ backgroundColor: c.entityTypes.client }}
                       >
                         <Check size={14} color="#ffffff" strokeWidth={2.5} />
                       </View>

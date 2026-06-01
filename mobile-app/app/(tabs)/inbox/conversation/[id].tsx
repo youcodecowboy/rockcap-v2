@@ -7,7 +7,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../../../model-testing-app/convex/_generated/api';
 import { ArrowLeft, Send, Paperclip, FileText, Building, FolderOpen, User, X } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
+import type { EntityType } from '@/lib/theme';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MobileHeader from '@/components/MobileHeader';
 import ContactDetailModal from '@/components/contacts/ContactDetailModal';
@@ -31,6 +33,15 @@ function iconForReference(type: EntityReference['type']) {
   return FolderOpen; // project
 }
 
+// Map a reference to its entity colour key so in-thread chips read by context:
+// clients green, projects indigo, contacts purple, documents (deal artefacts) blue.
+function entityKeyForReference(type: EntityReference['type']): EntityType {
+  if (type === 'client') return 'client';
+  if (type === 'project') return 'project';
+  if (type === 'contact') return 'contact';
+  return 'deal'; // document
+}
+
 function formatTime(ts: number | string): string {
   const d = new Date(ts);
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -44,6 +55,7 @@ export default function ConversationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
+  const c = useColors();
   const [messageText, setMessageText] = useState('');
   const [references, setReferences] = useState<EntityReference[]>([]);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -144,7 +156,7 @@ export default function ConversationDetailScreen() {
       {/* Sub-header with back + title + participants */}
       <View className="px-4 py-2.5 border-b border-m-border bg-m-bg-card flex-row items-center">
         <TouchableOpacity onPress={() => router.back()} className="p-1 mr-2">
-          <ArrowLeft size={18} color={colors.textSecondary} />
+          <ArrowLeft size={18} color={c.text.secondary} />
         </TouchableOpacity>
         <View className="flex-1">
           <Text className="text-base font-semibold text-m-text-primary" numberOfLines={1}>
@@ -195,15 +207,26 @@ export default function ConversationDetailScreen() {
                     <View className="mt-1.5 gap-1">
                       {msgRefs.map((ref, i) => {
                         const Icon = iconForReference(ref.type);
+                        // Entity colour by context — the chip reads as the thing it points to.
+                        const tone = c.entityTypes[entityKeyForReference(ref.type)];
                         return (
                           <TouchableOpacity
                             key={i}
                             onPress={() => navigateToReference(ref)}
-                            className={`flex-row items-center gap-1 rounded px-2 py-1 ${isMe ? 'bg-white/10' : 'bg-white/60'}`}
+                            className="flex-row items-center gap-1 rounded px-2 py-1"
+                            style={{
+                              backgroundColor: `${tone}26`,
+                              borderWidth: 1,
+                              borderColor: `${tone}66`,
+                            }}
                             activeOpacity={0.7}
                           >
-                            <Icon size={11} color={isMe ? 'rgba(255,255,255,0.9)' : colors.textSecondary} />
-                            <Text className={`text-xs underline ${isMe ? 'text-white' : 'text-m-text-primary'}`} numberOfLines={1}>
+                            <Icon size={11} color={tone} />
+                            <Text
+                              className="text-xs"
+                              style={{ color: tone }}
+                              numberOfLines={1}
+                            >
                               {ref.name}
                             </Text>
                           </TouchableOpacity>
@@ -212,7 +235,10 @@ export default function ConversationDetailScreen() {
                     </View>
                   )}
                 </View>
-                <Text className="text-[10px] text-m-text-tertiary mt-0.5 mx-1">
+                <Text
+                  className="text-[10px] text-m-text-tertiary mt-0.5 mx-1"
+                  style={{ fontFamily: typography.family.mono }}
+                >
                   {formatTime(item.createdAt || item._creationTime)}
                 </Text>
               </View>
@@ -232,12 +258,17 @@ export default function ConversationDetailScreen() {
         <View className="flex-row flex-wrap gap-1.5 px-4 py-2 border-t border-m-border bg-m-bg-subtle">
           {references.map((ref, i) => {
             const Icon = iconForReference(ref.type);
+            const tone = c.entityTypes[entityKeyForReference(ref.type)];
             return (
-              <View key={i} className="flex-row items-center gap-1 bg-m-bg-card border border-m-border rounded-full px-2 py-1">
-                <Icon size={10} color={colors.textSecondary} />
-                <Text className="text-xs text-m-text-secondary">{ref.name}</Text>
+              <View
+                key={i}
+                className="flex-row items-center gap-1 rounded-full px-2 py-1"
+                style={{ backgroundColor: `${tone}26`, borderWidth: 1, borderColor: `${tone}66` }}
+              >
+                <Icon size={10} color={tone} />
+                <Text className="text-xs" style={{ color: tone }}>{ref.name}</Text>
                 <TouchableOpacity onPress={() => removeReference(i)}>
-                  <X size={10} color={colors.textTertiary} />
+                  <X size={10} color={c.text.muted} />
                 </TouchableOpacity>
               </View>
             );
@@ -251,7 +282,7 @@ export default function ConversationDetailScreen() {
           onPress={() => setShowAttachMenu(!showAttachMenu)}
           className="w-9 h-9 rounded-full items-center justify-center"
         >
-          <Paperclip size={18} color={colors.textSecondary} />
+          <Paperclip size={18} color={c.text.secondary} />
         </TouchableOpacity>
         <TextInput
           value={messageText}
@@ -259,14 +290,14 @@ export default function ConversationDetailScreen() {
           placeholder="Message..."
           multiline
           className="flex-1 bg-m-bg-subtle rounded-2xl px-4 py-2 text-sm text-m-text-primary max-h-[100px]"
-          placeholderTextColor={colors.textPlaceholder}
+          placeholderTextColor={c.text.dim}
         />
         <TouchableOpacity
           onPress={handleSend}
           disabled={!messageText.trim() || sending}
           className={`w-9 h-9 rounded-full items-center justify-center ${messageText.trim() ? 'bg-m-bg-brand' : 'bg-m-bg-inset'}`}
         >
-          <Send size={16} color={messageText.trim() ? colors.textOnBrand : colors.textTertiary} />
+          <Send size={16} color={messageText.trim() ? c.bg.base : c.text.muted} />
         </TouchableOpacity>
       </View>
 
@@ -300,6 +331,7 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
   existingIds: string[];
 }) {
   const { isAuthenticated } = useConvexAuth();
+  const c = useColors();
   const [tab, setTab] = useState<'client' | 'project' | 'document' | 'contact'>('client');
   const [search, setSearch] = useState('');
 
@@ -343,7 +375,7 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 pt-3 pb-2 border-b border-m-border">
           <Text className="text-base font-semibold text-m-text-primary">Attach</Text>
-          <TouchableOpacity onPress={onClose}><X size={18} color={colors.textSecondary} /></TouchableOpacity>
+          <TouchableOpacity onPress={onClose}><X size={18} color={c.text.secondary} /></TouchableOpacity>
         </View>
         {/* Tabs */}
         <View className="flex-row border-b border-m-border">
@@ -366,7 +398,7 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
             onChangeText={setSearch}
             placeholder={`Search ${tab}s...`}
             className="bg-m-bg-subtle rounded-lg px-3 py-2 text-sm text-m-text-primary"
-            placeholderTextColor={colors.textPlaceholder}
+            placeholderTextColor={c.text.dim}
           />
         </View>
         {/* List */}
@@ -375,12 +407,14 @@ function AttachMenu({ onClose, onSelect, existingIds }: {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const Icon = iconForReference(item.type);
+            // Tint the row icon by the entity it represents.
+            const tone = c.entityTypes[entityKeyForReference(item.type)];
             return (
               <TouchableOpacity
                 onPress={() => onSelect(item)}
                 className="flex-row items-center gap-3 px-4 py-2.5 border-b border-m-border-subtle"
               >
-                <Icon size={14} color={colors.textSecondary} />
+                <Icon size={14} color={tone} />
                 <Text className="text-sm text-m-text-primary flex-1" numberOfLines={1}>{item.name}</Text>
               </TouchableOpacity>
             );

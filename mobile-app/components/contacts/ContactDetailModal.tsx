@@ -12,6 +12,7 @@ import {
   AlertTriangle, MapPin, Users,
 } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import ContactAvatar from './ContactAvatar';
 import TaskCreationFlow from '@/components/TaskCreationFlow';
 
@@ -35,6 +36,7 @@ interface Props {
 }
 
 export default function ContactDetailModal({ visible, contactId, onClose }: Props) {
+  const theme = useColors();
   const { isAuthenticated } = useConvexAuth();
 
   const contact = useQuery(
@@ -309,29 +311,29 @@ export default function ContactDetailModal({ visible, contactId, onClose }: Prop
             {!editing && (
               <View className="flex-row gap-2 mb-5">
                 <QuickAction
-                  icon={<Phone size={16} color={contact.phone ? colors.accent : colors.textTertiary} />}
+                  icon={<Phone size={16} color={contact.phone ? theme.entityTypes.contact : colors.textTertiary} />}
                   label="Call"
                   disabled={!contact.phone}
                   onPress={handleCall}
                 />
                 <QuickAction
-                  icon={<Mail size={16} color={contact.email ? colors.accent : colors.textTertiary} />}
+                  icon={<Mail size={16} color={contact.email ? theme.entityTypes.contact : colors.textTertiary} />}
                   label="Email"
                   disabled={!contact.email}
                   onPress={handleEmail}
                 />
                 <QuickAction
-                  icon={<Copy size={16} color={colors.accent} />}
+                  icon={<Copy size={16} color={theme.entityTypes.contact} />}
                   label="Copy"
                   onPress={handleCopy}
                 />
                 <QuickAction
-                  icon={<CheckSquare size={16} color={colors.accent} />}
+                  icon={<CheckSquare size={16} color={theme.entityTypes.contact} />}
                   label="Task"
                   onPress={() => setShowTaskCreate(true)}
                 />
                 <QuickAction
-                  icon={<Calendar size={16} color={colors.accent} />}
+                  icon={<Calendar size={16} color={theme.entityTypes.contact} />}
                   label="Meeting"
                   onPress={() => setShowMeetingCreate(true)}
                 />
@@ -768,9 +770,18 @@ function ClientRow({
 // ---------------------------------------------------------------------------
 
 function RelatedTaskRow({ task }: { task: any }) {
+  const theme = useColors();
   const isCompleted = task.status === 'completed';
   const isOverdue =
     task.dueDate && !isCompleted && new Date(task.dueDate) < new Date();
+
+  // Priority → canon accent (dark-readable tinted chip), replacing light pastels.
+  const priorityColor =
+    task.priority === 'high'
+      ? theme.accent.red
+      : task.priority === 'medium'
+      ? theme.accent.yellow
+      : theme.accent.green;
 
   return (
     <View className="flex-row items-start gap-2.5 px-3 py-2.5">
@@ -797,24 +808,14 @@ function RelatedTaskRow({ task }: { task: any }) {
             <View
               className="rounded-[5px] px-1 py-0.5"
               style={{
-                backgroundColor:
-                  task.priority === 'high'
-                    ? '#fef2f2'
-                    : task.priority === 'medium'
-                    ? '#fef3c7'
-                    : '#f0fdf4',
+                backgroundColor: `${priorityColor}26`,
+                borderWidth: 1,
+                borderColor: `${priorityColor}66`,
               }}
             >
               <Text
                 className="text-[9px] font-semibold capitalize"
-                style={{
-                  color:
-                    task.priority === 'high'
-                      ? '#b91c1c'
-                      : task.priority === 'medium'
-                      ? '#92400e'
-                      : '#166534',
-                }}
+                style={{ color: priorityColor }}
               >
                 {task.priority}
               </Text>
@@ -855,6 +856,7 @@ function RelatedTaskRow({ task }: { task: any }) {
 // ---------------------------------------------------------------------------
 
 function RelatedMeetingRow({ event }: { event: any }) {
+  const theme = useColors();
   const start = new Date(event.startTime);
   const now = new Date();
   const isToday = start.toDateString() === now.toDateString();
@@ -888,13 +890,15 @@ function RelatedMeetingRow({ event }: { event: any }) {
         style={{
           width: 28,
           height: 28,
-          backgroundColor: isPast ? colors.bgInset : '#dbeafe',
+          backgroundColor: isPast ? colors.bgInset : `${theme.accent.blue}26`,
+          borderWidth: isPast ? 0 : 1,
+          borderColor: isPast ? 'transparent' : `${theme.accent.blue}66`,
           marginTop: 1,
         }}
       >
         <Calendar
           size={13}
-          color={isPast ? colors.textTertiary : '#1d4ed8'}
+          color={isPast ? colors.textTertiary : theme.accent.blue}
         />
       </View>
       <View className="flex-1 min-w-0">

@@ -1,4 +1,6 @@
 import { View, Text } from 'react-native';
+import { useColors } from '@/lib/useColors';
+import type { Palette } from '@/lib/theme';
 
 // Reusable avatar tile: colored circle with 1-2 letter initials.
 // The color is derived deterministically from the name so the same contact
@@ -7,18 +9,12 @@ import { View, Text } from 'react-native';
 //   - ContactDetailModal header (large, 56px)
 //   - Client detail's Key Contacts row (small, 32px)
 
-// The palette is intentionally muted pastels — loud hues compete with the
-// product's monochrome design system. Pairs lift their background color
-// while matching a readable text color.
-const AVATAR_PALETTE = [
-  { bg: '#eff6ff', fg: '#1d4ed8' }, // blue
-  { bg: '#ecfdf5', fg: '#047857' }, // green
-  { bg: '#fef3c7', fg: '#b45309' }, // amber
-  { bg: '#f3e8ff', fg: '#7e22ce' }, // purple
-  { bg: '#ffe4e6', fg: '#be123c' }, // rose
-  { bg: '#ecfeff', fg: '#0e7490' }, // cyan
-  { bg: '#ffedd5', fg: '#c2410c' }, // orange
-  { bg: '#ccfbf1', fg: '#0f766e' }, // teal
+// Avatar colours are drawn from the canon accent palette so they read on the
+// dark canvas — same "hash name → pick a colour" selection as before, but the
+// SOURCE is now the theme accents and the treatment is the canon tinted
+// pattern (`${color}26` fill, solid `color` initials) instead of light pastels.
+const AVATAR_ACCENT_KEYS = [
+  'blue', 'green', 'yellow', 'purple', 'red', 'cyan', 'orange', 'teal',
 ] as const;
 
 export function getContactInitials(name: string): string {
@@ -31,14 +27,18 @@ export function getContactInitials(name: string): string {
   return trimmed.slice(0, 2).toUpperCase();
 }
 
-export function getContactAvatarColor(name: string) {
-  // Simple deterministic hash — same name always maps to the same palette
-  // entry. Not cryptographic, just stable.
+/**
+ * Deterministically pick a canon accent colour for a name — same name always
+ * maps to the same accent. Hash is not cryptographic, just stable. Returns the
+ * solid accent hex; callers tint the background with `${color}26`.
+ */
+export function getContactAvatarColor(accent: Palette['accent'], name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
-  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
+  const key = AVATAR_ACCENT_KEYS[Math.abs(hash) % AVATAR_ACCENT_KEYS.length];
+  return accent[key];
 }
 
 interface Props {
@@ -47,8 +47,9 @@ interface Props {
 }
 
 export default function ContactAvatar({ name, size = 36 }: Props) {
+  const c = useColors();
   const initials = getContactInitials(name);
-  const { bg, fg } = getContactAvatarColor(name);
+  const color = getContactAvatarColor(c.accent, name);
   // Font size scales with the container so the initials read the same weight
   // at any size. 0.4 * size is the common sweet spot for 2-letter initials.
   const fontSize = Math.round(size * 0.4);
@@ -58,7 +59,11 @@ export default function ContactAvatar({ name, size = 36 }: Props) {
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: bg,
+        // Canon tinted treatment: faint accent fill, hairline accent ring,
+        // solid accent initials — reads correctly on the dark canvas.
+        backgroundColor: `${color}26`,
+        borderWidth: 1,
+        borderColor: `${color}66`,
         alignItems: 'center',
         justifyContent: 'center',
       }}
@@ -67,7 +72,7 @@ export default function ContactAvatar({ name, size = 36 }: Props) {
         style={{
           fontSize,
           fontWeight: '700',
-          color: fg,
+          color,
           letterSpacing: -0.3,
         }}
       >

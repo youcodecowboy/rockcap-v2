@@ -3,7 +3,9 @@ import { useQuery } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { Id } from '../../../model-testing-app/convex/_generated/dataModel';
 import { TrendingUp, ChevronRight } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
+import EntityIconTile from '@/components/ui/EntityIconTile';
 
 interface OpenDealsCardProps {
   clientId: Id<'clients'>;
@@ -18,6 +20,8 @@ function formatMoney(amount?: number): string {
 }
 
 export default function OpenDealsCard({ clientId, onViewAll }: OpenDealsCardProps) {
+  const c = useColors();
+  const mono = { fontFamily: typography.family.mono } as const;
   const deals = useQuery(api.deals.listOpenForClient, { clientId }) ?? [];
   const allDeals = useQuery(api.deals.listForClient, { clientId }) ?? [];
 
@@ -36,12 +40,7 @@ export default function OpenDealsCard({ clientId, onViewAll }: OpenDealsCardProp
     <View className="bg-m-bg-card border border-m-border rounded-[12px] p-[14px]">
       <View className="flex-row justify-between items-center mb-2.5">
         <View className="flex-row items-center gap-1.5">
-          <View
-            className="w-5 h-5 rounded-[6px] items-center justify-center"
-            style={{ backgroundColor: '#dcfce7' }}
-          >
-            <TrendingUp size={12} color="#059669" strokeWidth={2} />
-          </View>
+          <EntityIconTile icon={TrendingUp} type="deal" size={20} />
           <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase tracking-wide">
             Open deals
           </Text>
@@ -50,12 +49,12 @@ export default function OpenDealsCard({ clientId, onViewAll }: OpenDealsCardProp
           <Text className="text-xs font-medium text-m-text-primary">
             View all {allDeals.length}
           </Text>
-          <ChevronRight size={12} color={colors.textPrimary} strokeWidth={2} />
+          <ChevronRight size={12} color={c.text.primary} strokeWidth={2} />
         </TouchableOpacity>
       </View>
 
       <View className="flex-row items-baseline gap-1.5 mb-3">
-        <Text className="text-[22px] font-bold text-m-text-primary">{formatMoney(openTotal)}</Text>
+        <Text className="text-[22px] font-bold text-m-text-primary" style={mono}>{formatMoney(openTotal)}</Text>
         <Text className="text-xs text-m-text-tertiary">in {deals.length} open deals</Text>
       </View>
 
@@ -73,7 +72,7 @@ export default function OpenDealsCard({ clientId, onViewAll }: OpenDealsCardProp
                 {d.stageName ?? d.stage ?? '—'}
               </Text>
             </View>
-            <Text className="text-[13px] font-semibold text-m-text-primary">
+            <Text className="text-[13px] font-semibold text-m-text-primary" style={mono}>
               {formatMoney(d.amount)}
             </Text>
           </View>
@@ -87,11 +86,16 @@ export default function OpenDealsCard({ clientId, onViewAll }: OpenDealsCardProp
         className="mt-2.5 pt-2.5 border-t border-m-border-subtle flex-row justify-between"
       >
         <Text className="text-[11px] text-m-text-tertiary">
-          Won <Text className="text-m-success font-semibold">{formatMoney(wonTotal)}</Text>
+          Won{' '}
+          <Text style={{ color: c.status.promoted, fontWeight: '600', ...mono }}>
+            {formatMoney(wonTotal)}
+          </Text>
         </Text>
         <Text className="text-[11px] text-m-text-tertiary">
           Lost{' '}
-          <Text className="text-m-text-secondary font-semibold">{formatMoney(lostTotal)}</Text>
+          <Text style={{ color: c.text.secondary, fontWeight: '600', ...mono }}>
+            {formatMoney(lostTotal)}
+          </Text>
         </Text>
       </View>
     </View>

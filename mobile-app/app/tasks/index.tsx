@@ -8,7 +8,9 @@ import { api } from '../../../model-testing-app/convex/_generated/api';
 import {
   Plus, Circle, CheckCircle2, ArrowRight, Calendar, AlertCircle, ChevronLeft, ChevronRight, Clock, MapPin, User, Paperclip,
 } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { typography } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import type { Palette } from '@/lib/theme';
 import MobileHeader from '@/components/MobileHeader';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -42,28 +44,29 @@ function formatDayAbbrev(date: Date): string {
   return date.toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, 3);
 }
 
-function getDueLabel(dueDate: string): { text: string; color: string } {
+function getDueLabel(dueDate: string, c: Palette): { text: string; color: string } {
   const due = new Date(dueDate);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
   const diffDays = Math.round((dueDay.getTime() - today.getTime()) / 86400000);
 
-  if (diffDays < 0) return { text: `Overdue ${Math.abs(diffDays)}d`, color: colors.error };
-  if (diffDays === 0) return { text: 'Due today', color: colors.warning };
-  if (diffDays === 1) return { text: 'Tomorrow', color: colors.textSecondary };
-  if (diffDays < 7) return { text: due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }), color: colors.textTertiary };
-  return { text: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), color: colors.textTertiary };
+  if (diffDays < 0) return { text: `Overdue ${Math.abs(diffDays)}d`, color: c.accent.red };
+  if (diffDays === 0) return { text: 'Due today', color: c.accent.yellow };
+  if (diffDays === 1) return { text: 'Tomorrow', color: c.text.secondary };
+  if (diffDays < 7) return { text: due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }), color: c.text.muted };
+  return { text: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), color: c.text.muted };
 }
 
-function getAccentColor(task: { status: string; dueDate?: string }): string {
-  if (task.status === 'in_progress') return '#3b82f6'; // blue
-  if (task.status === 'paused') return '#f59e0b'; // amber
+// Status → accent: in_progress→blue, paused→amber, overdue→red.
+function getAccentColor(task: { status: string; dueDate?: string }, c: Palette): string {
+  if (task.status === 'in_progress') return c.status.active; // blue
+  if (task.status === 'paused') return c.accent.yellow; // amber
   if (task.dueDate && task.status !== 'completed') {
     const due = new Date(task.dueDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (due < today) return colors.error;
+    if (due < today) return c.accent.red;
   }
   return 'transparent';
 }
@@ -106,6 +109,7 @@ type Section = {
 
 export default function TasksScreen() {
   const router = useRouter();
+  const c = useColors();
   // Accepts:
   //   ?create=true       → open the new-task modal immediately (pre-existing)
   //   ?taskId=<id>       → open TaskDetailSheet for that task on mount.
@@ -422,7 +426,6 @@ export default function TasksScreen() {
     label: string,
     count: number,
     icon: React.ReactNode,
-    bgColor: string,
   ) => (
     <View key={label} className="flex-1 bg-m-bg-card border border-m-border rounded-xl px-3 py-2.5 items-center">
       <View className="mb-1">{icon}</View>
@@ -440,8 +443,8 @@ export default function TasksScreen() {
   }, [tasks]);
 
   const renderTaskItem = (task: TaskItem) => {
-    const accent = getAccentColor(task);
-    const dueLabel = task.dueDate ? getDueLabel(task.dueDate) : null;
+    const accent = getAccentColor(task, c);
+    const dueLabel = task.dueDate ? getDueLabel(task.dueDate, c) : null;
     const isCompleted = task.status === 'completed';
     // "Delegated" = I created this and assigned it to others (not myself)
     const currentUserId = (currentUser as any)?._id;
@@ -466,9 +469,9 @@ export default function TasksScreen() {
             className="mr-3"
           >
             {isCompleted ? (
-              <CheckCircle2 size={20} color={colors.success} />
+              <CheckCircle2 size={20} color={c.accent.green} />
             ) : (
-              <Circle size={20} color={colors.textTertiary} />
+              <Circle size={20} color={c.text.muted} />
             )}
           </TouchableOpacity>
 
@@ -482,7 +485,7 @@ export default function TasksScreen() {
             </Text>
             <View className="flex-row items-center mt-0.5 gap-2 flex-wrap">
               {dueLabel && (
-                <Text className="text-xs" style={{ color: dueLabel.color }}>
+                <Text className="text-xs" style={{ color: dueLabel.color, fontFamily: typography.family.mono }}>
                   {dueLabel.text}
                 </Text>
               )}
@@ -492,16 +495,23 @@ export default function TasksScreen() {
                 </Text>
               )}
               {task.assignedByName && (
-                <View className="flex-row items-center gap-1 bg-blue-50 rounded-full px-1.5 py-0.5">
-                  <User size={9} color="#1d4ed8" />
-                  <Text className="text-[10px] font-medium" style={{ color: '#1d4ed8' }}>
+                <View
+                  className="flex-row items-center gap-1 rounded-full px-1.5 py-0.5"
+                  style={{
+                    backgroundColor: `${c.status.active}26`,
+                    borderWidth: 1,
+                    borderColor: `${c.status.active}66`,
+                  }}
+                >
+                  <User size={9} color={c.status.active} />
+                  <Text className="text-[10px] font-medium" style={{ color: c.status.active }}>
                     Assigned by {task.assignedByName}
                   </Text>
                 </View>
               )}
               {isDelegatedByMe && task.assignedTo && task.assignedTo.length > 0 && (
                 <View className="flex-row items-center gap-1 bg-m-bg-subtle rounded-full px-1.5 py-0.5">
-                  <User size={9} color={colors.textSecondary} />
+                  <User size={9} color={c.text.secondary} />
                   <Text className="text-[10px] font-medium text-m-text-secondary">
                     {task.assignedTo.length === 1
                       ? `Assigned to ${userNameMap[task.assignedTo[0]] || 'team'}`
@@ -511,7 +521,7 @@ export default function TasksScreen() {
               )}
               {task.attachmentCount !== undefined && task.attachmentCount > 0 && (
                 <View className="flex-row items-center gap-1 bg-m-bg-subtle rounded-full px-1.5 py-0.5">
-                  <Paperclip size={9} color={colors.textSecondary} />
+                  <Paperclip size={9} color={c.text.secondary} />
                   <Text className="text-[10px] font-medium text-m-text-secondary">
                     {task.attachmentCount}
                   </Text>
@@ -520,15 +530,21 @@ export default function TasksScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Priority badge */}
+          {/* Priority badge — high→red, medium→amber */}
           {task.priority === 'high' && (
-            <View className="bg-red-50 rounded px-1.5 py-0.5 ml-2">
-              <Text className="text-[10px] font-medium" style={{ color: colors.error }}>High</Text>
+            <View
+              className="rounded px-1.5 py-0.5 ml-2"
+              style={{ backgroundColor: `${c.accent.red}26`, borderWidth: 1, borderColor: `${c.accent.red}66` }}
+            >
+              <Text className="text-[10px] font-medium" style={{ color: c.accent.red }}>High</Text>
             </View>
           )}
           {task.priority === 'medium' && (
-            <View className="bg-amber-50 rounded px-1.5 py-0.5 ml-2">
-              <Text className="text-[10px] font-medium" style={{ color: colors.warning }}>Med</Text>
+            <View
+              className="rounded px-1.5 py-0.5 ml-2"
+              style={{ backgroundColor: `${c.accent.yellow}26`, borderWidth: 1, borderColor: `${c.accent.yellow}66` }}
+            >
+              <Text className="text-[10px] font-medium" style={{ color: c.accent.yellow }}>Med</Text>
             </View>
           )}
         </View>
@@ -551,14 +567,14 @@ export default function TasksScreen() {
         activeOpacity={0.7}
         className="bg-m-bg-card border border-m-border rounded-xl overflow-hidden flex-row"
       >
-        {/* Left indigo accent */}
-        <View style={{ width: 3, backgroundColor: '#6366f1' }} />
+        {/* Left indigo accent — events are project-coloured (indigo) */}
+        <View style={{ width: 3, backgroundColor: c.entityTypes.project }} />
 
         <View className="flex-1 px-3 py-3">
           <View className="flex-row items-center">
-            <Calendar size={14} color="#6366f1" />
+            <Calendar size={14} color={c.entityTypes.project} />
             {event.syncStatus === 'synced' && (
-              <View className="ml-1 w-1.5 h-1.5 rounded-full bg-green-400" />
+              <View className="ml-1 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c.accent.green }} />
             )}
             <Text className="text-sm text-m-text-primary font-medium ml-2 flex-1" numberOfLines={1}>
               {event.title}
@@ -566,12 +582,17 @@ export default function TasksScreen() {
           </View>
           <View className="flex-row items-center mt-1 gap-2">
             <View className="flex-row items-center">
-              <Clock size={11} color={colors.textTertiary} />
-              <Text className="text-xs text-m-text-tertiary ml-1">{startTime} - {endTime}</Text>
+              <Clock size={11} color={c.text.muted} />
+              <Text
+                className="text-xs text-m-text-tertiary ml-1"
+                style={{ fontFamily: typography.family.mono }}
+              >
+                {startTime} - {endTime}
+              </Text>
             </View>
             {event.location && (
               <View className="flex-row items-center">
-                <MapPin size={11} color={colors.textTertiary} />
+                <MapPin size={11} color={c.text.muted} />
                 <Text className="text-xs text-m-text-tertiary ml-0.5" numberOfLines={1}>{event.location}</Text>
               </View>
             )}
@@ -598,7 +619,7 @@ export default function TasksScreen() {
             onSubmitEditing={handleCreate}
             returnKeyType="done"
             className="flex-1 bg-m-bg-subtle rounded-lg px-3 py-2.5 text-sm text-m-text-primary"
-            placeholderTextColor={colors.textPlaceholder}
+            placeholderTextColor={c.text.dim}
           />
           <TouchableOpacity
             onPress={handleCreate}
@@ -625,14 +646,14 @@ export default function TasksScreen() {
                 <View className="px-4 pt-4 pb-2">
                   <Text className="text-lg font-bold text-m-text-primary mb-3">Tasks</Text>
                   <View className="flex-row gap-2 mb-2">
-                    {renderMetricPill('To Do', metrics.todo, <Circle size={16} color="#3b82f6" />, '#eff6ff')}
-                    {renderMetricPill('In Progress', metrics.inProgress, <ArrowRight size={16} color="#3b82f6" />, '#eff6ff')}
-                    {renderMetricPill('Meetings', metrics.meetings, <Calendar size={16} color="#6366f1" />, '#eef2ff')}
+                    {renderMetricPill('To Do', metrics.todo, <Circle size={16} color={c.status.active} />)}
+                    {renderMetricPill('In Progress', metrics.inProgress, <ArrowRight size={16} color={c.status.active} />)}
+                    {renderMetricPill('Meetings', metrics.meetings, <Calendar size={16} color={c.entityTypes.project} />)}
                   </View>
                   <View className="flex-row gap-2">
-                    {renderMetricPill('Completed', metrics.completed, <CheckCircle2 size={16} color={colors.success} />, '#ecfdf5')}
-                    {renderMetricPill('Overdue', metrics.overdue, <AlertCircle size={16} color={colors.error} />, '#fef2f2')}
-                    {renderMetricPill('Due Today', metrics.dueToday, <Calendar size={16} color={colors.warning} />, '#fffbeb')}
+                    {renderMetricPill('Completed', metrics.completed, <CheckCircle2 size={16} color={c.accent.green} />)}
+                    {renderMetricPill('Overdue', metrics.overdue, <AlertCircle size={16} color={c.accent.red} />)}
+                    {renderMetricPill('Due Today', metrics.dueToday, <Calendar size={16} color={c.accent.yellow} />)}
                   </View>
                 </View>
               )}
@@ -641,7 +662,7 @@ export default function TasksScreen() {
               <View className="px-4 pt-3 pb-2">
                 <View className="flex-row items-center justify-between mb-2">
                   <TouchableOpacity onPress={() => { setWeekOffset((w) => w - 1); setSelectedDayIndex(null); }} hitSlop={8}>
-                    <ChevronLeft size={18} color={colors.textSecondary} />
+                    <ChevronLeft size={18} color={c.text.secondary} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => { setWeekOffset(0); setSelectedDayIndex(null); }}>
                     <Text className="text-xs font-medium text-m-text-secondary">
@@ -649,7 +670,7 @@ export default function TasksScreen() {
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => { setWeekOffset((w) => w + 1); setSelectedDayIndex(null); }} hitSlop={8}>
-                    <ChevronRight size={18} color={colors.textSecondary} />
+                    <ChevronRight size={18} color={c.text.secondary} />
                   </TouchableOpacity>
                 </View>
 
@@ -667,7 +688,7 @@ export default function TasksScreen() {
                           className={`items-center rounded-xl px-3 py-2 min-w-[44px] ${
                             isSelected ? 'bg-m-accent' : isToday ? 'bg-m-bg-subtle' : ''
                           }`}
-                          style={isSelected ? undefined : isToday ? { borderWidth: 1, borderColor: colors.border } : undefined}
+                          style={isSelected ? undefined : isToday ? { borderWidth: 1, borderColor: c.border.default } : undefined}
                         >
                           <Text
                             className={`text-[10px] font-medium ${
@@ -687,7 +708,7 @@ export default function TasksScreen() {
                             <View className="w-1 h-1 rounded-full bg-m-accent mt-1" />
                           )}
                           {hasItems && isSelected && (
-                            <View className="w-1 h-1 rounded-full bg-white mt-1" />
+                            <View className="w-1 h-1 rounded-full bg-m-text-on-brand mt-1" />
                           )}
                         </TouchableOpacity>
                       );
@@ -775,7 +796,7 @@ export default function TasksScreen() {
           elevation: 4,
         }}
       >
-        <Plus size={16} color={colors.textOnBrand} />
+        <Plus size={16} color={c.bg.base} />
         <Text className="text-sm font-semibold text-m-text-on-brand">New Task</Text>
       </TouchableOpacity>
 

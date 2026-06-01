@@ -1,8 +1,24 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Calendar, Clock } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
-import { stageTone } from '@/lib/dealStageColors';
+import { colors, typography } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { categorizeStage, type StageCategory } from '@/lib/dealStageColors';
+import type { Palette } from '@/lib/theme';
 import type { Doc } from '../../../model-testing-app/convex/_generated/dataModel';
+
+// Stage category → canon accent (see DealDetailSheet for rationale). Keeps the
+// lib-owned selection logic; only swaps the light pastels for dark-readable
+// tinted accents.
+function stageAccent(accent: Palette['accent'], stageName?: string): string {
+  const byCategory: Record<StageCategory, string> = {
+    amber: accent.yellow,
+    blue: accent.blue,
+    purple: accent.purple,
+    green: accent.green,
+    grey: '#9a9a9a',
+  };
+  return byCategory[categorizeStage(stageName)];
+}
 
 interface DealCardProps {
   deal: Doc<'deals'>;
@@ -37,7 +53,8 @@ function formatLastActivity(iso?: string): string {
 }
 
 export default function DealCard({ deal, onPress }: DealCardProps) {
-  const tone = stageTone(deal.stageName);
+  const c = useColors();
+  const stageColor = stageAccent(c.accent, deal.stageName);
   const closeInfo = formatClose(deal.closeDate);
   const closeColor =
     closeInfo.tone === 'past' ? colors.error : closeInfo.tone === 'warn' ? colors.warning : colors.textTertiary;
@@ -47,6 +64,7 @@ export default function DealCard({ deal, onPress }: DealCardProps) {
       onPress={onPress}
       activeOpacity={0.7}
       className="bg-m-bg-card border border-m-border rounded-[12px] p-3"
+      style={{ borderLeftWidth: 2, borderLeftColor: c.entityTypes.deal }}
     >
       <View className="flex-row justify-between items-start gap-2 mb-2">
         <View className="flex-1 min-w-0">
@@ -57,12 +75,24 @@ export default function DealCard({ deal, onPress }: DealCardProps) {
             <Text className="text-[11px] text-m-text-tertiary mt-0.5">SPV: {deal.spvName}</Text>
           ) : null}
         </View>
-        <Text className="text-base font-bold text-m-text-primary">{formatMoney(deal.amount)}</Text>
+        <Text
+          className="text-base font-bold text-m-text-primary"
+          style={{ fontFamily: typography.family.mono }}
+        >
+          {formatMoney(deal.amount)}
+        </Text>
       </View>
 
       <View className="flex-row items-center flex-wrap gap-1.5">
-        <View style={{ backgroundColor: tone.bg }} className="px-2 py-0.5 rounded-full">
-          <Text style={{ color: tone.text }} className="text-[10px] font-medium">
+        <View
+          style={{
+            backgroundColor: `${stageColor}26`,
+            borderWidth: 1,
+            borderColor: `${stageColor}66`,
+          }}
+          className="px-2 py-0.5 rounded-full"
+        >
+          <Text style={{ color: stageColor }} className="text-[10px] font-medium">
             {deal.stageName ?? '—'}
           </Text>
         </View>

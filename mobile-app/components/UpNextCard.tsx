@@ -1,7 +1,8 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ListTodo, Calendar, Bell } from 'lucide-react-native';
-import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
 
 /**
  * UpNextCard — React Native port of the web dashboard's rich "Up Next" card.
@@ -57,36 +58,18 @@ function formatRelativeTime(dueDate: Date): string {
   return diffMs < 0 ? `Due ${label} ago` : `In ${label}`;
 }
 
-interface UrgencyStyle {
-  borderColor: string;
-  iconColor: string;
-  badgeBg: string;
-  badgeText: string;
-  badgeLabel: string;
-}
+// Urgency → accent colour mapping. overdue→red, today→amber/yellow, soon→blue.
+// Badges read on dark via a translucent tint (`${color}26`) bg + solid colour text.
+const URGENCY_ACCENT: Record<Urgency, keyof ReturnType<typeof useColors>['accent']> = {
+  overdue: 'red',
+  today: 'yellow',
+  future: 'blue',
+};
 
-const urgencyStyles: Record<Urgency, UrgencyStyle> = {
-  overdue: {
-    borderColor: colors.error,
-    iconColor: colors.error,
-    badgeBg: '#fef2f2',
-    badgeText: '#991b1b',
-    badgeLabel: 'OVERDUE',
-  },
-  today: {
-    borderColor: colors.warning,
-    iconColor: colors.warning,
-    badgeBg: '#fffbeb',
-    badgeText: '#92400e',
-    badgeLabel: 'DUE TODAY',
-  },
-  future: {
-    borderColor: colors.borderSubtle,
-    iconColor: colors.textTertiary,
-    badgeBg: colors.bgSubtle,
-    badgeText: colors.textSecondary,
-    badgeLabel: 'UPCOMING',
-  },
+const URGENCY_LABEL: Record<Urgency, string> = {
+  overdue: 'OVERDUE',
+  today: 'DUE TODAY',
+  future: 'UPCOMING',
 };
 
 const typeIcons: Record<UpNextItemType, typeof ListTodo> = {
@@ -102,6 +85,7 @@ interface UpNextCardProps {
 
 export default function UpNextCard({ items, maxItems = 3 }: UpNextCardProps) {
   const router = useRouter();
+  const c = useColors();
   const visible = items.slice(0, maxItems);
 
   return (
@@ -116,7 +100,11 @@ export default function UpNextCard({ items, maxItems = 3 }: UpNextCardProps) {
         <View className="gap-2">
           {visible.map((item) => {
             const urgency = getUrgency(item.dueDate);
-            const style = urgencyStyles[urgency];
+            const accent = c.accent[URGENCY_ACCENT[urgency]];
+            const isFuture = urgency === 'future';
+            // Future items stay neutral so only live urgency (overdue/today) draws the eye.
+            const borderColor = isFuture ? c.border.default : accent;
+            const iconColor = isFuture ? c.text.muted : accent;
             const Icon = typeIcons[item.type];
             const relative = formatRelativeTime(item.dueDate);
 
@@ -127,11 +115,11 @@ export default function UpNextCard({ items, maxItems = 3 }: UpNextCardProps) {
                 className="flex-row items-start gap-3 pl-3 py-1.5"
                 style={{
                   borderLeftWidth: 3,
-                  borderLeftColor: style.borderColor,
+                  borderLeftColor: borderColor,
                 }}
               >
                 <View className="mt-0.5">
-                  <Icon size={16} color={style.iconColor} />
+                  <Icon size={16} color={iconColor} />
                 </View>
                 <View className="flex-1 min-w-0">
                   <View className="flex-row items-center justify-between gap-2">
@@ -143,18 +131,19 @@ export default function UpNextCard({ items, maxItems = 3 }: UpNextCardProps) {
                     </Text>
                     <View
                       className="px-1.5 py-0.5 rounded"
-                      style={{ backgroundColor: style.badgeBg }}
+                      style={{ backgroundColor: `${accent}26` }}
                     >
                       <Text
                         className="text-[9px] font-semibold tracking-wide"
-                        style={{ color: style.badgeText }}
+                        style={{ color: accent }}
                       >
-                        {style.badgeLabel}
+                        {URGENCY_LABEL[urgency]}
                       </Text>
                     </View>
                   </View>
                   <Text
                     className="text-xs text-m-text-tertiary mt-0.5"
+                    style={{ fontFamily: typography.family.mono }}
                     numberOfLines={1}
                   >
                     {item.context} · {relative}

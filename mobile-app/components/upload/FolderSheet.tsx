@@ -7,6 +7,7 @@ import { useQuery, useConvexAuth } from 'convex/react';
 import { api } from '../../../model-testing-app/convex/_generated/api';
 import { Folder, FolderOpen, X, Check } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
+import { useColors } from '@/lib/useColors';
 import type { UploadScope } from './ScopeToggle';
 
 // Bottom-sheet folder picker. Scope determines which folder sets to load:
@@ -33,10 +34,11 @@ interface Props {
 
 // Single row in the folder list — extracted for readability.
 function FolderRow({
-  name, isSelected, onPress,
+  name, isSelected, accent, onPress,
 }: {
   name: string;
   isSelected: boolean;
+  accent: string;
   onPress: () => void;
 }) {
   const Icon = isSelected ? FolderOpen : Folder;
@@ -46,11 +48,11 @@ function FolderRow({
       className="flex-row items-center gap-3 px-4 py-3 border-b border-m-border-subtle"
       style={{ backgroundColor: isSelected ? colors.bgSubtle : 'transparent' }}
     >
-      <Icon size={16} color={isSelected ? colors.accent : colors.textTertiary} />
+      <Icon size={16} color={isSelected ? accent : colors.textTertiary} />
       <Text className="flex-1 text-sm text-m-text-primary" numberOfLines={1}>
         {name}
       </Text>
-      {isSelected && <Check size={16} color={colors.accent} />}
+      {isSelected && <Check size={16} color={accent} />}
     </TouchableOpacity>
   );
 }
@@ -68,7 +70,16 @@ function SectionHeader({ label }: { label: string }) {
 export default function FolderSheet({
   visible, scope, clientId, projectId, selectedFolderKey, onSelect, onClose,
 }: Props) {
+  const c = useColors();
   const { isAuthenticated } = useConvexAuth();
+  // Folder selection accent by context: project folders → indigo, client
+  // folders → green, internal/personal → neutral.
+  const accent =
+    scope === 'client'
+      ? projectId
+        ? c.entityTypes.project
+        : c.entityTypes.client
+      : c.text.muted;
 
   const clientFolders = useQuery(
     api.clients.getClientFolders,
@@ -242,6 +253,7 @@ export default function FolderSheet({
                   <FolderRow
                     name="No specific folder"
                     isSelected={selectedFolderKey === null}
+                    accent={accent}
                     onPress={() => handleSelect(null, null, null)}
                   />
                 );
@@ -250,6 +262,7 @@ export default function FolderSheet({
                 <FolderRow
                   name={item.name}
                   isSelected={selectedFolderKey === item.folderKey}
+                  accent={item.level === 'project' ? c.entityTypes.project : accent}
                   onPress={() => handleSelect(item.folderKey, item.name, item.level)}
                 />
               );

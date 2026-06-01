@@ -1,6 +1,10 @@
 import { View, Text } from 'react-native';
+import { useColors } from '@/lib/useColors';
+import { typography } from '@/lib/theme';
 
 interface Props { metadata?: any; }
+
+const MONO = { fontFamily: typography.family.mono } as const;
 
 function fmtMoney(raw: any): string {
   if (!raw) return '—';
@@ -17,6 +21,7 @@ function fmtDate(iso?: string): string {
 }
 
 export default function BeauhurstFinancialsCard({ metadata }: Props) {
+  const c = useColors();
   if (!metadata) return null;
   const turnover = metadata.beauhurst_data_turnover;
   const ebitda = metadata.beauhurst_data_ebitda;
@@ -27,28 +32,34 @@ export default function BeauhurstFinancialsCard({ metadata }: Props) {
   if (!turnover && !ebitda && !headcount && !funding) return null;
 
   return (
-    <View className="bg-m-bg-card border border-m-border rounded-[12px] p-3.5">
-      <Text className="text-[10px] font-semibold text-m-text-tertiary uppercase mb-2.5">
+    <View
+      className="bg-m-bg-card border border-m-border rounded-[12px] p-3.5"
+      style={{ borderTopWidth: 2, borderTopColor: c.entityTypes.client }}
+    >
+      <Text
+        className="text-[10px] font-semibold text-m-text-tertiary uppercase mb-2.5"
+        style={{ ...MONO, letterSpacing: 0.5 }}
+      >
         Financials
       </Text>
       <View className="flex-row flex-wrap gap-y-2.5">
         <View className="w-1/2 pr-2">
           <Text className="text-[10px] text-m-text-tertiary">Turnover</Text>
-          <Text className="text-sm font-semibold text-m-text-primary mt-0.5">
+          <Text className="text-sm font-semibold text-m-text-primary mt-0.5" style={MONO}>
             {fmtMoney(turnover)}
           </Text>
         </View>
         <View className="w-1/2 pl-2">
           <Text className="text-[10px] text-m-text-tertiary">EBITDA</Text>
-          <Text className="text-sm font-semibold text-m-text-primary mt-0.5">{fmtMoney(ebitda)}</Text>
+          <Text className="text-sm font-semibold text-m-text-primary mt-0.5" style={MONO}>{fmtMoney(ebitda)}</Text>
         </View>
         <View className="w-1/2 pr-2">
           <Text className="text-[10px] text-m-text-tertiary">Headcount</Text>
-          <Text className="text-sm font-semibold text-m-text-primary mt-0.5">{headcount ?? '—'}</Text>
+          <Text className="text-sm font-semibold text-m-text-primary mt-0.5" style={MONO}>{headcount ?? '—'}</Text>
         </View>
         <View className="w-1/2 pl-2">
           <Text className="text-[10px] text-m-text-tertiary">Funding received</Text>
-          <Text className="text-sm font-semibold text-m-text-primary mt-0.5">{fmtMoney(funding)}</Text>
+          <Text className="text-sm font-semibold text-m-text-primary mt-0.5" style={MONO}>{fmtMoney(funding)}</Text>
         </View>
       </View>
       {accountsDate ? (
