@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { OfflineProvider, useOffline } from '@/contexts/OfflineContext';
 import { DocTabProvider } from '@/contexts/TabContext';
+import { ThemeProvider } from '@/lib/useColors';
 import OfflineBanner from '@/components/ui/OfflineBanner';
 
 import '../global.css';
@@ -58,12 +59,14 @@ export default function RootLayout() {
     >
       <ClerkLoaded>
         <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-          <OfflineProvider>
-            <DocTabProvider>
-              <StatusBar style="light" />
-              <AuthGate />
-            </DocTabProvider>
-          </OfflineProvider>
+          <ThemeProvider>
+            <OfflineProvider>
+              <DocTabProvider>
+                <StatusBar style="light" />
+                <AuthGate />
+              </DocTabProvider>
+            </OfflineProvider>
+          </ThemeProvider>
         </ConvexProviderWithClerk>
       </ClerkLoaded>
     </ClerkProvider>
