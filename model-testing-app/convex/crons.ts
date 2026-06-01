@@ -75,6 +75,18 @@ crons.daily(
   internal.gmailWatch.renewWatchesInternal,
 );
 
+// Gmail inbound poll. Every 5 minutes, pull new INBOX mail for every
+// connected user via Gmail's history.list (gmail.modify scope grants read,
+// so no Pub/Sub topic needed) and route each message through the shared
+// reply pipeline. This is the live ingest that populates the inbox + the
+// reply.* MCP reads; the Pub/Sub push path (gmailWatch) layers real-time
+// delivery on top once a topic is provisioned, sharing the same watermark.
+crons.interval(
+  "gmail-inbound-poll",
+  { minutes: 5 },
+  internal.gmailInbound.pollAllInbound,
+);
+
 // v1.2: stale skillRun sweep. Once daily, mark any skillRun with
 // status=running AND _creationTime > 6h as failed. Prevents stuck runs
 // from blocking future dedup checks.

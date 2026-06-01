@@ -1,5 +1,7 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { internalMutation, internalQuery, query } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 
 // Internal API for the replyEvents table. Written by the Gmail push webhook
 // and the HubSpot sync sweep. Idempotency guard is the (source, externalId)
@@ -41,6 +43,11 @@ export const createInternal = internalMutation({
     linkedClientId: v.optional(v.id("clients")),
     ingestedManuallyByUserId: v.optional(v.id("users")),
     ingestedManuallyAt: v.optional(v.string()),
+    // Gmail inbound capture (see schema.ts replyEvents notes).
+    gmailThreadId: v.optional(v.string()),
+    gmailMessageId: v.optional(v.string()),
+    fromEmail: v.optional(v.string()),
+    fromName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("replyEvents", {
@@ -222,5 +229,53 @@ export const countUnrouted = query({
       .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "operator_review"))
       .collect();
     return rows.length;
+  },
+});
+
+// ── Inbox feed: all inbound, newest first, paginated ─────────────────
+// Powers the dashboard Inbox panel (initialNumItems 5) and the /inbox
+// "Gmail" tab (larger page). Ordered by receivedAt desc via the
+// by_received_at index — true received-time order, so a backfilled older
+// message can't jump above newer mail just because we ingested it later.
+// Each row is enriched with the linked client name + matched contact name
+// so the UI renders without extra round-trips.
+//
+// Intentionally org-wide (not user-scoped): the operator inbox is a shared
+// surface, mirroring reply.listUnrouted / the prospects triage queue.
+
+type EnrichedInboxRow = Doc<"replyEvents"> & {
+  clientName: string | null;
+  contactName: string | null;
+};
+
+async function enrichInboxRow(
+  ctx: { db: any },
+  row: Doc<"replyEvents">,
+): Promise<EnrichedInboxRow> {
+  let clientName: string | null = null;
+  if (row.linkedClientId) {
+    const client = await ctx.db.get(row.linkedClientId);
+    clientName = client?.name ?? client?.companyName ?? null;
+  }
+  let contactName: string | null = null;
+  if (row.contactId) {
+    const contact = await ctx.db.get(row.contactId);
+    contactName = contact?.name ?? null;
+  }
+  return { ...row, clientName, contactName };
+}
+
+export const listInboundPaginated = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_received_at")
+      .order("desc")
+      .paginate(args.paginationOpts);
+    const page = await Promise.all(
+      result.page.map((row) => enrichInboxRow(ctx, row)),
+    );
+    return { ...result, page };
   },
 });

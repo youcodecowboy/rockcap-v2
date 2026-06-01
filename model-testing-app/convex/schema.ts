@@ -4260,13 +4260,27 @@ export default defineSchema({
     // which captures the automated provider when present.
     ingestedManuallyByUserId: v.optional(v.id("users")),
     ingestedManuallyAt: v.optional(v.string()),
+
+    // Gmail inbound (live ingest). Captured by the gmailInbound poller so the
+    // inbox can show the sender even when no contact matches, and so a drafted
+    // reply threads correctly. gmailThreadId → SEND_PAYLOAD.threadId;
+    // gmailMessageId (the RFC822 Message-ID header) → In-Reply-To/References.
+    gmailThreadId: v.optional(v.string()),
+    gmailMessageId: v.optional(v.string()),
+    fromEmail: v.optional(v.string()),
+    fromName: v.optional(v.string()),
   })
     .index("by_source_externalId", ["source", "externalId"])
     .index("by_contact", ["contactId"])
     .index("by_processed", ["processed"])
     .index("by_user", ["userId"])
     .index("by_linked_client", ["linkedClientId"])
-    .index("by_dispatched_to", ["dispatchedTo"]),
+    .index("by_dispatched_to", ["dispatchedTo"])
+    // Inbox feed ordering. receivedAt is always an ISO-8601 UTC string
+    // (…Z) so lexicographic index order === chronological order; the
+    // inbox reads this descending for true received-time ordering rather
+    // than ingestion order.
+    .index("by_received_at", ["receivedAt"]),
 
   skillRuns: defineTable({
     // Identity

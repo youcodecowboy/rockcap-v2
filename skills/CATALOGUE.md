@@ -147,6 +147,8 @@ All three create `approvals` rows that surface on the Overview Pending Approvals
 
 ### `reply.*` — Inbound reply visibility + classification (4)
 
+> **Live ingest (2026-06-01):** Gmail inbound is now pulled automatically by the `gmail-inbound-poll` cron (every 5 min, via the `gmail.modify` read scope — no Pub/Sub topic required), so `reply.*` reflects real inbound email, not just manual paste. "Did we get anything from {client}?" → `reply.listByClient`. The poller captures Gmail thread + Message-ID on each `replyEvent`, so `outreach.draftReply({replyToReplyEventId})` now auto-threads, and approving the drafted reply (a `client_communication` / `kind:email_reply` approval) actually sends + threads. Sends still pass the per-user + global Gmail send kill-switches.
+
 | Tool | Purpose |
 |---|---|
 | `reply.listByClient({clientId, limit?})` | List replies linked to a client (newest first). Each row carries classifiedIntent + confidence + dispatch destination + body. |

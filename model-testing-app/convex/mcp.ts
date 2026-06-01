@@ -1783,6 +1783,21 @@ const TOOLS: McpTool[] = [
       required: ["contactId", "clientId", "subject", "bodyText", "bodyHtml"],
     },
     handler: async (ctx, userId, args) => {
+      // Auto-thread: when replying to a tracked reply event, pull the Gmail
+      // thread + Message-ID from it so the send threads correctly, unless the
+      // caller supplied them explicitly. Without this the reply lands as a new
+      // top-level email instead of in the conversation.
+      let threadId = args.threadId;
+      let inReplyTo = args.inReplyTo;
+      if (args.replyToReplyEventId && (!threadId || !inReplyTo)) {
+        const ev: any = await ctx.runQuery(api.replyEvents.getById, {
+          replyEventId: args.replyToReplyEventId,
+        });
+        if (ev) {
+          threadId = threadId ?? ev.gmailThreadId;
+          inReplyTo = inReplyTo ?? ev.gmailMessageId;
+        }
+      }
       const approvalId = await ctx.runMutation(internal.approvals.internalCreate, {
         entityType: "client_communication" as const,
         summary: args.reasoning
@@ -1794,8 +1809,8 @@ const TOOLS: McpTool[] = [
           subject: args.subject,
           bodyText: args.bodyText,
           bodyHtml: args.bodyHtml,
-          threadId: args.threadId,
-          inReplyTo: args.inReplyTo,
+          threadId,
+          inReplyTo,
           reasoning: args.reasoning,
         },
         requestedBy: userId,

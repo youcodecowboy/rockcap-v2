@@ -1,7 +1,7 @@
 'use client';
 
 import { useUser } from '@clerk/nextjs';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, usePaginatedQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -13,6 +13,7 @@ import {
   EmptyState,
   DataTable,
   Modal,
+  SkeletonText,
   type Column,
 } from '@/components/layouts';
 import { useColors } from '@/lib/useColors';
@@ -104,6 +105,12 @@ export default function Dashboard() {
   const handleConnectGmail = () => {
     window.location.href = `/api/gmail/auth?returnTo=${encodeURIComponent('/')}`;
   };
+  // Recent inbound email for the Inbox panel — 5 at a time, paginated.
+  const {
+    results: inboxEmails,
+    status: inboxStatus,
+    loadMore: loadMoreEmails,
+  } = usePaginatedQuery(api.replyEvents.listInboundPaginated, {}, { initialNumItems: 5 });
   const upcomingTasks = useQuery(api.tasks.getByUser, {});
   const clients = useQuery(api.clients.list, {});
   const projects = useQuery(api.projects.list, {});
@@ -565,13 +572,61 @@ export default function Dashboard() {
             <div className="flex flex-col h-full">
               {gmailConnected ? (
                 <>
-                  <EmptyState
-                    icon={<Inbox size={28} />}
-                    title="Coming soon"
-                    body="Email integration and notifications will appear here."
-                  />
-                  <div className="mt-4 flex">
-                    <Button variant="secondary" size="sm" onClick={() => router.push('/inbox')} style={{ marginLeft: 'auto' }}>
+                  {inboxStatus === 'LoadingFirstPage' ? (
+                    <div className="py-6"><SkeletonText lines={4} /></div>
+                  ) : inboxEmails.length === 0 ? (
+                    <EmptyState
+                      icon={<Inbox size={28} />}
+                      title="No emails yet"
+                      body="Inbound mail will appear here within a few minutes of arriving."
+                    />
+                  ) : (
+                    <div className="flex flex-col">
+                      {inboxEmails.map((email) => {
+                        const sender = email.fromName || email.contactName || email.fromEmail || 'Unknown sender';
+                        return (
+                          <button
+                            key={email._id}
+                            onClick={() => router.push(`/inbox?box=gmail&selected=${email._id}`)}
+                            className="flex items-start gap-3 py-2.5 text-left"
+                            style={{ borderBottom: `1px solid ${colors.border.light}` }}
+                          >
+                            <div
+                              className="mt-1 w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+                              style={{ background: colors.bg.light, color: colors.text.muted }}
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="truncate text-sm font-medium" style={{ color: colors.text.primary }}>
+                                  {sender}
+                                </span>
+                                <span className="flex-shrink-0 text-xs" style={{ color: colors.text.muted }}>
+                                  {formatNotificationTime(email.receivedAt)}
+                                </span>
+                              </div>
+                              <div className="truncate text-xs" style={{ color: colors.text.secondary }}>
+                                {email.replySubject || '(no subject)'}
+                              </div>
+                              {email.clientName && (
+                                <div className="truncate text-xs mt-0.5" style={{ color: colors.text.muted }}>
+                                  {email.clientName}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="mt-4 flex items-center gap-2">
+                    {inboxStatus === 'CanLoadMore' && (
+                      <Button variant="secondary" size="sm" onClick={() => loadMoreEmails(5)}>
+                        Load more
+                      </Button>
+                    )}
+                    <Button variant="secondary" size="sm" onClick={() => router.push('/inbox?box=gmail')} style={{ marginLeft: 'auto' }}>
                       View Inbox
                       <ArrowRight className="w-3 h-3" />
                     </Button>
