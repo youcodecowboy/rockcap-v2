@@ -137,7 +137,7 @@ The deep-context tools are the spine:
 
 ### `outreach.*` — Email draft staging (3)
 
-All three create `approvals` rows that surface on the Overview Pending Approvals card AND in `/approvals`. Approval execution wires the actual send.
+All three create `approvals` rows that surface on the Overview Pending Approvals card AND in `/approvals`. Approval execution sends the actual email (Gmail), threaded where applicable, behind the per-user + global send kill-switches. `draftToLender`'s `attachedDocumentIds` are fetched from storage and sent as real `multipart/mixed` attachments (≤18MB total; oversized/missing docs are skipped and reported in the approval's executionResult, not failed).
 
 | Tool | Purpose |
 |---|---|
