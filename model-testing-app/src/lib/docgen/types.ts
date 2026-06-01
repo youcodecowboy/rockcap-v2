@@ -2,7 +2,7 @@
 // Shared types for the document render engine (P1 + lender-brief layout LB1).
 
 export type DocFormat = "pdf" | "docx";
-export type DocLayout = "house" | "lender-brief";
+export type DocLayout = "house" | "lender-brief" | "client-brief";
 
 export interface RenderResult {
   format: DocFormat;
@@ -38,6 +38,28 @@ export interface LenderBriefData {
   signOff: { name: string; role: string; email: string; phone: string };
 }
 
+// ── Client-brief structured data ─────────────────────────────
+// The borrower-facing counterpart to the lender brief: RockCap advising the client
+// on the indicative lender landscape, leverage scenarios and expected pricing BEFORE
+// going to market. Same branded frame as the lender brief (shared chrome in
+// briefShared.ts), a "Client Briefing / Confidential" masthead, and a section set
+// driven by the brief's purpose (new-money landscape vs refinance/cash-release).
+// Reuses KeyFact + BriefSection — the composer emits the scenario-comparison and
+// lender-panel tables as section bodyHtml, exactly like the lender brief.
+export interface ClientBriefData {
+  /** new-facility: pre-market landscape for a new senior facility (default).
+   *  refinance: refinance / cash-release of an incumbent facility.
+   *  multi-scenario: two scoping cases shown side-by-side (e.g. include/exclude a lot). */
+  variant: "new-facility" | "refinance" | "multi-scenario";
+  /** Client briefs are sent to the borrower — almost always EXTERNAL. */
+  confidentiality: "INTERNAL" | "EXTERNAL";
+  title: { location: string; descriptor: string };
+  meta: { borrower: string; preparedBy: string; date: string };
+  keyFacts: KeyFact[];
+  sections: BriefSection[];
+  signOff: { name: string; role: string; email: string; phone: string };
+}
+
 // ── Render spec (discriminated union by layout) ──────────────
 interface RenderSpecBase {
   /** Human title; used in <title> and as the default file-name stem. */
@@ -53,4 +75,8 @@ export interface LenderBriefRenderSpec extends RenderSpecBase {
   layout: "lender-brief";
   briefData: LenderBriefData;
 }
-export type RenderSpec = HouseRenderSpec | LenderBriefRenderSpec;
+export interface ClientBriefRenderSpec extends RenderSpecBase {
+  layout: "client-brief";
+  briefData: ClientBriefData;
+}
+export type RenderSpec = HouseRenderSpec | LenderBriefRenderSpec | ClientBriefRenderSpec;

@@ -54,3 +54,4 @@ Defer to `document-house-style.md` and the doc-type reference. The three that ma
 - `../../shared-references/document-house-style.md`
 - `../../shared-references/doc-type-company-one-pager.md`
 - `../../shared-references/doc-type-lender-brief.md` — branded multi-page lender brief (structured `briefData` via the lender-brief layout). Track-record depth from CH group charges; section blocks never split across a page break.
+- `../../shared-references/doc-type-client-brief.md` — branded multi-page **client brief** (the borrower-facing counterpart; structured `briefData` via the client-brief layout, same chrome as the lender brief). Pre-market advice: mandatory "no lender approached yet / pricing indicative" caveats, leverage-scenario + expected-lender-pricing tables, `new-facility` / `refinance` / `multi-scenario` variants. RockCap's model leads; lender intel supplies the pricing panel.

@@ -7,6 +7,7 @@
 // footerTemplate so the reserved bottom margin applies on EVERY page.
 import { wrapInHouseStyle } from "./houseStyle";
 import { buildLenderBriefHtml, buildLenderBriefFooterTemplate } from "./layouts/lenderBrief";
+import { buildClientBriefHtml, buildClientBriefFooterTemplate } from "./layouts/clientBrief";
 import { renderHtmlToPdf, type PdfOptions } from "./renderPdf";
 import { renderHtmlToDocx } from "./renderDocx";
 import { MIME, type DocFormat, type RenderResult, type RenderSpec } from "./types";
@@ -14,6 +15,7 @@ import { MIME, type DocFormat, type RenderResult, type RenderSpec } from "./type
 export * from "./types";
 export { wrapInHouseStyle, escapeHtml, HOUSE_STYLE_CSS } from "./houseStyle";
 export { buildLenderBriefHtml, buildLenderBriefFooterTemplate } from "./layouts/lenderBrief";
+export { buildClientBriefHtml, buildClientBriefFooterTemplate } from "./layouts/clientBrief";
 
 async function renderOne(format: DocFormat, fullHtml: string, pdfOpts?: PdfOptions): Promise<RenderResult> {
   if (format === "pdf") {
@@ -38,6 +40,12 @@ export async function renderDocument(spec: RenderSpec): Promise<RenderResult[]> 
     // to the very bottom of that area, leaving ~13mm of white gap between the last
     // content line and the band — no content jammed against the footer.
     pdfOpts = { marginTopMm: 20, marginBottomMm: 24, marginSideMm: 18, footerTemplate: buildLenderBriefFooterTemplate() };
+  } else if (spec.layout === "client-brief") {
+    // Same branded frame + page-margin contract as the lender brief (shared chrome);
+    // only the masthead label and section set differ.
+    if (!spec.briefData?.sections?.length) throw new Error("renderDocument: client-brief has no sections");
+    fullHtml = buildClientBriefHtml(spec.briefData);
+    pdfOpts = { marginTopMm: 20, marginBottomMm: 24, marginSideMm: 18, footerTemplate: buildClientBriefFooterTemplate() };
   } else {
     if (!spec.contentHtml?.trim()) throw new Error("renderDocument: contentHtml is empty");
     fullHtml = wrapInHouseStyle(spec.contentHtml, { title: spec.title });
