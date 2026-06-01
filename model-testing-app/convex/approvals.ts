@@ -438,10 +438,18 @@ export const executeApproval = internalAction({
           }
           break;
         }
+        case "lender_outreach":
+          // Same send core as the reply path, plus attachment support
+          // (attachedDocumentIds → multipart/mixed). Recipient resolves from
+          // the related BDM contact. The entityType stays distinct only so the
+          // approvals UI can apply lender-specific review gates.
+          result = await ctx.runAction(internal.gmailSend.executeLenderOutreach, {
+            approvalId: args.approvalId,
+          });
+          break;
         // Other entity types register here. The rest mark executed with no
         // payload so the lifecycle still advances.
         case "hubspot_write":
-        case "lender_outreach":
         case "skill_action":
         case "cadence_fire":
         case "other":

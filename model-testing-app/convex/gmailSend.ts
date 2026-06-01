@@ -204,6 +204,12 @@ function quoteHeaderAddresses(addresses: string[]): string {
   return addresses.map((a) => a.trim()).filter(Boolean).join(", ");
 }
 
+interface Attachment {
+  filename: string;
+  mimeType: string;
+  base64: string; // STANDARD base64 (Buffer.toString("base64")), not url-safe
+}
+
 interface ComposeArgs {
   fromEmail: string;
   to: string[];
@@ -214,10 +220,82 @@ interface ComposeArgs {
   bodyText?: string;
   inReplyTo?: string;
   references?: string[];
+  attachments?: Attachment[];
+}
+
+// Binary → standard base64, runtime-safe. This file runs in the Convex
+// default runtime (it holds queries/mutations, so it can't be "use node"),
+// where Buffer isn't guaranteed — mirror base64Url's Buffer/btoa fallback.
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(
+      null,
+      Array.from(bytes.subarray(i, i + chunk)),
+    );
+  }
+  return btoa(binary);
+}
+
+// RFC 2045 requires base64 bodies wrapped at <=76 chars per line.
+function wrapBase64(b64: string): string {
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) lines.push(b64.slice(i, i + 76));
+  return lines.join("\r\n");
+}
+
+function sanitizeFilename(name: string): string {
+  return (name || "attachment").replace(/["\r\n]/g, "_");
+}
+
+// Build the MIME entity for the message body (text / html / both). Returns
+// its own Content-Type header line(s) + the body content, WITHOUT the
+// top-level message headers — so it can serve either as the whole single-
+// part message body OR as the first part inside a multipart/mixed wrapper
+// when attachments are present.
+function buildBodyEntity(bodyHtml?: string, bodyText?: string): {
+  contentTypeLines: string[];
+  content: string;
+} {
+  const hasHtml = !!bodyHtml;
+  const hasText = !!bodyText;
+
+  if (hasHtml && hasText) {
+    const altB = `rockcap-alt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return {
+      contentTypeLines: [`Content-Type: multipart/alternative; boundary="${altB}"`],
+      content: [
+        `--${altB}`,
+        "Content-Type: text/plain; charset=UTF-8",
+        "Content-Transfer-Encoding: 7bit",
+        "",
+        bodyText,
+        `--${altB}`,
+        "Content-Type: text/html; charset=UTF-8",
+        "Content-Transfer-Encoding: 7bit",
+        "",
+        bodyHtml,
+        `--${altB}--`,
+      ].join("\r\n"),
+    };
+  }
+  if (hasHtml) {
+    return {
+      contentTypeLines: ["Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: 7bit"],
+      content: bodyHtml as string,
+    };
+  }
+  return {
+    contentTypeLines: ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 7bit"],
+    content: bodyText ?? "",
+  };
 }
 
 function composeRfc822(args: ComposeArgs): string {
-  const boundary = `rockcap-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const headers: string[] = [];
   headers.push(`From: ${args.fromEmail}`);
   headers.push(`To: ${quoteHeaderAddresses(args.to)}`);
@@ -230,37 +308,43 @@ function composeRfc822(args: ComposeArgs): string {
     headers.push(`References: ${args.references.join(" ")}`);
   }
 
-  const hasHtml = !!args.bodyHtml;
-  const hasText = !!args.bodyText;
+  const bodyEntity = buildBodyEntity(args.bodyHtml, args.bodyText);
+  const attachments = args.attachments ?? [];
 
-  if (hasHtml && hasText) {
-    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
-    const body = [
+  // No attachments → the body entity's Content-Type is a top-level header.
+  if (attachments.length === 0) {
+    return [
+      ...headers,
+      ...bodyEntity.contentTypeLines,
       "",
-      `--${boundary}`,
-      "Content-Type: text/plain; charset=UTF-8",
-      "Content-Transfer-Encoding: 7bit",
-      "",
-      args.bodyText,
-      `--${boundary}`,
-      "Content-Type: text/html; charset=UTF-8",
-      "Content-Transfer-Encoding: 7bit",
-      "",
-      args.bodyHtml,
-      `--${boundary}--`,
-      "",
+      bodyEntity.content,
     ].join("\r\n");
-    return `${headers.join("\r\n")}\r\n${body}`;
   }
 
-  if (hasHtml) {
-    headers.push(`Content-Type: text/html; charset=UTF-8`);
-    return `${headers.join("\r\n")}\r\n\r\n${args.bodyHtml}`;
+  // Attachments → wrap body + each file in multipart/mixed.
+  const mixedB = `rockcap-mixed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const lines: string[] = [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${mixedB}"`,
+    "",
+    `--${mixedB}`,
+    ...bodyEntity.contentTypeLines,
+    "",
+    bodyEntity.content,
+  ];
+  for (const att of attachments) {
+    const filename = sanitizeFilename(att.filename);
+    lines.push(
+      `--${mixedB}`,
+      `Content-Type: ${att.mimeType || "application/octet-stream"}; name="${filename}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${filename}"`,
+      "",
+      wrapBase64(att.base64),
+    );
   }
-
-  // text only
-  headers.push(`Content-Type: text/plain; charset=UTF-8`);
-  return `${headers.join("\r\n")}\r\n\r\n${args.bodyText ?? ""}`;
+  lines.push(`--${mixedB}--`, "");
+  return lines.join("\r\n");
 }
 
 // ── OAuth refresh + Gmail send ───────────────────────────────
@@ -328,6 +412,7 @@ interface NormalizedSend {
   threadId?: string;
   inReplyTo?: string;
   references?: string[];
+  attachments?: Attachment[];
 }
 
 async function performApprovedSend(
@@ -400,6 +485,7 @@ async function performApprovedSend(
       bodyText: payload.bodyText,
       inReplyTo: payload.inReplyTo,
       references: payload.references,
+      attachments: payload.attachments,
     }),
   );
 
@@ -517,5 +603,100 @@ export const executeClientCommunication = internalAction({
       references: p.references ?? (p.inReplyTo ? [p.inReplyTo] : undefined),
     };
     return await performApprovedSend(ctx, approval, normalized);
+  },
+});
+
+// Gmail's hard cap is 25MB for a message including attachments; base64
+// inflates ~33%, so we cap the combined RAW (pre-encode) attachment bytes
+// well under that to leave room for the body + encoding overhead.
+const MAX_ATTACHMENT_BYTES_TOTAL = 18 * 1024 * 1024;
+
+// lender_outreach approvals (outreach.draftToLender). Same send core as the
+// reply path, plus attachment support: the payload carries attachedDocumentIds
+// (term sheets, briefs), which we fetch from Convex storage and encode as
+// multipart/mixed parts. Recipient resolves from the related BDM contact.
+export const executeLenderOutreach = internalAction({
+  args: { approvalId: v.id("approvals") },
+  handler: async (ctx, args): Promise<{
+    gmailMessageId: string;
+    gmailThreadId: string;
+    touchpointId?: string;
+    attachmentsSent?: number;
+    attachmentsSkipped?: string[];
+  }> => {
+    const approval: any = await ctx.runQuery(
+      internal.approvals.getApprovalForExecution,
+      { approvalId: args.approvalId },
+    );
+    if (!approval) throw new Error("Approval not found");
+    if (approval.entityType !== "lender_outreach") {
+      throw new Error(`Expected lender_outreach approval, got ${approval.entityType}`);
+    }
+    const p: any = approval.draftPayload ?? {};
+
+    // Recipient: explicit payload.to wins, else the related BDM contact.
+    let to: string[] = Array.isArray(p.to) ? p.to.filter(Boolean) : [];
+    if (to.length === 0) {
+      const contactId = p.contactId ?? approval.relatedContactId;
+      if (!contactId) throw new Error("No recipient: missing payload.to and relatedContactId");
+      const contact: any = await ctx.runQuery(internal.contacts.getInternal, {
+        contactId,
+      });
+      if (!contact?.email) {
+        throw new Error("Related lender contact has no email address on file");
+      }
+      to = [contact.email];
+    }
+
+    // Resolve attachments from storage. Skip (don't fail the whole send) any
+    // doc that's missing/deleted or has no stored file; track skips so the
+    // executionResult is honest about what actually went out.
+    const attachments: Attachment[] = [];
+    const attachmentsSkipped: string[] = [];
+    let totalBytes = 0;
+    const docIds: any[] = Array.isArray(p.attachedDocumentIds) ? p.attachedDocumentIds : [];
+    for (const docId of docIds) {
+      const meta: any = await ctx.runQuery(internal.documents.getAttachmentMetaInternal, {
+        id: docId,
+      });
+      if (!meta) {
+        attachmentsSkipped.push(`${docId} (missing or no file)`);
+        continue;
+      }
+      totalBytes += meta.fileSize ?? 0;
+      if (totalBytes > MAX_ATTACHMENT_BYTES_TOTAL) {
+        attachmentsSkipped.push(`${meta.fileName} (would exceed size limit)`);
+        continue;
+      }
+      const blob = await ctx.storage.get(meta.fileStorageId);
+      if (!blob) {
+        attachmentsSkipped.push(`${meta.fileName} (storage read failed)`);
+        continue;
+      }
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      attachments.push({
+        filename: meta.fileName,
+        mimeType: meta.fileType,
+        base64: bytesToBase64(bytes),
+      });
+    }
+
+    const normalized: NormalizedSend = {
+      to,
+      cc: p.cc,
+      subject: p.subject,
+      bodyHtml: p.bodyHtml,
+      bodyText: p.bodyText,
+      threadId: p.threadId,
+      inReplyTo: p.inReplyTo,
+      references: p.references ?? (p.inReplyTo ? [p.inReplyTo] : undefined),
+      attachments,
+    };
+    const sent = await performApprovedSend(ctx, approval, normalized);
+    return {
+      ...sent,
+      attachmentsSent: attachments.length,
+      attachmentsSkipped: attachmentsSkipped.length ? attachmentsSkipped : undefined,
+    };
   },
 });

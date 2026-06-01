@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { api } from "./_generated/api";
 
 // Helper functions for document code generation
@@ -152,6 +152,26 @@ export const get = query({
       return null;
     }
     return record;
+  },
+});
+
+// Internal: minimal metadata an email send needs to attach a document —
+// the storage handle, the filename to present, and the MIME type. Returns
+// null for missing/deleted docs or docs with no stored file (so the send
+// can skip them rather than fail). Used by gmailSend.executeLenderOutreach.
+export const getAttachmentMetaInternal = internalQuery({
+  args: { id: v.id("documents") },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.get(args.id);
+    if (!record || record.isDeleted || !record.fileStorageId) {
+      return null;
+    }
+    return {
+      fileStorageId: record.fileStorageId,
+      fileName: record.fileName,
+      fileType: record.fileType,
+      fileSize: record.fileSize,
+    };
   },
 });
 
