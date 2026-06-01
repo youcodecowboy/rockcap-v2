@@ -6,9 +6,12 @@ import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import EmojiPickerButton from './EmojiPicker';
 import TagInput from './TagInput';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Select } from '@/components/layouts';
+import { useColors } from '@/lib/useColors';
 import { useClients, useProjectsByClient } from '@/lib/clientStorage';
-import { Calendar, Save, AlertCircle, FileText, X } from 'lucide-react';
+import { Calendar, Save, AlertCircle, FileText, X, ChevronDown, ChevronUp } from 'lucide-react';
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 interface NoteHeaderProps {
   title: string;
@@ -29,6 +32,27 @@ interface NoteHeaderProps {
   onLinkedDocumentsChange?: (docIds: Id<"documents">[]) => void;
 }
 
+// Mono-uppercase field label per canon.
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  const colors = useColors();
+  return (
+    <label
+      style={{
+        display: 'block',
+        fontFamily: MONO,
+        fontSize: 9,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: colors.text.muted,
+        fontWeight: 500,
+        marginBottom: 5,
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
 /** Small chip that resolves a document's name and links to the reader */
 function LinkedDocumentChip({
   documentId,
@@ -37,14 +61,26 @@ function LinkedDocumentChip({
   documentId: Id<"documents">;
   onRemove: () => void;
 }) {
+  const colors = useColors();
   const doc = useQuery(api.documents.get, { id: documentId });
   const name = doc?.fileName || 'Loading...';
 
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 text-sm text-gray-700 hover:bg-gray-200 transition-colors">
+    <span
+      className="inline-flex items-center gap-1"
+      style={{
+        padding: '3px 8px',
+        borderRadius: 4,
+        background: colors.bg.cardAlt,
+        border: `1px solid ${colors.border.light}`,
+        color: colors.text.secondary,
+        fontSize: 12,
+      }}
+    >
       <a
         href={`/docs/reader/${documentId}`}
-        className="flex items-center gap-1 hover:text-blue-600"
+        className="flex items-center gap-1"
+        style={{ color: 'inherit' }}
         onClick={(e) => e.stopPropagation()}
       >
         <FileText className="w-3.5 h-3.5 shrink-0" />
@@ -56,7 +92,8 @@ function LinkedDocumentChip({
           e.stopPropagation();
           onRemove();
         }}
-        className="ml-0.5 p-0.5 rounded hover:bg-gray-300 transition-colors"
+        className="ml-0.5"
+        style={{ padding: 2, borderRadius: 3, lineHeight: 0, color: colors.text.muted, cursor: 'pointer' }}
         title="Remove linked document"
       >
         <X className="w-3 h-3" />
@@ -83,6 +120,7 @@ export default function NoteHeader({
   linkedDocumentIds,
   onLinkedDocumentsChange,
 }: NoteHeaderProps) {
+  const colors = useColors();
   const clients = useClients() || [];
   const projects = useProjectsByClient(clientId || undefined) || [];
   const [isMinimized, setIsMinimized] = useState(false);
@@ -115,25 +153,36 @@ export default function NoteHeader({
   const getSaveStatusDisplay = () => {
     switch (saveStatus) {
       case 'saving':
-        return { text: 'Saving...', color: 'text-blue-600', icon: Save };
+        return { text: 'Saving...', color: colors.accent.blue, icon: Save };
       case 'saved':
-        return { text: lastSaved ? `Saved ${lastSaved.time}` : 'Saved', color: 'text-green-600', icon: Save };
+        return { text: lastSaved ? `Saved ${lastSaved.time}` : 'Saved', color: colors.accent.green, icon: Save };
       case 'unsaved':
-        return { text: 'Unsaved changes', color: 'text-orange-600', icon: AlertCircle };
+        return { text: 'Unsaved changes', color: colors.accent.orange, icon: AlertCircle };
       case 'error':
-        return { text: 'Save failed', color: 'text-red-600', icon: AlertCircle };
+        return { text: 'Save failed', color: colors.accent.red, icon: AlertCircle };
       default:
-        return { text: '', color: '', icon: Save };
+        return { text: '', color: colors.text.muted, icon: Save };
     }
   };
 
   const saveStatusDisplay = getSaveStatusDisplay();
   const StatusIcon = saveStatusDisplay.icon;
 
+  // Native select wrapped with a canon chevron (canon Select hides the native arrow).
+  const SelectWrap = ({ children }: { children: React.ReactNode }) => (
+    <div className="relative">
+      {children}
+      <ChevronDown
+        size={14}
+        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: colors.text.muted, pointerEvents: 'none' }}
+      />
+    </div>
+  );
+
   return (
-    <div className="border-b border-gray-200 bg-white">
+    <div style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.card }}>
       {/* Top Row: Emoji + Title + Save Status + Minimize */}
-      <div className="px-6 py-4">
+      <div style={{ padding: '16px 24px' }}>
         <div className="flex items-start gap-3">
           <EmojiPickerButton
             onEmojiSelect={onEmojiChange}
@@ -144,11 +193,12 @@ export default function NoteHeader({
               type="text"
               value={title}
               onChange={(e) => onTitleChange(e.target.value)}
-              className="text-3xl font-bold text-gray-900 bg-transparent border-none outline-none w-full placeholder-gray-400"
+              className="w-full bg-transparent border-none outline-none"
+              style={{ fontSize: 28, fontWeight: 700, color: colors.text.primary }}
               placeholder="Untitled Note"
             />
             {!isMinimized && (
-              <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+              <div className="flex items-center gap-4" style={{ marginTop: 8, fontSize: 12, color: colors.text.muted }}>
                 <div className="flex items-center gap-1">
                   <Calendar className="w-4 h-4" />
                   <span>Created {created.date} at {created.time}</span>
@@ -159,173 +209,177 @@ export default function NoteHeader({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <div className={`flex items-center gap-2 ${saveStatusDisplay.color}`}>
+            <div className="flex items-center gap-2" style={{ color: saveStatusDisplay.color }}>
               <StatusIcon className="w-4 h-4" />
-              <span className="text-sm font-medium">{saveStatusDisplay.text}</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{saveStatusDisplay.text}</span>
             </div>
             <button
               onClick={() => setIsMinimized(!isMinimized)}
-              className="p-1 rounded hover:bg-gray-100 transition-colors"
+              style={{ padding: 4, borderRadius: 4, lineHeight: 0, color: colors.text.muted, cursor: 'pointer' }}
               title={isMinimized ? "Show details" : "Hide details"}
             >
-              {isMinimized ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                </svg>
-              )}
+              {isMinimized ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </button>
           </div>
         </div>
 
         {/* Metadata Row: Tags, Client, Project, Mentions - Only show if not minimized */}
         {!isMinimized && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          {/* Tags */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Tags</label>
-            <TagInput
-              tags={tags}
-              onChange={onTagsChange}
-              suggestions={[]} // Could be populated from existing tags
-              placeholder="Add tags..."
-            />
-          </div>
-
-          {/* Client Selector */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Client</label>
-            <Select
-              value={clientId || 'none'}
-              onValueChange={(value) => {
-                if (value === 'none') {
-                  onClientChange(null);
-                  onProjectChange(null);
-                } else {
-                  onClientChange(value as Id<"clients">);
-                }
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="No client" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No client (Internal)</SelectItem>
-                {clients.map((client) => {
-                  const id = (client as any)._id || (client as any).id;
-                  return (
-                    <SelectItem key={id} value={id}>
-                      {client.name}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Project Selector (only if client selected) */}
-          {clientId && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ marginTop: 16 }}>
+            {/* Tags */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Project</label>
-              <Select
-                value={projectId || 'none'}
-                onValueChange={(value) => {
-                  if (value === 'none') {
-                    onProjectChange(null);
-                  } else {
-                    onProjectChange(value as Id<"projects">);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="No project" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No project</SelectItem>
-                  {projects.map((project) => {
-                    const id = (project as any)._id || (project as any).id;
+              <FieldLabel>Tags</FieldLabel>
+              <TagInput
+                tags={tags}
+                onChange={onTagsChange}
+                suggestions={[]} // Could be populated from existing tags
+                placeholder="Add tags..."
+              />
+            </div>
+
+            {/* Client Selector */}
+            <div>
+              <FieldLabel>Client</FieldLabel>
+              <SelectWrap>
+                <Select
+                  value={clientId || 'none'}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === 'none') {
+                      onClientChange(null);
+                      onProjectChange(null);
+                    } else {
+                      onClientChange(value as Id<"clients">);
+                    }
+                  }}
+                >
+                  <option value="none">No client (Internal)</option>
+                  {clients.map((client) => {
+                    const id = (client as any)._id || (client as any).id;
                     return (
-                      <SelectItem key={id} value={id}>
-                        {project.name}
-                      </SelectItem>
+                      <option key={id} value={id}>
+                        {client.name}
+                      </option>
                     );
                   })}
-                </SelectContent>
-              </Select>
+                </Select>
+              </SelectWrap>
             </div>
-          )}
 
-          {/* Documents */}
-          {onLinkedDocumentsChange && (
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">Linked Documents</label>
-              {/* Linked document chips */}
-              <div className="flex flex-wrap gap-2 mb-2">
-                {(linkedDocumentIds || []).map((docId) => (
-                  <LinkedDocumentChip
-                    key={docId}
-                    documentId={docId}
-                    onRemove={() => {
-                      onLinkedDocumentsChange(
-                        (linkedDocumentIds || []).filter((id) => id !== docId)
-                      );
+            {/* Project Selector (only if client selected) */}
+            {clientId && (
+              <div>
+                <FieldLabel>Project</FieldLabel>
+                <SelectWrap>
+                  <Select
+                    value={projectId || 'none'}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === 'none') {
+                        onProjectChange(null);
+                      } else {
+                        onProjectChange(value as Id<"projects">);
+                      }
                     }}
-                  />
-                ))}
+                  >
+                    <option value="none">No project</option>
+                    {projects.map((project) => {
+                      const id = (project as any)._id || (project as any).id;
+                      return (
+                        <option key={id} value={id}>
+                          {project.name}
+                        </option>
+                      );
+                    })}
+                  </Select>
+                </SelectWrap>
               </div>
-              {/* Document search */}
-              {clientId ? (
-                <div className="relative">
-                  <div className="flex items-center gap-2 p-2 border border-gray-300 rounded-md">
-                    <FileText className="w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search documents to link..."
-                      className="flex-1 border-none outline-none text-sm bg-transparent"
-                      value={docSearchQuery}
-                      onChange={(e) => {
-                        setDocSearchQuery(e.target.value);
-                        setShowDocSearch(true);
-                      }}
-                      onFocus={() => setShowDocSearch(true)}
-                      onBlur={() => setTimeout(() => setShowDocSearch(false), 200)}
-                    />
+            )}
+
+            {/* Documents */}
+            {onLinkedDocumentsChange && (
+              <div className="md:col-span-2">
+                <FieldLabel>Linked Documents</FieldLabel>
+                {/* Linked document chips */}
+                {(linkedDocumentIds || []).length > 0 && (
+                  <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
+                    {(linkedDocumentIds || []).map((docId) => (
+                      <LinkedDocumentChip
+                        key={docId}
+                        documentId={docId}
+                        onRemove={() => {
+                          onLinkedDocumentsChange(
+                            (linkedDocumentIds || []).filter((id) => id !== docId)
+                          );
+                        }}
+                      />
+                    ))}
                   </div>
-                  {showDocSearch && docSearchQuery && filteredDocs.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                      {filteredDocs.map((doc: any) => (
-                        <button
-                          key={doc._id}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center gap-2"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            onLinkedDocumentsChange([
-                              ...(linkedDocumentIds || []),
-                              doc._id as Id<"documents">,
-                            ]);
-                            setDocSearchQuery('');
-                            setShowDocSearch(false);
-                          }}
-                        >
-                          <FileText className="w-4 h-4 text-gray-400 shrink-0" />
-                          <span className="truncate">{doc.fileName}</span>
-                        </button>
-                      ))}
+                )}
+                {/* Document search */}
+                {clientId ? (
+                  <div className="relative">
+                    <div
+                      className="flex items-center gap-2"
+                      style={{ padding: 8, border: `1px solid ${colors.border.default}`, borderRadius: 4, background: colors.bg.card }}
+                    >
+                      <FileText className="w-4 h-4 shrink-0" style={{ color: colors.text.muted }} />
+                      <input
+                        type="text"
+                        placeholder="Search documents to link..."
+                        className="flex-1 border-none outline-none bg-transparent"
+                        style={{ fontSize: 12, color: colors.text.primary }}
+                        value={docSearchQuery}
+                        onChange={(e) => {
+                          setDocSearchQuery(e.target.value);
+                          setShowDocSearch(true);
+                        }}
+                        onFocus={() => setShowDocSearch(true)}
+                        onBlur={() => setTimeout(() => setShowDocSearch(false), 200)}
+                      />
                     </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400">Select a client to link documents</p>
-              )}
-            </div>
-          )}
-        </div>
+                    {showDocSearch && docSearchQuery && filteredDocs.length > 0 && (
+                      <div
+                        className="absolute z-10 w-full overflow-y-auto"
+                        style={{
+                          marginTop: 4,
+                          background: colors.bg.card,
+                          border: `1px solid ${colors.border.default}`,
+                          borderRadius: 4,
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                          maxHeight: 192,
+                        }}
+                      >
+                        {filteredDocs.map((doc: any) => (
+                          <button
+                            key={doc._id}
+                            className="w-full text-left flex items-center gap-2"
+                            style={{ padding: '8px 12px', fontSize: 12, color: colors.text.primary, cursor: 'pointer' }}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              onLinkedDocumentsChange([
+                                ...(linkedDocumentIds || []),
+                                doc._id as Id<"documents">,
+                              ]);
+                              setDocSearchQuery('');
+                              setShowDocSearch(false);
+                            }}
+                          >
+                            <FileText className="w-4 h-4 shrink-0" style={{ color: colors.text.muted }} />
+                            <span className="truncate">{doc.fileName}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 11, color: colors.text.dim }}>Select a client to link documents</p>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
   );
 }
-
