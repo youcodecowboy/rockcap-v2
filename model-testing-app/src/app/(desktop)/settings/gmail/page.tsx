@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import {
   Panel,
@@ -26,7 +26,17 @@ import { ArrowLeft, AlertTriangle, Mail } from "lucide-react";
 
 function GmailSettingsInner() {
   const colors = useColors();
-  const status = useQuery(api.gmailTokens.getConnectionStatus as any);
+  // Convex auth resolves a beat after the Clerk session cookie is valid: the
+  // browser must mint a `convex`-template JWT before the backend will accept
+  // an authed query. getConnectionStatus is auth-gated server-side, so firing
+  // it during that window throws an uncaught `Unauthenticated`. Skip it until
+  // Convex reports authenticated. (getSendConfig is not auth-gated, so it can
+  // run regardless.)
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const status = useQuery(
+    api.gmailTokens.getConnectionStatus as any,
+    isAuthenticated ? {} : "skip",
+  );
   const sendConfig = useQuery(api.gmailTokens.getSendConfig as any);
   const setMySendEnabled = useMutation(api.gmailTokens.setMySendEnabled as any);
 
@@ -82,7 +92,7 @@ function GmailSettingsInner() {
     }
   };
 
-  const loading = status === undefined;
+  const loading = authLoading || !isAuthenticated || status === undefined;
 
   const globalSendOn = sendConfig?.isEnabled === true;
   const userSendOn = status?.connected && status.sendEnabled === true;
