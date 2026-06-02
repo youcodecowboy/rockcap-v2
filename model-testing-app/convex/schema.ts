@@ -4338,7 +4338,13 @@ export default defineSchema({
     // reply-detection rows (no sender/subject/body) that must NOT appear in
     // the inbox. Compound index keeps pages full + received-ordered without
     // scanning past those metadata rows.
-    .index("by_source_received_at", ["source", "receivedAt"]),
+    .index("by_source_received_at", ["source", "receivedAt"])
+    // Per-user inbox feed. Each operator OAuths their OWN Gmail account, so
+    // the inbox MUST be scoped to the viewer's userId — an org-wide read
+    // leaks one operator's private mail to another. userId sits between
+    // source and receivedAt so an equality filter on (source, userId) still
+    // leaves receivedAt free for ordered, full-page pagination.
+    .index("by_source_user_received_at", ["source", "userId", "receivedAt"]),
 
   skillRuns: defineTable({
     // Identity
