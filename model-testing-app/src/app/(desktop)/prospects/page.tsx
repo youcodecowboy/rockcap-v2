@@ -9,8 +9,9 @@ import { RepliesAwaitingTriageSection } from "@/components/prospects/sections/Re
 import { UpcomingMeetingsSection } from "@/components/prospects/sections/UpcomingMeetingsSection";
 import { NewTab } from "@/components/prospects/tabs2/NewTab";
 import { ProspectsTab } from "@/components/prospects/tabs2/ProspectsTab";
+import { SourcingTab } from "@/components/prospects/tabs2/SourcingTab";
 
-type Tab = "new" | "prospects";
+type Tab = "new" | "prospects" | "sourcing";
 
 export default function ProspectsPage() {
   const colors = useColors();
@@ -33,6 +34,10 @@ export default function ProspectsPage() {
   });
   const newCount = (candidates ?? []).length;
 
+  // Sourcing tab count — un-triaged candidates not already in the book.
+  const sourcingNew = useQuery(api.sourcing.list as any, { state: "new", includeInBook: false }) ?? [];
+  const sourcingCount = (sourcingNew as any[]).length;
+
   return (
     <>
       {/* TopAccent strip — amber for prospect entity */}
@@ -53,8 +58,9 @@ export default function ProspectsPage() {
         <UpcomingMeetingsSection />
         <RepliesAwaitingTriageSection />
 
-        {/* Pipeline tabs — New (unprocessed HubSpot companies) vs
-            Prospects (the researched → meeting-booked ladder). */}
+        {/* Pipeline tabs — Sourcing (charge-sourced candidate batches) →
+            New (unprocessed HubSpot companies) → Prospects (the researched
+            → meeting-booked ladder). */}
         <div
           style={{
             display: "flex",
@@ -63,6 +69,13 @@ export default function ProspectsPage() {
             marginBottom: 14,
           }}
         >
+          <TabButton
+            label="Sourcing"
+            count={sourcingCount}
+            active={tab === "sourcing"}
+            onClick={() => setTab("sourcing")}
+            colors={colors}
+          />
           <TabButton
             label="New"
             count={newCount}
@@ -79,7 +92,7 @@ export default function ProspectsPage() {
           />
         </div>
 
-        {tab === "new" ? <NewTab /> : <ProspectsTab />}
+        {tab === "sourcing" ? <SourcingTab /> : tab === "new" ? <NewTab /> : <ProspectsTab />}
       </div>
     </>
   );
