@@ -1543,6 +1543,53 @@ export default defineSchema({
     .index("by_status", ["chargeStatus"])
     .index("by_is_new", ["isNew"]),
 
+  // Sourced Companies — bulk prospect CANDIDATES surfaced from the charges
+  // service (companies a known lender has charged). These are NOT prospects:
+  // most are dismissed; only a few are "promoted" into clients (and only then
+  // does the full intel/Apollo gauntlet run). One lightweight CH profile call
+  // per company fills name/status/SIC; charge facts carry the provenance.
+  sourcedCompanies: defineTable({
+    companyNumber: v.string(),
+    companyName: v.optional(v.string()), // from CH profile enrichment
+    // CH basic profile (one /company/{n} call)
+    companyStatus: v.optional(v.string()), // active / dissolved / ...
+    companyType: v.optional(v.string()), // ltd / llp / ...
+    sicCodes: v.optional(v.array(v.string())),
+    incorporationDate: v.optional(v.string()),
+    town: v.optional(v.string()),
+    postcode: v.optional(v.string()),
+    registeredOfficeAddress: v.optional(v.any()),
+    // Provenance — why this company was sourced
+    sourcedFromLender: v.string(), // canonical lender name
+    latestChargeDate: v.optional(v.string()),
+    earliestChargeDate: v.optional(v.string()),
+    chargeCount: v.optional(v.number()),
+    outstandingCount: v.optional(v.number()),
+    hasOutstanding: v.optional(v.boolean()),
+    recentProperty: v.optional(v.string()), // PP scheme/address text
+    jurisdiction: v.optional(v.string()), // ew / sc / ni
+    entityType: v.optional(v.string()), // company / llp
+    // Sourcing workflow
+    sourcingState: v.union(
+      v.literal("new"),
+      v.literal("reviewed"),
+      v.literal("promoted"),
+      v.literal("dismissed"),
+    ),
+    alreadyInBook: v.optional(v.boolean()), // matched an existing client at source time
+    existingClientId: v.optional(v.id("clients")),
+    promotedToClientId: v.optional(v.id("clients")),
+    sourcingBatch: v.optional(v.string()), // groups one query run
+    enrichedAt: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_company_number", ["companyNumber"])
+    .index("by_state", ["sourcingState"])
+    .index("by_lender", ["sourcedFromLender"])
+    .index("by_batch", ["sourcingBatch"]),
+
   // Durable per-scheme enrichment for prospects. One row per SPV (scheme).
   // Written as drafts by the prospect-intel skill (operatorConfirmed=false),
   // confirmed/edited by operators in the Track Record tab. Surface-only:

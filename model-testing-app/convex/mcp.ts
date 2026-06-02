@@ -3839,6 +3839,110 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Sourcing domain ──────────────────────────────────────────
+  // Prospect SOURCING from the charges service: from a known lender, surface
+  // the companies it has charged as bulk candidates, enrich each with one CH
+  // profile call, and let the operator promote the few that fit into the
+  // prospect pipeline. Candidates live in `sourcedCompanies` (NOT clients).
+  {
+    name: "sourcing.searchLenders",
+    description:
+      "Disambiguate a lender name against the charges dataset. Returns distinct canonical lenders matching the query with charge/company counts — e.g. 'PARAGON' resolves to PARAGON BANK PLC vs PARAGON DEVELOPMENT FINANCE LIMITED. Call this FIRST to get the exact canonical name to pass to sourcing.fromLender.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Fuzzy lender name, e.g. 'paragon dev finance'" },
+        limit: { type: "number", description: "Max lenders to return. Default 25." },
+      },
+      required: ["query"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runAction(api.sourcing.searchLenders, {
+        query: args.query,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "sourcing.fromLender",
+    description:
+      "Source prospect CANDIDATES from a known lender: pull the companies that lender has charged (from the charges service), enrich each with one Companies House profile call (name/status/SIC/town), dedup against the existing client book, and store as `sourcedCompanies` candidates. These are NOT prospects yet — review then promote. Pass the EXACT canonical lender name from sourcing.searchLenders. Filters: status (all|outstanding|satisfied), registeredSince/registeredUntil (YYYY-MM-DD), jurisdiction (ew|sc|ni), entityType (company|llp), propertyContains (free-text scheme/location). Capped at 500 companies — narrow big lenders with registeredSince.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lender: { type: "string", description: "Exact canonical lender name (from sourcing.searchLenders)" },
+        status: { type: "string", description: "all | outstanding | satisfied. Default all." },
+        registeredSince: { type: "string", description: "YYYY-MM-DD lower bound on charge date" },
+        registeredUntil: { type: "string", description: "YYYY-MM-DD upper bound on charge date" },
+        jurisdiction: { type: "string", description: "ew | sc | ni" },
+        entityType: { type: "string", description: "company | llp" },
+        propertyContains: { type: "string", description: "free-text scheme/location filter" },
+        limit: { type: "number", description: "Max companies (<=500). Default 500." },
+      },
+      required: ["lender"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runAction(api.sourcing.sourceFromLender, args);
+      return asText(result);
+    },
+  },
+  {
+    name: "sourcing.list",
+    description:
+      "List sourced prospect candidates. Filter by state (new|reviewed|promoted|dismissed), lender (canonical name), or batch. Set includeInBook=false to hide companies already in the client book. Returns candidates with CH profile + charge provenance, newest charge first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        state: { type: "string", description: "new | reviewed | promoted | dismissed" },
+        lender: { type: "string", description: "canonical lender name" },
+        batch: { type: "string", description: "sourcing batch id" },
+        includeInBook: { type: "boolean", description: "include companies already in the book (default true)" },
+        limit: { type: "number" },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.sourcing.list, args ?? {});
+      return asText(result);
+    },
+  },
+  {
+    name: "sourcing.promote",
+    description:
+      "Promote a sourced candidate into the prospect pipeline: creates a borrower client (status=prospect) linked to the CH number, schedules the full Companies House sync, and marks the candidate 'promoted'. Apollo / deep intel is a separate operator-driven step after this. Returns the new client id.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "sourcedCompanies row id" } },
+      required: ["id"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.sourcing.promote, { id: args.id });
+      return asText({ promotedToClientId: result });
+    },
+  },
+  {
+    name: "sourcing.setState",
+    description:
+      "Set a sourced candidate's state to reviewed or dismissed (or back to new), with optional notes. Use to triage a sourcing batch without promoting.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "sourcedCompanies row id" },
+        state: { type: "string", description: "new | reviewed | dismissed" },
+        notes: { type: "string" },
+      },
+      required: ["id", "state"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.sourcing.setState, {
+        id: args.id,
+        state: args.state,
+        notes: args.notes,
+      });
+      return asText(result);
+    },
+  },
+
   // ── Meta / introspection ─────────────────────────────────────
   // Self-describing catalogue. The skills repo lives separately from this app,
   // so skill-forge calls this at the start of each session to refresh its

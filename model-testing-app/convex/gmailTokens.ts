@@ -290,6 +290,32 @@ export const updateSendConfig = mutation({
   },
 });
 
+// Auth-free admin helper to flip the global send kill switch from the
+// CLI / Convex dashboard, which carry no Clerk identity (so the public
+// updateSendConfig mutation's getAuthenticatedUser check can't be met
+// there). Internal-only: not callable from the browser client.
+export const setGlobalSendEnabled = internalMutation({
+  args: { isEnabled: v.boolean() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("gmailSendConfig")
+      .withIndex("by_enabled")
+      .first();
+    const now = new Date().toISOString();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        isEnabled: args.isEnabled,
+        updatedAt: now,
+      });
+      return existing._id;
+    }
+    return ctx.db.insert("gmailSendConfig", {
+      isEnabled: args.isEnabled,
+      updatedAt: now,
+    });
+  },
+});
+
 // Composite check used by the send wrapper (to be added in BL-4.2).
 // Returns true only if BOTH the global config and the per-user flag are
 // enabled AND the user has a valid (non-needsReconnect) connection.
