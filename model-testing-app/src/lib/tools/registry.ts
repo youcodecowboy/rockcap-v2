@@ -28,6 +28,7 @@ import { ANALYSIS_TOOLS } from "./domains/analysis.tools";
 import { MEETING_TOOLS } from "./domains/meeting.tools";
 import { FLAG_TOOLS } from "./domains/flag.tools";
 import { FINANCIAL_TOOLS } from "./domains/financial.tools";
+import { SOURCING_TOOLS } from "./domains/sourcing.tools";
 
 /**
  * Core write tools always available in global context
@@ -47,6 +48,9 @@ const GLOBAL_WRITE_TOOLS = new Set([
   "createMeeting",
   "extractMeetingFromText",
   "createFlag",
+  "sourceFromLender",
+  "promoteSourcedCompany",
+  "setSourcedCompanyState",
 ]);
 
 /**
@@ -113,6 +117,7 @@ export class ToolRegistry {
       ...MEETING_TOOLS,
       ...FLAG_TOOLS,
       ...FINANCIAL_TOOLS,
+      ...SOURCING_TOOLS,
     ]);
   }
 

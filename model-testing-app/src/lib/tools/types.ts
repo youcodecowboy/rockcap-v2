@@ -27,6 +27,7 @@ export const TOOL_DOMAINS = [
   "meeting",
   "flag",
   "financial",
+  "sourcing",
 ] as const;
 
 export type ToolDomain = (typeof TOOL_DOMAINS)[number];
@@ -61,7 +62,7 @@ export interface ToolParameters {
 // ---------------------------------------------------------------------------
 
 export interface ConvexMapping {
-  type: "query" | "mutation";
+  type: "query" | "mutation" | "action";
   /** Dot-path to the Convex function, e.g. "clients.list" */
   path: string;
 }

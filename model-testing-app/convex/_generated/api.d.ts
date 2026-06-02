@@ -143,6 +143,7 @@ import type * as scenarioResults from "../scenarioResults.js";
 import type * as scenarios from "../scenarios.js";
 import type * as search from "../search.js";
 import type * as skillRuns from "../skillRuns.js";
+import type * as sourcing from "../sourcing.js";
 import type * as structureGen from "../structureGen.js";
 import type * as tasks from "../tasks.js";
 import type * as templateDefinitions from "../templateDefinitions.js";
@@ -294,6 +295,7 @@ declare const fullApi: ApiFromModules<{
   scenarios: typeof scenarios;
   search: typeof search;
   skillRuns: typeof skillRuns;
+  sourcing: typeof sourcing;
   structureGen: typeof structureGen;
   tasks: typeof tasks;
   templateDefinitions: typeof templateDefinitions;

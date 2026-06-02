@@ -1784,6 +1784,48 @@ const handlers: Record<string, ToolHandler> = {
 
     return lines.join('\n');
   },
+
+  // ==========================================================================
+  // SOURCING (prospect candidates from the charges service)
+  // ==========================================================================
+  searchChargeholders: async (params, client) =>
+    client.action(api.sourcing.searchLenders, {
+      query: params.query,
+      limit: params.limit,
+    }),
+
+  sourceFromLender: async (params, client) =>
+    client.action(api.sourcing.sourceFromLender, {
+      lender: params.lender,
+      status: params.status,
+      registeredSince: params.registeredSince,
+      registeredUntil: params.registeredUntil,
+      jurisdiction: params.jurisdiction,
+      entityType: params.entityType,
+      propertyContains: params.propertyContains,
+      limit: params.limit,
+    }),
+
+  listSourcedCompanies: async (params, client) =>
+    client.query(api.sourcing.list, {
+      state: params.state,
+      lender: params.lender,
+      batch: params.batch,
+      includeInBook: params.includeInBook,
+      limit: params.limit,
+    }),
+
+  promoteSourcedCompany: async (params, client) =>
+    client.mutation(api.sourcing.promote, {
+      id: params.id as Id<"sourcedCompanies">,
+    }),
+
+  setSourcedCompanyState: async (params, client) =>
+    client.mutation(api.sourcing.setState, {
+      id: params.id as Id<"sourcedCompanies">,
+      state: params.state,
+      notes: params.notes,
+    }),
 };
 
 // ---------------------------------------------------------------------------
