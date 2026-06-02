@@ -281,8 +281,9 @@ export const countUnrouted = query({
 // prospect Replies tab, not here. Ordered by receivedAt desc; each row is
 // enriched with linked client + matched contact names for the UI.
 //
-// Intentionally org-wide (not user-scoped): the operator inbox is a shared
-// surface, mirroring reply.listUnrouted / the prospects triage queue.
+// User-scoped: each operator connects their OWN Gmail account, so the inbox
+// shows only the viewer's own captured mail. An org-wide read here leaked one
+// operator's private inbox to every other user — see by_source_user_received_at.
 
 type EnrichedInboxRow = Doc<"replyEvents"> & {
   clientName: string | null;
@@ -309,9 +310,25 @@ async function enrichInboxRow(
 export const listInboundPaginated = query({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
+    // Resolve the viewer. The inbox is scoped to the operator's own Gmail
+    // account — never return another user's mail. Unauthenticated or unknown
+    // users get an empty (terminal) page rather than an org-wide leak.
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
     const result = await ctx.db
       .query("replyEvents")
-      .withIndex("by_source_received_at", (q) => q.eq("source", "gmail_push"))
+      .withIndex("by_source_user_received_at", (q) =>
+        q.eq("source", "gmail_push").eq("userId", user._id),
+      )
       .order("desc")
       .paginate(args.paginationOpts);
     const page = await Promise.all(
