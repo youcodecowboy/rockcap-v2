@@ -157,6 +157,14 @@ Return JSON:
  * 5. Updates the job status
  */
 export async function POST(request: NextRequest) {
+  // This route is in middleware's public matcher (no Clerk cookie on the
+  // server-to-server call from process-intelligence-queue). It self-authenticates
+  // via the shared CRON_SECRET so it isn't an open trigger for anyone on the net.
+  const cronSecret = request.headers.get('x-cron-secret');
+  if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
   const client = getConvexClient();
 
   try {

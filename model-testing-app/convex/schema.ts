@@ -912,8 +912,9 @@ export default defineSchema({
     analysisResult: v.optional(v.any()), // AnalysisResult object
     documentId: v.optional(v.id("documents")),
     error: v.optional(v.string()),
-    isRead: v.optional(v.boolean()), // For notification read status
-    userId: v.optional(v.id("users")), // For future multi-user support
+    isRead: v.optional(v.boolean()), // LEGACY global read flag; treated as "read by everyone" baseline. Per-user read-state now lives in readByUserIds.
+    readByUserIds: v.optional(v.array(v.id("users"))), // Per-user notification read-state. Jobs are visible org-wide, but each user clears their own notifications independently.
+    userId: v.optional(v.id("users")), // Owner of the upload (job is still visible org-wide by design)
     hasCustomInstructions: v.optional(v.boolean()), // Flag to indicate if custom instructions were requested
     customInstructions: v.optional(v.string()), // Custom instructions for LLM analysis
     forceExtraction: v.optional(v.boolean()), // Force data extraction regardless of file type
